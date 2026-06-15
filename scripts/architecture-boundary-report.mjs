@@ -26,6 +26,12 @@ const focusRules = [
 		toLayer: "bridge/other",
 	},
 	{
+		key: "commands-to-bridge-protocol",
+		description: "commands importing bridge protocol generated helpers instead of shared generated types or command-owned metadata",
+		fromLayer: "commands",
+		toLayer: "bridge/protocol",
+	},
+	{
 		key: "cli-to-bridge-server",
 		description: "root CLI importing bridge/server directly instead of src/apps composition owners",
 		fromLayer: "cli",
@@ -62,6 +68,12 @@ const focusRules = [
 		toLayer: "bridge/other",
 	},
 	{
+		key: "browser-command-runtime-to-bridge-protocol",
+		description: "browser command runtime importing bridge protocol generated helpers instead of shared generated types",
+		fromLayer: "browser-command-runtime",
+		toLayer: "bridge/protocol",
+	},
+	{
 		key: "browser-page-runtime-to-bridge-other",
 		description: "browser page runtime importing bridge runtime helpers instead of neutral utilities or ports",
 		fromLayer: "browser-page-runtime",
@@ -84,6 +96,24 @@ const focusRules = [
 		description: "browser runtime importing command-runtime helpers instead of neutral runtime owners",
 		fromLayer: "browser-runtime",
 		toLayer: "browser-command-runtime",
+	},
+	{
+		key: "bridge-server-to-memory",
+		description: "bridge server importing memory services instead of leaving memory flush/persistence to app or command composition owners",
+		fromLayer: "bridge/server",
+		toLayer: "memory",
+	},
+	{
+		key: "bridge-server-to-abml-kernel",
+		description: "bridge server importing ABML kernels instead of staying transport/session oriented",
+		fromLayer: "bridge/server",
+		toPathPrefix: "src/kernels/abml/",
+	},
+	{
+		key: "bridge-server-main-to-kernels",
+		description: "BrowserBridgeServer importing kernels directly instead of using session/temporal coordinators or runtime port contracts",
+		fromPath: "src/bridge/server/BrowserBridgeServer.ts",
+		toPathPrefix: "src/kernels/",
 	},
 	{
 		key: "scan-to-adapters",
@@ -139,7 +169,12 @@ function focusedFindings(edges) {
 	const findings = focusRules.map((rule) => ({
 		...rule,
 		edges: edges
-			.filter((edge) => edge.fromLayer === rule.fromLayer && edge.toLayer === rule.toLayer)
+			.filter((edge) =>
+				(!rule.fromLayer || edge.fromLayer === rule.fromLayer)
+				&& (!rule.fromPath || edge.from === rule.fromPath)
+				&& (!rule.toLayer || edge.toLayer === rule.toLayer)
+				&& (!rule.toPathPrefix || edge.to.startsWith(rule.toPathPrefix))
+			)
 			.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to)),
 	}));
 	findings.push({

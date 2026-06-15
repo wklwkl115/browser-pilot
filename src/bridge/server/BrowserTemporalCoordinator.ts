@@ -2,7 +2,8 @@ import path from "node:path";
 import { classifyDeadlinePressure } from "../../kernels/temporal/budget.js";
 import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity } from "../../kernels/temporal/estimate.js";
 import type { TemporalAnchor, TemporalDecision, TemporalFrontierNext, TemporalProfileSample, TemporalReason, TemporalStamp, TemporalVerdict } from "../../kernels/temporal/types.js";
-import type { BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo } from "./types.js";
+import type { BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo } from "./types.js";
+import type { CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
 import { normalizeTemporalProfileRunId, writeTemporalProfileArtifacts, summarizeTemporalProfileSamples, type TemporalProfileArtifactPaths, type TemporalProfileSummary } from "./temporalProfileArtifacts.js";
 import { isRecord } from "../../utils/records.js";
 
@@ -23,17 +24,6 @@ export type QueueTemporalProfileInput = {
 	queueDepthAtStart?: number;
 	queueDelayMs?: number;
 	deadlineMs?: number;
-};
-
-export type TemporalProfileSampleInput = {
-	operationId?: string;
-	tool: string;
-	command?: string;
-	target?: { browserSessionId?: string; tabId?: number; targetRef?: string };
-	deadlineMs?: number;
-	elapsedMs: number;
-	result?: BrowserBridgeExecutionResult;
-	diagnostics?: Record<string, unknown>;
 };
 
 export type BrowserTemporalCoordinatorOptions = {
@@ -72,7 +62,7 @@ function supervisorFromData(data: unknown): Record<string, unknown> | undefined 
 	return isRecord(wait?.supervisor) ? wait.supervisor : undefined;
 }
 
-function diagnosticsFrom(input: TemporalProfileSampleInput): Record<string, unknown> | undefined {
+function diagnosticsFrom(input: CommandTemporalProfileSampleInput): Record<string, unknown> | undefined {
 	return input.diagnostics || (isRecord(input.result?.diagnostics) ? input.result.diagnostics : undefined);
 }
 
@@ -214,7 +204,7 @@ export class BrowserTemporalCoordinator {
 		return compact(estimateWaitContinuity(input));
 	}
 
-	buildProfileSample(input: TemporalProfileSampleInput): TemporalProfileSample {
+	buildProfileSample(input: CommandTemporalProfileSampleInput): TemporalProfileSample {
 		const diagnostics = diagnosticsFrom(input);
 		const temporalProfile = temporalProfileFromDiagnostics(diagnostics);
 		const effect = effectFromResult(input.result);

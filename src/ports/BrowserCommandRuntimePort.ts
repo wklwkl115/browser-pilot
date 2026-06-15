@@ -1,7 +1,12 @@
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
-import type { PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../kernels/abml/perceptionLedger.js";
+import type { PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../kernels/session/perceptionLedger.js";
 import type { SessionActiveOperationInfo, SessionObservationSnapshotInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/index.js";
 import type { TemporalProfileSample } from "../kernels/temporal/types.js";
+
+export type CommandPerceptionLedgerFrame = PerceptionLedgerFrame;
+export type CommandPerceptionLedgerKey = PerceptionLedgerKey;
+export type CommandPerceptionTraceSnapshot = PerceptionTraceSnapshot;
+export type CommandTemporalProfileSample = TemporalProfileSample;
 
 export type BrowserCommandRuntimeSnapshot = {
 	browserSessionId?: string;
@@ -74,13 +79,13 @@ export interface BrowserCommandRuntimePort {
 	finishOperation(operationId: string): SessionActiveOperationInfo | undefined;
 	queueDepth(browserSessionId: string | undefined, tabId: number | undefined): number | undefined;
 	leaseOwnerHash(browserSessionId: string | undefined, tabId: number | undefined): string | undefined;
-	getPerceptionLedgerFrame?(key: PerceptionLedgerKey): PerceptionLedgerFrame | undefined;
-	getRecentPerceptionLedgerFrames?(key: PerceptionLedgerKey, limit?: number): PerceptionLedgerFrame[];
-	recordPerceptionLedgerFrame?(frame: PerceptionLedgerFrame): PerceptionLedgerFrame;
-	recordPerceptionTraceTerms?(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>): PerceptionTraceSnapshot;
-	perceptionTraceSnapshot?(browserSessionId?: string): PerceptionTraceSnapshot;
-	buildTemporalProfileSample?(input: CommandTemporalProfileSampleInput): TemporalProfileSample;
-	recordTemporalProfileSample?(sample: TemporalProfileSample, options?: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string }): Promise<unknown>;
+	getPerceptionLedgerFrame?(key: CommandPerceptionLedgerKey): CommandPerceptionLedgerFrame | undefined;
+	getRecentPerceptionLedgerFrames?(key: CommandPerceptionLedgerKey, limit?: number): CommandPerceptionLedgerFrame[];
+	recordPerceptionLedgerFrame?(frame: CommandPerceptionLedgerFrame): CommandPerceptionLedgerFrame;
+	recordPerceptionTraceTerms?(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>): CommandPerceptionTraceSnapshot;
+	perceptionTraceSnapshot?(browserSessionId?: string): CommandPerceptionTraceSnapshot;
+	buildTemporalProfileSample?(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample;
+	recordTemporalProfileSample?(sample: CommandTemporalProfileSample, options?: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string }): Promise<unknown>;
 }
 
 export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo };

@@ -1,4 +1,4 @@
-import { PerceptionLedger } from "../../kernels/abml/perceptionLedger.js";
+import { PerceptionLedger } from "../../kernels/session/perceptionLedger.js";
 import { SessionKernel } from "../../kernels/session/index.js";
 import { BrowserTemporalCoordinator } from "./BrowserTemporalCoordinator.js";
 import { isOpen } from "./bridgeUtils.js";

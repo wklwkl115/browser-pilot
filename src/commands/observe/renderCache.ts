@@ -1,4 +1,4 @@
-import type { PerceptionLedgerFrame } from "../../kernels/abml/perceptionLedger.js";
+import type { PerceptionLedgerFrame } from "../../kernels/session/perceptionLedger.js";
 import { isRecord } from "../../utils/records.js";
 import type { PageFingerprint } from "../pageSignals.js";
 import type { ObserveMode, ObserveToolParams } from "./common.js";

@@ -103,6 +103,7 @@ export function sortSessionOperations<TOperation extends SessionOperation>(opera
 
 export { SessionOperationRegistry, type SessionActiveOperationInfo } from "./operationRegistry.js";
 export { SessionObservationSnapshotRegistry, type SessionObservationSnapshotInfo, type SessionBridgeSnapshotView } from "./observationSnapshotRegistry.js";
+export { PerceptionLedger, factsFromEntities, stableRefsFromFrames, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "./perceptionLedger.js";
 export { SessionKernel } from "./SessionKernel.js";
 export { DEFAULT_BROWSER_SESSION_ID, SessionRegistry, type SessionAutomationSession } from "./sessionRegistry.js";
 export {

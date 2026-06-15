@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { PerceptionLedgerFrame, PerceptionTraceSnapshot } from "../kernels/abml/perceptionLedger.js";
+import type { PerceptionLedgerFrame, PerceptionTraceSnapshot } from "../kernels/session/perceptionLedger.js";
 import { distillFrameIntoProfile, emptyMemoryOriginProfile, mergeProfiles } from "../kernels/memory/profile.js";
 import { applyVerificationStrike } from "../kernels/memory/staleness.js";
 import { toPersistableMemoryTerm, type MemoryFrameView, type MemoryOriginProfile, type MemoryTraceView, type MemoryVerificationStatus } from "../kernels/memory/types.js";

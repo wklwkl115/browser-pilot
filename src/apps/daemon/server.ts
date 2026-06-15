@@ -20,6 +20,7 @@ import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { resolveBrowserResultEvidence } from "../../resources/browserResultEvidence.js";
+import { drainMemoryProfileFlushes } from "../../memory/profileService.js";
 import { validateCommandArgs } from "../../validation/commandArgs.js";
 import { registerHook, emitLog, timingLogHook, type MiddlewareContext } from "../../commands/middleware.js";
 import { resolveUsageLogOptions, createUsageLogHook } from "../../commands/usageLog.js";
@@ -209,6 +210,9 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		tenantLease.stop();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 		await bridgeServer.stop().catch(() => {
+			/* best-effort */
+		});
+		await drainMemoryProfileFlushes().catch(() => {
 			/* best-effort */
 		});
 		if (writeLock) removeLockfile();

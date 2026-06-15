@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { PerceptionTraceSnapshot } from "../../kernels/abml/perceptionLedger.js";
+import type { PerceptionTraceSnapshot } from "../../kernels/session/perceptionLedger.js";
 import { extractUrlTerms } from "../../kernels/evidence/distill/relevanceTaps.js";
 import type { RelevanceTerm } from "../../kernels/evidence/distill/relevance.js";
 import { RELEVANCE_TUNING } from "../../kernels/evidence/distill/relevanceTuning.js";

@@ -9,7 +9,7 @@ import { buildTreeDiff, type TreeDiff } from "../../kernels/abml/treeDiff.js";
 import { buildSnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 import { buildCollectionModels } from "../../kernels/abml/collections.js";
 import { buildIdentityGraph, identityGraphSummary } from "../../kernels/abml/identityGraph.js";
-import { factsFromEntities, stableRefsFromFrames, type PerceptionLedgerFrame, type PerceptionLedgerKey } from "../../kernels/abml/perceptionLedger.js";
+import { factsFromEntities, stableRefsFromFrames, type PerceptionLedgerFrame, type PerceptionLedgerKey } from "../../kernels/session/perceptionLedger.js";
 import type { FactGranularity } from "../../kernels/evidence/distill/fact.js";
 import { createBrowserAbmlIntegration } from "../../browser-command-runtime/abml/integration.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";

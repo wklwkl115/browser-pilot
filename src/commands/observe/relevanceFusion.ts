@@ -1,6 +1,6 @@
 import type { Entity } from "../../kernels/abml/entity.js";
 import { buildInferenceSummary } from "../../kernels/abml/inference.js";
-import type { PerceptionTraceSnapshot } from "../../kernels/abml/perceptionLedger.js";
+import type { PerceptionTraceSnapshot } from "../../kernels/session/perceptionLedger.js";
 import { computeRelevanceMap, type RelevanceInput, type RelevanceResult, type RelevanceTerm } from "../../kernels/evidence/distill/relevance.js";
 import { extractScalarTerm, extractUrlTerms } from "../../kernels/evidence/distill/relevanceTaps.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";

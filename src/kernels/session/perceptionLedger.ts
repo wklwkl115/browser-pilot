@@ -1,4 +1,4 @@
-import type { Entity } from "./entity.js";
+import type { Entity } from "../abml/entity.js";
 
 export type PerceptionLedgerKey = {
 	browserSessionId?: string;

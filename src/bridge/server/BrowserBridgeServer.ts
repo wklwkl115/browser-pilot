@@ -12,16 +12,13 @@ import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js"
 import { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
-import type { TemporalProfileSampleInput } from "./BrowserTemporalCoordinator.js";
 import { BrowserBridgeSessionState } from "./BrowserBridgeSessionState.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
 import { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
 import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "../protocol/consentTypes.js";
-import type { TemporalProfileSample } from "../../kernels/temporal/types.js";
-import type { PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../../kernels/abml/perceptionLedger.js";
-import { drainMemoryProfileFlushes } from "../../memory/profileService.js";
+import type { CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot, CommandTemporalProfileSample, CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
 import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
 
 export class BrowserBridgeServer implements ConsentPort {
@@ -119,7 +116,6 @@ export class BrowserBridgeServer implements ConsentPort {
 		this.tabs.clear();
 		this.state.operations.clear();
 		this.state.observationSnapshots.clear();
-		await drainMemoryProfileFlushes();
 		this.state.perceptionLedger.clear();
 		await this.httpEndpoint.stop();
 	}
@@ -322,31 +318,31 @@ export class BrowserBridgeServer implements ConsentPort {
 		return this.state.observationSnapshots.list(this.snapshot());
 	}
 
-	getPerceptionLedgerFrame(key: PerceptionLedgerKey): PerceptionLedgerFrame | undefined {
+	getPerceptionLedgerFrame(key: CommandPerceptionLedgerKey): CommandPerceptionLedgerFrame | undefined {
 		return this.state.perceptionLedger.get(key);
 	}
 
-	getRecentPerceptionLedgerFrames(key: PerceptionLedgerKey, limit = 3): PerceptionLedgerFrame[] {
+	getRecentPerceptionLedgerFrames(key: CommandPerceptionLedgerKey, limit = 3): CommandPerceptionLedgerFrame[] {
 		return this.state.perceptionLedger.recent(key, limit);
 	}
 
-	recordPerceptionLedgerFrame(frame: PerceptionLedgerFrame): PerceptionLedgerFrame {
+	recordPerceptionLedgerFrame(frame: CommandPerceptionLedgerFrame): CommandPerceptionLedgerFrame {
 		return this.state.perceptionLedger.record(frame);
 	}
 
-	recordPerceptionTraceTerms(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>): PerceptionTraceSnapshot {
+	recordPerceptionTraceTerms(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>): CommandPerceptionTraceSnapshot {
 		return this.state.perceptionLedger.recordTraceTerms(browserSessionId, terms);
 	}
 
-	perceptionTraceSnapshot(browserSessionId?: string): PerceptionTraceSnapshot {
+	perceptionTraceSnapshot(browserSessionId?: string): CommandPerceptionTraceSnapshot {
 		return this.state.perceptionLedger.traceSnapshot(browserSessionId);
 	}
 
-	buildTemporalProfileSample(input: TemporalProfileSampleInput): TemporalProfileSample {
+	buildTemporalProfileSample(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample {
 		return this.state.temporal.buildProfileSample(input);
 	}
 
-	recordTemporalProfileSample(sample: TemporalProfileSample, options: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string } = {}): Promise<unknown> {
+	recordTemporalProfileSample(sample: CommandTemporalProfileSample, options: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string } = {}): Promise<unknown> {
 		return this.state.temporal.recordProfileSample(sample, options);
 	}
 
