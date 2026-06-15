@@ -3,9 +3,6 @@ name: check
 permissions:
   contents: read
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 on:
   pull_request:
   push:
@@ -20,7 +17,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node + install + build
         uses: ./.github/actions/setup-node-build
@@ -30,7 +27,7 @@ jobs:
 
       - name: Upload package verification artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: public-package-artifacts
           path: .pi/browser-artifacts/public-package/**
