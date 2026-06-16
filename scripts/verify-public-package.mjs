@@ -49,7 +49,6 @@ function assertCleanPackage(files) {
 		file.startsWith(".vscode/") ||
 		file.startsWith("dist/src/driver/") ||
 		file.startsWith("dist/src/frontend/") ||
-		file.startsWith("dist/src/resources/") ||
 		file.startsWith("dist/src/tools/") ||
 		file.startsWith("dist/src/protocol/") ||
 		file.startsWith("dist/src/abml/") ||
