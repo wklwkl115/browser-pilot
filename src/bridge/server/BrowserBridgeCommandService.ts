@@ -95,7 +95,7 @@ export class BrowserBridgeCommandService {
 		const browserSession = this.browserSession(options.browserSessionId);
 		const target = this.requireTargetRef(tabId, options.browserSessionId);
 		const id = this.requireTargetTabId(target, tabId);
-		this.deps.leases.acquireUiLock(browserSession.id, "browser_tabs.switch");
+		await this.deps.leases.acquireUiLock(browserSession.id, "browser_tabs.switch");
 		try {
 			const previousDefaultTabId = this.deps.tabs.previousDefaultTabId(options.browserSessionId);
 			const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId, browserSessionId: options.browserSessionId });
@@ -320,14 +320,17 @@ export class BrowserBridgeCommandService {
 	private requireLiveTabSession(tabId: number, browserSessionId?: string): BrowserTabSession {
 		const session = this.deps.tabs.liveSessionForTabId(tabId, browserSessionId);
 		if (session) return session;
-		const replacedByTabId = this.deps.tabs.replacedByTabId(tabId, browserSessionId);
+		const resolution = this.deps.tabs.replacementResolution(tabId, browserSessionId);
 		throw tabNotFoundError({
 			tabId,
 			browserSessionId,
 			selectedBrowser: this.deps.browserSessions.selectedInfo(this.browserSession(browserSessionId), (client) => this.deps.clients.info(client)),
 			tabs: this.deps.getTabs(),
 			latestTabId: this.deps.tabs.latestTabId(browserSessionId),
-			replacedByTabId,
+			replacedByTabId: resolution.tabId !== tabId ? resolution.tabId : undefined,
+			replacementChainFailure: resolution.replacementChainFailure,
+			replacementHops: resolution.replacementHops,
+			replacementChainAge: resolution.replacementChainAge,
 		});
 	}
 

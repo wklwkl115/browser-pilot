@@ -3,6 +3,16 @@
 import { BROWSER_PILOT_WORKER_BOOT_ID, BROWSER_PILOT_WORKER_STARTED_AT, chromeApi as chrome } from "./runtimeEnv";
 import { BRIDGE_BUILD_ID, BRIDGE_BUILD_PIPELINE_VERSION } from "../shared/buildInfo";
 
+let lostHookSessionsGetter: (() => Array<Record<string, unknown>>) | null = null;
+function registerLostHookSessionsGetter(getter: () => Array<Record<string, unknown>>): void {
+  lostHookSessionsGetter = getter;
+}
+
+let offscreenUnreachableGetter: (() => boolean) | null = null;
+function registerOffscreenUnreachableGetter(getter: () => boolean): void {
+  offscreenUnreachableGetter = getter;
+}
+
 const CSP_BYPASS_ALARM = "browser-pilot-csp-bypass-prune";
 
 function browserPilotBridgeInfo() {
@@ -37,6 +47,9 @@ function browserPilotBridgeInfo() {
       lost: recovery.totals?.lost || 0,
       byKind: recovery.totals?.byKind || {},
     } : null,
+    lostHookSessions: (() => { const lost = lostHookSessionsGetter?.() || []; return lost.length ? lost : undefined; })(),
+    offscreenUnreachable: offscreenUnreachableGetter?.() === true ? true : undefined,
+    ...(cspBypassRuleUnavailable ? { cspBypassRuleUnavailable } : {}),
   };
 }
 
@@ -45,6 +58,7 @@ const CSP_BYPASS_TTL_MS = 30_000;
 const cspBypassTabs = new Map<number, number>();
 let cspBypassUpdate: Promise<void> | null = null;
 let cspBypassAlarmInstalled = false;
+let cspBypassRuleUnavailable = false;
 
 function activeCspBypassTabIds(now = Date.now()): number[] {
   for (const [tabId, expiresAt] of Array.from(cspBypassTabs.entries())) {
@@ -110,6 +124,34 @@ function installCspBypassRule() {
   void syncCspBypassRule();
 }
 
+async function validateCspBypassRule(): Promise<boolean> {
+  const dnr = chrome.declarativeNetRequest as typeof chrome.declarativeNetRequest & {
+    getSessionRules?(): Promise<Array<Record<string, unknown>>>;
+    getDynamicRules?(): Promise<Array<Record<string, unknown>>>;
+  };
+  try {
+    const getRules = dnr.getSessionRules ?? dnr.getDynamicRules;
+    if (!getRules) {
+      // API unavailable — assume rule is present (best-effort)
+      cspBypassRuleUnavailable = false;
+      return true;
+    }
+    const rules = await getRules.call(dnr);
+    const found = Array.isArray(rules) && rules.some((r) => (r as { id?: unknown }).id === CSP_BYPASS_RULE_ID);
+    if (found) {
+      cspBypassRuleUnavailable = false;
+      return true;
+    }
+    // Rule missing — attempt reinstallation
+    await syncCspBypassRule();
+    cspBypassRuleUnavailable = false;
+    return true;
+  } catch (_error) {
+    cspBypassRuleUnavailable = true;
+    return false;
+  }
+}
+
 function enableCspBypassForTab(tabId: unknown, ttlMs = CSP_BYPASS_TTL_MS) {
   const id = typeof tabId === 'string' ? Number(tabId) : typeof tabId === 'number' ? tabId : NaN;
   if (!Number.isInteger(id) || id <= 0) return false;
@@ -126,6 +168,6 @@ const isScriptable = (url: unknown): boolean => {
   const text = typeof url === 'string' ? url : '';
   return !!text && (/^https?:/.test(text) || text === 'about:blank');
 };
-export { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, installCspBypassRule, enableCspBypassForTab, isScriptable };
+export { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, installCspBypassRule, enableCspBypassForTab, validateCspBypassRule, isScriptable, registerLostHookSessionsGetter, registerOffscreenUnreachableGetter };
 // ESM module metadata
-export const __browserPilotBridgeModule_bridge_info = { name: "bridge_info", symbols: { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, installCspBypassRule, enableCspBypassForTab, isScriptable } };
+export const __browserPilotBridgeModule_bridge_info = { name: "bridge_info", symbols: { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, installCspBypassRule, enableCspBypassForTab, validateCspBypassRule, isScriptable, registerLostHookSessionsGetter, registerOffscreenUnreachableGetter } };

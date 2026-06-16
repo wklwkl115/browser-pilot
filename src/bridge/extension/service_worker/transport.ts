@@ -1,6 +1,6 @@
 import { BROWSER_PILOT_BRIDGE_HTTP_URL, BROWSER_PILOT_BRIDGE_PORT, BROWSER_PILOT_BRIDGE_WS_URL } from "./config";
 import { chromeApi as chrome } from "./runtimeEnv";
-import { installCspBypassRule, isScriptable, browserPilotBridgeInfo } from "./bridge_info";
+import { installCspBypassRule, isScriptable, browserPilotBridgeInfo, validateCspBypassRule, registerOffscreenUnreachableGetter } from "./bridge_info";
 import { setBridgeWakeProbe } from "./core_commands";
 import { handleBrowserPilotBridgeWsMessage, setTransportSocketGetter } from "./router";
 import { runStartupRecovery } from "./state_store";
@@ -18,6 +18,8 @@ const sockets = new Map<number, SocketAdapter>();
 let startupRecoveryDone = false;
 let browserPilotTransportInstalled = false;
 let offscreenCreateInFlight: Promise<boolean> | null = null;
+let offscreenUnreachable = false;
+registerOffscreenUnreachableGetter(() => offscreenUnreachable);
 const WS_URL = BROWSER_PILOT_BRIDGE_WS_URL;
 const WS_HEALTH_URL = BROWSER_PILOT_BRIDGE_HTTP_URL;
 
@@ -54,9 +56,40 @@ async function ensureOffscreenDocument(): Promise<boolean> {
       url: OFFSCREEN_DOCUMENT_PATH,
       reasons: ["WORKERS"],
       justification: "Maintain the local Browser Pilot Bridge WebSocket transport outside the MV3 service worker lifetime.",
-    }).then(() => true, (error: unknown) => {
+    }).then(() => true, async (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
-      if (/only a single offscreen document/i.test(message)) return true;
+      if (/only a single offscreen document/i.test(message)) {
+        // Validate the existing offscreen document is reachable
+        try {
+          const pong = await Promise.race([
+            chrome.runtime.sendMessage({ type: "browser-pilot-offscreen-status" }),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+          ]);
+          if (pong && typeof pong === "object") {
+            offscreenUnreachable = false;
+            return true;
+          }
+        } catch (_pingError) {
+          // Ping failed — offscreen may be crashed
+        }
+        // Offscreen document exists but is unreachable — try to close and recreate
+        console.warn("[BROWSER-PILOT-WS] offscreen document exists but is unreachable; attempting close+recreate");
+        try {
+          const offscreenApi = chrome.offscreen as typeof chrome.offscreen & { closeDocument?: () => Promise<void> };
+          if (typeof offscreenApi?.closeDocument === "function") await offscreenApi.closeDocument();
+          await chrome.offscreen!.createDocument({
+            url: OFFSCREEN_DOCUMENT_PATH,
+            reasons: ["WORKERS"],
+            justification: "Maintain the local Browser Pilot Bridge WebSocket transport outside the MV3 service worker lifetime.",
+          });
+          offscreenUnreachable = false;
+          return true;
+        } catch (recreateError) {
+          console.warn("[BROWSER-PILOT-WS] offscreen close+recreate failed", recreateError);
+          offscreenUnreachable = true;
+          return false;
+        }
+      }
       console.warn("[BROWSER-PILOT-WS] offscreen create failed", error);
       return false;
     }).finally(() => { offscreenCreateInFlight = null; });
@@ -175,6 +208,7 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
     startupRecoveryDone = true;
     try { await runStartupRecovery(); } catch (error) { console.warn("[BROWSER-PILOT-WS] Startup recovery failed", error); }
   }
+  try { await validateCspBypassRule(); } catch (_e) { /* best-effort */ }
   const tabs = (await chrome.tabs.query({}) as BrowserPilotChromeTab[]).filter((tab: BrowserPilotChromeTab) => isScriptable(tab.url));
   socket.send(JSON.stringify({
     type: "ext_ready",

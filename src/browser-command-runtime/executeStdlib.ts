@@ -11,6 +11,7 @@ export type ExecuteStdlibInfo = {
 	resolveMisses: string[];
 	namespace: readonly string[];
 	targetRefs?: ExecuteStdlibTargetRef[];
+	warnings?: string[];
 };
 
 export type PreparedExecuteScript = {
@@ -133,6 +134,7 @@ export function prepareExecuteStdlib(script: string, options: { enabled?: boolea
 			resolveMisses: registry.misses,
 			namespace: click ? BROWSER_PILOT_STDLIB_NAMES : BROWSER_PILOT_STDLIB_NAMES.filter((name) => name !== "click"),
 			...(registry.targetRefs.length ? { targetRefs: registry.targetRefs } : {}),
+			...(registry.misses.length ? { warnings: [`${registry.misses.length} ref(s) failed to resolve: [${registry.misses.join(", ")}] — script received null elements`] } : {}),
 		},
 	};
 }

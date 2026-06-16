@@ -176,7 +176,10 @@ export class BrowserBridgeServer implements ConsentPort {
 	attachTabToBrowserSession(tabId: number | string, options: { browserSessionId?: string; browserId?: string } = {}): BrowserTabInfo {
 		const id = this.resolveAttachTargetTabId(tabId, options);
 		const attached = this.tabs.attachTab(id, options.browserSessionId, options.browserId);
-		if (!attached) throw tabNotFoundError({ tabId: id, browserSessionId: options.browserSessionId, tabs: this.getTabs(), latestTabId: this.tabs.latestTabId(options.browserSessionId), replacedByTabId: this.tabs.replacedByTabId(id, options.browserSessionId) });
+		if (!attached) {
+			const resolution = this.tabs.replacementResolution(id, options.browserSessionId);
+			throw tabNotFoundError({ tabId: id, browserSessionId: options.browserSessionId, tabs: this.getTabs(), latestTabId: this.tabs.latestTabId(options.browserSessionId), replacedByTabId: resolution.tabId !== id ? resolution.tabId : undefined, replacementChainFailure: resolution.replacementChainFailure, replacementHops: resolution.replacementHops, replacementChainAge: resolution.replacementChainAge });
+		}
 		return this.tabInfo(attached);
 	}
 
@@ -200,8 +203,21 @@ export class BrowserBridgeServer implements ConsentPort {
 		return this.state.leases.releaseTab(browserSession.id, tab);
 	}
 
-	acquireUiLock(browserSessionId: string | undefined, commandName: string): BrowserUiLockInfo {
-		return this.state.leases.acquireUiLock(this.browserSession(browserSessionId).id, commandName);
+	async acquireUiLock(browserSessionId: string | undefined, commandName: string): Promise<BrowserUiLockInfo> {
+		const resolvedId = this.browserSession(browserSessionId).id;
+		const maxRetries = 5;
+		const retryDelayMs = 100;
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			try {
+				return this.state.leases.acquireUiLock(resolvedId, commandName);
+			} catch (err: unknown) {
+				const isLockConflict = err instanceof Error && "code" in err && (err as { code: string }).code === "UI_LOCK_CONFLICT";
+				if (!isLockConflict || attempt === maxRetries) throw err;
+				await delay(retryDelayMs);
+			}
+		}
+		/* istanbul ignore next — unreachable; loop always returns or throws */
+		return this.state.leases.acquireUiLock(resolvedId, commandName);
 	}
 
 	releaseUiLock(browserSessionId: string | undefined): BrowserUiLockInfo | undefined {
@@ -434,13 +450,17 @@ export class BrowserBridgeServer implements ConsentPort {
 	private requireLiveTabSession(tabId: number, browserSessionId?: string): BrowserTabSession {
 		const session = this.tabs.liveSessionForTabId(tabId, browserSessionId);
 		if (session) return session;
+		const resolution = this.tabs.replacementResolution(tabId, browserSessionId);
 		throw tabNotFoundError({
 			tabId,
 			browserSessionId,
 			selectedBrowser: this.state.browserSessions.selectedInfo(this.browserSession(browserSessionId), (client) => this.clients.info(client)),
 			tabs: this.getTabs(),
 			latestTabId: this.tabs.latestTabId(browserSessionId),
-			replacedByTabId: this.tabs.replacedByTabId(tabId, browserSessionId),
+			replacedByTabId: resolution.tabId !== tabId ? resolution.tabId : undefined,
+			replacementChainFailure: resolution.replacementChainFailure,
+			replacementHops: resolution.replacementHops,
+			replacementChainAge: resolution.replacementChainAge,
 		});
 	}
 

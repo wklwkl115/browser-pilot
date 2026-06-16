@@ -16,6 +16,10 @@ export type BrowserBridgeTargetInfo = {
 	replacedFrom?: number;
 	replacedByTabId?: number;
 	replacementHops?: number;
+	/** How many more replacement hops are available before hitting the chain depth limit. */
+	replacementHopsRemaining?: number;
+	/** Milliseconds since the first replacement in the chain was recorded. */
+	replacementChainAge?: number;
 	browserId?: string;
 	openerTabId?: number;
 	url?: string;

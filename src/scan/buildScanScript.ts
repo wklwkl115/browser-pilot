@@ -8,6 +8,8 @@ export type BrowserScanOptions = {
 	maxChars?: number;
 	maxNodes?: number;
 	includeIframes?: boolean;
+	/** Growth-probe wait after scrolling, in ms. Default 300; env BROWSER_PILOT_GROWTH_PROBE_WAIT_MS overrides. Clamped to minimum 80. */
+	probeWaitMs?: number;
 };
 
 export function jsonForInlineScript(value: unknown): string {
@@ -32,11 +34,11 @@ function injectScanSignals(script: string): string {
 	return script.replace(marker, injected);
 }
 
-function injectGrowthProbe(script: string): string {
+function injectGrowthProbe(script: string, probeWaitMs: number): string {
 	const marker = "  const rows = collectVisibleRows(scanRoot);\n";
 	const injected = `${marker}  async function collectGrowthProbe(root, listHints) {
     const startedAt = Date.now();
-    const waitMs = 80;
+    const waitMs = ${probeWaitMs};
     const maxDelta = 800;
     const hints = Array.isArray(listHints) ? listHints : [];
     const candidates = [];
@@ -109,7 +111,7 @@ function injectGrowthProbe(script: string): string {
           return;
         }
         try { for (const item of items) observer.observe(item); } catch (_) { done(); return; }
-        timer = setTimeout(done, 40);
+        timer = setTimeout(done, 150);
       });
     }
     for (let hintIndex = 0; hintIndex < hints.length && hintIndex < 8; hintIndex++) {
@@ -186,7 +188,23 @@ function boundedInt(value: unknown, fallback: number, min: number, max: number):
 	return Math.max(min, Math.min(max, safe));
 }
 
+const DEFAULT_GROWTH_PROBE_WAIT_MS = 300;
+
+function resolveProbeWaitMs(optionValue: number | undefined): number {
+	const raw = process.env.BROWSER_PILOT_GROWTH_PROBE_WAIT_MS;
+	if (raw !== undefined) {
+		const envValue = Number(raw);
+		if (Number.isFinite(envValue)) return Math.max(80, Math.floor(envValue));
+	}
+	if (optionValue !== undefined) {
+		const n = Number(optionValue);
+		if (Number.isFinite(n)) return Math.max(80, Math.floor(n));
+	}
+	return DEFAULT_GROWTH_PROBE_WAIT_MS;
+}
+
 export function buildScanScript(options: BrowserScanOptions = {}): string {
+	const probeWaitMs = resolveProbeWaitMs(options.probeWaitMs);
 	const opts = {
 		textOnly: options.textOnly === true,
 		maxChars: boundedInt(options.maxChars, 35_000, 1_000, 500_000),
@@ -209,5 +227,5 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
 		frameworkOwnerPatternJson: jsonForInlineScript(FRAMEWORK_HANDLER_OWNER_PATTERN),
 		frameworkActionPatternJson: jsonForInlineScript(FRAMEWORK_ACTION_HANDLER_PATTERN),
 	});
-	return injectScanSignals(injectGrowthProbe(rendered));
+	return injectScanSignals(injectGrowthProbe(rendered, probeWaitMs));
 }

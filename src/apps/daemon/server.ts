@@ -330,17 +330,17 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 					const expiresAt = new Date(Date.now() + PAIR_PENDING_TTL_MS).toISOString();
 					const resultP = bridgeServer
 						.sendConsentRequest({ pairingId, label: String(label ?? "agent"), code, expiresAt, timeoutMs: PAIR_PENDING_TTL_MS })
-						.then((decision: ConsentDecision) => {
+						.then(async (decision: ConsentDecision) => {
 							if (decision === "approve") {
-								const r = authStore.approve(pairingId);
+								const r = await authStore.approve(pairingId);
 								bridgeServer.broadcastPairedAgents(composeSummaries());
 								return { decision, token: r?.token };
 							}
-							authStore.deny(pairingId);
+							await authStore.deny(pairingId);
 							return { decision };
 						})
-						.catch((): { decision: ConsentDecision; token?: string } => {
-							authStore.deny(pairingId);
+						.catch(async (): Promise<{ decision: ConsentDecision; token?: string }> => {
+							await authStore.deny(pairingId);
 							return { decision: "timeout" as ConsentDecision };
 						});
 					pendingPairResults.set(pairingId, resultP);

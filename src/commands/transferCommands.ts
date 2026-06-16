@@ -99,7 +99,7 @@ export function defineUploadCommand({ commands, ensureStarted }: CommandRegistra
 				const server = await ensureStarted();
 				const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const maxChars = commandMaxChars(params, "browser_upload");
-				server.acquireUiLock(params.browserSessionId, "browser_upload");
+				await server.acquireUiLock(params.browserSessionId, "browser_upload");
 				try {
 					const command = buildTransferUploadCommand(selector, files, params.index);
 					command.timeoutMs = timeoutMs;

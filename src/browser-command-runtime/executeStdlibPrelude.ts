@@ -78,14 +78,18 @@ ${options.click ? `
   function resolve(ref) {
     const tried = [];
     const entry = __entry(ref);
-    if (!entry || entry.ok !== true || !entry.descriptor) return { el: null, freshness: "miss", tried: ["registry"] };
+    if (!entry || entry.ok !== true || !entry.descriptor) {
+      console.warn("[browser-pilot] ref resolution miss:", ref, "tried:", ["registry"].join(","));
+      return { el: null, freshness: "miss", tried: ["registry"], warning: "element not found for ref — script will receive null" };
+    }
     const descriptor = entry.descriptor;
     for (const locator of Array.isArray(descriptor.locators) ? descriptor.locators : []) {
       tried.push(locator.by || "unknown");
       const el = __resolveLocator(locator);
       if (el) return { el, freshness: entry.fresh === false ? "stale" : "fresh", tried };
     }
-    return { el: null, freshness: "miss", tried, geometry: __geometryBox(descriptor) };
+    console.warn("[browser-pilot] ref resolution miss:", ref, "tried:", tried.join(","));
+    return { el: null, freshness: "miss", tried, geometry: __geometryBox(descriptor), warning: "element not found for ref — script will receive null" };
   }
   function box(ref) {
     const resolved = resolve(ref);
@@ -140,7 +144,7 @@ ${options.click ? `
   let __clickSeq = 0;
   const __clickPending = new Map();
   function click(ref, options = {}) {
-    if (!__clickBindingName || typeof window[__clickBindingName] !== "function") return Promise.reject(Object.assign(new Error("browserPilot.click binding unavailable"), { code: "BROWSER_PILOT_CLICK_BINDING_UNAVAILABLE" }));
+    if (!__clickBindingName || typeof window[__clickBindingName] !== "function") return Promise.reject(Object.assign(new Error("browserPilot.click binding unavailable"), { code: "BROWSER_PILOT_CLICK_BINDING_UNAVAILABLE", message: "browserPilot.click() requires the browser-pilot bridge click binding — ensure the script references a bp-ref:// URI so the binding is injected, or use element.click() as a fallback" }));
     const entry = __entry(ref);
     if (!entry || entry.ok !== true || !entry.descriptor) return Promise.reject(Object.assign(new Error("browserPilot.click ref not resolved"), { code: "BROWSER_PILOT_CLICK_REF_NOT_RESOLVED" }));
     const requestId = "click-" + Date.now().toString(36) + "-" + (++__clickSeq).toString(36);
@@ -149,7 +153,7 @@ ${options.click ? `
     return new Promise((resolveClick, rejectClick) => {
       const timer = setTimeout(() => {
         __clickPending.delete(requestId);
-        rejectClick(Object.assign(new Error("browserPilot.click timed out"), { code: "BROWSER_PILOT_CLICK_TIMEOUT" }));
+        rejectClick(Object.assign(new Error("browserPilot.click timed out"), { code: "BROWSER_PILOT_CLICK_TIMEOUT", message: "click IPC timed out after " + timeoutMs + "ms — the bridge may be overloaded or the target element may be unresponsive" }));
       }, timeoutMs);
       __clickPending.set(requestId, { resolve: resolveClick, reject: rejectClick, timer });
       try { window[__clickBindingName](JSON.stringify(payload)); }

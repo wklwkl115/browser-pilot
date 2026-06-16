@@ -85,7 +85,7 @@ export function definePickCommand({ commands, ensureStarted }: CommandRegistrarC
 				const timeoutMs = commandTimeoutMs(params.timeoutMs, 120_000);
 				const maxChars = commandMaxChars(params, "browser_pick");
 				const rawTargetRef = targetTabId(params);
-				server.acquireUiLock(params.browserSessionId, "browser_pick");
+				await server.acquireUiLock(params.browserSessionId, "browser_pick");
 				try {
 				if (rawTargetRef !== undefined && params.focus !== false) await server.switchTab(rawTargetRef as string | number, 5_000, { browserSessionId: params.browserSessionId });
 				const pickId = `pick-${Date.now()}-${Math.random().toString(16).slice(2)}`;

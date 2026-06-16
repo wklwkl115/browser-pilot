@@ -12,7 +12,7 @@ export type BrowserBridgeSessionRegistryPort = {
 };
 
 export type BrowserBridgeLeaseRegistryPort = {
-	acquireUiLock(browserSessionId: string, commandName: string): BrowserUiLockInfo;
+	acquireUiLock(browserSessionId: string, commandName: string): BrowserUiLockInfo | Promise<BrowserUiLockInfo>;
 	releaseUiLock(browserSessionId: string): BrowserUiLockInfo | undefined;
 	withAutoTabLease<T>(browserSessionId: string, tab: BrowserTabSession, fn: () => Promise<T>): Promise<T>;
 	touchTabLease(browserSessionId: string, tab: BrowserTabSession): BrowserTabLeaseInfo | undefined;

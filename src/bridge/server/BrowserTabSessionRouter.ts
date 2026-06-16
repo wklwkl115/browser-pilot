@@ -28,7 +28,11 @@ type ReplacementResolution = {
 	replacedFrom?: number;
 	replacedByTabId?: number;
 	replacementHops?: number;
+	replacementHopsRemaining?: number;
+	replacementChainAge?: number;
 	tabHandle?: string;
+	/** Set when resolution failed due to chain depth or TTL expiry. */
+	replacementChainFailure?: "max_hops_exceeded" | "ttl_expired";
 };
 
 type ReconnectIdentity = Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation" | "openerTabId"> & {
@@ -36,7 +40,7 @@ type ReconnectIdentity = Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | 
 	previousClient: WebSocket;
 };
 
-type TargetInfoExtras = Partial<Pick<BrowserBridgeTargetInfo, "tabHandle" | "targetRef" | "requestedTabId" | "replacedFrom" | "replacedByTabId" | "replacementHops" | "browserId" | "openerTabId">>;
+type TargetInfoExtras = Partial<Pick<BrowserBridgeTargetInfo, "tabHandle" | "targetRef" | "requestedTabId" | "replacedFrom" | "replacedByTabId" | "replacementHops" | "replacementHopsRemaining" | "replacementChainAge" | "browserId" | "openerTabId">>;
 
 export class BrowserTabSessionRouter {
 	readonly sessions = new Map<string, BrowserTabSession>();
@@ -362,6 +366,8 @@ export class BrowserTabSessionRouter {
 			...(resolved.replacedFrom !== undefined ? { replacedFrom: resolved.replacedFrom } : {}),
 			...(resolved.replacedByTabId !== undefined ? { replacedByTabId: resolved.replacedByTabId } : {}),
 			...(resolved.replacementHops !== undefined ? { replacementHops: resolved.replacementHops } : {}),
+			...(resolved.replacementHopsRemaining !== undefined ? { replacementHopsRemaining: resolved.replacementHopsRemaining } : {}),
+			...(resolved.replacementChainAge !== undefined ? { replacementChainAge: resolved.replacementChainAge } : {}),
 			...(resolved.tabHandle ? { tabHandle: resolved.tabHandle, targetRef: resolved.tabHandle } : {}),
 		});
 	}
@@ -570,12 +576,13 @@ export class BrowserTabSessionRouter {
 		});
 	}
 
-	private resolveNumericTabId(tabId: number, browserSessionId?: string): ReplacementResolution {
+	private resolveNumericTabId(tabId: number, browserSessionId?: string, now = Date.now()): ReplacementResolution {
 		const live = this.liveSessionForTabId(tabId, browserSessionId);
 		if (live) return { tabId, tabHandle: live.tabHandle };
 		let current = tabId;
 		let hops = 0;
 		let handle: string | undefined;
+		let earliestReplacementAt: number | undefined;
 		while (hops < MAX_REPLACEMENT_HOPS) {
 			const candidates = this.replacementCandidates(current, browserSessionId);
 			if (candidates.length !== 1) break;
@@ -583,6 +590,7 @@ export class BrowserTabSessionRouter {
 			hops += 1;
 			current = next.to;
 			handle = next.tabHandle ?? handle;
+			if (earliestReplacementAt === undefined || next.at < earliestReplacementAt) earliestReplacementAt = next.at;
 			const liveNext = this.liveSessionForTabId(current, browserSessionId);
 			if (liveNext) {
 				return {
@@ -590,16 +598,64 @@ export class BrowserTabSessionRouter {
 					replacedFrom: tabId,
 					replacedByTabId: liveNext.tabId,
 					replacementHops: hops,
+					replacementHopsRemaining: MAX_REPLACEMENT_HOPS - hops,
+					replacementChainAge: earliestReplacementAt !== undefined ? now - earliestReplacementAt : undefined,
 					tabHandle: liveNext.tabHandle ?? handle,
 				};
 			}
 		}
+		// Resolution failed — determine the cause for diagnostics.
+		if (hops > 0 && hops >= MAX_REPLACEMENT_HOPS) {
+			// Chain walked the maximum number of hops without finding a live tab.
+			return {
+				tabId,
+				replacementHops: hops,
+				replacementHopsRemaining: 0,
+				replacementChainAge: earliestReplacementAt !== undefined ? now - earliestReplacementAt : undefined,
+				tabHandle: handle,
+				replacementChainFailure: "max_hops_exceeded",
+			};
+		}
+		if (hops === 0 && this.hasExpiredReplacementEvidence(tabId, browserSessionId, now)) {
+			// No replacement record found, but evidence suggests one existed and expired.
+			return { tabId, replacementChainFailure: "ttl_expired" };
+		}
 		return { tabId };
+	}
+
+	/**
+	 * Check whether there is evidence that a replacement record for tabId existed
+	 * but was pruned due to TTL expiry. Looks for disconnected sessions whose
+	 * replacedFromTabId matches, indicating the tab was replaced but the
+	 * replacement record has since been pruned.
+	 */
+	private hasExpiredReplacementEvidence(tabId: number, browserSessionId?: string, now = Date.now()): boolean {
+		const browserSession = this.browserSession(browserSessionId);
+		const scopeClient = this.browserSessions.selectedOpenClient(browserSession);
+		for (const session of this.sessions.values()) {
+			if (session.replacedFromTabId !== tabId) continue;
+			if (session.disconnectedAt === undefined) continue;
+			if (scopeClient && session.client !== scopeClient) continue;
+			// The session was replaced from this tabId and is disconnected — the
+			// replacement record was likely pruned by TTL.
+			const age = session.replacedAt !== undefined ? now - session.replacedAt : undefined;
+			if (age !== undefined && age >= REPLACEMENT_TTL_MS) return true;
+		}
+		return false;
 	}
 
 	replacedByTabId(tabId: number, browserSessionId?: string): number | undefined {
 		const resolved = this.resolveNumericTabId(tabId, browserSessionId);
 		return resolved.tabId !== tabId ? resolved.tabId : undefined;
+	}
+
+	/**
+	 * Return the full replacement resolution result for a tabId, including any
+	 * chain failure diagnostics. Used by error-construction call sites that need
+	 * to distinguish max-hops-exceeded from TTL-expired failures.
+	 */
+	replacementResolution(tabId: number, browserSessionId?: string): ReplacementResolution {
+		return this.resolveNumericTabId(tabId, browserSessionId);
 	}
 
 	private pruneDisconnectedSessions(now = Date.now()): void {

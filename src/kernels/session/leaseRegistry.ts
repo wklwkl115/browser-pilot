@@ -154,7 +154,12 @@ export class SessionLeaseRegistry {
 	acquireUiLock(browserSessionId: string, commandName: string): SessionUiLockInfo {
 		const now = Date.now();
 		if (this.uiLock && this.uiLock.browserSessionId !== browserSessionId) {
-			throw new SessionKernelError("UI_LOCK_CONFLICT", "Browser UI is locked by another browser session", { requestedBrowserSessionId: browserSessionId, lock: this.describeUiLock(this.uiLock, now) });
+			const heldForMs = now - this.uiLock.createdAt;
+			throw new SessionKernelError(
+				"UI_LOCK_CONFLICT",
+				`UI lock held by ${this.uiLock.commandName} for ${heldForMs}ms — try again shortly`,
+				{ requestedBrowserSessionId: browserSessionId, lock: this.describeUiLock(this.uiLock, now), heldForMs },
+			);
 		}
 		this.uiLock = this.uiLock
 			? { ...this.uiLock, commandName, lastSeenAt: now, count: this.uiLock.count + 1 }

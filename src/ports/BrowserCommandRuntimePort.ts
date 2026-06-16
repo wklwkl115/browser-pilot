@@ -253,7 +253,7 @@ export interface BrowserCommandRuntimePort {
 	detachTabFromBrowserSession(tabId: number | string, options?: { browserSessionId?: string }): unknown;
 	leaseTab(tabId: number | string, options?: { browserSessionId?: string }): CommandTabLeaseInfo;
 	releaseTab(tabId: number | string, options?: { browserSessionId?: string }): CommandTabLeaseInfo | undefined;
-	acquireUiLock(browserSessionId: string | undefined, commandName: string): CommandUiLockInfo;
+	acquireUiLock(browserSessionId: string | undefined, commandName: string): CommandUiLockInfo | Promise<CommandUiLockInfo>;
 	releaseUiLock(browserSessionId: string | undefined): CommandUiLockInfo | undefined;
 	selectBrowser(browserId: string, options?: { browserSessionId?: string }): unknown;
 	createObservationSnapshot(snapshot: Omit<CommandObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): CommandObservationSnapshotInfo;

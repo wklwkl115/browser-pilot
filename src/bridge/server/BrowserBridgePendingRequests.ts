@@ -30,10 +30,20 @@ export class BrowserBridgePendingRequests {
 
 		return new Promise<BrowserBridgeExecutionResult>((resolve, reject) => {
 			const debugCodePreview = typeof code === "string" ? code.slice(0, 120) : JSON.stringify(code).slice(0, 120);
+			const sentAt = Date.now();
 			const timer: NodeJS.Timeout = setTimeout(() => {
 				this.pending.delete(id);
 				const state = pending.acked ? "ACK received, script may still be running" : "no ACK, message may not have been delivered";
-				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, { id, debugCodePreview, ...this.timeoutDiagnostics(options.tabId, timeoutMs, pending.acked, pending.target) }));
+				const elapsedMs = Date.now() - sentAt;
+				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, {
+					id,
+					debugCodePreview,
+					acked: pending.acked,
+					ackAt: pending.ackAt,
+					elapsedMs,
+					pendingRequestCount: this.pending.size,
+					...this.timeoutDiagnostics(options.tabId, timeoutMs, pending.acked, pending.target),
+				}));
 			}, timeoutMs);
 			const pending: PendingRequest = {
 				id,

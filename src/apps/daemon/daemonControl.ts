@@ -100,9 +100,14 @@ function readStartLock(): { pid?: number; acquiredAt?: string } | undefined {
 function isStartLockStale(): boolean {
 	const lock = readStartLock();
 	if (!lock) return true;
-	if (typeof lock.pid === "number" && !isPidAlive(lock.pid)) return true;
+	const pidAlive = typeof lock.pid === "number" && isPidAlive(lock.pid);
+	if (typeof lock.pid === "number" && !pidAlive) return true;
 	const acquiredAt = Date.parse(String(lock.acquiredAt || ""));
-	return !Number.isFinite(acquiredAt) || Date.now() - acquiredAt > START_LOCK_STALE_MS;
+	if (!Number.isFinite(acquiredAt)) return true;
+	// If the PID is still alive, the daemon is just starting slowly — use a
+	// longer stale window (2x) to avoid two CLIs both spawning daemons.
+	const effectiveStaleMs = pidAlive ? START_LOCK_STALE_MS * 2 : START_LOCK_STALE_MS;
+	return Date.now() - acquiredAt > effectiveStaleMs;
 }
 
 function tryAcquireStartLock(): { release: () => void } | undefined {
@@ -116,7 +121,12 @@ function tryAcquireStartLock(): { release: () => void } | undefined {
 		}
 		return { release: () => rmSync(startLockfilePath(), { force: true }) };
 	} catch {
-		if (isStartLockStale()) {
+		const lock = readStartLock();
+		const pidAlive = typeof lock?.pid === "number" && isPidAlive(lock.pid);
+		if (pidAlive && !isStartLockStale()) {
+			const ageS = lock?.acquiredAt ? Math.round((Date.now() - Date.parse(lock.acquiredAt)) / 1000) : "?";
+			console.error(`daemon startup in progress (pid ${lock!.pid}, started ${ageS}s ago) — waiting`);
+		} else if (isStartLockStale()) {
 			try {
 				rmSync(startLockfilePath(), { force: true });
 			} catch {

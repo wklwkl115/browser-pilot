@@ -6,7 +6,11 @@ import { persist as persistState, forget as forgetState, recover as recoverState
 import { addEventListener, cleanupBrowserPilotPageListenersForTab, getPerformanceEntries, removeEventListener } from "./wait";
 import { collectNodeListenerChain, collectNodeListeners, collectNodeSinkHints } from "./dom_flow";
 import { cleanupWaitsForUninstall } from "./wait_coordinator";
+import { registerLostHookSessionsGetter } from "./bridge_info";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
+
+const lostHookSessions: Array<{ sessionId: string; tabId: number; config?: unknown; reason: string }> = [];
+registerLostHookSessionsGetter(() => lostHookSessions.slice());
 
 async function injectBrowserPilotDispatcherViaCdp(tabId: number): Promise<BrowserPilotBridgeResponse> {
   const code = await (await fetch(chrome.runtime.getURL(BROWSER_PILOT_HOOK_DISPATCHER_FILE))).text();
@@ -263,9 +267,18 @@ registerRecovery(async (results) => {
       }
     },
   });
+  // Capture lost hook session details so the agent can see which sessions were active before the restart
+  for (const entry of result.lost) {
+    const parts = entry.key.split(':');
+    const tabId = Number(parts[0]) || 0;
+    const sessionId = parts.slice(1).join(':') || 'unknown';
+    lostHookSessions.push({ sessionId, tabId, config: entry.config, reason: entry.reason || 'unknown' });
+  }
   results.push(result);
 });
 
-export { injectBrowserPilotDispatcherViaCdp, confirmBrowserPilotDispatcher, browserPilotHookSessionId, browserPilotHookSessionArgs, ensureBrowserPilotDispatcher, handleBrowserPilotHookCommand };
+function getLostHookSessions(): Array<{ sessionId: string; tabId: number; config?: unknown; reason: string }> { return lostHookSessions.slice(); }
+
+export { injectBrowserPilotDispatcherViaCdp, confirmBrowserPilotDispatcher, browserPilotHookSessionId, browserPilotHookSessionArgs, ensureBrowserPilotDispatcher, handleBrowserPilotHookCommand, getLostHookSessions };
 // ESM module metadata
-export const __browserPilotBridgeModule_hook = { name: "hook", symbols: { injectBrowserPilotDispatcherViaCdp, confirmBrowserPilotDispatcher, browserPilotHookSessionId, browserPilotHookSessionArgs, ensureBrowserPilotDispatcher, handleBrowserPilotHookCommand } };
+export const __browserPilotBridgeModule_hook = { name: "hook", symbols: { injectBrowserPilotDispatcherViaCdp, confirmBrowserPilotDispatcher, browserPilotHookSessionId, browserPilotHookSessionArgs, ensureBrowserPilotDispatcher, handleBrowserPilotHookCommand, getLostHookSessions } };

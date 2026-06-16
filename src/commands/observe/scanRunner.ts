@@ -590,10 +590,15 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	if (baselineRequested && baseline === undefined && baselineResolutionError) {
 		baselineWarnings.push(`baseline resolution failed — returning full observation instead of diff: ${baselineResolutionError}`);
 	}
+	const summaryFocus = isRecord(summaryRecord.focus) ? summaryRecord.focus as Record<string, unknown> : undefined;
+	const summaryTruncation = isRecord(summaryFocus?.actionablesTruncation) ? summaryFocus!.actionablesTruncation as Record<string, unknown> : undefined;
+	const summaryWarnings = Array.isArray(summaryRecord.warnings) ? summaryRecord.warnings.filter((w): w is string => typeof w === "string") : [];
+	const allWarnings = [...baselineWarnings, ...summaryWarnings];
 	const observeDiagnostics = {
 		observeTimings: finalizedObserveTimings(observeTimings, data, observation.abmlRead),
 		...(baselineDiagnostics ? { baseline: baselineDiagnostics } : {}),
-		...(baselineWarnings.length ? { warnings: baselineWarnings } : {}),
+		...(summaryTruncation?.actionablesTruncated === true ? { actionablesTruncated: true, actionablesScanned: summaryTruncation.actionablesScanned, actionablesReturned: summaryTruncation.actionablesReturned } : {}),
+		...(allWarnings.length ? { warnings: allWarnings } : {}),
 	};
 	const abmlDetails = observation.abmlRead?.ok === true
 		? {

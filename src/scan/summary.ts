@@ -215,10 +215,15 @@ function scoreAction(node: Record<string, unknown>): number {
 	const rectHeight = asFiniteNumber(rect.height);
 	const rectX = asFiniteNumber(rect.x);
 	const rectY = asFiniteNumber(rect.y);
-	const fixedSmallEdge = ["fixed", "sticky"].includes(asText(node.position).toLowerCase())
+	const isFixedOrSticky = ["fixed", "sticky"].includes(asText(node.position).toLowerCase());
+	const fixedSmallEdge = isFixedOrSticky
 		&& rectWidth !== undefined && rectHeight !== undefined && rectWidth <= 180 && rectHeight <= 180
 		&& ((rectX !== undefined && rectX <= 32) || (rectY !== undefined && rectY <= 32));
-	if (fixedSmallEdge) score -= 260;
+	if (fixedSmallEdge) {
+		const tag = asText(node.tag).toLowerCase();
+		const isNavLandmark = role === "navigation" || tag === "nav";
+		score -= isNavLandmark ? 40 : 80;
+	}
 	const y = asFiniteNumber(rect.y);
 	if (y !== undefined && y >= 0 && y < 900) score += 80;
 	if (y !== undefined && y > 1800) score -= 120;
@@ -537,6 +542,16 @@ function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], opti
 function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: string[] = []): Summary {
 	const { item, tabs, content, lines, headings, interactive, actionables, listHints, listSummaries, mediaCandidates, visibleRows, sortedRankedActions, actionCounts: counts, preparedForm, textSignalCandidates, scanEntities, actionEntityByPath, referencedEntities } = prepared;
 	const primaryActions = selectPrimaryActions(sortedRankedActions, counts, limits.primaryActions);
+	const actionablesScanned = actionables.length;
+	const actionablesReturned = primaryActions.length;
+	const actionablesTruncated = actionablesScanned > actionablesReturned;
+	const actionablesTruncationMeta = actionablesTruncated
+		? { actionablesScanned, actionablesReturned, actionablesTruncated: true as const }
+		: { actionablesScanned, actionablesReturned, actionablesTruncated: false as const };
+	const warnings: string[] = [];
+	if (actionablesTruncated) {
+		warnings.push(`actionables truncated from ${actionablesScanned} to ${actionablesReturned} — use browser_observe with selector to target specific page regions`);
+	}
 	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
 	const primaryActionsWithEntityRefs = primaryActions.map((action) => {
 		const entity = actionEntityByPath.get(String(action.jsonPath || ""));
@@ -548,6 +563,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 		// after redaction — blind-eval F2). null/undefined clone through unchanged.
 		top_layer: structuredClone(item.top_layer),
 		primary_actions: primaryActionsWithEntityRefs,
+		...(actionablesTruncated ? { actionablesTruncation: actionablesTruncationMeta } : {}),
 		forms: summarizeForms(preparedForm, 2),
 		lists: listSummaries.slice(0, limits.lists),
 		headings: headings.slice(0, limits.headings),
@@ -580,6 +596,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 			tabs_count: tabs.length,
 		},
 		focus,
+		...(warnings.length ? { warnings } : {}),
 		artifact_hints: {
 			jsonPaths: {
 				content: "data.content",

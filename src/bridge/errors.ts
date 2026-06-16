@@ -37,14 +37,26 @@ export function tabNotFoundError(args: {
 	tabs: Array<{ tabId?: number } & Record<string, unknown>>;
 	latestTabId?: number;
 	replacedByTabId?: number;
+	replacementChainFailure?: "max_hops_exceeded" | "ttl_expired";
+	replacementHops?: number;
+	replacementChainAge?: number;
 }): BrowserBridgeError {
 	const liveTabIds = args.tabs.map((tab) => tab.tabId).filter((id): id is number => typeof id === "number");
-	const hint = liveTabIds.length
+	const chainDiagnostic = args.replacementChainFailure === "max_hops_exceeded"
+		? `tab replacement chain exceeded maximum depth (3 hops) — use targetRef/tabHandle instead of numeric tabId`
+		: args.replacementChainFailure === "ttl_expired"
+			? `tab replacement record expired (>5min) — re-query tabs with browser_tabs list`
+			: undefined;
+	const baseHint = liveTabIds.length
 		? `tabId ${args.tabId} is not connected. Use a stable tabHandle/targetRef from browser_tabs list, omit tabId to target the active tab${args.replacedByTabId ? `, or retry with replacement tabId ${args.replacedByTabId}` : args.latestTabId ? `, or use the current tab id ${args.latestTabId}` : ""}. Live tab ids: ${liveTabIds.join(", ")}.`
 		: "No browser tabs are currently connected. Open or attach one with browser_tabs first.";
+	const hint = chainDiagnostic ? `${chainDiagnostic}. ${baseHint}` : baseHint;
 	return new BrowserBridgeError("TAB_NOT_FOUND", "Target browser tab is not connected", {
 		tabId: args.tabId,
 		...(args.replacedByTabId ? { replacedByTabId: args.replacedByTabId } : {}),
+		...(args.replacementChainFailure ? { replacementChainFailure: args.replacementChainFailure } : {}),
+		...(args.replacementHops !== undefined ? { replacementHops: args.replacementHops } : {}),
+		...(args.replacementChainAge !== undefined ? { replacementChainAge: args.replacementChainAge } : {}),
 		browserSessionId: args.browserSessionId,
 		selectedBrowser: args.selectedBrowser,
 		tabs: args.tabs.map((tab) => compactTabForError(tab)),

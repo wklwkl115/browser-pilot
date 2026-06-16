@@ -150,7 +150,7 @@ export function mintPending(label: string): { pairingId: string; code: string } 
 	return { pairingId, code };
 }
 
-export function approve(pairingId: string): { token: string } | null {
+export async function approve(pairingId: string): Promise<{ token: string } | null> {
 	// Read from in-memory cache so we see the record even if the disk write from
 	// mintPending() has not yet completed (the consent callback may fire before
 	// the async disk write finishes).
@@ -169,19 +169,22 @@ export function approve(pairingId: string): { token: string } | null {
 	delete record.pairingCode;
 	delete record.pendingExpiresAt;
 
-	// Persist to disk asynchronously.
-	void serialized(() => persistStore());
+	// Persist to disk — await so the write completes before the caller responds.
+	// If the write fails the exception propagates, ensuring the CLI knows the
+	// approval was not durably persisted.
+	await serialized(() => persistStore());
 
 	return { token: rawToken };
 }
 
-export function deny(pairingId: string): void {
+export async function deny(pairingId: string): Promise<void> {
 	// Remove from in-memory cache synchronously.
 	const cache = getCache();
 	const idx = cache.agents.findIndex((a) => a.pairingId === pairingId && a.status === "pending");
 	if (idx !== -1) {
 		cache.agents.splice(idx, 1);
-		void serialized(() => persistStore());
+		// Persist to disk — await so the removal is durable before returning.
+		await serialized(() => persistStore());
 	}
 }
 

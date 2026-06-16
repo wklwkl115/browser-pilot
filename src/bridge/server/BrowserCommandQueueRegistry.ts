@@ -1,6 +1,19 @@
 import { BrowserBridgeError } from "../../utils/errors.js";
 
 const DEFAULT_MAX_QUEUE_DEPTH = 64;
+const WARNING_DEPTH_RATIO = 0.75;
+
+export type BrowserCommandQueuePressure = {
+	depth: number;
+	maxDepth: number;
+	warningThreshold: true;
+};
+
+export type BrowserCommandQueueStatus = {
+	depth: number;
+	maxDepth: number;
+	pressure: number;
+};
 
 export type BrowserCommandQueueInfo = {
 	key: string;
@@ -24,13 +37,14 @@ export class BrowserCommandQueueRegistry {
 		return this.maxDepth;
 	}
 
-	enqueue<T>(browserSessionId: string, tabId: number, run: () => Promise<T>): Promise<T> {
+	enqueue<T>(browserSessionId: string, tabId: number, run: () => Promise<T>): Promise<T> & { queuePressure?: BrowserCommandQueuePressure } {
 		const key = this.resolveKey(this.key(browserSessionId, tabId));
 		const currentDepth = this.depths.get(key) || 0;
 		if (currentDepth >= this.maxDepth) {
 			return Promise.reject(new BrowserBridgeError("QUEUE_FULL", "Browser command queue is full", { browserSessionId, tabId, depth: currentDepth, maxDepth: this.maxDepth }));
 		}
-		this.depths.set(key, currentDepth + 1);
+		const newDepth = currentDepth + 1;
+		this.depths.set(key, newDepth);
 		const previous = this.queues.get(key) || Promise.resolve();
 		const next = previous.catch(() => undefined).then(run).finally(() => {
 			const depth = Math.max(0, (this.depths.get(key) || 1) - 1);
@@ -43,11 +57,20 @@ export class BrowserCommandQueueRegistry {
 		});
 		const stored = next.catch(() => undefined);
 		this.queues.set(key, stored);
-		return next;
+		const result: Promise<T> & { queuePressure?: BrowserCommandQueuePressure } = next;
+		if (newDepth >= WARNING_DEPTH_RATIO * this.maxDepth) {
+			result.queuePressure = { depth: newDepth, maxDepth: this.maxDepth, warningThreshold: true };
+		}
+		return result;
 	}
 
 	depth(browserSessionId: string, tabId: number): number {
 		return this.depths.get(this.resolveKey(this.key(browserSessionId, tabId))) || 0;
+	}
+
+	status(browserSessionId: string, tabId: number): BrowserCommandQueueStatus {
+		const depth = this.depth(browserSessionId, tabId);
+		return { depth, maxDepth: this.maxDepth, pressure: depth / this.maxDepth };
 	}
 
 	migrateTabQueue(browserSessionId: string, fromTabId: number, toTabId: number): BrowserCommandQueueInfo | undefined {
