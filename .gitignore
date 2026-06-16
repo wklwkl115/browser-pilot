@@ -1,6 +1,7 @@
 .ace-tool/
 .pi/
 .browser-pilot/
+.agent-workbench/
 node_modules/
 
 # Local environment and secrets
