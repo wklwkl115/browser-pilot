@@ -32,6 +32,10 @@ type MonitorMetadata = {
 	changed: number;
 	top_change?: string;
 	navigated?: boolean;
+	/** When true, `changed` is unreliable due to page navigation. */
+	changedReliable?: boolean;
+	/** Human-readable warning surfaced when the monitor detects navigation. */
+	warning?: string;
 	afterUnreliable?: boolean;
 	urlBefore?: string;
 	urlAfter?: string;
@@ -146,7 +150,7 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<CommandRe
 			beforeChars: typeof before.content === "string" ? before.content.length : 0,
 			afterChars: typeof after.content === "string" ? after.content.length : 0,
 			...diff,
-			...(navigated ? { navigated: true, urlBefore: before.url, urlAfter: after.url } : {}),
+			...(navigated ? { navigated: true, changedReliable: false, warning: "page navigated — changed count is unreliable; use browser_wait + baseline observe for post-navigation change detection", urlBefore: before.url, urlAfter: after.url } : {}),
 			...(afterUnreliable ? { afterUnreliable: true } : {}),
 			beforeError: before.error,
 			afterError: after.error,

@@ -73,11 +73,24 @@ type TextSnippet = { lineStart: number; lineEnd: number; text: string; truncated
 type SearchSnippet = TextSnippet & { matchLine: number; path?: string; matchColumnStart?: number; matchColumnEnd?: number };
 type SampleSnippet = TextSnippet & { section: string; deduped?: boolean };
 
+type SkippedFile = { path: string; reason: string; size: number };
+
+type TruncationInfo = {
+	truncated: true;
+	truncationReason: string;
+	bytesRead?: number;
+	byteLimit?: number;
+	matchesFound?: number;
+	matchLimit?: number;
+	totalMatches?: number;
+	skippedFiles?: SkippedFile[];
+};
+
 export type BrowserArtifactReadResult =
-	| { mode: "text"; summary: Record<string, unknown>; offset: number; limit: number; nextOffset: number | null; snippets: TextSnippet[] }
-	| { mode: "search"; summary: Record<string, unknown>; query: string; regex: boolean; offset: number; matches: number; nextOffset: number | null; snippets: SearchSnippet[] }
-	| { mode: "sample"; summary: Record<string, unknown>; limit: number; snippets: SampleSnippet[] }
-	| { mode: "json"; summary: Record<string, unknown>; jsonPath?: string; pick?: string[]; value: unknown };
+	| { mode: "text"; summary: Record<string, unknown>; offset: number; limit: number; nextOffset: number | null; snippets: TextSnippet[]; truncation?: TruncationInfo }
+	| { mode: "search"; summary: Record<string, unknown>; query: string; regex: boolean; offset: number; matches: number; nextOffset: number | null; snippets: SearchSnippet[]; truncation?: TruncationInfo }
+	| { mode: "sample"; summary: Record<string, unknown>; limit: number; snippets: SampleSnippet[]; truncation?: TruncationInfo }
+	| { mode: "json"; summary: Record<string, unknown>; jsonPath?: string; pick?: string[]; value: unknown; truncation?: TruncationInfo };
 
 function isInsideOrEqual(parent: string, child: string): boolean {
 	const relative = path.relative(parent, child);
@@ -248,13 +261,28 @@ export function isSafeArtifactSearchRegexPattern(pattern: unknown): boolean {
 	return unsafeRegexReason(pattern, MAX_ARTIFACT_SEARCH_REGEX_CHARS) === undefined;
 }
 
+function describeUnsafeRegexReason(reason: string, query: string): string {
+	switch (reason) {
+		case "pattern_too_long": return `pattern too long (${query.length} chars, max ${MAX_ARTIFACT_SEARCH_REGEX_CHARS})`;
+		case "backreference": return "catastrophic backtracking risk: backreference detected";
+		case "lookaround_or_special_group": return "catastrophic backtracking risk: lookaround or special group detected";
+		case "nested_quantifier": return "catastrophic backtracking risk: nested quantifier detected";
+		case "quantified_alternation": return "catastrophic backtracking risk: quantified alternation detected";
+		case "too_many_wildcards": return "catastrophic backtracking risk: too many .* wildcards";
+		case "empty_pattern": return "empty pattern";
+		default: return reason;
+	}
+}
+
 function compileArtifactSearchRegex(query: string, flags: string): RegExp {
 	const unsafeReason = unsafeRegexReason(query, MAX_ARTIFACT_SEARCH_REGEX_CHARS);
 	if (unsafeReason) {
-		throw new ArtifactReaderError("ARTIFACT_SEARCH_REGEX_UNSAFE", "browser_artifact search regex is unsafe or exceeds limits", {
+		const detail = describeUnsafeRegexReason(unsafeReason, query);
+		throw new ArtifactReaderError("ARTIFACT_SEARCH_REGEX_UNSAFE", `browser_artifact search regex rejected: ${detail}`, {
 			query,
 			flags,
 			reason: unsafeReason,
+			reasonDetail: detail,
 			maxPatternChars: MAX_ARTIFACT_SEARCH_REGEX_CHARS,
 			maxLineChars: MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS,
 		});
@@ -311,6 +339,8 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 	let used = 0;
 	let lastRangeEnd = 0;
 	let regexTruncatedLines = 0;
+	let hitMatchLimit = false;
+	let hitCharsLimit = false;
 	const flushPending = () => {
 		if (!pending) return;
 		const budgetLeft = Math.max(0, maxChars - used);
@@ -361,8 +391,15 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 		ring.splice(0, ring.length, { line: lineNumber, text: line });
 	});
 	flushPending();
+	if (matches.length >= maxMatches) hitMatchLimit = true;
+	if (used >= maxChars) hitCharsLimit = true;
 	const { lineCount, chars } = stats;
 	const nextOffset = matches.length && matches[matches.length - 1].lineEnd < lineCount ? matches[matches.length - 1].lineEnd + 1 : null;
+	const truncation: TruncationInfo | undefined = hitMatchLimit
+		? { truncated: true, truncationReason: "per_file_match_limit", matchesFound: matches.length, matchLimit: maxMatches }
+		: hitCharsLimit
+			? { truncated: true, truncationReason: "chars_budget", matchesFound: matches.length, bytesRead: chars, byteLimit: maxChars }
+			: undefined;
 	return {
 		mode: "search" as const,
 		summary: {
@@ -378,6 +415,7 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 		matches: matches.length,
 		nextOffset,
 		snippets: matches,
+		...(truncation ? { truncation } : {}),
 	};
 }
 
@@ -739,11 +777,16 @@ async function searchMultipleArtifacts(params: BrowserArtifactParams, ctx?: Brow
 	let matchedFiles = 0;
 	let truncatedFiles = 0;
 	const snippets: SearchSnippet[] = [];
+	const skippedFiles: SkippedFile[] = [];
+	let hitByteLimit = false;
+	let hitTotalMatchLimit = false;
 	const perFileChars = Math.max(400, Math.floor(asPositiveInt(params.maxChars, 8_000) / Math.max(1, Math.min(selected.length, 4))));
 	for (const file of selected) {
 		const info = await stat(file);
 		if (consumedBytes + info.size > maxBytes) {
 			truncatedFiles += 1;
+			hitByteLimit = true;
+			skippedFiles.push({ path: file, reason: "exceeds_byte_limit", size: info.size });
 			break;
 		}
 		consumedBytes += info.size;
@@ -755,8 +798,16 @@ async function searchMultipleArtifacts(params: BrowserArtifactParams, ctx?: Brow
 			totalMatches += 1;
 		}
 		if (single.matches >= maxMatchesPerFile) truncatedFiles += 1;
-		if (totalMatches >= maxTotalMatches) break;
+		if (totalMatches >= maxTotalMatches) {
+			hitTotalMatchLimit = true;
+			break;
+		}
 	}
+	const truncation: TruncationInfo | undefined = hitTotalMatchLimit
+		? { truncated: true, truncationReason: "total_match_limit", totalMatches, matchLimit: maxTotalMatches, ...(skippedFiles.length ? { skippedFiles } : {}) }
+		: hitByteLimit
+			? { truncated: true, truncationReason: "byte_limit", bytesRead: consumedBytes, byteLimit: maxBytes, skippedFiles }
+			: undefined;
 	return {
 		mode: "search" as const,
 		summary: {
@@ -775,6 +826,7 @@ async function searchMultipleArtifacts(params: BrowserArtifactParams, ctx?: Brow
 		matches: totalMatches,
 		nextOffset: null,
 		snippets,
+		...(truncation ? { truncation } : {}),
 	};
 }
 
@@ -845,7 +897,7 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 	let result: BrowserArtifactReadResult;
 	if (mode === "json") {
 		if (info.size > MAX_ARTIFACT_READ_BYTES) {
-			throw new ArtifactReaderError("ARTIFACT_TOO_LARGE", "Artifact is too large for browser_artifact json reader", { path: absPath, bytes: info.size, maxBytes: MAX_ARTIFACT_READ_BYTES });
+			throw new ArtifactReaderError("ARTIFACT_TOO_LARGE", `Artifact exceeds byte limit (${info.size} bytes, max ${MAX_ARTIFACT_READ_BYTES})`, { path: absPath, bytes: info.size, maxBytes: MAX_ARTIFACT_READ_BYTES });
 		}
 		result = readJson(await readFile(absPath, "utf8"), info.size, absPath, params);
 		return redactArtifactResult(result, redact, targetedJsonRaw);

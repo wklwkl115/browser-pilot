@@ -11,6 +11,8 @@ export class BrowserBridgeClientRegistry {
 	private readonly clientInfo = new Map<WebSocket, BrowserBridgeClientInfo>();
 	private extensionClient?: WebSocket;
 	private everConnected = false;
+	private _lastDisconnectReason?: string;
+	private _lastDisconnectAt?: number;
 	private readonly getPort: () => number;
 	private readonly expectedBuild: ExpectedExtensionBuild;
 
@@ -37,6 +39,19 @@ export class BrowserBridgeClientRegistry {
 		this.clients.delete(ws);
 		this.clientInfo.delete(ws);
 		if (this.extensionClient === ws) this.extensionClient = undefined;
+	}
+
+	recordDisconnect(reason: string): void {
+		this._lastDisconnectReason = reason;
+		this._lastDisconnectAt = Date.now();
+	}
+
+	get lastDisconnectReason(): string | undefined {
+		return this._lastDisconnectReason;
+	}
+
+	get lastDisconnectAt(): number | undefined {
+		return this._lastDisconnectAt;
 	}
 
 	clear(): void {

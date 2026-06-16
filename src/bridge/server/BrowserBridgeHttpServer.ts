@@ -73,12 +73,13 @@ export class BrowserBridgeHttpServer {
 		const wss = new WebSocketServer({ noServer: true });
 		server.on("upgrade", (req, socket, head) => {
 			if (!isAllowedBridgeOrigin(req.headers.origin)) {
-				socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+				const body = JSON.stringify({ ok: false, error: "Origin not allowed", rejectedOrigin: req.headers.origin ?? null, allowedOrigins: ["chrome-extension://*", "(no origin / null)"], hint: "Only chrome-extension:// origins and requests with no Origin header are accepted. If you are connecting from a web page or another extension, ensure the request originates from an allowed source." });
+				socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" + body);
 				socket.destroy();
 				return;
 			}
 			if (wss.clients.size >= this.maxConnections) {
-				socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" + JSON.stringify({ ok: false, error: "Browser bridge connection limit reached", maxConnections: this.maxConnections, activeConnections: wss.clients.size }));
+				socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" + JSON.stringify({ ok: false, error: "Browser bridge connection limit reached", maxConnections: this.maxConnections, activeConnections: wss.clients.size, hint: "Close unused browser tabs or sessions to free connections, or set the BROWSER_PILOT_BRIDGE_MAX_CONNECTIONS environment variable to a higher value." }));
 				socket.destroy();
 				return;
 			}
@@ -113,7 +114,9 @@ export class BrowserBridgeHttpServer {
 				if (!isAddressInUse(error)) break;
 			}
 		}
-		throw new BrowserBridgeError("BRIDGE_START_FAILED", normalizeErrorMessage(lastError), { host: this.host, port: this.requestedPort, portRangeEnd: this.portRangeEnd });
+		const portRangeLabel = this.requestedPort === this.portRangeEnd ? String(this.requestedPort) : `${this.requestedPort}-${this.portRangeEnd}`;
+		const hint = `Check if other processes are using port${this.requestedPort === this.portRangeEnd ? "" : "s"} ${portRangeLabel}, or set BROWSER_PILOT_BRIDGE_PORT / BROWSER_PILOT_BRIDGE_PORT_RANGE_END environment variables to use a different range.`;
+		throw new BrowserBridgeError("BRIDGE_START_FAILED", normalizeErrorMessage(lastError), { host: this.host, port: this.requestedPort, portRangeEnd: this.portRangeEnd, triedPortRange: portRangeLabel, hint });
 	}
 
 	async stop(): Promise<void> {

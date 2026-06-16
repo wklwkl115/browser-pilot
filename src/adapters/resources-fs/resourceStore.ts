@@ -5,6 +5,7 @@ export {
 	REF_STORE_MAX_ENTRIES,
 	clearResourceStore,
 	isResourceFresh,
+	lastEviction,
 	listResources,
 	parseBrowserPilotRefUri,
 	parseResourceUri,
@@ -15,10 +16,12 @@ export {
 	resolveRefUriDetailed,
 	resolveResourceUri,
 	resourceRefStore,
+	stats,
 } from "../../resources/resourceStore.js";
 
 export type {
 	BrowserResultResource,
+	EvictionRecord,
 	RegisteredRefRecord,
 	RegisterBrowserResultResourceParams,
 	RegisterRefDescriptorParams,
@@ -26,4 +29,5 @@ export type {
 	ResolvedRefRecord,
 	ResourceKind,
 	ResourceRefStorePort,
+	ResourceStoreStats,
 } from "../../ports/ResourceRefStorePort.js";

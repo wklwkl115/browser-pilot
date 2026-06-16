@@ -4,7 +4,8 @@ import { BrowserBridgeError } from "../utils/errors.js";
 import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
 import type { BridgeCommand } from "../types/nativeProtocol.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
-import { classifyStateLoss, classifyTimeout } from "../kernels/temporal/classify.js";
+import { classifyStateLoss, classifyTimeout, diagnoseWaitTimeout } from "../kernels/temporal/classify.js";
+import type { WaitTimeoutDiagnosis, DiagnoseWaitTimeoutInput } from "../kernels/temporal/classify.js";
 import type { BrowserCommandRuntimePort, CommandTemporalDecision, CommandTemporalFrontierNext, CommandTemporalReason, CommandTemporalVerdict } from "../ports/BrowserCommandRuntimePort.js";
 
 const WAIT_LEASE_MAX_MS = 25_000;
@@ -188,9 +189,11 @@ function compactResultData(data: unknown, supervisor: Record<string, unknown>): 
 
 function waitDiagnostics(result: BrowserBridgeExecutionResult, supervisor: Record<string, unknown>): Record<string, unknown> {
 	const temporal = isRecord(supervisor.temporal) ? supervisor.temporal : undefined;
+	const waitDiagnosis = isRecord(supervisor.waitDiagnosis) ? supervisor.waitDiagnosis : undefined;
 	return {
 		...(result.diagnostics || {}),
 		...(temporal ? { temporal } : {}),
+		...(waitDiagnosis ? { waitDiagnosis } : {}),
 		temporalProfile: {
 			command: typeof supervisor.command === "string" ? supervisor.command : undefined,
 			deadlineMs: typeof supervisor.totalTimeoutMs === "number" ? supervisor.totalTimeoutMs : undefined,
@@ -206,7 +209,36 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function buildWaitDiagnosis(state: WaitSupervisorState): WaitTimeoutDiagnosis {
+	const temporalDecision = temporalDecisionForSupervisor(state);
+	const reasons = temporalDecision.verdict.reasons.slice(0, 3);
+	const lastLease = state.leases[state.leases.length - 1];
+	const selectorInfo = state.selectorTimeout;
+
+	const input: DiagnoseWaitTimeoutInput = {
+		command: state.command,
+		reasons,
+		selectorMissing: selectorInfo?.lastProbeFound === false || reasons.includes("selector_missing"),
+		selectorFound: selectorInfo?.lastProbeFound === true,
+		selectorState: typeof selectorInfo?.state === "string" ? selectorInfo.state : undefined,
+		selector: typeof selectorInfo?.selector === "string" ? selectorInfo.selector : undefined,
+		networkActive: reasons.includes("network_active"),
+		loadState: undefined,
+		loadStateTarget: undefined,
+		urlChanged: reasons.includes("url_changed") || reasons.includes("url_mismatch"),
+		historyLost: state.historyLost,
+		workerRestarts: state.workerRestarts,
+		backgroundThrottling: reasons.includes("background_throttling_suspected"),
+		clientDisconnected: lastLease?.status === "disconnect" || reasons.includes("client_disconnected"),
+		bridgeTimeout: lastLease?.status === "bridge_timeout" || reasons.includes("acked_bridge_timeout"),
+	};
+
+	return diagnoseWaitTimeout(input);
+}
+
 function supervisorPayload(state: WaitSupervisorState): Record<string, unknown> {
+	const temporalDecision = compactTemporalDecision(temporalDecisionForSupervisor(state));
+	const waitDiagnosis = buildWaitDiagnosis(state);
 	return {
 		durable: true,
 		waitId: state.waitId,
@@ -221,7 +253,8 @@ function supervisorPayload(state: WaitSupervisorState): Record<string, unknown> 
 		...(state.navigation ? { navigation: state.navigation } : {}),
 		leases: state.leases,
 		...(state.selectorTimeout ? { selectorTimeout: state.selectorTimeout } : {}),
-		temporal: compactTemporalDecision(temporalDecisionForSupervisor(state)),
+		temporal: temporalDecision,
+		waitDiagnosis,
 	};
 }
 

@@ -302,6 +302,9 @@ async function normalizeFuzzVhostsOptions(options: RawFuzzVhostsOptions): Promis
 }
 
 export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
+	const hardCapWarnings: string[] = [];
+	const requestedMaxCandidates = positiveInt(options.maxCandidates, 500);
+	if (requestedMaxCandidates > 5_000) hardCapWarnings.push(`maxCandidates capped from ${requestedMaxCandidates} to 5000 (hard limit)`);
 	const normalized = await normalizeFuzzVhostsOptions(options);
 	const baselines: Array<Record<string, unknown>> = [];
 	const baselineFingerprints: VhostBaselineFingerprint[] = [];
@@ -391,5 +394,5 @@ export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
 	const matched = results.filter((item) => item.matched === true);
 	const clusters = clusterVhostResponses(results);
 	const baselineClusters = clusterBaselineFingerprints(baselineFingerprints);
-	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseCount: normalized.bases.length, requestCount: sent, matchedCount: matched.length, truncatedCandidates, filterBaseline: normalized.filterBaseline, baselineStrategy: normalized.baselineStrategy, sniMode: normalized.sniMode, matchStatus: normalized.matchStatus, filterStatus: normalized.filterStatus, filterBodyBytes: normalized.filterBodyBytes, baselines, baselineClusters, clusters, results, matched, failures };
+	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseCount: normalized.bases.length, requestCount: sent, matchedCount: matched.length, truncatedCandidates, filterBaseline: normalized.filterBaseline, baselineStrategy: normalized.baselineStrategy, sniMode: normalized.sniMode, matchStatus: normalized.matchStatus, filterStatus: normalized.filterStatus, filterBodyBytes: normalized.filterBodyBytes, baselines, baselineClusters, clusters, results, matched, failures, ...(hardCapWarnings.length ? { warnings: hardCapWarnings } : {}) };
 }

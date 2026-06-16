@@ -76,7 +76,7 @@ export interface LeaseStatusResponse { ok: true; lease: LeaseInfo | null; self: 
 export interface LeaseBusyResponse {
   ok: false;
   code: "LEASE_BUSY";
-  heldBy: { pairingId: string; label: string; since: string };
+  heldBy: { pairingId: string; label: string; since: string; expiresAt: string };
 }
 
 export interface RevokeRequestBody { pairingId: string; }

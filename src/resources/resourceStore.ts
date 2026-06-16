@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import { parseRef } from "../kernels/refs/core.js";
 import { makeBrowserPilotRefUri, stableRefIdForDescriptor } from "../kernels/refs/refId.js";
 import { defaultRefPolicyForKind } from "../kernels/refs/refPolicy.js";
-import type { BrowserResultResource, RegisteredRefRecord, RegisterBrowserResultResourceParams, RegisterRefDescriptorParams, ResolveRefResult, ResolvedRefRecord, ResourceRefDescriptor as RefDescriptor, ResourceRefKind as RefKind, ResourceRefStorePort } from "../ports/ResourceRefStorePort.js";
+import type { BrowserResultResource, EvictionRecord, RegisteredRefRecord, RegisterBrowserResultResourceParams, RegisterRefDescriptorParams, ResolveRefResult, ResolvedRefRecord, ResourceRefDescriptor as RefDescriptor, ResourceRefKind as RefKind, ResourceRefStorePort } from "../ports/ResourceRefStorePort.js";
 import { computeContentHash, computeEtag, isFreshEtag } from "../utils/fileFreshness.js";
 
 export const RESOURCE_URI_SCHEME = "browser-result";
@@ -37,6 +37,7 @@ export function isResourceFresh(resource: BrowserResultResource): boolean {
 const resourceStore = new Map<string, BrowserResultResource>();
 const refStore = new Map<string, RegisteredRefRecord>();
 let registrationsSincePrune = 0;
+let _lastEviction: EvictionRecord | undefined;
 
 /** Construct the opaque URI for a given resource id. */
 function makeUri(id: string): string {
@@ -292,11 +293,21 @@ export function listResources(): BrowserResultResource[] {
 /** Remove all expired resources and refs. */
 export function pruneExpired(): void {
 	const now = Date.now();
+	let evicted = 0;
 	for (const [id, resource] of resourceStore) {
-		if (now > resource.expiresAt) resourceStore.delete(id);
+		if (now > resource.expiresAt) {
+			resourceStore.delete(id);
+			evicted++;
+		}
 	}
 	for (const [id, record] of refStore) {
-		if (now > record.descriptor.createdAt + record.descriptor.ttlMs) refStore.delete(id);
+		if (now > record.descriptor.createdAt + record.descriptor.ttlMs) {
+			refStore.delete(id);
+			evicted++;
+		}
+	}
+	if (evicted > 0) {
+		_lastEviction = { reason: "expired", count: evicted, at: now };
 	}
 	registrationsSincePrune = 0;
 }
@@ -306,6 +317,20 @@ export function clearResourceStore(): void {
 	resourceStore.clear();
 	refStore.clear();
 	registrationsSincePrune = 0;
+	_lastEviction = undefined;
+}
+
+/** Returns the most recent eviction record, or undefined if no eviction has occurred. */
+export function lastEviction(): EvictionRecord | undefined {
+	return _lastEviction;
+}
+
+/** Returns store stats including total entry count and last eviction info. */
+export function stats(): { totalEntries: number; lastEviction: EvictionRecord | undefined } {
+	return {
+		totalEntries: resourceStore.size + refStore.size,
+		lastEviction: _lastEviction,
+	};
 }
 
 export const resourceRefStore: ResourceRefStorePort = {
@@ -318,6 +343,8 @@ export const resourceRefStore: ResourceRefStorePort = {
 	listResources,
 	pruneExpired,
 	clearResourceStore,
+	lastEviction,
+	stats,
 };
 
 function pruneExpiredAmortized(): void {
@@ -326,6 +353,8 @@ function pruneExpiredAmortized(): void {
 }
 
 function enforceMaxEntries<T>(store: Map<string, T>, maxEntries: number, createdAt: (item: T) => number): void {
+	let evicted = 0;
+	let oldestEvictedAt: number | undefined;
 	while (store.size > maxEntries) {
 		let oldestId: string | undefined;
 		let oldestCreatedAt = Infinity;
@@ -336,7 +365,14 @@ function enforceMaxEntries<T>(store: Map<string, T>, maxEntries: number, created
 				oldestId = id;
 			}
 		}
-		if (!oldestId) return;
+		if (!oldestId) break;
+		if (oldestEvictedAt === undefined || oldestCreatedAt < oldestEvictedAt) {
+			oldestEvictedAt = oldestCreatedAt;
+		}
 		store.delete(oldestId);
+		evicted++;
+	}
+	if (evicted > 0) {
+		_lastEviction = { reason: "capacity", count: evicted, at: Date.now(), oldestEvictedAt };
 	}
 }

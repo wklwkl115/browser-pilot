@@ -1,7 +1,7 @@
 import type { Entity } from "../entity.js";
 import type { EntityDiff, EntityDiffOptions } from "../diff.js";
 import type { ActionabilityReport, RefDescriptor, VerificationResult } from "../types.js";
-import { isActionVerb, type AbmlActionVerb } from "../actionabilityModel.js";
+import { isActionVerb, failedChecksFromReport, actionabilityFailureReason, type AbmlActionVerb } from "../actionabilityModel.js";
 import { normalizeAbmlError } from "../errors.js";
 
 export type AbmlRuntimeContext = {
@@ -65,8 +65,11 @@ export function actionabilityFailure(verb: AbmlActionVerb, report: Actionability
 		: blockerCodes.has("disabled") ? "TARGET_DISABLED"
 			: blockerCodes.has("not_editable") ? "TARGET_NOT_EDITABLE"
 				: "ACTIONABILITY_TIMEOUT";
-	const error = normalizeAbmlError({ code, message: `${verb} actionability failed` }, { actionability: report });
-	return { ok: false, verb, error, nextActions: error.recovery.nextActions, meta: { blockerCount: report.blockers.length } };
+	const failedChecks = failedChecksFromReport(report);
+	const reason = actionabilityFailureReason(report);
+	const message = reason ? `${verb} actionability failed: ${reason}` : `${verb} actionability failed`;
+	const error = normalizeAbmlError({ code, message }, { actionability: report });
+	return { ok: false, verb, error, nextActions: error.recovery.nextActions, meta: { blockerCount: report.blockers.length, failedChecks, ...(reason ? { reason } : {}) } };
 }
 
 export function verificationFailure(verb: string, verification: VerificationResult): AbmlVerbFailure {

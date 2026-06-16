@@ -44,8 +44,13 @@ function isJavaScript(headers: HeaderMap, url: string): boolean {
 
 export async function runBrowserCrawl(options: CrawlOptions) {
 	const seeds = normalizeCrawlSeeds(options);
-	const maxDepth = Math.min(5, positiveInt(options.maxDepth, 2));
-	const maxPages = Math.min(500, positiveInt(options.maxPages, 50));
+	const requestedMaxDepth = positiveInt(options.maxDepth, 2);
+	const requestedMaxPages = positiveInt(options.maxPages, 50);
+	const maxDepth = Math.min(5, requestedMaxDepth);
+	const maxPages = Math.min(500, requestedMaxPages);
+	const hardCapWarnings: string[] = [];
+	if (requestedMaxDepth > 5) hardCapWarnings.push(`maxDepth capped from ${requestedMaxDepth} to 5 (hard limit)`);
+	if (requestedMaxPages > 500) hardCapWarnings.push(`maxPages capped from ${requestedMaxPages} to 500 (hard limit)`);
 	const sameOrigin = options.sameOrigin !== false;
 	const extractJs = options.extractJs !== false;
 	const activeGraphqlIntrospection = options.activeGraphqlIntrospection !== false;
@@ -159,5 +164,5 @@ export async function runBrowserCrawl(options: CrawlOptions) {
 	const sourceArchiveCount = pages.reduce((sum, page) => sum + Number(isRecord(page.sourceMapDetails) ? page.sourceMapDetails.archivedSourceCount || 0 : 0), 0);
 	const serviceWorkerCacheNames = Array.from(new Set(pages.flatMap((page) => isRecord(page.serviceWorkerDetails) && isRecord(page.serviceWorkerDetails.versionSummary) && Array.isArray(page.serviceWorkerDetails.versionSummary.cacheNames) ? page.serviceWorkerDetails.versionSummary.cacheNames.map(String) : []))).slice(0, 100);
 	const serviceWorkerVersionTokens = Array.from(new Set(pages.flatMap((page) => isRecord(page.serviceWorkerDetails) && isRecord(page.serviceWorkerDetails.versionSummary) && Array.isArray(page.serviceWorkerDetails.versionSummary.versionTokens) ? page.serviceWorkerDetails.versionSummary.versionTokens.map(String) : []))).slice(0, 100);
-	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), seeds, maxDepth, maxPages, sameOrigin, extractJs, activeGraphqlIntrospection, artifactRoot, sourceArchiveCount, serviceWorkerCacheNames, serviceWorkerVersionTokens, pageCount: pages.length, endpointCount: endpoints.size, pages, endpoints: Array.from(endpoints.values()), failures };
+	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), seeds, maxDepth, maxPages, sameOrigin, extractJs, activeGraphqlIntrospection, artifactRoot, sourceArchiveCount, serviceWorkerCacheNames, serviceWorkerVersionTokens, pageCount: pages.length, endpointCount: endpoints.size, pages, endpoints: Array.from(endpoints.values()), failures, ...(hardCapWarnings.length ? { warnings: hardCapWarnings } : {}) };
 }

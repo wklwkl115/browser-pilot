@@ -49,7 +49,7 @@ export class TenantLeaseRegistry {
 		pairingId: string,
 		label: string,
 		ttlMs: number = TENANT_LEASE_TTL_MS,
-	): { ok: true; lease: LeaseInfo } | { ok: false; heldBy: { pairingId: string; label: string; since: string } } {
+	): { ok: true; lease: LeaseInfo } | { ok: false; heldBy: { pairingId: string; label: string; since: string; expiresAt: string } } {
 		const existing = this.status();
 
 		if (existing === null || existing.pairingId === pairingId) {
@@ -69,7 +69,7 @@ export class TenantLeaseRegistry {
 
 		return {
 			ok: false,
-			heldBy: { pairingId: existing.pairingId, label: existing.label, since: existing.since },
+			heldBy: { pairingId: existing.pairingId, label: existing.label, since: existing.since, expiresAt: existing.expiresAt },
 		};
 	}
 
@@ -80,7 +80,7 @@ export class TenantLeaseRegistry {
 	ensureHeld(
 		pairingId: string,
 		label: string,
-	): { ok: true } | { ok: false; heldBy: { pairingId: string; label: string; since: string } } {
+	): { ok: true } | { ok: false; heldBy: { pairingId: string; label: string; since: string; expiresAt: string } } {
 		const result = this.acquire(pairingId, label);
 		if (result.ok) return { ok: true };
 		return { ok: false, heldBy: result.heldBy };

@@ -53,14 +53,15 @@ export class BrowserBridgeClientMessageService {
 			console.error("[browser-pilot-bridge] WebSocket message handler failed", this.redactMessageError(error, data.toString()));
 		}));
 		ws.on("pong", () => this.deps.clients.markPong(ws));
-		ws.on("close", () => this.unregisterClient(ws));
-		ws.on("error", () => this.unregisterClient(ws));
+		ws.on("close", () => this.unregisterClient(ws, "ws_close"));
+		ws.on("error", () => this.unregisterClient(ws, "ws_error"));
 	}
 
-	unregisterClient(ws: WebSocket): void {
+	unregisterClient(ws: WebSocket, reason?: string): void {
 		const disconnectedTabSessionIds = Array.from(this.deps.tabs.sessions.values()).filter((session) => session.client === ws && !session.disconnectedAt).map((session) => session.id);
 		const affectedBrowserSessionIds = this.deps.browserSessions.list().filter((session) => session.selectedClient === ws).map((session) => session.id);
 		this.deps.pendingRequests.rejectForClient(ws);
+		if (reason) this.deps.clients.recordDisconnect(reason);
 		this.deps.clients.unregister(ws);
 		this.deps.tabs.markClientDisconnected(ws);
 		const releasedLeases = this.deps.leases.releaseLeasesForTabSessions(disconnectedTabSessionIds, "disconnect");

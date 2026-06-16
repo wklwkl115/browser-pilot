@@ -223,6 +223,11 @@ async function normalizeFuzzPathsOptions(options: RawFuzzPathsOptions): Promise<
 }
 
 export async function runFuzzPaths(options: RawFuzzPathsOptions) {
+	const hardCapWarnings: string[] = [];
+	const requestedMaxCandidates = positiveInt(options.maxCandidates, 500);
+	if (requestedMaxCandidates > 5_000) hardCapWarnings.push(`maxCandidates capped from ${requestedMaxCandidates} to 5000 (hard limit)`);
+	const requestedMaxDepth = positiveInt(options.maxDepth, options.recursive === true ? 2 : 1);
+	if (requestedMaxDepth > MAX_FUZZ_DEPTH) hardCapWarnings.push(`maxDepth capped from ${requestedMaxDepth} to ${MAX_FUZZ_DEPTH} (hard limit)`);
 	const normalized = await normalizeFuzzPathsOptions(options);
 	const baselines: Array<Record<string, unknown>> = [];
 	const baselineFingerprints: FuzzPathFingerprint[] = [];
@@ -357,5 +362,6 @@ export async function runFuzzPaths(options: RawFuzzPathsOptions) {
 		results: uniqueResults,
 		matched,
 		failures,
+		...(hardCapWarnings.length ? { warnings: hardCapWarnings } : {}),
 	};
 }

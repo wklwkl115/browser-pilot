@@ -153,6 +153,8 @@ export type BrowserBridgeSnapshot = {
 	extensionConnected: boolean;
 	extension?: BrowserBridgeClientInfo;
 	clients: BrowserBridgeClientInfo[];
+	lastDisconnectReason?: string;
+	lastDisconnectAt?: number;
 	defaultTabId?: number;
 	defaultTabHandle?: string;
 	latestTabId?: number;

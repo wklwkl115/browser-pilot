@@ -68,10 +68,21 @@ function inferredModeFromParams(params: ObserveToolParams): ModeInference {
 		reasons.push(param);
 	}
 	if (candidates.length === 0) {
-		throw new BrowserBridgeError("INVALID_RULE", "browser_observe parameters imply incompatible observation modes", {
-			params: reasons,
-			reason: "cross-mode parameter combination has no valid observe mode",
-		});
+		const conflicts: Record<string, string[]> = {};
+		for (const param of reasons) {
+			const implied = impliedModesForParam(param, params);
+			if (implied) conflicts[param] = implied;
+		}
+		const constraintParts = reasons.map((p) => `${p} requires ${conflicts[p]!.join("|")}`);
+		throw new BrowserBridgeError(
+			"INVALID_RULE",
+			`browser_observe parameters imply incompatible observation modes: ${constraintParts.join(", ")}`,
+			{
+				params: reasons,
+				conflicts,
+				reason: `no observe mode satisfies all parameters: ${constraintParts.join(", ")}`,
+			},
+		);
 	}
 	if (candidates.length === 1) {
 		const mode = candidates[0]!;

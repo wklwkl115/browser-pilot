@@ -271,6 +271,7 @@ export interface BrowserCommandRuntimePort {
 	perceptionTraceSnapshot?(browserSessionId?: string): CommandPerceptionTraceSnapshot;
 	buildTemporalProfileSample?(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample;
 	recordTemporalProfileSample?(sample: CommandTemporalProfileSample, options?: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string }): Promise<unknown>;
+	getIntentRefRegistry?(): import("../kernels/session/intentRefRegistry.js").IntentRefRegistry | undefined;
 }
 
 export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo };

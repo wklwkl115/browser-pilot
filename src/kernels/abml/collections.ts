@@ -39,6 +39,16 @@ export type CollectionContinuation = {
 	evidenceRefs: string[];
 };
 
+export type PaginationControlKind = "next" | "previous" | "load-more" | "show-more" | "other";
+
+export type PaginationControl = {
+	ref?: string;
+	label?: string;
+	kind: PaginationControlKind;
+};
+
+export type ScrollDirection = "vertical" | "horizontal" | "both";
+
 export type CollectionModel = {
 	collectionId: string;
 	kind: CollectionKind;
@@ -58,6 +68,10 @@ export type CollectionModel = {
 	confidence: CollectionConfidence;
 
 	continuation?: CollectionContinuation;
+
+	pageSize?: number;
+	paginationControl?: PaginationControl;
+	scrollDirection?: ScrollDirection;
 
 	dataSources?: Array<{
 		source: CollectionDataSource;
@@ -444,17 +458,33 @@ function actionableText(actionable: Record<string, unknown>): string {
 		.toLowerCase();
 }
 
-function paginationEdge(actionables: Array<Record<string, unknown>> | undefined): { kind: CollectionContinuationKind; confidence: CollectionConfidence; summary: string; jsonPath?: string } | undefined {
+function classifyPaginationControlKind(text: string): PaginationControlKind {
+	if (/\bprevious\b|\bprev\b|\bback\b/.test(text)) return "previous";
+	if (/\bnext\b|\bolder\b|\bnewer\b/.test(text)) return "next";
+	if (/\bload\s*more\b/.test(text)) return "load-more";
+	if (/\bshow\s*more\b/.test(text)) return "show-more";
+	return "other";
+}
+
+function paginationEdge(actionables: Array<Record<string, unknown>> | undefined): { kind: CollectionContinuationKind; confidence: CollectionConfidence; summary: string; jsonPath?: string; control: PaginationControl } | undefined {
 	for (const [index, actionable] of (actionables ?? []).entries()) {
 		if (actionable.disabled === true || actionable.hidden === true) continue;
 		const text = actionableText(actionable);
 		if (/\b(next|more|load\s*more|show\s*more|older|newer)\b/.test(text)) {
 			const isPagination = /\b(next|older|newer|page)\b/.test(text);
+			const controlKind = classifyPaginationControlKind(text);
+			const ref = stringValue(actionable.ref) ?? stringValue(actionable["bp-ref"]) ?? stringValue(actionable.bpRef);
+			const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
 			return {
 				kind: isPagination ? "pagination-edge" : "expandable-edge",
 				confidence: "medium",
 				summary: isPagination ? "visible next/page control" : "visible load/show more control",
 				jsonPath: `data.actionables[${index}]`,
+				control: {
+					...(ref ? { ref } : {}),
+					...(label ? { label } : {}),
+					kind: controlKind,
+				},
 			};
 		}
 	}
@@ -566,13 +596,42 @@ function continuationFor(collectionId: string, kind: CollectionContinuationKind 
 	};
 }
 
-function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>): CollectionModel {
+function inferPageSize(draft: DraftCollection, probe: Record<string, unknown> | undefined): number | undefined {
+	if (probe) {
+		const beforeCount = numberValue(probe.beforeCount ?? probe.oldCount);
+		const afterCount = numberValue(probe.afterCount ?? probe.newCount);
+		if (beforeCount !== undefined && afterCount !== undefined && afterCount > beforeCount) {
+			const size = afterCount - beforeCount;
+			if (size > 0 && (draft.declaredTotal === undefined || size < draft.declaredTotal)) {
+				return size;
+			}
+		}
+	}
+	return undefined;
+}
+
+function inferScrollDirection(probe: Record<string, unknown> | undefined): ScrollDirection | undefined {
+	if (!probe) return undefined;
+	const beforeHeight = numberValue(probe.beforeScrollHeight ?? probe.oldScrollHeight);
+	const afterHeight = numberValue(probe.afterScrollHeight ?? probe.newScrollHeight);
+	if (beforeHeight !== undefined && afterHeight !== undefined && beforeHeight !== afterHeight) {
+		return "vertical";
+	}
+	return undefined;
+}
+
+function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>, rawGrowthProbe?: Record<string, unknown>): CollectionModel {
 	const collectionId = `c${index + 1}`;
 	const classified = completenessForDraft(draft, edge, growth);
 	const evidence = [...draft.evidence];
 	if (edge) evidence.push({ source: "relations", summary: edge.summary, jsonPath: edge.jsonPath });
 	if (growth) evidence.push({ source: "growthProbe", summary: growth.summary, jsonPath: "scanEvidence.growthProbe" });
 	const estimatedTotal = draft.estimatedTotal ?? (draft.declaredTotal !== undefined ? draft.declaredTotal : undefined);
+
+	const pageSize = inferPageSize(draft, rawGrowthProbe);
+	const paginationControl = edge?.control;
+	const scrollDirection = inferScrollDirection(rawGrowthProbe);
+
 	const model: CollectionModel = {
 		collectionId,
 		kind: draft.kind,
@@ -591,6 +650,11 @@ function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType
 		...(draft.dataSources.length ? { dataSources: draft.dataSources.slice(0, 5) } : {}),
 		evidence: evidence.slice(0, 8),
 	};
+
+	if (pageSize !== undefined) model.pageSize = pageSize;
+	if (paginationControl !== undefined) model.paginationControl = paginationControl;
+	if (scrollDirection !== undefined) model.scrollDirection = scrollDirection;
+
 	const evidenceRefs = model.evidence.map((item) => item.ref ?? item.jsonPath).filter((item): item is string => !!item);
 	const continuation = continuationFor(collectionId, classified.continuationKind, classified.confidence, evidenceRefs);
 	return continuation ? { ...model, continuation } : model;
@@ -632,10 +696,11 @@ export function buildCollectionModels(input: BuildCollectionModelsInput): Collec
 		addDraft(drafts, listHintKey(hint, index), listHintDraft(hint, index));
 	}
 	const edge = paginationEdge(input.scanEvidence?.actionables);
-	const growth = growthProbeEvidence(input.scanEvidence?.growthProbe);
+	const rawGrowthProbe = input.scanEvidence?.growthProbe;
+	const growth = growthProbeEvidence(rawGrowthProbe);
 	return [...drafts.values()]
 		.filter((draft) => draft.observedCount > 0 || (draft.hiddenCount ?? 0) > 0 || draft.itemRefs.length > 0)
 		.sort((a, b) => a.sourceRank - b.sourceRank || b.observedCount - a.observedCount || (b.declaredTotal ?? 0) - (a.declaredTotal ?? 0))
 		.slice(0, MAX_COLLECTIONS)
-		.map((draft, index) => modelFromDraft(index, draft, edge, growth));
+		.map((draft, index) => modelFromDraft(index, draft, edge, growth, rawGrowthProbe));
 }

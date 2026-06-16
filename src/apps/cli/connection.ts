@@ -23,16 +23,33 @@ export function connectionRecoveryCommands(timeoutMs = 30_000): RecoveryCommand[
 export function staleLockfileDiagnostic(): Record<string, unknown> | null {
 	const info = readLockfile();
 	if (!info) return null;
+	let lockfileAgeMs: number | null = null;
+	let lockfileAge: string | null = null;
+	if (info.startedAt) {
+		const started = new Date(info.startedAt).getTime();
+		if (Number.isFinite(started)) {
+			lockfileAgeMs = Date.now() - started;
+			const seconds = Math.floor(lockfileAgeMs / 1000);
+			if (seconds < 60) lockfileAge = `${seconds}s ago`;
+			else if (seconds < 3600) lockfileAge = `${Math.floor(seconds / 60)}m ${seconds % 60}s ago`;
+			else lockfileAge = `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m ago`;
+		}
+	}
 	return {
 		pid: info.pid,
 		controlHost: info.controlHost,
 		controlPort: info.controlPort,
+		...(info.bridgePort != null ? { bridgePort: info.bridgePort } : {}),
 		version: info.version,
 		expectedVersion: daemonVersion(),
 		versionStale: !isDaemonVersionCurrent(info),
 		startedAt: info.startedAt,
+		...(lockfileAge !== null ? { lockfileAge, lockfileAgeMs } : {}),
 		pidAlive: isPidAlive(info.pid),
 		unreachable: true,
+		hint: isPidAlive(info.pid)
+			? "The daemon process is alive but not responding. It may be stuck — try 'browser-pilot daemon stop' and restart."
+			: "The daemon process (PID " + info.pid + ") is no longer running but its lockfile remains. Run 'browser-pilot connect' to start a fresh daemon.",
 	};
 }
 
@@ -64,10 +81,17 @@ function publicBridge(status: DaemonStatus | undefined): Record<string, unknown>
 
 function publicExtension(status: DaemonStatus | undefined): Record<string, unknown> {
 	const extension = status?.extension && typeof status.extension === "object" ? status.extension : {};
-	return {
+	const health = status?.health && typeof status.health === "object" ? status.health : {};
+	const base: Record<string, unknown> = {
 		connected: status?.extensionConnected === true,
 		...extension,
 	};
+	if (status?.extensionConnected !== true && health.lastDisconnectReason) {
+		base.lastDisconnectReason = health.lastDisconnectReason;
+		base.lastDisconnectAt = health.lastDisconnectAt;
+		base.lastDisconnectAgeMs = health.lastDisconnectAgeMs;
+	}
+	return base;
 }
 
 function tabCountFrom(status: DaemonStatus | undefined): number {

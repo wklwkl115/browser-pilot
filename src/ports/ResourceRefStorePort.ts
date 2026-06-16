@@ -181,6 +181,18 @@ export type RegisterRefDescriptorParams = {
 	browserSessionId?: string;
 };
 
+export type EvictionRecord = {
+	reason: "expired" | "capacity";
+	count: number;
+	at: number;
+	oldestEvictedAt?: number;
+};
+
+export type ResourceStoreStats = {
+	totalEntries: number;
+	lastEviction: EvictionRecord | undefined;
+};
+
 export interface ResourceRefStorePort {
 	isResourceFresh(resource: BrowserResultResource): boolean;
 	registerBrowserResultResource(params: RegisterBrowserResultResourceParams): string;
@@ -191,4 +203,6 @@ export interface ResourceRefStorePort {
 	listResources(): BrowserResultResource[];
 	pruneExpired(): void;
 	clearResourceStore(): void;
+	lastEviction(): EvictionRecord | undefined;
+	stats(): ResourceStoreStats;
 }

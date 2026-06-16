@@ -89,7 +89,7 @@ export class BrowserBridgeServer implements ConsentPort {
 			logLeaseCleanup: (details) => this.logLeaseCleanup(details),
 			notifyExtensionReady: () => this.notifyExtensionReady(),
 		});
-		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws) => this.unregisterClient(ws), { onTick: (now) => this.sweepLeases(now) });
+		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws, reason) => this.unregisterClient(ws, reason), { onTick: (now) => this.sweepLeases(now) });
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd });
 	}
 
@@ -132,6 +132,8 @@ export class BrowserBridgeServer implements ConsentPort {
 			extensionConnected: !!this.state.browserSessions.selectedOpenClient(browserSession),
 			extension: this.state.browserSessions.selectedInfo(browserSession, (client) => this.clients.info(client)),
 			clients: this.clients.connectedClientInfos(),
+			lastDisconnectReason: this.clients.lastDisconnectReason,
+			lastDisconnectAt: this.clients.lastDisconnectAt,
 			defaultTabId: this.tabs.defaultTabId(options.browserSessionId),
 			defaultTabHandle: this.tabs.defaultTabHandle(options.browserSessionId),
 			latestTabId: this.tabs.latestTabId(options.browserSessionId),
@@ -338,6 +340,10 @@ export class BrowserBridgeServer implements ConsentPort {
 		return this.state.perceptionLedger.traceSnapshot(browserSessionId);
 	}
 
+	getIntentRefRegistry(): import("../../kernels/session/intentRefRegistry.js").IntentRefRegistry {
+		return this.state.intentRefRegistry;
+	}
+
 	buildTemporalProfileSample(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample {
 		return this.state.temporal.buildProfileSample(input);
 	}
@@ -379,8 +385,8 @@ export class BrowserBridgeServer implements ConsentPort {
 		this.clientMessageService.registerClient(ws);
 	}
 
-	private unregisterClient(ws: WebSocket): void {
-		this.clientMessageService.unregisterClient(ws);
+	private unregisterClient(ws: WebSocket, reason?: string): void {
+		this.clientMessageService.unregisterClient(ws, reason);
 	}
 
 	private notifyExtensionReady(): void {

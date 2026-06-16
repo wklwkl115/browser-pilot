@@ -19,6 +19,9 @@ import type { CommandFactGranularity } from "./resultTypes.js";
 // while resultMiddleware.ts shapes the returned envelope, budgets, redaction, and artifacts.
 export { fitInlineJsonToBudget } from "../kernels/evidence/distill/fit.js";
 
+/** Hard ceiling for any command timeout to prevent unbounded hangs. */
+const MAX_COMMAND_TIMEOUT_MS = 300_000;
+
 export type CommandResultContext = { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean } | undefined;
 
 export type StandardToolParams = {
@@ -195,7 +198,8 @@ export function commandPositiveInt(value: unknown, fallback: number): number {
 export function commandTimeoutMs(value: unknown, fallback: number, options: { allowZero?: boolean } = {}): number {
 	const n = Number(value);
 	if (options.allowZero && Number.isFinite(n) && n === 0) return 0;
-	return asPositiveInt(value, fallback);
+	if (!Number.isFinite(n) || n <= 0) return Math.min(fallback, MAX_COMMAND_TIMEOUT_MS);
+	return Math.min(asPositiveInt(value, fallback), MAX_COMMAND_TIMEOUT_MS);
 }
 
 export function artifactFallbackName(prefix: string, extension = "json"): string {
@@ -477,6 +481,8 @@ export async function runWebSecurityCommand<TParams extends StandardToolParams &
 		},
 		finalize: async ({ params, ctx, maxChars, operation, result }) => {
 			const resultDetails = spec.details(result);
+			const resultRecord = result as Record<string, unknown>;
+			const resultWarnings = Array.isArray(resultRecord.warnings) ? resultRecord.warnings.filter((item): item is string => typeof item === "string") : [];
 			return await jsonCommandResult(result, params, ctx, {
 				commandName: spec.commandName,
 				command: spec.command,
@@ -484,6 +490,7 @@ export async function runWebSecurityCommand<TParams extends StandardToolParams &
 				fallbackName: artifactFallbackName(spec.fallbackPrefix),
 				details: { command: spec.command, ...resultDetails },
 				operation,
+				...(resultWarnings.length ? { diagnostics: { warnings: resultWarnings } } : {}),
 				artifactValue: { ...(result as Record<string, unknown>), ...(operation ? { operation } : {}) },
 				distill: (value: unknown) => ({ ...spec.distill(value as TResult), ...(operation ? { operationId: operation.operationId, sourceMode: operation.sourceMode } : {}) }),
 			});

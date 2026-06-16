@@ -3,6 +3,7 @@ export { SessionOperationRegistry, type SessionActiveOperationInfo } from "./ope
 export { SessionObservationSnapshotRegistry, type SessionObservationSnapshotInfo, type SessionBridgeSnapshotView } from "./observationSnapshotRegistry.js";
 export { PerceptionLedger, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "./perceptionLedger.js";
 export { SessionKernel } from "./SessionKernel.js";
+export { createIntentRefRegistry, type IntentRefEntry, type IntentRefRegistry } from "./intentRefRegistry.js";
 export { DEFAULT_BROWSER_SESSION_ID, SessionRegistry, type SessionAutomationSession } from "./sessionRegistry.js";
 export {
 	SessionLeaseRegistry,

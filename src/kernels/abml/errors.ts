@@ -1,4 +1,5 @@
 import type { AbmlError, AbmlErrorCategory, AbmlErrorCode, AbmlRecovery, ActionabilityReport, VerificationResult } from "./types.js";
+import { failedChecksFromReport, actionabilityFailureReason } from "./actionabilityModel.js";
 import { normalizeError } from "../../utils/errors.js";
 import { redactSensitiveText, redactSensitiveValue } from "../../utils/redaction.js";
 
@@ -105,12 +106,21 @@ function defaultMessageForCode(code: AbmlErrorCode): string {
 export function normalizeAbmlError(error: unknown, options: AbmlNormalizeErrorOptions = {}): AbmlError {
 	const normalized = normalizeError(error);
 	const code = mapToAbmlCode(normalized.code);
+	// When an actionability report is attached and has failures, surface the failed
+	// predicate names and a human-readable reason in evidence so agents can react
+	// (scroll, dismiss overlay, wait for enable, etc.) without parsing the full report.
+	const actionabilityEvidence = options.actionability && !options.actionability.ok
+		? actionabilityDiagnostics(options.actionability)
+		: undefined;
+	const mergedEvidence = actionabilityEvidence
+		? { ...actionabilityEvidence, ...(options.evidence || {}) }
+		: options.evidence;
 	return {
 		code,
 		category: CODE_CATEGORY[code],
 		message: redactSensitiveText(options.message || normalized.message || defaultMessageForCode(code)),
 		recovery: DEFAULT_RECOVERIES[code],
-		...(options.evidence ? { evidence: redactSensitiveValue(options.evidence) as Record<string, unknown> } : {}),
+		...(mergedEvidence ? { evidence: redactSensitiveValue(mergedEvidence) as Record<string, unknown> } : {}),
 		...(options.candidates?.length ? { candidates: redactSensitiveValue(options.candidates) as AbmlError["candidates"] } : {}),
 		...(options.actionability ? { actionability: redactSensitiveValue(options.actionability) as ActionabilityReport } : {}),
 		...(options.verification ? { verification: redactSensitiveValue(options.verification) as VerificationResult } : {}),
@@ -120,5 +130,15 @@ export function normalizeAbmlError(error: unknown, options: AbmlNormalizeErrorOp
 			message: redactSensitiveText(normalized.message),
 			details: redactSensitiveValue(normalized.details) as Record<string, unknown>,
 		},
+	};
+}
+
+function actionabilityDiagnostics(report: ActionabilityReport): Record<string, unknown> | undefined {
+	const failedChecks = failedChecksFromReport(report);
+	if (!failedChecks.length) return undefined;
+	const reason = actionabilityFailureReason(report);
+	return {
+		failedChecks,
+		...(reason ? { reason } : {}),
 	};
 }

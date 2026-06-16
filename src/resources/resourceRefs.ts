@@ -3,6 +3,7 @@ export {
 	RESOURCE_URI_SCHEME,
 	clearResourceStore,
 	isResourceFresh,
+	lastEviction,
 	listResources,
 	parseBrowserPilotRefUri,
 	parseResourceUri,
@@ -13,10 +14,12 @@ export {
 	resolveRefUriDetailed,
 	resolveResourceUri,
 	resourceRefStore,
+	stats,
 } from "./resourceStore.js";
 
 export type {
 	BrowserResultResource,
+	EvictionRecord,
 	RegisteredRefRecord,
 	RegisterBrowserResultResourceParams,
 	RegisterRefDescriptorParams,
@@ -25,4 +28,5 @@ export type {
 	ResourceKind,
 	ResourceRefDescriptor,
 	ResourceRefStorePort,
+	ResourceStoreStats,
 } from "../ports/ResourceRefStorePort.js";

@@ -9,6 +9,7 @@ import { buildTreeDiff, type TreeDiff } from "../../kernels/abml/treeDiff.js";
 import { buildSnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 import { buildCollectionModels } from "../../kernels/abml/collections.js";
 import { buildIdentityGraph, identityGraphSummary } from "../../kernels/abml/identityGraph.js";
+import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
 import { createBrowserAbmlIntegration } from "../../browser-command-runtime/abml/integration.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
@@ -266,11 +267,14 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	}
 	const granularityCeiling = granularityCeilingFromLedger(server, plannedLedgerKey);
 	const effectiveBaseline: unknown = params.baseline ?? (!hasNavigation && ledgerFrame ? { snapshotId: ledgerFrame.snapshotId } : undefined);
+	const baselineRequested = effectiveBaseline !== undefined && effectiveBaseline !== null;
 	let baseline: BaselineResolution | undefined;
+	let baselineResolutionError: string | undefined;
 	try {
 		baseline = await resolveBaselineEntities(server, effectiveBaseline);
 	} catch (error) {
 		if (!ledgerFrame || params.baseline !== undefined) throw error;
+		baselineResolutionError = error instanceof Error ? error.message : String(error);
 		baseline = undefined;
 	}
 	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars });
@@ -433,7 +437,24 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 				snapshotProjection,
 				scanEvidence: scanCollectionEvidence(summaryData),
 			});
-			const idGraph = buildIdentityGraph(attributedEntities, causal);
+			// Intent ref registry: register high-confidence semantic anchors so agents can
+			// re-find elements after SPA navigations or full page loads.
+			const intentRegistry = typeof server.getIntentRefRegistry === "function" ? server.getIntentRefRegistry() : undefined;
+			if (intentRegistry && pageUrl) {
+				const pageOrigin = (() => { try { return new URL(pageUrl).origin; } catch { return undefined; } })();
+				if (pageOrigin) {
+					const anchorSummary = deriveSemanticRefAnchors(attributedEntities);
+					const highConfidenceEntries = anchorSummary.anchors
+						.filter((item) => item.anchor.confidence === "high" && item.anchor.mintingEligible)
+						.map((item) => {
+							const a = item.anchor;
+							const anchorKey = [a.containerRole, a.containerName, a.normalizedName, a.role, a.kind].filter(Boolean).join("/");
+							return { anchorKey, ref: item.ref, origin: pageOrigin, seenAt: snapshotMeta.capturedAt };
+						});
+					if (highConfidenceEntries.length) intentRegistry.register(highConfidenceEntries);
+				}
+			}
+			const idGraph = buildIdentityGraph(attributedEntities, causal, intentRegistry);
 			const runtimeRelationGraph = observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.relationGraph) ? observation.abmlRead.data.relationGraph : undefined;
 			const relationGraph = runtimeRelationGraph || buildRelationGraph(attributedEntities);
 			const baseFocus = typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus as Record<string, unknown> : {};
@@ -454,6 +475,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 				...(collections.length ? { collections } : {}),
 				...causalBlock,
 				...(idSummary.backendNodeIdCount || idSummary.anchorCount || idSummary.triggeredCount ? { identity: idSummary } : {}),
+				...(idGraph.intentRefs?.length ? { intentRefs: idGraph.intentRefs } : {}),
 				_identityGraph: idGraph,
 				...(isRecord(relationGraph) && Number(relationGraph.edgeCount || 0) > 0 ? { _relationGraph: relationGraph } : {}),
 				focus: {
@@ -561,7 +583,18 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const stableRefs = ledgerFrameForRecord ? stableRefsFromCommandFrames(ledgerFrameForRecord, priorLedgerFrame) : undefined;
 	const memoryProfileWarnings = consumeMemoryProfileDiagnostics(ctx?.cwd);
 	observeTimings.renderMs = elapsedMs(renderStartedAt);
-	const observeDiagnostics = { observeTimings: finalizedObserveTimings(observeTimings, data, observation.abmlRead) };
+	const baselineDiagnostics = baselineRequested
+		? { baselineRequested: true as const, baselineApplied: baseline !== undefined, ...(baselineResolutionError ? { baselineResolutionError } : {}) }
+		: undefined;
+	const baselineWarnings: string[] = [];
+	if (baselineRequested && baseline === undefined && baselineResolutionError) {
+		baselineWarnings.push(`baseline resolution failed — returning full observation instead of diff: ${baselineResolutionError}`);
+	}
+	const observeDiagnostics = {
+		observeTimings: finalizedObserveTimings(observeTimings, data, observation.abmlRead),
+		...(baselineDiagnostics ? { baseline: baselineDiagnostics } : {}),
+		...(baselineWarnings.length ? { warnings: baselineWarnings } : {}),
+	};
 	const abmlDetails = observation.abmlRead?.ok === true
 		? {
 			integrated: true,

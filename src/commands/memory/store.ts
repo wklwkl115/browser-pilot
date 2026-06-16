@@ -6,7 +6,8 @@ import { memoryEntryDir, resolveMemoryPath } from "../../memory/paths.js";
 import { parseMemoryEntry, serializeMemoryEntry } from "../../memory/frontmatter.js";
 import { browserMemoryUriForEntry, loadMemoryEntries, readMemoryIndex, withMemoryLock, writeDerivedMemoryIndex } from "../../memory/indexStore.js";
 import type { MemoryEntry, MemoryIndexEntry, MemoryRecordPayload, MemoryRecallCard, MemoryTombstone } from "../../memory/types.js";
-import { validateMemoryRecordPayloadShape, resolveMemoryEvidenceRefs } from "./evidence.js";
+import { validateMemoryRecordPayloadShape, resolveMemoryEvidenceRefs, checkEvidenceExpiryWarnings } from "./evidence.js";
+import type { EvidenceExpiryEntry } from "./evidence.js";
 import { normalizeMemoryEntryId } from "../../memory/ids.js";
 import { memorySimilarity, DEDUP_SIMILARITY, SIMILAR_SIMILARITY } from "./salience.js";
 import { routeByTokens, situationTokens } from "../../memory/routing.js";
@@ -72,9 +73,10 @@ export async function validateMemoryRecord(options: {
 	server?: BrowserCommandRuntimePort;
 	resolver?: MemoryResultResourceResolver;
 	payload: MemoryRecordPayload;
-}): Promise<{ scopeKey: string; entry: Omit<MemoryEntry, "relPath" | "etag">; existingIds: string[]; duplicateCandidates: MemoryDuplicateCandidate[] }> {
+}): Promise<{ scopeKey: string; entry: Omit<MemoryEntry, "relPath" | "etag">; existingIds: string[]; duplicateCandidates: MemoryDuplicateCandidate[]; warnings: string[]; evidenceExpiry: EvidenceExpiryEntry[] }> {
 	const { scopeKey, scopeKind, confidence } = validateMemoryRecordPayloadShape(options.payload);
 	const evidenceRefs = await resolveMemoryEvidenceRefs({ cwd: options.cwd, server: options.server, resolver: options.resolver, evidenceRefs: options.payload.evidenceRefs });
+	const { warnings, evidenceExpiry } = checkEvidenceExpiryWarnings(evidenceRefs);
 	const anchorOrigin = preciseOriginFromUrl(options.payload.url);
 	const anchors = anchorOrigin ? anchorsFromProfile(await readCachedMemoryProfile(options.cwd, anchorOrigin), options.payload.url) : undefined;
 	const now = new Date().toISOString();
@@ -112,7 +114,7 @@ export async function validateMemoryRecord(options: {
 		.filter((item) => !item.exact && item.similarity < DEDUP_SIMILARITY && item.similarity >= SIMILAR_SIMILARITY)
 		.map((item) => ({ id: item.current.id, title: item.current.title, similarity: item.similarity }))
 		.sort((a, b) => b.similarity - a.similarity);
-	return { scopeKey, entry, existingIds, duplicateCandidates };
+	return { scopeKey, entry, existingIds, duplicateCandidates, warnings, evidenceExpiry };
 }
 
 export async function recordMemoryEntry(options: {
@@ -120,7 +122,7 @@ export async function recordMemoryEntry(options: {
 	server?: BrowserCommandRuntimePort;
 	resolver?: MemoryResultResourceResolver;
 	payload: MemoryRecordPayload;
-}): Promise<{ entry: MemoryEntry; supersededIds: string[]; duplicateCandidates: MemoryDuplicateCandidate[]; index: Awaited<ReturnType<typeof readMemoryIndex>> }> {
+}): Promise<{ entry: MemoryEntry; supersededIds: string[]; duplicateCandidates: MemoryDuplicateCandidate[]; index: Awaited<ReturnType<typeof readMemoryIndex>>; warnings: string[]; evidenceExpiry: EvidenceExpiryEntry[] }> {
 	return await withMemoryLock(options.cwd, async () => {
 		const validated = await validateMemoryRecord(options);
 		const relPath = path.join(memoryEntryDir(validated.entry.kind), `${validated.entry.id}.md`);
@@ -137,7 +139,7 @@ export async function recordMemoryEntry(options: {
 			});
 		}
 		const index = await writeDerivedMemoryIndex(options.cwd);
-		return { entry: { ...validated.entry, relPath }, supersededIds: validated.existingIds, duplicateCandidates: validated.duplicateCandidates, index };
+		return { entry: { ...validated.entry, relPath }, supersededIds: validated.existingIds, duplicateCandidates: validated.duplicateCandidates, index, warnings: validated.warnings, evidenceExpiry: validated.evidenceExpiry };
 	});
 }
 
@@ -169,31 +171,57 @@ function scoreCard(entry: Awaited<ReturnType<typeof readMemoryIndex>>["entries"]
 	return { score, matchReason: reasons.join("+") };
 }
 
-export async function recallMemory(options: { cwd?: string; scopeKind?: MemoryEntry["scopeKind"]; scopeKey?: string; query?: string; url?: string }): Promise<MemoryRecallCard[]> {
+export type MemoryRecallResult = { cards: MemoryRecallCard[]; totalMatches: number };
+
+export async function recallMemory(options: { cwd?: string; scopeKind?: MemoryEntry["scopeKind"]; scopeKey?: string; query?: string; url?: string; offset?: number; limit?: number; freshOnly?: boolean }): Promise<MemoryRecallResult> {
 	// Default to origin scope whenever any scope identifier is given: an exact
 	// match needs both scopeKind and scopeKey, so a bare scopeKey (e.g. copied
 	// from an auto-surface hint) must still resolve instead of silently missing.
 	const scopeKind = options.scopeKind ?? ((options.url || options.scopeKey?.trim()) ? "origin" : undefined);
 	const scopeKey = scopeKind === "origin" ? (options.scopeKey?.trim() || (options.url ? normalizeOriginKeyFromUrl(options.url) : undefined)) : options.scopeKey?.trim();
 	const index = await readMemoryIndex(options.cwd);
+
+	// freshOnly pre-filter: when enabled, compute verification status for each
+	// active entry and exclude stale/unverified entries BEFORE ranking. Requires
+	// loading full entries (for anchors) and the origin profile (for live state).
+	let excludedIds: Set<string> | undefined;
+	if (options.freshOnly) {
+		const allEntries = await loadMemoryEntries(options.cwd);
+		const anchorsByEntryId = new Map<string, MemoryAnchors | undefined>();
+		for (const entry of allEntries) {
+			if (entry.status === "active") anchorsByEntryId.set(entry.id, entry.anchors);
+		}
+		const preciseOrigin = options.url ? preciseOriginFromUrl(options.url) : undefined;
+		const profile = preciseOrigin ? await readCachedMemoryProfile(options.cwd, preciseOrigin) : undefined;
+		const liveAnchors = anchorsFromProfile(profile, options.url);
+		excludedIds = new Set<string>();
+		for (const [id, anchors] of anchorsByEntryId) {
+			const verification = verifyMemoryAnchors(anchors, liveAnchors ?? {});
+			if (verification.status !== "fresh") excludedIds.add(id);
+		}
+	}
+
 	const routed = options.query ? routeByTokens(index.routing, situationTokens(options.query)) : undefined;
 	const ranked = index.entries
-		.filter((entry) => entry.status === "active")
+		.filter((entry) => entry.status === "active" && (!excludedIds || !excludedIds.has(entry.id)))
 		.map((entry) => {
 			const score = scoreCard(entry, options.query, scopeKind, scopeKey, routed?.get(entry.id) ?? 0);
 			return score ? { card: indexEntryToCard(entry, score.matchReason), score: score.score } : undefined;
 		})
 		.filter((item): item is { card: MemoryRecallCard; score: number } => !!item)
-		.sort((a, b) => b.score - a.score || a.card.id.localeCompare(b.card.id))
-		.slice(0, 10);
-	const cards = ranked.map((item) => item.card);
+		.sort((a, b) => b.score - a.score || a.card.id.localeCompare(b.card.id));
+	const totalMatches = ranked.length;
+	const offset = Math.max(0, Math.floor(options.offset ?? 0));
+	const limit = Math.max(1, Math.min(50, Math.floor(options.limit ?? 10)));
+	const paged = ranked.slice(offset, offset + limit);
+	const cards = paged.map((item) => item.card);
 	// When one card clearly dominates (sole match, or ≥2× the runner-up) inline its
 	// bounded body so the agent skips a follow-up read for the common case.
-	if (cards.length && (ranked.length === 1 || ranked[0].score >= 2 * (ranked[1]?.score ?? 0))) {
+	if (cards.length && (paged.length === 1 || paged[0].score >= 2 * (paged[1]?.score ?? 0))) {
 		const body = await topBody(options.cwd, cards[0].id, cards[0].kind);
 		if (body) cards[0].body = body;
 	}
-	return cards;
+	return { cards, totalMatches };
 }
 
 const INLINE_BODY_MAX_LINES = 60;

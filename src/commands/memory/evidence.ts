@@ -7,6 +7,7 @@ import { computeEtag } from "../../utils/fileFreshness.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
 import type { MemoryConfidence, MemoryEvidenceRef, MemoryRecordPayload } from "../../memory/types.js";
 import { normalizeOriginKeyFromUrl } from "./origin.js";
+import { resolveResourceUri } from "../../resources/resourceRefs.js";
 
 export type MemoryResolvedEvidenceRef = MemoryEvidenceRef;
 export type MemoryResultResourceResolution = { ok: true; path: string; etag?: string; bytes?: number } | { ok: false; code: string; error: string };
@@ -93,6 +94,34 @@ export async function resolveMemoryEvidenceRefs(options: {
 		resolved.push(resolveOperationRef(ref));
 	}
 	return resolved;
+}
+
+const EVIDENCE_EXPIRY_WARN_MS = 900_000; // 15 minutes
+
+export type EvidenceExpiryEntry = { ref: string; expiresAt: number; remainingMs: number };
+export type EvidenceExpiryWarnings = { warnings: string[]; evidenceExpiry: EvidenceExpiryEntry[] };
+
+/**
+ * Check resolved browser-result evidence refs for upcoming expiry.
+ * Returns warnings for any ref whose backing resource expires within 15 minutes.
+ * Does not alter resolution or prevent recording — advisory only.
+ */
+export function checkEvidenceExpiryWarnings(resolvedRefs: MemoryResolvedEvidenceRef[]): EvidenceExpiryWarnings {
+	const warnings: string[] = [];
+	const evidenceExpiry: EvidenceExpiryEntry[] = [];
+	const now = Date.now();
+	for (const ref of resolvedRefs) {
+		if (ref.kind !== "browser-result" || !ref.uri) continue;
+		const resource = resolveResourceUri(ref.uri);
+		if (!resource) continue;
+		const remainingMs = resource.expiresAt - now;
+		if (remainingMs < EVIDENCE_EXPIRY_WARN_MS) {
+			const minutes = Math.max(0, Math.round(remainingMs / 60_000));
+			warnings.push(`evidence ref ${ref.uri} expires in ~${minutes}m — memory may become unreadable after expiry; consider re-capturing evidence before recording`);
+			evidenceExpiry.push({ ref: ref.uri, expiresAt: resource.expiresAt, remainingMs: Math.max(0, remainingMs) });
+		}
+	}
+	return { warnings, evidenceExpiry };
 }
 
 export function validateMemoryRecordPayloadShape(payload: MemoryRecordPayload): { scopeKey: string; scopeKind: "origin" | "task" | "project"; confidence: MemoryConfidence } {

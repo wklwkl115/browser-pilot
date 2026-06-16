@@ -48,6 +48,7 @@ export function defineMemoryCommand({ commands, ensureStarted, memoryEvidenceRes
 			scopeKey: Type.Optional(Type.String({ description: "Origin scope key, or omit and provide url for normalization." })),
 			url: Type.Optional(Type.String({ description: "Optional absolute URL used to normalize origin scope for record/recall/validate." })),
 			query: Type.Optional(Type.String({ description: "Optional recall query matched against title/triggers." })),
+			freshOnly: Type.Optional(Type.Boolean({ description: "recall only: if true, exclude stale and unverified entries from results (default false)." })),
 			title: Type.Optional(Type.String({ description: "record/validate only: memory entry title." })),
 			triggers: Type.Optional(Type.Array(Type.String(), { description: "record/validate only: non-empty trigger phrases." })),
 			body: Type.Optional(Type.String({ description: "record/validate only: HOW-only body. SOP <=120 lines, fact <=160 lines." })),
@@ -61,8 +62,8 @@ export function defineMemoryCommand({ commands, ensureStarted, memoryEvidenceRes
 			id: Type.Optional(Type.String({ description: "read only: entry id." })),
 			uri: Type.Optional(Type.String({ description: "read only: browser-memory:// URI." })),
 			mode: Type.Optional(Type.Union(MEMORY_READ_MODES.map((value) => Type.Literal(value)), { description: "read only: text | json" })),
-			offset: Type.Optional(Type.Number({ description: "read text mode: starting line (1-indexed)." })),
-			limit: Type.Optional(Type.Number({ description: "read text/json mode: line or item limit." })),
+			offset: Type.Optional(Type.Number({ description: "read text mode: starting line (1-indexed). recall: skip the first N results (default 0).", minimum: 0 })),
+			limit: Type.Optional(Type.Number({ description: "read text/json mode: line or item limit. recall: maximum results to return (default 10, max 50).", minimum: 1, maximum: 50 })),
 			jsonPath: Type.Optional(Type.String({ description: "read only: optional jsonPath; when provided without mode, read defaults to json." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -75,8 +76,8 @@ export function defineMemoryCommand({ commands, ensureStarted, memoryEvidenceRes
 					return await jsonCommandResult({ action: "read", ...result, id: params.id, uri: params.uri }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { commandName: "browser_memory", fallbackName: "browser-memory-read.json" });
 				}
 				if (action === "recall") {
-					const cards = await recallMemory({ cwd: ctx?.cwd, scopeKind: params.scopeKind, scopeKey: params.scopeKey, url: params.url, query: params.query });
-					return await jsonCommandResult({ action: "recall", scopeKind: params.scopeKind, scopeKey: params.scopeKey, query: params.query, cards }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { commandName: "browser_memory", fallbackName: "browser-memory-recall.json" });
+					const recallResult = await recallMemory({ cwd: ctx?.cwd, scopeKind: params.scopeKind, scopeKey: params.scopeKey, url: params.url, query: params.query, offset: params.offset, limit: params.limit, freshOnly: params.freshOnly });
+					return await jsonCommandResult({ action: "recall", scopeKind: params.scopeKind, scopeKey: params.scopeKey, query: params.query, cards: recallResult.cards, totalMatches: recallResult.totalMatches }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { commandName: "browser_memory", fallbackName: "browser-memory-recall.json" });
 				}
 				const payload: MemoryRecordPayload = {
 					kind: params.kind as "sop" | "fact",
@@ -92,10 +93,10 @@ export function defineMemoryCommand({ commands, ensureStarted, memoryEvidenceRes
 				const server = await ensureStarted().catch(() => undefined);
 				if (action === "validate") {
 					const validated = await validateMemoryRecord({ cwd: ctx?.cwd, server, resolver: memoryEvidenceResolver, payload });
-					return await jsonCommandResult({ action: "validate", ok: true, scopeKind: validated.entry.scopeKind, scopeKey: validated.scopeKey, entry: validated.entry, supersedeCandidates: validated.existingIds, duplicateCandidates: validated.duplicateCandidates }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { commandName: "browser_memory", fallbackName: "browser-memory-validate.json" });
+					return await jsonCommandResult({ action: "validate", ok: true, scopeKind: validated.entry.scopeKind, scopeKey: validated.scopeKey, entry: validated.entry, supersedeCandidates: validated.existingIds, duplicateCandidates: validated.duplicateCandidates, ...(validated.warnings.length ? { warnings: validated.warnings } : {}), ...(validated.evidenceExpiry.length ? { evidenceExpiry: validated.evidenceExpiry } : {}) }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { commandName: "browser_memory", fallbackName: "browser-memory-validate.json" });
 				}
 				const recorded = await recordMemoryEntry({ cwd: ctx?.cwd, server, resolver: memoryEvidenceResolver, payload });
-				return await jsonCommandResult({ action: "record", ok: true, scopeKind: recorded.entry.scopeKind, scopeKey: recorded.entry.scopeKey, entry: recorded.entry, id: recorded.entry.id, uri: browserMemoryUriForEntry(recorded.entry), supersededIds: recorded.supersededIds, duplicateCandidates: recorded.duplicateCandidates, index: { generatedAt: recorded.index.generatedAt, entryCount: recorded.index.entries.length } }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { commandName: "browser_memory", fallbackName: "browser-memory-record.json" });
+				return await jsonCommandResult({ action: "record", ok: true, scopeKind: recorded.entry.scopeKind, scopeKey: recorded.entry.scopeKey, entry: recorded.entry, id: recorded.entry.id, uri: browserMemoryUriForEntry(recorded.entry), supersededIds: recorded.supersededIds, duplicateCandidates: recorded.duplicateCandidates, index: { generatedAt: recorded.index.generatedAt, entryCount: recorded.index.entries.length }, ...(recorded.warnings.length ? { warnings: recorded.warnings } : {}), ...(recorded.evidenceExpiry.length ? { evidenceExpiry: recorded.evidenceExpiry } : {}) }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { commandName: "browser_memory", fallbackName: "browser-memory-record.json" });
 			}, async (error) => await memoryErrorResult(error));
 		},
 	});

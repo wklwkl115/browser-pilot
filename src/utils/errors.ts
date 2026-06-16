@@ -34,6 +34,7 @@ export type ErrorDiagnostics = {
 	target?: Record<string, unknown>;
 	session?: Record<string, unknown>;
 	pending?: Record<string, unknown>;
+	waitDiagnosis?: { waitType: string; condition: string; observedState: string; suggestion: string };
 };
 
 export type NormalizedError = {
@@ -138,6 +139,14 @@ export function errorTaxonomyForCode(code: string, details: Record<string, unkno
 	return { domain: "unknown", category: "unknown", retryable: false, summary: code || "Unknown error.", source: "heuristic" };
 }
 
+function extractWaitDiagnosis(supervisor: Record<string, unknown> | undefined): ErrorDiagnostics["waitDiagnosis"] | undefined {
+	if (!supervisor) return undefined;
+	const wd = isRecord(supervisor.waitDiagnosis) ? supervisor.waitDiagnosis : undefined;
+	if (!wd) return undefined;
+	if (typeof wd.waitType !== "string" || typeof wd.condition !== "string" || typeof wd.observedState !== "string" || typeof wd.suggestion !== "string") return undefined;
+	return { waitType: wd.waitType, condition: wd.condition, observedState: wd.observedState, suggestion: wd.suggestion };
+}
+
 export function errorDiagnosticsFromDetails(details: Record<string, unknown>, code?: string): ErrorDiagnostics {
 	const scopes: string[] = [];
 	const targetRecord = isRecord(details.target) ? details.target : {};
@@ -163,11 +172,15 @@ export function errorDiagnosticsFromDetails(details: Record<string, unknown>, co
 	if (code && isAbmlRecoveryCode(code)) scopes.push("abml");
 	if (code && isWebSocketRecoveryCode(code)) scopes.push("websocket");
 	if (code?.startsWith("MEMORY_") || code === "UNSUPPORTED_SCOPE_KIND") scopes.push("memory");
+	const supervisor = isRecord(details.supervisor) ? details.supervisor : undefined;
+	const waitDiagnosis = extractWaitDiagnosis(supervisor);
+	if (waitDiagnosis) scopes.push("waitDiagnosis");
 	return {
 		scopes: Array.from(new Set(scopes)),
 		...(Object.keys(target).length ? { target } : {}),
 		...(Object.keys(session).length ? { session } : {}),
 		...(Object.keys(pending).length ? { pending } : {}),
+		...(waitDiagnosis ? { waitDiagnosis } : {}),
 	};
 }
 

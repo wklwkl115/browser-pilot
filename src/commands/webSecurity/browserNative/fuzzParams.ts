@@ -90,6 +90,9 @@ async function normalizeFuzzParamsOptions(options: FuzzParamsOptions): Promise<N
 }
 
 export async function runFuzzParams(options: FuzzParamsOptions) {
+	const hardCapWarnings: string[] = [];
+	const requestedMaxCases = positiveInt(options.maxCases, 500);
+	if (requestedMaxCases > 5_000) hardCapWarnings.push(`maxCases capped from ${requestedMaxCases} to 5000 (hard limit)`);
 	const baseRequest = buildReplayRequest(options);
 	const normalized = await normalizeFuzzParamsOptions(options);
 	const limitedCases = [] as Array<{ location: string; paramName: string; operation: string; valueLabel?: string; value?: unknown; contentTypeVariant?: string }>;
@@ -152,5 +155,5 @@ export async function runFuzzParams(options: FuzzParamsOptions) {
 	}
 	const matched = results.filter((item) => item.matched === true);
 	const parserClusters = clusterMultipartParserResults(results);
-	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseline, locationCount: normalized.locations.length, paramCount: normalized.paramNames.length, valueCount: normalized.values.length, operations: normalized.operations, contentTypeVariants: normalized.contentTypeVariants, caseCount: limitedCases.length, requestCount: sent, matchedCount: matched.length, truncatedCases: Math.max(0, totalCaseCount - limitedCases.length), matchStatus: normalized.matchStatus, filterStatus: normalized.filterStatus, filterBodyBytes: normalized.filterBodyBytes, parserClusters, results, matched, failures };
+	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseline, locationCount: normalized.locations.length, paramCount: normalized.paramNames.length, valueCount: normalized.values.length, operations: normalized.operations, contentTypeVariants: normalized.contentTypeVariants, caseCount: limitedCases.length, requestCount: sent, matchedCount: matched.length, truncatedCases: Math.max(0, totalCaseCount - limitedCases.length), matchStatus: normalized.matchStatus, filterStatus: normalized.filterStatus, filterBodyBytes: normalized.filterBodyBytes, parserClusters, results, matched, failures, ...(hardCapWarnings.length ? { warnings: hardCapWarnings } : {}) };
 }

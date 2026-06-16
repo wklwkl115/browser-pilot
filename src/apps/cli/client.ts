@@ -62,11 +62,17 @@ function daemonInvokeErrorResult(status: number, json: Record<string, unknown> |
 }
 
 function leaseBusyErrorResult(json: Record<string, unknown> | undefined, _tool: string): ToolResultLike {
-	const heldBy = isRecord(json?.heldBy) ? (json!.heldBy as { label?: string; pairingId?: string; since?: string }) : undefined;
+	const heldBy = isRecord(json?.heldBy) ? (json!.heldBy as { label?: string; pairingId?: string; since?: string; expiresAt?: string }) : undefined;
 	const holderLabel = typeof heldBy?.label === "string" ? heldBy.label : undefined;
+	const expiresAt = typeof heldBy?.expiresAt === "string" ? heldBy.expiresAt : undefined;
+	const remainingSeconds = expiresAt ? Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000)) : undefined;
+	const expiryNote = remainingSeconds !== undefined ? ` (expires in ~${remainingSeconds}s)` : "";
 	const message = holderLabel
-		? `command call blocked: lease held by "${holderLabel}"`
-		: "command call blocked: another agent holds the browser lease";
+		? `command call blocked: lease held by "${holderLabel}"${expiryNote}`
+		: `command call blocked: another agent holds the browser lease${expiryNote}`;
+	const waitHint = remainingSeconds !== undefined
+		? `Wait ~${remainingSeconds}s for the current lease to expire, or use \`browser-pilot lease release\` if you are the holder.`
+		: "Wait for the current lease holder to release, or use `browser-pilot lease release` if you are the holder.";
 	return {
 		content: [{
 			type: "text",
@@ -75,9 +81,9 @@ function leaseBusyErrorResult(json: Record<string, unknown> | undefined, _tool: 
 				code: CLI_LEASE_BUSY,
 				message,
 				taxonomy: { domain: "cli", category: "lease", retryable: true, source: "cli" },
-				heldBy: heldBy ?? null,
+				heldBy: { ...(heldBy ?? null), ...(expiresAt ? { expiresAt } : {}), ...(remainingSeconds !== undefined ? { remainingSeconds } : {}) },
 				recovery: {
-					hint: "Wait for the current lease holder to release, or use `browser-pilot lease release` if you are the holder.",
+					hint: waitHint,
 					commands: [
 						{ command: "browser-pilot lease status --json", argv: ["browser-pilot", "lease", "status", "--json"], purpose: "inspect the current lease holder" },
 						{ command: "browser-pilot pairings --json", argv: ["browser-pilot", "pairings", "--json"], purpose: "list all paired agents" },
