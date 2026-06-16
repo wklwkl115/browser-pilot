@@ -1,4 +1,4 @@
-import { isRecord } from "./records.js";
+import { isRecord } from "../../utils/records.js";
 
 export type KernelNormalizedError = {
 	code: string;

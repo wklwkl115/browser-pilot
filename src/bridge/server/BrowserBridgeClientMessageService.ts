@@ -3,7 +3,7 @@ import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
-import type { SessionLeaseRegistry, SessionRegistry } from "../../kernels/session/index.js";
+import type { BrowserBridgeLeaseRegistryPort, BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
 import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import { errorToPlain } from "../../utils/errors.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
@@ -28,11 +28,11 @@ type IncomingMessage = {
 
 type BrowserBridgeClientMessageServiceDeps = {
 	clients: BrowserBridgeClientRegistry;
-	browserSessions: SessionRegistry<WebSocket>;
+	browserSessions: BrowserBridgeSessionRegistryPort;
 	tabs: BrowserTabSessionRouter;
 	pendingRequests: BrowserBridgePendingRequests;
 	runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
-	leases: SessionLeaseRegistry;
+	leases: BrowserBridgeLeaseRegistryPort;
 	queues: BrowserCommandQueueRegistry;
 	consent: BrowserBridgeConsentCoordinator;
 	migratePerceptionLedger?: (fromTabId: number, toTabId: number, browserSessionIds?: string[]) => void;

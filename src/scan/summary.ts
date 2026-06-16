@@ -1,14 +1,11 @@
 import { truncateText } from "../utils/json.js";
+import { isRecord } from "../utils/records.js";
 import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../kernels/abml/entity.js";
-import { summaryRefIdForDescriptor } from "../kernels/abml/refId.js";
+import { summaryRefIdForDescriptor } from "../kernels/refs/refId.js";
 
 export type Summary = Record<string, unknown>;
 type SummaryColumn<T> = { key: string; value: (item: T) => unknown };
 type SummaryTable = { columns: string[]; rows: unknown[][]; count: number; truncated?: number };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function asArray(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];

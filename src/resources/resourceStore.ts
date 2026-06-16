@@ -13,11 +13,10 @@
  * - Expired resources/refs are pruned on registration and resolution.
  */
 import { randomUUID } from "node:crypto";
-import type { RefDescriptor, RefKind } from "../kernels/abml/types.js";
-import { defaultRefPolicyForKind } from "../kernels/abml/refPolicy.js";
-import { makeBrowserPilotRefUri, stableRefIdForDescriptor } from "../kernels/abml/refId.js";
-import { parseRef } from "../kernels/refs/index.js";
-import type { BrowserResultResource, RegisteredRefRecord, RegisterBrowserResultResourceParams, RegisterRefDescriptorParams, ResolveRefResult, ResolvedRefRecord, ResourceRefStorePort } from "../ports/ResourceRefStorePort.js";
+import { parseRef } from "../kernels/refs/core.js";
+import { makeBrowserPilotRefUri, stableRefIdForDescriptor } from "../kernels/refs/refId.js";
+import { defaultRefPolicyForKind } from "../kernels/refs/refPolicy.js";
+import type { BrowserResultResource, RegisteredRefRecord, RegisterBrowserResultResourceParams, RegisterRefDescriptorParams, ResolveRefResult, ResolvedRefRecord, ResourceRefDescriptor as RefDescriptor, ResourceRefKind as RefKind, ResourceRefStorePort } from "../ports/ResourceRefStorePort.js";
 import { computeContentHash, computeEtag, isFreshEtag } from "../utils/fileFreshness.js";
 
 export const RESOURCE_URI_SCHEME = "browser-result";

@@ -1,7 +1,7 @@
 import { resolveRefUriDetailed } from "../resources/resourceRefs.js";
-import type { RefDescriptor } from "../kernels/abml/types.js";
+import type { ResourceRefDescriptor as RefDescriptor } from "../ports/ResourceRefStorePort.js";
 import { BROWSER_PILOT_STDLIB_NAMES, scriptReferencesClick, stdlibPrelude } from "./executeStdlibPrelude.js";
-import { isBrowserPilotRef } from "../kernels/refs/index.js";
+import { isBrowserPilotRef } from "../kernels/refs/core.js";
 
 const REF_CANDIDATE_PATTERN = /[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>{}\])]+/gi;
 

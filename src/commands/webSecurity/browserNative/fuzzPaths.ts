@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createCodedError } from "../../../utils/codedError.js";
-import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster } from "../shared/baseline.js";
-import { compactStep, contentTypeOf, cookieProviderResultHeader, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http.js";
+import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, responsesDiffer, sameBaselineCluster } from "../shared/baseline.js";
+import { compactStep, contentTypeOf, cookieProviderResultHeader, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseFingerprint, sanitizeFetchHeaders } from "../shared/http.js";
 import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize.js";
 import type { CookieProvider, HeaderMap, RawFuzzPathsOptions } from "../shared/types.js";
 

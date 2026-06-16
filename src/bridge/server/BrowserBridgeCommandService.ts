@@ -17,7 +17,7 @@ import type {
 import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import type { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
 import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
-import type { SessionLeaseRegistry, SessionRegistry } from "../../kernels/session/index.js";
+import type { BrowserBridgeLeaseRegistryPort, BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
 import type { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import type { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { queueTemporalDiagnostics } from "./BrowserTemporalCoordinator.js";
@@ -60,9 +60,9 @@ function mergeDiagnostics(result: BrowserBridgeExecutionResult, diagnostics: Rec
 
 type BrowserBridgeCommandServiceDeps = {
 	clients: BrowserBridgeClientRegistry;
-	browserSessions: SessionRegistry<WebSocket>;
+	browserSessions: BrowserBridgeSessionRegistryPort;
 	queues: BrowserCommandQueueRegistry;
-	leases: SessionLeaseRegistry;
+	leases: BrowserBridgeLeaseRegistryPort;
 	tabs: BrowserTabSessionRouter;
 	pendingRequests: BrowserBridgePendingRequests;
 	runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;

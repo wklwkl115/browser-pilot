@@ -4,13 +4,12 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { NativeErrorCode } from "../../../types/nativeErrorCodes.js";
 import { createCodedError } from "../../../utils/codedError.js";
+import { isRecord } from "../../../utils/records.js";
+
+export { isRecord };
 
 export const DEFAULT_MAX_BODY_BYTES = 256_000;
 export const DEFAULT_TIMEOUT_MS = 15_000;
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 export function asString(value: unknown): string | undefined {
 	if (typeof value === "string") return value;

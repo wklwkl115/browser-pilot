@@ -1,5 +1,5 @@
 import { buildEvidenceEnvelope } from "../src/kernels/evidence/index.js";
-import { mintRef } from "../src/kernels/refs/index.js";
+import { mintRef } from "../src/kernels/refs/core.js";
 
 const actionRef = mintRef("dom", "example-button");
 const networkRef = mintRef("network", "example-request");

@@ -16,7 +16,7 @@
  */
 import { resolveRefUriDetailed, resolveResourceUri, isResourceFresh } from "./resourceStore.js";
 import { readBrowserArtifact, ArtifactReaderError } from "../../artifacts/artifactReader.js";
-import { isBrowserPilotRef } from "../../kernels/refs/index.js";
+import { isBrowserPilotRef } from "../../kernels/refs/core.js";
 
 export type BrowserResourceContent = {
 	uri: string;

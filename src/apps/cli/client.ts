@@ -9,14 +9,11 @@
 import { ensureDaemon, controlRequest } from "../daemon/daemonControl.js";
 import { resolvePairingToken } from "./pairing.js";
 import { CLI_LEASE_BUSY } from "../daemon/authTypes.js";
+import { isRecord } from "../../utils/records.js";
 import type { ToolResultLike } from "./render.js";
 
 /** Daemon/bridge unavailable — maps to EXIT.unavailable at the dispatch layer. */
 export class DaemonUnavailableError extends Error {}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
 
 function publicDaemonDiagnostics(json: Record<string, unknown> | undefined): Record<string, unknown> {
 	if (!json) return {};

@@ -1,11 +1,8 @@
 import { readFile } from "node:fs/promises";
-import type { PerceptionTraceSnapshot } from "../../kernels/session/perceptionLedger.js";
 import { extractUrlTerms } from "../../kernels/evidence/distill/relevanceTaps.js";
-import type { RelevanceTerm } from "../../kernels/evidence/distill/relevance.js";
 import { RELEVANCE_TUNING } from "../../kernels/evidence/distill/relevanceTuning.js";
-import { recallByTokens } from "../../kernels/memory/recall.js";
-import { situationTokens } from "../../kernels/memory/routing.js";
-import type { MemoryAugmentationPlan, MemoryRecallEntry, MemoryVerificationStatus } from "../../kernels/memory/types.js";
+import { recallByTokens } from "../../memory/recall.js";
+import { situationTokens } from "../../memory/routing.js";
 import { consumeMemoryProfileDiagnostics, readCachedMemoryProfile, recordMemoryProfileFrame, recordMemoryProfileStrike } from "../../memory/profileService.js";
 import { memoryKernelEnabled } from "../../memory/secret.js";
 import { containsSensitiveEvidence } from "../../utils/redaction.js";
@@ -13,18 +10,33 @@ import { browserMemoryUriForEntry, readMemoryIndexNoRepair } from "../../memory/
 import { parseMemoryEntry } from "../../memory/frontmatter.js";
 import { memoryEntryDir, resolveMemoryPath } from "../../memory/paths.js";
 import { normalizeMemoryEntryId } from "../../memory/ids.js";
+import type { MemoryVerificationStatus } from "../../memory/types.js";
+import type { CommandMemoryAugmentationPlan } from "../memoryAugmentationTypes.js";
+import type { CommandPerceptionTraceSnapshot } from "../../ports/BrowserCommandRuntimePort.js";
 import { verifyMemoryEntryAgainstProfile } from "../memory/store.js";
 import { normalizeOriginKeyFromUrl } from "../memory/origin.js";
+import type { ObserveRelevanceTerm } from "./relevanceTypes.js";
 
 const PROCESS_MEMORY_CONVERSATION_ID = `${process.pid}:${Date.now()}`;
 const memoryFullShown = new Set<string>();
 
-function urlTerms(url: string | undefined): RelevanceTerm[] {
+type CommandMemoryRecallEntry = {
+	id: string;
+	title: string;
+	triggers: string[];
+	scopeKind: "origin" | "task" | "project";
+	scopeKey: string;
+	kind: "sop" | "fact";
+	status: string;
+	updatedAt: string;
+};
+
+function urlTerms(url: string | undefined): ObserveRelevanceTerm[] {
 	return extractUrlTerms(url).map((term) => ({ ...term, source: "D" }));
 }
 
-function traceTerms(snapshot: PerceptionTraceSnapshot | undefined): RelevanceTerm[] {
-	return (snapshot?.terms ?? []).map((term, age) => ({ term: term.term, kind: term.kind as RelevanceTerm["kind"], weight: term.weight, age, source: "A" }));
+function traceTerms(snapshot: CommandPerceptionTraceSnapshot | undefined): ObserveRelevanceTerm[] {
+	return (snapshot?.terms ?? []).map((term, age) => ({ term: term.term, kind: term.kind as ObserveRelevanceTerm["kind"], weight: term.weight, age, source: "A" }));
 }
 
 function memoryAgreementToken(value: string): string {
@@ -47,7 +59,7 @@ function isSensitiveWarmStartTerm(term: string): boolean {
 	return false;
 }
 
-export async function memoryWarmStartTerms(cwd: string | undefined, url: string | undefined, trace: PerceptionTraceSnapshot | undefined): Promise<RelevanceTerm[]> {
+export async function memoryWarmStartTerms(cwd: string | undefined, url: string | undefined, trace: CommandPerceptionTraceSnapshot | undefined): Promise<ObserveRelevanceTerm[]> {
 	if (!memoryKernelEnabled()) return [];
 	const origin = memoryOrigin(url);
 	if (!origin) return [];
@@ -88,7 +100,7 @@ function memoryRecallTokens(url: string | undefined, query: string | undefined):
 	].join(" "));
 }
 
-async function loadMemoryEntryForRecall(cwd: string | undefined, entry: MemoryRecallEntry) {
+async function loadMemoryEntryForRecall(cwd: string | undefined, entry: CommandMemoryRecallEntry) {
 	const id = normalizeMemoryEntryId(entry.id);
 	const relPath = `${memoryEntryDir(entry.kind)}/${id}.md`;
 	const text = await readFile(resolveMemoryPath(cwd, relPath), "utf8").catch(() => undefined);
@@ -110,7 +122,7 @@ function nextStrikeCount(current: number, status: MemoryVerificationStatus): num
 	return current;
 }
 
-export async function buildMemoryAugmentationPlan(cwd: string | undefined, url: string | undefined, query: string | undefined): Promise<MemoryAugmentationPlan | undefined> {
+export async function buildMemoryAugmentationPlan(cwd: string | undefined, url: string | undefined, query: string | undefined): Promise<CommandMemoryAugmentationPlan | undefined> {
 	if (!memoryKernelEnabled()) return undefined;
 	const origin = memoryOrigin(url);
 	const scopeKey = normalizedMemoryScope(url);
@@ -118,7 +130,7 @@ export async function buildMemoryAugmentationPlan(cwd: string | undefined, url: 
 	const loaded = await readMemoryIndexNoRepair(cwd);
 	const tokens = memoryRecallTokens(url, query);
 	if (!loaded.index.entries.length || !tokens.length) return undefined;
-	const recalled = recallByTokens(loaded.index.entries.map((entry): MemoryRecallEntry => ({
+	const recalled = recallByTokens(loaded.index.entries.map((entry): CommandMemoryRecallEntry => ({
 		id: entry.id,
 		title: entry.title,
 		triggers: entry.triggers,

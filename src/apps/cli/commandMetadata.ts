@@ -2,6 +2,7 @@ import type { CliCommand } from "./registry.js";
 import { buildFlagSpecs, type FlagSpec } from "./flags.js";
 import { pad } from "./help.js";
 import { nativeToolMetadata } from "../../commands/nativeActionMetadata.js";
+import { isRecord } from "../../utils/records.js";
 import {
 	commandRouting,
 	kebabAction,
@@ -126,10 +127,6 @@ function schemaForFlagSpec(spec: FlagSpec): Record<string, unknown> {
 	if (spec.kind === "json") return { type: "object", ...(spec.description ? { description: spec.description } : {}) };
 	if (spec.kind === "enum" && spec.choices) return { anyOf: spec.choices.map((choice) => ({ const: choice })), ...(spec.description ? { description: spec.description } : {}) };
 	return { type: "string", ...(spec.description ? { description: spec.description } : {}) };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 export function schemaForFlagSpecs(cmd: CliCommand, specs: FlagSpec[]): Record<string, unknown> {

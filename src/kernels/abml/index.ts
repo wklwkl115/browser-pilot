@@ -7,8 +7,6 @@
 // Consumers import this barrel or the individual kernel modules directly. Browser I/O belongs in
 // src/browser-runtime/abml and must not be imported from this kernel.
 export * from "./types.js";
-export * from "./refId.js";
-export * from "./refPolicy.js";
 export * from "./actionabilityModel.js";
 export * from "./entity.js";
 export * from "./ax.js";

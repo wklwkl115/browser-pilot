@@ -1,8 +1,8 @@
 import path from "node:path";
-import type { PerceptionLedgerFrame, PerceptionTraceSnapshot } from "../kernels/session/perceptionLedger.js";
 import { distillFrameIntoProfile, emptyMemoryOriginProfile, mergeProfiles } from "../kernels/memory/profile.js";
 import { applyVerificationStrike } from "../kernels/memory/staleness.js";
-import { toPersistableMemoryTerm, type MemoryFrameView, type MemoryOriginProfile, type MemoryTraceView, type MemoryVerificationStatus } from "../kernels/memory/types.js";
+import { toPersistableMemoryTerm } from "../kernels/memory/terms.js";
+import type { MemoryFrameView, MemoryOriginProfile, MemoryPerceptionLedgerFrame, MemoryPerceptionTraceSnapshot, MemoryTraceView, MemoryVerificationStatus } from "./types.js";
 import { containsSensitiveEvidence } from "../utils/redaction.js";
 import { readMemoryProfile, writeMemoryProfile } from "./profileStore.js";
 import { hmacMemoryStamp } from "./hashStamp.js";
@@ -60,7 +60,7 @@ function canonicalPageUrl(url: string | undefined): { origin: string; canonicalU
 	}
 }
 
-function fingerprintSummary(frame: PerceptionLedgerFrame): Record<string, unknown> | undefined {
+function fingerprintSummary(frame: MemoryPerceptionLedgerFrame): Record<string, unknown> | undefined {
 	const fingerprint = frame.pageFingerprint;
 	if (!fingerprint) return undefined;
 	return {
@@ -71,7 +71,7 @@ function fingerprintSummary(frame: PerceptionLedgerFrame): Record<string, unknow
 	};
 }
 
-async function hashedFactStamps(cwd: string | undefined, origin: string, facts: PerceptionLedgerFrame["facts"]): Promise<Record<string, string> | undefined> {
+async function hashedFactStamps(cwd: string | undefined, origin: string, facts: MemoryPerceptionLedgerFrame["facts"]): Promise<Record<string, string> | undefined> {
 	const out: Record<string, string> = {};
 	for (const [ref, fact] of Object.entries(facts)) {
 		const stamp = fact.stableStamp ?? fact.versionStamp;
@@ -81,7 +81,7 @@ async function hashedFactStamps(cwd: string | undefined, origin: string, facts: 
 	return Object.keys(out).length ? out : undefined;
 }
 
-function traceViewFromSnapshot(browserSessionId: string | undefined, frame: PerceptionLedgerFrame, trace: PerceptionTraceSnapshot | undefined): MemoryTraceView {
+function traceViewFromSnapshot(browserSessionId: string | undefined, frame: MemoryPerceptionLedgerFrame, trace: MemoryPerceptionTraceSnapshot | undefined): MemoryTraceView {
 	const terms = (trace?.terms ?? [])
 		.map((term) => toPersistableMemoryTerm({ term: term.term, kind: term.kind, weight: term.weight }))
 		.filter((term): term is NonNullable<typeof term> => !!term && !isSensitiveMemoryTerm(term.term));
@@ -95,7 +95,7 @@ function isSensitiveMemoryTerm(term: string): boolean {
 	return false;
 }
 
-async function frameViewFromLedger(cwd: string | undefined, frame: PerceptionLedgerFrame): Promise<MemoryFrameView | undefined> {
+async function frameViewFromLedger(cwd: string | undefined, frame: MemoryPerceptionLedgerFrame): Promise<MemoryFrameView | undefined> {
 	const page = canonicalPageUrl(frame.pageFingerprint?.url);
 	if (!page) return undefined;
 	return {
@@ -151,7 +151,7 @@ function scheduleFlush(state: ProfileState, immediate: boolean): void {
 	state.timer = setTimeout(() => { void flushState(state); }, FLUSH_DELAY_MS);
 }
 
-export async function recordMemoryProfileFrame(options: { cwd?: string; browserSessionId?: string; frame: PerceptionLedgerFrame; trace?: PerceptionTraceSnapshot; fromCache?: boolean }): Promise<void> {
+export async function recordMemoryProfileFrame(options: { cwd?: string; browserSessionId?: string; frame: MemoryPerceptionLedgerFrame; trace?: MemoryPerceptionTraceSnapshot; fromCache?: boolean }): Promise<void> {
 	if (!memoryKernelEnabled() || options.fromCache) return;
 	const frameView = await frameViewFromLedger(options.cwd, options.frame).catch((error) => {
 		rememberDiagnostic(options.cwd, "memory_profile_persist_failed");

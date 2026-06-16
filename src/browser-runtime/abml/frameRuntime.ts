@@ -1,9 +1,8 @@
-import { registerRefDescriptor } from "../../resources/resourceRefs.js";
+import { registerRefDescriptor, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
-import type { RefDescriptor } from "../../kernels/abml/types.js";
 import { recordValue } from "../../utils/records.js";
 
 export type AbmlFrameRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;

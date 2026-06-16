@@ -4,10 +4,8 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import tls from "node:tls";
 import type { NativeErrorCode } from "../../../types/nativeErrorCodes.js";
-import type { ResponseFingerprint } from "../../../kernels/security/replayDiff.js";
-export { responseDistance, responsesDiffer } from "../../../kernels/security/replayDiff.js";
-export type { ResponseFingerprint } from "../../../kernels/security/replayDiff.js";
 import { createCodedError } from "../../../utils/codedError.js";
+import type { ResponseFingerprint } from "./baseline.js";
 import { asString, DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, defaultScheme, isRecord, normalizeHeaderName, numericList, positiveInt, sha256Hex, stringList } from "./normalize.js";
 import type { BrowserCookieMetadata, BrowserCookieProviderResult, FetchExchange, FetchRequest, FetchStep, HeaderMap, ProbeOptions, WebFetchOptions } from "./types.js";
 

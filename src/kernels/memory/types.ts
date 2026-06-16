@@ -12,21 +12,6 @@ export type MemoryTermCandidate = {
 	weight?: unknown;
 };
 
-function cleanPersistableTerm(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.replace(/\s+/g, " ").trim();
-	if (text.length < 2 || text.length > 128) return undefined;
-	return text;
-}
-
-export function toPersistableMemoryTerm(candidate: MemoryTermCandidate): PersistableMemoryTerm | undefined {
-	const term = cleanPersistableTerm(candidate.term);
-	if (!term) return undefined;
-	if (candidate.kind !== "selectorLiteral" && candidate.kind !== "ref" && candidate.kind !== "urlPathToken") return undefined;
-	const weight = typeof candidate.weight === "number" && Number.isFinite(candidate.weight) ? candidate.weight : undefined;
-	return { term, kind: candidate.kind, ...(weight !== undefined ? { weight } : {}) };
-}
-
 export type MemoryTermStat = PersistableMemoryTerm & {
 	sessionCount: number;
 	lastSeenAt: number;
@@ -70,6 +55,52 @@ export type MemoryTraceView = {
 	terms: PersistableMemoryTerm[];
 };
 
+export type MemoryPerceptionLedgerKey = {
+	browserSessionId?: string;
+	tabId?: number;
+	navigationEpoch?: string;
+};
+
+export type MemoryPerceptionLedgerFactState = {
+	versionStamp: string;
+	stableStamp?: string;
+	lastShownGranularity: "full" | "compact" | "line" | "ref";
+};
+
+export type MemoryPerceptionLedgerFrame = {
+	key: MemoryPerceptionLedgerKey;
+	snapshotId: string;
+	capturedAt: number;
+	facts: Record<string, MemoryPerceptionLedgerFactState>;
+	pageFingerprint?: {
+		changeSeq: number;
+		url?: string;
+		title?: string;
+		readyState?: string;
+		visibleCount?: number;
+		interactiveCount?: number;
+		capturedAt?: number;
+		dirty?: {
+			roots: string[];
+			overflow: boolean;
+			sinceSeq?: number;
+		};
+	};
+};
+
+export type MemoryPerceptionTraceTerm = {
+	term: string;
+	kind: string;
+	weight?: number;
+	at: number;
+	seq: number;
+};
+
+export type MemoryPerceptionTraceSnapshot = {
+	terms: MemoryPerceptionTraceTerm[];
+	latestSeq: number;
+};
+
 export type MemoryAnchors = {
 	canonicalUrl?: string;
 	fingerprintSummary?: Record<string, unknown>;
@@ -105,9 +136,4 @@ export type MemoryScoredRecall = {
 	entry: MemoryRecallEntry;
 	score: number;
 	matchReason: string;
-};
-
-export type MemoryAugmentationPlan = {
-	inline?: Record<string, unknown>;
-	handleOnly?: Record<string, unknown>;
 };

@@ -1,7 +1,5 @@
 import { Type } from "typebox";
-import type { SessionActiveOperationInfo as BrowserActiveOperationInfo } from "../kernels/session/index.js";
-import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
-import type { FactGranularity } from "../kernels/evidence/distill/fact.js";
+import type { BrowserCommandRuntimePort, CommandActiveOperationInfo as BrowserActiveOperationInfo } from "../ports/BrowserCommandRuntimePort.js";
 import { BrowserBridgeError, errorToPlain } from "../utils/errors.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import type { DetailLevel } from "../utils/params.js";
@@ -13,8 +11,9 @@ import { fitInlineJsonToBudgetMeasured } from "../kernels/evidence/distill/fit.j
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
 import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetRef, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./commandShared.js";
-import type { MemoryAugmentationPlan } from "../kernels/memory/types.js";
+import type { CommandMemoryAugmentationPlan } from "./memoryAugmentationTypes.js";
 import type { BrowserCommandDefinition, BrowserCommandSink } from "./commandDefinition.js";
+import type { CommandFactGranularity } from "./resultTypes.js";
 
 // Mandatory-read pair with resultMiddleware.ts: this file normalizes params/operation/errors,
 // while resultMiddleware.ts shapes the returned envelope, budgets, redaction, and artifacts.
@@ -67,7 +66,7 @@ type JsonCommandResultOptions = {
 	distill?: DistillFn;
 	artifactThreshold?: number;
 	maxChars?: number;
-	memoryAugmentationPlan?: MemoryAugmentationPlan;
+	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
 };
 
 type TextCommandResultOptions = {
@@ -87,10 +86,10 @@ type TextCommandResultOptions = {
 	distill?: TextDistillFn;
 	artifactThreshold?: number;
 	maxChars?: number;
-	granularityCeiling?: Exclude<FactGranularity, "omit">;
+	granularityCeiling?: Exclude<CommandFactGranularity, "omit">;
 	stableRefs?: Set<string>;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
-	memoryAugmentationPlan?: MemoryAugmentationPlan;
+	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
 };
 
 export type CommandOnUpdate = ((result: BrowserTextCommandResult) => void | Promise<void>) | undefined;

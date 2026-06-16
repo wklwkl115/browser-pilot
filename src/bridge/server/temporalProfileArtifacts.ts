@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { TemporalFrontierNext, TemporalProfileSample, TemporalReason, TemporalVerdictStatus } from "../../kernels/temporal/types.js";
+import type { CommandTemporalFrontierNext, CommandTemporalProfileSample, CommandTemporalReason, CommandTemporalVerdictStatus } from "../../ports/BrowserCommandRuntimePort.js";
 
 type NumericMetricSummary = {
 	samples: number;
@@ -19,9 +19,9 @@ export type TemporalProfileSummary = {
 	sampleCount: number;
 	tools: Record<string, number>;
 	commands: Record<string, number>;
-	verdicts: Partial<Record<TemporalVerdictStatus, number>>;
-	reasons: Partial<Record<TemporalReason, number>>;
-	recovery: Partial<Record<TemporalFrontierNext, number>>;
+	verdicts: Partial<Record<CommandTemporalVerdictStatus, number>>;
+	reasons: Partial<Record<CommandTemporalReason, number>>;
+	recovery: Partial<Record<CommandTemporalFrontierNext, number>>;
 	historyLostCount: number;
 	queueDelayMs?: NumericMetricSummary;
 	elapsedMs?: NumericMetricSummary;
@@ -32,7 +32,7 @@ export type TemporalProfileSummary = {
 export type TemporalProfileArtifactWrite = {
 	cwd?: string;
 	runId: string;
-	samples: TemporalProfileSample[];
+	samples: CommandTemporalProfileSample[];
 	evalRunDir?: string;
 	runnerSummaryPath?: string;
 };
@@ -88,7 +88,7 @@ function numericMetricSummary(values: Array<number | undefined>): NumericMetricS
 	return { samples: sorted.length, min: sorted[0], median, p95: percentile(0.95), max: sorted[sorted.length - 1] };
 }
 
-export function summarizeTemporalProfileSamples(samples: TemporalProfileSample[], input: { cwd?: string; runId: string; evalRunDir?: string; runnerSummaryPath?: string }): TemporalProfileSummary {
+export function summarizeTemporalProfileSamples(samples: CommandTemporalProfileSample[], input: { cwd?: string; runId: string; evalRunDir?: string; runnerSummaryPath?: string }): TemporalProfileSummary {
 	const reasons = samples.flatMap((sample) => sample.reasons || []);
 	const summary: TemporalProfileSummary = {
 		schemaVersion: 1,
@@ -99,9 +99,9 @@ export function summarizeTemporalProfileSamples(samples: TemporalProfileSample[]
 		sampleCount: samples.length,
 		tools: countStrings(samples.map((sample) => sample.tool)),
 		commands: countStrings(samples.map((sample) => sample.command)),
-		verdicts: countBy(samples.map((sample) => sample.verdict).filter((value): value is TemporalVerdictStatus => !!value)),
+		verdicts: countBy(samples.map((sample) => sample.verdict).filter((value): value is CommandTemporalVerdictStatus => !!value)),
 		reasons: countBy(reasons),
-		recovery: countBy(samples.map((sample) => sample.recovery).filter((value): value is TemporalFrontierNext => !!value)),
+		recovery: countBy(samples.map((sample) => sample.recovery).filter((value): value is CommandTemporalFrontierNext => !!value)),
 		historyLostCount: samples.filter((sample) => sample.historyLost === true).length,
 		...(numericMetricSummary(samples.map((sample) => sample.queueDelayMs)) ? { queueDelayMs: numericMetricSummary(samples.map((sample) => sample.queueDelayMs)) } : {}),
 		...(numericMetricSummary(samples.map((sample) => sample.elapsedMs)) ? { elapsedMs: numericMetricSummary(samples.map((sample) => sample.elapsedMs)) } : {}),

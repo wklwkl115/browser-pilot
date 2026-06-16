@@ -1,4 +1,4 @@
-import type { CommandResult } from "../kernels/evidence/index.js";
+import type { CommandResult } from "./resultTypes.js";
 
 export type CommandContext = {
 	ports: Record<string, unknown>;

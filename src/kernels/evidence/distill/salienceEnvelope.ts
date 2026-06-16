@@ -3,7 +3,7 @@ import { isRecord } from "../../../utils/records.js";
 import { compactEntityRenderingValue, compactSummaryValue } from "./granularity.js";
 import { fitEnvelopeBudget, type BudgetedEnvelope } from "./ladder.js";
 import { FACT_GRANULARITY_ORDER, type FactGranularity } from "./fact.js";
-import { extractRefsFromText } from "../../refs/index.js";
+import { extractRefsFromText } from "../../refs/text.js";
 
 const LIFTED_KEYS = ["snapshotProjection", "collections", "causal", "diff", "treeDiff", "relations", "gist", "outline", "entities"] as const;
 const REQUIRED_CONTINUITY_KEYS = ["snapshotProjection", "collections", "diff", "treeDiff"] as const;

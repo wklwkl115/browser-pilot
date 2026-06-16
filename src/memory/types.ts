@@ -1,10 +1,116 @@
-import type { MemoryAnchors, MemoryVerificationStatus } from "../kernels/memory/types.js";
-
 export type MemoryScopeKind = "origin" | "task" | "project";
 export type MemoryEntryKind = "sop" | "fact";
 export type MemoryEntryStatus = "active" | "deprecated";
 export type MemoryConfidence = "verified" | "high" | "medium" | "low";
 export type MemorySensitivity = "local";
+
+export type PersistableMemoryTermKind = "selectorLiteral" | "ref" | "urlPathToken";
+
+export type PersistableMemoryTerm = {
+	term: string;
+	kind: PersistableMemoryTermKind;
+	weight?: number;
+};
+
+export type MemoryTermStat = {
+	term: string;
+	kind: PersistableMemoryTermKind;
+	weight?: number;
+	sessionCount: number;
+	lastSeenAt: number;
+};
+
+export type MemorySessionDigest = {
+	sessionId: string;
+	capturedAt: number;
+	termKeys: string[];
+};
+
+export type MemoryUrlDigest = {
+	canonicalUrl: string;
+	capturedAt: number;
+	factStamps?: Record<string, string>;
+	fingerprintSummary?: Record<string, unknown>;
+};
+
+export type MemoryOriginProfile = {
+	schemaVersion: 1;
+	origin: string;
+	sessions: MemorySessionDigest[];
+	termStats: Record<string, MemoryTermStat>;
+	urls: MemoryUrlDigest[];
+	strikes: Record<string, number>;
+};
+
+export type MemoryAnchors = {
+	canonicalUrl?: string;
+	fingerprintSummary?: Record<string, unknown>;
+	stampSetId?: string;
+};
+
+export type MemoryVerificationStatus = "fresh" | "unverified" | "stale";
+
+export type MemoryFrameView = {
+	origin: string;
+	sessionId?: string;
+	canonicalUrl?: string;
+	capturedAt: number;
+	factStamps?: Record<string, string>;
+	fingerprintSummary?: Record<string, unknown>;
+	fromCache?: boolean;
+};
+
+export type MemoryTraceView = {
+	sessionId?: string;
+	capturedAt?: number;
+	terms: PersistableMemoryTerm[];
+};
+
+export type MemoryPerceptionLedgerKey = {
+	browserSessionId?: string;
+	tabId?: number;
+	navigationEpoch?: string;
+};
+
+export type MemoryPerceptionLedgerFactState = {
+	versionStamp: string;
+	stableStamp?: string;
+	lastShownGranularity: "full" | "compact" | "line" | "ref";
+};
+
+export type MemoryPerceptionLedgerFrame = {
+	key: MemoryPerceptionLedgerKey;
+	snapshotId: string;
+	capturedAt: number;
+	facts: Record<string, MemoryPerceptionLedgerFactState>;
+	pageFingerprint?: {
+		changeSeq: number;
+		url?: string;
+		title?: string;
+		readyState?: string;
+		visibleCount?: number;
+		interactiveCount?: number;
+		capturedAt?: number;
+		dirty?: {
+			roots: string[];
+			overflow: boolean;
+			sinceSeq?: number;
+		};
+	};
+};
+
+export type MemoryPerceptionTraceTerm = {
+	term: string;
+	kind: string;
+	weight?: number;
+	at: number;
+	seq: number;
+};
+
+export type MemoryPerceptionTraceSnapshot = {
+	terms: MemoryPerceptionTraceTerm[];
+	latestSeq: number;
+};
 
 export type MemoryEvidenceRef =
 	| { kind: "artifact"; path: string; etag?: string; bytes?: number }

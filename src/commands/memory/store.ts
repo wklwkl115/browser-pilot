@@ -16,7 +16,7 @@ import type { MemoryResultResourceResolver } from "../commandShared.js";
 import { stableJson } from "../../utils/json.js";
 import { readCachedMemoryProfile } from "../../memory/profileService.js";
 import { memoryStampSetId, verifyMemoryAnchors } from "../../kernels/memory/staleness.js";
-import type { MemoryAnchors, MemoryOriginProfile } from "../../kernels/memory/types.js";
+import type { MemoryAnchors, MemoryOriginProfile } from "../../memory/types.js";
 
 function newMemoryId(kind: "sop" | "fact"): string {
 	return `${kind}_${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}_${randomUUID().slice(0, 8)}`;

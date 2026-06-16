@@ -2,9 +2,8 @@ import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntim
 import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
-import type { RefDescriptor } from "../../kernels/abml/types.js";
 import { buildAxEntityFromNode, boxModelToGeometry, isInterestingAxNode } from "../../kernels/abml/ax.js";
-import { registerRefDescriptor } from "../../resources/resourceRefs.js";
+import { registerRefDescriptor, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import { recordValue } from "../../utils/records.js";
 
 export type AbmlPierceRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;

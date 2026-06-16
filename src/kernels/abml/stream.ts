@@ -1,4 +1,4 @@
-import { defaultRefPolicyForKind } from "./refPolicy.js";
+import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import { isRecord } from "../../utils/records.js";
 import type { Entity } from "./entity.js";
 import type { CaptureRef, CaptureState, RefDescriptor } from "./types.js";

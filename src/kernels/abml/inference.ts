@@ -25,7 +25,7 @@
 import type { Entity, RelationType } from "./entity.js";
 import type { EntityDiff } from "./diff.js";
 import type { RelationSummary } from "./relations.js";
-import { collectRefs } from "../refs/index.js";
+import { collectRefs } from "../refs/text.js";
 
 export type PageIntent =
 	| "login"            // password-type input + submit button

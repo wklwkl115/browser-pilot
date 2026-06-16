@@ -4,7 +4,7 @@ import { recordValue } from "../utils/records.js";
 import { parseJsonOrThrow, stableJson } from "../utils/json.js";
 import { atomicWriteText } from "../utils/fsAtomic.js";
 import { emptyMemoryOriginProfile, mergeProfiles } from "../kernels/memory/profile.js";
-import type { MemoryOriginProfile } from "../kernels/memory/types.js";
+import type { MemoryOriginProfile } from "./types.js";
 import { memoryKernelEnabled } from "./secret.js";
 
 const MEMORY_ROOT = ".browser-pilot/memory";

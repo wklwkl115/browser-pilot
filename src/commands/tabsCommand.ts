@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import { type NativeErrorCode } from "../types/nativeErrorCodes.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { defaultLeaseIdRedactor } from "../kernels/session/leaseDiagnostics.js";
-import type { SessionTabLeaseInfo as BrowserTabLeaseInfo } from "../kernels/session/index.js";
+import type { CommandTabLeaseInfo as BrowserTabLeaseInfo } from "../ports/BrowserCommandRuntimePort.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams, commandTimeoutMs } from "./commandRuntime.js";
 import { compactBridgeForTabsList, compactTabForList, publicCreateTabResult, publicSnapshot } from "./tabsProjection.js";

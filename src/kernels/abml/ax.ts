@@ -1,4 +1,4 @@
-import { defaultRefPolicyForKind } from "./refPolicy.js";
+import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import { isRecord } from "../../utils/records.js";
 import type { BuiltEntity, Entity, EntityKind, EntityState, EntityStructure, RelationType } from "./entity.js";
 import type { Locator } from "./types.js";

@@ -9,7 +9,7 @@
 import type { Entity, EntityRelation } from "./entity.js";
 import { isRecord } from "../../utils/records.js";
 import { redactSensitiveText } from "../../utils/redaction.js";
-import { mintRef } from "../refs/index.js";
+import { mintRef } from "../refs/core.js";
 
 export type CausalRequest = {
 	ref: string;

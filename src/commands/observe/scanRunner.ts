@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { executeBrowserWaitWithSupervisor } from "../../browser-command-runtime/waitSupervisor.js";
-import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
+import type { BrowserCommandRuntimePort, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey } from "../../ports/BrowserCommandRuntimePort.js";
 import { summarizeEntityDiff, type EntityDiff } from "../../kernels/abml/diff.js";
 import { buildRelationSummary, addEntityRelations, buildRelationGraph } from "../../kernels/abml/relations.js";
 import { buildInferenceSummary, entitiesForInferenceEvidence } from "../../kernels/abml/inference.js";
@@ -9,8 +9,6 @@ import { buildTreeDiff, type TreeDiff } from "../../kernels/abml/treeDiff.js";
 import { buildSnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 import { buildCollectionModels } from "../../kernels/abml/collections.js";
 import { buildIdentityGraph, identityGraphSummary } from "../../kernels/abml/identityGraph.js";
-import { factsFromEntities, stableRefsFromFrames, type PerceptionLedgerFrame, type PerceptionLedgerKey } from "../../kernels/session/perceptionLedger.js";
-import type { FactGranularity } from "../../kernels/evidence/distill/fact.js";
 import { createBrowserAbmlIntegration } from "../../browser-command-runtime/abml/integration.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
@@ -27,9 +25,11 @@ import { buildEntityOutline, buildPageGist, sortEntitiesBySalience } from "./ent
 import { cachedEnvelopeFromArtifact, modeInferredDetails, modeInferredSummary, observeRenderParamsSignature, renderCacheMatches, scanCommandName, sessionDeltaEnabled } from "./renderCache.js";
 import { entityRefs, mergeEntitiesByRef, resolveBaselineEntities, type BaselineResolution } from "./baseline.js";
 import { buildMemoryAugmentationPlan, consumeMemoryProfileDiagnostics, memoryWarmStartTerms, recordMemoryProfileFrame } from "./memoryAugmentation.js";
+import { factsFromObservedEntities, stableRefsFromCommandFrames } from "./perceptionLedgerProjection.js";
 import { buildObserveRelevance, observeIntent, relevanceEnabled, type ObserveRelevance } from "./relevanceFusion.js";
 import { addBridgeRoundTrips, elapsedMs, finalizedObserveTimings, type ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, withObservationMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
+import type { CommandFactGranularity } from "../resultTypes.js";
 
 // Build the envelope `causal` block when a baseline is supplied. Passive (no control attribution):
 // "requests fired since the baseline observation". Emits `unavailable` when no recorder is active
@@ -45,12 +45,12 @@ async function buildObserveCausal(server: BrowserCommandRuntimePort, params: Obs
 	}
 }
 
-function ledgerKey(browserSessionId: string | undefined, tabId: number | undefined, url: string | undefined): PerceptionLedgerKey | undefined {
+function ledgerKey(browserSessionId: string | undefined, tabId: number | undefined, url: string | undefined): CommandPerceptionLedgerKey | undefined {
 	if (!url) return undefined;
 	return { browserSessionId, tabId, navigationEpoch: url };
 }
 
-function granularityCeilingFromLedger(server: BrowserCommandRuntimePort, key: PerceptionLedgerKey | undefined): Exclude<FactGranularity, "omit"> | undefined {
+function granularityCeilingFromLedger(server: BrowserCommandRuntimePort, key: CommandPerceptionLedgerKey | undefined): Exclude<CommandFactGranularity, "omit"> | undefined {
 	if (!key || typeof server.getRecentPerceptionLedgerFrames !== "function") return undefined;
 	const recent = server.getRecentPerceptionLedgerFrames(key, 3);
 	const pressured = recent.filter((frame) => (frame.allocation?.budgetUsedRatio ?? 0) > 0.92).length;
@@ -552,13 +552,13 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		...causalBlock,
 	};
 	const finalLedgerKey = ledgerKey(bridge.browserSessionId, tabId, typeof data?.url === "string" ? data.url : undefined);
-	let allocation: PerceptionLedgerFrame["allocation"] | undefined;
-	const ledgerFacts = attributedEntities ? factsFromEntities(attributedEntities) : undefined;
-	const ledgerFrameForRecord: PerceptionLedgerFrame | undefined = finalLedgerKey && ledgerFacts
+	let allocation: CommandPerceptionLedgerFrame["allocation"] | undefined;
+	const ledgerFacts = attributedEntities ? factsFromObservedEntities(attributedEntities) : undefined;
+	const ledgerFrameForRecord: CommandPerceptionLedgerFrame | undefined = finalLedgerKey && ledgerFacts
 		? { key: finalLedgerKey, snapshotId: snapshotMeta.snapshotId, capturedAt: snapshotMeta.capturedAt, facts: ledgerFacts }
 		: undefined;
 	const priorLedgerFrame = finalLedgerKey && typeof server.getRecentPerceptionLedgerFrames === "function" ? server.getRecentPerceptionLedgerFrames(finalLedgerKey, 1)[0] : undefined;
-	const stableRefs = ledgerFrameForRecord ? stableRefsFromFrames(ledgerFrameForRecord, priorLedgerFrame) : undefined;
+	const stableRefs = ledgerFrameForRecord ? stableRefsFromCommandFrames(ledgerFrameForRecord, priorLedgerFrame) : undefined;
 	const memoryProfileWarnings = consumeMemoryProfileDiagnostics(ctx?.cwd);
 	observeTimings.renderMs = elapsedMs(renderStartedAt);
 	const observeDiagnostics = { observeTimings: finalizedObserveTimings(observeTimings, data, observation.abmlRead) };

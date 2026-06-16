@@ -23,5 +23,6 @@ export type {
 	ResolveRefResult,
 	ResolvedRefRecord,
 	ResourceKind,
+	ResourceRefDescriptor,
 	ResourceRefStorePort,
 } from "../ports/ResourceRefStorePort.js";

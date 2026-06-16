@@ -46,6 +46,7 @@ import {
 	printCommandHelp,
 	schemaForFlagSpecs,
 } from "./commandMetadata.js";
+import { isRecord } from "../../utils/records.js";
 
 async function loadCliCommands(): Promise<CliCommand[]> {
 	const registry = await import("./registry.js");
@@ -75,10 +76,6 @@ function recoveryCommand(command: string, argv: string[], purpose: string): Reco
 function renderLocalJson(obj: Record<string, unknown>): number {
 	writeJsonEnvelope({ ok: true, exitCode: EXIT.ok, ...obj });
 	return EXIT.ok;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function compactText(text: string): string {

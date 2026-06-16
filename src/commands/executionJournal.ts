@@ -1,5 +1,5 @@
 import type { BrowserBridgeTargetInfo } from "../ports/BrowserRuntimeTypes.js";
-import type { TemporalConfidence, TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../kernels/temporal/types.js";
+import type { CommandTemporalConfidence, CommandTemporalFrontierNext, CommandTemporalReason, CommandTemporalVerdictStatus } from "../ports/BrowserCommandRuntimePort.js";
 import { isRecord } from "../utils/params.js";
 
 export type ExecuteEffect = {
@@ -36,12 +36,12 @@ export type ExecuteEffect = {
 	targetDirtyRoots?: string[];
 	temporal?: {
 		verdict: {
-			status: TemporalVerdictStatus;
-			confidence: TemporalConfidence;
-			reasons: TemporalReason[];
+			status: CommandTemporalVerdictStatus;
+			confidence: CommandTemporalConfidence;
+			reasons: CommandTemporalReason[];
 		};
 		frontier: {
-			next: TemporalFrontierNext;
+			next: CommandTemporalFrontierNext;
 			handle?: string;
 		};
 	};

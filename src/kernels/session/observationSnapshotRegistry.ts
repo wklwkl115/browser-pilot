@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { evaluateObservationSnapshot, pruneObservationSnapshotsByTtl } from "./index.js";
+import { evaluateObservationSnapshot, pruneObservationSnapshotsByTtl } from "./lifecycle.js";
 
 export type SessionObservationSnapshotInfo = {
 	snapshotId: string;

@@ -1,10 +1,8 @@
 import { stableJson } from "../utils/json.js";
 import { buildSaveTextArtifactPlan, artifactPlanReasons, type ArtifactPlan, type ArtifactPlanReason } from "../kernels/evidence/distill/artifactPlan.js";
 import { allocateFacts } from "../kernels/evidence/distill/allocate.js";
-import { fitEnvelopeBudget, fitSummaryBudget, SUMMARY_MAX_CHARS, type DistilledSummary } from "../kernels/evidence/distill/ladder.js";
 import { renderFacts, type RenderedFacts } from "../kernels/evidence/distill/render.js";
 import { fitSalienceEnvelopeBudget } from "../kernels/evidence/distill/salienceEnvelope.js";
-import type { FactGranularity } from "../kernels/evidence/distill/fact.js";
 import { normalizeDetailLevel, type DetailLevel } from "../utils/params.js";
 import { jsonResult, textResult, type BrowserTextCommandResult } from "../utils/toolResult.js";
 import { containsSensitiveEvidence, redactSensitiveValueWithPointers } from "../artifacts/artifactPrivacy.js";
@@ -13,16 +11,17 @@ import { distillValue, getDistillerDefinition } from "./distillerRegistry.js";
 import { asArray, isRecord } from "./summaries/common.js";
 import { summarizeHtmlSnapshot } from "./summaries/index.js";
 import { appendMemoryAutoSurface } from "./memory/autoSurface.js";
-import type { MemoryAugmentationPlan } from "../kernels/memory/types.js";
-import { collectRefs, extractRefsFromText } from "../kernels/refs/index.js";
-import { buildEvidenceEnvelope, type EvidenceEnvelope } from "../kernels/evidence/index.js";
+import type { CommandMemoryAugmentationPlan } from "./memoryAugmentationTypes.js";
+import { fitCommandEnvelopeBudget, fitCommandSummaryBudget, SUMMARY_MAX_CHARS } from "./resultBudgeting.js";
+import { buildCommandEvidenceEnvelope, type CommandDistilledSummary, type CommandEvidenceEnvelope, type CommandFactGranularity } from "./resultTypes.js";
+import { collectRefs, extractRefsFromText } from "../kernels/refs/text.js";
 
 // Mandatory-read pair with commandRuntime.ts: keep envelope fields, redaction, distillation,
 // artifact fallback, and memory nudge behavior centralized here.
 export { distillValue } from "./distillerRegistry.js";
 export { summarizeHtmlSnapshot } from "./summaries/index.js";
 
-export type { DistilledSummary } from "../kernels/evidence/distill/ladder.js";
+export type DistilledSummary = CommandDistilledSummary;
 export type DistilledEnvelope = {
 	tool: string;
 	command?: string;
@@ -74,7 +73,7 @@ export type DistilledEnvelope = {
 	snapshot?: Record<string, unknown>;
 	saved?: Record<string, unknown>;
 	memory?: Record<string, unknown>;
-	evidence?: EvidenceEnvelope;
+	evidence?: CommandEvidenceEnvelope;
 	renderer?: "salience-v1";
 	delta?: "session";
 	baselineSnapshotId?: string;
@@ -102,9 +101,9 @@ type DistillBaseOptions = {
 	 */
 	redact?: boolean;
 	rawArtifactValue?: unknown;
-	granularityCeiling?: Exclude<FactGranularity, "omit">;
+	granularityCeiling?: Exclude<CommandFactGranularity, "omit">;
 	stableRefs?: Set<string>;
-	memoryAugmentationPlan?: MemoryAugmentationPlan;
+	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 };
 
@@ -436,7 +435,7 @@ function factRenderingDiagnostics(options: DistillBaseOptions, value: unknown, m
 }
 
 function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number, options: DistillBaseOptions): DistilledEnvelope {
-	return rendererMarker() ? fitSalienceEnvelopeBudget(envelope, maxChars, { granularityCeiling: options.granularityCeiling }) : fitEnvelopeBudget(envelope, maxChars);
+	return rendererMarker() ? fitSalienceEnvelopeBudget(envelope, maxChars, { granularityCeiling: options.granularityCeiling }) : fitCommandEnvelopeBudget(envelope, maxChars);
 }
 
 export function livePlaneSignature(envelope: DistilledEnvelope): string {
@@ -496,7 +495,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const summaryForFitting = { ...redactedSummary };
 	delete summaryForFitting.nextActions;
 	const preFitBudget = Math.max(1_000, Math.min(SUMMARY_MAX_CHARS, Math.floor(Number(options.maxChars || SUMMARY_MAX_CHARS) * 0.7)));
-	const fittedSummary = fitSummaryBudget(summaryForFitting, preFitBudget);
+	const fittedSummary = fitCommandSummaryBudget(summaryForFitting, preFitBudget);
 	const redactedOperation = options.operation ? maybeRedact(options.operation) as Record<string, unknown> : undefined;
 	const redactedSnapshot = options.snapshot ? maybeRedact(options.snapshot) as Record<string, unknown> : undefined;
 	const correlation = {
@@ -523,7 +522,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const limits = normalizedLimits(options, fittedSummary);
 	const privacy = normalizedPrivacy(saved, sensitiveRaw);
 	const nextActions = normalizedNextActions(options, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions, entities);
-	const evidence = buildEvidenceEnvelope({
+	const evidence = buildCommandEvidenceEnvelope({
 		summary: fittedSummary,
 		runtimeRefs: collectRefs({ summary: fittedSummary, entities, nextActions, operation: redactedOperation, snapshot: redactedSnapshot }),
 		artifact: saved,

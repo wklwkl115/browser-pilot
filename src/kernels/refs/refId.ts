@@ -1,7 +1,42 @@
-import type { RefDescriptor, RefKind } from "./types.js";
-import { mintRef } from "../refs/index.js";
+import { mintRef, type BrowserPilotRefKind } from "./core.js";
 
-export function makeBrowserPilotRefUri(kind: RefKind, id: string): string {
+export type BrowserPilotRefLocator =
+	| { by: "backendNodeId"; value: number; targetId?: string }
+	| { by: "axNodeId"; value: string }
+	| { by: "attrSignature"; value: Record<string, string> }
+	| { by: "css"; value: string }
+	| { by: "xpath"; value: string }
+	| { by: "textAnchor"; value: string; role?: string; exact?: boolean }
+	| { by: "point"; x: number; y: number };
+
+export type BrowserPilotStableRefDescriptor = {
+	kind: BrowserPilotRefKind;
+	locators: BrowserPilotRefLocator[];
+	owner: {
+		tabId?: number;
+		topLevelOrigin?: string;
+	};
+	snapshot?: unknown;
+	semantic?: {
+		role?: string;
+		name?: string;
+		anchor?: {
+			scope?: string;
+			confidence?: string;
+			mintingEligible?: boolean;
+			containerRole?: string;
+			containerName?: string;
+			role?: string;
+			kind?: string;
+			normalizedName?: string;
+		};
+	};
+	documentEpoch?: {
+		url?: string;
+	};
+};
+
+export function makeBrowserPilotRefUri(kind: BrowserPilotRefKind, id: string): string {
 	return mintRef(kind, id);
 }
 
@@ -19,7 +54,7 @@ function stableHash24(value: unknown): string {
 	return [hashA, hashB, hashC].map((hash) => hash.toString(16).padStart(8, "0")).join("");
 }
 
-export function stableRefIdForDescriptor(descriptor: Omit<RefDescriptor, "refId">): string | undefined {
+export function stableRefIdForDescriptor(descriptor: BrowserPilotStableRefDescriptor): string | undefined {
 	const semantic = descriptor.semantic || {};
 	const anchor = semantic.anchor;
 	const semanticAnchor = anchor?.scope === "abml-template"
@@ -55,7 +90,7 @@ export function stableRefIdForDescriptor(descriptor: Omit<RefDescriptor, "refId"
 	return makeBrowserPilotRefUri(descriptor.kind, hash);
 }
 
-export function summaryRefIdForDescriptor(descriptor: Omit<RefDescriptor, "refId">): string {
+export function summaryRefIdForDescriptor(descriptor: BrowserPilotStableRefDescriptor): string {
 	const stable = stableRefIdForDescriptor(descriptor);
 	if (stable) return stable;
 	const hash = stableHash24({

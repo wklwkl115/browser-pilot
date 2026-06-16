@@ -1,12 +1,197 @@
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
-import type { PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../kernels/session/perceptionLedger.js";
-import type { SessionActiveOperationInfo, SessionObservationSnapshotInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/index.js";
-import type { TemporalProfileSample } from "../kernels/temporal/types.js";
 
-export type CommandPerceptionLedgerFrame = PerceptionLedgerFrame;
-export type CommandPerceptionLedgerKey = PerceptionLedgerKey;
-export type CommandPerceptionTraceSnapshot = PerceptionTraceSnapshot;
-export type CommandTemporalProfileSample = TemporalProfileSample;
+export type CommandPerceptionLedgerKey = {
+	browserSessionId?: string;
+	tabId?: number;
+	navigationEpoch?: string;
+};
+
+export type CommandPerceptionObjectiveKey = {
+	tabId?: number;
+	navigationEpoch?: string;
+};
+
+export type CommandPerceptionLedgerFactState = {
+	versionStamp: string;
+	stableStamp?: string;
+	lastShownGranularity: "full" | "compact" | "line" | "ref";
+};
+
+export type CommandPerceptionLedgerFrame = {
+	key: CommandPerceptionLedgerKey;
+	snapshotId: string;
+	capturedAt: number;
+	facts: Record<string, CommandPerceptionLedgerFactState>;
+	pageFingerprint?: {
+		changeSeq: number;
+		url?: string;
+		title?: string;
+		readyState?: string;
+		visibleCount?: number;
+		interactiveCount?: number;
+		capturedAt?: number;
+		dirty?: {
+			roots: string[];
+			overflow: boolean;
+			sinceSeq?: number;
+		};
+	};
+	renderCache?: {
+		mode: string;
+		detailLevel: string;
+		maxChars: number;
+		paramsSignature: string;
+		renderedAt: number;
+	};
+	allocation?: {
+		budgetUsedRatio: number;
+		omittedCount: number;
+	};
+	objective?: {
+		key: CommandPerceptionObjectiveKey;
+		snapshotId: string;
+		shared: boolean;
+	};
+};
+
+export type CommandPerceptionTraceTerm = {
+	term: string;
+	kind: string;
+	weight?: number;
+	at: number;
+	seq: number;
+};
+
+export type CommandPerceptionTraceSnapshot = {
+	terms: CommandPerceptionTraceTerm[];
+	latestSeq: number;
+};
+
+export type CommandTemporalVerdictStatus = "fresh" | "possibly_stale" | "stale" | "unknown";
+export type CommandTemporalConfidence = "mechanical" | "bounded" | "partial" | "lost";
+export type CommandTemporalReason =
+	| "same_target"
+	| "same_page_epoch"
+	| "same_wait_history"
+	| "target_possibly_stale"
+	| "target_stale_before_dispatch"
+	| "target_region_dirty"
+	| "url_changed"
+	| "selection_version_changed"
+	| "tab_replaced"
+	| "tab_disconnected"
+	| "extension_unavailable"
+	| "queue_saturated"
+	| "queue_delay_budget_exceeded"
+	| "no_ack"
+	| "acked_bridge_timeout"
+	| "lease_timeout"
+	| "client_disconnected"
+	| "worker_restarted_history_lost"
+	| "url_mismatch"
+	| "load_state_unreached"
+	| "selector_missing"
+	| "selector_unstable"
+	| "background_throttling_suspected"
+	| "network_active"
+	| "signal_unavailable"
+	| "underconstrained_wait"
+	| "late_success_after_deadline"
+	| "unknown_due_to_history_loss"
+	| "unknown_due_to_clock_domain"
+	| "unknown_due_to_missing_anchor";
+export type CommandTemporalFrontierNext = "reuse_target" | "retry_same_wait" | "reobserve" | "diagnose" | "fail_closed";
+
+export type CommandTemporalVerdict = {
+	status: CommandTemporalVerdictStatus;
+	confidence: CommandTemporalConfidence;
+	reasons: CommandTemporalReason[];
+};
+
+export type CommandTemporalDecision = {
+	verdict: CommandTemporalVerdict;
+	frontier: {
+		next: CommandTemporalFrontierNext;
+		handle?: string;
+	};
+	source?: string;
+};
+
+export type CommandTemporalProfileSample = {
+	operationId?: string;
+	tool: string;
+	command?: string;
+	target?: { browserSessionId?: string; tabId?: number; targetRef?: string };
+	deadlineMs?: number;
+	elapsedMs: number;
+	bridgeRoundTrips?: number;
+	queueDepthAtEnqueue?: number;
+	queueDepthAtStart?: number;
+	queueDelayMs?: number;
+	waitAttempts?: number;
+	workerRestarts?: number;
+	historyLost?: boolean;
+	rawSignals?: string[];
+	verdict?: CommandTemporalVerdictStatus;
+	reasons?: CommandTemporalReason[];
+	recovery?: CommandTemporalFrontierNext;
+};
+
+export type CommandActiveOperationInfo = {
+	operationId: string;
+	commandName: string;
+	command?: string;
+	browserSessionId?: string;
+	tabId?: number;
+	phase: string;
+	progress?: number;
+	queueDepth?: number;
+	leaseOwnerHash?: string;
+	conflictReason?: string;
+	snapshotId?: string;
+	sourceMode?: string;
+	details?: Record<string, unknown>;
+	startedAt: number;
+	updatedAt: number;
+};
+
+export type CommandObservationSnapshotInfo = {
+	snapshotId: string;
+	browserSessionId?: string;
+	tabId?: number;
+	url?: string;
+	frameScope?: string;
+	selectionVersion?: number;
+	sourceMode: string;
+	capturedAt: number;
+	ttlMs: number;
+	networkSeq?: number;
+	hookSeq?: number;
+	invalidatedReason?: string;
+	expired?: boolean;
+	saved?: {
+		path?: string;
+	};
+};
+
+export type CommandTabLeaseInfo = {
+	id: string;
+	browserSessionId: string;
+	tabSessionId: string;
+	browserId: string;
+	tabId: number;
+	explicit: boolean;
+	createdAt: number;
+	lastSeenAt: number;
+};
+
+export type CommandUiLockInfo = {
+	browserSessionId: string;
+	commandName: string;
+	createdAt: number;
+	lastSeenAt: number;
+	count: number;
+};
 
 export type BrowserCommandRuntimeSnapshot = {
 	browserSessionId?: string;
@@ -23,10 +208,10 @@ export type BrowserCommandRuntimeSnapshot = {
 	latestTabHandle?: string;
 	selectionVersion: number;
 	tabs: Array<Record<string, unknown>>;
-	leases?: SessionTabLeaseInfo[];
-	uiLock?: SessionUiLockInfo;
+	leases?: CommandTabLeaseInfo[];
+	uiLock?: CommandUiLockInfo;
 	queues?: Array<Record<string, unknown>>;
-	operations?: SessionActiveOperationInfo[];
+	operations?: CommandActiveOperationInfo[];
 	pending: Array<Record<string, unknown>>;
 };
 
@@ -66,17 +251,17 @@ export interface BrowserCommandRuntimePort {
 	closeBrowserSession(browserSessionId: string): unknown;
 	attachTabToBrowserSession(tabId: number | string, options?: { browserSessionId?: string; browserId?: string }): BrowserTabLike;
 	detachTabFromBrowserSession(tabId: number | string, options?: { browserSessionId?: string }): unknown;
-	leaseTab(tabId: number | string, options?: { browserSessionId?: string }): SessionTabLeaseInfo;
-	releaseTab(tabId: number | string, options?: { browserSessionId?: string }): SessionTabLeaseInfo | undefined;
-	acquireUiLock(browserSessionId: string | undefined, commandName: string): SessionUiLockInfo;
-	releaseUiLock(browserSessionId: string | undefined): SessionUiLockInfo | undefined;
+	leaseTab(tabId: number | string, options?: { browserSessionId?: string }): CommandTabLeaseInfo;
+	releaseTab(tabId: number | string, options?: { browserSessionId?: string }): CommandTabLeaseInfo | undefined;
+	acquireUiLock(browserSessionId: string | undefined, commandName: string): CommandUiLockInfo;
+	releaseUiLock(browserSessionId: string | undefined): CommandUiLockInfo | undefined;
 	selectBrowser(browserId: string, options?: { browserSessionId?: string }): unknown;
-	createObservationSnapshot(snapshot: Omit<SessionObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): SessionObservationSnapshotInfo;
-	getObservationSnapshot(snapshotId: string): SessionObservationSnapshotInfo | undefined;
-	listObservationSnapshots(): SessionObservationSnapshotInfo[];
-	beginOperation(operation: Omit<SessionActiveOperationInfo, "operationId" | "startedAt" | "updatedAt"> & { operationId?: string }): SessionActiveOperationInfo;
-	updateOperation(operationId: string, patch: Partial<Omit<SessionActiveOperationInfo, "operationId" | "startedAt">>): SessionActiveOperationInfo | undefined;
-	finishOperation(operationId: string): SessionActiveOperationInfo | undefined;
+	createObservationSnapshot(snapshot: Omit<CommandObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): CommandObservationSnapshotInfo;
+	getObservationSnapshot(snapshotId: string): CommandObservationSnapshotInfo | undefined;
+	listObservationSnapshots(): CommandObservationSnapshotInfo[];
+	beginOperation(operation: Omit<CommandActiveOperationInfo, "operationId" | "startedAt" | "updatedAt"> & { operationId?: string }): CommandActiveOperationInfo;
+	updateOperation(operationId: string, patch: Partial<Omit<CommandActiveOperationInfo, "operationId" | "startedAt">>): CommandActiveOperationInfo | undefined;
+	finishOperation(operationId: string): CommandActiveOperationInfo | undefined;
 	queueDepth(browserSessionId: string | undefined, tabId: number | undefined): number | undefined;
 	leaseOwnerHash(browserSessionId: string | undefined, tabId: number | undefined): string | undefined;
 	getPerceptionLedgerFrame?(key: CommandPerceptionLedgerKey): CommandPerceptionLedgerFrame | undefined;

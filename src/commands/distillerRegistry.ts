@@ -2,10 +2,10 @@ import { summarizeGenericValue } from "./summaries/index.js";
 import { isRecord } from "./summaries/common.js";
 import { ensureBuiltinDistillers } from "./summaries/builtinDistillers.js";
 import type { TSchema } from "typebox";
-import type { Fact } from "../kernels/evidence/distill/fact.js";
+import type { CommandFact } from "./resultTypes.js";
 
 export type Distiller = (value: unknown, command?: string) => Record<string, unknown>;
-export type Factifier = (value: unknown, command?: string) => Fact[];
+export type Factifier = (value: unknown, command?: string) => CommandFact[];
 
 /**
  * Extended distiller definition that pairs a distill function with an explicit

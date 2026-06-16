@@ -1,4 +1,4 @@
-import { defaultRefPolicyForKind } from "./refPolicy.js";
+import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import type { Locator, RefDescriptor, RefKind } from "./types.js";
 import { isRecord } from "../../utils/records.js";
 

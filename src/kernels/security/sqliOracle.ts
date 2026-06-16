@@ -1,3 +1,4 @@
+import { isRecord } from "../../utils/records.js";
 import { responseDistance, type ResponseFingerprint } from "./replayDiff.js";
 
 export const SQL_DBMS_SIGNATURES: Array<{ dbms: string; patterns: RegExp[] }> = [
@@ -9,10 +10,6 @@ export const SQL_DBMS_SIGNATURES: Array<{ dbms: string; patterns: RegExp[] }> = 
 ];
 
 const SQL_ERROR_PATTERNS = [...SQL_DBMS_SIGNATURES.flatMap((item) => item.patterns), /syntax error\s+(?:at|near)/i, /The used SELECT statements have a different number of columns/i, /Unknown column/i];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
 
 export function hasSqlError(text: string): boolean {
 	return SQL_ERROR_PATTERNS.some((pattern) => pattern.test(text));

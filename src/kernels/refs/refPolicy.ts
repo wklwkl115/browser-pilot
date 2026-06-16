@@ -1,13 +1,41 @@
-import type { RefDescriptor, RefKind, RefPolicy, ResolveContext } from "./types.js";
+import type { BrowserPilotRefKind } from "./core.js";
 
-export type RefPolicyDecision =
+export type BrowserPilotRefPolicy = {
+	redaction: "default" | "disabled";
+	shareableAcrossSessions: boolean;
+	liveActionsAllowed: boolean;
+};
+
+export type BrowserPilotRefPolicyDecision =
 	| { ok: true; mode: "redacted" | "raw"; sameSession: boolean }
 	| { ok: false; code: "REF_STALE" | "HANDLE_NOT_FOUND" | "HANDLE_EXPIRED" | "HANDLE_ETAG_MISMATCH" | "REF_SCOPE_VIOLATION" | "PRIVACY_BLOCKED"; reason: string; sameSession: boolean };
+
+export type BrowserPilotRefAccessDescriptor = {
+	kind: BrowserPilotRefKind;
+	owner: {
+		browserSessionId?: string;
+		tabId?: number;
+		topLevelOrigin?: string;
+	};
+	policy: BrowserPilotRefPolicy;
+	snapshot?: unknown;
+	createdAt: number;
+	ttlMs: number;
+};
+
+export type BrowserPilotRefAccessContext = {
+	browserSessionId?: string;
+	tabId?: number;
+	topLevelOrigin?: string;
+	now: number;
+	requestedRedaction: "default" | "disabled";
+	explicitSensitiveAccess: boolean;
+};
 
 export const DEFAULT_LIVE_REF_TTL_MS = 5 * 60 * 1000;
 export const DEFAULT_IMMUTABLE_REF_TTL_MS = 60 * 60 * 1000;
 
-export function defaultRefPolicyForKind(kind: RefKind, options: { hasOwnerBinding?: boolean; sensitive?: boolean } = {}): RefPolicy {
+export function defaultRefPolicyForKind(kind: BrowserPilotRefKind, options: { hasOwnerBinding?: boolean; sensitive?: boolean } = {}): BrowserPilotRefPolicy {
 	const hasOwnerBinding = options.hasOwnerBinding === true;
 	const sensitive = options.sensitive === true;
 	if (kind === "data-slice") {
@@ -22,11 +50,11 @@ export function defaultRefPolicyForKind(kind: RefKind, options: { hasOwnerBindin
 	return { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: false };
 }
 
-export function isRefExpired(ref: Pick<RefDescriptor, "createdAt" | "ttlMs">, now: number): boolean {
+export function isRefExpired(ref: Pick<BrowserPilotRefAccessDescriptor, "createdAt" | "ttlMs">, now: number): boolean {
 	return now > ref.createdAt + ref.ttlMs;
 }
 
-export function isSameSessionScope(ref: Pick<RefDescriptor, "owner">, context: Pick<ResolveContext, "browserSessionId" | "tabId">): boolean {
+export function isSameSessionScope(ref: Pick<BrowserPilotRefAccessDescriptor, "owner">, context: Pick<BrowserPilotRefAccessContext, "browserSessionId" | "tabId">): boolean {
 	const ownerSession = ref.owner.browserSessionId;
 	const ownerTabId = ref.owner.tabId;
 	if (ownerSession && ownerSession !== context.browserSessionId) return false;
@@ -34,7 +62,7 @@ export function isSameSessionScope(ref: Pick<RefDescriptor, "owner">, context: P
 	return true;
 }
 
-export function classifyRefScope(ref: Pick<RefDescriptor, "kind" | "owner" | "policy">, context: Pick<ResolveContext, "browserSessionId" | "tabId" | "topLevelOrigin">): { ok: true; sameSession: boolean } | { ok: false; code: "REF_SCOPE_VIOLATION"; reason: string; sameSession: boolean } {
+export function classifyRefScope(ref: Pick<BrowserPilotRefAccessDescriptor, "kind" | "owner" | "policy">, context: Pick<BrowserPilotRefAccessContext, "browserSessionId" | "tabId" | "topLevelOrigin">): { ok: true; sameSession: boolean } | { ok: false; code: "REF_SCOPE_VIOLATION"; reason: string; sameSession: boolean } {
 	const sameSession = isSameSessionScope(ref, context);
 	if (ref.owner.browserSessionId && ref.owner.browserSessionId !== context.browserSessionId) {
 		if (!(ref.kind === "data-slice" && ref.policy.shareableAcrossSessions)) return { ok: false, code: "REF_SCOPE_VIOLATION", reason: "browser session mismatch", sameSession };
@@ -49,10 +77,10 @@ export function classifyRefScope(ref: Pick<RefDescriptor, "kind" | "owner" | "po
 }
 
 export function decideRefAccess(
-	ref: Pick<RefDescriptor, "kind" | "owner" | "policy" | "snapshot" | "createdAt" | "ttlMs">,
-	context: ResolveContext,
+	ref: BrowserPilotRefAccessDescriptor,
+	context: BrowserPilotRefAccessContext,
 	options: { resourceFound?: boolean; resourceExpired?: boolean; etagMatches?: boolean; sensitive?: boolean } = {},
-): RefPolicyDecision {
+): BrowserPilotRefPolicyDecision {
 	const sameSession = isSameSessionScope(ref, context);
 	if (isRefExpired(ref, context.now)) return { ok: false, code: "REF_STALE", reason: "ref ttl expired", sameSession };
 	if (options.resourceFound === false) return { ok: false, code: "HANDLE_NOT_FOUND", reason: "snapshot resource not found", sameSession };

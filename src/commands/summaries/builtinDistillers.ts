@@ -1,10 +1,10 @@
 import { jsonCost } from "../../kernels/evidence/distill/cost.js";
 import { compactEntityRenderingValue, lineEncodeEntity } from "../../kernels/evidence/distill/granularity.js";
-import type { Fact } from "../../kernels/evidence/distill/fact.js";
 import { registerCommandDistiller, registerDistillerDefinition, unwrapDistillData, type Distiller } from "../distillerRegistry.js";
+import type { CommandFact } from "../resultTypes.js";
 import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHookCollectData, summarizeHookPerformance, summarizeMemoryResult, summarizeNetworkData, summarizeWsSessionData } from "./index.js";
 import { EvidenceSummarySchema, HookDomFlowSummarySchema, MemorySummarySchema, NetworkSummarySchema } from "./outputSchemas.js";
-import { mintRef } from "../../kernels/refs/index.js";
+import { mintRef } from "../../kernels/refs/core.js";
 
 const DOM_FLOW_COMMANDS = new Set(["hook.getNodeListeners", "hook.getListenerChain", "hook.getSinkHints"]);
 let builtinDistillersRegistered = false;
@@ -29,7 +29,7 @@ const networkDistiller: Distiller = (value) => summarizeNetworkData(unwrapDistil
 const wsDistiller: Distiller = (value, command) => summarizeWsSessionData(String(command || "ws"), unwrapDistillData(value));
 const memoryDistiller: Distiller = (value) => summarizeMemoryResult(unwrapDistillData(value));
 
-function summaryFact(ref: string, plane: Fact["plane"], value: Record<string, unknown>, salience: Fact["salience"]): Fact {
+function summaryFact(ref: string, plane: CommandFact["plane"], value: Record<string, unknown>, salience: CommandFact["salience"]): CommandFact {
 	const compact = plane === "entity" ? compactEntityRenderingValue(value) : { ...value };
 	const line = lineEncodeEntity(compact) || `${plane}:${ref}`;
 	return {
@@ -45,7 +45,7 @@ function summaryFact(ref: string, plane: Fact["plane"], value: Record<string, un
 	};
 }
 
-function factifySummary(commandName: string, value: unknown, command: string | undefined, distiller: Distiller, salience: Fact["salience"]): Fact[] {
+function factifySummary(commandName: string, value: unknown, command: string | undefined, distiller: Distiller, salience: CommandFact["salience"]): CommandFact[] {
 	const commandId = String(command || "default").replace(/[^a-z0-9._-]+/gi, "-");
 	return [summaryFact(mintRef("summary", `${commandName}/${commandId}`), "summary", distiller(value, command), salience)];
 }

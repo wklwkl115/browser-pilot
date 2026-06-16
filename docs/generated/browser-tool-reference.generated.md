@@ -165,10 +165,10 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `FRAME_DETACHED` | page | runtime.frame | yes | schema |  |
 | `FRAME_EVAL_FAILED` | cdp | runtime.cdp | yes | heuristic | `src/bridge/extension/service_worker/cdp.ts` |
 | `FRAME_NOT_FOUND` | cdp | runtime.cdp | no | heuristic | `src/bridge/extension/service_worker/cdp.ts` |
-| `HANDLE_ETAG_MISMATCH` | abml | abml.ref | yes | schema | `src/kernels/abml/refPolicy.ts` |
-| `HANDLE_EXPIRED` | abml | abml.ref | yes | schema | `src/kernels/abml/refPolicy.ts`, `src/adapters/resources-fs/resourceStore.ts` |
+| `HANDLE_ETAG_MISMATCH` | abml | abml.ref | yes | schema | `src/kernels/refs/refPolicy.ts` |
+| `HANDLE_EXPIRED` | abml | abml.ref | yes | schema | `src/kernels/refs/refPolicy.ts`, `src/adapters/resources-fs/resourceStore.ts` |
 | `HANDLE_KIND_MISMATCH` | abml | abml.input | no | schema |  |
-| `HANDLE_NOT_FOUND` | abml | abml.ref | yes | schema | `src/kernels/abml/refPolicy.ts`, `src/adapters/resources-fs/resourceStore.ts` |
+| `HANDLE_NOT_FOUND` | abml | abml.ref | yes | schema | `src/kernels/refs/refPolicy.ts`, `src/adapters/resources-fs/resourceStore.ts` |
 | `HTTPS_CERT_GENERATION_FAILED` | security | tool.security | no | schema |  |
 | `INJECTION_FAILED` | native | runtime.hook | yes | schema |  |
 | `INTERNAL_ERROR` | native | runtime.internal | no | schema | `src/commands/webSecurity/shared/http.ts` |
@@ -219,13 +219,13 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `BROWSER_PILOT_CLICK_CANCELLED` | native | runtime.input | yes | schema | `src/browser-command-runtime/executeStdlibPrelude.ts` |
 | `BROWSER_PILOT_CLICK_REF_NOT_RESOLVED` | native | runtime.input | yes | schema | `src/browser-command-runtime/executeStdlibPrelude.ts` |
 | `BROWSER_PILOT_CLICK_TIMEOUT` | native | runtime.input | yes | schema | `src/browser-command-runtime/executeStdlibPrelude.ts` |
-| `PRIVACY_BLOCKED` | abml | abml.privacy | no | schema | `src/kernels/abml/refPolicy.ts` |
+| `PRIVACY_BLOCKED` | abml | abml.privacy | no | schema | `src/kernels/refs/refPolicy.ts` |
 | `PRIVATE_TARGET_BLOCKED` | security | tool.security | no | schema | `src/commands/webSecurity/shared/http.ts` |
 | `QUEUE_FULL` | driver | driver.queue | yes | schema | `src/bridge/server/BrowserCommandQueueRegistry.ts` |
 | `REF_AMBIGUOUS` | abml | abml.ref | yes | schema |  |
 | `REF_NOT_FOUND` | abml | abml.ref | yes | schema |  |
-| `REF_SCOPE_VIOLATION` | abml | abml.session | yes | schema | `src/kernels/abml/refPolicy.ts` |
-| `REF_STALE` | abml | abml.ref | yes | schema | `src/kernels/abml/refPolicy.ts`, `src/adapters/resources-fs/resourceStore.ts` |
+| `REF_SCOPE_VIOLATION` | abml | abml.session | yes | schema | `src/kernels/refs/refPolicy.ts` |
+| `REF_STALE` | abml | abml.ref | yes | schema | `src/kernels/refs/refPolicy.ts`, `src/adapters/resources-fs/resourceStore.ts` |
 | `REQUEST_NOT_FOUND` | network | runtime.network | no | schema |  |
 | `RESOURCE_NOT_FOUND` | abml | abml.ref | no | schema | `src/adapters/resources-fs/resourceReader.ts` |
 | `RESOURCE_READ_ERROR` | abml | abml.ref | no | schema | `src/adapters/resources-fs/resourceReader.ts` |

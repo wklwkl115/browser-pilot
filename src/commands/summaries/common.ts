@@ -1,13 +1,12 @@
 import { truncateText } from "../../utils/json.js";
+import { isRecord } from "../../utils/records.js";
+
+export { isRecord };
 
 export type Summary = Record<string, unknown>;
 export type CountItem = { key: string; count: number };
 export type SummaryTable = { columns: string[]; rows: unknown[][]; count: number; truncated?: number };
 export type SummaryColumn<T> = { key: string; value: (item: T) => unknown };
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 export function asArray(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];

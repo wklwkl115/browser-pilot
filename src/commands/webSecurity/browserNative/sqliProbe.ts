@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createCodedError } from "../../../utils/codedError.js";
-import { compactStep, extractTitle, responseDistance, responseFingerprint, responsesDiffer } from "../shared/http.js";
+import { responseDistance, responsesDiffer } from "../shared/baseline.js";
+import { compactStep, extractTitle, responseFingerprint } from "../shared/http.js";
 import { detectSqlDbms, firstBooleanOracle, hasSqlError, nearestBooleanTruth, sqliUnionMeta } from "../../../kernels/security/sqliOracle.js";
 import { asString, isRecord, positiveInt, readWordlist, sleep, splitWords, stringList } from "../shared/normalize.js";
 import { buildReplayRequest, existingParamNames, inferFuzzParamLocations, mutateParamRequest, normalizeReplayOptions, sendReplayLikeRequest } from "../shared/replay.js";

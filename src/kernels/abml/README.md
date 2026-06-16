@@ -43,9 +43,7 @@ kernel's entire public surface at a glance.
 | Module | Role |
 | --- | --- |
 | `types.ts` | Foundational types — locators, refs, actionability, errors, captures. |
-| `refId.ts` | Pure bp-ref URI minting and summary placeholder ref IDs. |
 | `entity.ts` | `Entity` / `EntityState` / `EntityStructure` model + builders. |
-| `refPolicy.ts` | Ref-access policy per kind (`defaultRefPolicyForKind`, `decideRefAccess`). |
 | `ax.ts` | **DOM↔AX merge** — box-IoU/role/name scoring, AX-authoritative state/structure fusion. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |
@@ -59,6 +57,10 @@ kernel's entire public surface at a glance.
 | `errors.ts` | `normalizeAbmlError` + recovery shaping. |
 | `verbs/router.ts` | Verb input/result/runtime types + actionability/verification failure helpers. |
 | `verbs/{read,frame,pierce}.ts` | Per-verb **decision** logic (no browser call). |
+
+Generic ref URI minting, stable ref IDs, and ref-access policy live in
+[`../refs/`](../refs) so resource storage and ABML share one ref owner without
+making resource ports depend on ABML.
 
 The matching browser I/O for each verb lives in `../../browser-runtime/abml/*Runtime.ts`
 (e.g. `ax.ts`'s merge is fed by `../../browser-runtime/abml/axRuntime.ts`, which reads the

@@ -7,7 +7,7 @@ import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptE
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";
 import { scanEntitiesForEnvelope, summarizeScanData } from "../../scan/summary.js";
 import { normalizeTabId } from "../../utils/params.js";
-import { resolveRefUriDetailed, registerRefDescriptor } from "../../resources/resourceRefs.js";
+import { resolveRefUriDetailed, registerRefDescriptor, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { createCaptureRef, buildNetworkEntryEntity, buildEventEntity, type CaptureRefContext } from "../../kernels/abml/stream.js";
 import { buildCausalRequest, buildCausalEvent, buildCausalSummary, buildCausalEvents, latestSeq } from "../../kernels/abml/causal.js";
@@ -15,9 +15,9 @@ import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axR
 import { bootstrapScanBackendNodeIds } from "../../kernels/abml/identityBootstrap.js";
 import { materializeRelationGraph, derivePaintOrderRelationAnchors, deriveStateRelationAnchors } from "../../kernels/abml/relations.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
-import { decideRefAccess, defaultRefPolicyForKind } from "../../kernels/abml/refPolicy.js";
+import { decideRefAccess, defaultRefPolicyForKind } from "../../kernels/refs/refPolicy.js";
 import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
-import type { ActionabilityReport, CaptureRef, RefDescriptor, VerificationResult } from "../../kernels/abml/types.js";
+import type { ActionabilityReport, VerificationResult } from "../../kernels/abml/types.js";
 import type { AbmlFrameInput, AbmlPierceInput, AbmlReadInput, AbmlRuntimeContext, AbmlVerbFailure, AbmlVerbResult } from "../../kernels/abml/verbs/router.js";
 import { runAbmlRead } from "../../kernels/abml/verbs/read.js";
 import { runAbmlPierce } from "../../kernels/abml/verbs/pierce.js";
@@ -299,12 +299,18 @@ type StreamPlane = "network" | "event";
 const STREAM_CAPTURE_TTL_MS = 60 * 60 * 1000;
 const STREAM_NETWORK_LIMIT = 500;
 const STREAM_EVENT_LIMIT = 200;
+type RuntimeCaptureRef = RefDescriptor & {
+	streamState?: {
+		startedAt?: number;
+		lastSeq?: number;
+	};
+};
 
 // Read the drain cursor (+ channel age) carried by an incoming signal capture-ref. A non-signal ref (or
 // none) yields an empty cursor → the caller arms a fresh channel.
 function captureCursor(descriptor: RefDescriptor | undefined): { lastSeq?: number; startedAt?: number } {
 	if (!descriptor || descriptor.kind !== "signal") return {};
-	const stream = (descriptor as CaptureRef).streamState;
+	const stream = (descriptor as RuntimeCaptureRef).streamState;
 	return {
 		lastSeq: typeof stream?.lastSeq === "number" ? stream.lastSeq : undefined,
 		startedAt: typeof stream?.startedAt === "number" ? stream.startedAt : undefined,

@@ -1,5 +1,5 @@
 import { defaultLeaseIdRedactor } from "../kernels/session/leaseDiagnostics.js";
-import type { SessionTabLeaseInfo as BrowserTabLeaseInfo, SessionUiLockInfo as BrowserUiLockInfo } from "../kernels/session/index.js";
+import type { CommandTabLeaseInfo as BrowserTabLeaseInfo, CommandUiLockInfo as BrowserUiLockInfo } from "../ports/BrowserCommandRuntimePort.js";
 import { recordValue, toTabId } from "../utils/records.js";
 
 function firstString(...values: unknown[]): string | undefined {

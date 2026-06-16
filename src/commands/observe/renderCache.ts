@@ -1,9 +1,9 @@
-import type { PerceptionLedgerFrame } from "../../kernels/session/perceptionLedger.js";
+import type { CommandPerceptionLedgerFrame } from "../../ports/BrowserCommandRuntimePort.js";
 import { isRecord } from "../../utils/records.js";
 import type { PageFingerprint } from "../pageSignals.js";
 import type { ObserveMode, ObserveToolParams } from "./common.js";
 
-type RenderCache = NonNullable<PerceptionLedgerFrame["renderCache"]>;
+type RenderCache = NonNullable<CommandPerceptionLedgerFrame["renderCache"]>;
 
 export function sessionDeltaEnabled(params: ObserveToolParams): boolean {
 	return params.fresh !== true && process.env.BROWSER_PILOT_SESSION_DELTA !== "0" && String(params.detailLevel || "summary") !== "full" && params.baseline === undefined;
@@ -111,7 +111,7 @@ function dirtyWindowClean(fingerprint: PageFingerprint): boolean {
 	return !!dirty && dirty.overflow !== true && dirty.roots.length === 0;
 }
 
-export function renderCacheMatches(frame: PerceptionLedgerFrame | undefined, mode: ObserveMode, detailLevel: string, maxChars: number, paramsSignature: string, fingerprint: PageFingerprint | undefined, now = Date.now(), ttlMs = observeCacheTtlMs()): frame is PerceptionLedgerFrame & { renderCache: RenderCache } {
+export function renderCacheMatches(frame: CommandPerceptionLedgerFrame | undefined, mode: ObserveMode, detailLevel: string, maxChars: number, paramsSignature: string, fingerprint: PageFingerprint | undefined, now = Date.now(), ttlMs = observeCacheTtlMs()): frame is CommandPerceptionLedgerFrame & { renderCache: RenderCache } {
 	if (!frame?.pageFingerprint || !frame.renderCache || !fingerprint) return false;
 	if (ttlMs <= 0 || typeof frame.renderCache.renderedAt !== "number") return false;
 	const withinTtl = now - frame.renderCache.renderedAt <= ttlMs;

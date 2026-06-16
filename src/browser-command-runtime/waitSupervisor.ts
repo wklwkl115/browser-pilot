@@ -5,8 +5,7 @@ import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.
 import type { BridgeCommand } from "../types/nativeProtocol.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import { classifyStateLoss, classifyTimeout } from "../kernels/temporal/classify.js";
-import type { TemporalDecision, TemporalFrontierNext, TemporalReason, TemporalVerdict } from "../kernels/temporal/types.js";
-import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
+import type { BrowserCommandRuntimePort, CommandTemporalDecision, CommandTemporalFrontierNext, CommandTemporalReason, CommandTemporalVerdict } from "../ports/BrowserCommandRuntimePort.js";
 
 const WAIT_LEASE_MAX_MS = 25_000;
 const WAIT_LEASE_BRIDGE_GRACE_MS = 3_000;
@@ -56,17 +55,17 @@ type WaitSupervisorState = {
 
 type CompactTemporalDecision = {
 	verdict: {
-		status: TemporalVerdict["status"];
-		confidence: TemporalVerdict["confidence"];
-		reasons: TemporalReason[];
+		status: CommandTemporalVerdict["status"];
+		confidence: CommandTemporalVerdict["confidence"];
+		reasons: CommandTemporalReason[];
 	};
 	frontier: {
-		next: TemporalFrontierNext;
+		next: CommandTemporalFrontierNext;
 		handle?: string;
 	};
 };
 
-function compactTemporalDecision(decision: TemporalDecision, handle?: string): CompactTemporalDecision {
+function compactTemporalDecision(decision: CommandTemporalDecision, handle?: string): CompactTemporalDecision {
 	return {
 		verdict: {
 			status: decision.verdict.status,

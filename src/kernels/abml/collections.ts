@@ -7,7 +7,7 @@ import type { Entity, EntityKind } from "./entity.js";
 import type { SnapshotProjection, SnapshotProjectionTemplate } from "./snapshotProjection.js";
 import type { StructureTemplate } from "./templating.js";
 import type { TreeDiff } from "./treeDiff.js";
-import { mintRef } from "../refs/index.js";
+import { mintRef } from "../refs/core.js";
 
 export type CollectionCompleteness =
 	| "complete"

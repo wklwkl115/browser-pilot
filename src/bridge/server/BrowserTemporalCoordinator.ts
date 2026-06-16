@@ -1,9 +1,9 @@
 import path from "node:path";
 import { classifyDeadlinePressure } from "../../kernels/temporal/budget.js";
 import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity } from "../../kernels/temporal/estimate.js";
-import type { TemporalAnchor, TemporalDecision, TemporalFrontierNext, TemporalProfileSample, TemporalReason, TemporalStamp, TemporalVerdict } from "../../kernels/temporal/types.js";
+import type { TemporalAnchor, TemporalDecision, TemporalFrontierNext, TemporalReason, TemporalStamp, TemporalVerdict } from "../../kernels/temporal/types.js";
 import type { BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo } from "./types.js";
-import type { CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
+import type { CommandTemporalProfileSample, CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
 import { normalizeTemporalProfileRunId, writeTemporalProfileArtifacts, summarizeTemporalProfileSamples, type TemporalProfileArtifactPaths, type TemporalProfileSummary } from "./temporalProfileArtifacts.js";
 import { isRecord } from "../../utils/records.js";
 
@@ -33,7 +33,7 @@ export type BrowserTemporalCoordinatorOptions = {
 type RuntimeProfileBucket = {
 	cwd: string;
 	runId: string;
-	samples: TemporalProfileSample[];
+	samples: CommandTemporalProfileSample[];
 	artifactTail: Promise<TemporalProfileArtifactPaths | undefined>;
 };
 
@@ -204,7 +204,7 @@ export class BrowserTemporalCoordinator {
 		return compact(estimateWaitContinuity(input));
 	}
 
-	buildProfileSample(input: CommandTemporalProfileSampleInput): TemporalProfileSample {
+	buildProfileSample(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample {
 		const diagnostics = diagnosticsFrom(input);
 		const temporalProfile = temporalProfileFromDiagnostics(diagnostics);
 		const effect = effectFromResult(input.result);
@@ -241,13 +241,13 @@ export class BrowserTemporalCoordinator {
 			...((numeric(supervisor?.workerRestarts) ?? numeric(temporalProfile?.workerRestarts)) !== undefined ? { workerRestarts: numeric(supervisor?.workerRestarts) ?? numeric(temporalProfile?.workerRestarts) } : {}),
 			...((bool(supervisor?.historyLost) ?? bool(temporalProfile?.historyLost)) !== undefined ? { historyLost: bool(supervisor?.historyLost) ?? bool(temporalProfile?.historyLost) } : {}),
 			...(Array.isArray(temporalProfile?.rawSignals) ? { rawSignals: temporalProfile.rawSignals.filter((item): item is string => typeof item === "string").slice(0, 8) } : {}),
-			...(typeof verdict?.status === "string" ? { verdict: verdict.status as TemporalProfileSample["verdict"] } : {}),
+			...(typeof verdict?.status === "string" ? { verdict: verdict.status as CommandTemporalProfileSample["verdict"] } : {}),
 			...(reasons(verdict?.reasons) ? { reasons: reasons(verdict?.reasons) } : {}),
-			...(typeof frontier?.next === "string" ? { recovery: frontier.next as TemporalProfileSample["recovery"] } : {}),
+			...(typeof frontier?.next === "string" ? { recovery: frontier.next as CommandTemporalProfileSample["recovery"] } : {}),
 		};
 	}
 
-	recordProfileSample(sample: TemporalProfileSample, options: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string } = {}): Promise<TemporalProfileArtifactPaths | undefined> {
+	recordProfileSample(sample: CommandTemporalProfileSample, options: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string } = {}): Promise<TemporalProfileArtifactPaths | undefined> {
 		const bucket = this.runtimeBucket(options);
 		bucket.samples.push(sample);
 		if (bucket.samples.length > this.runtimeSampleCap) bucket.samples.splice(0, bucket.samples.length - this.runtimeSampleCap);

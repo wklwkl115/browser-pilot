@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { registerBrowserResultResource } from "../../resources/resourceRefs.js";
+import { registerBrowserResultResource, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../capture/inject.js";
 import { VIEWPORT_TEMPLATE } from "../../capture/generated/visionBundle.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
@@ -8,7 +8,6 @@ import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation
 import { saveDataUrl } from "../../artifacts/artifactFiles.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
-import type { RefDescriptor } from "../../kernels/abml/types.js";
 
 export type AbmlVisionRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
 

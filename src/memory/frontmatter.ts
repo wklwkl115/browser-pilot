@@ -2,8 +2,7 @@ import yaml from "js-yaml";
 import { createCodedError } from "../utils/codedError.js";
 import { isRecord } from "../utils/records.js";
 import { normalizeMemoryEntryId } from "./ids.js";
-import type { MemoryEntry, MemoryFrontmatter } from "./types.js";
-import type { MemoryAnchors } from "../kernels/memory/types.js";
+import type { MemoryAnchors, MemoryEntry, MemoryFrontmatter } from "./types.js";
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 

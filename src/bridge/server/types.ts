@@ -1,5 +1,4 @@
 import type { WebSocket } from "ws";
-import type { SessionActiveOperationInfo, SessionAutomationSession, SessionObservationSnapshotInfo, SessionReleasedTabLeaseInfo, SessionReleasedUiLockInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../../kernels/session/index.js";
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../../ports/BrowserRuntimeTypes.js";
 
 export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserBridgeTargetSource } from "../../ports/BrowserRuntimeTypes.js";
@@ -50,7 +49,16 @@ export type BrowserTabInfo = Omit<BrowserTabSession, "client"> & {
 	targetRef: string;
 };
 
-export type BrowserAutomationSession = SessionAutomationSession<WebSocket>;
+export type BrowserAutomationSession = {
+	id: string;
+	name?: string;
+	selectedClient?: WebSocket;
+	defaultSessionId?: string;
+	latestSessionId?: string;
+	selectionVersion: number;
+	createdAt: number;
+	lastSeenAt: number;
+};
 
 export type BrowserAutomationSessionInfo = {
 	id: string;
@@ -65,13 +73,32 @@ export type BrowserAutomationSessionInfo = {
 	selectedBrowser?: BrowserBridgeClientInfo;
 };
 
-export type BrowserTabLeaseInfo = SessionTabLeaseInfo;
+export type BrowserTabLeaseInfo = {
+	id: string;
+	browserSessionId: string;
+	tabSessionId: string;
+	browserId: string;
+	tabId: number;
+	explicit: boolean;
+	createdAt: number;
+	lastSeenAt: number;
+};
 
-export type BrowserReleasedTabLeaseInfo = SessionReleasedTabLeaseInfo;
+export type BrowserReleasedTabLeaseInfo = BrowserTabLeaseInfo & {
+	releaseReason: "ttl" | "disconnect";
+};
 
-export type BrowserUiLockInfo = SessionUiLockInfo;
+export type BrowserUiLockInfo = {
+	browserSessionId: string;
+	commandName: string;
+	createdAt: number;
+	lastSeenAt: number;
+	count: number;
+};
 
-export type BrowserReleasedUiLockInfo = SessionReleasedUiLockInfo;
+export type BrowserReleasedUiLockInfo = BrowserUiLockInfo & {
+	releaseReason: "ttl" | "disconnect";
+};
 
 export type BrowserCommandQueueInfo = {
 	key: string;
@@ -80,9 +107,42 @@ export type BrowserCommandQueueInfo = {
 	depth: number;
 };
 
-export type BrowserActiveOperationInfo = SessionActiveOperationInfo;
+export type BrowserActiveOperationInfo = {
+	operationId: string;
+	commandName: string;
+	command?: string;
+	browserSessionId?: string;
+	tabId?: number;
+	phase: string;
+	progress?: number;
+	queueDepth?: number;
+	leaseOwnerHash?: string;
+	conflictReason?: string;
+	snapshotId?: string;
+	sourceMode?: string;
+	details?: Record<string, unknown>;
+	startedAt: number;
+	updatedAt: number;
+};
 
-export type BrowserObservationSnapshotInfo = SessionObservationSnapshotInfo;
+export type BrowserObservationSnapshotInfo = {
+	snapshotId: string;
+	browserSessionId?: string;
+	tabId?: number;
+	url?: string;
+	frameScope?: string;
+	selectionVersion?: number;
+	sourceMode: string;
+	capturedAt: number;
+	ttlMs: number;
+	networkSeq?: number;
+	hookSeq?: number;
+	invalidatedReason?: string;
+	expired?: boolean;
+	saved?: {
+		path?: string;
+	};
+};
 
 export type BrowserBridgeSnapshot = {
 	browserSessionId?: string;
