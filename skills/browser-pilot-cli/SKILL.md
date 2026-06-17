@@ -9,7 +9,7 @@ compatibility: browser-pilot CLI 0.3.0+ on any shell-capable platform, Browser P
 
 Drive live browser pages with the `browser-pilot` shell CLI, exposed as subcommands over a user-local singleton daemon.
 
-**This skill complements the CLI; it does not restate it.** The CLI is self-describing: `browser-pilot commands --json` lists every command + its `agentCli` routing, and `browser-pilot schema <cmd> --json` (or `schema <cmd> <natural-subcommand> --json`) gives exact flags/params. That is the single source of truth and it never drifts — **read it for flags instead of trusting any hard-coded flag list.** What follows is how to *drive* the CLI and *sequence* the tools: the loop, the routing, the boundaries, the gotchas.
+**This skill complements the CLI; it does not restate it.** The CLI is self-describing: `browser-pilot commands --json` lists every command + its `agentCli` routing, and `browser-pilot schema <cmd> --json` (or `schema <cmd> <natural-subcommand> --json`) gives exact flags/params. That is the single source of truth and it never drifts — **read it for flags instead of trusting any hard-coded flag list.** Each flag carries `paramClass: "intent" | "mechanical"` and human help splits real choices ("Flags:") from a "Plumbing (optional; defaults apply — usually omit)" group: spend your decisions on the **intent** flags and ignore **mechanical** routing (e.g. `--tab-id`) unless you are disambiguating. What follows is how to *drive* the CLI and *sequence* the tools: the loop, the routing, the boundaries, the gotchas.
 
 Three facts shape everything below:
 - **Perception is `browser-pilot observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(bp-ref://...)` appearing in result hints are vocabulary, not extra subcommands.
@@ -33,7 +33,7 @@ On long lists/tables prefer the reading products (`outline`/`gist`) and `causal`
 4. Verify: `browser-pilot wait ...` / re-observe / network|hook evidence / read artifact.
 5. Report: `targetRef`/`tabId`, URL, selector/request/session IDs, artifact URI/path, next step.
 
-Sessions are managed via `tabs` session subcommands, not a per-command flag. Outputs default to a compact, redacted summary; size reads with `--limit`/`--offset`/`--json-path` (`detailLevel`/`maxChars` are internal, not flags).
+Sessions are managed via `tabs` session subcommands, not a per-command flag. Outputs default to a compact, redacted summary; size reads with `--limit`/`--offset`/`--json-path` (`detailLevel`/`maxChars` are stripped before validation, not flags; the routing flags that do survive — e.g. `--tab-id` — are `paramClass:"mechanical"` plumbing you normally omit).
 
 Memory is a Loop bookend: `observe --mode scan|text` may surface current URL/intent-matched SOPs in `envelope.memory`; on success `browser-pilot memory --action record` at step 5. See Memory.
 
@@ -168,7 +168,7 @@ Use this only after a fresh `observe --mode scan` produced the ref and normal `e
 
 - Playbooks: `docs/playbooks/` — triage · recon · capture-and-replay · sqli · ssrf-oast · auth-session-jwt · evidence-and-reporting
 - Methodology map: `docs/reference/web-security-methodology-map.md` · CLI usage: `docs/cli.md`
-- Tool reference: `docs/generated/browser-tool-reference.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Boundaries: `docs/tool-boundaries.md`
+- Tool reference: `docs/generated/browser-tool-reference.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Parameter doctrine (intent vs plumbing): `docs/generated/tool-parameter-doctrine.generated.md` · Boundaries: `docs/tool-boundaries.md`
 
 ## Output
 

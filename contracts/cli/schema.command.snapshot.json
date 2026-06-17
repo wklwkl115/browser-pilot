@@ -62,7 +62,8 @@
             "type": "string"
           }
         ],
-        "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab."
+        "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
+        "x-bp-class": "mechanical"
       },
       "targetRef": {
         "type": "string",
@@ -77,6 +78,7 @@
       "flag": "--command",
       "kind": "json",
       "required": true,
+      "paramClass": "intent",
       "description": "Bridge command object, e.g. {cmd:'tabs',method:'list'} or {cmd:'cdp',...}",
       "inputs": [
         "inline",
@@ -89,6 +91,7 @@
       "flag": "--tab-id",
       "kind": "string",
       "required": false,
+      "paramClass": "mechanical",
       "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
       "inputs": [
         "inline",
@@ -101,6 +104,7 @@
       "flag": "--target-ref",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
       "inputs": [
         "inline",

@@ -161,7 +161,8 @@
             "type": "string"
           }
         ],
-        "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab."
+        "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
+        "x-bp-class": "mechanical"
       },
       "targetRef": {
         "type": "string",
@@ -176,6 +177,7 @@
       "flag": "--mode",
       "kind": "enum",
       "required": false,
+      "paramClass": "intent",
       "choices": [
         "scan",
         "content",
@@ -193,6 +195,7 @@
       "flag": "--selector",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "content/html modes: CSS selector for a target readable root or exact HTML/text slice",
       "inputs": [
         "inline",
@@ -205,6 +208,7 @@
       "flag": "--url",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "scan/content/html/text modes: optional URL to navigate to before observation",
       "inputs": [
         "inline",
@@ -217,6 +221,7 @@
       "flag": "--include-links",
       "kind": "boolean",
       "required": false,
+      "paramClass": "intent",
       "description": "content mode only: include Markdown links; default true",
       "inputs": [
         "inline"
@@ -227,6 +232,7 @@
       "flag": "--max-nodes",
       "kind": "number",
       "required": false,
+      "paramClass": "intent",
       "description": "scan/text modes: maximum DOM nodes visited",
       "inputs": [
         "inline"
@@ -237,6 +243,7 @@
       "flag": "--include-iframes",
       "kind": "boolean",
       "required": false,
+      "paramClass": "intent",
       "description": "scan/text modes: include same-origin iframe content",
       "inputs": [
         "inline"
@@ -247,6 +254,7 @@
       "flag": "--baseline",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "scan mode only: prior ABML entity list or prior scan summary/envelope used to compute envelope.diff. CLI-friendlier: use --baseline-snapshot-id or --baseline-path instead of inlining a large prior envelope.",
       "inputs": [
         "inline",
@@ -259,6 +267,7 @@
       "flag": "--baseline-snapshot-id",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "scan mode only: snapshotId from a prior browser_observe scan; the daemon resolves it to that scan's saved entities as the baseline. CLI-friendly by-reference alternative to passing the full prior envelope inline as `baseline`.",
       "inputs": [
         "inline",
@@ -271,6 +280,7 @@
       "flag": "--baseline-path",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "scan mode only: filesystem path to a prior scan's saved artifact; used as the baseline. No-state by-reference alternative to inlining `baseline`.",
       "inputs": [
         "inline",
@@ -283,6 +293,7 @@
       "flag": "--action-ref",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "scan mode only (R3.x P1): bp-ref:// of the control you just activated; attributes the baseline network-delta to it as `triggered` relations. Falls back to the focused control when omitted.",
       "inputs": [
         "inline",
@@ -295,6 +306,7 @@
       "flag": "--html-mode",
       "kind": "enum",
       "required": false,
+      "paramClass": "intent",
       "choices": [
         "fragment",
         "raw",
@@ -312,6 +324,7 @@
       "flag": "--params",
       "kind": "json",
       "required": false,
+      "paramClass": "intent",
       "inputs": [
         "inline",
         "@file",
@@ -323,6 +336,7 @@
       "flag": "--intent",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "scan/text modes only: explicit task intent used as a relevance signal for ranking observation results",
       "inputs": [
         "inline",
@@ -335,6 +349,7 @@
       "flag": "--fresh",
       "kind": "boolean",
       "required": false,
+      "paramClass": "intent",
       "description": "scan/text modes only: force a fresh full-frame observation for this call; ignores the session-delta baseline and render cache without disabling relevance or memory",
       "inputs": [
         "inline"
@@ -345,6 +360,7 @@
       "flag": "--tab-id",
       "kind": "string",
       "required": false,
+      "paramClass": "mechanical",
       "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
       "inputs": [
         "inline",
@@ -357,6 +373,7 @@
       "flag": "--target-ref",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
       "inputs": [
         "inline",

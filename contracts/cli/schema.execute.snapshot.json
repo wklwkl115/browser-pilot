@@ -63,7 +63,8 @@
             "type": "string"
           }
         ],
-        "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab."
+        "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
+        "x-bp-class": "mechanical"
       },
       "targetRef": {
         "type": "string",
@@ -82,6 +83,7 @@
       "flag": "--script",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "JavaScript source. Provide either script or program.",
       "inputs": [
         "inline",
@@ -94,6 +96,7 @@
       "flag": "--program",
       "kind": "array",
       "required": false,
+      "paramClass": "intent",
       "description": "Ordered program of physical input frames and JS eval, executed as one atomic sequence via trusted CDP events. Each element has exactly one discriminator (eval/mouse/key/text/wait); delay is a universal modifier. Use for page interaction (clicks, typing, scrolling, drag); use script for pure JavaScript.",
       "inputs": [
         "inline",
@@ -106,6 +109,7 @@
       "flag": "--tab-id",
       "kind": "string",
       "required": false,
+      "paramClass": "mechanical",
       "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
       "inputs": [
         "inline",
@@ -118,6 +122,7 @@
       "flag": "--target-ref",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
       "inputs": [
         "inline",
@@ -130,6 +135,7 @@
       "flag": "--monitor",
       "kind": "boolean",
       "required": false,
+      "paramClass": "intent",
       "description": "Capture compact before/after scan diff. Default false to avoid token and latency overhead.",
       "inputs": [
         "inline"
@@ -140,6 +146,7 @@
       "flag": "--script-file",
       "kind": "string",
       "required": false,
+      "paramClass": "intent",
       "description": "Read JavaScript source from a local file and pass it as --script. CLI-only; cannot be combined with --script.",
       "inputs": [
         "inline",

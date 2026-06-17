@@ -473,6 +473,18 @@ kernels/evidence/
     - `SessionKernel` 管状态，不管 transport。
     - `BridgeServer` 管连接，不管业务。
 
+16. **参数二分律（Intent / Mechanical Parameter Doctrine）**
+    - 每个工具参数只能属于两类之一：
+      - **Intent（意图）**：表达 agent 当下要做什么；不同策略会传不同值（如 observe 的 `mode`/`selector`、execute 的 `script`、wait 的 `any`/`all`、sqli 的 engine、目标 frame、命名第二个 recorder 的 `sessionId`）。
+      - **Mechanical（机械路由）**：无策略含义的管线参数；两个不同策略的调用总会传相同值或直接省略。其中 `timeoutMs`/`maxChars`/`detailLevel`/`outputPath`/`redact` 在校验前即被剥离、不作为 flag 暴露；真正出现在 agent flag 面上的机械参数只有 `tabId`（全部工具）与 `browserSessionId`（`browser_tabs`）。
+    - 判定法则：两个执行不同策略的 agent 在此参数上是否总会传相同值？是 ⇒ mechanical；否 ⇒ intent。
+    - Intent 主权归 agent：必须显式；即便可选也由 agent 决定。工具不得据其它参数“推断”或静默改写 intent。
+    - Mechanical 一律降税到零：以稳定且文档化的默认值 + 显式 override 表达，省略即取默认。
+    - **默认值 ≠ 推断**：默认值在“无输入”时填入与其它参数无关的固定值（`mode` 省略 ⇒ `scan`），允许；推断读取 agent 的其它输入来改变取值（`selector` 在场 ⇒ `content`），会搬移意图，**禁止对任何带策略含义的参数新增推断**。本律不放宽 `No mode:"auto"` 禁令。
+    - 现存 `browser_observe` 省略-mode 推断是唯一被 contract 冻结的历史例外：grandfather 保留，不得扩展，不作先例。
+    - 分类单一来源（见铁律 7）：mechanical 标注落在 schema 关键字 `x-bp-class`，由 `sharedTabScopedToolParams` 等共享参数构造器集中产出；缺省即 intent。CLI/schema/docs/skill 一律从 schema 派生 “decide / plumbing” 分组，不得另立来源。
+    - 新增/修改 command 参数时必须完成本分类；未分类的新参数视为违反合同。
+
 ## 7. Contracts
 
 新增：

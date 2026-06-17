@@ -2,6 +2,8 @@
 
 Generated reference for the shipped `browser_*` tools.
 
+> For each tool's **intent vs mechanical (plumbing)** parameter split (architecture-charter.md 铁律 #16), see `docs/generated/tool-parameter-doctrine.generated.md` or the live `browser-pilot schema <cmd> --json` (`paramClass` per flag). The flat `Parameters` column below does not encode that split.
+
 ## Source summary
 
 - Tool metadata source: `src/commands/**/*Command*.ts` command manifest metadata/config objects.

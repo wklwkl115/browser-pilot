@@ -1,5 +1,5 @@
 {
-  "entryCount": 1913,
+  "entryCount": 1915,
   "files": [
     "CHANGELOG.md",
     "CODE_OF_CONDUCT.md",
@@ -1479,6 +1479,7 @@
     "docs/cli.md",
     "docs/generated/browser-tool-reference.generated.md",
     "docs/generated/native-protocol.generated.md",
+    "docs/generated/tool-parameter-doctrine.generated.md",
     "docs/guide-cli.md",
     "docs/playbooks/README.md",
     "docs/playbooks/auth-session-jwt.md",
@@ -1524,6 +1525,7 @@
     "scripts/sync-bridge-config.mjs",
     "scripts/sync-capture.mjs",
     "scripts/sync-native-protocol.mjs",
+    "scripts/sync-tool-reference.mjs",
     "scripts/verify-public-package.mjs",
     "skills/browser-pilot-cli/SKILL.md",
     "src/adapters/artifacts-fs/index.ts",

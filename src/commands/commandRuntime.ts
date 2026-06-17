@@ -10,7 +10,7 @@ import { stableJson } from "../utils/json.js";
 import { fitInlineJsonToBudgetMeasured } from "../kernels/evidence/distill/fit.js";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
-import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetRef, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./commandShared.js";
+import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, MECHANICAL_PARAM, optionalTargetRef, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./commandShared.js";
 import type { CommandMemoryAugmentationPlan } from "./memoryAugmentationTypes.js";
 import type { BrowserCommandDefinition, BrowserCommandSink } from "./commandDefinition.js";
 import type { CommandFactGranularity } from "./resultTypes.js";
@@ -175,15 +175,19 @@ export function defineBrowserCommand(commands: BrowserCommandSink, spec: Browser
 }
 
 export function sharedTabScopedToolParams(options: SharedCommandParamOptions = {}) {
+	// Mechanical routing params per Charter law #16: tagged x-bp-class=mechanical so the CLI schema +
+	// help group them as plumbing (optional, defaults apply). targetRef stays intent (which tab to act on).
+	// Most of these are stripped before validation and never surface as flags; in practice only tabId
+	// (every tool) and browserSessionId (browser_tabs) reach the agent-facing flag surface.
 	const params: Record<string, unknown> = {};
-	if (options.includeBrowserSessionId === true) params.browserSessionId = Type.Optional(Type.String({ description: "Deprecated compatibility only; stripped before tool validation. Browser-session routing defaults to the selected session." }));
+	if (options.includeBrowserSessionId === true) params.browserSessionId = Type.Optional(Type.String({ description: "Deprecated compatibility only; stripped before tool validation. Browser-session routing defaults to the selected session.", ...MECHANICAL_PARAM }));
 	if (options.includeTabId !== false) params.tabId = optionalTargetTabId(options.tabIdDescription);
 	if (options.includeTargetRef !== false) params.targetRef = optionalTargetRef(options.targetRefDescription);
-	if (options.includeDetailLevel === true) params.detailLevel = Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION }));
-	if (options.includeOutputPath === true) params.outputPath = Type.Optional(Type.String({ description: options.outputPathDescription ?? OUTPUT_PATH_DESCRIPTION }));
-	if (options.includeTimeout === true) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Deprecated compatibility only; stripped before tool validation. Commands use their built-in timeout contracts." }));
-	if (options.includeMaxChars === true) params.maxChars = Type.Optional(Type.Number({ description: options.maxCharsDescription ?? MAX_CHARS_DESCRIPTION }));
-	if (options.includeRedact === true) params.redact = Type.Optional(Type.Boolean({ description: "Deprecated compatibility only; model-facing output is redacted by default and targeted raw reads use browser_artifact jsonPath/pick." }));
+	if (options.includeDetailLevel === true) params.detailLevel = Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION, ...MECHANICAL_PARAM }));
+	if (options.includeOutputPath === true) params.outputPath = Type.Optional(Type.String({ description: options.outputPathDescription ?? OUTPUT_PATH_DESCRIPTION, ...MECHANICAL_PARAM }));
+	if (options.includeTimeout === true) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Deprecated compatibility only; stripped before tool validation. Commands use their built-in timeout contracts.", ...MECHANICAL_PARAM }));
+	if (options.includeMaxChars === true) params.maxChars = Type.Optional(Type.Number({ description: options.maxCharsDescription ?? MAX_CHARS_DESCRIPTION, ...MECHANICAL_PARAM }));
+	if (options.includeRedact === true) params.redact = Type.Optional(Type.Boolean({ description: "Deprecated compatibility only; model-facing output is redacted by default and targeted raw reads use browser_artifact jsonPath/pick.", ...MECHANICAL_PARAM }));
 	return params;
 }
 

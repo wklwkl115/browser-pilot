@@ -4,6 +4,8 @@ This file defines the Semantic singleton boundary for each callable `browser_*` 
 
 Primary inputs are the tool parameters shown in `docs/generated/browser-tool-reference.generated.md`; this boundary file focuses on tool choice, evidence type, and follow-up flow.
 
+Per the Parameter Doctrine (architecture-charter.md 铁律 #16), every tool parameter is either **intent** (an agent strategy choice — `mode`, `selector`, `script`, `sessionId`, etc.) or **mechanical** routing (zero-strategy plumbing with defaults — `tabId`, `browserSessionId`, …). The live `schema <cmd> --json` tags each flag `paramClass`, and CLI help groups mechanical flags under "Plumbing"; treat the schema as the source of that split.
+
 ## Primary workflow
 
 1. `browser_tabs` establishes target and explicit `tabHandle`/`targetRef` (numeric `tabId` remains compatibility input).

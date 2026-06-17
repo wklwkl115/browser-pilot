@@ -45,6 +45,7 @@
           "flag": "--path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Artifact path returned by a browser tool, absolute or relative to cwd",
           "inputs": [
             "inline",
@@ -57,6 +58,7 @@
           "flag": "--paths",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Explicit artifact paths for bounded multi-artifact search mode. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -70,6 +72,7 @@
           "flag": "--root",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional relative root under .browser-pilot/artifacts for bounded multi-artifact search.",
           "inputs": [
             "inline",
@@ -82,6 +85,7 @@
           "flag": "--glob",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional bounded glob for multi-artifact search, e.g. **/*.json",
           "inputs": [
             "inline",
@@ -94,6 +98,7 @@
           "flag": "--mode",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "text",
             "json",
@@ -110,6 +115,7 @@
           "flag": "--offset",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Line offset for text/search; item offset for json arrays; character offset for json scalar strings",
           "inputs": [
             "inline"
@@ -120,6 +126,7 @@
           "flag": "--limit",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Line count for text/sample; item/key limit for json arrays/objects; character limit for json scalar strings",
           "inputs": [
             "inline"
@@ -130,6 +137,7 @@
           "flag": "--json-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Simple dot/bracket path for json mode; when provided without mode, read defaults to json. Missing paths return exists:false/notFound:true. Browser tool artifacts usually keep primary results under data, e.g. data, data.items, data.links.",
           "inputs": [
             "inline",
@@ -142,6 +150,7 @@
           "flag": "--pick",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "Multiple simple JSON paths; repeat --pick path for each path in the CLI (not a JSON array string). Results stay aligned one entry per requested path.",
           "inputs": [
             "inline",
@@ -154,6 +163,7 @@
           "flag": "--query",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "String or bounded safe-regex query for search mode; when provided without mode and without jsonPath/pick, read defaults to search.",
           "inputs": [
             "inline",
@@ -166,6 +176,7 @@
           "flag": "--regex",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Treat query as a bounded regular expression; unsafe patterns are rejected",
           "inputs": [
             "inline"
@@ -176,6 +187,7 @@
           "flag": "--ignore-case",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Case-insensitive search unless false",
           "inputs": [
             "inline"
@@ -186,6 +198,7 @@
           "flag": "--context-lines",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Context lines around search matches",
           "inputs": [
             "inline"
@@ -196,6 +209,7 @@
           "flag": "--context-chars",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Character window around long-line search matches or single-line samples; bounded internally.",
           "inputs": [
             "inline"
@@ -206,6 +220,7 @@
           "flag": "--column-offset",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "text mode only: zero-based character offset within each selected line for long single-line artifacts.",
           "inputs": [
             "inline"
@@ -216,6 +231,7 @@
           "flag": "--column-limit",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "text mode only: maximum characters to return from columnOffset within each selected line.",
           "inputs": [
             "inline"
@@ -226,6 +242,7 @@
           "flag": "--max-matches",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Maximum search matches",
           "inputs": [
             "inline"
@@ -236,6 +253,7 @@
           "flag": "--max-files",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Maximum files scanned for bounded multi-artifact search.",
           "inputs": [
             "inline"
@@ -246,6 +264,7 @@
           "flag": "--max-bytes",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Maximum total bytes scanned for bounded multi-artifact search.",
           "inputs": [
             "inline"
@@ -256,6 +275,7 @@
           "flag": "--max-matches-per-file",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Maximum search matches retained per file in bounded multi-artifact search.",
           "inputs": [
             "inline"
@@ -266,6 +286,7 @@
           "flag": "--max-total-matches",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Maximum total matches retained across all files in bounded multi-artifact search.",
           "inputs": [
             "inline"
@@ -316,6 +337,7 @@
           "flag": "--action",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "start",
             "list",
@@ -335,6 +357,7 @@
           "flag": "--session-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Logical callback listener session id. Required for status/collect/clear/trigger/stop.",
           "inputs": [
             "inline",
@@ -347,6 +370,7 @@
           "flag": "--listen-host",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Local listen host; default 127.0.0.1. Use 0.0.0.0 to listen on all interfaces.",
           "inputs": [
             "inline",
@@ -359,6 +383,7 @@
           "flag": "--port",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Local HTTP listen port; default 0 chooses an ephemeral port.",
           "inputs": [
             "inline"
@@ -369,6 +394,7 @@
           "flag": "--public-base-url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional externally reachable HTTP base URL to combine with the generated callback path.",
           "inputs": [
             "inline",
@@ -381,6 +407,7 @@
           "flag": "--public-https-base-url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional externally reachable HTTPS base URL to combine with the generated callback path.",
           "inputs": [
             "inline",
@@ -393,6 +420,7 @@
           "flag": "--base-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Callback path template. {{correlationId}} is replaced; default /__browser_pilot_oast/{{correlationId}}.",
           "inputs": [
             "inline",
@@ -405,6 +433,7 @@
           "flag": "--correlation-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Correlation id to embed in generated callback URLs/hosts; default random.",
           "inputs": [
             "inline",
@@ -417,6 +446,7 @@
           "flag": "--response-status",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "HTTP/HTTPS status returned by the callback listener; default 200.",
           "inputs": [
             "inline"
@@ -427,6 +457,7 @@
           "flag": "--response-body",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "HTTP/HTTPS response body returned by the callback listener; default ok.",
           "inputs": [
             "inline",
@@ -439,6 +470,7 @@
           "flag": "--response-headers",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "HTTP/HTTPS response headers returned by the callback listener.",
           "inputs": [
             "inline",
@@ -451,6 +483,7 @@
           "flag": "--enable-https",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Also start a local HTTPS callback listener with a self-signed certificate.",
           "inputs": [
             "inline"
@@ -461,6 +494,7 @@
           "flag": "--https-port",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Local HTTPS listen port; default 0 chooses an ephemeral port.",
           "inputs": [
             "inline"
@@ -471,6 +505,7 @@
           "flag": "--enable-dns",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Also start a local UDP DNS callback listener.",
           "inputs": [
             "inline"
@@ -481,6 +516,7 @@
           "flag": "--dns-listen-host",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Local DNS listen host; defaults to listenHost.",
           "inputs": [
             "inline",
@@ -493,6 +529,7 @@
           "flag": "--dns-port",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Local DNS listen port; default 0 chooses an ephemeral port.",
           "inputs": [
             "inline"
@@ -503,6 +540,7 @@
           "flag": "--dns-base-domain",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Generated DNS callback base domain used for dnsCallbackHost, e.g. oast.test.",
           "inputs": [
             "inline",
@@ -515,6 +553,7 @@
           "flag": "--public-dns-base-domain",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional externally reachable DNS base domain used for publicDnsCallbackHost.",
           "inputs": [
             "inline",
@@ -527,6 +566,7 @@
           "flag": "--dns-response-address",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "IPv4 address returned for A queries handled by the local DNS listener; default 127.0.0.1.",
           "inputs": [
             "inline",
@@ -539,6 +579,7 @@
           "flag": "--external-metadata",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional external tunnel/provider metadata stored with the session and returned in status/list results.",
           "inputs": [
             "inline",
@@ -551,6 +592,7 @@
           "flag": "--mode",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "http",
             "https",
@@ -566,6 +608,7 @@
           "flag": "--target",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: explicit target URL or DNS name; otherwise the current session callback URL/host is used.",
           "inputs": [
             "inline",
@@ -578,6 +621,7 @@
           "flag": "--method",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: HTTP/HTTPS method; default POST.",
           "inputs": [
             "inline",
@@ -590,6 +634,7 @@
           "flag": "--request-headers",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: HTTP/HTTPS request headers.",
           "inputs": [
             "inline",
@@ -602,6 +647,7 @@
           "flag": "--body",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: HTTP/HTTPS text body.",
           "inputs": [
             "inline",
@@ -614,6 +660,7 @@
           "flag": "--body-base64",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: HTTP/HTTPS base64 body for binary-ish payloads.",
           "inputs": [
             "inline",
@@ -626,6 +673,7 @@
           "flag": "--query-name",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: DNS query name override; aliases target for dns mode.",
           "inputs": [
             "inline",
@@ -638,6 +686,7 @@
           "flag": "--query-type",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: DNS query type; default A.",
           "inputs": [
             "inline",
@@ -650,6 +699,7 @@
           "flag": "--resolver-host",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: DNS resolver host override; defaults to the current session DNS listener host.",
           "inputs": [
             "inline",
@@ -662,6 +712,7 @@
           "flag": "--resolver-port",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: DNS resolver port override; defaults to the current session DNS listener port.",
           "inputs": [
             "inline"
@@ -672,6 +723,7 @@
           "flag": "--reject-unauthorized",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: HTTPS certificate verification flag. Default false for the local self-signed listener.",
           "inputs": [
             "inline"
@@ -682,6 +734,7 @@
           "flag": "--max-events",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Maximum persisted callback events per session; default 1000, hard-capped at 100000.",
           "inputs": [
             "inline"
@@ -692,6 +745,7 @@
           "flag": "--max-runtime-ms",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Maximum worker lifetime in milliseconds before the local callback listener self-stops; default 3600000, hard-capped at 86400000.",
           "inputs": [
             "inline"
@@ -702,6 +756,7 @@
           "flag": "--after-seq",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "collect only: return callback events with seq greater than this value.",
           "inputs": [
             "inline"
@@ -712,6 +767,7 @@
           "flag": "--trigger-timeout-ms",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "trigger only: wait timeout in milliseconds for the triggered callback event to be persisted.",
           "inputs": [
             "inline"
@@ -722,6 +778,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -779,6 +836,7 @@
           "flag": "--command",
           "kind": "json",
           "required": true,
+          "paramClass": "intent",
           "description": "Bridge command object, e.g. {cmd:'tabs',method:'list'} or {cmd:'cdp',...}",
           "inputs": [
             "inline",
@@ -791,6 +849,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -803,6 +862,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -855,6 +915,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
           "inputs": [
             "inline",
@@ -867,6 +928,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -879,6 +941,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "URL used when bindBrowserSession collects browser cookies for HTTP request injection.",
           "inputs": [
             "inline",
@@ -891,6 +954,7 @@
           "flag": "--cookie",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Single Cookie header, Set-Cookie line, or name=value string.",
           "inputs": [
             "inline",
@@ -903,6 +967,7 @@
           "flag": "--cookies",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Cookie header string, array of strings, or browser-cookie-like objects with name/value.",
           "inputs": [
             "inline",
@@ -915,6 +980,7 @@
           "flag": "--set-cookie",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Single Set-Cookie header line.",
           "inputs": [
             "inline",
@@ -927,6 +993,7 @@
           "flag": "--set-cookies",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Set-Cookie header string or array of Set-Cookie lines.",
           "inputs": [
             "inline",
@@ -939,6 +1006,7 @@
           "flag": "--jwt",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Single JWT value.",
           "inputs": [
             "inline",
@@ -951,6 +1019,7 @@
           "flag": "--jwts",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "JWT values.",
           "inputs": [
             "inline",
@@ -963,6 +1032,7 @@
           "flag": "--values",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "Raw cookie/session values to analyze.",
           "inputs": [
             "inline",
@@ -975,6 +1045,7 @@
           "flag": "--secret-candidates",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "HMAC secret candidates for HS256/HS384/HS512 verification. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -988,6 +1059,7 @@
           "flag": "--secrets",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Alias for secretCandidates. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -1001,6 +1073,7 @@
           "flag": "--wordlist",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Inline HMAC secret candidate wordlist. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -1014,6 +1087,7 @@
           "flag": "--wordlist-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Local HMAC secret candidate wordlist file path; one entry per line.",
           "inputs": [
             "inline",
@@ -1026,6 +1100,7 @@
           "flag": "--max-secret-candidates",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Maximum HMAC secret candidates to test; default 10000, hard-capped at 100000.",
           "inputs": [
             "inline"
@@ -1036,6 +1111,7 @@
           "flag": "--claim-mutations",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Claims to merge into decoded JWT/JWE/session payloads when generating a mutated token.",
           "inputs": [
             "inline",
@@ -1048,6 +1124,7 @@
           "flag": "--claim-replay",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional bounded replay check for generated claim mutations. Supports url, method, headers, body/bodyBase64, cookieName, matchStatus, maxCases, followRedirects, timeoutMs, maxBodyBytes, and allowPrivateTargets.",
           "inputs": [
             "inline",
@@ -1060,6 +1137,7 @@
           "flag": "--allow-private-targets",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Allow claimReplay requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures.",
           "inputs": [
             "inline"
@@ -1070,6 +1148,7 @@
           "flag": "--bind-browser-session",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Collect browser cookies for URL-scoped HTTP request injection using the connected browser session; default false.",
           "inputs": [
             "inline"
@@ -1120,6 +1199,7 @@
           "flag": "--action",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "crawl",
             "fingerprint"
@@ -1134,6 +1214,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
           "inputs": [
             "inline",
@@ -1146,6 +1227,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -1158,6 +1240,7 @@
           "flag": "--allow-private-targets",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures and callback listeners.",
           "inputs": [
             "inline"
@@ -1168,6 +1251,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Single seed URL or host. Host-only input uses defaultScheme.",
           "inputs": [
             "inline",
@@ -1180,6 +1264,7 @@
           "flag": "--urls",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Bounded list of seed URLs or hosts. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -1193,6 +1278,7 @@
           "flag": "--paths",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Optional seed paths to resolve against each target URL. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -1206,6 +1292,7 @@
           "flag": "--headers",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional request headers object.",
           "inputs": [
             "inline",
@@ -1218,6 +1305,7 @@
           "flag": "--method",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "fingerprint mode only: HTTP method for probing; default GET.",
           "inputs": [
             "inline",
@@ -1230,6 +1318,7 @@
           "flag": "--ports",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "fingerprint mode only: optional ports to apply to each target URL. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -1243,6 +1332,7 @@
           "flag": "--schemes",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "fingerprint mode only: optional schemes to expand, e.g. [http, https]. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -1256,6 +1346,7 @@
           "flag": "--include-favicon-hash",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "fingerprint mode only: fetch /favicon.ico for each final origin and include favicon hash metadata; default false.",
           "inputs": [
             "inline"
@@ -1266,6 +1357,7 @@
           "flag": "--include-tls-certificate",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "fingerprint mode only: inspect HTTPS peer certificate metadata for final URLs; default false.",
           "inputs": [
             "inline"
@@ -1276,6 +1368,7 @@
           "flag": "--same-origin",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "crawl mode only: stay within seed origins; default true.",
           "inputs": [
             "inline"
@@ -1286,6 +1379,7 @@
           "flag": "--known-files",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "none",
             "robotstxt",
@@ -1302,6 +1396,7 @@
           "flag": "--extract-js",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "crawl mode only: extract JS endpoint hints and crawl same-origin script files; default true.",
           "inputs": [
             "inline"
@@ -1312,6 +1407,7 @@
           "flag": "--active-graphql-introspection",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "crawl mode only: actively POST a standard GraphQL introspection query only to URLs/content-types that look like GraphQL; default true. Set false for passive-only GraphQL parsing.",
           "inputs": [
             "inline"
@@ -1322,6 +1418,7 @@
           "flag": "--bind-browser-session",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Inject browser cookies for crawl/fingerprint requests into outgoing HTTP request headers; default false.",
           "inputs": [
             "inline"
@@ -1372,6 +1469,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -1384,6 +1482,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -1396,6 +1495,7 @@
           "flag": "--selector",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "CSS selector to click or inspect for media download.",
           "inputs": [
             "inline",
@@ -1408,6 +1508,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Direct HTTP(S) URL to download via Chrome downloads API.",
           "inputs": [
             "inline",
@@ -1420,6 +1521,7 @@
           "flag": "--mode",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "click",
             "media",
@@ -1435,6 +1537,7 @@
           "flag": "--index",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Zero-based match index when selector matches multiple elements; default 0.",
           "inputs": [
             "inline"
@@ -1445,6 +1548,7 @@
           "flag": "--filename",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional suggested filename for direct URL or media mode. Chrome may still uniquify or adjust it.",
           "inputs": [
             "inline",
@@ -1457,6 +1561,7 @@
           "flag": "--conflict-action",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "uniquify",
             "overwrite",
@@ -1472,6 +1577,7 @@
           "flag": "--save-as",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Direct URL only: ask Chrome to show Save As dialog; default false.",
           "inputs": [
             "inline"
@@ -1482,6 +1588,7 @@
           "flag": "--expect-mime",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Expected MIME or category ('image'/'media'/'video'/'audio', or a full type like 'image/png'). media mode defaults to 'image'. If the completed download's MIME doesn't match, the result flags a `mimeMismatch` diagnostic (e.g. an anti-bot text/html page returned for an image).",
           "inputs": [
             "inline",
@@ -1534,6 +1641,7 @@
           "flag": "--params",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "inputs": [
             "inline",
             "@file",
@@ -1545,6 +1653,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -1557,6 +1666,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -1569,6 +1679,7 @@
           "flag": "--session-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Network recorder session id",
           "inputs": [
             "inline",
@@ -1581,6 +1692,7 @@
           "flag": "--event-types",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "inputs": [
             "inline",
             "@file",
@@ -1592,6 +1704,7 @@
           "flag": "--include-hook",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Include page hook status/events",
           "inputs": [
             "inline"
@@ -1602,6 +1715,7 @@
           "flag": "--include-network",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Include Network recorder status/entries",
           "inputs": [
             "inline"
@@ -1612,6 +1726,7 @@
           "flag": "--include-performance",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Include performance entries",
           "inputs": [
             "inline"
@@ -1662,6 +1777,7 @@
           "flag": "--script",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "JavaScript source. Provide either script or program.",
           "inputs": [
             "inline",
@@ -1674,6 +1790,7 @@
           "flag": "--program",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "Ordered program of physical input frames and JS eval, executed as one atomic sequence via trusted CDP events. Each element has exactly one discriminator (eval/mouse/key/text/wait); delay is a universal modifier. Use for page interaction (clicks, typing, scrolling, drag); use script for pure JavaScript.",
           "inputs": [
             "inline",
@@ -1686,6 +1803,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -1698,6 +1816,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -1710,6 +1829,7 @@
           "flag": "--monitor",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Capture compact before/after scan diff. Default false to avoid token and latency overhead.",
           "inputs": [
             "inline"
@@ -1720,6 +1840,7 @@
           "flag": "--script-file",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Read JavaScript source from a local file and pass it as --script. CLI-only; cannot be combined with --script.",
           "inputs": [
             "inline",
@@ -1778,6 +1899,7 @@
           "flag": "--action",
           "kind": "string",
           "required": true,
+          "paramClass": "intent",
           "description": "list | evaluate | addNewDocumentScript | removeNewDocumentScript",
           "inputs": [
             "inline",
@@ -1790,6 +1912,7 @@
           "flag": "--params",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "inputs": [
             "inline",
             "@file",
@@ -1801,6 +1924,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -1813,6 +1937,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -1825,6 +1950,7 @@
           "flag": "--frame-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'frameId' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -1837,6 +1963,7 @@
           "flag": "--expression",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'expression' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -1849,6 +1976,7 @@
           "flag": "--source",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'source' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -1861,6 +1989,7 @@
           "flag": "--identifier",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'identifier' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -1891,6 +2020,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -1903,6 +2033,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -1937,6 +2068,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -1949,6 +2081,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -1961,6 +2094,7 @@
               "flag": "--frame-id",
               "kind": "string",
               "required": true,
+              "paramClass": "intent",
               "description": "Per-action 'frameId' — pass here or inside params; folded into params.",
               "inputs": [
                 "inline",
@@ -1973,6 +2107,7 @@
               "flag": "--expression",
               "kind": "string",
               "required": true,
+              "paramClass": "intent",
               "description": "Per-action 'expression' — pass here or inside params; folded into params.",
               "inputs": [
                 "inline",
@@ -2028,6 +2163,7 @@
           "flag": "--mode",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "path",
             "vhost",
@@ -2043,6 +2179,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
           "inputs": [
             "inline",
@@ -2055,6 +2192,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -2067,6 +2205,7 @@
           "flag": "--allow-private-targets",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures and callback listeners.",
           "inputs": [
             "inline"
@@ -2077,6 +2216,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Base target URL, request URL, or URL containing FUZZ. Host-only input uses defaultScheme.",
           "inputs": [
             "inline",
@@ -2089,6 +2229,7 @@
           "flag": "--urls",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Bounded list of base target URLs or hosts. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -2102,6 +2243,7 @@
           "flag": "--base-url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: base URL for relative raw request targets.",
           "inputs": [
             "inline",
@@ -2114,6 +2256,7 @@
           "flag": "--words",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Candidate words/values. path mode: appended or substituted into FUZZ; vhost mode: expanded into hosts; param mode: aliases values. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -2127,6 +2270,7 @@
           "flag": "--wordlist",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Inline candidate wordlist; aliases words/values. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -2140,6 +2284,7 @@
           "flag": "--wordlist-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional local wordlist file path; one entry per line.",
           "inputs": [
             "inline",
@@ -2152,6 +2297,7 @@
           "flag": "--method",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "HTTP method; default GET in path/vhost modes, override request method in param mode.",
           "inputs": [
             "inline",
@@ -2164,6 +2310,7 @@
           "flag": "--headers",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional request headers object or overrides.",
           "inputs": [
             "inline",
@@ -2176,6 +2323,7 @@
           "flag": "--match-status",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional status matcher list/string.",
           "inputs": [
             "inline",
@@ -2188,6 +2336,7 @@
           "flag": "--filter-status",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional status filter list/string.",
           "inputs": [
             "inline",
@@ -2200,6 +2349,7 @@
           "flag": "--filter-body-bytes",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional body byte-size filter list/string for noisy baselines.",
           "inputs": [
             "inline",
@@ -2212,6 +2362,7 @@
           "flag": "--bind-browser-session",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Inject browser cookies into outgoing HTTP request headers; default false.",
           "inputs": [
             "inline"
@@ -2222,6 +2373,7 @@
           "flag": "--paths",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "path mode only: explicit candidate paths/routes to request. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -2235,6 +2387,7 @@
           "flag": "--extensions",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "path mode only: optional extensions for extension fuzzing, e.g. php,json,txt.",
           "inputs": [
             "inline",
@@ -2247,6 +2400,7 @@
           "flag": "--append-slash",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "path mode only: also test trailing-slash directory variants.",
           "inputs": [
             "inline"
@@ -2257,6 +2411,7 @@
           "flag": "--recursive",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "path mode only: recursively fuzz discovered directory-like paths; default false.",
           "inputs": [
             "inline"
@@ -2267,6 +2422,7 @@
           "flag": "--filter-baseline",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "path/vhost modes only: only return candidates that differ from baseline status/title/body/hash; default false for path, true for vhost.",
           "inputs": [
             "inline"
@@ -2277,6 +2433,7 @@
           "flag": "--baseline-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "path mode only: optional baseline path/word used for automatic baseline comparison.",
           "inputs": [
             "inline",
@@ -2289,6 +2446,7 @@
           "flag": "--baseline-strategy",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "exact",
             "cluster",
@@ -2304,6 +2462,7 @@
           "flag": "--hosts",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "vhost mode only: explicit Host header candidate values. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -2317,6 +2476,7 @@
           "flag": "--base-domain",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "vhost mode only: base domain used to expand words as word.baseDomain.",
           "inputs": [
             "inline",
@@ -2329,6 +2489,7 @@
           "flag": "--template",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "vhost mode only: host template containing FUZZ, e.g. FUZZ.example.test.",
           "inputs": [
             "inline",
@@ -2341,6 +2502,7 @@
           "flag": "--baseline-host",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "vhost mode only: baseline Host header; default is a generated invalid-looking host.",
           "inputs": [
             "inline",
@@ -2353,6 +2515,7 @@
           "flag": "--baseline-hosts",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "vhost mode only: additional baseline Host header values for wildcard response clustering.",
           "inputs": [
             "inline",
@@ -2365,6 +2528,7 @@
           "flag": "--sni-mode",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "target",
             "host",
@@ -2381,6 +2545,7 @@
           "flag": "--sni-name",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "vhost mode only: custom HTTPS SNI servername when needed.",
           "inputs": [
             "inline",
@@ -2393,6 +2558,7 @@
           "flag": "--raw-request",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: raw HTTP request text used as the fuzz template.",
           "inputs": [
             "inline",
@@ -2405,6 +2571,7 @@
           "flag": "--request",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: captured request-like object from browser_network/HAR.",
           "inputs": [
             "inline",
@@ -2417,6 +2584,7 @@
           "flag": "--body",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: text request body override.",
           "inputs": [
             "inline",
@@ -2429,6 +2597,7 @@
           "flag": "--body-base64",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: base64 request body override for binary-ish payloads.",
           "inputs": [
             "inline",
@@ -2441,6 +2610,7 @@
           "flag": "--mutations",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: base mutation object with url, method, headers, body, bodyBase64, or multipart.",
           "inputs": [
             "inline",
@@ -2453,6 +2623,7 @@
           "flag": "--locations",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: parameter locations: query, json, form, multipart, header, or all.",
           "inputs": [
             "inline",
@@ -2465,6 +2636,7 @@
           "flag": "--param-names",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "param mode only: parameter names to fuzz. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -2478,6 +2650,7 @@
           "flag": "--values",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: candidate values to assign to each parameter.",
           "inputs": [
             "inline",
@@ -2490,6 +2663,7 @@
           "flag": "--json-values",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: JSON values for JSON or multipart parameter fuzzing.",
           "inputs": [
             "inline",
@@ -2502,6 +2676,7 @@
           "flag": "--operations",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: parameter operations: set, add, delete. Default set.",
           "inputs": [
             "inline",
@@ -2514,6 +2689,7 @@
           "flag": "--content-type-variants",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "param mode only: multipart Content-Type variants: normal, quoted, missing-boundary, mismatch.",
           "inputs": [
             "inline",
@@ -2572,6 +2748,7 @@
           "flag": "--action",
           "kind": "string",
           "required": true,
+          "paramClass": "intent",
           "description": "listTargets | installTargets | install | collect | status | clear | pause | resume | uninstall | evaluate | addEventListener | removeEventListener | performance | listSessions | getNodeListeners | getListenerChain | getSinkHints",
           "inputs": [
             "inline",
@@ -2584,6 +2761,7 @@
           "flag": "--params",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "inputs": [
             "inline",
             "@file",
@@ -2595,6 +2773,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -2607,6 +2786,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -2619,6 +2799,7 @@
           "flag": "--session-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Hook session id",
           "inputs": [
             "inline",
@@ -2631,6 +2812,7 @@
           "flag": "--targets",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'targets' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -2643,6 +2825,7 @@
           "flag": "--expression",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'expression' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -2655,6 +2838,7 @@
           "flag": "--event-type",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'eventType' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -2667,6 +2851,7 @@
           "flag": "--listener-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'listenerId' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -2679,6 +2864,7 @@
           "flag": "--selector",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'selector' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -2709,6 +2895,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -2721,6 +2908,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -2733,6 +2921,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -2766,6 +2955,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -2778,6 +2968,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -2790,6 +2981,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -2802,6 +2994,7 @@
               "flag": "--targets",
               "kind": "array",
               "required": true,
+              "paramClass": "intent",
               "split": "comma",
               "description": "Per-action 'targets' — pass here or inside params; folded into params. CLI natural route accepts comma-separated values or repeated --targets.",
               "inputs": [
@@ -2834,6 +3027,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -2846,6 +3040,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -2858,6 +3053,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -2889,6 +3085,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -2901,6 +3098,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -2913,6 +3111,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -2944,6 +3143,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -2956,6 +3156,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -2968,6 +3169,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -2999,6 +3201,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -3011,6 +3214,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -3023,6 +3227,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -3054,6 +3259,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -3066,6 +3272,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -3078,6 +3285,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -3109,6 +3317,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -3121,6 +3330,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -3133,6 +3343,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -3164,6 +3375,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -3176,6 +3388,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -3188,6 +3401,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -3219,6 +3433,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -3231,6 +3446,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -3243,6 +3459,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -3274,6 +3491,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -3286,6 +3504,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -3298,6 +3517,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Hook session id",
               "inputs": [
                 "inline",
@@ -3353,6 +3573,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
           "inputs": [
             "inline",
@@ -3365,6 +3586,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -3377,6 +3599,7 @@
           "flag": "--allow-private-targets",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures and callback listeners.",
           "inputs": [
             "inline"
@@ -3387,6 +3610,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Absolute URL or host/path target. Required unless rawRequest or request supplies a URL.",
           "inputs": [
             "inline",
@@ -3399,6 +3623,7 @@
           "flag": "--base-url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Base URL for relative raw request targets.",
           "inputs": [
             "inline",
@@ -3411,6 +3636,7 @@
           "flag": "--raw-request",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Raw HTTP request text: request line, headers, blank line, optional body.",
           "inputs": [
             "inline",
@@ -3423,6 +3649,7 @@
           "flag": "--request",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Captured request-like object from browser_network/HAR; url/method/headers/postData are recognized.",
           "inputs": [
             "inline",
@@ -3435,6 +3662,7 @@
           "flag": "--har",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "HAR object; selected entries are replayed as a request sequence.",
           "inputs": [
             "inline",
@@ -3447,6 +3675,7 @@
           "flag": "--har-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Local HAR JSON file path; selected entries are replayed as a request sequence.",
           "inputs": [
             "inline",
@@ -3459,6 +3688,7 @@
           "flag": "--har-entry-index",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Zero-based HAR entry index to replay.",
           "inputs": [
             "inline"
@@ -3469,6 +3699,7 @@
           "flag": "--har-url-pattern",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped.",
           "inputs": [
             "inline",
@@ -3481,6 +3712,7 @@
           "flag": "--requests",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "Request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Step objects may include variables, variableScope, and extractors/captures for later-step injection.",
           "inputs": [
             "inline",
@@ -3493,6 +3725,7 @@
           "flag": "--sequence",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "Alias for requests; replayed sequentially with optional step-variable extraction/injection.",
           "inputs": [
             "inline",
@@ -3505,6 +3738,7 @@
           "flag": "--multipart",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Multipart body builder: fields object/array and files with inline content/bodyBase64. fileFieldMatrix can expand focused multipart file-field replay cases from one template file.",
           "inputs": [
             "inline",
@@ -3517,6 +3751,7 @@
           "flag": "--compare-baseline",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "When true, replay an unmutated baseline request and include response delta evidence.",
           "inputs": [
             "inline"
@@ -3527,6 +3762,7 @@
           "flag": "--sequence-cookies",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Carry Set-Cookie values between sequence steps; default true for sequences.",
           "inputs": [
             "inline"
@@ -3537,6 +3773,7 @@
           "flag": "--continue-on-error",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Continue sequence replay after a failed step; default false.",
           "inputs": [
             "inline"
@@ -3547,6 +3784,7 @@
           "flag": "--variables",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Initial replay variables for {{name}} injection across raw/url/header/body/multipart strings.",
           "inputs": [
             "inline",
@@ -3559,6 +3797,7 @@
           "flag": "--variable-scope",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Captured replay variable scope: sequence | step. Default sequence; step objects may override.",
           "inputs": [
             "inline",
@@ -3571,6 +3810,7 @@
           "flag": "--method",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Override HTTP method.",
           "inputs": [
             "inline",
@@ -3583,6 +3823,7 @@
           "flag": "--headers",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Headers to merge or override.",
           "inputs": [
             "inline",
@@ -3595,6 +3836,7 @@
           "flag": "--body",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Text request body override.",
           "inputs": [
             "inline",
@@ -3607,6 +3849,7 @@
           "flag": "--body-base64",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Base64 request body override for binary-ish payloads.",
           "inputs": [
             "inline",
@@ -3619,6 +3862,7 @@
           "flag": "--mutations",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional mutation object with url, method, headers, body, bodyBase64, or multipart.",
           "inputs": [
             "inline",
@@ -3631,6 +3875,7 @@
           "flag": "--bind-browser-session",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Merge browser cookies into outgoing HTTP request headers for the request URL; default false.",
           "inputs": [
             "inline"
@@ -3641,6 +3886,7 @@
           "flag": "--reflect-csrf",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "When bindBrowserSession is true, reflect a double-submit CSRF cookie (e.g. XSRF-TOKEN) into its matching request header; default true. Set false to send the bound session without a CSRF header (e.g. to test CSRF protection).",
           "inputs": [
             "inline"
@@ -3651,6 +3897,7 @@
           "flag": "--csrf-cookie",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Exact CSRF cookie name to reflect, overriding auto-detection (xsrf-token/csrf-token/csrftoken/_csrf/csrf_token).",
           "inputs": [
             "inline",
@@ -3663,6 +3910,7 @@
           "flag": "--csrf-header",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Request header name to carry the reflected CSRF token, overriding the default (XSRF-TOKEN→X-XSRF-TOKEN, else X-CSRF-Token).",
           "inputs": [
             "inline",
@@ -3715,6 +3963,7 @@
           "flag": "--action",
           "kind": "enum",
           "required": true,
+          "paramClass": "intent",
           "choices": [
             "record",
             "recall",
@@ -3731,6 +3980,7 @@
           "flag": "--kind",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "sop",
             "fact"
@@ -3745,6 +3995,7 @@
           "flag": "--scope-kind",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "origin",
             "task",
@@ -3760,6 +4011,7 @@
           "flag": "--scope-key",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Origin scope key, or omit and provide url for normalization.",
           "inputs": [
             "inline",
@@ -3772,6 +4024,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional absolute URL used to normalize origin scope for record/recall/validate.",
           "inputs": [
             "inline",
@@ -3784,6 +4037,7 @@
           "flag": "--query",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional recall query matched against title/triggers.",
           "inputs": [
             "inline",
@@ -3796,6 +4050,7 @@
           "flag": "--fresh-only",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "recall only: if true, exclude stale and unverified entries from results (default false).",
           "inputs": [
             "inline"
@@ -3806,6 +4061,7 @@
           "flag": "--title",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "record/validate only: memory entry title.",
           "inputs": [
             "inline",
@@ -3818,6 +4074,7 @@
           "flag": "--triggers",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "record/validate only: non-empty trigger phrases.",
           "inputs": [
             "inline",
@@ -3830,6 +4087,7 @@
           "flag": "--body",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "record/validate only: HOW-only body. SOP <=120 lines, fact <=160 lines.",
           "inputs": [
             "inline",
@@ -3842,6 +4100,7 @@
           "flag": "--evidence-refs",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "record/validate only: optional provenance evidence refs; provided refs must resolve successfully, and browser-result:// requires a resource resolver.",
           "inputs": [
             "inline",
@@ -3854,6 +4113,7 @@
           "flag": "--id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "read only: entry id.",
           "inputs": [
             "inline",
@@ -3866,6 +4126,7 @@
           "flag": "--uri",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "read only: browser-memory:// URI.",
           "inputs": [
             "inline",
@@ -3878,6 +4139,7 @@
           "flag": "--mode",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "text",
             "json"
@@ -3892,6 +4154,7 @@
           "flag": "--offset",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "read text mode: starting line (1-indexed). recall: skip the first N results (default 0).",
           "inputs": [
             "inline"
@@ -3902,6 +4165,7 @@
           "flag": "--limit",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "read text/json mode: line or item limit. recall: maximum results to return (default 10, max 50).",
           "inputs": [
             "inline"
@@ -3912,6 +4176,7 @@
           "flag": "--json-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "read only: optional jsonPath; when provided without mode, read defaults to json.",
           "inputs": [
             "inline",
@@ -3970,6 +4235,7 @@
           "flag": "--action",
           "kind": "string",
           "required": true,
+          "paramClass": "intent",
           "description": "start | stop | status | clear | list | get | body | exportHar | wait",
           "inputs": [
             "inline",
@@ -3982,6 +4248,7 @@
           "flag": "--params",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "inputs": [
             "inline",
             "@file",
@@ -3993,6 +4260,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -4005,6 +4273,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -4017,6 +4286,7 @@
           "flag": "--session-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Recorder session id",
           "inputs": [
             "inline",
@@ -4047,6 +4317,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -4059,6 +4330,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -4071,6 +4343,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Recorder session id",
               "inputs": [
                 "inline",
@@ -4102,6 +4375,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -4114,6 +4388,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -4126,6 +4401,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Recorder session id",
               "inputs": [
                 "inline",
@@ -4157,6 +4433,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -4169,6 +4446,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -4181,6 +4459,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Recorder session id",
               "inputs": [
                 "inline",
@@ -4212,6 +4491,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -4224,6 +4504,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -4236,6 +4517,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Recorder session id",
               "inputs": [
                 "inline",
@@ -4267,6 +4549,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -4279,6 +4562,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -4291,6 +4575,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Recorder session id",
               "inputs": [
                 "inline",
@@ -4322,6 +4607,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -4334,6 +4620,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -4346,6 +4633,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Recorder session id",
               "inputs": [
                 "inline",
@@ -4377,6 +4665,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -4389,6 +4678,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -4401,6 +4691,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Recorder session id",
               "inputs": [
                 "inline",
@@ -4432,6 +4723,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -4444,6 +4736,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -4456,6 +4749,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Recorder session id",
               "inputs": [
                 "inline",
@@ -4487,6 +4781,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -4499,6 +4794,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -4511,6 +4807,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Recorder session id",
               "inputs": [
                 "inline",
@@ -4566,6 +4863,7 @@
           "flag": "--mode",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "scan",
             "content",
@@ -4583,6 +4881,7 @@
           "flag": "--selector",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "content/html modes: CSS selector for a target readable root or exact HTML/text slice",
           "inputs": [
             "inline",
@@ -4595,6 +4894,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "scan/content/html/text modes: optional URL to navigate to before observation",
           "inputs": [
             "inline",
@@ -4607,6 +4907,7 @@
           "flag": "--include-links",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "content mode only: include Markdown links; default true",
           "inputs": [
             "inline"
@@ -4617,6 +4918,7 @@
           "flag": "--max-nodes",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "scan/text modes: maximum DOM nodes visited",
           "inputs": [
             "inline"
@@ -4627,6 +4929,7 @@
           "flag": "--include-iframes",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "scan/text modes: include same-origin iframe content",
           "inputs": [
             "inline"
@@ -4637,6 +4940,7 @@
           "flag": "--baseline",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "scan mode only: prior ABML entity list or prior scan summary/envelope used to compute envelope.diff. CLI-friendlier: use --baseline-snapshot-id or --baseline-path instead of inlining a large prior envelope.",
           "inputs": [
             "inline",
@@ -4649,6 +4953,7 @@
           "flag": "--baseline-snapshot-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "scan mode only: snapshotId from a prior browser_observe scan; the daemon resolves it to that scan's saved entities as the baseline. CLI-friendly by-reference alternative to passing the full prior envelope inline as `baseline`.",
           "inputs": [
             "inline",
@@ -4661,6 +4966,7 @@
           "flag": "--baseline-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "scan mode only: filesystem path to a prior scan's saved artifact; used as the baseline. No-state by-reference alternative to inlining `baseline`.",
           "inputs": [
             "inline",
@@ -4673,6 +4979,7 @@
           "flag": "--action-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "scan mode only (R3.x P1): bp-ref:// of the control you just activated; attributes the baseline network-delta to it as `triggered` relations. Falls back to the focused control when omitted.",
           "inputs": [
             "inline",
@@ -4685,6 +4992,7 @@
           "flag": "--html-mode",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "fragment",
             "raw",
@@ -4702,6 +5010,7 @@
           "flag": "--params",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "inputs": [
             "inline",
             "@file",
@@ -4713,6 +5022,7 @@
           "flag": "--intent",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "scan/text modes only: explicit task intent used as a relevance signal for ranking observation results",
           "inputs": [
             "inline",
@@ -4725,6 +5035,7 @@
           "flag": "--fresh",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "scan/text modes only: force a fresh full-frame observation for this call; ignores the session-delta baseline and render cache without disabling relevance or memory",
           "inputs": [
             "inline"
@@ -4735,6 +5046,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -4747,6 +5059,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -4799,6 +5112,7 @@
           "flag": "--message",
           "kind": "string",
           "required": true,
+          "paramClass": "intent",
           "description": "Instruction shown to the user in the page picker overlay",
           "inputs": [
             "inline",
@@ -4811,6 +5125,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -4823,6 +5138,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -4835,6 +5151,7 @@
           "flag": "--multiple",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Allow Cmd/Ctrl+click multi-select; default true",
           "inputs": [
             "inline"
@@ -4845,6 +5162,7 @@
           "flag": "--focus",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Focus/switch to tabId before picking; default true when tabId is provided",
           "inputs": [
             "inline"
@@ -4895,6 +5213,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -4907,6 +5226,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -4919,6 +5239,7 @@
           "flag": "--format",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "png | jpeg | webp",
           "inputs": [
             "inline",
@@ -4931,6 +5252,7 @@
           "flag": "--quality",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "JPEG/WebP quality",
           "inputs": [
             "inline"
@@ -4941,6 +5263,7 @@
           "flag": "--capture-beyond-viewport",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "CDP captureBeyondViewport",
           "inputs": [
             "inline"
@@ -4951,6 +5274,7 @@
           "flag": "--fallback",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Allow visible-tab fallback",
           "inputs": [
             "inline"
@@ -5001,6 +5325,7 @@
           "flag": "--engine",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "builtin",
             "sqlmap"
@@ -5015,6 +5340,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
           "inputs": [
             "inline",
@@ -5027,6 +5353,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -5039,6 +5366,7 @@
           "flag": "--allow-private-targets",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures.",
           "inputs": [
             "inline"
@@ -5049,6 +5377,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Absolute URL or host/path target. Required unless rawRequest, request, requests, sequence, or HAR input supplies a target.",
           "inputs": [
             "inline",
@@ -5061,6 +5390,7 @@
           "flag": "--base-url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Base URL for relative raw request targets.",
           "inputs": [
             "inline",
@@ -5073,6 +5403,7 @@
           "flag": "--raw-request",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Raw HTTP request text used as the SQLi probe or sqlmap request template.",
           "inputs": [
             "inline",
@@ -5085,6 +5416,7 @@
           "flag": "--request",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Captured request-like object from browser_network/HAR.",
           "inputs": [
             "inline",
@@ -5097,6 +5429,7 @@
           "flag": "--method",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Override HTTP method.",
           "inputs": [
             "inline",
@@ -5109,6 +5442,7 @@
           "flag": "--headers",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Headers to merge or override on the template.",
           "inputs": [
             "inline",
@@ -5121,6 +5455,7 @@
           "flag": "--body",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Text request body override.",
           "inputs": [
             "inline",
@@ -5133,6 +5468,7 @@
           "flag": "--body-base64",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Base64 request body override for binary-ish payloads.",
           "inputs": [
             "inline",
@@ -5145,6 +5481,7 @@
           "flag": "--mutations",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional base mutation object with url, method, headers, body, or bodyBase64.",
           "inputs": [
             "inline",
@@ -5157,6 +5494,7 @@
           "flag": "--har",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: HAR object; selected entries are replayed as sqlmap bridge targets.",
           "inputs": [
             "inline",
@@ -5169,6 +5507,7 @@
           "flag": "--har-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: local HAR JSON file path; selected entries are replayed as sqlmap bridge targets.",
           "inputs": [
             "inline",
@@ -5181,6 +5520,7 @@
           "flag": "--har-entry-index",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Zero-based HAR entry index to replay.",
           "inputs": [
             "inline"
@@ -5191,6 +5531,7 @@
           "flag": "--har-url-pattern",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped.",
           "inputs": [
             "inline",
@@ -5203,6 +5544,7 @@
           "flag": "--requests",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Each selected entry is sent to sqlmap as a separate target.",
           "inputs": [
             "inline",
@@ -5215,6 +5557,7 @@
           "flag": "--sequence",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: alias for requests; each selected entry is sent to sqlmap as a separate target.",
           "inputs": [
             "inline",
@@ -5227,6 +5570,7 @@
           "flag": "--locations",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: parameter locations: query, json, form, header, or all. Default inferred from template.",
           "inputs": [
             "inline",
@@ -5239,6 +5583,7 @@
           "flag": "--param-names",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Optional parameter names to probe or pass to sqlmap -p. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -5252,6 +5597,7 @@
           "flag": "--probe-types",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: probe families: boolean, error, time, union, or all. Default all.",
           "inputs": [
             "inline",
@@ -5264,6 +5610,7 @@
           "flag": "--payload-mode",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "append",
             "replace"
@@ -5278,6 +5625,7 @@
           "flag": "--dbms",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional DBMS payload pack or sqlmap --dbms hint: mysql, postgresql, sqlite, mssql, oracle, or combinations.",
           "inputs": [
             "inline",
@@ -5290,6 +5638,7 @@
           "flag": "--boolean-payload-pairs",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: boolean payload pairs as objects with truePayload/falsePayload or strings separated by ||, =>, or comma.",
           "inputs": [
             "inline",
@@ -5302,6 +5651,7 @@
           "flag": "--error-payloads",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: error oracle payloads.",
           "inputs": [
             "inline",
@@ -5314,6 +5664,7 @@
           "flag": "--time-payloads",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: time oracle payloads.",
           "inputs": [
             "inline",
@@ -5326,6 +5677,7 @@
           "flag": "--union-payloads",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: union/order payloads.",
           "inputs": [
             "inline",
@@ -5338,6 +5690,7 @@
           "flag": "--union-echo",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: enumerate reflected UNION SELECT column positions when hints are available; default true.",
           "inputs": [
             "inline"
@@ -5348,6 +5701,7 @@
           "flag": "--order-by-max",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: maximum ORDER BY index for generated union probes; default 3, hard-capped at 64.",
           "inputs": [
             "inline"
@@ -5358,6 +5712,7 @@
           "flag": "--union-column-max",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: maximum UNION SELECT column count for generated probes; default 3, hard-capped at 64.",
           "inputs": [
             "inline"
@@ -5368,6 +5723,7 @@
           "flag": "--extract-expression",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: optional SQL expression for boolean-blind character extraction.",
           "inputs": [
             "inline",
@@ -5380,6 +5736,7 @@
           "flag": "--extract-max-length",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: maximum extracted characters; default 32, hard-capped at 256.",
           "inputs": [
             "inline"
@@ -5390,6 +5747,7 @@
           "flag": "--extract-charset",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: candidate charset for boolean-blind extraction.",
           "inputs": [
             "inline",
@@ -5402,6 +5760,7 @@
           "flag": "--payloads",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: additional payloads appended to error probes.",
           "inputs": [
             "inline",
@@ -5414,6 +5773,7 @@
           "flag": "--wordlist-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: local wordlist file path (one payload per line, # = comment) whose entries are appended to the default error-probe payloads. Use src/commands/webSecurity/wordlists/sqli-error-payloads.txt as a base or provide a community wordlist. No-override default behavior is byte-identical.",
           "inputs": [
             "inline",
@@ -5426,6 +5786,7 @@
           "flag": "--time-payload-wordlist-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: local wordlist file path (one payload per line, # = comment) whose entries are appended to the default time-probe payloads. Use src/commands/webSecurity/wordlists/sqli-time-payloads.txt as a base.",
           "inputs": [
             "inline",
@@ -5438,6 +5799,7 @@
           "flag": "--time-threshold-ms",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: elapsed-time delta threshold for time oracle matches; default 2000.",
           "inputs": [
             "inline"
@@ -5448,6 +5810,7 @@
           "flag": "--baseline-repeats",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: baseline request repetitions; default 1, hard-capped at 10.",
           "inputs": [
             "inline"
@@ -5458,6 +5821,7 @@
           "flag": "--stop-on-first-match",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:builtin only: stop probing a confirmed vulnerable parameter after the first oracle match; default false.",
           "inputs": [
             "inline"
@@ -5468,6 +5832,7 @@
           "flag": "--sqlmap-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: optional sqlmap executable or launcher command. Default auto-detects sqlmap in PATH or python -m sqlmap.",
           "inputs": [
             "inline",
@@ -5480,6 +5845,7 @@
           "flag": "--sqlmap-args",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: optional launcher arguments prepended before generated sqlmap flags.",
           "inputs": [
             "inline",
@@ -5492,6 +5858,7 @@
           "flag": "--extra-args",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: additional sqlmap CLI arguments appended after generated flags.",
           "inputs": [
             "inline",
@@ -5504,6 +5871,7 @@
           "flag": "--allow-launcher-override",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: required when sqlmapPath or BROWSER_PILOT_SQLMAP_PATH overrides the auto-detected launcher. Default false.",
           "inputs": [
             "inline"
@@ -5514,6 +5882,7 @@
           "flag": "--technique",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: sqlmap technique letters, e.g. BEUSTQ or B,U.",
           "inputs": [
             "inline",
@@ -5526,6 +5895,7 @@
           "flag": "--level",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: sqlmap --level; default 1, clamped to 1-5.",
           "inputs": [
             "inline"
@@ -5536,6 +5906,7 @@
           "flag": "--risk",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: sqlmap --risk; default 1, clamped to 1-3.",
           "inputs": [
             "inline"
@@ -5546,6 +5917,7 @@
           "flag": "--threads",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: sqlmap --threads; default 1, clamped to 1-10.",
           "inputs": [
             "inline"
@@ -5556,6 +5928,7 @@
           "flag": "--retries",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: sqlmap --retries; default 3.",
           "inputs": [
             "inline"
@@ -5566,6 +5939,7 @@
           "flag": "--batch",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: run sqlmap in batch mode; default true.",
           "inputs": [
             "inline"
@@ -5576,6 +5950,7 @@
           "flag": "--flush-session",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: pass --flush-session before testing; default false.",
           "inputs": [
             "inline"
@@ -5586,6 +5961,7 @@
           "flag": "--answers",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: optional sqlmap --answers string for scripted prompts.",
           "inputs": [
             "inline",
@@ -5598,6 +5974,7 @@
           "flag": "--current-db",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: request current database metadata via --current-db.",
           "inputs": [
             "inline"
@@ -5608,6 +5985,7 @@
           "flag": "--current-user",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: request current user metadata via --current-user.",
           "inputs": [
             "inline"
@@ -5618,6 +5996,7 @@
           "flag": "--is-dba",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: request DBA capability metadata via --is-dba.",
           "inputs": [
             "inline"
@@ -5628,6 +6007,7 @@
           "flag": "--banner",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: request DBMS banner metadata via --banner.",
           "inputs": [
             "inline"
@@ -5638,6 +6018,7 @@
           "flag": "--tamper",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "engine:sqlmap only: sqlmap tamper script list or comma string passed to --tamper.",
           "inputs": [
             "inline",
@@ -5650,6 +6031,7 @@
           "flag": "--bind-browser-session",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Merge browser cookies into outgoing HTTP request headers for request URLs; default false.",
           "inputs": [
             "inline"
@@ -5700,6 +6082,7 @@
           "flag": "--action",
           "kind": "string",
           "required": true,
+          "paramClass": "intent",
           "description": "One of: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab",
           "inputs": [
             "inline",
@@ -5712,6 +6095,7 @@
           "flag": "--browser-session-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Deprecated compatibility only; stripped before tool validation. Browser-session routing defaults to the selected session.",
           "inputs": [
             "inline",
@@ -5724,6 +6108,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target for switch/close: numeric tabId or tabHandle string.",
           "inputs": [
             "inline",
@@ -5736,6 +6121,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Preferred stable tabHandle for switch/close/attach/detach/lease/release.",
           "inputs": [
             "inline",
@@ -5748,6 +6134,7 @@
           "flag": "--name",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Browser session display name for createSession.",
           "inputs": [
             "inline",
@@ -5760,6 +6147,7 @@
           "flag": "--browser-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Browser client id or extension id for selectBrowser",
           "inputs": [
             "inline",
@@ -5772,6 +6160,7 @@
           "flag": "--snapshot-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional observation snapshot id for browser_tabs action=snapshot.",
           "inputs": [
             "inline",
@@ -5784,6 +6173,7 @@
           "flag": "--allow-expired",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "browser_tabs action=snapshot only: allow returning expired observation snapshot metadata.",
           "inputs": [
             "inline"
@@ -5794,6 +6184,7 @@
           "flag": "--include-bridge-per-tab",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "browser_tabs action=list only: advanced compatibility; include the repeated per-tab bridge block. Default false keeps tabs compact and hoists bridge to top-level.",
           "inputs": [
             "inline"
@@ -5804,6 +6195,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "URL for create",
           "inputs": [
             "inline",
@@ -5816,6 +6208,7 @@
           "flag": "--active",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Whether created tab should be active",
           "inputs": [
             "inline"
@@ -5826,6 +6219,7 @@
           "flag": "--incognito",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint.",
           "inputs": [
             "inline"
@@ -5876,6 +6270,7 @@
           "flag": "--engine",
           "kind": "enum",
           "required": false,
+          "paramClass": "intent",
           "choices": [
             "builtin",
             "nuclei"
@@ -5890,6 +6285,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
           "inputs": [
             "inline",
@@ -5902,6 +6298,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -5914,6 +6311,7 @@
           "flag": "--allow-private-targets",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures.",
           "inputs": [
             "inline"
@@ -5924,6 +6322,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Single target URL or host. Host-only input uses defaultScheme.",
           "inputs": [
             "inline",
@@ -5936,6 +6335,7 @@
           "flag": "--urls",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Bounded list of target URLs or hosts. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -5949,6 +6349,7 @@
           "flag": "--paths",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "Optional paths to resolve against each target URL before template expansion or nuclei replay. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -5962,6 +6363,7 @@
           "flag": "--raw-request",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Raw HTTP request text used as the base request or nuclei request template.",
           "inputs": [
             "inline",
@@ -5974,6 +6376,7 @@
           "flag": "--request",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Captured request-like object from browser_network/HAR.",
           "inputs": [
             "inline",
@@ -5986,6 +6389,7 @@
           "flag": "--method",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Default HTTP method; template method overrides it or request override for nuclei.",
           "inputs": [
             "inline",
@@ -5998,6 +6402,7 @@
           "flag": "--headers",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Base request headers; template headers merge over them or nuclei replay override.",
           "inputs": [
             "inline",
@@ -6010,6 +6415,7 @@
           "flag": "--body",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Base text request body for raw/captured replay mode.",
           "inputs": [
             "inline",
@@ -6022,6 +6428,7 @@
           "flag": "--body-base64",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Base64 request body for raw/captured replay mode.",
           "inputs": [
             "inline",
@@ -6034,6 +6441,7 @@
           "flag": "--mutations",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "Optional base mutation object with url, method, headers, body, or bodyBase64.",
           "inputs": [
             "inline",
@@ -6046,6 +6454,7 @@
           "flag": "--template-ids",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "builtin mode: built-in template ids or tags to run. Omit templateIds/templates/templatePath to run the small built-in exposure/API baseline; use all for every built-in template. nuclei mode: optional nuclei template ids passed via -id.",
           "inputs": [
             "inline",
@@ -6058,6 +6467,7 @@
           "flag": "--templates",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "builtin mode only: inline custom template object or array. Fields: id, paths/url, method, headers, body, matchStatus, bounded bodyRegex, bodyIncludes, bounded headerRegex, bounded extractRegex, matchers, extractors.",
           "inputs": [
             "inline",
@@ -6070,6 +6480,7 @@
           "flag": "--template-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "builtin mode only: local JSON or YAML template file path containing a template object, array, or {templates}.",
           "inputs": [
             "inline",
@@ -6082,6 +6493,7 @@
           "flag": "--variables",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "builtin mode only: template variable values for {{name}} substitution.",
           "inputs": [
             "inline",
@@ -6094,6 +6506,7 @@
           "flag": "--tech",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "builtin mode only: optional technology hints retained for template selection workflows.",
           "inputs": [
             "inline",
@@ -6106,6 +6519,7 @@
           "flag": "--max-requests",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "builtin mode only: maximum total HTTP requests across all expanded template/target combinations; default 2000, hard-capped at 10000.",
           "inputs": [
             "inline"
@@ -6116,6 +6530,7 @@
           "flag": "--nuclei-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: optional nuclei executable or launcher command. Default auto-detects nuclei in PATH.",
           "inputs": [
             "inline",
@@ -6128,6 +6543,7 @@
           "flag": "--nuclei-args",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: optional launcher arguments prepended before generated nuclei flags.",
           "inputs": [
             "inline",
@@ -6140,6 +6556,7 @@
           "flag": "--extra-args",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: additional nuclei CLI arguments appended after generated flags.",
           "inputs": [
             "inline",
@@ -6152,6 +6569,7 @@
           "flag": "--allow-launcher-override",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: required when nucleiPath or BROWSER_PILOT_NUCLEI_PATH overrides the auto-detected launcher. Default false.",
           "inputs": [
             "inline"
@@ -6162,6 +6580,7 @@
           "flag": "--template-paths",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "nuclei mode only: local nuclei template file or directory paths passed via -t. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -6175,6 +6594,7 @@
           "flag": "--workflow-paths",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "split": "comma",
           "description": "nuclei mode only: local nuclei workflow file or directory paths passed via -w. Accepts comma-separated values or a repeated flag.",
           "inputs": [
@@ -6188,6 +6608,7 @@
           "flag": "--tags",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: optional nuclei tag selector list passed via -tags.",
           "inputs": [
             "inline",
@@ -6200,6 +6621,7 @@
           "flag": "--exclude-tags",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: optional nuclei exclude-tag selector list passed via -etags.",
           "inputs": [
             "inline",
@@ -6212,6 +6634,7 @@
           "flag": "--severities",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: optional nuclei severity selector list passed via -severity.",
           "inputs": [
             "inline",
@@ -6224,6 +6647,7 @@
           "flag": "--authors",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: optional nuclei author selector list passed via -author.",
           "inputs": [
             "inline",
@@ -6236,6 +6660,7 @@
           "flag": "--har",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: HAR object; selected entries are replayed as nuclei bridge targets.",
           "inputs": [
             "inline",
@@ -6248,6 +6673,7 @@
           "flag": "--har-path",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: local HAR JSON file path; selected entries are replayed as nuclei bridge targets.",
           "inputs": [
             "inline",
@@ -6260,6 +6686,7 @@
           "flag": "--har-entry-index",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Zero-based HAR entry index to replay.",
           "inputs": [
             "inline"
@@ -6270,6 +6697,7 @@
           "flag": "--har-url-pattern",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped.",
           "inputs": [
             "inline",
@@ -6282,6 +6710,7 @@
           "flag": "--requests",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Each selected entry is sent to nuclei as a separate target.",
           "inputs": [
             "inline",
@@ -6294,6 +6723,7 @@
           "flag": "--sequence",
           "kind": "array",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: alias for requests; each selected entry is sent to nuclei as a separate target.",
           "inputs": [
             "inline",
@@ -6306,6 +6736,7 @@
           "flag": "--retries",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: retry count; default 1.",
           "inputs": [
             "inline"
@@ -6316,6 +6747,7 @@
           "flag": "--concurrency",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: concurrency via -c; default 10, clamped to 1-100.",
           "inputs": [
             "inline"
@@ -6326,6 +6758,7 @@
           "flag": "--bulk-size",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "nuclei mode only: bulk size via -bs; default 10, clamped to 1-100.",
           "inputs": [
             "inline"
@@ -6336,6 +6769,7 @@
           "flag": "--bind-browser-session",
           "kind": "boolean",
           "required": false,
+          "paramClass": "intent",
           "description": "Merge browser cookies into outgoing HTTP request headers for request URLs; default false.",
           "inputs": [
             "inline"
@@ -6386,6 +6820,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -6398,6 +6833,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -6410,6 +6846,7 @@
           "flag": "--selector",
           "kind": "string",
           "required": true,
+          "paramClass": "intent",
           "description": "CSS selector for the file input, label, or button that opens the file chooser.",
           "inputs": [
             "inline",
@@ -6422,6 +6859,7 @@
           "flag": "--files",
           "kind": "array",
           "required": true,
+          "paramClass": "intent",
           "description": "One or more absolute local file paths.",
           "inputs": [
             "inline",
@@ -6434,6 +6872,7 @@
           "flag": "--index",
           "kind": "number",
           "required": false,
+          "paramClass": "intent",
           "description": "Zero-based match index when selector matches multiple elements; default 0.",
           "inputs": [
             "inline"
@@ -6444,6 +6883,7 @@
           "flag": "--confirm",
           "kind": "boolean",
           "required": true,
+          "paramClass": "intent",
           "description": "Must be true to confirm the user approved uploading these exact local file path(s).",
           "inputs": [
             "inline"
@@ -6500,6 +6940,7 @@
           "flag": "--action",
           "kind": "string",
           "required": true,
+          "paramClass": "intent",
           "description": "navigate | navigateAndWait | navigation | loadState | networkIdle | selector | any | all (non-empty waits/conditions) | cancel | diagnose",
           "inputs": [
             "inline",
@@ -6512,6 +6953,7 @@
           "flag": "--params",
           "kind": "json",
           "required": false,
+          "paramClass": "intent",
           "inputs": [
             "inline",
             "@file",
@@ -6523,6 +6965,7 @@
           "flag": "--tab-id",
           "kind": "string",
           "required": false,
+          "paramClass": "mechanical",
           "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
           "inputs": [
             "inline",
@@ -6535,6 +6978,7 @@
           "flag": "--target-ref",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
           "inputs": [
             "inline",
@@ -6547,6 +6991,7 @@
           "flag": "--session-id",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Logical wait session id",
           "inputs": [
             "inline",
@@ -6559,6 +7004,7 @@
           "flag": "--url",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'url' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -6571,6 +7017,7 @@
           "flag": "--selector",
           "kind": "string",
           "required": false,
+          "paramClass": "intent",
           "description": "Per-action 'selector' — pass here or inside params; folded into params.",
           "inputs": [
             "inline",
@@ -6603,6 +7050,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -6615,6 +7063,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -6627,6 +7076,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
@@ -6639,6 +7089,7 @@
               "flag": "--url",
               "kind": "string",
               "required": true,
+              "paramClass": "intent",
               "description": "Per-action 'url' — pass here or inside params; folded into params.",
               "inputs": [
                 "inline",
@@ -6672,6 +7123,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -6684,6 +7136,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -6696,6 +7149,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
@@ -6708,6 +7162,7 @@
               "flag": "--url",
               "kind": "string",
               "required": true,
+              "paramClass": "intent",
               "description": "Per-action 'url' — pass here or inside params; folded into params.",
               "inputs": [
                 "inline",
@@ -6739,6 +7194,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -6751,6 +7207,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -6763,6 +7220,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
@@ -6794,6 +7252,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -6806,6 +7265,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -6818,6 +7278,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
@@ -6849,6 +7310,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -6861,6 +7323,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -6873,6 +7336,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
@@ -6906,6 +7370,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -6918,6 +7383,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -6930,6 +7396,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
@@ -6942,6 +7409,7 @@
               "flag": "--selector",
               "kind": "string",
               "required": true,
+              "paramClass": "intent",
               "description": "Per-action 'selector' — pass here or inside params; folded into params.",
               "inputs": [
                 "inline",
@@ -6973,6 +7441,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -6985,6 +7454,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -6997,6 +7467,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
@@ -7028,6 +7499,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -7040,6 +7512,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -7052,6 +7525,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
@@ -7083,6 +7557,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -7095,6 +7570,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -7107,6 +7583,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
@@ -7138,6 +7615,7 @@
               "flag": "--tab-id",
               "kind": "string",
               "required": false,
+              "paramClass": "mechanical",
               "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
               "inputs": [
                 "inline",
@@ -7150,6 +7628,7 @@
               "flag": "--target-ref",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
               "inputs": [
                 "inline",
@@ -7162,6 +7641,7 @@
               "flag": "--session-id",
               "kind": "string",
               "required": false,
+              "paramClass": "intent",
               "description": "Logical wait session id",
               "inputs": [
                 "inline",
