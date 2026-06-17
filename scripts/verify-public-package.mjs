@@ -105,7 +105,7 @@ const help = runConsumerBin(["--help"]).stdout;
 assert(help.includes("browser-pilot"), "CLI help must mention browser-pilot");
 const commands = JSON.parse(runConsumerBin(["commands", "--json"]).stdout);
 assert.equal(commands.ok, true, "commands --json must return ok:true");
-assert(Array.isArray(commands.commands) && commands.commands.length === 22, "commands --json must list all browser commands");
+assert(Array.isArray(commands.commands) && commands.commands.length === 21, "commands --json must list all browser commands");
 const schema = JSON.parse(runConsumerBin(["schema", "observe", "--json"]).stdout);
 assert.equal(schema.ok, true, "schema observe --json must return ok:true");
 const status = JSON.parse(runConsumerBin(["status", "--json"]).stdout);

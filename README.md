@@ -7,7 +7,7 @@
 [![CI](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
-[![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#tools)
+[![Tools](https://img.shields.io/badge/tools-21%20browser__*-blueviolet.svg)](#tools)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](tsconfig.json)
 [![860+ Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#development)
 
@@ -17,7 +17,7 @@
 
 Browser Pilot gives AI agents direct control over real Chrome/Edge tabs — DOM structure,
 JavaScript execution, CDP commands, network traffic, cookie jars, and file transfers.
-Everything a human can do in DevTools, your agent can do through 22 composable
+Everything a human can do in DevTools, your agent can do through 21 composable
 `browser_*` tools.
 
 > **Not a simulator. Not a proxy. Not a screenshot parser.**
@@ -87,8 +87,8 @@ Browser Pilot gives agents what they actually need:
 └────────────────────────┬──────────────────────────────────────────┘
                          │
 ┌────────────────────────▼──────────────────────────────────────────┐
-│  Tool Layer (22 browser_* tools)                                  │
-│  Core: tabs, observe, execute, command, wait, pick, screenshot,   │
+│  Tool Layer (21 browser_* tools)                                  │
+│  Core: tabs, observe, execute, command, wait, screenshot,         │
 │        network, hook, evidence, frame, artifact, memory,          │
 │        download, upload                                           │
 │  Security: crawl, fuzz, sqli, template, cookie-analyze,           │
@@ -97,7 +97,7 @@ Browser Pilot gives agents what they actually need:
 ```
 
 The Chrome extension runs in the browser and bridges to a Node.js server over a local
-WebSocket. The tool layer on top exposes 22 composable tools through the `browser-pilot`
+WebSocket. The tool layer on top exposes 21 composable tools through the `browser-pilot`
 CLI, backed by a user-local daemon that owns the live browser session.
 
 | Frontend | Best for | Guide |
@@ -132,7 +132,7 @@ manually after editing source, run those two commands.
 
 ### Use via CLI
 
-The `browser-pilot` CLI exposes all 22 tools as shell subcommands. A user-local daemon
+The `browser-pilot` CLI exposes all 21 tools as shell subcommands. A user-local daemon
 manages the bridge server — it auto-starts on first use.
 
 ```bash
@@ -183,7 +183,6 @@ testing, and daemon management.
 | `browser_memory` | core | `src/commands/defineMemoryCommand.ts` |
 | `browser_network` | core | `src/commands/defineNativeActionCommands.ts` |
 | `browser_observe` | core | `src/commands/defineObserveCommand.ts` |
-| `browser_pick` | core | `src/commands/definePickCommand.ts` |
 | `browser_screenshot` | core | `src/commands/defineScreenshotCommand.ts` |
 | `browser_sqli` | security | `src/commands/webSecurity/commands/registerSqli.ts` |
 | `browser_tabs` | core | `src/commands/tabsCommand.ts` |
@@ -192,7 +191,7 @@ testing, and daemon management.
 | `browser_wait` | core | `src/commands/defineNativeActionCommands.ts` |
 <!-- END TOOL INDEX -->
 
-15 core tools (tabs, observe, execute, command, wait, pick, screenshot, network, hook,
+14 core tools (tabs, observe, execute, command, wait, screenshot, network, hook,
 evidence, frame, artifact, memory, download, upload) and 7 security tools (crawl, fuzz,
 sqli, template, cookie-analyze, http-replay, callback-oast). See the
 [tool reference](docs/generated/browser-tool-reference.generated.md) for full

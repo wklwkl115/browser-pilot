@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "commandCount": 22,
+  "commandCount": 21,
   "commands": [
     {
       "name": "artifact",
@@ -5076,107 +5076,6 @@
             "inline",
             "@file",
             "stdin"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "pick",
-      "commandName": "browser_pick",
-      "group": "core",
-      "description": "Interactively pick DOM elements in the real browser and return stable CSS selectors plus element summaries.",
-      "agentCli": {
-        "mode": "standard",
-        "recommended": true
-      },
-      "artifactBehavior": {
-        "resultField": "saved.path",
-        "descriptorFields": [
-          "path",
-          "kind",
-          "bytes",
-          "chars",
-          "privacy",
-          "readCommands"
-        ],
-        "readCommand": "browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
-        "readModes": [
-          "json",
-          "text",
-          "search",
-          "sample"
-        ],
-        "commonJsonPaths": [
-          "data",
-          "data.content",
-          "data.actionables",
-          "data.list_hints"
-        ],
-        "notes": [
-          "JSON results that include saved.path are enriched with artifacts[] descriptors; cliNextActions[] only carries non-duplicate executable follow-ups.",
-          "Large or sensitive raw payloads stay in local artifacts; read bounded paths with browser-pilot artifact."
-        ]
-      },
-      "flags": [
-        {
-          "name": "message",
-          "flag": "--message",
-          "kind": "string",
-          "required": true,
-          "paramClass": "intent",
-          "description": "Instruction shown to the user in the page picker overlay",
-          "inputs": [
-            "inline",
-            "@file",
-            "stdin"
-          ]
-        },
-        {
-          "name": "tabId",
-          "flag": "--tab-id",
-          "kind": "string",
-          "required": false,
-          "paramClass": "mechanical",
-          "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
-          "inputs": [
-            "inline",
-            "@file",
-            "stdin"
-          ]
-        },
-        {
-          "name": "targetRef",
-          "flag": "--target-ref",
-          "kind": "string",
-          "required": false,
-          "paramClass": "intent",
-          "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
-          "inputs": [
-            "inline",
-            "@file",
-            "stdin"
-          ]
-        },
-        {
-          "name": "multiple",
-          "flag": "--multiple",
-          "kind": "boolean",
-          "required": false,
-          "paramClass": "intent",
-          "description": "Allow Cmd/Ctrl+click multi-select; default true",
-          "inputs": [
-            "inline"
-          ]
-        },
-        {
-          "name": "focus",
-          "flag": "--focus",
-          "kind": "boolean",
-          "required": false,
-          "paramClass": "intent",
-          "description": "Focus/switch to tabId before picking; default true when tabId is provided",
-          "inputs": [
-            "inline"
           ]
         }
       ]

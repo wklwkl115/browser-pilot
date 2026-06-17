@@ -11,7 +11,6 @@ const check = process.argv.includes("--check");
 const entries = [
 	["scanTemplate.ts", "scanBundle.ts"],
 	["contentTemplate.ts", "contentBundle.ts"],
-	["pickTemplate.ts", "pickBundle.ts"],
 	["visionTemplate.ts", "visionBundle.ts"],
 ];
 

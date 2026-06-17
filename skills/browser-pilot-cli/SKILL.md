@@ -63,7 +63,6 @@ Pick the subcommand by intent; get its flags from `schema <cmd> --json`.
 | Action returned ok but page didn't change; OR JS-typed text the framework ignores (submit stays disabled, controlled input / `contenteditable` reverts to empty) | fresh observed click ref → `execute --script-file` with `await browserPilot.click(ref)`; otherwise trusted-event-gated/canvas → `command --command @file` with `input.pointer` / `input.keys` |
 | CDP / native command | `command --command @native-command.json` |
 | Wait nav/selector/load/idle | `wait selector --selector "#id"` / `wait navigate --url ...` / `wait network-idle` (never sleep-loop) |
-| User points to element | `pick` |
 | Download / upload | `download` / `upload --files <absolute> --confirm` (no hand-scripted clicks) |
 | Record requests/HAR/body | `network start` → act → `network list`/`get`/`body`/`export-har` (by `--session-id`) |
 | Capture console/error/storage/ws/crypto/DOM-sink/listener | `hook install-targets --targets ...` → act → `hook collect --session-id ...` or `evidence` |
@@ -161,7 +160,7 @@ Use this only after a fresh `observe --mode scan` produced the ref and normal `e
 | Resource `stale`/`HANDLE_NOT_FOUND`/baseline expired | re-capture with `observe --mode scan` or the original command to mint fresh evidence; never retry the old handle |
 | Context lost / delta baseline forgotten | (1) `browser-pilot observe --mode scan --fresh --json` to re-see the page; (2) `browser-pilot artifact --mode search --glob '**/*.json' --json` to rediscover own artifacts (each carries `snapshot.url`/`capturedAt`/`snapshotId`); (3) `browser-pilot memory --action recall --json` for durable SOP/facts; do not turn off relevance or memory globally |
 | Unexplained `INVALID_RULE` / unsupported action | inspect `browser-pilot status --json` / `tabs --action snapshot --json` for `extension.extensionStale`; if true or `reportedBuild` is missing, reload the browser extension and retry |
-| Command not found | `browser-pilot --help`; all 22 commands listed unless package/daemon is stale |
+| Command not found | `browser-pilot --help`; all 21 commands listed unless package/daemon is stale |
 | `crawl`/`fuzz`/`http-replay` TLS `unable to verify the first certificate` | TLS-intercepting proxy/AV/corporate CA. Daemon trusts the OS/browser CA store on Node ≥22; if it persists set `NODE_EXTRA_CA_CERTS=<root.pem>` and restart. The error's `remediation` names the fix |
 
 ## Index

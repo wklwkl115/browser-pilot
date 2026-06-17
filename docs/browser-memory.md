@@ -40,7 +40,7 @@
 - 精确同标题或**近乎相同**(相似度 ≥ `0.8`)→ 自动 supersede(写 tombstone),不堆积近重复;返回 `supersededIds`。
 - **相似但不同**(`0.5` ≤ 相似度 < `0.8`)→ 不合并,作为 `duplicateCandidates` 软提示返回,agent 可自行决定是否显式替换。
 - 不同流程(如 `login flow` vs `checkout payment`)相似度低,正常共存。
-- **催记仅在"做了事"时**:纯读工具(observe / screenshot / wait / frame / pick / artifact)即便带 evidence 也不触发 `record candidate`——只是看页面不值得结晶;recall 浮现不受此限。
+- **催记仅在"做了事"时**:纯读工具(observe / screenshot / wait / frame / artifact)即便带 evidence 也不触发 `record candidate`——只是看页面不值得结晶;recall 浮现不受此限。
 
 ## 自动召回（memory kernel）
 

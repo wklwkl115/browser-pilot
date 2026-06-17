@@ -7,7 +7,7 @@
 [![CI](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
-[![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#工具列表)
+[![Tools](https://img.shields.io/badge/tools-21%20browser__*-blueviolet.svg)](#工具列表)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](tsconfig.json)
 [![860+ Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#开发)
 
@@ -17,7 +17,7 @@
 
 Browser Pilot 让 AI agent 直接控制真实的 Chrome/Edge 标签页：DOM 结构、JavaScript
 执行、CDP 命令、网络流量、Cookie、文件传输。人类在 DevTools 里能做的一切，你的 agent 都能通过
-22 个可组合的 `browser_*` 工具完成。
+21 个可组合的 `browser_*` 工具完成。
 
 > **不是模拟器。不是代理。不是截图解析。**
 > 你的 agent 把 DOM 读成语义模型，像开发者在 DevTools 里一样编写 JavaScript。
@@ -75,8 +75,8 @@ Browser Pilot 给 agent 它们真正需要的东西：
 └────────────────────────┬──────────────────────────────────────────┘
                          │
 ┌────────────────────────▼──────────────────────────────────────────┐
-│  工具层 (22 个 browser_* 工具)                                     │
-│  核心: tabs, observe, execute, command, wait, pick, screenshot,   │
+│  工具层 (21 个 browser_* 工具)                                     │
+│  核心: tabs, observe, execute, command, wait, screenshot,         │
 │        network, hook, evidence, frame, artifact, memory,          │
 │        download, upload                                           │
 │  安全: crawl, fuzz, sqli, template, cookie-analyze,               │
@@ -85,7 +85,7 @@ Browser Pilot 给 agent 它们真正需要的东西：
 ```
 
 Chrome 扩展运行在浏览器中，通过本地 WebSocket 桥接到 Node.js 服务器。
-顶层工具层通过 `browser-pilot` CLI 暴露 22 个可组合的工具，由用户级 daemon 持有真实浏览器会话。
+顶层工具层通过 `browser-pilot` CLI 暴露 21 个可组合的工具，由用户级 daemon 持有真实浏览器会话。
 
 | 前端 | 适用场景 | 指南 |
 |---|---|---|
@@ -118,7 +118,7 @@ Chrome 扩展产物（`npm run build:bridge`）。修改源码后如需手动重
 
 ### 通过 CLI 使用
 
-`browser-pilot` CLI 将全部 22 个工具暴露为 shell 子命令。用户级单例 daemon 管理 bridge server，
+`browser-pilot` CLI 将全部 21 个工具暴露为 shell 子命令。用户级单例 daemon 管理 bridge server，
 首次调用时自动启动。
 
 ```bash
@@ -150,7 +150,7 @@ npx browser-pilot schema observe --json
 
 ## 工具列表
 
-15 个核心工具（tabs, observe, execute, command, wait, pick, screenshot, network, hook,
+14 个核心工具（tabs, observe, execute, command, wait, screenshot, network, hook,
 evidence, frame, artifact, memory, download, upload）和 7 个安全工具（crawl, fuzz,
 sqli, template, cookie-analyze, http-replay, callback-oast）。详见
 [工具参考](docs/generated/browser-tool-reference.generated.md)。

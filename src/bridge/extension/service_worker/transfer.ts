@@ -300,7 +300,17 @@ async function browserPilotTransferEvaluate(tabId: number, expression: string, t
   const data = asRecord(resp.data);
   const result = asRecord(data.result || resp.result || resp.data);
   const exceptionDetails = asRecord(result.exceptionDetails);
-  if (result.exceptionDetails) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, asRecord(exceptionDetails.exception).description || 'Runtime.evaluate failed', exceptionDetails);
+  if (result.exceptionDetails) {
+    // Recover the structured selector error code from the in-page exception (Runtime.evaluate drops
+    // the thrown Error's custom .code) and strip the JS stack so callers see a clean SELECTOR_NOT_FOUND
+    // / INVALID_SELECTOR instead of an opaque execution error with a stack trace.
+    const rawDesc = String(asRecord(exceptionDetails.exception).description || asRecord(exceptionDetails.exception).value || 'Runtime.evaluate failed');
+    const message = rawDesc.split('\n')[0].replace(/^[A-Za-z]*Error:\s*/, '');
+    const code = message.includes('No element matches selector') ? BROWSER_PILOT_ERROR_CODES.SELECTOR_NOT_FOUND
+      : message.includes('Invalid selector') ? BROWSER_PILOT_ERROR_CODES.INVALID_SELECTOR
+      : BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR;
+    return browserPilotError(code, message, exceptionDetails);
+  }
   return { ok: true, data: asRecord(asRecord(result.result).value) as TransferEvalData };
 }
 

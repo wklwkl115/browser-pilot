@@ -101,7 +101,7 @@ function buildSnapshots() {
 		...outputSnapshots(),
 	};
 	const count = snapshots["contracts/cli/commands.snapshot.json"].commandCount;
-	assert.equal(count, 22, `command count must stay 22, got ${count}`);
+	assert.equal(count, 21, `command count must stay 21 (browser_pick removed), got ${count}`);
 	return snapshots;
 }
 
