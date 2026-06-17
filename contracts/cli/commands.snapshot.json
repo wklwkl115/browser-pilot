@@ -1623,7 +1623,7 @@
       "name": "execute",
       "commandName": "browser_execute",
       "group": "core",
-      "description": "Execute JavaScript in a connected real browser tab.",
+      "description": "Execute JavaScript, or a structured program of physical input frames (mouse/key/text/drag) and JS eval, in a connected real browser tab.",
       "agentCli": {
         "mode": "standard",
         "recommended": true
@@ -1661,8 +1661,20 @@
           "name": "script",
           "flag": "--script",
           "kind": "string",
-          "required": true,
-          "description": "JavaScript source.",
+          "required": false,
+          "description": "JavaScript source. Provide either script or program.",
+          "inputs": [
+            "inline",
+            "@file",
+            "stdin"
+          ]
+        },
+        {
+          "name": "program",
+          "flag": "--program",
+          "kind": "array",
+          "required": false,
+          "description": "Ordered program of physical input frames and JS eval, executed as one atomic sequence via trusted CDP events. Each element has exactly one discriminator (eval/mouse/key/text/wait); delay is a universal modifier. Use for page interaction (clicks, typing, scrolling, drag); use script for pure JavaScript.",
           "inputs": [
             "inline",
             "@file",
@@ -1698,7 +1710,7 @@
           "flag": "--monitor",
           "kind": "boolean",
           "required": false,
-          "description": "Capture compact before/after scan diff for JavaScript mode. Default false to avoid token and latency overhead.",
+          "description": "Capture compact before/after scan diff. Default false to avoid token and latency overhead.",
           "inputs": [
             "inline"
           ]
@@ -3780,6 +3792,16 @@
           ]
         },
         {
+          "name": "freshOnly",
+          "flag": "--fresh-only",
+          "kind": "boolean",
+          "required": false,
+          "description": "recall only: if true, exclude stale and unverified entries from results (default false).",
+          "inputs": [
+            "inline"
+          ]
+        },
+        {
           "name": "title",
           "flag": "--title",
           "kind": "string",
@@ -3870,7 +3892,7 @@
           "flag": "--offset",
           "kind": "number",
           "required": false,
-          "description": "read text mode: starting line (1-indexed).",
+          "description": "read text mode: starting line (1-indexed). recall: skip the first N results (default 0).",
           "inputs": [
             "inline"
           ]
@@ -3880,7 +3902,7 @@
           "flag": "--limit",
           "kind": "number",
           "required": false,
-          "description": "read text/json mode: line or item limit.",
+          "description": "read text/json mode: line or item limit. recall: maximum results to return (default 10, max 50).",
           "inputs": [
             "inline"
           ]

@@ -15,7 +15,9 @@ type ExecutionSignalSnapshot = {
 	defaultTabId?: number;
 };
 
-export type ExecutionEffectRun<T extends BrowserBridgeExecutionResult = BrowserBridgeExecutionResult> = {
+// T is unconstrained: the wrapper only times the dispatch and reads page signals before/after — it
+// never touches the result's shape — so it can wrap a JS execution result or a multi-frame program run.
+export type ExecutionEffectRun<T = BrowserBridgeExecutionResult> = {
 	result: T;
 	effect?: ExecuteEffect;
 	before?: ExecutionSignalSnapshot;
@@ -151,7 +153,7 @@ function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnap
 	};
 }
 
-export async function withExecutionEffect<T extends BrowserBridgeExecutionResult>(
+export async function withExecutionEffect<T>(
 	server: BrowserCommandRuntimePort,
 	options: EffectOptions,
 	dispatch: () => Promise<T>,

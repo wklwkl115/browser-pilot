@@ -38,13 +38,21 @@
   },
   "schema": {
     "type": "object",
-    "required": [
-      "script"
-    ],
     "properties": {
       "script": {
         "type": "string",
-        "description": "JavaScript source."
+        "description": "JavaScript source. Provide either script or program."
+      },
+      "program": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": true
+        },
+        "description": "Ordered program of physical input frames and JS eval, executed as one atomic sequence via trusted CDP events. Each element has exactly one discriminator (eval/mouse/key/text/wait); delay is a universal modifier. Use for page interaction (clicks, typing, scrolling, drag); use script for pure JavaScript.",
+        "minItems": 1,
+        "maxItems": 60
       },
       "tabId": {
         "anyOf": [
@@ -63,7 +71,7 @@
       },
       "monitor": {
         "type": "boolean",
-        "description": "Capture compact before/after scan diff for JavaScript mode. Default false to avoid token and latency overhead."
+        "description": "Capture compact before/after scan diff. Default false to avoid token and latency overhead."
       }
     },
     "additionalProperties": false
@@ -73,8 +81,20 @@
       "name": "script",
       "flag": "--script",
       "kind": "string",
-      "required": true,
-      "description": "JavaScript source.",
+      "required": false,
+      "description": "JavaScript source. Provide either script or program.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "program",
+      "flag": "--program",
+      "kind": "array",
+      "required": false,
+      "description": "Ordered program of physical input frames and JS eval, executed as one atomic sequence via trusted CDP events. Each element has exactly one discriminator (eval/mouse/key/text/wait); delay is a universal modifier. Use for page interaction (clicks, typing, scrolling, drag); use script for pure JavaScript.",
       "inputs": [
         "inline",
         "@file",
@@ -110,7 +130,7 @@
       "flag": "--monitor",
       "kind": "boolean",
       "required": false,
-      "description": "Capture compact before/after scan diff for JavaScript mode. Default false to avoid token and latency overhead.",
+      "description": "Capture compact before/after scan diff. Default false to avoid token and latency overhead.",
       "inputs": [
         "inline"
       ]

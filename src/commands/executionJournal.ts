@@ -57,7 +57,7 @@ export type ExecutionJournal = {
 		selectionVersionAtResolve?: number;
 	};
 	dispatch?: {
-		kind: "javascript" | "native-command" | "input";
+		kind: "javascript" | "native-command" | "input" | "program";
 		command?: string;
 		cdpSessionName?: string;
 		eventCount?: number;

@@ -12,7 +12,7 @@ import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js"
 import { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
-import { BrowserBridgeSessionState } from "./BrowserBridgeSessionState.js";
+import { BrowserBridgeSessionState, type IntentRefRegistry } from "./BrowserBridgeSessionState.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
@@ -356,7 +356,7 @@ export class BrowserBridgeServer implements ConsentPort {
 		return this.state.perceptionLedger.traceSnapshot(browserSessionId);
 	}
 
-	getIntentRefRegistry(): import("../../kernels/session/intentRefRegistry.js").IntentRefRegistry {
+	getIntentRefRegistry(): IntentRefRegistry {
 		return this.state.intentRefRegistry;
 	}
 
