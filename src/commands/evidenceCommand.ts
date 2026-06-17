@@ -1,7 +1,8 @@
 import { Type } from "typebox";
 import { nativeCommandToolMetadata } from "./nativeActionMetadata.js";
 import { summarizeEvidenceData } from "./summaries/index.js";
-import { applyDefaultTimeout, artifactFallbackName, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
+import { nextActionsForEvidenceBundle } from "../kernels/evidence/distill/recovery.js";
+import { applyDefaultTimeout, artifactFallbackName, buildActiveContext, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, NativeCommandParamsSchema, NativeStringList, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { isRecord } from "../utils/params.js";
@@ -61,8 +62,13 @@ export function defineEvidenceCommand({ commands, ensureStarted }: CommandRegist
 					fallbackName: artifactFallbackName(nativeCommandToolMetadata.browser_evidence.artifactPrefix),
 					details: { command: commandName },
 					operation,
+					activeContext: buildActiveContext(server, params),
 					artifactValue: { ...result, operation },
-					distill: (value) => ({ ...summarizeEvidenceData(isRecord(value) && value.data !== undefined ? value.data : value), operationId: operation.operationId, sourceMode: operation.sourceMode }),
+					distill: (value) => {
+						const summary = summarizeEvidenceData(isRecord(value) && value.data !== undefined ? value.data : value);
+						const nextActions = nextActionsForEvidenceBundle(isRecord(summary.sources) ? summary.sources as Record<string, Record<string, unknown>> : undefined);
+						return { ...summary, ...(nextActions ? { nextActions } : {}), operationId: operation.operationId, sourceMode: operation.sourceMode };
+					},
 				});
 			});
 		},

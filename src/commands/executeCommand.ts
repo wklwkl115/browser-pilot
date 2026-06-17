@@ -13,7 +13,7 @@ import { prepareExecuteStdlib, type ExecuteStdlibTargetRef } from "../browser-co
 import { executeProgram, collectProgramTargetRefs, type ProgramContext } from "../browser-command-runtime/programEngine.js";
 import { validateProgram } from "../browser-command-runtime/programDispatcher.js";
 import { summarizeGenericValue } from "./summaries/index.js";
-import { artifactFallbackName, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
+import { artifactFallbackName, buildActiveContext, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 
@@ -284,6 +284,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 						artifactThreshold: needsArtifact ? 1 : undefined,
 						details: { mode: "program", frameCount, aborted: !!programResult.aborted, monitor: monitorRequested, ...(warning ? { warning } : {}) },
 						operation,
+						activeContext: buildActiveContext(server, params),
 						artifactValue: { ...resultValue, operation },
 						distill: (value) => {
 							const record = isRecord(value) ? value : {};
@@ -377,6 +378,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					artifactThreshold: needsResultArtifact ? 1 : undefined,
 					details: { mode: "javascript", monitor: params.monitor === true, ...(executeDiagnostics ? { diagnostics: executeDiagnostics } : {}), ...(preparedScript.stdlib ? { browserPilotRuntime: "1" } : {}) },
 					operation,
+					activeContext: buildActiveContext(server, params),
 					diagnostics: executeDiagnostics,
 					artifactValue: { ...resultValue, operation },
 					distill: (value) => {

@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import type { BrowserCommandRuntimePort, CommandActiveOperationInfo as BrowserActiveOperationInfo } from "../ports/BrowserCommandRuntimePort.js";
+import type { BrowserCommandRuntimePort, BrowserTabLike, CommandActiveOperationInfo as BrowserActiveOperationInfo } from "../ports/BrowserCommandRuntimePort.js";
 import { BrowserBridgeError, errorToPlain } from "../utils/errors.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import type { DetailLevel } from "../utils/params.js";
@@ -70,6 +70,7 @@ type JsonCommandResultOptions = {
 	artifactThreshold?: number;
 	maxChars?: number;
 	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
+	activeContext?: Record<string, unknown>;
 };
 
 type TextCommandResultOptions = {
@@ -93,6 +94,7 @@ type TextCommandResultOptions = {
 	stableRefs?: Set<string>;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
+	activeContext?: Record<string, unknown>;
 };
 
 export type CommandOnUpdate = ((result: BrowserTextCommandResult) => void | Promise<void>) | undefined;
@@ -224,6 +226,29 @@ export function resolveLocalTargetTabId(server: Partial<Pick<BrowserCommandRunti
 	return normalizeTabId(value);
 }
 
+/**
+ * Read-only "active context" echo (pure legibility, no behavior change): the resolved tab plus the
+ * latest scan snapshot the agent can thread into the next observe --diff/baseline or capture call,
+ * so it never has to scroll back through prior outputs for an id. Network recorders / hook sessions
+ * are intentionally absent — that state lives browser-side and is not reachable from the command layer.
+ */
+export function buildActiveContext(server: BrowserCommandRuntimePort, params: Pick<StandardToolParams, "browserSessionId" | "tabId" | "targetRef">): Record<string, unknown> | undefined {
+	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
+	const snapshot = server.snapshot({ browserSessionId });
+	const tabId = resolveLocalTargetTabId(server, params.targetRef ?? params.tabId, browserSessionId) ?? snapshot.defaultTabId;
+	const tab = (snapshot.tabs as BrowserTabLike[] | undefined)?.find((entry) => typeof entry.tabId === "number" && entry.tabId === tabId);
+	const targetRef = (tab?.targetRef ?? tab?.tabHandle ?? (tabId === snapshot.defaultTabId ? snapshot.defaultTabHandle : undefined)) || undefined;
+	// Match observe --diff's baseline filter (incl. saved.path) so the echoed id is always a usable baseline.
+	const lastObservationSnapshotId = server.listObservationSnapshots().find((snap) => snap.tabId === tabId && snap.sourceMode === "scan" && !snap.expired && Boolean(snap.saved?.path))?.snapshotId;
+	const context: Record<string, unknown> = {
+		...(snapshot.browserSessionId ? { browserSessionId: snapshot.browserSessionId } : {}),
+		...(typeof tabId === "number" ? { tabId } : {}),
+		...(targetRef ? { targetRef } : {}),
+		...(lastObservationSnapshotId ? { lastObservationSnapshotId } : {}),
+	};
+	return Object.keys(context).length ? context : undefined;
+}
+
 export async function runCommandHandler(handler: () => Promise<BrowserTextCommandResult>, onError: (error: unknown) => BrowserTextCommandResult | Promise<BrowserTextCommandResult> = errorResult): Promise<BrowserTextCommandResult> {
 	try {
 		return await handler();
@@ -277,6 +302,7 @@ export async function jsonCommandResult(value: unknown, params: Pick<StandardToo
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
 		memoryAugmentationPlan: options.memoryAugmentationPlan,
+		activeContext: options.activeContext,
 		redact: params.redact,
 	});
 }
@@ -305,6 +331,7 @@ export async function textCommandResult(text: string, params: Pick<StandardToolP
 		stableRefs: options.stableRefs,
 		onAllocation: options.onAllocation,
 		memoryAugmentationPlan: options.memoryAugmentationPlan,
+		activeContext: options.activeContext,
 		redact: params.redact,
 	});
 }
@@ -483,7 +510,7 @@ export async function runWebSecurityCommand<TParams extends StandardToolParams &
 			await handle?.update({ progress: 85, details: spec.details(result) });
 			return result;
 		},
-		finalize: async ({ params, ctx, maxChars, operation, result }) => {
+		finalize: async ({ server, params, ctx, maxChars, operation, result }) => {
 			const resultDetails = spec.details(result);
 			const resultRecord = result as Record<string, unknown>;
 			const resultWarnings = Array.isArray(resultRecord.warnings) ? resultRecord.warnings.filter((item): item is string => typeof item === "string") : [];
@@ -494,6 +521,7 @@ export async function runWebSecurityCommand<TParams extends StandardToolParams &
 				fallbackName: artifactFallbackName(spec.fallbackPrefix),
 				details: { command: spec.command, ...resultDetails },
 				operation,
+				activeContext: buildActiveContext(server, params),
 				...(resultWarnings.length ? { diagnostics: { warnings: resultWarnings } } : {}),
 				artifactValue: { ...(result as Record<string, unknown>), ...(operation ? { operation } : {}) },
 				distill: (value: unknown) => ({ ...spec.distill(value as TResult), ...(operation ? { operationId: operation.operationId, sourceMode: operation.sourceMode } : {}) }),

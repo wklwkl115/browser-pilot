@@ -39,14 +39,15 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 	defineBrowserCommand(commands, {
 		name: "browser_tabs",
 		label: "Browser Tabs",
-		description: "List, switch, create, close, select a real browser, or manage browser sessions connected through the Browser Pilot bridge.",
-		promptSnippet: "Control connected browser tabs and scoped browser sessions: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab.",
+		description: "List, switch, create, close, or snapshot browser tabs; advanced actions manage scoped browser sessions and tab leases through the Browser Pilot bridge.",
+		promptSnippet: "Control connected browser tabs. Common: list, snapshot, switch, create, close. Advanced (browser session & lease lifecycle — rarely needed): selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab.",
 		promptGuidelines: [
 			"Start automation with browser_tabs list unless browser_tabs create just returned id/targetRef; use switch only when you intentionally change the browser active tab.",
 			"Prefer the returned id/targetRef/tabHandle for later tab-scoped browser_* calls; numeric tabId remains compatibility input.",
+			"Everyday tab control is list/switch/create/close/snapshot; the session & lease actions (selectBrowser/listSessions/createSession/selectSession/closeSession/attachTab/detachTab/leaseTab/releaseTab) are advanced multi-agent isolation/coordination — skip them unless you are managing browser sessions or tab leases.",
 		],
 		parameters: strictCommandParameters({
-			action: Type.String({ description: "One of: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
+			action: Type.String({ description: "Common: list, snapshot, switch, create, close. Advanced (session & lease lifecycle): selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
 			...sharedTabScopedToolParams({ includeBrowserSessionId: true, tabIdDescription: "Compatibility target for switch/close: numeric tabId or tabHandle string.", targetRefDescription: "Preferred stable tabHandle for switch/close/attach/detach/lease/release." }),
 			name: Type.Optional(Type.String({ description: "Browser session display name for createSession." })),
 			browserId: Type.Optional(Type.String({ description: "Browser client id or extension id for selectBrowser" })),

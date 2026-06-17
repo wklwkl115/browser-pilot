@@ -5042,6 +5042,17 @@
           ]
         },
         {
+          "name": "diff",
+          "flag": "--diff",
+          "kind": "boolean",
+          "required": false,
+          "paramClass": "intent",
+          "description": "scan mode only: compute envelope.diff/treeDiff against the most recent prior scan snapshot for this tab as the baseline (auto-resolved; no snapshotId to thread). Explicit baseline/baselineSnapshotId/baselinePath override it; not combinable with fresh:true.",
+          "inputs": [
+            "inline"
+          ]
+        },
+        {
           "name": "tabId",
           "flag": "--tab-id",
           "kind": "string",
@@ -6043,7 +6054,7 @@
       "name": "tabs",
       "commandName": "browser_tabs",
       "group": "core",
-      "description": "List, switch, create, close, select a real browser, or manage browser sessions connected through the Browser Pilot bridge.",
+      "description": "List, switch, create, close, or snapshot browser tabs; advanced actions manage scoped browser sessions and tab leases through the Browser Pilot bridge.",
       "agentCli": {
         "mode": "standard",
         "recommended": true
@@ -6083,7 +6094,7 @@
           "kind": "string",
           "required": true,
           "paramClass": "intent",
-          "description": "One of: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab",
+          "description": "Common: list, snapshot, switch, create, close. Advanced (session & lease lifecycle): selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab",
           "inputs": [
             "inline",
             "@file",

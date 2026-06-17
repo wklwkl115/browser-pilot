@@ -152,6 +152,10 @@
         "type": "boolean",
         "description": "scan/text modes only: force a fresh full-frame observation for this call; ignores the session-delta baseline and render cache without disabling relevance or memory"
       },
+      "diff": {
+        "type": "boolean",
+        "description": "scan mode only: compute envelope.diff/treeDiff against the most recent prior scan snapshot for this tab as the baseline (auto-resolved; no snapshotId to thread). Explicit baseline/baselineSnapshotId/baselinePath override it; not combinable with fresh:true."
+      },
       "tabId": {
         "anyOf": [
           {
@@ -351,6 +355,17 @@
       "required": false,
       "paramClass": "intent",
       "description": "scan/text modes only: force a fresh full-frame observation for this call; ignores the session-delta baseline and render cache without disabling relevance or memory",
+      "inputs": [
+        "inline"
+      ]
+    },
+    {
+      "name": "diff",
+      "flag": "--diff",
+      "kind": "boolean",
+      "required": false,
+      "paramClass": "intent",
+      "description": "scan mode only: compute envelope.diff/treeDiff against the most recent prior scan snapshot for this tab as the baseline (auto-resolved; no snapshotId to thread). Explicit baseline/baselineSnapshotId/baselinePath override it; not combinable with fresh:true.",
       "inputs": [
         "inline"
       ]
