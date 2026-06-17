@@ -552,11 +552,13 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 	if (actionablesTruncated) {
 		warnings.push(`actionables truncated from ${actionablesScanned} to ${actionablesReturned} — use browser_observe with selector to target specific page regions`);
 	}
-	// Distinguish an anti-bot / still-loading interstitial from a genuinely empty page: a known
-	// challenge/loading title plus a near-empty body. Without this an agent reads controlCount:0 as
-	// "empty" and wastes probes instead of waiting/solving the challenge.
-	if (/just a moment|checking your browser|请稍候|請稍候|attention required|cloudflare|verifying you are human|访问验证|人机验证/i.test(String(item.title || "")) && content.length < 200) {
-		warnings.push(`page looks like an anti-bot/loading interstitial (title="${String(item.title || "").slice(0, 50)}", near-empty body) — wait and re-observe (browser_wait load-state/network-idle) or solve the challenge in the browser before trusting this scan`);
+	// Cause-agnostic low-substance signal: when a scan finds nothing actionable and effectively no
+	// text, the page is likely still loading, behind an anti-bot/consent/login wall, or genuinely
+	// empty. Flag the STATE (not a guessed vendor/cause) so the agent waits or verifies instead of
+	// reading controlCount:0 as "empty page" and wasting probes. Conservative: a single actionable or
+	// any real text suppresses it, so minimal-but-valid pages are not flagged.
+	if (actionablesScanned === 0 && content.length < 40) {
+		warnings.push(`low-substance page: ${Number(item.node_count) || 0} nodes, ${content.length} text chars, 0 actionable controls (title="${String(item.title || "").slice(0, 50)}") — likely still loading, an anti-bot/consent/login wall, or genuinely empty; wait and re-observe (browser_wait load-state/network-idle) or verify the title/URL before trusting this scan`);
 	}
 	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
 	const primaryActionsWithEntityRefs = primaryActions.map((action) => {
