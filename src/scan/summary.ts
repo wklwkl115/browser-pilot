@@ -552,6 +552,12 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 	if (actionablesTruncated) {
 		warnings.push(`actionables truncated from ${actionablesScanned} to ${actionablesReturned} — use browser_observe with selector to target specific page regions`);
 	}
+	// Distinguish an anti-bot / still-loading interstitial from a genuinely empty page: a known
+	// challenge/loading title plus a near-empty body. Without this an agent reads controlCount:0 as
+	// "empty" and wastes probes instead of waiting/solving the challenge.
+	if (/just a moment|checking your browser|请稍候|請稍候|attention required|cloudflare|verifying you are human|访问验证|人机验证/i.test(String(item.title || "")) && content.length < 200) {
+		warnings.push(`page looks like an anti-bot/loading interstitial (title="${String(item.title || "").slice(0, 50)}", near-empty body) — wait and re-observe (browser_wait load-state/network-idle) or solve the challenge in the browser before trusting this scan`);
+	}
 	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
 	const primaryActionsWithEntityRefs = primaryActions.map((action) => {
 		const entity = actionEntityByPath.get(String(action.jsonPath || ""));

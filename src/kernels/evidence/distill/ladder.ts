@@ -33,7 +33,9 @@ const PREVIEW_FALLBACK_CHARS = 800;
 const OVERFLOW_GUARD_LIMITS = { stringChars: 800, arrayItems: 20, tableRows: 20 } as const;
 const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
 const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "collections", "identity", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
-const ENVELOPE_REMOVABLE_KEYS = ["entities", "outline", "relations", "causal", "gist"] as const;
+// gist is deliberately NOT removable: it is tiny (landmarks + counts) and the agent's primary
+// page-orientation field, so it must survive budget truncation (only compacted, never dropped).
+const ENVELOPE_REMOVABLE_KEYS = ["entities", "outline", "relations", "causal"] as const;
 
 function pickDefined(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
@@ -283,6 +285,7 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 		...(out.treeDiff ? { treeDiff: out.treeDiff } : {}),
 		...(out.snapshotProjection ? { snapshotProjection: out.snapshotProjection } : {}),
 		...(out.collections ? { collections: out.collections } : {}),
+		...(out.gist ? { gist: out.gist } : {}),
 		nextActions: out.nextActions?.slice(0, 2),
 		saved: out.saved,
 	} as T, [...omitted, "nonessential_metadata"]);
@@ -297,6 +300,7 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 		limits: out.limits,
 		privacy: out.privacy,
 		...(out.identity ? { identity: out.identity } : {}),
+		...(out.gist ? { gist: out.gist } : {}),
 		nextActions: out.nextActions?.slice(0, 2),
 		saved: out.saved,
 	} as T, [...omitted, "nonessential_metadata", ...(out.diff ? ["diff"] : []), ...(out.treeDiff ? ["treeDiff"] : []), ...(out.snapshotProjection ? ["snapshotProjection"] : [])]);
