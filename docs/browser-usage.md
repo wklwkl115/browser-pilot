@@ -40,16 +40,12 @@ When changing bridge ports, set `BROWSER_PILOT_BRIDGE_PORT`, run
 ## Verify
 
 ```bash
-npm run check
-npm run quality:local
 npm run verify:package
 ```
 
-`npm run check` typechecks, lints, builds Node output, builds the extension, and
-then runs `verify:package`. Package verification creates an npm tarball, installs
-it into a clean throwaway consumer project, and runs the shipped
-`browser-pilot` CLI help/schema/status commands. Artifacts are written under
-`.browser-pilot/artifacts/public-package/`.
+`verify:package` creates an npm tarball, installs it into a clean throwaway
+consumer project, and runs the shipped `browser-pilot` CLI help/schema/status
+commands. Artifacts are written under `.browser-pilot/artifacts/public-package/`.
 
 ## Troubleshooting
 

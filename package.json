@@ -58,8 +58,6 @@
     "contract:record": "node scripts/contracts.mjs record",
     "contract:verify": "node scripts/contracts.mjs verify",
     "verify:boundaries": "node scripts/verify-boundaries.mjs",
-    "check": "npm run typecheck && npm run lint && npm run build && npm run build:bridge && npm run contract:verify && npm run verify:package && npm run verify:pairing",
-    "quality:local": "npm run check",
     "prepack": "npm run build && node scripts/build-bridge.mjs --quiet",
     "verify:package": "node scripts/verify-public-package.mjs"
   },

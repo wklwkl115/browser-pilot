@@ -4,7 +4,6 @@
 
 **给你的 AI agent 一个真正的浏览器 —— 而不是一张截图。**
 
-[![CI](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#工具列表)
@@ -235,8 +234,6 @@ npm run build             # 编译 Node.js 源码到 dist/
 npm run lint              # ESLint
 npm run typecheck         # TypeScript 项目检查
 npm run verify:package    # 打包、安装并 smoke-test 公开包
-npm run check             # 类型检查、lint、构建、扩展构建和包验证
-npm run quality:local     # 完整公开检查的别名
 ```
 
 `verify:package` 会创建 npm tarball，安装到干净的临时 consumer 项目，并运行

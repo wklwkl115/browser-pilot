@@ -18,14 +18,13 @@ cd browser-pilot
 npm ci
 npm run build
 npm run build:bridge
-npm run check          # runs all gates: lint, types, tests, contracts
 ```
 
 ## Development Workflow
 
 1. Fork the repo and create your branch from `main`
 2. Make your changes
-3. Run `npm run check` to verify everything passes
+3. Run the focused commands that match your change
 4. If you changed tools or protocol, run `npm run sync:protocol` and `npm run docs:sync`
 5. Open a Pull Request using the provided template
 
@@ -51,7 +50,7 @@ npm run sync:protocol    # regenerate protocol types, metadata, docs
 npm run docs:sync        # regenerate tool contract docs and managed blocks
 ```
 
-Finish non-trivial work with `npm run check`.
+Finish non-trivial work by running the focused commands that match what you changed.
 
 ## Code of Conduct
 

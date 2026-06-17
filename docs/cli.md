@@ -302,8 +302,7 @@ local debugging.
 ## Verification
 
 `npm run verify:package` creates the public npm tarball, installs it into a clean throwaway
-consumer project, and runs the shipped CLI discovery/schema/status commands. The same package
-verification is included in `npm run check`.
+consumer project, and runs the shipped CLI discovery/schema/status commands.
 
 For local CLI discovery without a browser connection, use:
 

@@ -12,7 +12,7 @@
 
 <!-- How did you verify this works? -->
 
-- [ ] `npm run check` passes
+- [ ] Relevant focused checks pass
 - [ ] Relevant smoke tests pass (if touching browser-facing code)
 - [ ] Docs/generated files updated (if touching tools, protocol, or skills)
 

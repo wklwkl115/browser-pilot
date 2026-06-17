@@ -27,5 +27,5 @@ traffic, local files selected for upload, and local-only artifacts.
 ## Maintainer Triage
 
 Security reports should be verified against the current worktree before a fix is
-accepted. Accepted fixes should include focused regression coverage and pass the
-narrowest relevant gate before the final `npm run check`.
+accepted. Accepted fixes should include focused regression coverage and the
+narrowest relevant verification for the changed surface.

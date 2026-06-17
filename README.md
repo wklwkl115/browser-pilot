@@ -4,7 +4,6 @@
 
 **Give your AI agent a real browser — not a screenshot.**
 
-[![CI](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#tools)
@@ -281,8 +280,6 @@ npm run build             # Compile Node.js source to dist/
 npm run lint              # ESLint
 npm run typecheck         # TypeScript project check
 npm run verify:package    # Pack, install, and smoke-test the public package
-npm run check             # Typecheck, lint, build, bridge build, and verify the package
-npm run quality:local     # Alias for the full public check
 ```
 
 `verify:package` creates an npm tarball, installs it into a clean throwaway

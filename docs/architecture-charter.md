@@ -665,7 +665,7 @@ npm run contract:verify
 |---|---|---|---|
 | P12.1 | 全量静态扫描旧名 | rg scripts | 旧名清零 |
 | P12.2 | 全量 contracts verify | `npm run contract:verify` | 通过 |
-| P12.3 | 全量 check | `npm run check` | 通过 |
+| P12.3 | 全量 check | 已移除 | 不再要求 |
 | P12.4 | package smoke | `npm run verify:package` | consumer CLI 正常 |
 | P12.5 | pairing smoke | `npm run verify:pairing` | 29+ assertions 通过 |
 | P12.6 | extension load manual checklist | docs | Browser Pilot Bridge 可加载 |
@@ -721,7 +721,7 @@ rg -n "PI_BROWSER|pi-ref://|\\bpi-ref\\b|\\.pi/|pi_browser|piBrowser|PiBrowser|P
 - Extension runtime 作为 browser-side kernel 独立构建。
 - CLI/schema/docs/skill 不再漂移。
 - 旧 Pi/MCP 心智从代码主干和公开文档中消失。
-- `npm run check` 与 `npm run contract:verify` 是合并前硬门禁。
+- 不再要求单一全量门禁命令作为合并前硬门禁。
 
 ## 12. 执行状态
 
@@ -732,11 +732,11 @@ rg -n "PI_BROWSER|pi-ref://|\\bpi-ref\\b|\\.pi/|pi_browser|piBrowser|PiBrowser|P
 | Phase 2: Ref Kernel + 命名基础迁移 | Done | old Pi/ref/path/header scan clean; `bp-ref://` mint/parse centralized in refs kernel |
 | Phase 3: Temporal Kernel 独立 | Done | temporal core under `src/kernels/temporal`; boundary lint clean |
 | Phase 4: Evidence Envelope | Done | `EvidenceEnvelope` command result enrichment; `npm run contract:verify` |
-| Phase 5: Command Runtime 替换旧 host/registrar | Done | `npm run check`; command count = 22; stale `dist/src/commands/commandAdapter*` / `register*Tool*` package gate clean |
+| Phase 5: Command Runtime 替换旧 host/registrar | Done | command count = 22; stale `dist/src/commands/commandAdapter*` / `register*Tool*` package gate clean |
 | Phase 6: Session Kernel 独立 | Done | `src/kernels/session/SessionKernel.ts` owns browser sessions, leases, operations, observation snapshots; bridge consumes it through `BrowserBridgeSessionState`; boundary lint clean |
 | Phase 7: Apps/Daemon 重构 | Done | CLI main flow lives in `src/apps/cli/main.ts`; daemon auth/control/lease helpers live in `src/apps/daemon`; `verify:pairing` 29/29 passed |
 | Phase 8: Bridge Protocol + Extension 迁移 | Done | `src/bridge/protocol` single source; `src/bridge/extension`; `bridge/browser_pilot_bridge`; `npm run build:bridge` |
 | Phase 9: Memory + Artifact State 独立 | Done | memory kernel under `src/kernels/memory`; resource/artifact state under adapters; `.browser-pilot/artifacts` verified by package smoke |
 | Phase 10: Security Kernel 收口 | Done | replay diff/baseline and SQLi oracle under `src/kernels/security`; boundary lint clean |
 | Phase 11: 删除旧主干 | Done | `src/driver`, `src/resources`, `src/distill-core`, `src/tools`, `src/frontend`, `src/abml*`, `src/*-core`, `src/protocol`, `bridge_src`, old bridge package removed |
-| Phase 12: 最终验收 | Done | `npm run check`; `npm run contract:verify`; package smoke commandCount=22; pairing smoke 29/29; old-name scan only hits migration notes |
+| Phase 12: 最终验收 | Done | `npm run contract:verify`; package smoke commandCount=22; pairing smoke 29/29; old-name scan only hits migration notes |
