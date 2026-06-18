@@ -8,7 +8,6 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Tools](https://img.shields.io/badge/tools-21%20browser__*-blueviolet.svg)](#tools)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](tsconfig.json)
-[![860+ Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#development)
 
 </div>
 
@@ -54,8 +53,6 @@ Browser Pilot gives agents what they actually need:
 - **Token-efficient output** — salience-based rendering, session delta compression, and
   task-conditioned relevance keep tool outputs compact. Repeated scans of the same page
   send only what changed.
-- **Consumer-first package check** — the public tarball is installed in a clean fixture
-  and smoke-tested through the shipped CLI.
 
 ## How It Compares
 

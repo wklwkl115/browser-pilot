@@ -94,7 +94,3 @@ the touched surface.
 Consumers import the kernel modules directly from `src/kernels/abml` or the barrel:
 `import { ... } from ".../kernels/abml/index.js"`. Browser I/O code stays outside the kernel in the
 browser-runtime layer.
-
-## Related docs
-
-- [`docs/cli.md`](../../docs/cli.md) — public CLI reference.
