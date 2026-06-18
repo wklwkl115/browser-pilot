@@ -37,8 +37,7 @@ that loop.
 
 ## Layout
 
-`index.ts` is the **single entry point** — `export *` of every module below. Read it to see the
-kernel's entire public surface at a glance.
+The modules below make up the kernel's public surface — consumers import them directly.
 
 | Module | Role |
 | --- | --- |
@@ -91,6 +90,5 @@ the touched surface.
 
 ## Consumers
 
-Consumers import the kernel modules directly from `src/kernels/abml` or the barrel:
-`import { ... } from ".../kernels/abml/index.js"`. Browser I/O code stays outside the kernel in the
-browser-runtime layer.
+Consumers import the kernel modules directly from `src/kernels/abml/*`. Browser I/O code stays
+outside the kernel in the browser-runtime layer.
