@@ -2,7 +2,7 @@
   "name": "browser-pilot",
   "version": "0.3.0",
   "license": "Apache-2.0",
-  "description": "Agent-driven browser automation: a Chrome extension + Node bridge exposing 22 browser_* tools for scanning, execution, evidence capture, and web-security testing.",
+  "description": "Agent-driven browser automation: a Chrome extension + Node bridge exposing 21 browser_* tools for scanning, execution, evidence capture, and web-security testing.",
   "keywords": [
     "browser-pilot",
     "browser-automation",

@@ -2,7 +2,6 @@ export const TOOL_RESULT_BUDGETS = {
 	browser_command: 50_000,
 	browser_execute: 50_000,
 	browser_observe: 35_000,
-	browser_pick: 12_000,
 	browser_upload: 12_000,
 	browser_download: 12_000,
 	browser_wait: 50_000,

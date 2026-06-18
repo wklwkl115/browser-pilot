@@ -14,7 +14,6 @@ export const TOOL_RELEVANCE_TAPS: Record<string, ToolRelevanceTapSpec> = {
 	browser_network: { params: { sessionId: "scalar" } },
 	browser_hook: { params: { selector: "selector", eventType: "scalar" } },
 	browser_frame: { params: { selector: "selector", frameId: "scalar" } },
-	browser_pick: { params: { message: "scalar" } },
 };
 
 function termsForValue(value: unknown, mode: NonNullable<ToolRelevanceTapSpec["params"]>[string]): RelevanceTapTerm[] {

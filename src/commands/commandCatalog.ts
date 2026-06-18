@@ -5,7 +5,6 @@ import { defineExecuteCommand } from "./executeCommand.js";
 import { defineFrameCommand, defineHookCommand, defineNetworkCommand, defineWaitCommand } from "./nativeActionCommands.js";
 import { defineObserveCommand } from "./observeCommand.js";
 import { defineMemoryCommand } from "./memoryCommand.js";
-import { definePickCommand } from "./pickCommand.js";
 import { defineScreenshotCommand } from "./screenshotCommand.js";
 import { defineTabsCommand } from "./tabsCommand.js";
 import { defineDownloadCommand, defineUploadCommand } from "./transferCommands.js";
@@ -25,7 +24,6 @@ const CORE_BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = [
 	defineNativeCommand,
 	defineExecuteCommand,
 	defineObserveCommand,
-	definePickCommand,
 	defineDownloadCommand,
 	defineUploadCommand,
 	defineWaitCommand,

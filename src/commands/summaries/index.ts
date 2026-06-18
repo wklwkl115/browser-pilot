@@ -6,7 +6,6 @@ export { summarizeHookCollectData, summarizeHookPerformance } from "./hook.js";
 export { summarizeHtmlSnapshot } from "./html.js";
 export { summarizeNetworkData } from "./network.js";
 export { summarizeMemoryResult } from "./memory.js";
-export { summarizePickData } from "./pick.js";
 export { buildScanEntities, scanEntitiesForEnvelope, scanEntitiesFromGroups, summarizeScanData } from "../../scan/summary.js";
 export { summarizeTransferData } from "./transfer.js";
 export { summarizeBrowserCrawlData, summarizeCallbackOastData, summarizeCookieAnalyzeData, summarizeDomFlowData, summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData, summarizeHttpReplayData, summarizeJsAstAnalysisData, summarizeNucleiBridgeData, summarizeSqlmapBridgeData, summarizeSqliProbeData, summarizeTemplateCheckData, summarizeWasmArtifactData, summarizeWasmWatBridgeData, summarizeWebReconProbeData, summarizeWsSessionData } from "./webSecurity/index.js";
