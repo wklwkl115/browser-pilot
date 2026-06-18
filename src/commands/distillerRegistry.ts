@@ -71,14 +71,6 @@ export function getDistillerDefinition(commandName: string): DistillerDefinition
 	return definitionRegistry.get(commandName);
 }
 
-/**
- * Return all command names that have a DistillerDefinition (with summarySchema).
- */
-export function getDefinedDistillerToolNames(): string[] {
-	ensureBuiltinDistillersReady();
-	return Array.from(definitionRegistry.keys()).sort();
-}
-
 export function ensureBuiltinDistillersReady(): void {
 	if (builtinRegistrationState !== "uninitialized") return;
 	builtinRegistrationState = "registering";
@@ -101,22 +93,8 @@ function resolveDistiller(commandName: string, command?: string): Distiller | un
 	return undefined;
 }
 
-export function hasRegisteredDistiller(commandName: string, command?: string): boolean {
-	ensureBuiltinDistillersReady();
-	return !!resolveDistiller(commandName, command);
-}
-
 export function distillValue(commandName: string, command: string | undefined, value: unknown): Record<string, unknown> {
 	ensureBuiltinDistillersReady();
 	const distiller = resolveDistiller(commandName, command);
 	return distiller ? distiller(value, command) : summarizeGenericValue(value);
-}
-
-export function getDistillerRegistrySnapshot(): { commandNames: string[]; commandRuleLabels: string[]; definitionToolNames: string[] } {
-	ensureBuiltinDistillersReady();
-	return {
-		commandNames: Array.from(distillerRegistry.keys()).sort(),
-		commandRuleLabels: commandDistillerRules.map((item) => item.label).sort(),
-		definitionToolNames: Array.from(definitionRegistry.keys()).sort(),
-	};
 }

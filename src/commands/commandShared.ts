@@ -1,7 +1,5 @@
 import { Type, type TSchema } from "typebox";
-import type { BridgeCommand } from "../types/nativeProtocol.js";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
-import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 import type { BrowserCommandSink } from "./commandDefinition.js";
 export { asPositiveInt } from "../utils/params.js";
@@ -32,13 +30,6 @@ export type CommandRegistrarContext = {
 };
 
 export type CommandRegistrar = (context: CommandRegistrarContext) => void;
-
-export function parseMaybeCommand(script: string): BridgeCommand | undefined {
-	const trimmed = script.trim();
-	if (!trimmed.startsWith("{")) return undefined;
-	const parsed = tryJson(trimmed);
-	return isRecord(parsed) && typeof parsed.cmd === "string" ? parsed as BridgeCommand : undefined;
-}
 
 export function objectParam(value: unknown): Record<string, unknown> {
 	return isRecord(value) ? { ...value } : {};

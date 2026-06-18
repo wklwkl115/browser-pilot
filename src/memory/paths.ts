@@ -14,13 +14,3 @@ export function resolveMemoryPath(cwd: string | undefined, ...parts: string[]): 
 export function memoryEntryDir(kind: MemoryEntryKind): string {
 	return kind === "sop" ? "sop" : "facts";
 }
-
-export function safeSlug(value: string): string {
-	const normalized = String(value || "")
-		.trim()
-		.toLowerCase()
-		.replace(/[^a-z0-9._-]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, 80);
-	return normalized || "entry";
-}

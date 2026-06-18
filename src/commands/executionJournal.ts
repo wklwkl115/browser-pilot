@@ -124,8 +124,3 @@ export function buildExecutionJournal(input: {
 		...(input.stdlib ? { stdlib: input.stdlib } : {}),
 	};
 }
-
-export function executionJournalFromValue(value: unknown): ExecutionJournal | undefined {
-	const record = isRecord(value) ? value : undefined;
-	return isRecord(record?.execution) ? record.execution as ExecutionJournal : undefined;
-}

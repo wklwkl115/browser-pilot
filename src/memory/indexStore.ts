@@ -153,11 +153,3 @@ export async function readMemoryIndexNoRepair(cwd: string | undefined): Promise<
 		return { index: EMPTY_MEMORY_INDEX, warning: "memory_index_unreadable" };
 	}
 }
-
-export async function writeMemoryAudit(cwd: string | undefined, name: string, value: unknown): Promise<string> {
-	const ts = new Date().toISOString().replace(/[:.]/g, "-");
-	const rel = path.join("audit", `${ts}-${name}.json`);
-	const abs = resolveMemoryPath(cwd, rel);
-	await atomicWriteText(abs, `${stableJson(value)}\n`);
-	return abs;
-}

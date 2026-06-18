@@ -71,36 +71,10 @@ export function registerHook(name: HookName, hook: MiddlewareHook | LoggingHook)
 }
 
 /**
- * Run all registered hooks for a given lifecycle point.
- * Returns the first failing hook result, or {pass:true} if all pass.
- */
-export async function runHooks(
-	name: Exclude<HookName, "on_log">,
-	ctx: MiddlewareContext,
-	params: unknown,
-): Promise<MiddlewareResult> {
-	for (const hook of hooks[name] as MiddlewareHook[]) {
-		const result = await hook(ctx, params);
-		if (!result.pass) return result;
-	}
-	return { pass: true };
-}
-
-/**
  * Emit a log event to all registered on_log hooks.
  */
 export function emitLog(ctx: MiddlewareContext, durationMs: number, result: "ok" | "error", details?: Record<string, unknown>): void {
 	for (const hook of hooks.on_log) hook(ctx, durationMs, result, details);
-}
-
-/**
- * Clear all registered hooks (for testing / shutdown).
- */
-export function clearHooks(): void {
-	for (const name of Object.keys(hooks) as HookName[]) {
-		if (name === "on_log") hooks.on_log.length = 0;
-		else (hooks[name as Exclude<HookName, "on_log">] as MiddlewareHook[]).length = 0;
-	}
 }
 
 // ─── Built-in hooks ──────────────────────────────────────────────────────────

@@ -257,10 +257,6 @@ async function eachLine(absPath: string, onLine: (line: string, lineNumber: numb
 	return { lineCount: lineNumber, chars };
 }
 
-export function isSafeArtifactSearchRegexPattern(pattern: unknown): boolean {
-	return unsafeRegexReason(pattern, MAX_ARTIFACT_SEARCH_REGEX_CHARS) === undefined;
-}
-
 function describeUnsafeRegexReason(reason: string, query: string): string {
 	switch (reason) {
 		case "pattern_too_long": return `pattern too long (${query.length} chars, max ${MAX_ARTIFACT_SEARCH_REGEX_CHARS})`;
