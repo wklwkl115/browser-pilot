@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { BrowserBridgeError } from "../../utils/errors.js";
+import { normalizeNativeErrorCode } from "../../types/nativeErrorCodes.js";
 import { DEFAULT_TIMEOUT_MS, normalizeErrorMessage } from "./bridgeUtils.js";
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, PendingRequest } from "./types.js";
 
@@ -84,7 +85,12 @@ export class BrowserBridgePendingRequests {
 	rejectBrowserError(id: string, error: unknown, result: unknown, diagnostics?: Record<string, unknown>): void {
 		const pending = this.take(id);
 		if (!pending) return;
-		pending.reject(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", normalizeErrorMessage(error), { id, tabId: pending.tabId, error, result, target: this.resolvedTarget(pending.target), ...(diagnostics ? { diagnostics } : {}) }));
+		// Preserve the extension's structured error code (carried on the command result, e.g.
+		// SELECTOR_NOT_FOUND) instead of flattening every bridge error to BROWSER_EXECUTION_ERROR —
+		// keeps recovery hints routable. Falls back to BROWSER_EXECUTION_ERROR when no code is present.
+		const codeFrom = (value: unknown): unknown => (value && typeof value === "object" ? (value as { error_code?: unknown; code?: unknown }).error_code ?? (value as { code?: unknown }).code : undefined);
+		const code = normalizeNativeErrorCode(codeFrom(result) ?? codeFrom(error), "BROWSER_EXECUTION_ERROR");
+		pending.reject(new BrowserBridgeError(code, normalizeErrorMessage(error), { id, tabId: pending.tabId, error, result, target: this.resolvedTarget(pending.target), ...(diagnostics ? { diagnostics } : {}) }));
 	}
 
 	rejectForClient(ws: WebSocket): void {

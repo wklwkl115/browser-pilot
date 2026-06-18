@@ -72,6 +72,35 @@ type ExecutionEffectRecoveryLike = {
 	};
 };
 
+type EvidenceSourceSummaryLike = {
+	ok?: unknown;
+	error_code?: unknown;
+	events?: unknown;
+	items?: unknown;
+	entries?: unknown;
+	count?: unknown;
+};
+
+const CAPTURE_NOT_STARTED_CODES = new Set(["NO_SESSION", "NOT_INSTALLED", "NETWORK_RECORDER_NOT_STARTED"]);
+
+/**
+ * Advisory (non-error) ordering hint for browser_evidence: the bundle always returns ok:true even
+ * when no capture was active, so an empty bundle is otherwise a silent dead-end the agent discovers
+ * calls later. Surfaces the "start capture BEFORE the action" ordering constraint immediately.
+ */
+export function nextActionsForEvidenceBundle(sources: Record<string, EvidenceSourceSummaryLike> | undefined): string[] | undefined {
+	if (!sources || Object.keys(sources).length === 0) return undefined;
+	const num = (value: unknown): number => (typeof value === "number" ? value : 0);
+	const entries = Object.values(sources);
+	const anyEvidence = entries.some((source) => num(source.events) > 0 || num(source.items) > 0 || num(source.entries) > 0 || num(source.count) > 0);
+	if (anyEvidence) return undefined;
+	const notStarted = entries.some((source) => typeof source.error_code === "string" && CAPTURE_NOT_STARTED_CODES.has(source.error_code));
+	if (notStarted) {
+		return ["evidence bundle is empty because capture was not active — install hooks with browser_hook action=installTargets and/or start recording with browser_network action=start BEFORE the triggering action, then re-run browser_evidence"];
+	}
+	return ["evidence bundle is empty — capture started after the action records nothing; start browser_hook/browser_network before the action that should produce evidence, then re-run browser_evidence"];
+}
+
 export function nextActionsForExecutionEffect(effect: ExecutionEffectRecoveryLike | undefined): string[] | undefined {
 	if (!effect) return undefined;
 	const actions = uniqueRecoveryActions([
@@ -156,6 +185,7 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 		["SELECTOR_NOT_FOUND", "INVALID_SELECTOR", "ELEMENT_NOT_FOUND"].includes(code) ? "browser_observe mode=scan|html" : undefined,
 		selector ? `verify selector=${selector} against the current DOM` : undefined,
 		["BODY_UNAVAILABLE", "REQUEST_NOT_FOUND", "NETWORK_RECORDER_NOT_STARTED"].includes(code) ? "browser_network action=list|body with a fresh recorder session" : undefined,
+		["NO_SESSION", "NOT_INSTALLED"].includes(code) ? "set the target tab (pass targetRef/tabHandle) and install a hook session (browser_hook action=installTargets) before collect/status/evaluate" : undefined,
 		["ARTIFACT_NOT_FOUND", "ARTIFACT_PATH_REQUIRED", "ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT", "ARTIFACT_TOO_LARGE", "ARTIFACT_SEARCH_QUERY_REQUIRED", "ARTIFACT_SEARCH_REGEX_INVALID", "ARTIFACT_SEARCH_REGEX_UNSAFE", "ARTIFACT_MULTI_SEARCH_MODE_INVALID", "ARTIFACT_QUERY_REQUIRES_SEARCH_MODE", "ARTIFACT_JSON_INVALID"].includes(code) ? "browser_artifact mode=search|json|text with explicit path/paths and bounded limits" : undefined,
 		code === "ARTIFACT_QUERY_REQUIRES_SEARCH_MODE" ? "use browser_artifact mode=search with query, or remove query from json/text/sample reads" : undefined,
 		code === "ARTIFACT_JSON_INVALID" ? "use browser_artifact mode=text|search for non-JSON artifacts, or choose a valid JSON artifact path" : undefined,

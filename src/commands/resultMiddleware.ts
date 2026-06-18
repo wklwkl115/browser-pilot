@@ -71,6 +71,8 @@ export type DistilledEnvelope = {
 	correlation?: Record<string, unknown>;
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
+	// Read-only "active context" echo: resolved tab + latest scan snapshot to thread forward.
+	activeContext?: Record<string, unknown>;
 	saved?: Record<string, unknown>;
 	memory?: Record<string, unknown>;
 	evidence?: CommandEvidenceEnvelope;
@@ -91,6 +93,7 @@ type DistillBaseOptions = {
 	details?: Record<string, unknown>;
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
+	activeContext?: Record<string, unknown>;
 	diagnostics?: Record<string, unknown>;
 	artifactThreshold?: number;
 	entities?: Array<Record<string, unknown>>;
@@ -498,6 +501,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const fittedSummary = fitCommandSummaryBudget(summaryForFitting, preFitBudget);
 	const redactedOperation = options.operation ? maybeRedact(options.operation) as Record<string, unknown> : undefined;
 	const redactedSnapshot = options.snapshot ? maybeRedact(options.snapshot) as Record<string, unknown> : undefined;
+	const redactedActiveContext = options.activeContext && Object.keys(options.activeContext).length ? maybeRedact(options.activeContext) as Record<string, unknown> : undefined;
 	const correlation = {
 		...pickDefined(redactedSummary, ["requestId", "waitId", "listenerId", "sessionId", "browserSessionId", "selectionVersionAtDispatch", "selectionVersionAtResolve", "sourceMode"]),
 		...pickDefined(redactedOperation || {}, ["operationId", "snapshotId", "sourceMode"]),
@@ -558,6 +562,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		nextActions,
 		operation: redactedOperation,
 		snapshot: redactedSnapshot,
+		...(redactedActiveContext ? { activeContext: redactedActiveContext } : {}),
 		...(Object.keys(correlation).length ? { correlation } : {}),
 		saved,
 		evidence,

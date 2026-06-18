@@ -7,7 +7,7 @@ import { nativeToolMetadata } from "./nativeActionMetadata.js";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands.js";
 import { readFrameEntities } from "../browser-command-runtime/abml/frameEntities.js";
 import type { ToolResultBudgetName } from "./budgets.js";
-import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
+import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, buildActiveContext, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 
@@ -132,6 +132,7 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 					fallbackName: artifactFallbackName(config.artifactPrefix),
 					details: { command: commandName, action: params.action },
 					operation,
+					activeContext: buildActiveContext(server, params),
 					diagnostics: result.diagnostics,
 					artifactValue: { ...result, operation },
 				});

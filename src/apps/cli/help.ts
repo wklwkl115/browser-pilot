@@ -22,7 +22,7 @@ export const COMMAND_SUMMARIES: CliCommandSummary[] = [
 	{ subcommand: "observe", name: "browser_observe", description: "Observe browser tabs, simplified page structure, readable content, or exact HTML/text through an explicit observation mode." },
 	{ subcommand: "screenshot", name: "browser_screenshot", description: "Native screenshot capture. Saves the image to disk by default and returns the file path." },
 	{ subcommand: "sqli", name: "browser_sqli", description: "Probe SQL injection or run bounded sqlmap automation from explicit scoped request templates with boolean/error/time/union evidence, mature-engine findings, and artifacts." },
-	{ subcommand: "tabs", name: "browser_tabs", description: "List, switch, create, close, select a real browser, or manage browser sessions connected through the Browser Pilot bridge." },
+	{ subcommand: "tabs", name: "browser_tabs", description: "List, switch, create, close, or snapshot browser tabs; advanced actions manage scoped browser sessions and tab leases through the Browser Pilot bridge." },
 	{ subcommand: "template", name: "browser_template", description: "Run bounded built-in/custom HTTP template checks or mature nuclei template automation against scoped targets or request templates with structured matches and artifacts." },
 	{ subcommand: "upload", name: "browser_upload", description: "Upload local file(s) through a page file chooser using CDP DOM.setFileInputFiles." },
 	{ subcommand: "wait", name: "browser_wait", description: "Native wait/navigation commands: navigate, navigateAndWait, loadState, networkIdle, selector, any, all, cancel, diagnose. Composite any/all require non-empty waits or conditions." },

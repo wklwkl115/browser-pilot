@@ -10,10 +10,16 @@ import { isRecord } from "../utils/records.js";
 import { compactExecutionEffect, buildExecutionJournal, type ExecuteEffect } from "./executionJournal.js";
 import { withExecutionEffect } from "./executionEffect.js";
 import { prepareExecuteStdlib, type ExecuteStdlibTargetRef } from "../browser-command-runtime/executeStdlib.js";
+import { executeProgram, collectProgramTargetRefs, type ProgramContext } from "../browser-command-runtime/programEngine.js";
+import { validateProgram } from "../browser-command-runtime/programDispatcher.js";
 import { summarizeGenericValue } from "./summaries/index.js";
-import { artifactFallbackName, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
+import { artifactFallbackName, buildActiveContext, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
+
+const PROGRAM_MAX_FRAMES = 60;
+const PROGRAM_WARNING_THRESHOLD = 30;
+const PROGRAM_NAV_WARNING = "page navigated — changed count is unreliable; use browser_wait + baseline observe for post-navigation change detection";
 
 type MonitorScanResult = {
 	ok: boolean;
@@ -164,27 +170,161 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 	defineBrowserCommand(commands, {
 		name: "browser_execute",
 		label: "Browser Execute",
-		description: "Execute JavaScript in a connected real browser tab.",
-		promptSnippet: "Execute JavaScript in a real browser tab.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_execute for precise browser actions; return explicit values from async JavaScript."],
+		description: "Execute JavaScript, or a structured program of physical input frames (mouse/key/text/drag) and JS eval, in a connected real browser tab.",
+		promptSnippet: "Execute JavaScript or a physical-input program in a real browser tab.",
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use program (ordered frames of mouse/key/text/drag + eval/wait) for page interaction via trusted CDP events; use script for pure async JavaScript. Provide exactly one of script or program."],
 		parameters: strictCommandParameters({
-			script: Type.String({ description: "JavaScript source." }),
+			script: Type.Optional(Type.String({ description: "JavaScript source. Provide either script or program." })),
+			program: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), {
+				description: "Ordered program of physical input frames and JS eval, executed as one atomic sequence via trusted CDP events. Each element has exactly one discriminator (eval/mouse/key/text/wait); delay is a universal modifier. Use for page interaction (clicks, typing, scrolling, drag); use script for pure JavaScript.",
+				minItems: 1,
+				maxItems: PROGRAM_MAX_FRAMES,
+			})),
 			...sharedTabScopedToolParams(),
-			monitor: Type.Optional(Type.Boolean({ description: "Capture compact before/after scan diff for JavaScript mode. Default false to avoid token and latency overhead." })),
+			monitor: Type.Optional(Type.Boolean({ description: "Capture compact before/after scan diff. Default false to avoid token and latency overhead." })),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			return await runCommandHandler(async () => {
-				if (!params.script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script", { commandName: "browser_execute" });
-				if (detectCommandLikeScript(params.script)) {
+				const program = Array.isArray(params.program) && params.program.length > 0 ? (params.program as unknown[]) : undefined;
+				const script = typeof params.script === "string" && params.script.length > 0 ? params.script : undefined;
+				if (program && script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute accepts either script or program, not both", { commandName: "browser_execute" });
+				const server = await ensureStarted();
+				if (program) {
+					if (program.length > PROGRAM_MAX_FRAMES) throw new BrowserBridgeError("INVALID_RULE", `browser_execute program exceeds ${PROGRAM_MAX_FRAMES} frame limit (got ${program.length})`, { commandName: "browser_execute", frameCount: program.length });
+					const validation = validateProgram(program);
+					if (!validation.ok) throw new BrowserBridgeError("INVALID_RULE", validation.error, { commandName: "browser_execute", step: validation.step });
+					const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
+					const maxChars = commandMaxChars(params, "browser_execute");
+					const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
+					const rawTargetRef = targetTabId(params);
+					const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
+					const monitorRequested = params.monitor === true;
+					const scanScript = monitorRequested ? buildScanScript({ textOnly: false, maxChars: 50_000, maxNodes: 3_000 }) : undefined;
+					const monitorTimeoutMs = Math.min(Math.max(500, timeoutMs), 5_000);
+					const { result: programOutcome, operation } = await withTrackedOperation(server, {
+						commandName: "browser_execute",
+						command: "program",
+						browserSessionId,
+						tabId,
+						phase: "running",
+						progress: 5,
+						queueDepth: server.queueDepth(browserSessionId, tabId),
+						leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
+					}, _onUpdate, async (handle) => {
+						await handle.update({ progress: 15 });
+						const before = scanScript ? await monitorScan(server, scanScript, { browserSessionId, tabId: rawTargetRef, timeoutMs: monitorTimeoutMs }) : undefined;
+						const programCtx: ProgramContext = {
+							server,
+							tabId,
+							browserSessionId,
+							targetRef: typeof rawTargetRef === "string" ? rawTargetRef : undefined,
+							refRegistry: {},
+							contextVars: new Map(),
+							lastEvalResult: undefined,
+							evalTimeoutMs: timeoutMs,
+							signal: signal ?? new AbortController().signal,
+						};
+						// Aggregate effect tracking across the whole program (same signal machinery as the script path).
+						const { result: programResult, effect } = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs, targetRefs: collectProgramTargetRefs(program) as unknown as ExecuteStdlibTargetRef[] }, () => executeProgram(program, programCtx));
+						const after = scanScript ? await monitorScan(server, scanScript, { browserSessionId, tabId: rawTargetRef, timeoutMs: monitorTimeoutMs }) : undefined;
+						await handle.update({ progress: 85 });
+						return { programResult, effect, before, after };
+					});
+					const { programResult, effect, before, after } = programOutcome;
+					const frames = Array.isArray(programResult.frames) ? programResult.frames : [];
+					let monitor: MonitorMetadata | undefined;
+					if (monitorRequested && before && after) {
+						const diff = before.ok && after.ok ? diffScanContent(before.content, after.content) : { changed: 0, top_change: undefined };
+						const navigated = !!(before.url && after.url && before.url !== after.url);
+						monitor = {
+							...(after.url || before.url ? { url: after.url ?? before.url } : {}),
+							beforeOk: before.ok,
+							afterOk: after.ok,
+							beforeChars: typeof before.content === "string" ? before.content.length : 0,
+							afterChars: typeof after.content === "string" ? after.content.length : 0,
+							...diff,
+							...(navigated ? { navigated: true, changedReliable: false, warning: PROGRAM_NAV_WARNING, urlBefore: before.url, urlAfter: after.url } : {}),
+							beforeError: before.error,
+							afterError: after.error,
+							beforeSource: before.source,
+							afterSource: after.source,
+						};
+					}
+					let actionRef: string | undefined;
+					const lastPhysical = [...frames].reverse().find((f) => { const k = String(f.kind ?? ""); return k.startsWith("mouse:") || k.startsWith("key:") || k === "text"; });
+					if (lastPhysical) for (const element of program) if (isRecord(element) && typeof element.ref === "string" && element.ref.startsWith("bp-ref://")) actionRef = element.ref;
+					const execution = buildExecutionJournal({
+						operationId: operation.operationId,
+						dispatch: { kind: "program", command: "program" },
+						effect,
+						monitor,
+						stdlib: { used: frames.some((f) => f.kind === "eval") },
+					});
+					const frameCount = frames.length;
+					const warning = frameCount > PROGRAM_WARNING_THRESHOLD ? `program contains ${frameCount} frames — consider splitting into multiple observe+program cycles` : undefined;
+					const resultValue = { executed: frames, result: programResult.result, aborted: programResult.aborted ?? null, ...(effect ? { effect } : {}), ...(monitor ? { monitor } : {}), execution, actionRef: actionRef ?? null };
+					if (typeof server.buildTemporalProfileSample === "function" && typeof server.recordTemporalProfileSample === "function") {
+						void server.recordTemporalProfileSample(server.buildTemporalProfileSample({
+							operationId: operation.operationId,
+							tool: "browser_execute",
+							command: "program",
+							target: { browserSessionId, tabId, targetRef: typeof rawTargetRef === "string" ? rawTargetRef : undefined },
+							deadlineMs: timeoutMs,
+							elapsedMs: Math.max(0, operation.updatedAt - operation.startedAt),
+							diagnostics: { aborted: !!programResult.aborted, frameCount: frames.length },
+						}), { cwd: ctx?.cwd });
+					}
+					const needsArtifact = frames.some((f) => { if (f.result === undefined) return false; try { return JSON.stringify(f.result).length > 1_000; } catch { return false; } });
+					return await jsonCommandResult(resultValue, params, ctx, {
+						commandName: "browser_execute",
+						command: "program",
+						defaultDetailLevel: "preview",
+						maxChars,
+						fallbackName: artifactFallbackName("execute"),
+						artifactThreshold: needsArtifact ? 1 : undefined,
+						details: { mode: "program", frameCount, aborted: !!programResult.aborted, monitor: monitorRequested, ...(warning ? { warning } : {}) },
+						operation,
+						activeContext: buildActiveContext(server, params),
+						artifactValue: { ...resultValue, operation },
+						distill: (value) => {
+							const record = isRecord(value) ? value : {};
+							const generic = summarizeGenericValue(record.result);
+							const aborted = isRecord(record.aborted) ? record.aborted : undefined;
+							const executedFrames = Array.isArray(record.executed) ? record.executed : [];
+							const okFrames = executedFrames.filter((f: unknown) => isRecord(f) && f.ok === true).length;
+							const failedFrames = executedFrames.filter((f: unknown) => isRecord(f) && f.ok === false).length;
+							const eff = isRecord(record.effect) ? compactExecutionEffect(record.effect as ExecuteEffect) : undefined;
+							const effHints = nextActionsForExecutionEffect(record.effect as ExecuteEffect | undefined);
+							const base = {
+								...generic,
+								operationId: operation.operationId,
+								sourceMode: operation.sourceMode,
+								mode: "program",
+								frameCount: executedFrames.length,
+								framesOk: okFrames,
+								framesFailed: failedFrames,
+								...(eff ? { effect: eff } : {}),
+								...(aborted ? { aborted: true, abortReason: aborted.reason, abortStep: aborted.atStep, ...(aborted.newUrl ? { newUrl: aborted.newUrl } : {}) } : {}),
+								...(record.actionRef ? { actionRef: record.actionRef } : {}),
+								...(warning ? { warning } : {}),
+							} as Record<string, unknown>;
+							if (effHints) base.nextActions = [...(Array.isArray(base.nextActions) ? base.nextActions : []), ...effHints];
+							const mon = isRecord(record.monitor) ? record.monitor : undefined;
+							if (mon) base.monitorSource = { before: mon.beforeSource, after: mon.afterSource, changed: mon.changed, top_change: mon.top_change, ...(mon.navigated === true ? { navigated: true, urlBefore: mon.urlBefore, urlAfter: mon.urlAfter } : {}) };
+							return base;
+						},
+					});
+				}
+				if (!script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script or program", { commandName: "browser_execute" });
+				if (detectCommandLikeScript(script)) {
 					throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { commandName: "browser_execute", recovery: { useTool: "browser_command" } });
 				}
-				const server = await ensureStarted();
 				const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const maxChars = commandMaxChars(params, "browser_execute");
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 				const rawTargetRef = targetTabId(params);
 				const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
-				const preparedScript = prepareExecuteStdlib(params.script);
+				const preparedScript = prepareExecuteStdlib(script);
 				const { result: jsResult, operation } = await withTrackedOperation(server, {
 					commandName: "browser_execute",
 					command: "javascript",
@@ -238,6 +378,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					artifactThreshold: needsResultArtifact ? 1 : undefined,
 					details: { mode: "javascript", monitor: params.monitor === true, ...(executeDiagnostics ? { diagnostics: executeDiagnostics } : {}), ...(preparedScript.stdlib ? { browserPilotRuntime: "1" } : {}) },
 					operation,
+					activeContext: buildActiveContext(server, params),
 					diagnostics: executeDiagnostics,
 					artifactValue: { ...resultValue, operation },
 					distill: (value) => {

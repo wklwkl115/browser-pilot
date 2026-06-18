@@ -28,6 +28,7 @@ export type ObserveToolParams = {
 	baselinePath?: string;
 	actionRef?: string;
 	fresh?: boolean;
+	diff?: boolean;
 	modeInferred?: { mode: ObserveMode; reason: string } | null;
 };
 

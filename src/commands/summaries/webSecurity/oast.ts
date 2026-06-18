@@ -55,6 +55,9 @@ export function summarizeCallbackOastData(value: unknown): Summary {
 			{ key: "remote", value: (event) => event.remoteAddress },
 		], 30),
 		nextActions: [
+			...(isRecord(value) && value.action === "start" && typeof value.sessionId === "string" && value.sessionId
+				? [`thread sessionId="${value.sessionId}" (the oast-* id, NOT correlationId) into status/collect/trigger/stop for this listener`]
+				: []),
 			"inject the generated callback URL or host through browser_http_replay or browser_execute, then collect bounded callback evidence",
 			"read callback artifacts or rerun collect with afterSeq when event details need manual confirmation",
 			"stop or clear idle callback sessions after evidence is preserved to keep listener state bounded",

@@ -2,6 +2,7 @@ import type { CliCommand } from "./registry.js";
 import { buildFlagSpecs, type FlagSpec } from "./flags.js";
 import { pad } from "./help.js";
 import { nativeToolMetadata } from "../../commands/nativeActionMetadata.js";
+import { paramClassOf, type ParamClass } from "../../commands/commandShared.js";
 import { isRecord } from "../../utils/records.js";
 import {
 	commandRouting,
@@ -120,6 +121,16 @@ export function actionSpecificFlagSpecs(cmd: CliCommand, actionName: string): Fl
 		});
 }
 
+/**
+ * Charter law #16: read a flag's Intent/Mechanical class from the command schema (single source).
+ * Synthetic CLI-only flags with no schema property (e.g. --script-file) default to intent.
+ */
+function paramClassFor(cmd: CliCommand, name: string): ParamClass {
+	const root = isRecord(cmd.parameters) ? cmd.parameters : {};
+	const props = isRecord(root.properties) ? root.properties as Record<string, unknown> : {};
+	return paramClassOf(props[name]);
+}
+
 function schemaForFlagSpec(spec: FlagSpec): Record<string, unknown> {
 	if (spec.kind === "boolean") return { type: "boolean", ...(spec.description ? { description: spec.description } : {}) };
 	if (spec.kind === "number") return { type: "number", ...(spec.description ? { description: spec.description } : {}) };
@@ -172,10 +183,18 @@ export function printCommandHelp(cmd: CliCommand, natural?: { action: string }):
 	if (naturalRows.length) {
 		lines.push("Natural subcommands (recommended):", ...naturalRows, "");
 	}
-	lines.push(natural ? "Flags:" : supportsNaturalActionRouting(cmd) ? "Advanced legacy flags:" : "Flags:");
-	for (const s of specs) {
+	const renderFlag = (s: FlagSpec): string => {
 		const meta = s.kind === "enum" && s.choices ? ` (${s.choices.join("|")})` : s.kind === "boolean" ? "" : ` <${s.kind}>`;
-		lines.push(`  ${pad(`${s.flag}${meta}`, 30)}${s.required ? "[required] " : ""}${s.description ?? ""}`.trimEnd());
+		return `  ${pad(`${s.flag}${meta}`, 30)}${s.required ? "[required] " : ""}${s.description ?? ""}`.trimEnd();
+	};
+	// Charter law #16: split the agent's real choices from ignorable plumbing.
+	const intentSpecs = specs.filter((s) => paramClassFor(cmd, s.name) === "intent");
+	const plumbingSpecs = specs.filter((s) => paramClassFor(cmd, s.name) === "mechanical");
+	lines.push(natural ? "Flags:" : supportsNaturalActionRouting(cmd) ? "Advanced legacy flags:" : "Flags:");
+	for (const s of intentSpecs) lines.push(renderFlag(s));
+	if (plumbingSpecs.length) {
+		lines.push("", "Plumbing (optional; defaults apply — usually omit):");
+		for (const s of plumbingSpecs) lines.push(renderFlag(s));
 	}
 	const actionParams = natural ? [] : nativeActionParamsHelp(cmd.name);
 	if (actionParams.length) {
@@ -213,6 +232,7 @@ export function flagMetadata(cmd: CliCommand, naturalAction?: string): Record<st
 		flag: spec.flag,
 		kind: spec.kind,
 		required: spec.required,
+		paramClass: paramClassFor(cmd, spec.name),
 		...(spec.choices ? { choices: spec.choices } : {}),
 		...(spec.split ? { split: spec.split } : {}),
 		...(spec.description ? { description: spec.description } : {}),

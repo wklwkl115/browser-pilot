@@ -6,6 +6,19 @@ import { isRecord } from "../utils/records.js";
 import type { BrowserCommandSink } from "./commandDefinition.js";
 export { asPositiveInt } from "../utils/params.js";
 
+// Charter law #16 (Intent / Mechanical Parameter Doctrine). A parameter is either an agent
+// strategy choice (intent) or zero-strategy plumbing (mechanical). The classification lives on
+// the schema as the single source of truth (铁律 7); CLI/docs derive the decide/plumbing split
+// from it. Absence of the keyword ⇒ intent.
+export const PARAM_CLASS_KEYWORD = "x-bp-class";
+export type ParamClass = "intent" | "mechanical";
+/** Spread into a TypeBox param's options to mark it mechanical routing. Emitted only by shared plumbing builders. */
+export const MECHANICAL_PARAM = { [PARAM_CLASS_KEYWORD]: "mechanical" } as const;
+/** Read a parameter's class off its resolved JSON-schema property. Defaults to intent. */
+export function paramClassOf(propertySchema: unknown): ParamClass {
+	return isRecord(propertySchema) && (propertySchema as Record<string, unknown>)[PARAM_CLASS_KEYWORD] === "mechanical" ? "mechanical" : "intent";
+}
+
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
 export const DEFAULT_OBSERVATION_TIMEOUT_MS = 35_000;
 
@@ -59,7 +72,8 @@ export function enumOrEnumArrayParam<const TValue extends readonly [string, stri
 }
 
 export function optionalTargetTabId(description = TAB_ID_DESCRIPTION) {
-	return Type.Optional(Type.Union([Type.Number(), Type.String()], { description }));
+	// Mechanical: deprecated-compat duplicate of targetRef; both resolve via the same target resolver.
+	return Type.Optional(Type.Union([Type.Number(), Type.String()], { description, ...MECHANICAL_PARAM }));
 }
 
 export function optionalTargetRef(description = TARGET_REF_DESCRIPTION) {

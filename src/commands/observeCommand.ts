@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { runContentObservation, runHtmlObservation, runScanObservation, observeErrorResult, type ObserveMode, type ObserveToolParams } from "./observeRunners.js";
-import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams } from "./commandRuntime.js";
+import { defineBrowserCommand, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { NativeCommandParamsSchema, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 
@@ -110,6 +110,8 @@ function rejectModeParam(mode: ObserveMode, param: string, reason: string): neve
 export function validateObserveParams(mode: ObserveMode, params: ObserveToolParams): void {
 	if (params.fresh === true && (params.baseline !== undefined || params.baselineSnapshotId !== undefined || params.baselinePath !== undefined)) rejectModeParam(mode, "fresh", "fresh:true cannot be combined with baseline/baselineSnapshotId/baselinePath");
 	if (params.fresh === true && mode !== "scan" && mode !== "text") rejectModeParam(mode, "fresh", "fresh:true is only valid for scan/text re-anchor observations");
+	if (mode !== "scan" && params.diff === true) rejectModeParam(mode, "diff", "diff auto-baseline is only valid for scan mode");
+	if (params.fresh === true && params.diff === true) rejectModeParam(mode, "fresh", "fresh:true cannot be combined with diff:true");
 	if (mode !== "scan" && params.baseline !== undefined) rejectModeParam(mode, "baseline", "baseline diff is only valid for scan mode");
 	if (mode !== "scan" && params.actionRef !== undefined) rejectModeParam(mode, "actionRef", "actionRef causal attribution is only valid for scan mode");
 	if ((mode === "scan" || mode === "text" || mode === "tabs") && params.selector !== undefined) rejectModeParam(mode, "selector", "selector is only valid for content/html modes");
@@ -149,6 +151,7 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 			params: Type.Optional(NativeCommandParamsSchema),
 			intent: Type.Optional(Type.String({ description: "scan/text modes only: explicit task intent used as a relevance signal for ranking observation results" })),
 			fresh: Type.Optional(Type.Boolean({ description: "scan/text modes only: force a fresh full-frame observation for this call; ignores the session-delta baseline and render cache without disabling relevance or memory" })),
+			diff: Type.Optional(Type.Boolean({ description: "scan mode only: compute envelope.diff/treeDiff against the most recent prior scan snapshot for this tab as the baseline (auto-resolved; no snapshotId to thread). Explicit baseline/baselineSnapshotId/baselinePath override it; not combinable with fresh:true." })),
 			...sharedTabScopedToolParams(),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -172,6 +175,15 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 				observeParams.mode = mode;
 				observeParams.modeInferred = normalized.inferred;
 				validateObserveParams(mode, observeParams);
+				// --diff: keep the choice (do I want a diff?) with the agent but resolve the bookkeeping
+				// (which snapshotId) here — pick the most recent prior scan snapshot for this tab. Explicit
+				// baseline still wins; if no prior scan exists, leave baseline unset (full scan, no error).
+				if (mode === "scan" && observeParams.baseline === undefined && observeParams.diff === true) {
+					const bridge = server.snapshot({ browserSessionId: observeParams.browserSessionId });
+					const effectiveTabId = resolveLocalTargetTabId(server, targetTabId(observeParams), observeParams.browserSessionId) ?? bridge.defaultTabId;
+					const latest = server.listObservationSnapshots().find((snap) => snap.tabId === effectiveTabId && snap.sourceMode === "scan" && !snap.expired && Boolean(snap.saved?.path));
+					if (latest) observeParams.baseline = { snapshotId: latest.snapshotId };
+				}
 				if (mode === "scan" || mode === "text" || mode === "tabs") return await runScanObservation(server, observeParams, toolCtx, mode, _onUpdate);
 				if (mode === "content") return await runContentObservation(server, observeParams, toolCtx, _onUpdate);
 				return await runHtmlObservation(server, observeParams, toolCtx, _onUpdate);

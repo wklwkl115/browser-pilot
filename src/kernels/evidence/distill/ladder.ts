@@ -33,7 +33,23 @@ const PREVIEW_FALLBACK_CHARS = 800;
 const OVERFLOW_GUARD_LIMITS = { stringChars: 800, arrayItems: 20, tableRows: 20 } as const;
 const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
 const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "collections", "identity", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
-const ENVELOPE_REMOVABLE_KEYS = ["entities", "outline", "relations", "causal", "gist"] as const;
+// Envelope field survival under budget pressure, expressed as explicit value tiers so survival is by
+// declared rank in ONE place — never scattered by-name patches across the fit phases. Reprioritizing
+// a field = move it between these lists. The fit phases below are ordered to spend bytes well: a
+// verbose summary is worth less than the ESSENTIAL structural fields on a large page, so the summary
+// is hard-shrunk before any ESSENTIAL field is dropped.
+//   DROP_FIRST — low value-per-byte; removed before the summary is shrunk.
+//   ESSENTIAL  — high value (structure/change/orientation); kept through summary shrink, dropped only on extreme overflow.
+//   CORE       — densest orientation; the last fields to survive any truncation.
+const ENVELOPE_DROP_FIRST = ["entities", "outline", "relations", "causal"] as const;
+const ENVELOPE_ESSENTIAL = ["diff", "identity", "treeDiff", "snapshotProjection", "collections", "gist"] as const;
+const ENVELOPE_CORE = ["identity", "gist"] as const;
+
+function pickPresentEnvelopeFields<T extends BudgetedEnvelope>(out: T, keys: readonly string[]): Record<string, unknown> {
+	const picked: Record<string, unknown> = {};
+	for (const key of keys) if (out[key as keyof T] !== undefined) picked[key] = out[key as keyof T];
+	return picked;
+}
 
 function pickDefined(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
@@ -256,7 +272,7 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 			if (finished) return finished;
 		}
 	}
-	for (const key of ENVELOPE_REMOVABLE_KEYS) {
+	for (const key of ENVELOPE_DROP_FIRST) {
 		if (out[key] === undefined) continue;
 		out = { ...out };
 		delete out[key];
@@ -269,7 +285,9 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 	out = { ...out, summary: fitSummaryBudget(out.summary, summaryBudget) };
 	const finished = tryFinish();
 	if (finished) return finished;
-	const essentialWithDiff = markEnvelopeBudgetOmissions({
+	// Hard-shrink the summary while retaining the ESSENTIAL structural/orientation fields — a verbose
+	// summary is worth less than collections/treeDiff/identity/gist on a large page.
+	const essential = markEnvelopeBudgetOmissions({
 		tool: out.tool,
 		command: out.command,
 		browserSessionId: out.browserSessionId,
@@ -278,15 +296,13 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 		diagnostics: out.diagnostics,
 		limits: out.limits,
 		privacy: out.privacy,
-		...(out.diff ? { diff: out.diff } : {}),
-		...(out.identity ? { identity: out.identity } : {}),
-		...(out.treeDiff ? { treeDiff: out.treeDiff } : {}),
-		...(out.snapshotProjection ? { snapshotProjection: out.snapshotProjection } : {}),
-		...(out.collections ? { collections: out.collections } : {}),
+		...pickPresentEnvelopeFields(out, ENVELOPE_ESSENTIAL),
 		nextActions: out.nextActions?.slice(0, 2),
 		saved: out.saved,
 	} as T, [...omitted, "nonessential_metadata"]);
-	if (stableJson(essentialWithDiff).length <= budget) return essentialWithDiff;
+	if (stableJson(essential).length <= budget) return essential;
+	// Extreme overflow: only the densest CORE orientation survives.
+	const droppedEssential = ENVELOPE_ESSENTIAL.filter((k) => !ENVELOPE_CORE.includes(k as typeof ENVELOPE_CORE[number]) && out[k as keyof T] !== undefined);
 	return markEnvelopeBudgetOmissions({
 		tool: out.tool,
 		command: out.command,
@@ -296,8 +312,8 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 		diagnostics: out.diagnostics,
 		limits: out.limits,
 		privacy: out.privacy,
-		...(out.identity ? { identity: out.identity } : {}),
+		...pickPresentEnvelopeFields(out, ENVELOPE_CORE),
 		nextActions: out.nextActions?.slice(0, 2),
 		saved: out.saved,
-	} as T, [...omitted, "nonessential_metadata", ...(out.diff ? ["diff"] : []), ...(out.treeDiff ? ["treeDiff"] : []), ...(out.snapshotProjection ? ["snapshotProjection"] : [])]);
+	} as T, [...omitted, "nonessential_metadata", ...droppedEssential]);
 }

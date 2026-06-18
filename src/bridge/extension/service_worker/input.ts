@@ -141,21 +141,37 @@ async function pointer(tabId: number, msg: BrowserPilotBridgeCommand, startedAt:
 	const b = button(msg.button), clickCount = Math.max(1, Math.trunc(Number(msg.count || 1))), modifiers = mods(msg.modifiers);
 	const sent: Sent[] = [], focusEmulation = await focus(tabId, msg), base = { x, y, modifiers };
 	const mouse = async (params: JsonRecord) => await emit(tabId, msg, "Input.dispatchMouseEvent", params, sent);
-	if (gesture === "hover") {
+	if (gesture === "hover" || gesture === "moveonly") {
 		const failed = await mouse({ ...base, type: "mouseMoved", button: "none" }); if (failed) return failed;
-	} else if (gesture === "press") {
-		for (const p of [{ ...base, type: "mouseMoved", button: "none" }, { ...base, type: "mousePressed", button: b, clickCount }, { ...base, type: "mouseReleased", button: b, clickCount }]) { const failed = await mouse(p); if (failed) return failed; }
+	} else if (gesture === "press" || gesture === "pressonly") {
+		const pressOnly = gesture === "pressonly";
+		const events = pressOnly
+			? [{ ...base, type: "mousePressed", button: b, clickCount }]
+			: [{ ...base, type: "mouseMoved", button: "none" }, { ...base, type: "mousePressed", button: b, clickCount }, { ...base, type: "mouseReleased", button: b, clickCount }];
+		for (const p of events) { const failed = await mouse(p); if (failed) return failed; }
+	} else if (gesture === "releaseonly") {
+		const failed = await mouse({ ...base, type: "mouseReleased", button: b, clickCount }); if (failed) return failed;
 	} else if (gesture === "wheel") {
 		const failed = await mouse({ ...base, type: "mouseWheel", button: "none", deltaX: opt(msg.deltaX) ?? 0, deltaY: opt(msg.deltaY) ?? 0 }); if (failed) return failed;
 	} else if (gesture === "drag") {
 		const explicit = points(msg.path), end = explicit.at(-1) || { x: opt(msg.toX) ?? x, y: opt(msg.toY) ?? y }, path = explicit.length ? explicit : line({ x, y }, end);
 		for (const p of [{ ...base, type: "mouseMoved", button: "none" }, { ...base, type: "mousePressed", button: b, clickCount }, ...path.map(p => ({ type: "mouseMoved", x: p.x, y: p.y, button: b, modifiers })), { type: "mouseReleased", x: end.x, y: end.y, button: b, clickCount, modifiers }]) { const failed = await mouse(p); if (failed) return failed; }
-	} else return err("INVALID_RULE", "input.pointer gesture must be press, drag, wheel, or hover", { gesture });
+	} else return err("INVALID_RULE", "input.pointer gesture must be press, drag, wheel, hover, moveonly, pressonly, or releaseonly", { gesture });
 	return done("input.pointer", startedAt, sent, focusEmulation, { gesture, coordinates: { x, y } });
 }
 
+// Modifier KeyboardEvent.code → [KeyboardEvent.key, virtualKeyCode]
+const MODIFIER_CODES: Record<string, [string, number]> = { ShiftLeft: ["Shift", 16], ShiftRight: ["Shift", 16], ControlLeft: ["Control", 17], ControlRight: ["Control", 17], AltLeft: ["Alt", 18], AltRight: ["Alt", 18], MetaLeft: ["Meta", 91], MetaRight: ["Meta", 91] };
 function keyParams(key: string, type: string, modifiers: number): JsonRecord {
 	const named: Record<string, [string, number]> = { Enter: ["Enter", 13], Escape: ["Escape", 27], Tab: ["Tab", 9], Backspace: ["Backspace", 8], Delete: ["Delete", 46], ArrowLeft: ["ArrowLeft", 37], ArrowUp: ["ArrowUp", 38], ArrowRight: ["ArrowRight", 39], ArrowDown: ["ArrowDown", 40], Home: ["Home", 36], End: ["End", 35], PageUp: ["PageUp", 33], PageDown: ["PageDown", 34] };
+	// browser_execute program frames pass KeyboardEvent.code values (KeyC, Digit5, ShiftLeft, …); browser_command
+	// passes a single character ("a") or a named key ("Enter"). Detect the code form first.
+	const letterCode = /^Key([A-Z])$/.exec(key);
+	if (letterCode) { const ch = letterCode[1]!; return { type, key: ch.toLowerCase(), code: key, windowsVirtualKeyCode: ch.charCodeAt(0), nativeVirtualKeyCode: ch.charCodeAt(0), modifiers }; }
+	const digitCode = /^Digit([0-9])$/.exec(key);
+	if (digitCode) { const d = digitCode[1]!; return { type, key: d, code: key, windowsVirtualKeyCode: d.charCodeAt(0), nativeVirtualKeyCode: d.charCodeAt(0), modifiers }; }
+	const mod = MODIFIER_CODES[key];
+	if (mod) return { type, key: mod[0], code: key, windowsVirtualKeyCode: mod[1], nativeVirtualKeyCode: mod[1], modifiers };
 	const upper = key.length === 1 ? key.toUpperCase() : key, code = /^[A-Z]$/.test(upper) ? `Key${upper}` : /^[0-9]$/.test(key) ? `Digit${key}` : named[key]?.[0];
 	const vk = named[key]?.[1] ?? (key.length === 1 ? upper.charCodeAt(0) : undefined);
 	return { type, key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers };
@@ -173,7 +189,16 @@ async function keys(tabId: number, msg: BrowserPilotBridgeCommand, startedAt: nu
 		const r = rec(item), key = String(r.key || "");
 		if (!key) return err("INVALID_RULE", "input.keys key entries require key");
 		keyNames.push(key);
-		for (const type of ["keyDown", "keyUp"]) { const failed = await emit(tabId, msg, "Input.dispatchKeyEvent", keyParams(key, type, mods(r.modifiers)), sent); if (failed) return failed; }
+		// Support optional `type` field for single-phase key events (keyDown or keyUp).
+		// When omitted, emit both keyDown and keyUp (legacy behavior).
+		const itemType = typeof r.type === "string" ? r.type.toLowerCase() : undefined;
+		if (itemType === "keydown") {
+			const failed = await emit(tabId, msg, "Input.dispatchKeyEvent", keyParams(key, "keyDown", mods(r.modifiers)), sent); if (failed) return failed;
+		} else if (itemType === "keyup") {
+			const failed = await emit(tabId, msg, "Input.dispatchKeyEvent", keyParams(key, "keyUp", mods(r.modifiers)), sent); if (failed) return failed;
+		} else {
+			for (const type of ["keyDown", "keyUp"]) { const failed = await emit(tabId, msg, "Input.dispatchKeyEvent", keyParams(key, type, mods(r.modifiers)), sent); if (failed) return failed; }
+		}
 	}
 	return done("input.keys", startedAt, sent, focusEmulation, { keys: keyNames });
 }

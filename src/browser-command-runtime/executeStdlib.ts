@@ -120,12 +120,12 @@ function buildRefRegistry(refUris: string[]): { registry: Record<string, unknown
 	return { registry, embedded: refUris.length - misses.length, misses, targetRefs };
 }
 
-export function prepareExecuteStdlib(script: string, options: { enabled?: boolean } = {}): PreparedExecuteScript {
+export function prepareExecuteStdlib(script: string, options: { enabled?: boolean; disableClick?: boolean } = {}): PreparedExecuteScript {
 	const enabled = options.enabled ?? process.env.BROWSER_PILOT_STDLIB !== "0";
 	if (!enabled || !shouldInjectStdlib(script)) return { script };
 	const refUris = collectRefUris(script);
 	const registry = buildRefRegistry(refUris);
-	const click = scriptReferencesClick(script);
+	const click = options.disableClick ? false : scriptReferencesClick(script);
 	return {
 		script: `${stdlibPrelude(registry.registry, { click })}\n${script}`,
 		stdlib: {
