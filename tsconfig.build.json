@@ -18,8 +18,7 @@
   "include": [
     "index.ts",
     "src/**/*.ts",
-    "src/**/*.d.ts",
-    "cli/**/*.ts"
+    "src/**/*.d.ts"
   ],
   "exclude": [
     "src/bridge/extension/**",

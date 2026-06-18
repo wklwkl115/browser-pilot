@@ -40,26 +40,19 @@
     }
   },
   "bin": {
-    "browser-pilot": "./dist/cli/bin.js"
+    "browser-pilot": "./dist/src/apps/cli/bin.js"
   },
   "scripts": {
     "sync:protocol": "node scripts/sync-native-protocol.mjs",
-    "sync:capture": "node scripts/sync-capture.mjs",
     "sync:config": "node scripts/sync-bridge-config.mjs",
     "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json",
     "build:bridge": "node scripts/build-bridge.mjs",
     "prepare": "tsc -p tsconfig.build.json && node scripts/build-bridge.mjs --quiet",
-    "cli": "tsx cli/bin.ts",
+    "cli": "tsx src/apps/cli/bin.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "lint": "eslint . && node scripts/verify-boundaries.mjs",
+    "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "report:boundaries": "node scripts/architecture-boundary-report.mjs",
-    "verify:pairing": "node scripts/verify-pairing.mjs",
-    "contract:record": "node scripts/contracts.mjs record",
-    "contract:verify": "node scripts/contracts.mjs verify",
-    "verify:boundaries": "node scripts/verify-boundaries.mjs",
-    "prepack": "npm run build && node scripts/build-bridge.mjs --quiet",
-    "verify:package": "node scripts/verify-public-package.mjs"
+    "prepack": "npm run build && node scripts/build-bridge.mjs --quiet"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
@@ -88,34 +81,17 @@
   },
   "files": [
     "CHANGELOG.md",
-    "CONTRIBUTING.md",
     "CODE_OF_CONDUCT.md",
     "README.md",
-    "README.zh-CN.md",
     "LICENSE",
     "SECURITY.md",
     "bridge/",
     "src/bridge/extension/",
     "capture-src/",
-    "docs/browser-memory.md",
-    "docs/browser-usage.md",
-    "docs/cli.md",
-    "docs/guide-cli.md",
-    "docs/generated/browser-tool-reference.generated.md",
-    "docs/generated/native-protocol.generated.md",
-    "docs/playbooks/",
-    "docs/reference/",
-    "docs/tool-boundaries.md",
-    "scripts/architecture-boundary-*.mjs",
-    "scripts/import-graph.mjs",
     "scripts/build-bridge.mjs",
     "scripts/clean-build.mjs",
     "scripts/sync-bridge-config.mjs",
-    "scripts/sync-capture.mjs",
     "scripts/sync-native-protocol.mjs",
-    "scripts/verify-public-package.mjs",
-    "skills/browser-pilot-cli/",
-    "cli/",
     "src/",
     "dist/",
     "tsconfig.json",
@@ -124,3 +100,4 @@
     "tsconfig.bridge-src.json"
   ]
 }
+

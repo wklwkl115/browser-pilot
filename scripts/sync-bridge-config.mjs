@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(root, "bridge", "browser_bridge_config.json");
-const legacyBridgeConfigPath = path.join(root, "bridge", "browser_pilot_bridge", "config.js");
 const serviceWorkerConfigPath = path.join(root, "src/bridge/extension", "service_worker", "config.ts");
 const tsConfigPath = path.join(root, "src", "bridge", "server", "browserBridgeConfig.ts");
 
@@ -33,8 +32,6 @@ const BROWSER_PILOT_BRIDGE_PORT_RANGE_END = ${JSON.stringify(config.portRangeEnd
 const BROWSER_PILOT_BRIDGE_WS_URL = ${JSON.stringify(wsUrl)};
 const BROWSER_PILOT_BRIDGE_HTTP_URL = ${JSON.stringify(httpUrl)};
 `;
-writeFileSync(legacyBridgeConfigPath, bridgeConfig, "utf8");
-
 const serviceWorkerConfig = `${bridgeConfig}// ESM module metadata
 export { TID, BROWSER_PILOT_BRIDGE_HOST, BROWSER_PILOT_BRIDGE_PORT, BROWSER_PILOT_BRIDGE_PORT_RANGE_END, BROWSER_PILOT_BRIDGE_WS_URL, BROWSER_PILOT_BRIDGE_HTTP_URL };
 export const __browserPilotBridgeModule_config = { name: "config", symbols: { TID, BROWSER_PILOT_BRIDGE_HOST, BROWSER_PILOT_BRIDGE_PORT, BROWSER_PILOT_BRIDGE_PORT_RANGE_END, BROWSER_PILOT_BRIDGE_WS_URL, BROWSER_PILOT_BRIDGE_HTTP_URL } };
@@ -48,4 +45,4 @@ export const DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END = ${JSON.stringify(config.por
 `;
 writeFileSync(tsConfigPath, tsConfig, "utf8");
 
-console.log(`synced browser bridge config: ${path.relative(root, legacyBridgeConfigPath)}, ${path.relative(root, serviceWorkerConfigPath)}, ${path.relative(root, tsConfigPath)}`);
+console.log(`synced browser bridge config: ${path.relative(root, serviceWorkerConfigPath)}, ${path.relative(root, tsConfigPath)}`);

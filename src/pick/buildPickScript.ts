@@ -1,5 +1,5 @@
 import { jsonForInlineScript, renderCaptureTemplate } from "../capture/inject.js";
-import { PICK_CLEANUP_TEMPLATE, PICK_TEMPLATE } from "../capture/generated/pickBundle.js";
+import { PICK_CLEANUP_TEMPLATE, PICK_TEMPLATE } from "../../capture-src/entries/pickTemplate.js";
 import { BROWSER_NOISE_ATTRIBUTE_NAMES, BROWSER_NOISE_ATTRIBUTE_PREFIXES, BROWSER_NOISE_CLASS_PATTERNS, BROWSER_NOISE_SELECTORS } from "../scan/noiseRules.js";
 
 export type BrowserPickOptions = {

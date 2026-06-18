@@ -52,7 +52,7 @@ function sessionRoot(cwd?: string): string {
 }
 // callbackOastWorker.mjs is a plain-JS worker that tsc does NOT emit to dist/. The package
 // ships both src/ and dist/, so resolve the worker in src/ even when running from the compiled
-// dist build (the CLI daemon runs from dist/cli/bin.js) — `<root>/dist/src/...` → `<root>/src/...`.
+// dist build (the CLI daemon runs from dist/src/apps/cli/bin.js) — `<root>/dist/src/...` → `<root>/src/...`.
 // From source (tsx) the path has no dist/src/ segment, so the rewrite is a no-op.
 const WORKER_PATH = fileURLToPath(new URL("./callbackOastWorker.mjs", import.meta.url))
 	.replace(`${path.sep}dist${path.sep}src${path.sep}`, `${path.sep}src${path.sep}`);

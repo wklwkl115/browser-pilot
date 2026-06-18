@@ -1,6 +1,6 @@
 // Flat ESLint config (ESM). Type-aware linting across the two TypeScript
 // environments in this repo:
-//   - src/ + cli/ + index.ts  → Node.js   (tsconfig.json)
+//   - src/ + index.ts  → Node.js   (tsconfig.json)
 //   - src/bridge/extension/       → WebWorker (tsconfig.bridge-src.json)
 //
 // Ratcheted posture: the historical warning backlog is burned down, and the
@@ -61,18 +61,6 @@ export default tseslint.config(
 				tsconfigRootDir: import.meta.dirname,
 			},
 			globals: { ...globals.worker, chrome: "readonly" },
-		},
-	},
-	// CLI sources — type-aware via the Node tsconfig (which includes cli/).
-	{
-		files: ["cli/**/*.ts"],
-		languageOptions: {
-			parser: tseslint.parser,
-			parserOptions: {
-				project: "./tsconfig.json",
-				tsconfigRootDir: import.meta.dirname,
-			},
-			globals: { ...globals.node },
 		},
 	},
 	// Page scripts run injected in the page DOM context, not the worker.

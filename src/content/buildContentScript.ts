@@ -1,5 +1,5 @@
 import { jsonForInlineScript, renderCaptureTemplate } from "../capture/inject.js";
-import { CONTENT_TEMPLATE } from "../capture/generated/contentBundle.js";
+import { CONTENT_TEMPLATE } from "../../capture-src/entries/contentTemplate.js";
 import { BROWSER_NOISE_SELECTORS } from "../scan/noiseRules.js";
 
 export type BrowserContentOptions = {

@@ -10,8 +10,6 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](tsconfig.json)
 [![860+ Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#development)
 
-[中文文档](README.zh-CN.md)
-
 </div>
 
 Browser Pilot gives AI agents direct control over real Chrome/Edge tabs — DOM structure,
@@ -101,7 +99,7 @@ CLI, backed by a user-local daemon that owns the live browser session.
 
 | Frontend | Best for | Guide |
 |---|---|---|
-| **CLI** (`browser-pilot` command) | Shell-capable agents, CI, cron, humans | [CLI Usage Guide](docs/guide-cli.md) |
+| **CLI** (`browser-pilot` command) | Shell-capable agents, CI, cron, humans | built-in help |
 
 ## Quick Start
 
@@ -159,43 +157,10 @@ npx browser-pilot --help
 npx browser-pilot schema observe --json
 ```
 
-See the **[CLI Usage Guide](docs/guide-cli.md)** for workflows, file inputs, security
-testing, and daemon management.
-
-## Tools
-
-<!-- BEGIN TOOL INDEX -->
-| Tool | Group | Source |
-| --- | --- | --- |
-| `browser_artifact` | core | `src/commands/defineArtifactCommand.ts` |
-| `browser_callback_oast` | security | `src/commands/webSecurity/commands/registerCallbackOast.ts` |
-| `browser_command` | core | `src/commands/defineNativeCommand.ts` |
-| `browser_cookie_analyze` | security | `src/commands/webSecurity/commands/registerCookieAnalyze.ts` |
-| `browser_crawl` | security | `src/commands/webSecurity/commands/registerCrawl.ts` |
-| `browser_download` | core | `src/commands/transferCommands.ts` |
-| `browser_evidence` | core | `src/commands/defineEvidenceCommand.ts` |
-| `browser_execute` | core | `src/commands/defineExecuteCommand.ts` |
-| `browser_frame` | core | `src/commands/defineNativeActionCommands.ts` |
-| `browser_fuzz` | security | `src/commands/webSecurity/commands/registerFuzz.ts` |
-| `browser_hook` | core | `src/commands/defineNativeActionCommands.ts` |
-| `browser_http_replay` | security | `src/commands/webSecurity/commands/registerHttpReplay.ts` |
-| `browser_memory` | core | `src/commands/defineMemoryCommand.ts` |
-| `browser_network` | core | `src/commands/defineNativeActionCommands.ts` |
-| `browser_observe` | core | `src/commands/defineObserveCommand.ts` |
-| `browser_pick` | core | `src/commands/definePickCommand.ts` |
-| `browser_screenshot` | core | `src/commands/defineScreenshotCommand.ts` |
-| `browser_sqli` | security | `src/commands/webSecurity/commands/registerSqli.ts` |
-| `browser_tabs` | core | `src/commands/tabsCommand.ts` |
-| `browser_template` | security | `src/commands/webSecurity/commands/registerTemplate.ts` |
-| `browser_upload` | core | `src/commands/transferCommands.ts` |
-| `browser_wait` | core | `src/commands/defineNativeActionCommands.ts` |
-<!-- END TOOL INDEX -->
-
 15 core tools (tabs, observe, execute, command, wait, pick, screenshot, network, hook,
 evidence, frame, artifact, memory, download, upload) and 7 security tools (crawl, fuzz,
-sqli, template, cookie-analyze, http-replay, callback-oast). See the
-[tool reference](docs/generated/browser-tool-reference.generated.md) for full
-schemas and parameters.
+sqli, template, cookie-analyze, http-replay, callback-oast). Use
+`browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface.
 
 ## Typical Workflow
 
@@ -270,8 +235,6 @@ npx browser-pilot http-replay --raw-request @request.txt --json
 npx browser-pilot sqli --url "https://example.com/search?q=test" --json
 ```
 
-See [docs/playbooks/](docs/playbooks/) for step-by-step security testing guides.
-
 ## Development
 
 ```bash
@@ -279,29 +242,11 @@ npm run build:bridge      # Build the Chrome extension
 npm run build             # Compile Node.js source to dist/
 npm run lint              # ESLint
 npm run typecheck         # TypeScript project check
-npm run verify:package    # Pack, install, and smoke-test the public package
 ```
-
-`verify:package` creates an npm tarball, installs it into a clean throwaway
-consumer project, and runs the shipped `browser-pilot` CLI help/schema/status
-commands. Its artifacts are written under `.browser-pilot/artifacts/public-package/`.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 
 ## Documentation
 
-| Doc | Description |
-|---|---|
-| [docs/guide-cli.md](docs/guide-cli.md) | CLI usage guide — workflows, patterns, examples |
-| [skills/browser-pilot-cli/SKILL.md](skills/browser-pilot-cli/SKILL.md) | In-repo CLI operating skill for shell-capable agents |
-| [docs/architecture-charter.md](docs/architecture-charter.md) | Breaking architecture rewrite charter, execution rules, and TODO plan |
-| [docs/cli.md](docs/cli.md) | CLI reference — full command/flag/output specification |
-| [docs/playbooks/](docs/playbooks/) | Security testing playbooks |
-| [docs/tool-boundaries.md](docs/tool-boundaries.md) | Tool selection boundaries |
-| [docs/browser-memory.md](docs/browser-memory.md) | Local browser memory system |
-| [docs/browser-usage.md](docs/browser-usage.md) | Installation, extension loading, troubleshooting |
-| [docs/generated/browser-tool-reference.generated.md](docs/generated/browser-tool-reference.generated.md) | Generated tool reference |
-| [docs/generated/native-protocol.generated.md](docs/generated/native-protocol.generated.md) | Generated native protocol reference |
+Use `browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface.
 
 ## Notes
 

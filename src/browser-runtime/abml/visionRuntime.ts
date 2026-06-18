@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { registerBrowserResultResource, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../capture/inject.js";
-import { VIEWPORT_TEMPLATE } from "../../capture/generated/visionBundle.js";
+import { VIEWPORT_TEMPLATE } from "../../../capture-src/entries/visionTemplate.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { saveDataUrl } from "../../artifacts/artifactFiles.js";

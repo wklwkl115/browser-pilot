@@ -86,7 +86,7 @@ runtime, Node-only, or npm dependency import is a boundary violation.
   whitelist in the boundary test (after re-verifying its dependency closure stays pure).
   Otherwise the consumer belongs in the runtime layer, not here.
 
-After any change: `npm run typecheck`, `npm run lint`, and the relevant contract/package checks for
+After any change: `npm run typecheck`, `npm run lint`, and any focused manual verification needed for
 the touched surface.
 
 ## Consumers
@@ -97,5 +97,4 @@ browser-runtime layer.
 
 ## Related docs
 
-- [`docs/architecture-charter.md`](../../docs/architecture-charter.md) — project architecture rules, dependency direction, and migration goals.
-- [`docs/generated/browser-tool-reference.generated.md`](../../docs/generated/browser-tool-reference.generated.md) — generated public command and error reference.
+- [`docs/cli.md`](../../docs/cli.md) — public CLI reference.
