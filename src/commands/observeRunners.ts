@@ -19,10 +19,4 @@ export {
 	sortEntitiesBySalience,
 } from "./observe/entityViews.js";
 
-export {
-	buildMemoryAugmentationPlan as __buildMemoryAugmentationPlanForTests,
-	memoryWarmStartTerms as __memoryWarmStartTermsForTests,
-	__resetMemoryAugmentationStateForTests,
-} from "./observe/memoryAugmentation.js";
-
 export type { ObserveMode, ObserveToolParams } from "./observe/common.js";

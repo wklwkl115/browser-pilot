@@ -181,8 +181,4 @@ export async function buildMemoryAugmentationPlan(cwd: string | undefined, url: 
 	};
 }
 
-export function __resetMemoryAugmentationStateForTests(): void {
-	memoryFullShown.clear();
-}
-
 export { consumeMemoryProfileDiagnostics, recordMemoryProfileFrame };

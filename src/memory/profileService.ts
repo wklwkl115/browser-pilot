@@ -190,9 +190,3 @@ export async function drainMemoryProfileFlushes(): Promise<void> {
 	for (const state of states.values()) await flushState(state);
 	await Promise.all([...states.values()].map((state) => state.chain));
 }
-
-export function __resetMemoryProfileServiceForTests(): void {
-	for (const state of states.values()) if (state.timer) clearTimeout(state.timer);
-	states.clear();
-	diagnostics.clear();
-}
