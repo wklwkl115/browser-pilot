@@ -1,8 +1,12 @@
 import { isRecord } from "../../utils/records.js";
 
+type Rect = { x: number; y: number; w: number; h: number };
+type IndexedEntry = SnapshotGeometryEntry & { scaledBounds: Rect };
+type BootstrapOptions = { scanCapturedAt?: number; scanCapturedAtIso?: string; snapshotStartedAt?: string; snapshotEndedAt?: string };
+
 export type SnapshotGeometryEntry = {
 	backendNodeId: number;
-	bounds: { x: number; y: number; w: number; h: number };
+	bounds: Rect;
 	attrs?: Record<string, string>;
 };
 
@@ -16,8 +20,8 @@ export type BackendNodeIdBootstrapRecord = {
 	backendNodeId?: number;
 	iou?: number;
 	candidateCount?: number;
-	scanRect?: { x: number; y: number; w: number; h: number };
-	snapshotBounds?: { x: number; y: number; w: number; h: number };
+	scanRect?: Rect;
+	snapshotBounds?: Rect;
 };
 
 export type BackendNodeIdBootstrapStats = {
@@ -50,7 +54,7 @@ function num(value: unknown): number | undefined {
 	return Number.isFinite(n) ? n : undefined;
 }
 
-function rectFromScan(value: unknown, scrollX: number, scrollY: number): { x: number; y: number; w: number; h: number } | undefined {
+function rectFromScan(value: unknown, scrollX: number, scrollY: number): Rect | undefined {
 	if (!isRecord(value)) return undefined;
 	const x = num(value.x);
 	const y = num(value.y);
@@ -60,7 +64,7 @@ function rectFromScan(value: unknown, scrollX: number, scrollY: number): { x: nu
 	return { x: x + scrollX, y: y + scrollY, w, h };
 }
 
-function scaledRect(rect: { x: number; y: number; w: number; h: number }, scale: number): { x: number; y: number; w: number; h: number } {
+function scaledRect(rect: Rect, scale: number): Rect {
 	const divisor = scale > 0 ? scale : 1;
 	return { x: rect.x / divisor, y: rect.y / divisor, w: rect.w / divisor, h: rect.h / divisor };
 }
@@ -69,7 +73,7 @@ function rectArea(rect: { w: number; h: number }): number {
 	return Math.max(0, rect.w) * Math.max(0, rect.h);
 }
 
-function rectIou(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): number {
+function rectIou(a: Rect, b: Rect): number {
 	const ix = Math.max(a.x, b.x);
 	const iy = Math.max(a.y, b.y);
 	const ix2 = Math.min(a.x + a.w, b.x + b.w);
@@ -86,82 +90,106 @@ function idFromSimpleSelector(selector: unknown): string | undefined {
 }
 
 function countStatuses(records: BackendNodeIdBootstrapRecord[]): Omit<BackendNodeIdBootstrapStats, "total" | "coverage" | "matchThreshold" | "snapshotScaleDivisor" | "viewportKnown" | "records" | "sampleWindowMs" | "scanCapturedAt" | "snapshotStartedAt" | "snapshotEndedAt"> {
-	return {
-		matched: records.filter((item) => item.status === "matched").length,
-		ambiguous: records.filter((item) => item.status === "ambiguous").length,
-		stale: records.filter((item) => item.status === "stale").length,
-		missing: records.filter((item) => item.status === "missing").length,
-		unsupported: records.filter((item) => item.status === "unsupported").length,
-	};
+	const counts = { matched: 0, ambiguous: 0, stale: 0, missing: 0, unsupported: 0 };
+	for (const item of records) counts[item.status] += 1;
+	return counts;
 }
 
-export function bootstrapScanBackendNodeIds(
-	data: Record<string, unknown>,
-	entries: SnapshotGeometryEntry[],
-	options: { scanCapturedAt?: number; scanCapturedAtIso?: string; snapshotStartedAt?: string; snapshotEndedAt?: string } = {},
-): BackendNodeIdBootstrapResult {
-	const viewport = isRecord(data.viewport) ? data.viewport : {};
-	const scrollX = num(viewport.scrollX) ?? 0;
-	const scrollY = num(viewport.scrollY) ?? 0;
-	const scale = Math.max(1, num(viewport.devicePixelRatio) ?? 1);
-	const viewportKnown = num(viewport.scrollX) !== undefined && num(viewport.scrollY) !== undefined;
-	const indexedEntries = entries
+function indexEntries(entries: SnapshotGeometryEntry[], scale: number): IndexedEntry[] {
+	return entries
 		.filter((entry) => Number.isFinite(entry.backendNodeId) && entry.backendNodeId > 0 && rectArea(entry.bounds) > 0)
 		.map((entry) => ({ ...entry, scaledBounds: scaledRect(entry.bounds, scale) }));
-	const byId = new Map<string, typeof indexedEntries[number]>();
-	for (const entry of indexedEntries) {
-		const id = entry.attrs?.id;
-		if (id && !byId.has(id)) byId.set(id, entry);
+}
+
+function entriesById(entries: IndexedEntry[]): Map<string, IndexedEntry> {
+	const byId = new Map<string, IndexedEntry>();
+	for (const entry of entries) if (entry.attrs?.id && !byId.has(entry.attrs.id)) byId.set(entry.attrs.id, entry);
+	return byId;
+}
+
+function actionableIndex(item: Record<string, unknown>, index: number): number {
+	const explicit = num(item.index);
+	return explicit !== undefined && explicit >= 0 ? Math.floor(explicit) : index;
+}
+
+function actionableJsonPath(item: Record<string, unknown>, index: number): string {
+	return `data.actionables[${actionableIndex(item, index)}]`;
+}
+
+function highIouSummary(scanRect: Rect, entries: IndexedEntry[]): { count: number; best?: IndexedEntry; bestIou: number } {
+	let count = 0;
+	let best: IndexedEntry | undefined;
+	let bestIou = 0;
+	for (const entry of entries) {
+		const iou = rectIou(scanRect, entry.scaledBounds);
+		if (iou < MATCH_IOU_THRESHOLD) continue;
+		count += 1;
+		if (!best || iou > bestIou || (iou === bestIou && entry.backendNodeId < best.backendNodeId)) {
+			best = entry;
+			bestIou = iou;
+		}
 	}
-	const actionables = Array.isArray(data.actionables) ? data.actionables : [];
-	const records: BackendNodeIdBootstrapRecord[] = [];
-	const nextActionables = actionables.map((item, index) => {
-		if (!isRecord(item)) return item;
-		const jsonPath = `data.actionables[${Number(item.index ?? index)}]`;
-		const selector = typeof item.selector === "string" ? item.selector : undefined;
-		const scanRect = rectFromScan(item.rect, scrollX, scrollY);
-		if (!scanRect || !indexedEntries.length) {
-			records.push({ jsonPath, selector, status: "unsupported", reason: !scanRect ? "scan-rect-unavailable" : "snapshot-geometry-unavailable" });
-			return item;
-		}
-		const candidates = indexedEntries
-			.map((entry) => ({ entry, iou: rectIou(scanRect, entry.scaledBounds) }))
-			.filter((candidate) => candidate.iou >= MATCH_IOU_THRESHOLD)
-			.sort((a, b) => b.iou - a.iou || a.entry.backendNodeId - b.entry.backendNodeId);
-		if (candidates.length > 1) {
-			records.push({ jsonPath, selector, status: "ambiguous", reason: "multiple-high-iou-candidates", candidateCount: candidates.length, scanRect, iou: Number(candidates[0]!.iou.toFixed(3)) });
-			return { ...item, backendNodeIdBootstrap: { status: "ambiguous", reason: "multiple-high-iou-candidates", candidateCount: candidates.length } };
-		}
-		if (candidates.length === 1) {
-			const match = candidates[0]!;
-			const iou = Number(match.iou.toFixed(3));
-			records.push({ jsonPath, selector, status: "matched", reason: "unique-high-iou", backendNodeId: match.entry.backendNodeId, iou, candidateCount: 1, scanRect, snapshotBounds: match.entry.scaledBounds });
-			return { ...item, backendNodeId: match.entry.backendNodeId, backendNodeIdBootstrap: { status: "matched", reason: "unique-high-iou", iou } };
-		}
-		const simpleId = idFromSimpleSelector(selector);
-		const selectorEntry = simpleId ? byId.get(simpleId) : undefined;
-		if (selectorEntry) {
-			const iou = Number(rectIou(scanRect, selectorEntry.scaledBounds).toFixed(3));
-			records.push({ jsonPath, selector, status: "stale", reason: "selector-node-geometry-drift", backendNodeId: selectorEntry.backendNodeId, iou, candidateCount: 0, scanRect, snapshotBounds: selectorEntry.scaledBounds });
-			return { ...item, backendNodeIdBootstrap: { status: "stale", reason: "selector-node-geometry-drift", iou } };
-		}
-		records.push({ jsonPath, selector, status: "missing", reason: "no-high-iou-candidate", candidateCount: 0, scanRect });
-		return { ...item, backendNodeIdBootstrap: { status: "missing", reason: "no-high-iou-candidate" } };
-	});
+	return { count, best, bestIou };
+}
+
+function sampleWindowMs(options: BootstrapOptions): number | undefined {
+	if (options.scanCapturedAt === undefined || !options.snapshotEndedAt) return undefined;
+	const endedAt = Date.parse(options.snapshotEndedAt);
+	if (!Number.isFinite(endedAt)) return undefined;
+	return Math.max(0, endedAt - options.scanCapturedAt);
+}
+
+function buildStats(records: BackendNodeIdBootstrapRecord[], scale: number, viewportKnown: boolean, options: BootstrapOptions): BackendNodeIdBootstrapStats {
 	const counts = countStatuses(records);
-	const sampleWindowMs = options.scanCapturedAt !== undefined && options.snapshotEndedAt ? Math.max(0, Date.parse(options.snapshotEndedAt) - options.scanCapturedAt) : undefined;
-	const stats: BackendNodeIdBootstrapStats = {
+	const windowMs = sampleWindowMs(options);
+	return {
 		total: records.length,
 		...counts,
 		coverage: records.length ? Number((counts.matched / records.length).toFixed(3)) : 0,
 		matchThreshold: MATCH_IOU_THRESHOLD,
 		snapshotScaleDivisor: scale,
 		viewportKnown,
-		...(sampleWindowMs !== undefined ? { sampleWindowMs } : {}),
+		...(windowMs === undefined ? {} : { sampleWindowMs: windowMs }),
 		...(options.scanCapturedAtIso ? { scanCapturedAt: options.scanCapturedAtIso } : {}),
 		...(options.snapshotStartedAt ? { snapshotStartedAt: options.snapshotStartedAt } : {}),
 		...(options.snapshotEndedAt ? { snapshotEndedAt: options.snapshotEndedAt } : {}),
 		records,
 	};
+}
+
+function bootstrapActionable(item: Record<string, unknown>, index: number, entries: IndexedEntry[], byId: Map<string, IndexedEntry>, scrollX: number, scrollY: number) {
+	const jsonPath = actionableJsonPath(item, index);
+	const selector = typeof item.selector === "string" ? item.selector : undefined;
+	const scanRect = rectFromScan(item.rect, scrollX, scrollY);
+	if (!scanRect || !entries.length) return { item, record: { jsonPath, selector, status: "unsupported" as const, reason: !scanRect ? "scan-rect-unavailable" : "snapshot-geometry-unavailable" } };
+	const summary = highIouSummary(scanRect, entries);
+	if (summary.count > 1) return { item: { ...item, backendNodeIdBootstrap: { status: "ambiguous", reason: "multiple-high-iou-candidates", candidateCount: summary.count } }, record: { jsonPath, selector, status: "ambiguous" as const, reason: "multiple-high-iou-candidates", candidateCount: summary.count, scanRect, iou: Number(summary.bestIou.toFixed(3)) } };
+	if (summary.best) {
+		const iou = Number(summary.bestIou.toFixed(3));
+		return { item: { ...item, backendNodeId: summary.best.backendNodeId, backendNodeIdBootstrap: { status: "matched", reason: "unique-high-iou", iou } }, record: { jsonPath, selector, status: "matched" as const, reason: "unique-high-iou", backendNodeId: summary.best.backendNodeId, iou, candidateCount: 1, scanRect, snapshotBounds: summary.best.scaledBounds } };
+	}
+	const selectorEntry = byId.get(idFromSimpleSelector(selector) || "");
+	if (!selectorEntry) return { item: { ...item, backendNodeIdBootstrap: { status: "missing", reason: "no-high-iou-candidate" } }, record: { jsonPath, selector, status: "missing" as const, reason: "no-high-iou-candidate", candidateCount: 0, scanRect } };
+	const iou = Number(rectIou(scanRect, selectorEntry.scaledBounds).toFixed(3));
+	return { item: { ...item, backendNodeIdBootstrap: { status: "stale", reason: "selector-node-geometry-drift", iou } }, record: { jsonPath, selector, status: "stale" as const, reason: "selector-node-geometry-drift", backendNodeId: selectorEntry.backendNodeId, iou, candidateCount: 0, scanRect, snapshotBounds: selectorEntry.scaledBounds } };
+}
+
+export function bootstrapScanBackendNodeIds(data: Record<string, unknown>, entries: SnapshotGeometryEntry[], options: BootstrapOptions = {}): BackendNodeIdBootstrapResult {
+	const viewport = isRecord(data.viewport) ? data.viewport : {};
+	const scrollX = num(viewport.scrollX) ?? 0;
+	const scrollY = num(viewport.scrollY) ?? 0;
+	const scale = Math.max(1, num(viewport.devicePixelRatio) ?? 1);
+	const viewportKnown = num(viewport.scrollX) !== undefined && num(viewport.scrollY) !== undefined;
+	const indexedEntries = indexEntries(entries, scale);
+	const byId = entriesById(indexedEntries);
+	const actionables = Array.isArray(data.actionables) ? data.actionables : [];
+	const records: BackendNodeIdBootstrapRecord[] = [];
+	const nextActionables = actionables.map((item, index) => {
+		if (!isRecord(item)) return item;
+		const resolved = bootstrapActionable(item, index, indexedEntries, byId, scrollX, scrollY);
+		records.push(resolved.record);
+		return resolved.item;
+	});
+	const stats = buildStats(records, scale, viewportKnown, options);
 	return { data: { ...data, actionables: nextActionables, backendNodeIdBootstrap: stats }, stats };
 }
