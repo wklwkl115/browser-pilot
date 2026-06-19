@@ -15,6 +15,7 @@ node_modules/
 *.pfx
 
 # Build/test artifacts
+.cache/
 coverage/
 dist/
 build/

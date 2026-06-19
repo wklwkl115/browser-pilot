@@ -4,6 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": ".cache/tsconfig.typecheck.tsbuildinfo",
     "allowImportingTsExtensions": true,
     "lib": [
       "ES2022",

@@ -50,7 +50,8 @@
     "prepare": "tsc -p tsconfig.build.json && node scripts/build-bridge.mjs --quiet",
     "cli": "tsx src/apps/cli/bin.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "lint": "eslint .",
+    "audit:reachability": "node scripts/audit-reachability.mjs",
+    "lint": "npm run audit:reachability && eslint .",
     "lint:fix": "eslint . --fix",
     "prepack": "npm run build && node scripts/build-bridge.mjs --quiet"
   },

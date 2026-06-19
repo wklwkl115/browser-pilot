@@ -1,0 +1,44 @@
+min_version = "2024.1.0"
+
+[tools]
+node = "22"
+
+[tasks.test]
+description = "Run deterministic Node tests for all bootstrap and refactor scopes"
+run = "node scripts/run-tests.mjs all"
+
+[tasks.test-cli]
+description = "Run bootstrap + CLI characterization tests"
+run = "node scripts/run-tests.mjs cli"
+
+[tasks.test-artifacts]
+description = "Run bootstrap + artifact characterization tests"
+run = "node scripts/run-tests.mjs artifacts"
+
+[tasks.test-js-ast]
+description = "Run bootstrap + JS AST characterization tests"
+run = "node scripts/run-tests.mjs js-ast"
+
+[tasks.dev]
+description = "Fast developer validation for the current refactor scope"
+run = "node scripts/run-validation.mjs dev all"
+
+[tasks.dev-cli]
+description = "Fast developer validation for CLI refactor work"
+run = "node scripts/run-validation.mjs dev cli"
+
+[tasks.dev-artifacts]
+description = "Fast developer validation for artifact refactor work"
+run = "node scripts/run-validation.mjs dev artifacts"
+
+[tasks.dev-js-ast]
+description = "Fast developer validation for JS AST refactor work"
+run = "node scripts/run-validation.mjs dev js-ast"
+
+[tasks.affected]
+description = "Changed-file validation with deterministic fallback to full dev"
+run = "node scripts/run-validation.mjs affected changed"
+
+[tasks.verify]
+description = "Release-readiness validation for the current refactor scope"
+run = "node scripts/run-validation.mjs verify all"

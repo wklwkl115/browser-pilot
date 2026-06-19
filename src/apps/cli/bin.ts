@@ -6,7 +6,7 @@ async function run(argv: string[]): Promise<number> {
 		printHelp();
 		return 0;
 	}
-	const { main } = await import("./index.js");
+	const { main } = await import("./main.js");
 	return await main(argv);
 }
 
