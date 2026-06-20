@@ -67,7 +67,7 @@ live AX tree).
 
 ## The boundary is CI-enforced
 
-`npm run lint` includes architecture boundary checks. Files here must import only another core
+`mise run verify` includes the architecture boundary checks for this kernel through the canonical lint gate. Files here must import only another core
 module or an approved transitively-pure cross-cutting helper. A command, adapter, bridge, browser
 runtime, Node-only, or npm dependency import is a boundary violation.
 
@@ -85,7 +85,7 @@ runtime, Node-only, or npm dependency import is a boundary violation.
   whitelist in the boundary test (after re-verifying its dependency closure stays pure).
   Otherwise the consumer belongs in the runtime layer, not here.
 
-After any change: `npm run typecheck`, `npm run lint`, and any focused manual verification needed for
+After any change: `mise run verify`, plus any focused manual verification needed for
 the touched surface.
 
 ## Consumers

@@ -4,10 +4,9 @@ import { isRecord } from "../utils/records.js";
 import type { BrowserCommandSink } from "./commandDefinition.js";
 export { asPositiveInt } from "../utils/params.js";
 
-// Charter law #16 (Intent / Mechanical Parameter Doctrine). A parameter is either an agent
-// strategy choice (intent) or zero-strategy plumbing (mechanical). The classification lives on
-// the schema as the single source of truth (铁律 7); CLI/docs derive the decide/plumbing split
-// from it. Absence of the keyword ⇒ intent.
+// Parameter classes separate agent strategy choices (intent) from zero-strategy plumbing
+// (mechanical). The classification lives on the schema as the single source of truth;
+// CLI/docs derive the decide/plumbing split from it. Absence of the keyword means intent.
 export const PARAM_CLASS_KEYWORD = "x-bp-class";
 export type ParamClass = "intent" | "mechanical";
 /** Spread into a TypeBox param's options to mark it mechanical routing. Emitted only by shared plumbing builders. */

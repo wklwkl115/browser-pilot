@@ -19,6 +19,10 @@ run = "node scripts/run-tests.mjs artifacts"
 description = "Run bootstrap + JS AST characterization tests"
 run = "node scripts/run-tests.mjs js-ast"
 
+[tasks.test-governance]
+description = "Run bootstrap + governance/workflow validation tests"
+run = "node scripts/run-tests.mjs governance"
+
 [tasks.dev]
 description = "Fast developer validation for the current refactor scope"
 run = "node scripts/run-validation.mjs dev all"
@@ -34,6 +38,10 @@ run = "node scripts/run-validation.mjs dev artifacts"
 [tasks.dev-js-ast]
 description = "Fast developer validation for JS AST refactor work"
 run = "node scripts/run-validation.mjs dev js-ast"
+
+[tasks.dev-governance]
+description = "Fast developer validation for governance and workflow changes"
+run = "node scripts/run-validation.mjs dev governance"
 
 [tasks.affected]
 description = "Changed-file validation with deterministic fallback to full dev"

@@ -9,6 +9,7 @@ const lintTargets = {
 	cli: ["src/apps/cli", "src/apps/daemon", "src/commands"],
 	artifacts: ["src/artifacts", "src/commands/artifactCommand.ts"],
 	"js-ast": ["src/commands/webSecurity/shared/jsAst.ts", "src/commands/webSecurity/shared/jsAstArtifact.ts"],
+	governance: [],
 };
 const scopeMarkers = [
 	["src/apps/cli/", "cli"],
@@ -18,10 +19,13 @@ const scopeMarkers = [
 	["tests/cli/", "cli"],
 	["tests/artifacts/", "artifacts"],
 	["tests/js-ast/", "js-ast"],
+	["tests/governance/", "governance"],
+	["REPO_GOVERNANCE.md", "governance"],
+	["README.md", "governance"],
 ];
 
 function resolveChangedScope() {
-	const output = execFileSync("git", ["status", "--short", "--untracked-files=all", "--", "src", "tests", "mise.toml", ".github/workflows", "scripts"], { cwd: root, encoding: "utf8" });
+	const output = execFileSync("git", ["status", "--short", "--untracked-files=all", "--", "src", "tests", "mise.toml", ".github/workflows", "scripts", "README.md", "REPO_GOVERNANCE.md"], { cwd: root, encoding: "utf8" });
 	const scopes = new Set();
 	for (const rawLine of output.split(/\r?\n/).filter(Boolean)) {
 		const line = rawLine.slice(3).trim();
@@ -52,6 +56,10 @@ function run(command, args, label) {
 
 async function runLint(scope) {
 	const targets = lintTargets[scope] || lintTargets.all;
+	if (targets.length === 0) {
+		console.log(`ok: lint:${scope}: skipped`);
+		return;
+	}
 	await run(npmCommand, ["exec", "--", "eslint", ...targets], `lint:${scope}`);
 	console.log(`ok: lint:${scope}`);
 }
@@ -79,7 +87,8 @@ const scope = scopeFor(mode, requestedScope);
 if (!lintTargets[scope]) throw new Error(`unknown validation scope: ${scope}`);
 
 if (mode === "dev" || mode === "affected") {
-	await Promise.all([runLint(scope), runTypecheck(), runTests(scope)]);
+	const checks = scope === "governance" ? [runLint(scope), runTests(scope)] : [runLint(scope), runTypecheck(), runTests(scope)];
+	await Promise.all(checks);
 	process.exit(0);
 }
 
