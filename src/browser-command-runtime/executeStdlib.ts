@@ -1,6 +1,6 @@
 import { resolveRefUriDetailed } from "../resources/resourceRefs.js";
 import type { ResourceRefDescriptor as RefDescriptor } from "../ports/ResourceRefStorePort.js";
-import { BROWSER_PILOT_STDLIB_NAMES, scriptReferencesClick, stdlibPrelude } from "./executeStdlibPrelude.js";
+import { BROWSER_PILOT_STDLIB_NAMES, stdlibPrelude } from "./executeStdlibPrelude.js";
 import { isBrowserPilotRef } from "../kernels/refs/core.js";
 
 const REF_CANDIDATE_PATTERN = /[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>{}\])]+/gi;
@@ -120,19 +120,18 @@ function buildRefRegistry(refUris: string[]): { registry: Record<string, unknown
 	return { registry, embedded: refUris.length - misses.length, misses, targetRefs };
 }
 
-export function prepareExecuteStdlib(script: string, options: { enabled?: boolean; disableClick?: boolean } = {}): PreparedExecuteScript {
+export function prepareExecuteStdlib(script: string, options: { enabled?: boolean } = {}): PreparedExecuteScript {
 	const enabled = options.enabled ?? process.env.BROWSER_PILOT_STDLIB !== "0";
 	if (!enabled || !shouldInjectStdlib(script)) return { script };
 	const refUris = collectRefUris(script);
 	const registry = buildRefRegistry(refUris);
-	const click = options.disableClick ? false : scriptReferencesClick(script);
 	return {
-		script: `${stdlibPrelude(registry.registry, { click })}\n${script}`,
+		script: `${stdlibPrelude(registry.registry)}\n${script}`,
 		stdlib: {
 			used: true,
 			refsEmbedded: registry.embedded,
 			resolveMisses: registry.misses,
-			namespace: click ? BROWSER_PILOT_STDLIB_NAMES : BROWSER_PILOT_STDLIB_NAMES.filter((name) => name !== "click"),
+			namespace: BROWSER_PILOT_STDLIB_NAMES,
 			...(registry.targetRefs.length ? { targetRefs: registry.targetRefs } : {}),
 			...(registry.misses.length ? { warnings: [`${registry.misses.length} ref(s) failed to resolve: [${registry.misses.join(", ")}] — script received null elements`] } : {}),
 		},

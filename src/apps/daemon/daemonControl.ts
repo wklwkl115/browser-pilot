@@ -34,6 +34,7 @@ export interface DaemonStatus {
 	ok: boolean;
 	bridgePort?: number;
 	running?: boolean;
+	readiness?: string;
 	extensionConnected?: boolean;
 	extension?: Record<string, unknown>;
 	tabs?: unknown[];
@@ -299,10 +300,16 @@ export function resolveDaemonStartCommand(): DaemonStartCommand {
 	const explicit = process.env.BROWSER_PILOT_DAEMON_ENTRY;
 	if (explicit) return { command: process.execPath, args: [explicit, "daemon", "start"] };
 	const root = packageRoot() ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-	const jsEntry = path.join(root, "dist", "cli", "bin.js");
-	if (existsSync(jsEntry)) return { command: process.execPath, args: [jsEntry, "daemon", "start"] };
-	const tsEntry = path.join(root, "cli", "bin.ts");
-	if (existsSync(tsEntry)) {
+	const jsEntry = [
+		path.join(root, "dist", "src", "apps", "cli", "bin.js"),
+		path.join(root, "dist", "cli", "bin.js"),
+	].find((candidate) => existsSync(candidate));
+	if (jsEntry) return { command: process.execPath, args: [jsEntry, "daemon", "start"] };
+	const tsEntry = [
+		path.join(root, "src", "apps", "cli", "bin.ts"),
+		path.join(root, "cli", "bin.ts"),
+	].find((candidate) => existsSync(candidate));
+	if (tsEntry) {
 		const tsxCli = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
 		if (existsSync(tsxCli)) {
 			// Prefer running the tsx loader IN-PROCESS via `node --import tsx` (Node ≥20.6).
@@ -315,7 +322,7 @@ export function resolveDaemonStartCommand(): DaemonStartCommand {
 		}
 		return { command: process.execPath, args: [tsEntry, "daemon", "start"] };
 	}
-	return { command: process.execPath, args: [jsEntry, "daemon", "start"] };
+	return { command: process.execPath, args: [path.join(root, "dist", "src", "apps", "cli", "bin.js"), "daemon", "start"] };
 }
 
 function supportsImportFlag(): boolean {

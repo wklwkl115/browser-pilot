@@ -30,8 +30,6 @@ All notable changes to this project will be documented in this file.
   MV3 service worker restarts, and extension reconnects.
 - **Trusted event escape** — `browser_command` with `input.pointer`/`input.keys` for
   CDP physical input when JS `el.click()` is silently blocked by trusted-event gates.
-- **`browserPilot.click(ref)`** — single-call physical click via observed `bp-ref://` handle
-  inside `browser_execute`, combining coordinate measurement and CDP dispatch.
 - **Interception primitives** — response auto-fulfill, script replacement,
   request mutation via bridge commands.
 - **WebSocket session primitives** — open/send/replay/wait/collect/close for

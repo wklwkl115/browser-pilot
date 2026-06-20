@@ -264,8 +264,8 @@ async function executeEvalFrame(
 		}
 		const contextPrelude = contextLines.length > 0 ? contextLines.join("\n") + "\n" : "";
 
-		// Inject stdlib (4-function: resolve/box/setValue/settled — no click)
-		const prepared = prepareExecuteStdlib(script, { enabled: true, disableClick: true });
+		// Inject stdlib helpers for ref resolution and DOM-aware value/wait helpers.
+		const prepared = prepareExecuteStdlib(script, { enabled: true });
 		const fullScript = `${contextPrelude}${prepared.script}`;
 
 		const result = await ctx.server.executeJavaScript(fullScript, {
@@ -543,7 +543,7 @@ async function executeWaitFrame(
 	try {
 		// Use settled() stdlib for DOM-aware waiting
 		const script = `browserPilot.settled(${ms}, ${Math.min(ms * 2 + 1000, 5000)})`;
-		const prepared = prepareExecuteStdlib(script, { enabled: true, disableClick: true });
+		const prepared = prepareExecuteStdlib(script, { enabled: true });
 		const result = await ctx.server.executeJavaScript(prepared.script, {
 			browserSessionId: ctx.browserSessionId,
 			tabId: ctx.tabId as number | string | undefined,

@@ -83,6 +83,26 @@ async function runBuild() {
 	console.log("ok: build");
 }
 
+async function runExtensionTypecheck() {
+	// The MV3 extension is excluded from tsconfig.json/tsconfig.build.json, so the normal
+	// typecheck/build never sees it. Validate it through its dedicated project so CI catches
+	// extension-side type errors instead of silently skipping src/bridge/extension/**.
+	await run(npmCommand, ["exec", "--", "tsc", "-p", "tsconfig.bridge-src.json"], "typecheck:extension");
+	console.log("ok: typecheck:extension");
+}
+
+async function runProtocolCheck() {
+	// Fail if the schema-derived protocol files drifted from src/bridge/protocol/native-command.schema.json.
+	await run("node", ["scripts/sync-native-protocol.mjs", "--check"], "sync:protocol");
+	console.log("ok: sync:protocol");
+}
+
+async function runFullLint() {
+	// Whole-repo lint (matches `npm run lint`), broader than the scoped dev gate.
+	await run(npmCommand, ["exec", "--", "eslint", "."], "lint");
+	console.log("ok: lint");
+}
+
 const scope = scopeFor(mode, requestedScope);
 if (!lintTargets[scope]) throw new Error(`unknown validation scope: ${scope}`);
 
@@ -93,8 +113,8 @@ if (mode === "dev" || mode === "affected") {
 }
 
 if (mode === "verify") {
-	await Promise.all([runReachability(), runTypecheck(), runTests("all")]);
-	await runLint("all");
+	await Promise.all([runReachability(), runTypecheck(), runExtensionTypecheck(), runProtocolCheck(), runTests("all")]);
+	await runFullLint();
 	await runBuild();
 	process.exit(0);
 }

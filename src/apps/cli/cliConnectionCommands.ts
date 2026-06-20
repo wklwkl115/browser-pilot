@@ -43,7 +43,7 @@ export async function runConnectCommand(argv: string[]): Promise<number> {
 		process.stderr.write(`connect failed: ${String(result.envelope.message ?? "browser extension not connected")}\n`);
 		return result.exitCode;
 	}
-	process.stdout.write(result.envelope.ready === true ? "ready\n" : "daemon/bridge running; extension not connected\n");
+	process.stdout.write(result.envelope.ready === true ? "ready\n" : `not ready (${String(result.envelope.readiness ?? "unknown")})\n`);
 	return result.exitCode;
 }
 
@@ -58,7 +58,7 @@ export async function runStatusCommand(argv: string[]): Promise<number> {
 	}
 	const env = await connectionStatus(process.cwd(), 15_000, { tabs: parsed.value.params.tabs === true });
 	if (mode === "json") return renderLocalJson(env);
-	process.stdout.write(`ready: ${env.ready === true ? "true" : "false"}\n`);
+	process.stdout.write(`ready: ${env.ready === true ? "true" : "false"} (${String(env.readiness ?? "unknown")})\n`);
 	return EXIT.ok;
 }
 

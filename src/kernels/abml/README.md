@@ -85,8 +85,9 @@ runtime, Node-only, or npm dependency import is a boundary violation.
   whitelist in the boundary test (after re-verifying its dependency closure stays pure).
   Otherwise the consumer belongs in the runtime layer, not here.
 
-After any change: `mise run verify`, plus any focused manual verification needed for
-the touched surface.
+For repo-wide contributor workflow, canonical gates, and validation expectations, start with
+[`REPO_GOVERNANCE.md`](../../../REPO_GOVERNANCE.md). After any change here, run `mise run verify`
+plus any focused manual verification needed for the touched surface.
 
 ## Consumers
 

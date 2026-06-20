@@ -99,6 +99,9 @@ function refPoint(target: JsonRecord): RefPoint | undefined {
 	for (const locator of Array.isArray(target.locators) ? target.locators : []) { const r = rec(locator), x = opt(r.x), y = opt(r.y); if (r.by === "point" && x !== undefined && y !== undefined) return { x, y }; }
 	return undefined;
 }
+function preferRefPoint(target: JsonRecord, point: RefPoint | undefined): boolean {
+	return target.preferPoint === true && !!point;
+}
 function centerFromBoxModel(data: JsonRecord): RefPoint | undefined {
 	const result = rec(data.result);
 	const rawBorder = result.border ?? rec(result.model).border;
@@ -123,17 +126,24 @@ async function handleBrowserPilotRefInputCommand(cmd: string, tabId: number, msg
 	if (cmd !== "input.ref") return err("INVALID_RULE", "Unknown ref input command: " + cmd, { cmd });
 	const action = String(msg.action || "").toLowerCase();
 	if (action !== "click") return err("INVALID_RULE", "input.ref action must be click", { action });
-	const target = rec(msg.target), backend = backendTarget(target);
-	const point = backend ? await backendPoint(tabId, msg, target, backend, startedAt) : refPoint(target);
+	const target = rec(msg.target), backend = backendTarget(target), pointFallback = refPoint(target);
+	const usePoint = preferRefPoint(target, pointFallback);
+	let point = usePoint
+		? pointFallback
+		: backend ? await backendPoint(tabId, msg, target, backend, startedAt) : pointFallback;
+	if (point && "ok" in point) {
+		if (!usePoint && pointFallback) point = pointFallback;
+		else return point;
+	}
 	if (!point) return failRef("INVALID_REF_TARGET", "input.ref target requires backendNodeId or point", startedAt, target, backend?.backendNodeId);
-	if ("ok" in point) return point;
+	const resolution = usePoint || !backend || point === pointFallback ? "point" : "backendNodeId";
 	const sent: Sent[] = [], focusEmulation = await focus(tabId, msg), base = { x: point.x, y: point.y, modifiers: 0 };
 	for (const p of [{ ...base, type: "mouseMoved", button: "none" }, { ...base, type: "mousePressed", button: "left", clickCount: 1 }, { ...base, type: "mouseReleased", button: "left", clickCount: 1 }]) {
-		const failed = await emit(tabId, msg, "Input.dispatchMouseEvent", p, sent, backend?.targetId);
-		if (failed) return failRef("BACKEND_NODE_STALE", cdpErrorText(failed), startedAt, target, backend?.backendNodeId, { resolution: backend ? "backendNodeId" : "point", phase: "dispatchMouseEvent", attemptedEvents: sent.map((item) => item.type).filter(Boolean), ...(backend?.targetId ? { targetId: backend.targetId, targetScoped: true } : {}) });
+		const failed = await emit(tabId, msg, "Input.dispatchMouseEvent", p, sent, usePoint ? undefined : backend?.targetId);
+		if (failed) return failRef("BACKEND_NODE_STALE", cdpErrorText(failed), startedAt, target, backend?.backendNodeId, { resolution, phase: "dispatchMouseEvent", attemptedEvents: sent.map((item) => item.type).filter(Boolean), ...(!usePoint && backend?.targetId ? { targetId: backend.targetId, targetScoped: true } : {}) });
 	}
-	const pointRoute = point.cdpRoute;
-	return done("input.ref", startedAt, sent, focusEmulation, { action: "click", resolution: backend ? "backendNodeId" : "point", dispatchOnly: true, target: refTargetSummary(target, backend?.backendNodeId), ...(backend?.targetId ? { targetId: backend.targetId, targetScoped: true, attachRouteUsed: pointRoute?.attachRouteUsed === true, ...(pointRoute ? { cdpRoute: pointRoute } : {}) } : {}), coordinates: { x: Math.round(point.x), y: Math.round(point.y) } });
+	const pointRoute = "cdpRoute" in point ? point.cdpRoute : undefined;
+	return done("input.ref", startedAt, sent, focusEmulation, { action: "click", resolution, dispatchOnly: true, target: refTargetSummary(target, backend?.backendNodeId), ...(!usePoint && backend?.targetId ? { targetId: backend.targetId, targetScoped: true, attachRouteUsed: pointRoute?.attachRouteUsed === true, ...(pointRoute ? { cdpRoute: pointRoute } : {}) } : {}), coordinates: { x: Math.round(point.x), y: Math.round(point.y) } });
 }
 
 async function pointer(tabId: number, msg: BrowserPilotBridgeCommand, startedAt: number): Promise<BrowserPilotBridgeResponse> {

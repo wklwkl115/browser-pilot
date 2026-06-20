@@ -4,15 +4,17 @@ import { noBrowserExtensionError } from "../errors.js";
 import { BrowserBridgeError } from "../../utils/errors.js";
 import { CLOSED_STATES, isOpen } from "./bridgeUtils.js";
 import { compareExtensionBuild, readExpectedExtensionBuild, type ExpectedExtensionBuild } from "./extensionBuild.js";
-import type { BrowserBridgeClientInfo } from "./types.js";
+import type { BridgeConnectionMetrics, BrowserBridgeClientInfo } from "./types.js";
 
 export class BrowserBridgeClientRegistry {
 	private readonly clients = new Set<WebSocket>();
 	private readonly clientInfo = new Map<WebSocket, BrowserBridgeClientInfo>();
 	private extensionClient?: WebSocket;
 	private everConnected = false;
+	private everHandshaked = false;
 	private _lastDisconnectReason?: string;
 	private _lastDisconnectAt?: number;
+	private readonly _metrics: BridgeConnectionMetrics = { connects: 0, reconnects: 0, swRestarts: 0, duplicates: 0, disconnects: 0 };
 	private readonly getPort: () => number;
 	private readonly expectedBuild: ExpectedExtensionBuild;
 
@@ -44,6 +46,22 @@ export class BrowserBridgeClientRegistry {
 	recordDisconnect(reason: string): void {
 		this._lastDisconnectReason = reason;
 		this._lastDisconnectAt = Date.now();
+		this._metrics.disconnects += 1;
+	}
+
+	/** Tally an ext_ready handshake by its classified kind, and record reconnect latency. */
+	recordConnect(kind: "cold" | "reconnect" | "sw-restart" | "duplicate"): void {
+		this._metrics.connects += 1;
+		if (kind === "reconnect" || kind === "sw-restart") {
+			this._metrics.reconnects += 1;
+			if (typeof this._lastDisconnectAt === "number") this._metrics.lastReconnectLatencyMs = Math.max(0, Date.now() - this._lastDisconnectAt);
+		}
+		if (kind === "sw-restart") this._metrics.swRestarts += 1;
+		if (kind === "duplicate") this._metrics.duplicates += 1;
+	}
+
+	metrics(): BridgeConnectionMetrics {
+		return { ...this._metrics };
 	}
 
 	get lastDisconnectReason(): string | undefined {
@@ -109,6 +127,56 @@ export class BrowserBridgeClientRegistry {
 		if (typeof raw.userAgent === "string") current.userAgent = raw.userAgent;
 		if (typeof raw.workerBootId === "string") current.workerBootId = raw.workerBootId;
 		if (typeof raw.workerStartedAt === "number" && Number.isFinite(raw.workerStartedAt)) current.workerStartedAt = raw.workerStartedAt;
+		if (typeof raw.extensionInstanceId === "string") current.extensionInstanceId = raw.extensionInstanceId;
+	}
+
+	/**
+	 * Classify a fresh ext_ready handshake against currently-connected clients so callers
+	 * (reconnect reconciliation, diagnostics) can tell apart the lifecycle that produced it:
+	 *   duplicate   — another open socket already reports this same instance + worker boot;
+	 *   sw-restart  — another open socket reports this instance but a different worker boot;
+	 *   reconnect   — no peer socket, but the bridge has handshaked before (instance re-dialing);
+	 *   cold        — the very first handshake of this bridge's lifetime.
+	 * Pure read — call recordHandshake() separately to advance the everHandshaked flag.
+	 */
+	classifyConnect(keep: WebSocket, instanceId: string | undefined, workerBootId: string | undefined): "cold" | "reconnect" | "sw-restart" | "duplicate" {
+		if (instanceId) {
+			for (const [ws, info] of this.clientInfo.entries()) {
+				if (ws === keep || CLOSED_STATES.has(ws.readyState as 2 | 3)) continue;
+				if (info.extensionInstanceId !== instanceId) continue;
+				return info.workerBootId && workerBootId && info.workerBootId === workerBootId ? "duplicate" : "sw-restart";
+			}
+		}
+		return this.everHandshaked ? "reconnect" : "cold";
+	}
+
+	recordHandshake(): void {
+		this.everHandshaked = true;
+	}
+
+	/**
+	 * Enforce one live socket per extension instance: close any *other* open client
+	 * reporting the same extensionInstanceId, keeping the newest socket. A reconnect
+	 * (SW restart / offscreen re-dial) can briefly leave the stale socket registered;
+	 * collapsing avoids split-brain selection and double delivery. Returns the
+	 * superseded sockets (already told to close). No-op when instanceId is absent
+	 * (older extension build) — falls back to prior multi-socket behavior.
+	 */
+	supersedeInstanceClients(instanceId: string | undefined, keep: WebSocket): WebSocket[] {
+		if (!instanceId) return [];
+		const superseded: WebSocket[] = [];
+		for (const [ws, info] of this.clientInfo.entries()) {
+			if (ws === keep || info.extensionInstanceId !== instanceId) continue;
+			superseded.push(ws);
+		}
+		for (const ws of superseded) {
+			try {
+				ws.close();
+			} catch {
+				/* best-effort supersede close — the close handler still unregisters it */
+			}
+		}
+		return superseded;
 	}
 
 	select(ws: WebSocket | undefined): void {

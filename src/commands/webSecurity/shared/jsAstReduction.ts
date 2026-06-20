@@ -3,6 +3,7 @@ import type { JsAstAnalysisOptions, JsAstReductionFact, MutableStringArrayCandid
 import { collectObjectDispatchCandidates } from "./jsAstCollectors.js";
 import { collectAliasMap, collectCandidateStringArrayValues, collectConstBindingMap, collectKnownDecoderMap, collectObjectDispatchImplementationMap, evaluateConstantExpression, reductionLiteralText, resolveAliasName, tryDecodeCall, tryObjectDispatchCall } from "./jsAstReductionContext.js";
 import { numericIndexValue } from "./jsAstUtils.js";
+import { applyNativeJsAstReduction } from "../../../native/browserPilotNativeKernels.js";
 
 type ReductionPass = "stringArrayElement" | "decoderCall" | "constantExpression" | "aliasPropagation" | "objectDispatch";
 type PublicReductionPass = "stringArrayElement" | "decoderCall" | "constantExpression";
@@ -18,11 +19,19 @@ function selectNonOverlappingReplacements(replacements: DeterministicReplacement
 }
 
 export function applyDeterministicReduction(sourceText: string, sourceFile: ts.SourceFile, candidates: Map<string, MutableStringArrayCandidate>, options: Required<JsAstAnalysisOptions>): JsAstReductionFact {
+	const objectDispatchCandidates = collectObjectDispatchCandidates(sourceFile, options);
+	const native = applyNativeJsAstReduction({
+		sourceText,
+		candidateNames: Array.from(candidates.keys()),
+		objectDispatchNames: objectDispatchCandidates.map((item) => item.name),
+		options,
+	});
+	if (native) return native;
 	const candidateValues = collectCandidateStringArrayValues(sourceFile, candidates);
 	const decoderMap = collectKnownDecoderMap(sourceFile, candidates);
 	const aliases = collectAliasMap(sourceFile);
 	const constBindings = collectConstBindingMap(sourceFile);
-	const objectDispatchMap = collectObjectDispatchImplementationMap(sourceFile, collectObjectDispatchCandidates(sourceFile, options));
+	const objectDispatchMap = collectObjectDispatchImplementationMap(sourceFile, objectDispatchCandidates);
 	const replacements: DeterministicReplacement[] = [];
 	function visit(node: ts.Node): void {
 		if (ts.isExpression(node)) recordReplacement(sourceFile, node, decoderMap, candidateValues, aliases, constBindings, objectDispatchMap, replacements);

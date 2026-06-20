@@ -121,8 +121,10 @@ function doctorDaemon(found: Awaited<ReturnType<typeof findDaemon>>): Record<str
 		versionStale: !isDaemonVersionCurrent(found.info),
 		bridgePort: found.status.bridgePort,
 		bridgeRunning: found.status.running,
+		readiness: found.status.readiness,
 		extensionConnected: found.status.extensionConnected,
 		extension: found.status.extension,
+		health: found.status.health,
 		toolCount: found.status.tools,
 	};
 }

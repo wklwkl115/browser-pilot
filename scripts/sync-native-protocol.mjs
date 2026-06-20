@@ -15,6 +15,10 @@ const outputs = [
 	[path.join(root, "src", "types", "nativeErrorCodes.ts"), generateNativeErrorCodesTs],
 ];
 
+function generatedHeader() {
+	return "// Generated from src/bridge/protocol/native-command.schema.json. Do not edit by hand.\n";
+}
+
 function generateBridgeProtocolTs() {
 	return `${generatedHeader()}import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
@@ -218,7 +222,7 @@ function missingRequired(command: Record<string, unknown>, required: string[] | 
 	return (required || []).filter((field) => !hasValue(command[field]));
 }
 
-function requiredAnySatisfied(command: Record<string, unknown>, groups: string[][] | undefined): boolean {
+export function requiredAnySatisfied(command: Record<string, unknown>, groups: string[][] | undefined): boolean {
 	if (!groups?.length) return true;
 	return groups.some((group) => Array.isArray(group) && group.every((field) => hasValue(command[field])));
 }

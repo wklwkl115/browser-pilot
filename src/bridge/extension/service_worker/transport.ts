@@ -1,6 +1,6 @@
 import { BROWSER_PILOT_BRIDGE_HTTP_URL, BROWSER_PILOT_BRIDGE_PORT, BROWSER_PILOT_BRIDGE_WS_URL } from "./config";
 import { chromeApi as chrome } from "./runtimeEnv";
-import { installCspBypassRule, isScriptable, browserPilotBridgeInfo, validateCspBypassRule, registerOffscreenUnreachableGetter } from "./bridge_info";
+import { installCspBypassRule, isScriptable, browserPilotBridgeInfo, getExtensionInstanceId, validateCspBypassRule, registerOffscreenUnreachableGetter } from "./bridge_info";
 import { setBridgeWakeProbe } from "./core_commands";
 import { handleBrowserPilotBridgeWsMessage, setTransportSocketGetter } from "./router";
 import { runStartupRecovery } from "./state_store";
@@ -209,11 +209,12 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
     try { await runStartupRecovery(); } catch (error) { console.warn("[BROWSER-PILOT-WS] Startup recovery failed", error); }
   }
   try { await validateCspBypassRule(); } catch (_e) { /* best-effort */ }
+  const extensionInstanceId = await getExtensionInstanceId();
   const tabs = (await chrome.tabs.query({}) as BrowserPilotChromeTab[]).filter((tab: BrowserPilotChromeTab) => isScriptable(tab.url));
   socket.send(JSON.stringify({
     type: "ext_ready",
     consentCapable: true,
-    bridge: { ...browserPilotBridgeInfo(), bridgePort: port, primaryPort },
+    bridge: { ...browserPilotBridgeInfo(), bridgePort: port, primaryPort, ...(extensionInstanceId ? { extensionInstanceId } : {}) },
     tabs: tabs.map((tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId })),
   }));
 }

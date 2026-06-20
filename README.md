@@ -6,14 +6,14 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
-[![Tools](https://img.shields.io/badge/tools-21%20browser__*-blueviolet.svg)](#tools)
+[![Tools](https://img.shields.io/badge/tools-browser__*-blueviolet.svg)](#tools)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](tsconfig.json)
 
 </div>
 
 Browser Pilot gives AI agents direct control over real Chrome/Edge tabs — DOM structure,
 JavaScript execution, CDP commands, network traffic, cookie jars, and file transfers.
-Everything a human can do in DevTools, your agent can do through 21 composable
+Everything a human can do in DevTools, your agent can do through composable
 `browser_*` tools.
 
 > **Not a simulator. Not a proxy. Not a screenshot parser.**
@@ -47,7 +47,7 @@ Browser Pilot gives agents what they actually need:
   respond" dead ends.
 - **Full network visibility** — record/replay/mutate HTTP traffic, export HAR, capture
   request bodies. See exactly what the page sends and receives.
-- **Built-in security testing** — 7 web security tools (crawl, fuzz, SQLi, template
+- **Built-in security testing** — scoped web security tools (crawl, fuzz, SQLi, template
   checks, cookie/session analysis, HTTP replay, OAST) share the browser session. No
   separate proxy setup.
 - **Token-efficient output** — salience-based rendering, session delta compression, and
@@ -62,7 +62,7 @@ Browser Pilot gives agents what they actually need:
 | Arbitrary JS execution in page | **Yes** | Eval only | No | Limited |
 | CDP physical input (trusted events) | **Yes** | Partial | No | No |
 | Full network record/replay/mutate | **Yes** | HAR only | No | Proxy needed |
-| Built-in web security tools (7) | **Yes** | No | No | No |
+| Built-in web security tools | **Yes** | No | No | No |
 | Token-efficient output (salience + delta) | **Yes** | N/A | No | N/A |
 | Session memory (per-site SOP recall) | **Yes** | No | No | No |
 | Survives MV3 SW restart / tab replace | **Yes** | N/A | No | Partial |
@@ -81,7 +81,7 @@ Browser Pilot gives agents what they actually need:
 └────────────────────────┬──────────────────────────────────────────┘
                          │
 ┌────────────────────────▼──────────────────────────────────────────┐
-│  Tool Layer (21 browser_* tools)                                  │
+│  Tool Layer (browser_* tools)                                     │
 │  Core: tabs, observe, execute, command, wait, screenshot,         │
 │        network, hook, evidence, frame, artifact, memory,          │
 │        download, upload                                           │
@@ -91,8 +91,8 @@ Browser Pilot gives agents what they actually need:
 ```
 
 The Chrome extension runs in the browser and bridges to a Node.js server over a local
-WebSocket. The tool layer on top exposes 21 composable tools through the `browser-pilot`
-CLI, backed by a user-local daemon that owns the live browser session.
+WebSocket. The tool layer on top exposes composable `browser_*` tools through the
+`browser-pilot` CLI, backed by a user-local daemon that owns the live browser session.
 
 | Frontend | Best for | Guide |
 |---|---|---|
@@ -126,8 +126,8 @@ manually after editing source, run those two commands.
 
 ### Use via CLI
 
-The `browser-pilot` CLI exposes all 21 tools as shell subcommands. A user-local daemon
-manages the bridge server — it auto-starts on first use.
+The `browser-pilot` CLI exposes the `browser_*` tool surface as shell subcommands. A
+user-local daemon manages the bridge server — it auto-starts on first use.
 
 ```bash
 # Readiness gate (recommended for multi-step work)
@@ -154,9 +154,9 @@ npx browser-pilot --help
 npx browser-pilot schema observe --json
 ```
 
-14 core tools (tabs, observe, execute, command, wait, screenshot, network, hook,
-evidence, frame, artifact, memory, download, upload) and 7 security tools (crawl, fuzz,
-sqli, template, cookie-analyze, http-replay, callback-oast). Use
+Core tools include tabs, observe, execute, command, wait, screenshot, network, hook,
+evidence, frame, artifact, memory, download, and upload. Security tools include crawl, fuzz,
+sqli, template, cookie-analyze, http-replay, and callback-oast. Use
 `browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface.
 
 ## Typical Workflow
@@ -244,6 +244,8 @@ npm run typecheck         # TypeScript project check
 ## Documentation
 
 Use `browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface.
+For contributor workflow, canonical gates, and repo-specific guardrails, start with
+[REPO_GOVERNANCE.md](REPO_GOVERNANCE.md).
 
 ## Notes
 

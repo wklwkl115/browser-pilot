@@ -551,7 +551,10 @@ export type BrowserPilotChromeApi = {
   management: { getAll(): Promise<Array<JsonRecord & { id?: string; name?: string; enabled?: boolean; type?: string; version?: string }>>; setEnabled(id: string, enabled: boolean): Promise<void> };
   offscreen?: BrowserPilotChromeOffscreen;
   alarms: { create(name: string, alarmInfo: JsonRecord): void; clear?(name: string): Promise<boolean> | boolean; onAlarm: BrowserPilotChromeEvent<(alarm: { name: string }) => void | Promise<void>> };
-  storage?: { session?: { get(keys?: string | string[] | JsonRecord): Promise<JsonRecord>; set(items: JsonRecord): Promise<void>; remove(keys: string | string[]): Promise<void> } };
+  storage?: {
+    session?: { get(keys?: string | string[] | JsonRecord): Promise<JsonRecord>; set(items: JsonRecord): Promise<void>; remove(keys: string | string[]): Promise<void> };
+    local?: { get(keys?: string | string[] | JsonRecord): Promise<JsonRecord>; set(items: JsonRecord): Promise<void>; remove(keys: string | string[]): Promise<void> };
+  };
   contentSettings?: Record<string, { set(details: JsonRecord): Promise<void> }>;
   declarativeNetRequest: { updateDynamicRules(rules: JsonRecord): Promise<void>; updateSessionRules?: (rules: JsonRecord) => Promise<void>; getDynamicRules?(): Promise<Array<JsonRecord>>; getSessionRules?(): Promise<Array<JsonRecord>> };
   webNavigation: Record<string, BrowserPilotChromeEvent<(details: JsonRecord & { tabId?: number; frameId?: number; url?: string }) => void>>;

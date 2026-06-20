@@ -2,7 +2,7 @@ import { WebSocket } from "ws";
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
-import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
+import { BrowserBridgePendingRequests, requestGraceMs } from "./BrowserBridgePendingRequests.js";
 import type { BrowserBridgeLeaseRegistryPort, BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
 import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import { errorToPlain } from "../../utils/errors.js";
@@ -60,7 +60,11 @@ export class BrowserBridgeClientMessageService {
 	unregisterClient(ws: WebSocket, reason?: string): void {
 		const disconnectedTabSessionIds = Array.from(this.deps.tabs.sessions.values()).filter((session) => session.client === ws && !session.disconnectedAt).map((session) => session.id);
 		const affectedBrowserSessionIds = this.deps.browserSessions.list().filter((session) => session.selectedClient === ws).map((session) => session.id);
-		this.deps.pendingRequests.rejectForClient(ws);
+		// Hold in-flight requests in a grace window instead of failing them outright: a fast
+		// reconnect (offscreen re-dial / SW restart) can still complete or reclaim them. Capture
+		// the owning instance before unregister so a same-instance reconnect can correlate.
+		const instanceId = this.deps.clients.info(ws)?.extensionInstanceId;
+		this.deps.pendingRequests.drainClient(ws, instanceId, requestGraceMs());
 		if (reason) this.deps.clients.recordDisconnect(reason);
 		this.deps.clients.unregister(ws);
 		this.deps.tabs.markClientDisconnected(ws);
@@ -94,6 +98,24 @@ export class BrowserBridgeClientMessageService {
 		if (type === "ext_ready" || type === "tabs_update") {
 			this.deps.browserSessions.selectClient(this.deps.browserSessions.defaultSession(), ws);
 			this.deps.clients.updateClientInfo(ws, message.bridge || message.extension);
+			if (type === "ext_ready") {
+				// Classify against peers BEFORE collapsing, then enforce one live socket per
+				// extension instance. Idempotent: a repeat ext_ready on the same socket finds
+				// no peer to supersede and just refreshes selection/info.
+				const info = this.deps.clients.info(ws);
+				const connectKind = this.deps.clients.classifyConnect(ws, info?.extensionInstanceId, info?.workerBootId);
+				if (info) info.connectKind = connectKind;
+				this.deps.clients.recordConnect(connectKind);
+				this.deps.clients.recordHandshake();
+				const graceMs = requestGraceMs();
+				// Drain a superseded peer's in-flight requests synchronously (its async close would
+				// otherwise race the reconcile below), then reconcile all draining requests for this
+				// instance against the freshly-connected socket.
+				const superseded = this.deps.clients.supersedeInstanceClients(info?.extensionInstanceId, ws);
+				for (const stale of superseded) this.deps.pendingRequests.drainClient(stale, info?.extensionInstanceId, graceMs);
+				const durable = recordValue(message.bridge)?.durableRequests === true;
+				this.deps.pendingRequests.reconnectInstance(info?.extensionInstanceId, ws, { durable });
+			}
 			const replacements = Array.isArray(message.replaced) ? this.deps.tabs.applyTabReplacements(message.replaced, ws) : [];
 			this.deps.tabs.updateTabs(Array.isArray(message.tabs) ? message.tabs : [], ws);
 			this.deps.tabs.recordTabActivation(message.activation, ws);

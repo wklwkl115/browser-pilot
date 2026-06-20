@@ -53,6 +53,33 @@ function browserPilotBridgeInfo() {
   };
 }
 
+// Stable per-installation identity that survives service-worker restarts and reconnects
+// (unlike workerBootId, which is minted fresh each SW boot). Persisted in
+// chrome.storage.local so the bridge can tell a reconnecting instance apart from a new
+// browser, collapse duplicate sockets to one per instance, and reconcile in-flight work
+// across a reconnect. Cached in-memory after first read.
+const EXTENSION_INSTANCE_ID_KEY = "browserPilotExtensionInstanceId";
+let cachedExtensionInstanceId: string | undefined;
+async function getExtensionInstanceId(): Promise<string | undefined> {
+  if (cachedExtensionInstanceId) return cachedExtensionInstanceId;
+  const local = chrome.storage?.local;
+  if (!local?.get || !local?.set) return undefined;
+  try {
+    const raw = await local.get(EXTENSION_INSTANCE_ID_KEY);
+    const existing = raw && typeof raw === "object" ? (raw as Record<string, unknown>)[EXTENSION_INSTANCE_ID_KEY] : undefined;
+    if (typeof existing === "string" && existing) {
+      cachedExtensionInstanceId = existing;
+      return existing;
+    }
+    const generated = globalThis.crypto?.randomUUID?.() ?? `inst:${BROWSER_PILOT_WORKER_BOOT_ID}`;
+    await local.set({ [EXTENSION_INSTANCE_ID_KEY]: generated });
+    cachedExtensionInstanceId = generated;
+    return generated;
+  } catch (_error) {
+    return undefined;
+  }
+}
+
 const CSP_BYPASS_RULE_ID = 9999;
 const CSP_BYPASS_TTL_MS = 30_000;
 const cspBypassTabs = new Map<number, number>();
@@ -168,6 +195,6 @@ const isScriptable = (url: unknown): boolean => {
   const text = typeof url === 'string' ? url : '';
   return !!text && (/^https?:/.test(text) || text === 'about:blank');
 };
-export { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, installCspBypassRule, enableCspBypassForTab, validateCspBypassRule, isScriptable, registerLostHookSessionsGetter, registerOffscreenUnreachableGetter };
+export { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, getExtensionInstanceId, installCspBypassRule, enableCspBypassForTab, validateCspBypassRule, isScriptable, registerLostHookSessionsGetter, registerOffscreenUnreachableGetter };
 // ESM module metadata
-export const __browserPilotBridgeModule_bridge_info = { name: "bridge_info", symbols: { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, installCspBypassRule, enableCspBypassForTab, validateCspBypassRule, isScriptable, registerLostHookSessionsGetter, registerOffscreenUnreachableGetter } };
+export const __browserPilotBridgeModule_bridge_info = { name: "bridge_info", symbols: { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, getExtensionInstanceId, installCspBypassRule, enableCspBypassForTab, validateCspBypassRule, isScriptable, registerLostHookSessionsGetter, registerOffscreenUnreachableGetter } };

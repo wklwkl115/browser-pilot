@@ -34,6 +34,37 @@ export function isAllowedBridgeOrigin(origin: string | undefined): boolean {
 	return origin.startsWith("chrome-extension://");
 }
 
+export type BridgeReadiness = "bridge-down" | "bridge-up" | "connecting" | "degraded" | "ready";
+
+/**
+ * Derive a coarse, honest connection-readiness state from bridge snapshot fields,
+ * so callers (CLI status/connect, agents) get a graded signal instead of a binary
+ * connected/not-connected. Pure + deterministic — pass `now` in tests.
+ *
+ * - bridge-down: the bridge server is not listening yet.
+ * - ready:       an extension is connected and has completed the ext_ready handshake.
+ * - connecting:  a client socket is open but ext_ready has not arrived yet.
+ * - degraded:    no client, but one disconnected within the reconnect window — an
+ *                idle/restarting MV3 worker is expected to re-dial shortly.
+ * - bridge-up:   listening, but no extension has connected (idle / never loaded).
+ */
+export function deriveBridgeReadiness(input: {
+	running: boolean;
+	extensionConnected: boolean;
+	connectedClients?: number;
+	lastDisconnectAt?: number;
+	now?: number;
+	reconnectWindowMs?: number;
+}): BridgeReadiness {
+	if (!input.running) return "bridge-down";
+	if (input.extensionConnected) return "ready";
+	if ((input.connectedClients ?? 0) > 0) return "connecting";
+	const now = input.now ?? Date.now();
+	const windowMs = input.reconnectWindowMs ?? 30_000;
+	if (typeof input.lastDisconnectAt === "number" && now - input.lastDisconnectAt <= windowMs) return "degraded";
+	return "bridge-up";
+}
+
 export function bridgeResultFailure(data: unknown): { message: string; details: Record<string, unknown> } | undefined {
 	if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
 	const record = data as Record<string, unknown>;

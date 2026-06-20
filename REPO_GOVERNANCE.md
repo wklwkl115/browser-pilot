@@ -1,5 +1,6 @@
 # Repo Governance
 
+This is the single contributor entry point for repo workflow rules and validation gates; other contributor-facing docs should point here instead of restating them.
 Keep changes biased toward deletion, behavior preservation, and one canonical source of truth per workflow.
 
 ## Canonical Gates

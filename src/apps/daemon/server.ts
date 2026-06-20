@@ -16,6 +16,7 @@
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
+import { deriveBridgeReadiness } from "../../bridge/server/bridgeUtils.js";
 import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
@@ -53,6 +54,14 @@ export interface DaemonHandle {
 export interface StartDaemonOptions {
 	/** Write the user-local singleton lockfile (default true). Tests pass false. */
 	writeLock?: boolean;
+	/**
+	 * Bind the BrowserBridgeServer immediately on startup instead of lazily on the
+	 * first /connect or /invoke (default: same as writeLock). Eager binding lets the
+	 * extension's always-on background probe connect before the first tool call, so
+	 * the connection converges without the agent calling connect. Hermetic in-process
+	 * tests (writeLock:false) skip it to avoid binding a real port.
+	 */
+	startBridgeEagerly?: boolean;
 	/** Called after /shutdown has closed the server (foreground daemon exits the process here). */
 	onShutdown?: () => void;
 }
@@ -122,10 +131,18 @@ function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, inc
 	const extension = snapshot?.extension;
 	const lastTabSyncAt = server.getLastTabSyncAt();
 	const now = Date.now();
+	const readiness = deriveBridgeReadiness({
+		running: server.running,
+		extensionConnected: snapshot?.extensionConnected === true,
+		connectedClients: typeof snapshot?.connectedClients === "number" ? snapshot.connectedClients : undefined,
+		lastDisconnectAt: typeof snapshot?.lastDisconnectAt === "number" ? snapshot.lastDisconnectAt : undefined,
+		now,
+	});
 	return {
 		ok: true,
 		bridgePort: server.running ? server.port : undefined,
 		running: server.running,
+		readiness,
 		extensionConnected: snapshot?.extensionConnected === true,
 		extension: extension ? {
 			id: extension.extensionId,
@@ -151,6 +168,8 @@ function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, inc
 			lastDisconnectReason: snapshot?.lastDisconnectReason,
 			lastDisconnectAt: snapshot?.lastDisconnectAt,
 			lastDisconnectAgeMs: typeof snapshot?.lastDisconnectAt === "number" ? Math.max(0, now - snapshot.lastDisconnectAt) : undefined,
+			connectionMetrics: snapshot?.connectionMetrics,
+			requestMetrics: snapshot?.requestMetrics,
 		},
 		...(includeTabs ? { tabs } : {}),
 		tools: toolCount,
@@ -412,11 +431,25 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	const address = server.address();
 	const controlPort = typeof address === "object" && address ? address.port : 0;
 
+	const startBridgeEagerly = options.startBridgeEagerly ?? writeLock;
+	if (startBridgeEagerly) {
+		// Bind the bridge now so the extension's background probe can dial in before the
+		// first tool call — the connection "takes over" without an explicit connect.
+		// Best-effort: a bind failure must not abort daemon startup. The lazy
+		// ensureStarted() path (/connect, /invoke) still retries and surfaces the error.
+		try {
+			await ensureStarted();
+		} catch (error) {
+			console.error(`[browser-pilot] eager bridge start failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
 	if (writeLock) {
 		const info: DaemonInfo = {
 			pid: process.pid,
 			controlHost: "127.0.0.1",
 			controlPort,
+			...(bridgeServer.running ? { bridgePort: bridgeServer.port } : {}),
 			token,
 			startedAt: new Date().toISOString(),
 			version: DAEMON_VERSION,

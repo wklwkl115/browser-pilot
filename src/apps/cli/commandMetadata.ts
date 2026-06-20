@@ -122,7 +122,7 @@ export function actionSpecificFlagSpecs(cmd: CliCommand, actionName: string): Fl
 }
 
 /**
- * Charter law #16: read a flag's Intent/Mechanical class from the command schema (single source).
+ * Read a flag's intent/mechanical class from the command schema.
  * Synthetic CLI-only flags with no schema property (e.g. --script-file) default to intent.
  */
 function paramClassFor(cmd: CliCommand, name: string): ParamClass {
@@ -187,7 +187,7 @@ export function printCommandHelp(cmd: CliCommand, natural?: { action: string }):
 		const meta = s.kind === "enum" && s.choices ? ` (${s.choices.join("|")})` : s.kind === "boolean" ? "" : ` <${s.kind}>`;
 		return `  ${pad(`${s.flag}${meta}`, 30)}${s.required ? "[required] " : ""}${s.description ?? ""}`.trimEnd();
 	};
-	// Charter law #16: split the agent's real choices from ignorable plumbing.
+	// Split the agent's real choices from ignorable plumbing.
 	const intentSpecs = specs.filter((s) => paramClassFor(cmd, s.name) === "intent");
 	const plumbingSpecs = specs.filter((s) => paramClassFor(cmd, s.name) === "mechanical");
 	lines.push(natural ? "Flags:" : supportsNaturalActionRouting(cmd) ? "Advanced legacy flags:" : "Flags:");

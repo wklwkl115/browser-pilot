@@ -16,6 +16,10 @@ export type BrowserBridgeClientInfo = {
 	userAgent?: string;
 	workerBootId?: string;
 	workerStartedAt?: number;
+	/** Stable per-installation id (survives SW restarts); used to dedupe sockets and reconcile reconnects. */
+	extensionInstanceId?: string;
+	/** How the most recent ext_ready was classified: cold | reconnect | sw-restart | duplicate. */
+	connectKind?: string;
 	connectedAt: number;
 	lastSeenAt: number;
 	lastPingAt?: number;
@@ -144,6 +148,23 @@ export type BrowserObservationSnapshotInfo = {
 	};
 };
 
+export type BridgeConnectionMetrics = {
+	connects: number;
+	reconnects: number;
+	swRestarts: number;
+	duplicates: number;
+	disconnects: number;
+	lastReconnectLatencyMs?: number;
+};
+
+export type BridgeRequestMetrics = {
+	drained: number;
+	graceExpired: number;
+	redelivered: number;
+	reconciledNotDelivered: number;
+	reconciledInflightUnknown: number;
+};
+
 export type BrowserBridgeSnapshot = {
 	browserSessionId?: string;
 	host: string;
@@ -172,6 +193,8 @@ export type BrowserBridgeSnapshot = {
 		acked: boolean;
 		target?: BrowserBridgeTargetInfo;
 	}>;
+	connectionMetrics?: BridgeConnectionMetrics;
+	requestMetrics?: BridgeRequestMetrics;
 };
 
 export type ExecuteOptions = {
@@ -187,6 +210,16 @@ export type PendingRequest = {
 	id: string;
 	tabId?: number;
 	client: WebSocket;
+	/** Original command payload, retained so the request can be redelivered to a reconnected socket. */
+	code: unknown;
+	/** Effective per-request timeout, retained to re-arm the timer after a redelivery. */
+	timeoutMs: number;
+	/** Owning extension instance, tagged when the request enters the draining state. */
+	instanceId?: string;
+	/** True while held after a client disconnect, awaiting reconnect or grace expiry. */
+	draining?: boolean;
+	/** Grace-window timer that fails the request if no reconnect reclaims it. */
+	graceTimer?: NodeJS.Timeout;
 	createdAt: number;
 	acked: boolean;
 	ackAt?: number;

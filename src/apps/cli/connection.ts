@@ -135,9 +135,13 @@ export async function connectionStatus(cwd = process.cwd(), timeoutMs = 15_000, 
 	const ready = Boolean(found && isDaemonVersionCurrent(found.info) && found.status.running === true && found.status.extensionConnected === true);
 	// Best-effort lease status — omitted (not null) when unavailable
 	const leaseStatus = found ? await fetchLeaseStatus(found.info) : null;
+	const readiness = found
+		? (typeof found.status.readiness === "string" ? found.status.readiness : (found.status.extensionConnected === true ? "ready" : "bridge-up"))
+		: "no-daemon";
 	return {
 		command: "status",
 		ready,
+		readiness,
 		cwd,
 		daemon: found
 			? publicDaemon(found.info, found.status)
@@ -223,9 +227,11 @@ export async function connectBrowser(opts: { wait: boolean; timeoutMs: number; c
 	const json = response.json ?? {};
 	const status = json.status as DaemonStatus | undefined;
 	const ready = status?.running === true && status.extensionConnected === true;
+	const readiness = typeof status?.readiness === "string" ? status.readiness : (ready ? "ready" : "bridge-up");
 	const common = {
 		command: "connect",
 		ready,
+		readiness,
 		startedDaemon,
 		startedBridge: json.startedBridge === true,
 		waitedMs: Date.now() - startedAt,

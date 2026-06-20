@@ -1024,26 +1024,6 @@ const schema = {
       "retryable": true,
       "summary": "No usable target tab is available for a tab-scoped command."
     },
-    "BROWSER_PILOT_CLICK_BINDING_UNAVAILABLE": {
-      "category": "runtime.input",
-      "retryable": true,
-      "summary": "browserPilot.click was called outside an execute-time privileged binding."
-    },
-    "BROWSER_PILOT_CLICK_CANCELLED": {
-      "category": "runtime.input",
-      "retryable": true,
-      "summary": "Pending browserPilot.click requests were cancelled during execute cleanup."
-    },
-    "BROWSER_PILOT_CLICK_REF_NOT_RESOLVED": {
-      "category": "runtime.input",
-      "retryable": true,
-      "summary": "browserPilot.click could not resolve the supplied ref in the embedded execute registry."
-    },
-    "BROWSER_PILOT_CLICK_TIMEOUT": {
-      "category": "runtime.input",
-      "retryable": true,
-      "summary": "browserPilot.click did not receive a privileged dispatch response before its bounded timeout."
-    },
     "REQUEST_NOT_FOUND": {
       "category": "runtime.network",
       "retryable": false,

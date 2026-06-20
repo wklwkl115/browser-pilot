@@ -2,7 +2,7 @@
   "name": "browser-pilot",
   "version": "0.3.0",
   "license": "Apache-2.0",
-  "description": "Agent-driven browser automation: a Chrome extension + Node bridge exposing 21 browser_* tools for scanning, execution, evidence capture, and web-security testing.",
+  "description": "Agent-driven browser automation: a Chrome extension + Node bridge exposing composable browser_* tools for scanning, execution, evidence capture, and web-security testing.",
   "keywords": [
     "browser-pilot",
     "browser-automation",
@@ -47,13 +47,14 @@
     "sync:config": "node scripts/sync-bridge-config.mjs",
     "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json",
     "build:bridge": "node scripts/build-bridge.mjs",
+    "build:native": "node scripts/build-native.mjs --required",
     "prepare": "tsc -p tsconfig.build.json && node scripts/build-bridge.mjs --quiet",
     "cli": "tsx src/apps/cli/bin.ts",
     "typecheck": "tsc -p tsconfig.json",
     "audit:reachability": "node scripts/audit-reachability.mjs",
     "lint": "npm run audit:reachability && eslint .",
     "lint:fix": "eslint . --fix",
-    "prepack": "npm run build && node scripts/build-bridge.mjs --quiet"
+    "prepack": "npm run build && node scripts/build-native.mjs --quiet && node scripts/build-bridge.mjs --quiet"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
@@ -94,6 +95,9 @@
     "scripts/sync-bridge-config.mjs",
     "scripts/sync-native-protocol.mjs",
     "src/",
+    "native/browser-pilot-kernels/Cargo.toml",
+    "native/browser-pilot-kernels/Cargo.lock",
+    "native/browser-pilot-kernels/src/",
     "dist/",
     "tsconfig.json",
     "tsconfig.base.json",

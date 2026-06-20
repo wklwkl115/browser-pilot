@@ -177,7 +177,7 @@ export function defineBrowserCommand(commands: BrowserCommandSink, spec: Browser
 }
 
 export function sharedTabScopedToolParams(options: SharedCommandParamOptions = {}) {
-	// Mechanical routing params per Charter law #16: tagged x-bp-class=mechanical so the CLI schema +
+	// Mechanical routing params use x-bp-class=mechanical so the CLI schema +
 	// help group them as plumbing (optional, defaults apply). targetRef stays intent (which tab to act on).
 	// Most of these are stripped before validation and never surface as flags; in practice only tabId
 	// (every tool) and browserSessionId (browser_tabs) reach the agent-facing flag surface.

@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { resolveDaemonStartCommand } from "../../src/apps/daemon/daemonControl.ts";
 
 function runCli(args: string[]) {
 	return spawnSync("node", ["--import", "tsx", "src/apps/cli/bin.ts", ...args], {
@@ -86,6 +87,12 @@ test("daemon status stays a local json command when no daemon is running", () =>
 	assert.equal(result.status, 0);
 	assert.equal(body.command, "daemon.status");
 	assert.equal(typeof body.expectedVersion, "string");
+});
+
+test("daemon auto-start resolves the real source cli entry", () => {
+	const command = resolveDaemonStartCommand();
+	assert.equal(command.command, process.execPath);
+	assert.ok(command.args.some((arg) => arg.replaceAll("\\", "/").endsWith("src/apps/cli/bin.ts") || arg.replaceAll("\\", "/").endsWith("dist/src/apps/cli/bin.js")), JSON.stringify(command));
 });
 
 test("connect and status keep their local help text", () => {

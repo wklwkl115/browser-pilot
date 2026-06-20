@@ -2,8 +2,6 @@ import { WebSocket } from "ws";
 import { DEFAULT_BROWSER_BRIDGE_HOST, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } from "./browserBridgeConfig.js";
 import { tabNotFoundError } from "../errors.js";
 import { BrowserBridgeError, errorToPlain } from "../../utils/errors.js";
-const BROWSER_BRIDGE_SERVER_CONTRACT_SENTINELS = ["validateBridgeCommand", "methodAccessMode", "spec.accessMode"] as const;
-void BROWSER_BRIDGE_SERVER_CONTRACT_SENTINELS;
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import { BrowserBridgeClientHeartbeat } from "./BrowserBridgeClientHeartbeat.js";
 import { BrowserBridgeHttpServer } from "./BrowserBridgeHttpServer.js";
@@ -145,6 +143,8 @@ export class BrowserBridgeServer implements ConsentPort {
 			queues: this.queues.snapshot(),
 			operations: this.state.operations.snapshot(),
 			pending: this.pendingRequests.snapshot(),
+			connectionMetrics: this.clients.metrics(),
+			requestMetrics: this.pendingRequests.metrics(),
 		};
 	}
 

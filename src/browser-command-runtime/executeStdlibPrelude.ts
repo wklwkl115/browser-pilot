@@ -1,16 +1,10 @@
-export const BROWSER_PILOT_STDLIB_NAMES = ["resolve", "box", "setValue", "settled", "click"] as const;
+export const BROWSER_PILOT_STDLIB_NAMES = ["resolve", "box", "setValue", "settled"] as const;
 
-const BROWSER_PILOT_CLICK_BINDING_PLACEHOLDER = "__BROWSER_PILOT_STDLIB_CLICK_BINDING__";
-
-export function scriptReferencesClick(script: string): boolean {
-	return /\bbrowserPilot\s*\.\s*click\b/.test(script);
-}
-
-export function stdlibPrelude(registry: Record<string, unknown>, options: { click: boolean }): string {
+export function stdlibPrelude(registry: Record<string, unknown>): string {
 	return `
 const browserPilot = (() => {
   const __registry = ${JSON.stringify(registry)};
-  const __names = ${JSON.stringify(options.click ? BROWSER_PILOT_STDLIB_NAMES : BROWSER_PILOT_STDLIB_NAMES.filter((name) => name !== "click"))};
+  const __names = ${JSON.stringify(BROWSER_PILOT_STDLIB_NAMES)};
   function __entry(ref) {
     if (typeof ref === "string") return __registry[ref] || null;
     if (ref && typeof ref === "object" && ref.descriptor) return { ok: true, fresh: true, descriptor: ref.descriptor };
@@ -21,6 +15,37 @@ const browserPilot = (() => {
     const value = String((el && (el.innerText || el.textContent)) || "").replace(/\\s+/g, " ").trim();
     const target = String(text || "").replace(/\\s+/g, " ").trim();
     return exact ? value === target : value.includes(target);
+  }
+  function __rect(el) {
+    if (!el || typeof el.getBoundingClientRect !== "function") return null;
+    try { return el.getBoundingClientRect(); } catch (_) { return null; }
+  }
+  function __samplePoints(rect) {
+    const viewportW = Math.max(document.documentElement && document.documentElement.clientWidth || 0, window.innerWidth || 0);
+    const viewportH = Math.max(document.documentElement && document.documentElement.clientHeight || 0, window.innerHeight || 0);
+    if (!rect || !viewportW || !viewportH) return [];
+    const samples = [[0.5,0.5],[0.25,0.5],[0.75,0.5],[0.5,0.25],[0.5,0.75]];
+    return samples.map(pair => ({
+      x: Math.round(Math.max(0, Math.min(viewportW - 1, rect.left + rect.width * pair[0]))),
+      y: Math.round(Math.max(0, Math.min(viewportH - 1, rect.top + rect.height * pair[1])))
+    }));
+  }
+  function __actionablePoint(el) {
+    if (!el || el.nodeType !== 1) return undefined;
+    const rect = __rect(el);
+    if (!rect) return undefined;
+    const cs = typeof getComputedStyle === "function" ? getComputedStyle(el) : null;
+    const viewportW = Math.max(document.documentElement && document.documentElement.clientWidth || 0, window.innerWidth || 0);
+    const viewportH = Math.max(document.documentElement && document.documentElement.clientHeight || 0, window.innerHeight || 0);
+    const cssVisible = !!(rect.width || rect.height) && (!cs || (cs.visibility !== "hidden" && cs.display !== "none" && cs.opacity !== "0" && cs.pointerEvents !== "none"));
+    const rectVisible = cssVisible && rect.bottom > 0 && rect.right > 0 && rect.top < viewportH && rect.left < viewportW;
+    if (!rectVisible) return undefined;
+    if (typeof document.elementFromPoint !== "function") return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    for (const point of __samplePoints(rect)) {
+      const hit = document.elementFromPoint(point.x, point.y);
+      if (!hit || hit === el || el.contains(hit) || (hit.contains && hit.contains(el))) return point;
+    }
+    return undefined;
   }
   function __resolveLocator(locator) {
     if (!locator || typeof locator !== "object") return null;
@@ -50,46 +75,24 @@ const browserPilot = (() => {
     if (point) return { x: Math.round(point.x), y: Math.round(point.y), width: 0, height: 0 };
     return null;
   }
-${options.click ? `
-  function __backendTarget(descriptor) {
-    const ownerTargetId = descriptor && descriptor.owner && typeof descriptor.owner.targetId === "string" && descriptor.owner.targetId.trim() ? descriptor.owner.targetId.trim() : undefined;
-    for (const locator of Array.isArray(descriptor && descriptor.locators) ? descriptor.locators : []) {
-      if (locator && locator.by === "backendNodeId" && Number.isFinite(Number(locator.value))) {
-        const targetId = typeof locator.targetId === "string" && locator.targetId.trim() ? locator.targetId.trim() : ownerTargetId;
-        return { backendNodeId: Number(locator.value), ...(targetId ? { targetId } : {}) };
-      }
-    }
-    return ownerTargetId ? { targetId: ownerTargetId } : {};
-  }
-  function __point(descriptor) {
-    const point = descriptor && descriptor.geometry && descriptor.geometry.point;
-    if (point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y))) return { x: Number(point.x), y: Number(point.y) };
-    for (const locator of Array.isArray(descriptor && descriptor.locators) ? descriptor.locators : []) {
-      if (locator && locator.by === "point" && Number.isFinite(Number(locator.x)) && Number.isFinite(Number(locator.y))) return { x: Number(locator.x), y: Number(locator.y) };
-    }
-    return undefined;
-  }
-  function __safeTarget(descriptor) {
-    const backendTarget = __backendTarget(descriptor);
-    const point = __point(descriptor);
-    return { refId: descriptor.refId, ...backendTarget, ...(point ? { point } : {}) };
-  }
-` : ""}
   function resolve(ref) {
     const tried = [];
     const entry = __entry(ref);
     if (!entry || entry.ok !== true || !entry.descriptor) {
       console.warn("[browser-pilot] ref resolution miss:", ref, "tried:", ["registry"].join(","));
-      return { el: null, freshness: "miss", tried: ["registry"], warning: "element not found for ref — script will receive null" };
+      return { el: null, freshness: "miss", tried: ["registry"], warning: "element not found for ref - script will receive null" };
     }
     const descriptor = entry.descriptor;
+    let fallback = null;
     for (const locator of Array.isArray(descriptor.locators) ? descriptor.locators : []) {
       tried.push(locator.by || "unknown");
       const el = __resolveLocator(locator);
-      if (el) return { el, freshness: entry.fresh === false ? "stale" : "fresh", tried };
+      if (!fallback && el) fallback = el;
+      if (__actionablePoint(el)) return { el, freshness: entry.fresh === false ? "stale" : "fresh", tried };
     }
+    if (fallback) return { el: fallback, freshness: entry.fresh === false ? "stale" : "fresh", tried, warning: "resolved element is present but not visibly hittable" };
     console.warn("[browser-pilot] ref resolution miss:", ref, "tried:", tried.join(","));
-    return { el: null, freshness: "miss", tried, geometry: __geometryBox(descriptor), warning: "element not found for ref — script will receive null" };
+    return { el: null, freshness: "miss", tried, geometry: __geometryBox(descriptor), warning: "element not found for ref - script will receive null" };
   }
   function box(ref) {
     const resolved = resolve(ref);
@@ -139,56 +142,7 @@ ${options.click ? `
       setTimeout(() => done(false), timeout);
     });
   }
-${options.click ? `
-  const __clickBindingName = ${JSON.stringify(BROWSER_PILOT_CLICK_BINDING_PLACEHOLDER)};
-  let __clickSeq = 0;
-  const __clickPending = new Map();
-  function click(ref, options = {}) {
-    if (!__clickBindingName || typeof window[__clickBindingName] !== "function") return Promise.reject(Object.assign(new Error("browserPilot.click binding unavailable"), { code: "BROWSER_PILOT_CLICK_BINDING_UNAVAILABLE", message: "browserPilot.click() requires the browser-pilot bridge click binding — ensure the script references a bp-ref:// URI so the binding is injected, or use element.click() as a fallback" }));
-    const entry = __entry(ref);
-    if (!entry || entry.ok !== true || !entry.descriptor) return Promise.reject(Object.assign(new Error("browserPilot.click ref not resolved"), { code: "BROWSER_PILOT_CLICK_REF_NOT_RESOLVED" }));
-    const requestId = "click-" + Date.now().toString(36) + "-" + (++__clickSeq).toString(36);
-    const timeoutMs = Math.max(100, Math.min(30000, Number(options && options.timeoutMs) || 10000));
-    const payload = { requestId, action: "click", target: __safeTarget(entry.descriptor) };
-    return new Promise((resolveClick, rejectClick) => {
-      const timer = setTimeout(() => {
-        __clickPending.delete(requestId);
-        rejectClick(Object.assign(new Error("browserPilot.click timed out"), { code: "BROWSER_PILOT_CLICK_TIMEOUT", message: "click IPC timed out after " + timeoutMs + "ms — the bridge may be overloaded or the target element may be unresponsive" }));
-      }, timeoutMs);
-      __clickPending.set(requestId, { resolve: resolveClick, reject: rejectClick, timer });
-      try { window[__clickBindingName](JSON.stringify(payload)); }
-      catch (error) {
-        clearTimeout(timer);
-        __clickPending.delete(requestId);
-        rejectClick(error);
-      }
-    });
-  }
-  window.__browserPilotStdlibResolve = function(requestId, payload) {
-    const pending = __clickPending.get(String(requestId || ""));
-    if (!pending) return false;
-    __clickPending.delete(String(requestId || ""));
-    clearTimeout(pending.timer);
-    if (payload && payload.ok === false) {
-      const err = new Error(String(payload.error || payload.error_code || "browserPilot.click failed"));
-      err.code = payload.error_code;
-      err.details = payload.details;
-      pending.reject(err);
-    } else {
-      pending.resolve(payload && payload.data !== undefined ? payload.data : payload);
-    }
-    return true;
-  };
-  window.__browserPilotStdlibRejectAll = function(reason) {
-    for (const [requestId, pending] of Array.from(__clickPending.entries())) {
-      __clickPending.delete(requestId);
-      clearTimeout(pending.timer);
-      pending.reject(Object.assign(new Error(String(reason || "browserPilot.click cancelled")), { code: "BROWSER_PILOT_CLICK_CANCELLED" }));
-    }
-    return true;
-  };
-` : ""}
-  return Object.freeze({ resolve, box, setValue, settled${options.click ? ", click" : ""}, __namespace: Object.freeze(__names) });
+  return Object.freeze({ resolve, box, setValue, settled, __namespace: Object.freeze(__names) });
 })();
 `;
 }

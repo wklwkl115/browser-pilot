@@ -586,3 +586,11 @@ export function commandForNativeToolAction(commandName: NativeActionToolName, ac
 
 export const nativeCommandToolMetadata = nativeToolMetadata.nativeCommandTools;
 export const nativeTransferToolMetadata = nativeToolMetadata.transferTools;
+
+export function metadataForNativeCommandTool(commandName: NativeCommandToolName) {
+	return nativeCommandToolMetadata[commandName];
+}
+
+export function metadataForNativeTransferTool(commandName: NativeTransferToolName) {
+	return nativeTransferToolMetadata[commandName];
+}

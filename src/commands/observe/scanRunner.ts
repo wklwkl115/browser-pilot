@@ -31,6 +31,7 @@ import { buildObserveRelevance, observeIntent, relevanceEnabled, type ObserveRel
 import { addBridgeRoundTrips, elapsedMs, finalizedObserveTimings, type ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, withObservationMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
 import type { CommandFactGranularity } from "../resultTypes.js";
+import { buildNativeTreeDiff } from "../../native/browserPilotNativeKernels.js";
 
 // Build the envelope `causal` block when a baseline is supplied. Passive (no control attribution):
 // "requests fired since the baseline observation". Emits `unavailable` when no recorder is active
@@ -396,7 +397,8 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const abmlDiffSummary = abmlDiff ? summarizeEntityDiff(abmlDiff, baseline?.entities, observation.abmlRead?.ok === true ? observation.abmlRead.entities ?? [] : []) : undefined;
 	const envelopeDiff = abmlDiff ? { ...abmlDiff, ...(abmlDiffSummary ? { summary: abmlDiffSummary } : {}) } : undefined;
 	const abmlTreeDiff: TreeDiff | undefined = observation.abmlRead?.ok === true && baseline
-		? buildTreeDiff(baseline.entities, observation.abmlRead.entities ?? [], { partialBaseline: baseline.partialBaseline })
+		? buildNativeTreeDiff(baseline.entities, observation.abmlRead.entities ?? [], { partialBaseline: baseline.partialBaseline })
+			?? buildTreeDiff(baseline.entities, observation.abmlRead.entities ?? [], { partialBaseline: baseline.partialBaseline })
 		: undefined;
 	// R3.x causal attribution — attach `triggered` edges BEFORE the relation summary so they surface in
 	// relations.summary + the controls' inline relations. Two sources, both additive (the delta stays
