@@ -1,5 +1,5 @@
 import ts from "typescript";
-import type { JsAstAnalysisOptions, MutableFunctionFact, MutableSuspiciousSummary } from "./jsAstTypes.js";
+import type { JsAstAnalysisOptions, MutableFunctionFact, MutableSuspiciousSummary } from "../../../kernels/security/jsAstTypes.js";
 import { calleeName, classifyFunctionKind, inferFunctionName, isInfiniteWhile, isTopLevelFunctionLike, lineOf, numericIndexValue, returnsStringArrayIndex, sampleArgument, sliceWithTruncation } from "./jsAstUtils.js";
 import { collectObjectDispatchCandidates } from "./jsAstCollectors.js";
 import { applyDeterministicReduction } from "./jsAstReduction.js";

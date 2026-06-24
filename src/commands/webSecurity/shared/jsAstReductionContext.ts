@@ -1,5 +1,5 @@
 import ts from "typescript";
-import type { JsAstObjectDispatchCandidate, MutableStringArrayCandidate } from "./jsAstTypes.js";
+import type { JsAstObjectDispatchCandidate, MutableStringArrayCandidate } from "../../../kernels/security/jsAstTypes.js";
 import { calleeName, isWritableElementAccess, numericIndexValue, propertyNameText, returnsStringArrayIndex, stringLiteralValue } from "./jsAstUtils.js";
 
 export function collectCandidateStringArrayValues(sourceFile: ts.SourceFile, candidates: Map<string, MutableStringArrayCandidate>): Map<string, string[]> {

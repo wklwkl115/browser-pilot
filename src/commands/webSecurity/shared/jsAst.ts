@@ -2,9 +2,9 @@ import ts from "typescript";
 import { collectExportFacts, collectImportFacts, collectStringArrayCandidates, collectTopLevelCounts } from "./jsAstCollectors.js";
 import { collectAnalysisPass } from "./jsAstAnalysisPass.js";
 import { boundedOptions, lineAndColumnOf, moduleKindOf, sliceWithTruncation } from "./jsAstUtils.js";
-import type { JsAstAnalysis, JsAstAnalysisOptions, JsAstParseDiagnostic } from "./jsAstTypes.js";
+import type { JsAstAnalysis, JsAstAnalysisOptions, JsAstParseDiagnostic } from "../../../kernels/security/jsAstTypes.js";
 
-export type { JsAstAnalysis, JsAstAnalysisOptions, JsAstDecoderCallFact, JsAstExportFact, JsAstFunctionFact, JsAstImportFact, JsAstObjectDispatchCandidate, JsAstParseDiagnostic, JsAstReductionFact, JsAstStringArrayCandidate } from "./jsAstTypes.js";
+export type { JsAstAnalysis, JsAstAnalysisOptions, JsAstDecoderCallFact, JsAstExportFact, JsAstFunctionFact, JsAstImportFact, JsAstObjectDispatchCandidate, JsAstParseDiagnostic, JsAstReductionFact, JsAstStringArrayCandidate } from "../../../kernels/security/jsAstTypes.js";
 
 function parseDiagnosticsOf(sourceFile: ts.SourceFile): JsAstParseDiagnostic[] {
 	return (((sourceFile as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] }).parseDiagnostics) || []).map((diag: ts.DiagnosticWithLocation) => {

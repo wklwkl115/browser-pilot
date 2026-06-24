@@ -1,5 +1,5 @@
 import ts from "typescript";
-import type { JsAstAnalysis, JsAstAnalysisOptions, JsAstObjectDispatchCandidate, MutableExportFact, MutableImportFact, MutableStringArrayCandidate } from "./jsAstTypes.js";
+import type { JsAstAnalysis, JsAstAnalysisOptions, JsAstObjectDispatchCandidate, MutableExportFact, MutableImportFact, MutableStringArrayCandidate } from "../../../kernels/security/jsAstTypes.js";
 import { identifierText, isTopLevelFunctionLike, lineOf, propertyNameText, textOfModuleSpecifier } from "./jsAstUtils.js";
 
 export function collectImportFacts(sourceFile: ts.SourceFile, options: Required<JsAstAnalysisOptions>): MutableImportFact[] {

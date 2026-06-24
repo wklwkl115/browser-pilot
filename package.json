@@ -88,7 +88,6 @@
     "LICENSE",
     "SECURITY.md",
     "bridge/",
-    "src/bridge/extension/",
     "capture-src/",
     "scripts/build-bridge.mjs",
     "scripts/clean-build.mjs",

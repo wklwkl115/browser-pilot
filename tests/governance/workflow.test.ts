@@ -67,3 +67,16 @@ test("package metadata avoids hard-coded tool counts", () => {
 	const pkg = text(packagePath);
 	assert.doesNotMatch(pkg, /\d+ browser_\* tools|\d+ composable tools|all \d+ tools/i);
 });
+
+test("package files avoids redundant child entries covered by parent directories", () => {
+	const pkg = JSON.parse(text(packagePath)) as { files?: string[] };
+	const files = pkg.files || [];
+	const normalized = files.map((entry) => entry.replace(/\\/g, "/").replace(/^\.\//, ""));
+	for (const entry of normalized) {
+		const cleanEntry = entry.endsWith("/") ? entry : `${entry}/`;
+		for (const parent of normalized) {
+			if (entry === parent || !parent.endsWith("/")) continue;
+			assert.ok(!cleanEntry.startsWith(parent), `${entry} is already covered by ${parent}`);
+		}
+	}
+});

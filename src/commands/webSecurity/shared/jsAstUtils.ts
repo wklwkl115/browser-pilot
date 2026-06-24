@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { DEFAULT_OPTIONS, type JsAstAnalysisOptions, type JsAstFunctionFact } from "./jsAstTypes.js";
+import { DEFAULT_OPTIONS, type JsAstAnalysisOptions, type JsAstFunctionFact } from "../../../kernels/security/jsAstTypes.js";
 
 export function boundedOptions(options: JsAstAnalysisOptions = {}): Required<JsAstAnalysisOptions> {
 	return {

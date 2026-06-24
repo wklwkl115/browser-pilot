@@ -1,5 +1,5 @@
 import ts from "typescript";
-import type { JsAstAnalysisOptions, JsAstReductionFact, MutableStringArrayCandidate } from "./jsAstTypes.js";
+import type { JsAstAnalysisOptions, JsAstReductionFact, MutableStringArrayCandidate } from "../../../kernels/security/jsAstTypes.js";
 import { collectObjectDispatchCandidates } from "./jsAstCollectors.js";
 import { collectAliasMap, collectCandidateStringArrayValues, collectConstBindingMap, collectKnownDecoderMap, collectObjectDispatchImplementationMap, evaluateConstantExpression, reductionLiteralText, resolveAliasName, tryDecodeCall, tryObjectDispatchCall } from "./jsAstReductionContext.js";
 import { numericIndexValue } from "./jsAstUtils.js";
