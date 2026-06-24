@@ -1,0 +1,21 @@
+# Checklist
+
+- [x] `core_commands.ts` 的 top-level dispatch 与 batch dispatch 已复用同一命令支持定义或共享路径，新增/移除 core command 时不会只更新一边。
+- [x] extension direct dispatch、batch dispatch、unknown command、native command validation、CDP batch 特殊路径均有测试或等价验证覆盖。
+- [x] daemon `/invoke` 已拆出授权、参数准备/验证、命令执行、日志和响应 shaping seam，`startDaemon()` 未继续承担新增业务细节。
+- [x] daemon `/invoke` 的 success、unknown tool、validation error、command throw、pairing invalid/revoked、lease busy、legacy grace mode 响应保持兼容。
+- [x] `src/kernels/session/*` 对 Node crypto 的规则已在 `CODE_WIKI.md` 和治理测试中一致表达，不存在源码允许但文档禁止或文档允许但测试不保护的摇摆状态。
+- [x] observe scan runner 已有 characterization tests 覆盖 ABML integrated/non-integrated、baseline diff/treeDiff、causal、artifact hints、memory augmentation、ledger 关键契约。
+- [x] `scanRunner.ts` 已抽出 summary/enrichment/artifact 相关 seam，主流程更短且没有改变 `browser_observe` 用户可见 envelope 语义。
+- [x] result middleware 已将 redaction、budget fitting、evidence、nextActions 等内部横切逻辑拆为小 helper 或模块，`jsonCommandResult`、`textCommandResult` 等入口保持兼容。
+- [x] result envelope characterization 覆盖 summary budget、saved artifact、redaction、evidence refs、memory fitting、nextActions，现有命令输出契约未漂移。
+- [x] `browser_execute` monitor before/after scan 与 diff 逻辑已由窄 adapter 承担，program/script 执行主逻辑不再直接拥有 monitor scan 细节。
+- [x] `browser_execute` monitor enabled/disabled、program/script、ABML fallback、legacy scan fallback、navigation warning 行为保持兼容。
+- [x] `BrowserBridgeServer` 已建立更窄内部 port 或 dependency interface，并至少迁移低风险内部调用方；未删除或重命名既有公共入口。
+- [x] bridge server snapshot、tabs/session、leases、queues、pending、consent、operation 行为有测试或等价验证覆盖。
+- [x] memory store 已分离 validation/enrichment、persistence/repository、ranking/dedup 职责，fact memory record/recall/read 行为保持兼容。
+- [x] fact-only memory 边界继续成立：SOP、workflow、playbook、checklist、步骤或 agent 指令语义仍不能被 record/index/recall/observe 自动暴露。
+- [x] 所有受影响 import、测试引用和文档引用无悬空路径；未编辑 `dist/` 或 `bridge/browser_pilot_bridge/` 生成产物。
+- [x] 已按 touched area 运行相关局部门禁或 `mise run affected`，并记录结果。
+- [x] 最终已运行 `mise run verify` 并通过；如修改治理/workflow 文档，`mise run dev-governance` 也已通过。
+- [x] 最终说明包含实际变更文件、保持兼容的公共契约、验证证据、未完成长期迁移点和残余风险。

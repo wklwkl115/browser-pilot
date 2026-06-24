@@ -17,6 +17,7 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
 import { deriveBridgeReadiness } from "../../bridge/server/bridgeUtils.js";
+import type { BrowserBridgeSnapshot, BrowserTabInfo } from "../../bridge/server/types.js";
 import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
@@ -74,6 +75,26 @@ type CliInvokeMetadata = {
 	compatibilityInterface?: string;
 };
 
+type JsonSender = (status: number, obj: Record<string, unknown>) => void;
+
+export type InvokePipelineContext = {
+	req: http.IncomingMessage;
+	send: JsonSender;
+	body: Record<string, unknown>;
+	toolByName: Map<string, CommandDefinition>;
+	tenantLease: TenantLeaseRegistry;
+	usageEnabled: boolean;
+};
+
+type PreparedInvoke = {
+	tool: string;
+	cwd?: string;
+	cli?: CliInvokeMetadata;
+	def: CommandDefinition;
+	args: Record<string, unknown>;
+	strippedDeprecatedParams: string[];
+};
+
 let hooksRegistered = false;
 function registerDaemonHooks(): void {
 	if (hooksRegistered) return;
@@ -108,7 +129,15 @@ function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 	});
 }
 
-function safeTabs(server: BrowserBridgeServer): unknown[] {
+export interface DaemonBridgeStatusPort {
+	readonly running: boolean;
+	readonly port: number;
+	snapshot(): BrowserBridgeSnapshot;
+	getTabs(): BrowserTabInfo[];
+	getLastTabSyncAt(): number | undefined;
+}
+
+function safeTabs(server: DaemonBridgeStatusPort): unknown[] {
 	try {
 		return server.getTabs();
 	} catch {
@@ -120,7 +149,7 @@ function activeTabFrom(tabs: unknown[]): unknown {
 	return tabs.find((tab) => typeof tab === "object" && tab && (tab as { active?: unknown }).active === true) ?? tabs[0] ?? null;
 }
 
-function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, includeTabs: boolean): Record<string, unknown> {
+function bridgeStatusPayload(server: DaemonBridgeStatusPort, toolCount: number, includeTabs: boolean): Record<string, unknown> {
 	const tabs = safeTabs(server);
 	let snapshot;
 	try {
@@ -174,6 +203,63 @@ function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, inc
 		...(includeTabs ? { tabs } : {}),
 		tools: toolCount,
 	};
+}
+
+function authorizeInvoke(req: http.IncomingMessage, tenantLease: TenantLeaseRegistry): { ok: true } | { ok: false; status: number; body: Record<string, unknown> } {
+	const requirePairing = process.env[ENV_REQUIRE_PAIRING] === "1" || authStore.hasActiveAgents();
+	if (!requirePairing) return { ok: true };
+	const ptoken = req.headers[PAIRING_TOKEN_HEADER];
+	const rec = authStore.findByToken(typeof ptoken === "string" ? ptoken : undefined);
+	if (!rec) return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid } };
+	if (rec.status === "revoked") return { ok: false, status: 403, body: { ok: false, code: AUTH_ERROR_CODES.pairingRevoked } };
+	if (rec.status !== "active") return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid } };
+	const held = tenantLease.ensureHeld(rec.pairingId, rec.label);
+	if (!held.ok) return { ok: false, status: 409, body: { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: (held as { ok: false; heldBy: unknown }).heldBy } };
+	authStore.touch(rec.pairingId);
+	return { ok: true };
+}
+
+function prepareInvoke(body: Record<string, unknown>, toolByName: Map<string, CommandDefinition>): PreparedInvoke | { errorStatus: number; errorBody: Record<string, unknown> } {
+	const tool = typeof body.tool === "string" ? body.tool : "";
+	const params = isRecord(body.params) ? body.params : {};
+	const cwd = typeof body.cwd === "string" ? body.cwd : undefined;
+	const cli = isRecord(body.cli) ? body.cli as CliInvokeMetadata : undefined;
+	const def = toolByName.get(tool);
+	if (!def) return { errorStatus: 404, errorBody: { ok: false, error: `unknown tool: ${tool || "(missing)"}` } };
+	const prepared = (def.prepareArguments ? def.prepareArguments(params) : params) as Record<string, unknown>;
+	const strippedDeprecatedParams = strippedDeprecatedParamKeys(params, prepared);
+	const validation = validateCommandArgs(def.parameters, prepared);
+	if (!validation.ok) return { errorStatus: 400, errorBody: { ok: false, error: validation.error } };
+	return { tool, cwd, cli, def, args: validation.args, strippedDeprecatedParams };
+}
+
+async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean): Promise<Record<string, unknown>> {
+	const ctx: MiddlewareContext = {
+		method: "invoke",
+		commandName: invocation.tool,
+		startedAt: Date.now(),
+		...(usageEnabled ? { args: invocation.args } : {}),
+		...(usageEnabled && invocation.cli ? { cli: invocation.cli } : {}),
+	};
+	try {
+		const result = await invocation.def.execute(`cli-${invocation.tool}-${Date.now()}`, invocation.args, undefined, undefined, { cwd: invocation.cwd, hasUI: false, ...(invocation.cli ? { omitTransportDetails: true } : {}) });
+		if (usageEnabled) ctx.resultBytes = JSON.stringify(result.content).length;
+		emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok", invocation.strippedDeprecatedParams.length ? { strippedDeprecatedParams: invocation.strippedDeprecatedParams } : undefined);
+		const terminate = result.terminate === true;
+		return { ok: true, content: result.content, ...(invocation.cli && !terminate ? {} : { details: result.details }), terminate };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { error: message, ...(invocation.strippedDeprecatedParams.length ? { strippedDeprecatedParams: invocation.strippedDeprecatedParams } : {}) });
+		return { ok: true, content: [{ type: "text", text: message }], terminate: true };
+	}
+}
+
+export async function handleInvokeRoute({ req, send, body, toolByName, tenantLease, usageEnabled }: InvokePipelineContext): Promise<void> {
+	const prepared = prepareInvoke(body, toolByName);
+	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
+	const auth = authorizeInvoke(req, tenantLease);
+	if (!auth.ok) return send(auth.status, auth.body);
+	return send(200, await executeInvoke(prepared, usageEnabled));
 }
 
 /** Construct the daemon, start its control server, and (optionally) write the lockfile. */
@@ -297,47 +383,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 			}
 			if (req.method === "POST" && pathname === "/invoke") {
 				const body = await readBody(req);
-				const tool = typeof body.tool === "string" ? body.tool : "";
-				const params = isRecord(body.params) ? body.params : {};
-				const cwd = typeof body.cwd === "string" ? body.cwd : undefined;
-				const cli = isRecord(body.cli) ? body.cli as CliInvokeMetadata : undefined;
-				const def = toolByName.get(tool);
-				if (!def) return send(404, { ok: false, error: `unknown tool: ${tool || "(missing)"}` });
-				const prepared = (def.prepareArguments ? def.prepareArguments(params) : params) as Record<string, unknown>;
-				const strippedDeprecatedParams = strippedDeprecatedParamKeys(params, prepared);
-				const validation = validateCommandArgs(def.parameters, prepared);
-				if (!validation.ok) return send(400, { ok: false, error: validation.error });
-				// Connection-authorization enforcement.
-				// Grace mode: when no active agents exist AND env is not set, allow legacy ungated path.
-				const requirePairing = process.env[ENV_REQUIRE_PAIRING] === "1" || authStore.hasActiveAgents();
-				if (requirePairing) {
-					const ptoken = req.headers[PAIRING_TOKEN_HEADER];
-					const rec = authStore.findByToken(typeof ptoken === "string" ? ptoken : undefined);
-					if (!rec) return send(401, { ok: false, code: AUTH_ERROR_CODES.pairingInvalid });
-					if (rec.status === "revoked") return send(403, { ok: false, code: AUTH_ERROR_CODES.pairingRevoked });
-					if (rec.status !== "active") return send(401, { ok: false, code: AUTH_ERROR_CODES.pairingInvalid });
-					const held = tenantLease.ensureHeld(rec.pairingId, rec.label);
-					if (!held.ok) return send(409, { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: (held as { ok: false; heldBy: unknown }).heldBy });
-					authStore.touch(rec.pairingId);
-				}
-				const ctx: MiddlewareContext = {
-					method: "invoke",
-					commandName: tool,
-					startedAt: Date.now(),
-					...(usageEnabled ? { args: validation.args } : {}),
-					...(usageEnabled && cli ? { cli } : {}),
-				};
-				try {
-					const result = await def.execute(`cli-${tool}-${Date.now()}`, validation.args, undefined, undefined, { cwd, hasUI: false, ...(cli ? { omitTransportDetails: true } : {}) });
-					if (usageEnabled) ctx.resultBytes = JSON.stringify(result.content).length;
-					emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok", strippedDeprecatedParams.length ? { strippedDeprecatedParams } : undefined);
-					const terminate = result.terminate === true;
-					return send(200, { ok: true, content: result.content, ...(cli && !terminate ? {} : { details: result.details }), terminate });
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
-					emitLog(ctx, Date.now() - ctx.startedAt, "error", { error: message, ...(strippedDeprecatedParams.length ? { strippedDeprecatedParams } : {}) });
-					return send(200, { ok: true, content: [{ type: "text", text: message }], terminate: true });
-				}
+				return handleInvokeRoute({ req, send, body, toolByName, tenantLease, usageEnabled });
 			}
 			if (req.method === "POST" && pathname === "/pair/start") {
 					const { label } = await readBody(req);

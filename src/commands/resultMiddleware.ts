@@ -1,20 +1,21 @@
 import { stableJson } from "../utils/json.js";
 import { buildSaveTextArtifactPlan, artifactPlanReasons, type ArtifactPlan, type ArtifactPlanReason } from "../kernels/evidence/distill/artifactPlan.js";
-import { allocateFacts } from "../kernels/evidence/distill/allocate.js";
-import { renderFacts, type RenderedFacts } from "../kernels/evidence/distill/render.js";
-import { fitSalienceEnvelopeBudget } from "../kernels/evidence/distill/salienceEnvelope.js";
 import { normalizeDetailLevel, type DetailLevel } from "../utils/params.js";
 import { jsonResult, textResult, type BrowserTextCommandResult } from "../utils/toolResult.js";
-import { containsSensitiveEvidence, redactSensitiveValueWithPointers } from "../artifacts/artifactPrivacy.js";
+import { containsSensitiveEvidence } from "../artifacts/artifactPrivacy.js";
 import { saveTextArtifact } from "../artifacts/artifactFiles.js";
-import { distillValue, getDistillerDefinition } from "./distillerRegistry.js";
+import { distillValue } from "./distillerRegistry.js";
 import { asArray, isRecord } from "./summaries/common.js";
 import { summarizeHtmlSnapshot } from "./summaries/index.js";
 import { appendMemoryAutoSurface } from "./memory/autoSurface.js";
 import type { CommandMemoryAugmentationPlan } from "./memoryAugmentationTypes.js";
-import { fitCommandEnvelopeBudget, fitCommandSummaryBudget, SUMMARY_MAX_CHARS } from "./resultBudgeting.js";
-import { buildCommandEvidenceEnvelope, type CommandDistilledSummary, type CommandEvidenceEnvelope, type CommandFactGranularity } from "./resultTypes.js";
-import { collectRefs, extractRefsFromText } from "../kernels/refs/text.js";
+import { fitCommandSummaryBudget, SUMMARY_MAX_CHARS } from "./resultBudgeting.js";
+import type { CommandDistilledSummary, CommandEvidenceEnvelope, CommandFactGranularity } from "./resultTypes.js";
+import { factRenderingDiagnostics, fitResponseEnvelopeWithMemory, renderedOmittedCount, rendererMarker } from "./resultEnvelopeBudget.js";
+import { buildResultEvidence } from "./resultEvidence.js";
+import { normalizedNextActions } from "./resultNextActions.js";
+import { normalizedPrivacy, redactForModel } from "./resultRedaction.js";
+import { collectRefs } from "../kernels/refs/text.js";
 
 // Mandatory-read pair with commandRuntime.ts: keep envelope fields, redaction, distillation,
 // artifact fallback, and memory nudge behavior centralized here.
@@ -108,13 +109,6 @@ type DistillBaseOptions = {
 	stableRefs?: Set<string>;
 	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
-};
-
-type FactRenderingDiagnostics = {
-	rendered: number;
-	skipped: number;
-	markerCount: number;
-	planes: string[];
 };
 
 type DistilledJsonOptions = DistillBaseOptions & {
@@ -319,165 +313,6 @@ function normalizedDiagnostics(summary: DistilledSummary, saved?: Record<string,
 	return Object.keys(diagnostics).length ? diagnostics : undefined;
 }
 
-function normalizedPrivacy(saved?: Record<string, unknown>, sensitiveRaw = false): Record<string, unknown> | undefined {
-	const savedPrivacy = isRecord(saved?.privacy) ? saved.privacy : undefined;
-	if (!savedPrivacy && !sensitiveRaw) return undefined;
-	return {
-		...pickDefined(savedPrivacy || {}, ["classification", "localOnly", "redaction"]),
-		...(sensitiveRaw ? { sensitiveEvidence: true, modelFacingRedaction: "default" } : {}),
-	};
-}
-
-function artifactReadActions(summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>): string[] {
-	if (!saved?.path) return [];
-	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints : undefined;
-	const preferredReads = asArray(hints?.preferredReads).filter(isRecord);
-	// H2: include mode=json in the hint so agents can translate it directly to a CLI call without
-	// having to know that --json-path requires --mode json (blind-eval H2, n=2, bilibili+linux.do).
-	const actions = preferredReads
-		.map((hint) => typeof hint.jsonPath === "string" && hint.jsonPath ? `read_saved_artifact mode=json jsonPath=${hint.jsonPath}` : undefined)
-		.filter((item): item is string => !!item)
-		.slice(0, 3);
-	// H1: when the execute/command result is already fully inline in summary.data (small return value,
-	// F1 fix), emitting correlation-ID artifact hints as nextActions is misleading noise — the agent
-	// already has the data and doesn't need to call browser_artifact. Suppress them when dataInline is
-	// set (blind-eval H1, n=2, bilibili+linux.do). For all other tools (observe, network, hook, …)
-	// correlation hints remain useful for evidence linkage.
-	const dataAlreadyInline = summary.dataInline === true;
-	if (!dataAlreadyInline) {
-		const correlationPaths = [
-			{ key: "operationId", path: "operation.operationId", value: operation?.operationId },
-			{ key: "snapshotId", path: "snapshot.snapshotId", value: snapshot?.snapshotId },
-			{ key: "requestId", path: "data.requestId", value: summary.requestId },
-			{ key: "waitId", path: "data.waitId", value: summary.waitId },
-			{ key: "listenerId", path: "data.listenerId", value: summary.listenerId },
-		].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
-		for (const item of correlationPaths.slice(0, 3)) actions.push(`read_saved_artifact mode=json jsonPath=${item.path}`);
-	}
-	return actions.length ? Array.from(new Set(actions)) : ["read_saved_artifact mode=json", "read_saved_artifact mode=text"];
-}
-
-const SESSION_DELTA_RECOVERY_TARGET_LIMIT = 3;
-
-function recoveryTargetKey(action: string): string | undefined {
-	if (action.startsWith("read_saved_artifact")) return action;
-	const ref = extractRefsFromText(action)[0];
-	return ref;
-}
-
-function capSessionDeltaRecoveryFanout(actions: string[], delta?: string): string[] {
-	if (delta !== "session") return actions;
-	const seenTargets = new Set<string>();
-	return actions.filter((action) => {
-		const key = recoveryTargetKey(action);
-		if (!key) return true;
-		if (seenTargets.has(key)) return true;
-		if (seenTargets.size >= SESSION_DELTA_RECOVERY_TARGET_LIMIT) return false;
-		seenTargets.add(key);
-		return true;
-	});
-}
-
-function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, summaryHintActions: string[] = [], entities?: Array<Record<string, unknown>>): string[] | undefined {
-	const actions: string[] = [];
-	actions.push(...summaryHintActions.filter((item) => !item.includes("path=")));
-	actions.push(...artifactReadActions(summary, saved, operation, snapshot));
-	if (entities?.length) {
-		const first = entities.find((entity) => typeof entity.ref === "string") || entities[0];
-		const ref = typeof first?.ref === "string" ? first.ref : undefined;
-		const kind = typeof first?.kind === "string" ? first.kind : undefined;
-		if (ref) {
-			actions.push(`read(${ref})`);
-			if (kind === "control" || kind === "element") actions.push(`click(${ref})`);
-			if (kind === "region") actions.push(`inspect(${ref})`);
-			if (kind === "frame") actions.push(`frame(${ref})`);
-		}
-	}
-	if (saved?.path && summary.nextOffset !== undefined && summary.nextOffset !== null) actions.push(`read_saved_artifact offset=${String(summary.nextOffset)}`);
-	if (summary.bodyUnavailableReason) actions.push("inspect network body with a fresh recorder entry or recapture with captureBodies enabled");
-	if (summary.notFound === true && typeof summary.nearestPath === "string" && summary.nearestPath) actions.push(`read_saved_artifact mode=json jsonPath=${summary.nearestPath}`);
-	if (summary.empty === true || summary.notFound === true) actions.push("narrow the target ref/filter or re-read with mode=scan|html");
-	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) actions.push("increase maxChars/maxBodyBytes or inspect the saved artifact by jsonPath/offset");
-	if (options.browserSessionId === undefined && (summary.tabId !== undefined || summary.targetRef !== undefined || isRecord(summary.target))) actions.push("pass explicit targetRef/browserSessionId for follow-up tab-scoped calls");
-	const unique = capSessionDeltaRecoveryFanout(Array.from(new Set(actions)), typeof summary.delta === "string" ? summary.delta : undefined);
-	return unique.length ? unique.slice(0, 7) : undefined;
-}
-
-function redactForModel<T>(value: T, saved?: Record<string, unknown>, rawArtifactValue?: unknown): T {
-	return redactSensitiveValueWithPointers(value, {
-		rawArtifactPath: typeof saved?.path === "string" ? saved.path : undefined,
-		rawArtifactBytes: typeof saved?.bytes === "number" ? saved.bytes : undefined,
-		artifactValue: rawArtifactValue,
-	}) as T;
-}
-
-function rendererMarker(): DistilledEnvelope["renderer"] | undefined {
-	return process.env.BROWSER_PILOT_RENDERER === "ladder" ? undefined : "salience-v1";
-}
-
-function allocationCostModel(): "byte" | "token" {
-	return process.env.BROWSER_PILOT_TOKEN_COST === "1" ? "token" : "byte";
-}
-
-function factRenderingDiagnostics(options: DistillBaseOptions, value: unknown, maxChars: number): FactRenderingDiagnostics | undefined {
-	if (!rendererMarker()) return undefined;
-	const factify = getDistillerDefinition(options.commandName)?.factify;
-	if (!factify) return undefined;
-	const facts = factify(value, options.command);
-	if (!facts.length) return undefined;
-	const budget = Math.max(256, Math.floor(maxChars * 0.25));
-	const plan = allocateFacts(facts, budget, [{ plane: "summary", minFacts: 1, minGranularity: "compact" }], { minDensity: 0.01, costModel: allocationCostModel(), stableRefs: options.stableRefs });
-	const rendered: RenderedFacts = renderFacts(facts, plan);
-	const planes = Object.keys(rendered).filter((key) => key !== "omitted" && key !== "stats").sort();
-	return {
-		rendered: rendered.stats?.factsRendered ?? 0,
-		skipped: rendered.stats?.factsOmitted ?? 0,
-		markerCount: rendered.stats?.truncationMarkers ?? 0,
-		planes,
-	};
-}
-
-function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number, options: DistillBaseOptions): DistilledEnvelope {
-	return rendererMarker() ? fitSalienceEnvelopeBudget(envelope, maxChars, { granularityCeiling: options.granularityCeiling }) : fitCommandEnvelopeBudget(envelope, maxChars);
-}
-
-export function livePlaneSignature(envelope: DistilledEnvelope): string {
-	return stableJson({
-		entities: envelope.entities,
-		gist: envelope.gist,
-		outline: envelope.outline,
-		relations: envelope.relations,
-		identity: envelope.identity,
-		diff: envelope.diff,
-		causal: envelope.causal,
-		treeDiff: envelope.treeDiff,
-		snapshotProjection: envelope.snapshotProjection,
-		collections: envelope.collections,
-		rendererOmitted: envelope.summary.rendererOmitted,
-		envelopeOmitted: envelope.summary.envelopeOmitted,
-		warnings: Array.isArray(envelope.diagnostics?.warnings) ? envelope.diagnostics.warnings : undefined,
-	});
-}
-
-function fitResponseEnvelopeWithMemory(base: DistilledEnvelope, maxChars: number, options: DistillBaseOptions): DistilledEnvelope {
-	const fittedBase = fitResponseEnvelope(base, maxChars, options);
-	const plan = options.memoryAugmentationPlan;
-	const memoryAllowed = options.commandName === "browser_observe" && (!options.command || ["scan", "scan.text", "navigate+scan", "navigate+text"].includes(options.command));
-	if (!memoryAllowed || (!plan?.inline && !plan?.handleOnly)) return fittedBase;
-	const baseSignature = livePlaneSignature(fittedBase);
-	for (const variant of [plan.inline, plan.handleOnly]) {
-		if (!variant) continue;
-		const candidate = fitResponseEnvelope({ ...base, memory: variant }, maxChars, options);
-		if (candidate.memory && livePlaneSignature(candidate) === baseSignature) return candidate;
-	}
-	return fittedBase;
-}
-
-function renderedOmittedCount(envelope: DistilledEnvelope): number {
-	const omitted = envelope.summary.rendererOmitted;
-	return Array.isArray(omitted) ? omitted.filter((item) => typeof item === "string").length : 0;
-}
-
 function reportAllocation(options: DistillBaseOptions, envelope: DistilledEnvelope, rendered: string): void {
 	if (!options.onAllocation) return;
 	const budget = Math.max(1, Math.floor(options.maxChars));
@@ -526,12 +361,14 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const limits = normalizedLimits(options, fittedSummary);
 	const privacy = normalizedPrivacy(saved, sensitiveRaw);
 	const nextActions = normalizedNextActions(options, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions, entities);
-	const evidence = buildCommandEvidenceEnvelope({
+	const evidence = buildResultEvidence({
 		summary: fittedSummary,
-		runtimeRefs: collectRefs({ summary: fittedSummary, entities, nextActions, operation: redactedOperation, snapshot: redactedSnapshot }),
+		entities,
+		nextActions,
+		operation: redactedOperation,
+		snapshot: redactedSnapshot,
 		artifact: saved,
-		recoveryActions: nextActions,
-		memory: isRecord(redactedSummary.memory) ? redactedSummary.memory as Record<string, unknown> : undefined,
+		memorySource: isRecord(redactedSummary.memory) ? redactedSummary.memory as Record<string, unknown> : undefined,
 		redactionApplied: sensitiveRaw || Boolean(privacy),
 	});
 	return fitResponseEnvelopeWithMemory({

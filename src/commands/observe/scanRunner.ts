@@ -4,7 +4,7 @@ import type { BrowserCommandRuntimePort, CommandPerceptionLedgerFrame, CommandPe
 import { summarizeEntityDiff, type EntityDiff } from "../../kernels/abml/diff.js";
 import { buildRelationSummary, addEntityRelations, buildRelationGraph } from "../../kernels/abml/relations.js";
 import { buildInferenceSummary, entitiesForInferenceEvidence } from "../../kernels/abml/inference.js";
-import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, causalFiredHint, type CausalSummary } from "../../kernels/abml/causal.js";
+import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, type CausalSummary } from "../../kernels/abml/causal.js";
 import { buildTreeDiff, type TreeDiff } from "../../kernels/abml/treeDiff.js";
 import { buildSnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 import { buildCollectionModels } from "../../kernels/abml/collections.js";
@@ -32,6 +32,7 @@ import { addBridgeRoundTrips, elapsedMs, finalizedObserveTimings, type ObserveTi
 import { currentObserveSnapshotMeta, withObservationMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
 import type { CommandFactGranularity } from "../resultTypes.js";
 import { buildNativeTreeDiff } from "../../native/browserPilotNativeKernels.js";
+import { attachAbmlArtifactHints, buildObserveAbmlDetails, buildObserveArtifactProjection, buildScanNextActionHints } from "./scanProjection.js";
 
 // Build the envelope `causal` block when a baseline is supplied. Passive (no control attribution):
 // "requests fired since the baseline observation". Emits `unavailable` when no recorder is active
@@ -109,37 +110,6 @@ function scanCollectionEvidence(data: unknown) {
 		actionables: recordArray(record.actionables),
 		...(isRecord(record.growthProbe) ? { growthProbe: record.growthProbe } : {}),
 	};
-}
-
-function addArtifactHint(summary: Record<string, unknown>, key: string, read: { label: string; jsonPath: string; kind?: string }, position: "front" | "back" = "back"): void {
-	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints as Record<string, unknown> : undefined;
-	if (!hints) return;
-	const jsonPaths = isRecord(hints.jsonPaths) ? { ...hints.jsonPaths } : {};
-	jsonPaths[key] = read.jsonPath;
-	const preferredReads = Array.isArray(hints.preferredReads) ? [...hints.preferredReads] : [];
-	if (!preferredReads.some((item) => isRecord(item) && item.jsonPath === read.jsonPath)) {
-		if (position === "front") preferredReads.unshift(read);
-		else preferredReads.push(read);
-	}
-	hints.jsonPaths = jsonPaths;
-	hints.preferredReads = preferredReads;
-}
-
-function attachAbmlArtifactHints(summary: Record<string, unknown>): void {
-	if (Array.isArray(summary.collections) && summary.collections.length) {
-		addArtifactHint(summary, "collections", { label: "collection completeness + continuation", jsonPath: "envelope.collections", kind: "abml-collections" }, "front");
-	}
-	if (isRecord(summary.snapshotProjection)) {
-		addArtifactHint(summary, "snapshotProjection", { label: "living snapshot projection", jsonPath: "envelope.snapshotProjection", kind: "abml-structure" });
-	}
-	const focus = isRecord(summary.focus) ? summary.focus : undefined;
-	if (isRecord(focus?.relations)) {
-		addArtifactHint(summary, "relations", { label: "relationship graph summary", jsonPath: "envelope.relations", kind: "abml-relations" });
-		addArtifactHint(summary, "relationGraph", { label: "full ABML relation graph", jsonPath: "envelope.relationGraph", kind: "abml-relations" });
-	}
-	if (isRecord(summary.identity)) {
-		addArtifactHint(summary, "identityGraph", { label: "identity lattice graph", jsonPath: "envelope.identityGraph", kind: "abml-identity" });
-	}
 }
 
 export async function runScanObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, mode: Extract<ObserveMode, "scan" | "text" | "tabs">, onUpdate?: CommandOnUpdate) {
@@ -521,60 +491,32 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	//     point straight at it.
 	// NOT templates/relations: the eval showed they only give structure (agents still need JS for per-item
 	// VALUES), so pushing them is marginal. Hints fire only when there's something real to point at → low noise.
-	const scanHints: string[] = (() => {
-		const hints: string[] = [];
-		const sid = typeof snapshotMeta.snapshotId === "string" ? snapshotMeta.snapshotId : undefined;
-		if (!hasBaseline && sid) {
-			hints.push(`to see what CHANGES after you act here: re-run browser_observe mode=scan baseline:"${sid}" → envelope.treeDiff (template-level appeared/disappeared, cleaner than re-extracting before/after)${recorderState.active ? "; + envelope.causal.requests = which requests your action fired" : ""}`);
-		}
-		if (hasBaseline && causal) {
-			// Use the TRUE fired count (requestCount), not the capped requests.length, or the hint
-			// under-reports 30×+ when >12 requests fired since baseline (blind-eval R-G5 F2/G10).
-			const firedHint = causalFiredHint(causal);
-			if (firedHint) hints.push(firedHint);
-		}
-		if (hasBaseline && abmlTreeDiff && abmlTreeDiff.summary.changedTemplateCount > 0) {
-			const s = abmlTreeDiff.summary;
-			const eg = [
-				...(s.sample?.appeared?.length ? [`+${s.sample.appeared.slice(0, 3).join(", ")}`] : []),
-				...(s.sample?.disappeared?.length ? [`-${s.sample.disappeared.slice(0, 3).join(", ")}`] : []),
-				...(s.sample?.changed?.length ? [`~${s.sample.changed.slice(0, 3).join(", ")}`] : []),
-			].join("; ");
-			hints.push(`structure changed (${s.appeared} appeared / ${s.disappeared} disappeared / ${s.changed} changed, template-level)${eg ? ` — e.g. ${eg}` : ""} → envelope.treeDiff.summary.sample names the items; .templates[].instances has the rest (no need to re-extract)`);
-		}
-		return hints;
-	})();
+	const scanHints = buildScanNextActionHints({
+		hasBaseline,
+		snapshotId: snapshotMeta.snapshotId,
+		recorderActive: recorderState.active,
+		causal,
+		treeDiff: abmlTreeDiff,
+	});
 	if (scanHints.length) summaryRecord.nextActions = scanHints;
-	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : undefined;
-	const artifactCollections = Array.isArray(summaryRecord.collections) ? summaryRecord.collections.filter(isRecord) as Array<Record<string, unknown>> : undefined;
-	const artifactIdentityGraph = isRecord(summaryRecord._identityGraph) ? summaryRecord._identityGraph : undefined;
-	const artifactRelationGraph = isRecord(summaryRecord._relationGraph) ? summaryRecord._relationGraph : undefined;
-	delete summaryRecord._identityGraph;
-	delete summaryRecord._relationGraph;
-	// Mirror the ABML envelope products into the saved artifact's top-level `envelope` block so an agent
-	// reading via browser_artifact finds them at a flat path (not buried in summary.focus). relations +
-	// inference were previously only inside summary.focus — a real-agent eval (2026-06-05, task3) showed
-	// agents hunting `data.relations`/`data.tables` and missing the buried table relations, while
-	// top-level-mirrored causal/templates/diff were found and used. Lift them to match.
-	const artifactFocus = isRecord(summaryRecord.focus) ? (summaryRecord.focus as Record<string, unknown>) : undefined;
-	// relations is conditional (focus only carries it when it has edges); templates/inference are no longer
-	// agent-facing output, so they are not mirrored. diff/treeDiff/snapshotProjection/causal stay.
-	const artifactRelations = isRecord(artifactFocus?.relations) ? artifactFocus!.relations : undefined;
-	const artifactEnvelopeMirror = {
-		tool: "browser_observe",
-		command: scanCommandName(mode, hasNavigation),
-		summary,
-		...(envelopeEntities.length ? { entities: envelopeEntities.slice(0, 12) } : {}),
-		...(envelopeDiff ? { diff: envelopeDiff } : {}),
-		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
-		...(artifactRelations ? { relations: artifactRelations } : {}),
-		...(artifactRelationGraph ? { relationGraph: artifactRelationGraph } : {}),
-		...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}),
-		...(artifactCollections?.length ? { collections: artifactCollections } : {}),
-		...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}),
-		...(artifactRelevance ? { relevance: artifactRelevance } : {}),
-		...causalBlock,
-	};
+	const {
+		artifactSnapshotProjection,
+		artifactCollections,
+		artifactIdentityGraph,
+		artifactRelationGraph,
+		artifactRelations,
+		artifactEnvelopeMirror,
+	} = buildObserveArtifactProjection({
+		summaryRecord,
+		summary: summaryRecord,
+		envelopeEntities,
+		envelopeDiff,
+		abmlTreeDiff,
+		artifactRelevance,
+		causalBlock,
+		mode,
+		hasNavigation,
+	});
 	const finalLedgerKey = ledgerKey(bridge.browserSessionId, tabId, typeof data?.url === "string" ? data.url : undefined);
 	let allocation: CommandPerceptionLedgerFrame["allocation"] | undefined;
 	const ledgerFacts = attributedEntities ? factsFromObservedEntities(attributedEntities) : undefined;
@@ -602,17 +544,10 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		...(summaryTruncation?.actionablesTruncated === true ? { actionablesTruncated: true, actionablesScanned: summaryTruncation.actionablesScanned, actionablesReturned: summaryTruncation.actionablesReturned } : {}),
 		...(allWarnings.length ? { warnings: allWarnings } : {}),
 	};
-	const abmlDetails = observation.abmlRead?.ok === true
-		? {
-			integrated: true,
-			entityCount: observation.abmlRead.entities?.length ?? 0,
-			primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0,
-			listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0,
-			visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0,
-			frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0,
-			diagnostics: observeDiagnostics.observeTimings,
-		}
-		: { integrated: false, diagnostics: observeDiagnostics.observeTimings };
+	const abmlDetails = buildObserveAbmlDetails({
+		abmlRead: observation.abmlRead,
+		diagnostics: observeDiagnostics.observeTimings,
+	});
 	const resultDetails = {
 		mode,
 		modeInferred: modeInferredDetails(params),

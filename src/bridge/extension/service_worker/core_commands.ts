@@ -9,6 +9,8 @@ import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse,
 
 type BridgeWakeProbe = (resetDelay: boolean) => unknown;
 type ValidatedBridgeCommand = { ok: true; command: BrowserPilotBridgeCommand } | { ok: false; error?: string; details?: JsonRecord };
+type BrowserPilotCoreDispatchContext = { resolveParams?: (params: unknown) => JsonRecord };
+type BrowserPilotCoreCommandHandler = (msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender, context: BrowserPilotCoreDispatchContext) => Promise<BrowserPilotBridgeResponse>;
 let bridgeWakeProbe: BridgeWakeProbe | null = null;
 
 function coreRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
@@ -260,12 +262,13 @@ async function handleCookies(msg: BrowserPilotBridgeCommand, sender: BrowserPilo
   }
 }
 
-async function handleCDP(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender): Promise<BrowserPilotBridgeResponse> {
+async function handleCDP(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender, context: BrowserPilotCoreDispatchContext = {}): Promise<BrowserPilotBridgeResponse> {
   const tabId = Number(msg.tabId || sender.tab?.id || 0);
-  if (!tabId) return bridgeError(BROWSER_PILOT_ERROR_CODES.NO_SESSION, 'no tabId', { cmd: msg.cmd, method: msg.method });
+  if (!tabId) return bridgeError(BROWSER_PILOT_ERROR_CODES.NO_SESSION, context.resolveParams ? 'no tabId for batch cdp command' : 'no tabId', { cmd: msg.cmd, method: msg.method });
   const cdp = browserPilotPersistentCdp();
   if (!cdp?.send) return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'persistent CDP helper is not loaded', { cmd: msg.cmd, method: msg.method, tabId });
-  const resp = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, String(msg.method || ''), coreRecord(msg.params), { name: String(msg.name || 'default'), persistent: msg.persistent === true, timeoutMs: msg.timeoutMs || msg.timeout_ms }));
+  const params = context.resolveParams ? context.resolveParams(msg.params) : coreRecord(msg.params);
+  const resp = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, String(msg.method || ''), params, { name: String(msg.name || 'default'), persistent: msg.persistent === true, timeoutMs: msg.timeoutMs || msg.timeout_ms }));
   const data = coreRecord(resp.data);
   if (resp && resp.ok !== false) return { ok: true, data: data.result !== undefined ? data.result : (resp.result || resp.data) };
   return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, resp?.error || resp?.message || 'persistent CDP send failed', { cmd: msg.cmd, method: msg.method, tabId, persistent: resp });
@@ -284,17 +287,26 @@ function validateBrowserPilotBridgeProtocolMessage(msg: BrowserPilotBridgeComman
   return protocol.validateCommand(msg, { allowMissingTabId: true });
 }
 
-async function dispatchBrowserPilotBridgeCommand(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender): Promise<BrowserPilotBridgeResponse> {
-  if (msg.cmd === 'bridge_wake') return await handleBridgeWake(msg, sender);
-  if (msg.cmd === 'content.fingerprint') return await handleContentFingerprintCommand(msg, sender);
-  if (msg.cmd === 'cookies') return await handleCookies(msg, sender);
-  if (msg.cmd === 'cdp') return await handleCDP(msg, sender);
-  if (msg.cmd === 'persistent_cdp') return await handlePersistentCDP(msg, sender);
+const BROWSER_PILOT_CORE_COMMAND_HANDLERS: Record<string, BrowserPilotCoreCommandHandler> = {
+  bridge_wake: (msg, sender) => handleBridgeWake(msg, sender),
+  'content.fingerprint': (msg, sender) => handleContentFingerprintCommand(msg, sender),
+  cookies: (msg, sender) => handleCookies(msg, sender),
+  cdp: (msg, sender, context) => handleCDP(msg, sender, context),
+  persistent_cdp: (msg, sender) => handlePersistentCDP(msg, sender),
+  tabs: (msg) => handleTabsCommand(msg),
+  management: (msg) => handleManagementCommand(msg),
+  contentSettings: (msg) => handleContentSettingsCommand(msg),
+};
+
+function resolveBrowserPilotCoreCommandHandler(cmd: unknown): BrowserPilotCoreCommandHandler | undefined {
+  return typeof cmd === 'string' ? BROWSER_PILOT_CORE_COMMAND_HANDLERS[cmd] : undefined;
+}
+
+async function dispatchBrowserPilotBridgeCommand(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender, context: BrowserPilotCoreDispatchContext = {}): Promise<BrowserPilotBridgeResponse> {
+  const handler = resolveBrowserPilotCoreCommandHandler(msg.cmd);
+  if (handler) return await handler(msg, sender, context);
   if (isBrowserPilotNativeCommand(optionalString(msg.cmd))) return await handleBrowserPilotNativeCommand(msg, sender) as BrowserPilotBridgeResponse;
   if (msg.cmd === 'batch') return await handleBatch(msg, sender);
-  if (msg.cmd === 'tabs') return await handleTabsCommand(msg);
-  if (msg.cmd === 'management') return await handleManagementCommand(msg);
-  if (msg.cmd === 'contentSettings') return await handleContentSettingsCommand(msg);
   return bridgeError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unknown cmd: ' + String(msg.cmd), { cmd: msg.cmd });
 }
 
@@ -312,25 +324,9 @@ async function handleBatch(msg: BrowserPilotBridgeCommand, sender: BrowserPilotB
           continue;
         }
         if (c.tabId === undefined && msg.tabId !== undefined) c.tabId = msg.tabId;
-        if (c.cmd === 'cookies') {
-          R.push(normalizeBridgeResponse(await handleCookies(c, sender), c.cmd));
-        } else if (c.cmd === 'tabs') {
-          R.push(normalizeBridgeResponse(await handleTabsCommand(c), c.cmd));
-        } else if (c.cmd === 'cdp') {
-          const tabId = Number(c.tabId || msg.tabId || sender.tab?.id || 0);
-          if (!tabId) {
-            R.push(bridgeError(BROWSER_PILOT_ERROR_CODES.NO_SESSION, 'no tabId for batch cdp command', { cmd: c.cmd, method: c.method }));
-            continue;
-          }
-          const cdp = browserPilotPersistentCdp();
-          if (!cdp?.send) {
-            R.push(bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'persistent CDP helper is not loaded', { cmd: c.cmd, method: c.method, tabId }));
-            continue;
-          }
-          const resp = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, String(c.method || ''), resolve$N(c.params), { name: String(c.name || 'default'), persistent: c.persistent === true, timeoutMs: c.timeoutMs || c.timeout_ms }));
-          const data = coreRecord(resp.data);
-          if (resp && resp.ok !== false) R.push({ ok: true, data: data.result !== undefined ? data.result : (resp.result || resp.data) });
-          else R.push(bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, resp?.error || resp?.message || 'persistent CDP send failed', { cmd: c.cmd, method: c.method, tabId, persistent: resp }));
+        const handler = resolveBrowserPilotCoreCommandHandler(c.cmd);
+        if (handler) {
+          R.push(normalizeBridgeResponse(await dispatchBrowserPilotBridgeCommand(c, sender, { resolveParams: resolve$N }), c.cmd));
         } else if (isBrowserPilotNativeCommand(optionalString(c.cmd))) {
           const validation = validateBrowserPilotBridgeProtocolMessage(c);
           if (!validation.ok) R.push(bridgeError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, validation.error, validation.details));
@@ -353,6 +349,6 @@ async function handleBatch(msg: BrowserPilotBridgeCommand, sender: BrowserPilotB
     return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, coreErrorMessage(e), { cmd: msg.cmd, results: R, raw: coreErrorDetails(e) });
   }
 }
-export { setBridgeWakeProbe, handleBridgeWake, normalizeBrowserPilotCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, browserPilotCookiePartitionIdentity, browserPilotCookieIdentity, mergeBrowserPilotCookies, normalizeBrowserPilotCookieUrl, handleCookies, handleCDP, handlePersistentCDP, validateBrowserPilotBridgeProtocolMessage, dispatchBrowserPilotBridgeCommand, handleBatch };
+export { setBridgeWakeProbe, handleBridgeWake, normalizeBrowserPilotCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, browserPilotCookiePartitionIdentity, browserPilotCookieIdentity, mergeBrowserPilotCookies, normalizeBrowserPilotCookieUrl, handleCookies, handleCDP, handlePersistentCDP, validateBrowserPilotBridgeProtocolMessage, resolveBrowserPilotCoreCommandHandler, dispatchBrowserPilotBridgeCommand, handleBatch };
 // ESM module metadata
-export const __browserPilotBridgeModule_core_commands = { name: "core_commands", symbols: { setBridgeWakeProbe, handleBridgeWake, normalizeBrowserPilotCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, browserPilotCookiePartitionIdentity, browserPilotCookieIdentity, mergeBrowserPilotCookies, normalizeBrowserPilotCookieUrl, handleCookies, handleCDP, handlePersistentCDP, validateBrowserPilotBridgeProtocolMessage, dispatchBrowserPilotBridgeCommand, handleBatch } };
+export const __browserPilotBridgeModule_core_commands = { name: "core_commands", symbols: { setBridgeWakeProbe, handleBridgeWake, normalizeBrowserPilotCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, browserPilotCookiePartitionIdentity, browserPilotCookieIdentity, mergeBrowserPilotCookies, normalizeBrowserPilotCookieUrl, handleCookies, handleCDP, handlePersistentCDP, validateBrowserPilotBridgeProtocolMessage, resolveBrowserPilotCoreCommandHandler, dispatchBrowserPilotBridgeCommand, handleBatch } };

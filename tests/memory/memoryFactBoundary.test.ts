@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildMemoryAugmentationPlan } from "../../src/commands/observe/memoryAugmentation.ts";
 import { readBrowserMemory } from "../../src/commands/memory/reader.ts";
-import { recallMemory } from "../../src/commands/memory/store.ts";
+import { recallMemory, recordMemoryEntry, validateMemoryRecord } from "../../src/commands/memory/store.ts";
 import { validateMemoryRecordPayloadShape } from "../../src/commands/memory/evidence.ts";
 import { parseMemoryEntry, serializeMemoryEntry } from "../../src/memory/frontmatter.ts";
 import { readMemoryIndex, writeDerivedMemoryIndex } from "../../src/memory/indexStore.ts";
 import { memoryEntryDir, resolveMemoryPath } from "../../src/memory/paths.ts";
+import { clearResourceStore, registerBrowserResultResource, resolveResourceUri } from "../../src/resources/resourceRefs.ts";
 import type { MemoryEntry, MemoryRecordPayload } from "../../src/memory/types.ts";
 
 function makeMemoryRoot() {
@@ -32,6 +34,11 @@ function basePayload(overrides: Partial<MemoryRecordPayload> = {}): MemoryRecord
 
 function writeEntry(cwd: string, entry: Omit<MemoryEntry, "relPath" | "etag">) {
 	writeFileSync(resolveMemoryPath(cwd, memoryEntryDir(), `${entry.id}.md`), serializeMemoryEntry(entry), "utf8");
+}
+
+async function readEntry(cwd: string, id: string): Promise<MemoryEntry> {
+	const relPath = `${memoryEntryDir()}/${id}.md`;
+	return parseMemoryEntry(await readFile(resolveMemoryPath(cwd, relPath), "utf8"), relPath);
 }
 
 test("memory record validation accepts fact-only payloads", () => {
@@ -59,6 +66,62 @@ test("memory record validation rejects SOP and workflow content", () => {
 			(error: unknown) => (error as { code?: string }).code === "MEMORY_SCHEMA_INVALID" && /durable facts only/.test((error as Error).message),
 		);
 	}
+});
+
+test("memory record writes fact entries and recall/read preserve URI behavior", async () => {
+	const cwd = makeMemoryRoot();
+	const recorded = await recordMemoryEntry({ cwd, payload: basePayload() });
+	assert.equal(recorded.entry.kind, "fact");
+	assert.equal(recorded.index.entries.length, 1);
+	assert.match(recorded.entry.relPath, /^facts[\\/]/);
+	const readBack = await readEntry(cwd, recorded.entry.id);
+	assert.equal(readBack.body.trim(), basePayload().body);
+	const recall = await recallMemory({ cwd, url: "https://example.test/account/profile", query: "account portal" });
+	assert.equal(recall.totalMatches, 1);
+	assert.equal(recall.cards[0]?.id, recorded.entry.id);
+	assert.match(recall.cards[0]?.handles[0] ?? "", /^browser-memory:\/\/fact\//);
+	assert.match(recall.cards[0]?.body ?? "", /available at \/account/);
+	const readResult = await readBrowserMemory({ cwd, uri: `browser-memory://fact/${recorded.entry.id}`, mode: "json" });
+	assert.equal(readResult.mode, "json");
+	assert.equal(((readResult.value as { frontmatter?: { id?: string } }).frontmatter ?? {}).id, recorded.entry.id);
+});
+
+test("memory record dedups exact facts and reports merely similar candidates", async () => {
+	const cwd = makeMemoryRoot();
+	const first = await recordMemoryEntry({ cwd, payload: basePayload({ title: "Account portal URL", body: "The account portal lives at /account." }) });
+	const similar = await validateMemoryRecord({ cwd, payload: basePayload({ title: "Account portal location", body: "The account portal lives at /account for the region." }) });
+	assert.deepEqual(similar.existingIds, []);
+	assert.deepEqual(similar.duplicateCandidates.map((item) => item.id), [first.entry.id]);
+	const exact = await recordMemoryEntry({ cwd, payload: basePayload({ title: "Account portal URL", body: "The account portal lives at /account." }) });
+	assert.deepEqual(exact.supersededIds, [first.entry.id]);
+});
+
+test("memory recall freshOnly filters entries without profile anchors", async () => {
+	const cwd = makeMemoryRoot();
+	await recordMemoryEntry({ cwd, payload: basePayload() });
+	const normal = await recallMemory({ cwd, url: "https://example.test/account", query: "account portal" });
+	assert.equal(normal.totalMatches, 1);
+	const freshOnly = await recallMemory({ cwd, url: "https://example.test/account", query: "account portal", freshOnly: true });
+	assert.equal(freshOnly.totalMatches, 0);
+});
+
+test("memory validation returns evidence expiry warnings for near-expiry browser-result refs", async () => {
+	clearResourceStore();
+	const cwd = makeMemoryRoot();
+	const artifactPath = resolveMemoryPath(cwd, "evidence.json");
+	writeFileSync(artifactPath, JSON.stringify({ ok: true }), "utf8");
+	const uri = registerBrowserResultResource({ kind: "evidence", artifactPath, name: "evidence" });
+	const resource = resolveResourceUri(uri);
+	assert.ok(resource);
+	resource.expiresAt = Date.now() + 60_000;
+	const validated = await validateMemoryRecord({
+		cwd,
+		resolver: async () => ({ ok: true, path: artifactPath }),
+		payload: basePayload({ evidenceRefs: [uri] }),
+	});
+	assert.equal(validated.evidenceExpiry.length, 1);
+	assert.match(validated.warnings[0] ?? "", /expires/);
+	clearResourceStore();
 });
 
 test("browser_observe memory augmentation surfaces matched facts only", async () => {

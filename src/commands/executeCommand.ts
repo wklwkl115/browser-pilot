@@ -2,9 +2,6 @@ import { Type } from "typebox";
 import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { nextActionsForExecutionEffect } from "../kernels/evidence/distill/recovery.js";
-import { buildScanScript } from "../scan/buildScanScript.js";
-import { createBrowserAbmlIntegration } from "../browser-command-runtime/abml/integration.js";
-import { compactError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 import { compactExecutionEffect, buildExecutionJournal, type ExecuteEffect } from "./executionJournal.js";
@@ -16,50 +13,16 @@ import { summarizeGenericValue } from "./summaries/index.js";
 import { artifactFallbackName, buildActiveContext, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
+import { buildExecuteMonitorMetadata, executeJavaScriptWithMonitor, monitorTimeoutMs, readExecuteMonitorScan, type ExecuteMonitorMetadata } from "./execute/monitorAdapter.js";
 
 const PROGRAM_MAX_FRAMES = 60;
 const PROGRAM_WARNING_THRESHOLD = 30;
 const PROGRAM_NAV_WARNING = "page navigated — changed count is unreliable; use browser_wait + baseline observe for post-navigation change detection";
 
-type MonitorScanResult = {
-	ok: boolean;
-	content?: string;
-	url?: string;
-	error?: Record<string, unknown>;
-	source?: "abml-read" | "legacy-scan";
+type ExecuteResultWithFeedback = BrowserBridgeExecutionResult & {
+	effect?: ExecuteEffect;
+	monitor?: ExecuteMonitorMetadata;
 };
-
-type MonitorMetadata = {
-	url?: string;
-	beforeOk: boolean;
-	afterOk: boolean;
-	beforeChars: number;
-	afterChars: number;
-	changed: number;
-	top_change?: string;
-	navigated?: boolean;
-	/** When true, `changed` is unreliable due to page navigation. */
-	changedReliable?: boolean;
-	/** Human-readable warning surfaced when the monitor detects navigation. */
-	warning?: string;
-	afterUnreliable?: boolean;
-	urlBefore?: string;
-	urlAfter?: string;
-	beforeError?: Record<string, unknown>;
-	afterError?: Record<string, unknown>;
-	beforeSource?: "abml-read" | "legacy-scan";
-	afterSource?: "abml-read" | "legacy-scan";
-};
-
-function textLines(value: unknown): string[] {
-	return String(value || "").split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
-}
-
-function diffScanContent(before: unknown, after: unknown): { changed: number; top_change?: string } {
-	const beforeSet = new Set(textLines(before));
-	const added = textLines(after).filter((line) => !beforeSet.has(line));
-	return { changed: added.length, top_change: added[0]?.slice(0, 2_000) };
-}
 
 function detectCommandLikeScript(script: string): boolean {
 	const trimmed = script.trim();
@@ -107,65 +70,6 @@ export function executeResultNeedsArtifact(value: unknown): boolean {
 	return !!executeArtifactHints(isRecord(value) ? value.data : undefined);
 }
 
-async function monitorScan(server: Awaited<ReturnType<CommandRegistrarContext["ensureStarted"]>>, scanScript: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number }): Promise<MonitorScanResult> {
-	try {
-		const runtime = createBrowserAbmlIntegration(server, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs, maxChars: 50_000 });
-		const abml = await runtime.readStructure({ browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs, maxChars: 50_000 });
-		if (abml?.ok && abml.data && typeof abml.data === "object") {
-			const summary = (abml.data as Record<string, unknown>).summary as Record<string, unknown> | undefined;
-			const content = typeof summary?.textPreview === "string" ? summary.textPreview : JSON.stringify(abml.entities ?? [], null, 2);
-			const url = typeof summary?.url === "string" ? summary.url : undefined;
-			return { ok: true, content, url, source: "abml-read" };
-		}
-		const result = await server.executeJavaScript(scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs });
-		const content = (result.data as Record<string, unknown> | undefined)?.content;
-		return { ok: true, content: typeof content === "string" ? content : undefined, source: "legacy-scan" };
-	} catch (error) {
-		return { ok: false, error: compactError(error, "MONITOR_SCAN_FAILED") };
-	}
-}
-
-type ExecuteResultWithFeedback = BrowserBridgeExecutionResult & {
-	effect?: ExecuteEffect;
-	monitor?: MonitorMetadata;
-};
-
-async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<CommandRegistrarContext["ensureStarted"]>>, script: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number; targetRefs?: ExecuteStdlibTargetRef[] }): Promise<ExecuteResultWithFeedback> {
-	const monitorTimeoutMs = Math.min(Math.max(500, options.timeoutMs), 5_000);
-	const scanScript = buildScanScript({ textOnly: false, maxChars: 50_000, maxNodes: 3_000 });
-	const before = await monitorScan(server, scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: monitorTimeoutMs });
-	const effectTabId = resolveLocalTargetTabId(server, options.tabId, options.browserSessionId);
-	const executed = await withExecutionEffect(server, { browserSessionId: options.browserSessionId, tabId: effectTabId, timeoutMs: options.timeoutMs, targetRefs: options.targetRefs }, () => server.executeJavaScript(script, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs }));
-	const after = await monitorScan(server, scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: monitorTimeoutMs });
-	const diff = before.ok && after.ok ? diffScanContent(before.content, after.content) : { changed: 0, top_change: undefined };
-	// A script that navigates/reloads makes the same-document line diff meaningless: the after-read
-	// races the navigation and often sees no NEW lines → a misleading `changed: 0`. `summary.url` comes
-	// from the page's location.href (updated synchronously on assignment), so a url change is the reliable
-	// signal. Flag it so `changed: 0` is never read as "nothing happened" (observed in a real agent
-	// session: a click that navigated to the next chapter reported changed:0). For navigation-level change
-	// detection use browser_wait + a baseline observe (treeDiff), not monitor.
-	const navigated = !!(before.url && after.url && before.url !== after.url);
-	const afterUnreliable = before.ok && !after.ok;
-	return {
-		...executed.result,
-		effect: executed.effect,
-		monitor: {
-			...(after.url || before.url ? { url: after.url ?? before.url } : {}),
-			beforeOk: before.ok,
-			afterOk: after.ok,
-			beforeChars: typeof before.content === "string" ? before.content.length : 0,
-			afterChars: typeof after.content === "string" ? after.content.length : 0,
-			...diff,
-			...(navigated ? { navigated: true, changedReliable: false, warning: "page navigated — changed count is unreliable; use browser_wait + baseline observe for post-navigation change detection", urlBefore: before.url, urlAfter: after.url } : {}),
-			...(afterUnreliable ? { afterUnreliable: true } : {}),
-			beforeError: before.error,
-			afterError: after.error,
-			beforeSource: before.source,
-			afterSource: after.source,
-		},
-	};
-}
-
 export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_execute",
@@ -199,8 +103,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					const rawTargetRef = targetTabId(params);
 					const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
 					const monitorRequested = params.monitor === true;
-					const scanScript = monitorRequested ? buildScanScript({ textOnly: false, maxChars: 50_000, maxNodes: 3_000 }) : undefined;
-					const monitorTimeoutMs = Math.min(Math.max(500, timeoutMs), 5_000);
+					const scanTimeoutMs = monitorTimeoutMs(timeoutMs);
 					const { result: programOutcome, operation } = await withTrackedOperation(server, {
 						commandName: "browser_execute",
 						command: "program",
@@ -212,7 +115,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 						leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
 					}, _onUpdate, async (handle) => {
 						await handle.update({ progress: 15 });
-						const before = scanScript ? await monitorScan(server, scanScript, { browserSessionId, tabId: rawTargetRef, timeoutMs: monitorTimeoutMs }) : undefined;
+						const before = monitorRequested ? await readExecuteMonitorScan(server, { browserSessionId, tabId: rawTargetRef, timeoutMs: scanTimeoutMs }) : undefined;
 						const programCtx: ProgramContext = {
 							server,
 							tabId,
@@ -226,29 +129,15 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 						};
 						// Aggregate effect tracking across the whole program (same signal machinery as the script path).
 						const { result: programResult, effect } = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs, targetRefs: collectProgramTargetRefs(program) as unknown as ExecuteStdlibTargetRef[] }, () => executeProgram(program, programCtx));
-						const after = scanScript ? await monitorScan(server, scanScript, { browserSessionId, tabId: rawTargetRef, timeoutMs: monitorTimeoutMs }) : undefined;
+						const after = monitorRequested ? await readExecuteMonitorScan(server, { browserSessionId, tabId: rawTargetRef, timeoutMs: scanTimeoutMs }) : undefined;
 						await handle.update({ progress: 85 });
 						return { programResult, effect, before, after };
 					});
 					const { programResult, effect, before, after } = programOutcome;
 					const frames = Array.isArray(programResult.frames) ? programResult.frames : [];
-					let monitor: MonitorMetadata | undefined;
+					let monitor: ExecuteMonitorMetadata | undefined;
 					if (monitorRequested && before && after) {
-						const diff = before.ok && after.ok ? diffScanContent(before.content, after.content) : { changed: 0, top_change: undefined };
-						const navigated = !!(before.url && after.url && before.url !== after.url);
-						monitor = {
-							...(after.url || before.url ? { url: after.url ?? before.url } : {}),
-							beforeOk: before.ok,
-							afterOk: after.ok,
-							beforeChars: typeof before.content === "string" ? before.content.length : 0,
-							afterChars: typeof after.content === "string" ? after.content.length : 0,
-							...diff,
-							...(navigated ? { navigated: true, changedReliable: false, warning: PROGRAM_NAV_WARNING, urlBefore: before.url, urlAfter: after.url } : {}),
-							beforeError: before.error,
-							afterError: after.error,
-							beforeSource: before.source,
-							afterSource: after.source,
-						};
+						monitor = buildExecuteMonitorMetadata(before, after, { navigationWarning: PROGRAM_NAV_WARNING });
 					}
 					let actionRef: string | undefined;
 					const lastPhysical = [...frames].reverse().find((f) => { const k = String(f.kind ?? ""); return k.startsWith("mouse:") || k.startsWith("key:") || k === "text"; });

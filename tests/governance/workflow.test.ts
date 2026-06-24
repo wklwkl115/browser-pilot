@@ -12,6 +12,8 @@ const codeWikiPath = path.join(root, "CODE_WIKI.md");
 const commandSharedPath = path.join(root, "src/commands/commandShared.ts");
 const commandMetadataPath = path.join(root, "src/apps/cli/commandMetadata.ts");
 const commandRuntimePath = path.join(root, "src/commands/commandRuntime.ts");
+const kernelRoot = path.join(root, "src", "kernels");
+const sessionKernelRoot = path.join(kernelRoot, "session");
 
 function text(filePath: string) {
 	return readFileSync(filePath, "utf8");
@@ -104,10 +106,24 @@ test("code wiki documents memory fact-only behavior and observe fact exposure", 
 	assert.match(wiki, /browser_observe[\s\S]{0,160}fact memory/i);
 });
 
+test("code wiki documents the session kernel node crypto exception", () => {
+	const wiki = text(codeWikiPath);
+	assert.match(wiki, /src\/kernels\/session\/\*[\s\S]{0,120}node:crypto/);
+	assert.match(wiki, /randomUUID[\s\S]{0,80}randomBytes[\s\S]{0,80}createHash/);
+});
+
 test("kernel source stays isolated from runtime, command, and bridge layers", () => {
-	const kernelRoot = path.join(root, "src", "kernels");
 	const forbidden = /from\s+["'](?:\.\.\/)+(?:commands|bridge|browser-runtime|browser-command-runtime)\//;
 	for (const filePath of walkSourceFiles(kernelRoot)) {
 		assert.doesNotMatch(text(filePath), forbidden, path.relative(root, filePath));
+	}
+});
+
+test("only session kernel may import node crypto", () => {
+	const cryptoImport = /from\s+["']node:crypto["']/;
+	for (const filePath of walkSourceFiles(kernelRoot)) {
+		const relative = path.relative(root, filePath);
+		if (filePath.startsWith(`${sessionKernelRoot}${path.sep}`)) continue;
+		assert.doesNotMatch(text(filePath), cryptoImport, relative);
 	}
 });

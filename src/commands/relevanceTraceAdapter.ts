@@ -1,10 +1,10 @@
-import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
+import type { BrowserCommandRelevanceTracePort } from "../ports/BrowserCommandRuntimePort.js";
 import type { BrowserCommandDefinition, BrowserCommandSink } from "./commandDefinition.js";
 import { isRecord } from "../utils/records.js";
 import { withDeprecatedParamStrip } from "./prepareArguments.js";
 import { extractToolRelevanceTerms } from "./relevanceTaps.js";
 
-export function withRelevanceTraceTap(delegate: BrowserCommandSink, server: BrowserCommandRuntimePort): BrowserCommandSink {
+export function withRelevanceTraceTap(delegate: BrowserCommandSink, server: BrowserCommandRelevanceTracePort): BrowserCommandSink {
 	return {
 		define(definition: BrowserCommandDefinition) {
 			const preparedDefinition = withDeprecatedParamStrip(definition);

@@ -396,7 +396,7 @@ Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向�
 
 ### 5.6 `src/kernels`
 
-Kernels 是纯逻辑层。这里的代码不做浏览器 I/O、不读写文件、不依赖 Node-only API、不依赖 runtime/commands/bridge。
+Kernels 是纯逻辑层。这里的代码不做浏览器 I/O、不读写文件、不依赖 runtime/commands/bridge。除 `src/kernels/session/*` 可显式导入 `node:crypto` 用于随机 ID 与不可逆诊断哈希外，kernel 不依赖 Node-only API。
 
 主要子目录：
 
@@ -736,14 +736,16 @@ Native command schema 源头是 [`src/bridge/protocol/native-command.schema.json
 
 ### 9.1 Kernel 纯边界
 
-`src/kernels/*`，尤其是 `src/kernels/abml/*`，必须保持纯逻辑：
+`src/kernels/*`，尤其是 `src/kernels/abml/*`，必须保持纯逻辑。`src/kernels/session/*` 是唯一允许直接使用 `node:crypto` 的 kernel 子目录，仅限 `randomUUID`/`randomBytes` 生成 session/lease/operation/snapshot ID 或 salt，以及 `createHash` 生成不可逆诊断哈希；不得扩展到文件、进程、网络、browser、commands、bridge 或 runtime 依赖。
 
-- 不做 browser I/O；
-- 不调用 CDP；
-- 不读写文件；
-- 不 spawn 进程；
-- 不依赖 Node-only API；
-- 不依赖 commands、bridge、browser-runtime；
+通用 kernel 边界：
+
+- 不做 browser I/O;
+- 不调用 CDP;
+- 不读写文件;
+- 不 spawn 进程;
+- 不依赖 Node-only API，除上述 `src/kernels/session/*` 的 `node:crypto` 例外;
+- 不依赖 commands、bridge、browser-runtime;
 - 不写 per-site/per-framework 分支。
 
 依赖方向只能是：
@@ -989,6 +991,8 @@ Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级
 - [`src/resources`](src/resources)
 - [`src/memory`](src/memory)
 - [`src/commands/memory`](src/commands/memory)
+
+`src/commands/memory/store.ts` 保持 record/validate/recall 的入口职责；payload fact-only validation 与 evidence/profile enrichment 位于 `validation.ts`/`evidence.ts`，磁盘写入、tombstone、bounded body read 位于 `repository.ts`，recall ranking 与 dedup/similar scoring 位于 `ranking.ts`。这些拆分不改变 `.browser-pilot/memory` 下的 frontmatter、index、URI 或 tombstone 兼容格式。
 
 ### 12.4 TypeScript 配置边界
 

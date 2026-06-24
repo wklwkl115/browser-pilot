@@ -234,44 +234,89 @@ export type CommandTemporalProfileSampleInput = {
 	diagnostics?: Record<string, unknown>;
 };
 
-export interface BrowserCommandRuntimePort {
+export interface BrowserCommandSnapshotPort {
 	snapshot(options?: { browserSessionId?: string }): BrowserCommandRuntimeSnapshot;
 	getTabs(options?: { includeDisconnected?: boolean }): BrowserTabLike[];
 	refreshTabs(timeoutMs?: number, options?: { browserSessionId?: string }): Promise<BrowserTabLike[]>;
+	waitForExtensionReconnect(previousClientId: string | undefined, timeoutMs?: number): Promise<BrowserCommandRuntimeSnapshot>;
+}
+
+export interface BrowserCommandTargetPort {
 	resolveTargetTabId(value: unknown, browserSessionId?: string): number;
+}
+
+export interface BrowserCommandDispatchPort extends BrowserCommandTargetPort {
 	sendCommand(command: BrowserRuntimeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean }): Promise<BrowserBridgeExecutionResult>;
 	executeJavaScript(script: string, options?: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number }): Promise<BrowserBridgeExecutionResult>;
+}
+
+export interface BrowserCommandTabControlPort {
 	switchTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string }): Promise<BrowserBridgeExecutionResult>;
 	createTab(url: string, active?: boolean, timeoutMs?: number, options?: { browserSessionId?: string; incognito?: boolean }): Promise<BrowserBridgeExecutionResult>;
 	closeTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string }): Promise<BrowserBridgeExecutionResult>;
-	waitForExtensionReconnect(previousClientId: string | undefined, timeoutMs?: number): Promise<BrowserCommandRuntimeSnapshot>;
+}
+
+export interface BrowserCommandSessionPort {
 	listBrowserSessions(): unknown[];
 	createBrowserSession(name?: string): unknown;
 	selectBrowserSession(browserSessionId: string): unknown;
 	closeBrowserSession(browserSessionId: string): unknown;
 	attachTabToBrowserSession(tabId: number | string, options?: { browserSessionId?: string; browserId?: string }): BrowserTabLike;
 	detachTabFromBrowserSession(tabId: number | string, options?: { browserSessionId?: string }): unknown;
+	selectBrowser(browserId: string, options?: { browserSessionId?: string }): unknown;
+}
+
+export interface BrowserCommandLeasePort {
 	leaseTab(tabId: number | string, options?: { browserSessionId?: string }): CommandTabLeaseInfo;
 	releaseTab(tabId: number | string, options?: { browserSessionId?: string }): CommandTabLeaseInfo | undefined;
 	acquireUiLock(browserSessionId: string | undefined, commandName: string): CommandUiLockInfo | Promise<CommandUiLockInfo>;
 	releaseUiLock(browserSessionId: string | undefined): CommandUiLockInfo | undefined;
-	selectBrowser(browserId: string, options?: { browserSessionId?: string }): unknown;
+	queueDepth(browserSessionId: string | undefined, tabId: number | undefined): number | undefined;
+	leaseOwnerHash(browserSessionId: string | undefined, tabId: number | undefined): string | undefined;
+}
+
+export interface BrowserCommandObservationPort {
 	createObservationSnapshot(snapshot: Omit<CommandObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): CommandObservationSnapshotInfo;
 	getObservationSnapshot(snapshotId: string): CommandObservationSnapshotInfo | undefined;
 	listObservationSnapshots(): CommandObservationSnapshotInfo[];
+}
+
+export interface BrowserCommandOperationPort {
 	beginOperation(operation: Omit<CommandActiveOperationInfo, "operationId" | "startedAt" | "updatedAt"> & { operationId?: string }): CommandActiveOperationInfo;
 	updateOperation(operationId: string, patch: Partial<Omit<CommandActiveOperationInfo, "operationId" | "startedAt">>): CommandActiveOperationInfo | undefined;
 	finishOperation(operationId: string): CommandActiveOperationInfo | undefined;
-	queueDepth(browserSessionId: string | undefined, tabId: number | undefined): number | undefined;
-	leaseOwnerHash(browserSessionId: string | undefined, tabId: number | undefined): string | undefined;
+}
+
+export interface BrowserCommandPerceptionPort {
 	getPerceptionLedgerFrame?(key: CommandPerceptionLedgerKey): CommandPerceptionLedgerFrame | undefined;
 	getRecentPerceptionLedgerFrames?(key: CommandPerceptionLedgerKey, limit?: number): CommandPerceptionLedgerFrame[];
 	recordPerceptionLedgerFrame?(frame: CommandPerceptionLedgerFrame): CommandPerceptionLedgerFrame;
 	recordPerceptionTraceTerms?(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>): CommandPerceptionTraceSnapshot;
 	perceptionTraceSnapshot?(browserSessionId?: string): CommandPerceptionTraceSnapshot;
+}
+
+export interface BrowserCommandTemporalPort {
 	buildTemporalProfileSample?(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample;
 	recordTemporalProfileSample?(sample: CommandTemporalProfileSample, options?: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string }): Promise<unknown>;
+}
+
+export interface BrowserCommandIntentRefPort {
 	getIntentRefRegistry?(): import("../kernels/session/intentRefRegistry.js").IntentRefRegistry | undefined;
 }
+
+export interface BrowserCommandRuntimePort extends
+	BrowserCommandSnapshotPort,
+	BrowserCommandDispatchPort,
+	BrowserCommandTabControlPort,
+	BrowserCommandSessionPort,
+	BrowserCommandLeasePort,
+	BrowserCommandObservationPort,
+	BrowserCommandOperationPort,
+	BrowserCommandPerceptionPort,
+	BrowserCommandTemporalPort,
+	BrowserCommandIntentRefPort {
+}
+
+export type BrowserCommandRelevanceTracePort = Pick<BrowserCommandPerceptionPort, "recordPerceptionTraceTerms">;
 
 export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo };
