@@ -5,13 +5,18 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildMemoryAugmentationPlan } from "../../src/commands/observe/memoryAugmentation.ts";
-import { readBrowserMemory } from "../../src/commands/memory/reader.ts";
+import { readBrowserMemory, readBrowserMemoryResource } from "../../src/commands/memory/reader.ts";
 import { recallMemory, recordMemoryEntry, validateMemoryRecord } from "../../src/commands/memory/store.ts";
 import { validateMemoryRecordPayloadShape } from "../../src/commands/memory/evidence.ts";
+import { drainMemoryProfileFlushes, recordMemoryProfileFrame, readCachedMemoryProfile } from "../../src/memory/profileService.ts";
 import { parseMemoryEntry, serializeMemoryEntry } from "../../src/memory/frontmatter.ts";
 import { readMemoryIndex, writeDerivedMemoryIndex } from "../../src/memory/indexStore.ts";
+import { hmacMemoryStamp } from "../../src/memory/hashStamp.ts";
 import { memoryEntryDir, resolveMemoryPath } from "../../src/memory/paths.ts";
-import { clearResourceStore, registerBrowserResultResource, resolveResourceUri } from "../../src/resources/resourceRefs.ts";
+import { memoryProfileFilePath, readMemoryProfile, writeMemoryProfile } from "../../src/memory/profileStore.ts";
+import { memorySecretPath, readMemorySecret, readOrCreateMemorySecret } from "../../src/memory/secret.ts";
+import { resolveBrowserResultEvidence } from "../../src/resources/browserResultEvidence.ts";
+import { clearResourceStore, registerBrowserResultResource, resolveRefUriDetailed, resolveResourceUri } from "../../src/resources/resourceRefs.ts";
 import type { MemoryEntry, MemoryRecordPayload } from "../../src/memory/types.ts";
 
 function makeMemoryRoot() {
@@ -94,6 +99,165 @@ test("memory record dedups exact facts and reports merely similar candidates", a
 	assert.deepEqual(similar.duplicateCandidates.map((item) => item.id), [first.entry.id]);
 	const exact = await recordMemoryEntry({ cwd, payload: basePayload({ title: "Account portal URL", body: "The account portal lives at /account." }) });
 	assert.deepEqual(exact.supersededIds, [first.entry.id]);
+});
+
+test("memory recall is isolated by cwd and profile files stay under each cwd", async () => {
+	const firstCwd = makeMemoryRoot();
+	const secondCwd = makeMemoryRoot();
+	await recordMemoryEntry({ cwd: firstCwd, payload: basePayload({ title: "First cwd portal", body: "The isolated portal lives in cwd one." }) });
+	const firstRecall = await recallMemory({ cwd: firstCwd, url: "https://example.test/account", query: "isolated portal" });
+	const secondRecall = await recallMemory({ cwd: secondCwd, url: "https://example.test/account", query: "isolated portal" });
+	assert.equal(firstRecall.totalMatches, 1);
+	assert.equal(secondRecall.totalMatches, 0);
+	await writeMemoryProfile(firstCwd, { schemaVersion: 1, origin: "https://example.test", sessions: [], termStats: {}, urls: [], strikes: {} });
+	assert.notEqual(memoryProfileFilePath(firstCwd, "https://example.test"), memoryProfileFilePath(secondCwd, "https://example.test"));
+	assert.deepEqual((await readMemoryProfile(secondCwd, "https://example.test")).profile, undefined);
+});
+
+test("memory profile reads report malformed profile metadata without crossing cwd scope", async () => {
+	const cwd = makeMemoryRoot();
+	const filePath = memoryProfileFilePath(cwd, "https://example.test");
+	mkdirSync(path.dirname(filePath), { recursive: true });
+	writeFileSync(filePath, JSON.stringify({ schemaVersion: 1, origin: "https://other.test", sessions: [], urls: [], termStats: {}, strikes: {} }), "utf8");
+	const result = await readMemoryProfile(cwd, "https://example.test");
+	assert.equal(result.profile, undefined);
+	assert.equal(result.warning, "memory_profile_unreadable");
+});
+
+test("memory profile service recovers from malformed disk data without dropping pending frames", async () => {
+	const cwd = makeMemoryRoot();
+	const filePath = memoryProfileFilePath(cwd, "https://example.test");
+	mkdirSync(path.dirname(filePath), { recursive: true });
+	writeFileSync(filePath, "{not-json", "utf8");
+	await recordMemoryProfileFrame({
+		cwd,
+		browserSessionId: "session-1",
+		frame: {
+			key: { browserSessionId: "session-1", navigationEpoch: "nav-1" },
+			snapshotId: "snapshot-1",
+			capturedAt: 1000,
+			facts: { "bp-ref://element/account": { versionStamp: "account-visible-v1", stableStamp: "account-visible", lastShownGranularity: "full" } },
+			pageFingerprint: { changeSeq: 7, url: "https://example.test/account?token=hidden", readyState: "complete", visibleCount: 4, interactiveCount: 2 },
+		},
+		trace: {
+			latestSeq: 3,
+			terms: [
+				{ term: "account-portal", kind: "selectorLiteral", at: 1000, seq: 1 },
+				{ term: "password=hunter2", kind: "selectorLiteral", at: 1001, seq: 2 },
+				{ term: "customer@example.test", kind: "selectorLiteral", at: 1002, seq: 3 },
+			],
+		},
+	});
+	await drainMemoryProfileFlushes();
+	const profile = (await readMemoryProfile(cwd, "https://example.test")).profile;
+	assert.ok(profile);
+	assert.deepEqual(profile.urls.map((item) => item.canonicalUrl), ["https://example.test/account"]);
+	assert.equal(profile.urls[0]?.fingerprintSummary?.readyState, "complete");
+	assert.ok(Object.values(profile.urls[0]?.factStamps ?? {}).every((stamp) => !stamp.includes("account-visible")));
+	assert.ok(Object.values(profile.termStats).some((term) => term.term === "account-portal"));
+	assert.ok(Object.values(profile.termStats).every((term) => !/hunter2|customer@example\.test/i.test(term.term)));
+	assert.deepEqual((await readCachedMemoryProfile(cwd, "https://other.test"))?.urls ?? [], []);
+});
+
+test("memory secrets stay cwd scoped and stamps do not echo raw stable values", async () => {
+	const firstCwd = makeMemoryRoot();
+	const secondCwd = makeMemoryRoot();
+	const firstSecret = await readOrCreateMemorySecret(firstCwd);
+	const secondSecret = await readOrCreateMemorySecret(secondCwd);
+	assert.ok(firstSecret);
+	assert.ok(secondSecret);
+	assert.equal((await readMemorySecret(firstCwd))?.toString("hex"), firstSecret.toString("hex"));
+	assert.notEqual(firstSecret.toString("hex"), secondSecret.toString("hex"));
+	assert.notEqual(memorySecretPath(firstCwd), memorySecretPath(secondCwd));
+	const stamp = await hmacMemoryStamp(firstCwd, "https://example.test", "raw-version-stamp");
+	assert.match(stamp ?? "", /^[a-f0-9]{32}$/);
+	assert.notEqual(stamp, "raw-version-stamp");
+});
+
+test("memory read rejects traversal-like fact URIs through normalized not-found handling", async () => {
+	const cwd = makeMemoryRoot();
+	const result = await readBrowserMemoryResource("browser-memory://fact/../../outside?mode=json", cwd);
+	assert.equal(result.ok, false);
+	assert.equal(result.code, "MEMORY_ENTRY_NOT_FOUND");
+});
+
+test("memory index derivation ignores malformed records while preserving valid facts", async () => {
+	const cwd = makeMemoryRoot();
+	const now = new Date().toISOString();
+	writeFileSync(resolveMemoryPath(cwd, memoryEntryDir(), "broken.md"), "---\nschemaVersion: 1\nid: broken\ntitle: Broken persisted fact\nkind: workflow\ntriggers:\n  - valid persisted\nscopeKind: origin\nscopeKey: example.test\nsensitivity: local\nstatus: active\nconfidence: verified\nverifiedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\nevidenceRefs: []\n---\nMalformed legacy body.\n", "utf8");
+	writeEntry(cwd, {
+		schemaVersion: 1,
+		id: "valid-fact",
+		title: "Valid persisted fact",
+		kind: "fact",
+		triggers: ["valid persisted"],
+		scopeKind: "origin",
+		scopeKey: "example.test",
+		sensitivity: "local",
+		status: "active",
+		confidence: "verified",
+		verifiedAt: now,
+		updatedAt: now,
+		evidenceRefs: [],
+		body: "Only the valid persisted fact is indexed.",
+	});
+	const index = await writeDerivedMemoryIndex(cwd);
+	assert.deepEqual(index.entries.map((entry) => entry.id), ["valid-fact"]);
+	const recall = await recallMemory({ cwd, url: "https://example.test/path", query: "valid persisted" });
+	assert.equal(recall.totalMatches, 1);
+	assert.equal(recall.cards[0]?.id, "valid-fact");
+});
+
+test("memory recall ranking prefers exact scoped facts and omits superseded duplicates", async () => {
+	const cwd = makeMemoryRoot();
+	const first = await recordMemoryEntry({ cwd, payload: basePayload({ title: "Portal canonical URL", body: "The portal canonical URL is /account." }) });
+	const replacement = await recordMemoryEntry({ cwd, payload: basePayload({ title: "Portal canonical URL", body: "The portal canonical URL is /account." }) });
+	await recordMemoryEntry({ cwd, payload: basePayload({ scopeKind: "project", scopeKey: "browser-pilot", title: "Portal project note", body: "The portal project note is less specific." }) });
+	const recall = await recallMemory({ cwd, url: "https://example.test/account", query: "portal" });
+	assert.equal(recall.cards[0]?.id, replacement.entry.id);
+	assert.equal(recall.cards.some((card) => card.id === first.entry.id), false);
+	assert.match(recall.cards[0]?.matchReason ?? "", /exact-origin/);
+});
+
+test("browser-result resources expose stable handles and stale freshness after artifact rewrites", async () => {
+	clearResourceStore();
+	const cwd = makeMemoryRoot();
+	const artifactPath = resolveMemoryPath(cwd, "resource.json");
+	writeFileSync(artifactPath, JSON.stringify({ version: 1 }), "utf8");
+	const uri = registerBrowserResultResource({ kind: "evidence", artifactPath, name: "resource" });
+	const resource = resolveResourceUri(uri);
+	assert.ok(resource);
+	assert.match(uri, /^browser-result:\/\//);
+	assert.doesNotMatch(uri, /resource\.json/);
+	const evidence = await resolveBrowserResultEvidence(uri);
+	assert.equal(evidence.ok, true);
+	assert.equal(evidence.ok ? evidence.path : undefined, path.normalize(artifactPath));
+	const fresh = resolveRefUriDetailed(resource.refId);
+	assert.equal(fresh.ok, true);
+	assert.equal(fresh.ok ? fresh.ref.fresh : undefined, true);
+	writeFileSync(artifactPath, JSON.stringify({ version: 2, changed: true }), "utf8");
+	const stale = resolveRefUriDetailed(resource.refId);
+	assert.equal(stale.ok, true);
+	assert.equal(stale.ok ? stale.ref.fresh : undefined, false);
+	const staleEvidence = await resolveBrowserResultEvidence(uri);
+	assert.equal(staleEvidence.ok, false);
+	assert.equal(staleEvidence.ok ? undefined : staleEvidence.code, "MEMORY_EVIDENCE_STALE");
+	const invalid = resolveRefUriDetailed("browser-result://missing-resource");
+	assert.equal(invalid.ok, false);
+	assert.equal(invalid.ok ? undefined : invalid.code, "HANDLE_NOT_FOUND");
+	const missingEvidence = await resolveBrowserResultEvidence("browser-result://missing-resource");
+	assert.equal(missingEvidence.ok, false);
+	assert.equal(missingEvidence.ok ? undefined : missingEvidence.code, "MEMORY_EVIDENCE_UNRESOLVABLE");
+	clearResourceStore();
+});
+
+test("memory validation rejects missing browser-result resources through resolver boundary", async () => {
+	clearResourceStore();
+	const cwd = makeMemoryRoot();
+	await assert.rejects(
+		validateMemoryRecord({ cwd, resolver: async () => ({ ok: false, code: "HANDLE_NOT_FOUND", error: "Resource not found" }), payload: basePayload({ evidenceRefs: ["browser-result://missing-resource"] }) }),
+		(error: unknown) => (error as { code?: string }).code === "HANDLE_NOT_FOUND" && /Resource not found/.test((error as Error).message),
+	);
 });
 
 test("memory recall freshOnly filters entries without profile anchors", async () => {

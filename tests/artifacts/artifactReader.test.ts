@@ -141,6 +141,35 @@ test("single-line sample windows preserve truncation metadata", async () => {
 	assert.equal(result.snippets[2]?.truncatedAfter, false);
 });
 
+test("missing artifact reads keep coded not-found recovery metadata", async () => {
+	const { cwd } = makeArtifactRoot();
+	await assert.rejects(
+		readBrowserArtifact({ path: ".browser-pilot/artifacts/missing.json", mode: "json" }, { cwd }),
+		(error: unknown) => error instanceof ArtifactReaderError && error.code === "ARTIFACT_NOT_FOUND" && Array.isArray((error.details as { recovery?: { nextActions?: unknown[] } }).recovery?.nextActions),
+	);
+});
+
+test("invalid json artifacts keep coded metadata without leaking content", async () => {
+	const { cwd, root } = makeArtifactRoot();
+	writeFileSync(path.join(root, "broken.json"), "{ not valid json", "utf8");
+	await assert.rejects(
+		readBrowserArtifact({ path: ".browser-pilot/artifacts/broken.json", mode: "json" }, { cwd }),
+		(error: unknown) => error instanceof ArtifactReaderError && error.code === "ARTIFACT_JSON_INVALID" && (error.details as { bytes?: number }).bytes === 16 && !JSON.stringify(error.details).includes("not valid json"),
+	);
+});
+
+test("absolute artifact reads are explicit while relative paths stay scoped to cwd", async () => {
+	const first = makeArtifactRoot();
+	const second = makeArtifactRoot();
+	const absolutePath = path.join(first.root, "shared.txt");
+	writeFileSync(absolutePath, "first cwd artifact\n", "utf8");
+	writeFileSync(path.join(second.root, "shared.txt"), "second cwd artifact\n", "utf8");
+	const relative = await readBrowserArtifact({ path: ".browser-pilot/artifacts/shared.txt" }, { cwd: second.cwd });
+	assert.match(relative.snippets[0]?.text ?? "", /second cwd/);
+	const absolute = await readBrowserArtifact({ path: absolutePath }, { cwd: second.cwd });
+	assert.match(absolute.snippets[0]?.text ?? "", /first cwd/);
+});
+
 test("artifactReader refactor target stays within the file-size budget", () => {
 	const filePath = path.join(process.cwd(), "src/artifacts/artifactReader.ts");
 	const lines = readFileSync(filePath, "utf8").split(/\r?\n/).length;

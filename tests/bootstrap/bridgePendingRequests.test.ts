@@ -26,6 +26,35 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const lastId = (ws: FakeSocket): string => String(ws.sent[ws.sent.length - 1].id);
 
+test("request timeout rejects and removes the pending snapshot entry", async () => {
+	const pr = newPending();
+	const ws = fakeSocket();
+	const promise = pr.send(ws, "slow", { tabId: 9, timeoutMs: 100 });
+	assert.equal(pr.snapshot().length, 1);
+	assert.equal(pr.snapshot()[0].tabId, 9);
+
+	await assert.rejects(promise, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+		assert.equal(error.code, "BRIDGE_TIMEOUT");
+		assert.equal(error.details?.debugCodePreview, "slow");
+		return true;
+	});
+	assert.equal(pr.snapshot().length, 0);
+});
+
+test("rejectAllStopped clears every pending request with a bridge stopped error", async () => {
+	const pr = newPending();
+	const ws = fakeSocket();
+	const first = pr.send(ws, "first", { tabId: 1, timeoutMs: 5_000 });
+	const second = pr.send(ws, "second", { tabId: 2, timeoutMs: 5_000 });
+	assert.equal(pr.snapshot().length, 2);
+
+	pr.rejectAllStopped();
+
+	await assert.rejects(first, (error: Error & { code?: string }) => error.code === "BRIDGE_STOPPED");
+	await assert.rejects(second, (error: Error & { code?: string }) => error.code === "BRIDGE_STOPPED");
+	assert.equal(pr.snapshot().length, 0);
+});
+
 test("drainClient holds an in-flight request, then fails it after the grace window", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();

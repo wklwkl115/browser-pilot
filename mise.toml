@@ -27,6 +27,10 @@ run = "node scripts/run-tests.mjs memory"
 description = "Run bootstrap + governance/workflow validation tests"
 run = "node scripts/run-tests.mjs governance"
 
+[tasks.coverage]
+description = "Generate a non-threshold Node test coverage report for the current suite"
+run = "node scripts/run-coverage.mjs all"
+
 [tasks.dev]
 description = "Fast developer validation for the current refactor scope"
 run = "node scripts/run-validation.mjs dev all"

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
 import { WebSocket } from "ws";
 import { BrowserBridgeServer } from "../../src/bridge/server/BrowserBridgeServer.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
@@ -19,6 +20,27 @@ async function withServer<T>(fn: (server: BrowserBridgeServer) => Promise<T>): P
 	}
 }
 
+async function listenBlocker(host = "127.0.0.1"): Promise<{ port: number; close: () => Promise<void> }> {
+	const server = http.createServer((_req, res) => {
+		res.writeHead(200);
+		res.end("busy");
+	});
+	await new Promise<void>((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(0, host, () => {
+			server.off("error", reject);
+			resolve();
+		});
+	});
+	const address = server.address();
+	assert.equal(typeof address, "object");
+	assert.ok(address);
+	return {
+		port: address.port,
+		close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+	};
+}
+
 async function connectExtension(server: BrowserBridgeServer, tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }]): Promise<WebSocket> {
 	const ws = new WebSocket(bridgeUrl(server));
 	await new Promise<void>((resolve, reject) => {
@@ -34,6 +56,43 @@ async function connectExtension(server: BrowserBridgeServer, tabs: Array<Record<
 	await server.waitForExtensionReady(undefined, 1_000);
 	return ws;
 }
+
+test("BrowserBridgeServer advances to the next configured port when the requested port is busy", async () => {
+	const blocker = await listenBlocker();
+	const server = new BrowserBridgeServer({ port: blocker.port, portRangeEnd: blocker.port + 1 });
+	try {
+		await server.start();
+		assert.equal(server.running, true);
+		assert.equal(server.requestedPort, blocker.port);
+		assert.equal(server.port, blocker.port + 1);
+		const health = await fetch(`http://${server.host}:${server.port}/health`).then((res) => res.json() as Promise<Record<string, unknown>>);
+		assert.equal(health.ok, true);
+		assert.equal(health.port, blocker.port + 1);
+	} finally {
+		await server.stop();
+		await blocker.close();
+	}
+});
+
+test("BrowserBridgeServer fails with diagnostics when the configured port range is exhausted", async () => {
+	const blocker = await listenBlocker();
+	const server = new BrowserBridgeServer({ port: blocker.port, portRangeEnd: blocker.port });
+	try {
+		await assert.rejects(server.start(), (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+			assert.equal(error.code, "BRIDGE_START_FAILED");
+			assert.equal(error.details?.host, "127.0.0.1");
+			assert.equal(error.details?.port, blocker.port);
+			assert.equal(error.details?.portRangeEnd, blocker.port);
+			assert.equal(error.details?.triedPortRange, String(blocker.port));
+			assert.match(String(error.details?.hint), /Check if other processes are using port/);
+			return true;
+		});
+		assert.equal(server.running, false);
+	} finally {
+		await server.stop();
+		await blocker.close();
+	}
+});
 
 test("BrowserBridgeServer command runtime port exposes snapshot, tabs, sessions, leases, operations and perception state", async () => {
 	await withServer(async (server) => {

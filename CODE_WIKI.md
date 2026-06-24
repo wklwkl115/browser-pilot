@@ -1007,7 +1007,7 @@ Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级
 
 ## 13. 测试体系
 
-测试使用 Node built-in test runner + `tsx`，脚本位于 [`scripts/run-tests.mjs`](scripts/run-tests.mjs)。
+测试使用 Node built-in test runner + `tsx`，脚本位于 [`scripts/run-tests.mjs`](scripts/run-tests.mjs)。覆盖率观测使用 Node 22 test runner 内置 V8 coverage，脚本位于 [`scripts/run-coverage.mjs`](scripts/run-coverage.mjs)，只生成报告与 `coverage/` 下的 V8 JSON，不设置全仓库硬阈值，也不改变默认测试或 `mise run affected` / `mise run verify` 行为。
 
 测试分组：
 
@@ -1025,6 +1025,8 @@ Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级
 node scripts/run-tests.mjs all
 node scripts/run-tests.mjs cli
 node --import tsx --test tests/bootstrap/smoke.test.ts
+mise run coverage
+node scripts/run-coverage.mjs all
 ```
 
 CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)，核心步骤是：

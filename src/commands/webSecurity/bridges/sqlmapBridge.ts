@@ -41,7 +41,7 @@ type SqlmapLauncher = {
 	source: "param" | "env" | "auto";
 };
 
-type SqlmapFinding = {
+export type SqlmapFinding = {
 	parameter?: string;
 	place?: string;
 	type?: string;
@@ -186,7 +186,7 @@ function previewText(text: string, maxChars = 1_000): string | undefined {
 	return trimmed.length > maxChars ? `${trimmed.slice(0, maxChars)}…` : trimmed;
 }
 
-function parseSqlmapOutput(text: string): {
+export function parseSqlmapOutput(text: string): {
 	vulnerable: boolean;
 	dbmsFingerprints: string[];
 	webServerOs?: string;
