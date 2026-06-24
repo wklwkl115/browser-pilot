@@ -60,17 +60,16 @@ export async function withMemoryLock<T>(cwd: string | undefined, fn: () => Promi
 
 export async function loadMemoryEntries(cwd: string | undefined): Promise<MemoryEntry[]> {
 	const root = resolveMemoryPath(cwd);
-	const files = [
-		...await walkFiles(path.join(root, memoryEntryDir("sop"))),
-		...await walkFiles(path.join(root, memoryEntryDir("fact"))),
-	].filter((file) => file.endsWith(".md"));
+	const files = (await walkFiles(path.join(root, memoryEntryDir()))).filter((file) => file.endsWith(".md"));
 	const entries: MemoryEntry[] = [];
 	for (const file of files) {
 		const relPath = path.relative(root, file).replace(/\\/g, "/");
-		const text = await readFile(file, "utf8");
-		const parsed = parseMemoryEntry(text, relPath);
-		parsed.etag = computeEtag(file);
-		entries.push(parsed);
+		try {
+			const text = await readFile(file, "utf8");
+			const parsed = parseMemoryEntry(text, relPath);
+			parsed.etag = computeEtag(file);
+			entries.push(parsed);
+		} catch { continue; }
 	}
 	return entries.sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -134,10 +133,33 @@ export async function writeDerivedMemoryIndex(cwd: string | undefined): Promise<
 	return index;
 }
 
+export function sanitizeMemoryIndex(index: MemoryIndex): MemoryIndex {
+	const entries = index.entries.filter((entry) => entry.kind === "fact").map((entry) => {
+		const handlePrefix = `browser-memory://fact/${entry.id}`;
+		return {
+			...entry,
+			kind: "fact" as const,
+			handles: entry.handles.filter((handle) => handle === handlePrefix || handle.startsWith(`${handlePrefix}?`)),
+		};
+	});
+	const ids = new Set(entries.map((entry) => entry.id));
+	const byScope: Record<string, string[]> = {};
+	for (const [key, values] of Object.entries(index.byScope ?? {})) {
+		const filtered = values.filter((id) => ids.has(id));
+		if (filtered.length) byScope[key] = filtered;
+	}
+	const routing: Record<string, string[]> = {};
+	for (const [key, values] of Object.entries(index.routing ?? {})) {
+		const filtered = values.filter((id) => ids.has(id));
+		if (filtered.length) routing[key] = filtered;
+	}
+	return { ...index, entries, byScope, routing };
+}
+
 export async function readMemoryIndex(cwd: string | undefined): Promise<MemoryIndex> {
 	const filePath = resolveMemoryPath(cwd, "index.json");
 	try {
-		return parseJsonOrThrow<MemoryIndex>(await readFile(filePath, "utf8"), filePath);
+		return sanitizeMemoryIndex(parseJsonOrThrow<MemoryIndex>(await readFile(filePath, "utf8"), filePath));
 	} catch {
 		return await writeDerivedMemoryIndex(cwd);
 	}
@@ -146,7 +168,7 @@ export async function readMemoryIndex(cwd: string | undefined): Promise<MemoryIn
 export async function readMemoryIndexNoRepair(cwd: string | undefined): Promise<{ index: MemoryIndex; warning?: string }> {
 	const filePath = resolveMemoryPath(cwd, "index.json");
 	try {
-		return { index: parseJsonOrThrow<MemoryIndex>(await readFile(filePath, "utf8"), filePath) };
+		return { index: sanitizeMemoryIndex(parseJsonOrThrow<MemoryIndex>(await readFile(filePath, "utf8"), filePath)) };
 	} catch (error) {
 		const code = (error as { code?: string } | undefined)?.code;
 		if (code === "ENOENT") return { index: EMPTY_MEMORY_INDEX };

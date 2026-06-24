@@ -10,30 +10,28 @@ import { readMemoryIndex } from "../../memory/indexStore.js";
 import { memoryEntryDir, resolveMemoryPath } from "../../memory/paths.js";
 import type { MemoryEntry, MemoryReadMode, MemoryReadResult } from "../../memory/types.js";
 
-function parseBrowserMemoryUri(uri: string): { kind: "index" | "sop" | "fact"; id?: string; etag?: string } | undefined {
+function parseBrowserMemoryUri(uri: string): { kind: "index" | "fact"; id?: string; etag?: string } | undefined {
 	const prefix = "browser-memory://";
 	if (!uri.startsWith(prefix)) return undefined;
 	const [pathPart, queryPart] = uri.slice(prefix.length).split("?");
 	const query = new URLSearchParams(queryPart || "");
 	if (pathPart === "index") return { kind: "index", etag: query.get("etag") || undefined };
 	const [kind, id] = pathPart.split("/");
-	if ((kind === "sop" || kind === "fact") && id) return { kind, id: normalizeMemoryEntryId(id), etag: query.get("etag") || undefined };
+	if (kind === "fact" && id) return { kind, id: normalizeMemoryEntryId(id), etag: query.get("etag") || undefined };
 	return undefined;
 }
 
-async function loadEntryById(cwd: string | undefined, id: string, kind?: "sop" | "fact"): Promise<{ entry: MemoryEntry; absPath: string }> {
+async function loadEntryById(cwd: string | undefined, id: string): Promise<{ entry: MemoryEntry; absPath: string }> {
 	const safeId = normalizeMemoryEntryId(id);
-	const dirs = kind ? [memoryEntryDir(kind)] : ["sop", "facts"] as const;
-	for (const dir of dirs) {
-		const abs = resolveMemoryPath(cwd, dir, `${safeId}.md`);
-		try {
-			const text = await readFile(abs, "utf8");
-			const rel = path.relative(resolveMemoryPath(cwd), abs).replace(/\\/g, "/");
-			const entry = parseMemoryEntry(text, rel);
-			return { entry, absPath: abs };
-		} catch { continue; }
+	const abs = resolveMemoryPath(cwd, memoryEntryDir(), `${safeId}.md`);
+	try {
+		const text = await readFile(abs, "utf8");
+		const rel = path.relative(resolveMemoryPath(cwd), abs).replace(/\\/g, "/");
+		const entry = parseMemoryEntry(text, rel);
+		return { entry, absPath: abs };
+	} catch {
+		throw createCodedError({ name: "MemoryReadError", code: "MEMORY_ENTRY_NOT_FOUND", message: `browser_memory fact not found: ${safeId}`, details: { id: safeId } });
 	}
-	throw createCodedError({ name: "MemoryReadError", code: "MEMORY_ENTRY_NOT_FOUND", message: `browser_memory entry not found: ${safeId}`, details: { id: safeId } });
 }
 
 function lineSlice(text: string, offset: number, limit: number): MemoryReadResult {
@@ -77,7 +75,7 @@ export async function readBrowserMemory(options: {
 	}
 	const id = options.id || target?.id;
 	if (!id) throw createCodedError({ name: "MemoryReadError", code: "MEMORY_ENTRY_NOT_FOUND", message: "browser_memory read requires id or browser-memory:// URI" });
-	const { entry, absPath } = await loadEntryById(options.cwd, id, target?.kind);
+	const { entry, absPath } = await loadEntryById(options.cwd, id);
 	const currentEtag = computeEtag(absPath);
 	const expectedEtag = target?.etag || entry.etag;
 	if (expectedEtag && currentEtag && expectedEtag !== currentEtag) throw createCodedError({ name: "MemoryReadError", code: "MEMORY_RESOURCE_STALE", message: "browser_memory resource is stale", details: { id, path: absPath } });
@@ -97,6 +95,7 @@ export async function readBrowserMemory(options: {
 				verifiedAt: entry.verifiedAt,
 				updatedAt: entry.updatedAt,
 				evidenceRefs: entry.evidenceRefs,
+				...(entry.anchors ? { anchors: entry.anchors } : {}),
 			},
 			body: entry.body,
 		};

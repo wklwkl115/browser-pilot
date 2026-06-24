@@ -120,7 +120,7 @@ export type MemoryRecallEntry = {
 	triggers: string[];
 	scopeKind: "origin" | "task" | "project";
 	scopeKey: string;
-	kind: "sop" | "fact";
+	kind: "fact";
 	status: string;
 	updatedAt: string;
 	verification?: MemoryVerificationStatus;

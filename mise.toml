@@ -19,6 +19,10 @@ run = "node scripts/run-tests.mjs artifacts"
 description = "Run bootstrap + JS AST characterization tests"
 run = "node scripts/run-tests.mjs js-ast"
 
+[tasks.test-memory]
+description = "Run bootstrap + memory characterization tests"
+run = "node scripts/run-tests.mjs memory"
+
 [tasks.test-governance]
 description = "Run bootstrap + governance/workflow validation tests"
 run = "node scripts/run-tests.mjs governance"

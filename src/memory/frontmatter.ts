@@ -42,13 +42,14 @@ export function parseMemoryEntry(text: string, relPath: string): MemoryEntry {
 	const match = FRONTMATTER_RE.exec(text);
 	if (!match) throw createCodedError({ name: "MemoryFrontmatterError", code: "MEMORY_SCHEMA_INVALID", message: "memory entry missing YAML frontmatter", details: { relPath } });
 	const frontmatter = asRecord(yaml.load(match[1]) ?? {});
+	if (frontmatter.kind !== "fact") throw createCodedError({ name: "MemoryFrontmatterError", code: "MEMORY_SCHEMA_INVALID", message: "memory entry kind must be fact", details: { relPath } });
 	const triggers = Array.isArray(frontmatter.triggers) ? frontmatter.triggers.filter((v): v is string => typeof v === "string") : [];
 	const evidenceRefs = Array.isArray(frontmatter.evidenceRefs) ? frontmatter.evidenceRefs as MemoryEntry["evidenceRefs"] : [];
 	return {
 		schemaVersion: 1,
 		id: normalizeMemoryEntryId(frontmatter.id),
 		title: String(frontmatter.title || "").trim(),
-		kind: frontmatter.kind === "fact" ? "fact" : "sop",
+		kind: "fact",
 		triggers,
 		scopeKind: frontmatter.scopeKind === "task" || frontmatter.scopeKind === "project" ? frontmatter.scopeKind : "origin",
 		scopeKey: String(frontmatter.scopeKey || "").trim(),

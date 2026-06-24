@@ -151,10 +151,10 @@ function memoryRecoveryActions(code: string, details: Record<string, unknown>): 
 	return uniqueRecoveryActions([
 		code === "MEMORY_ACTION_UNSUPPORTED" ? "use browser_memory action=record|recall|read|validate" : undefined,
 		["MEMORY_SCOPE_REQUIRED", "UNSUPPORTED_SCOPE_KIND"].includes(code) ? `browser_memory action=record|recall with url or explicit scopeKind/scopeKey${scopeHint}` : undefined,
-		code === "MEMORY_EVIDENCE_REQUIRED" ? "record memory with durable evidenceRefs such as saved.path, browser-result://, or a non-stale snapshot reference" : undefined,
+		code === "MEMORY_EVIDENCE_REQUIRED" ? "record memory facts with durable evidenceRefs such as saved.path, browser-result://, or a non-stale snapshot reference" : undefined,
 		["MEMORY_EVIDENCE_UNREADABLE", "MEMORY_EVIDENCE_UNRESOLVABLE", "MEMORY_EVIDENCE_STALE", "MEMORY_RESOURCE_STALE"].includes(code) ? "re-capture evidence with browser_observe or the original capture tool, then retry browser_memory" : undefined,
 		code === "MEMORY_SECRET_DETECTED" ? "remove secrets, tokens, credentials, captcha-evasion, or stealth instructions before recording memory" : undefined,
-		code === "MEMORY_SCHEMA_INVALID" ? "validate browser_memory payload shape: title, non-empty triggers, bounded body, and supported scope fields" : undefined,
+		code === "MEMORY_SCHEMA_INVALID" ? "record only durable memory facts with title, non-empty triggers, bounded body, kind=fact, and supported scope fields; do not store SOP/workflow/instruction content" : undefined,
 		code === "MEMORY_ENTRY_NOT_FOUND" ? "browser_memory action=recall or read by a fresh browser-memory:// URI/id" : undefined,
 		id && ["MEMORY_ENTRY_NOT_FOUND", "MEMORY_RESOURCE_STALE"].includes(code) ? `browser_memory action=read id=${id}` : undefined,
 		uri && ["MEMORY_EVIDENCE_UNRESOLVABLE", "MEMORY_RESOURCE_STALE", "MEMORY_ENTRY_NOT_FOUND"].includes(code) ? `retry with a fresh resource URI instead of ${uri}` : undefined,

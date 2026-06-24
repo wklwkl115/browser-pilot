@@ -64,7 +64,7 @@ Browser Pilot gives agents what they actually need:
 | Full network record/replay/mutate | **Yes** | HAR only | No | Proxy needed |
 | Built-in web security tools | **Yes** | No | No | No |
 | Token-efficient output (salience + delta) | **Yes** | N/A | No | N/A |
-| Session memory (per-site SOP recall) | **Yes** | No | No | No |
+| Session memory (per-site fact recall) | **Yes** | No | No | No |
 | Survives MV3 SW restart / tab replace | **Yes** | N/A | No | Partial |
 | Designed for AI agents | **First** | Adapted | Yes | Adapted |
 
@@ -189,9 +189,11 @@ token-efficient without sacrificing completeness.
 
 ### Browser Memory
 
-A local store (`.browser-pilot/memory/`) lets agents record and recall per-site procedures
-(SOPs) and facts. Once recorded, `browser_observe` automatically surfaces relevant memory
-for the current URL — so the agent doesn't re-derive the same action sequence twice.
+A local store (`.browser-pilot/memory/`) lets agents record and recall per-site facts.
+Memory records are facts only: `kind=fact` entries may capture durable observations, but
+SOPs, workflows, playbooks, checklists, procedural steps, and agent instructions are rejected.
+Once recorded, `browser_observe` automatically surfaces relevant fact memory for the current
+URL — so the agent doesn't re-derive stable context twice.
 
 ### Living Tab Sessions
 

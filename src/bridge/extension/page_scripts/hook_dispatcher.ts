@@ -385,9 +385,20 @@ declare global {
     const capacity = buffer_size || DEFAULT_BUFFER_SIZE;
     return { buffer_capacity: capacity, buffer_used: used, buffer_utilization: capacity ? used / capacity : 0, dropped_events: overflow };
   }
+  function browserPilotMessageTargetOrigin(): string {
+    try {
+      const origin = window.location && window.location.origin;
+      return origin && origin !== 'null' ? origin : '*';
+    } catch (_error) {
+      return '*';
+    }
+  }
+  function postBrowserPilotMessage(message: unknown): void {
+    window.postMessage(message, browserPilotMessageTargetOrigin());
+  }
   function notifyOverflow(event: HookEvent): void {
     try {
-      window.postMessage({ __browser_pilot_overflow__: true, dropped_events: overflow, buffer_capacity: buffer_size, buffer_used: buffer_count, event_type: event && event.type, seq: event && event.seq }, '*');
+      postBrowserPilotMessage({ __browser_pilot_overflow__: true, dropped_events: overflow, buffer_capacity: buffer_size, buffer_used: buffer_count, event_type: event && event.type, seq: event && event.seq });
     } catch (_error) {
       /* best-effort overflow notification */
     }
@@ -413,8 +424,8 @@ declare global {
     if (!eventNotifyQueue.length) return;
     const batch = eventNotifyQueue.splice(0, eventNotifyQueue.length);
     try {
-      if (options && options.batch_post_message) window.postMessage({ __browser_pilot_event__: true, event_batch: batch, count: batch.length }, '*');
-      else batch.forEach(event => window.postMessage({ __browser_pilot_event__: true, event }, '*'));
+      if (options && options.batch_post_message) postBrowserPilotMessage({ __browser_pilot_event__: true, event_batch: batch, count: batch.length });
+      else batch.forEach(event => postBrowserPilotMessage({ __browser_pilot_event__: true, event }));
     } catch (_error) {
       /* best-effort batched event notification */
     }
@@ -422,7 +433,7 @@ declare global {
   function notifyEvent(event: HookEvent): void {
     if (!(options && options.batch_post_message)) {
       try {
-        window.postMessage({ __browser_pilot_event__: true, event }, '*');
+        postBrowserPilotMessage({ __browser_pilot_event__: true, event });
       } catch (_error) {
         /* best-effort single event notification */
       }
@@ -1011,11 +1022,12 @@ declare global {
 
   window.addEventListener('message', (e: MessageEvent) => {
     if (e.source !== window) return;
+    if (browserPilotMessageTargetOrigin() !== '*' && e.origin !== browserPilotMessageTargetOrigin()) return;
     const msg = asRecord(e.data);
     if (!msg || !msg.__browser_pilot_hook_cmd__) return;
     const id = msg.id;
     const resp = dispatch(msg.cmd, msg.args || {});
-    window.postMessage({ __browser_pilot_hook_response__: true, id, resp }, '*');
+    postBrowserPilotMessage({ __browser_pilot_hook_response__: true, id, resp });
   });
   window.__BROWSER_PILOT_HOOKS__ = {
     version: VERSION, dispatcher_version: VERSION, ERROR_CODES, COMMAND_CANONICAL, install, collect, status, uninstall, clearBuffer, pause, resume, evaluate, dispatch,

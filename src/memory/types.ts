@@ -1,5 +1,5 @@
 export type MemoryScopeKind = "origin" | "task" | "project";
-export type MemoryEntryKind = "sop" | "fact";
+export type MemoryEntryKind = "fact";
 export type MemoryEntryStatus = "active" | "deprecated";
 export type MemoryConfidence = "verified" | "high" | "medium" | "low";
 export type MemorySensitivity = "local";

@@ -26,7 +26,7 @@ type CommandMemoryRecallEntry = {
 	triggers: string[];
 	scopeKind: "origin" | "task" | "project";
 	scopeKey: string;
-	kind: "sop" | "fact";
+	kind: "fact";
 	status: string;
 	updatedAt: string;
 };
@@ -102,7 +102,7 @@ function memoryRecallTokens(url: string | undefined, query: string | undefined):
 
 async function loadMemoryEntryForRecall(cwd: string | undefined, entry: CommandMemoryRecallEntry) {
 	const id = normalizeMemoryEntryId(entry.id);
-	const relPath = `${memoryEntryDir(entry.kind)}/${id}.md`;
+	const relPath = `${memoryEntryDir()}/${id}.md`;
 	const text = await readFile(resolveMemoryPath(cwd, relPath), "utf8").catch(() => undefined);
 	return text ? parseMemoryEntry(text, relPath) : undefined;
 }

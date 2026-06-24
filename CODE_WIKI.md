@@ -640,7 +640,9 @@ Envelope 常见字段：
 - `text`：可见文本优先观察；
 - `tabs`：tab inventory。
 
-关键文件：[`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts)。
+`scan` / `text` 会通过 observe memory augmentation 自动在结果 envelope 的 `memory` 字段暴露匹配的本地 fact memory。该自动暴露面只面向 `kind=fact` 的事实卡片：首次匹配可内联 bounded body，后续/折叠视图只给 handle 与元数据；SOP、workflow、playbook、checklist、步骤或 agent 指令不应被记录，也不会作为 observe 行为指南暴露。
+
+关键文件：[`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts)、[`observe/memoryAugmentation.ts`](src/commands/observe/memoryAugmentation.ts)。
 
 #### `browser_execute`
 
@@ -832,6 +834,7 @@ kernels ──▶ kernels 内部纯模块
 ### 10.2 禁止或高风险依赖
 
 - `src/kernels/*` 不应导入 `src/commands/*`、`src/bridge/*`、`src/browser-runtime/*`。
+- `src/commands/memory/*` 只能记录与召回 `kind=fact` 的本地事实记忆；不得把 SOP、workflow、playbook、checklist、步骤或 agent 指令语义写入 memory。record/validate 会拒绝非 fact kind 与 SOP-like 内容；`browser_observe` 只自动暴露匹配到的 fact memory，不把 memory 当作流程指南。需要 daemon/bridge 信息时优先依赖窄接口，例如 snapshot evidence 只依赖 `getObservationSnapshot()`。
 - `bridge/browser_pilot_bridge/` 和 `dist/` 是生成产物，不手改。
 - `src/bridge/protocol/native-command.schema.json` 是 native protocol 源头。
 - `commandCatalog.ts` 是 public tool surface 源头。

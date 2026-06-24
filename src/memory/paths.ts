@@ -1,5 +1,4 @@
 import path from "node:path";
-import type { MemoryEntryKind } from "./types.js";
 
 export const BROWSER_MEMORY_ROOT = ".browser-pilot/memory";
 
@@ -11,6 +10,6 @@ export function resolveMemoryPath(cwd: string | undefined, ...parts: string[]): 
 	return path.join(resolveMemoryRoot(cwd), ...parts);
 }
 
-export function memoryEntryDir(kind: MemoryEntryKind): string {
-	return kind === "sop" ? "sop" : "facts";
+export function memoryEntryDir(): string {
+	return "facts";
 }

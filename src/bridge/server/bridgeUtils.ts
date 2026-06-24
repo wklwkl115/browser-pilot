@@ -31,7 +31,12 @@ export function normalizeErrorMessage(error: unknown): string {
 
 export function isAllowedBridgeOrigin(origin: string | undefined): boolean {
 	if (origin === undefined || origin === "null") return true;
-	return origin.startsWith("chrome-extension://");
+	try {
+		const url = new URL(origin);
+		return url.protocol === "chrome-extension:" && /^[a-p]{32}$/.test(url.hostname);
+	} catch {
+		return false;
+	}
 }
 
 export type BridgeReadiness = "bridge-down" | "bridge-up" | "connecting" | "degraded" | "ready";

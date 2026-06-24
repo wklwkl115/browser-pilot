@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -8,12 +8,21 @@ const governancePath = path.join(root, "REPO_GOVERNANCE.md");
 const readmePath = path.join(root, "README.md");
 const packagePath = path.join(root, "package.json");
 const abmlReadmePath = path.join(root, "src/kernels/abml/README.md");
+const codeWikiPath = path.join(root, "CODE_WIKI.md");
 const commandSharedPath = path.join(root, "src/commands/commandShared.ts");
 const commandMetadataPath = path.join(root, "src/apps/cli/commandMetadata.ts");
 const commandRuntimePath = path.join(root, "src/commands/commandRuntime.ts");
 
 function text(filePath: string) {
 	return readFileSync(filePath, "utf8");
+}
+
+function walkSourceFiles(dir: string): string[] {
+	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+		const filePath = path.join(dir, entry.name);
+		if (entry.isDirectory()) return walkSourceFiles(filePath);
+		return entry.isFile() && /\.(?:ts|tsx|js|mjs|cjs)$/.test(entry.name) ? [filePath] : [];
+	});
 }
 
 test("repo governance uses mise-first gate commands", () => {
@@ -78,5 +87,27 @@ test("package files avoids redundant child entries covered by parent directories
 			if (entry === parent || !parent.endsWith("/")) continue;
 			assert.ok(!cleanEntry.startsWith(parent), `${entry} is already covered by ${parent}`);
 		}
+	}
+});
+
+test("public docs describe memory as fact-only and observe as fact surfacing", () => {
+	const readme = text(readmePath);
+	assert.match(readme, /facts? only/i);
+	assert.match(readme, /SOPs?, workflows?, playbooks?, checklists?[\s\S]{0,80}agent instructions/i);
+	assert.match(readme, /browser_observe[\s\S]{0,120}surfaces?[\s\S]{0,120}facts?/i);
+});
+
+test("code wiki documents memory fact-only behavior and observe fact exposure", () => {
+	const wiki = text(codeWikiPath);
+	assert.match(wiki, /kind=fact/);
+	assert.match(wiki, /SOP、workflow、playbook、checklist/);
+	assert.match(wiki, /browser_observe[\s\S]{0,160}fact memory/i);
+});
+
+test("kernel source stays isolated from runtime, command, and bridge layers", () => {
+	const kernelRoot = path.join(root, "src", "kernels");
+	const forbidden = /from\s+["'](?:\.\.\/)+(?:commands|bridge|browser-runtime|browser-command-runtime)\//;
+	for (const filePath of walkSourceFiles(kernelRoot)) {
+		assert.doesNotMatch(text(filePath), forbidden, path.relative(root, filePath));
 	}
 });

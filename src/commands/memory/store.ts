@@ -7,20 +7,19 @@ import { parseMemoryEntry, serializeMemoryEntry } from "../../memory/frontmatter
 import { browserMemoryUriForEntry, loadMemoryEntries, readMemoryIndex, withMemoryLock, writeDerivedMemoryIndex } from "../../memory/indexStore.js";
 import type { MemoryEntry, MemoryIndexEntry, MemoryRecordPayload, MemoryRecallCard, MemoryTombstone } from "../../memory/types.js";
 import { validateMemoryRecordPayloadShape, resolveMemoryEvidenceRefs, checkEvidenceExpiryWarnings } from "./evidence.js";
-import type { EvidenceExpiryEntry } from "./evidence.js";
+import type { EvidenceExpiryEntry, MemorySnapshotResolver } from "./evidence.js";
 import { normalizeMemoryEntryId } from "../../memory/ids.js";
 import { memorySimilarity, DEDUP_SIMILARITY, SIMILAR_SIMILARITY } from "./salience.js";
 import { routeByTokens, situationTokens } from "../../memory/routing.js";
 import { normalizeOriginKeyFromUrl } from "./origin.js";
-import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import type { MemoryResultResourceResolver } from "../commandShared.js";
 import { stableJson } from "../../utils/json.js";
 import { readCachedMemoryProfile } from "../../memory/profileService.js";
 import { memoryStampSetId, verifyMemoryAnchors } from "../../kernels/memory/staleness.js";
 import type { MemoryAnchors, MemoryOriginProfile } from "../../memory/types.js";
 
-function newMemoryId(kind: "sop" | "fact"): string {
-	return `${kind}_${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}_${randomUUID().slice(0, 8)}`;
+function newMemoryId(): string {
+	return `fact_${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}_${randomUUID().slice(0, 8)}`;
 }
 
 export type MemoryDuplicateCandidate = { id: string; title: string; similarity: number };
@@ -70,7 +69,7 @@ export function verifyMemoryEntryAgainstProfile(entry: Pick<MemoryEntry, "anchor
 
 export async function validateMemoryRecord(options: {
 	cwd?: string;
-	server?: BrowserCommandRuntimePort;
+	server?: MemorySnapshotResolver;
 	resolver?: MemoryResultResourceResolver;
 	payload: MemoryRecordPayload;
 }): Promise<{ scopeKey: string; entry: Omit<MemoryEntry, "relPath" | "etag">; existingIds: string[]; duplicateCandidates: MemoryDuplicateCandidate[]; warnings: string[]; evidenceExpiry: EvidenceExpiryEntry[] }> {
@@ -82,9 +81,9 @@ export async function validateMemoryRecord(options: {
 	const now = new Date().toISOString();
 	const entry: Omit<MemoryEntry, "relPath" | "etag"> = {
 		schemaVersion: 1,
-		id: newMemoryId(options.payload.kind),
+		id: newMemoryId(),
 		title: options.payload.title.trim(),
-		kind: options.payload.kind,
+		kind: "fact",
 		triggers: options.payload.triggers.map((item) => item.trim()).filter(Boolean),
 		scopeKind,
 		scopeKey,
@@ -103,7 +102,7 @@ export async function validateMemoryRecord(options: {
 	// soft candidates for the agent to supersede deliberately if intended.
 	const payloadTitle = options.payload.title.trim().toLowerCase();
 	const scored = (await loadMemoryEntries(options.cwd))
-		.filter((current) => current.status === "active" && current.kind === options.payload.kind && current.scopeKind === scopeKind && current.scopeKey === scopeKey)
+		.filter((current) => current.status === "active" && current.scopeKind === scopeKind && current.scopeKey === scopeKey)
 		.map((current) => ({
 			current,
 			exact: current.title.trim().toLowerCase() === payloadTitle,
@@ -119,13 +118,13 @@ export async function validateMemoryRecord(options: {
 
 export async function recordMemoryEntry(options: {
 	cwd?: string;
-	server?: BrowserCommandRuntimePort;
+	server?: MemorySnapshotResolver;
 	resolver?: MemoryResultResourceResolver;
 	payload: MemoryRecordPayload;
 }): Promise<{ entry: MemoryEntry; supersededIds: string[]; duplicateCandidates: MemoryDuplicateCandidate[]; index: Awaited<ReturnType<typeof readMemoryIndex>>; warnings: string[]; evidenceExpiry: EvidenceExpiryEntry[] }> {
 	return await withMemoryLock(options.cwd, async () => {
 		const validated = await validateMemoryRecord(options);
-		const relPath = path.join(memoryEntryDir(validated.entry.kind), `${validated.entry.id}.md`);
+		const relPath = path.join(memoryEntryDir(), `${validated.entry.id}.md`);
 		const absPath = resolveMemoryPath(options.cwd, relPath);
 		await atomicWriteText(absPath, serializeMemoryEntry(validated.entry));
 		for (const existingId of validated.existingIds) {
@@ -218,7 +217,7 @@ export async function recallMemory(options: { cwd?: string; scopeKind?: MemoryEn
 	// When one card clearly dominates (sole match, or ≥2× the runner-up) inline its
 	// bounded body so the agent skips a follow-up read for the common case.
 	if (cards.length && (paged.length === 1 || paged[0].score >= 2 * (paged[1]?.score ?? 0))) {
-		const body = await topBody(options.cwd, cards[0].id, cards[0].kind);
+		const body = await topBody(options.cwd, cards[0].id);
 		if (body) cards[0].body = body;
 	}
 	return { cards, totalMatches };
@@ -227,10 +226,9 @@ export async function recallMemory(options: { cwd?: string; scopeKind?: MemoryEn
 const INLINE_BODY_MAX_LINES = 60;
 const INLINE_BODY_MAX_CHARS = 4_000;
 
-async function topBody(cwd: string | undefined, id: string, kind: MemoryEntry["kind"]): Promise<string | undefined> {
-	// Read just the one entry file for the dominant card (not the whole store).
+async function topBody(cwd: string | undefined, id: string): Promise<string | undefined> {
 	const safeId = normalizeMemoryEntryId(id);
-	const rel = path.join(memoryEntryDir(kind), `${safeId}.md`);
+	const rel = path.join(memoryEntryDir(), `${safeId}.md`);
 	const text = await readFile(resolveMemoryPath(cwd, rel), "utf8").catch(() => undefined);
 	if (!text) return undefined;
 	const lines = parseMemoryEntry(text, rel).body.split(/\r?\n/);

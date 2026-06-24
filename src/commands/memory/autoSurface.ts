@@ -11,7 +11,7 @@ import { memoryKernelEnabled } from "../../memory/secret.js";
 const SKIP_TOOLS = new Set(["browser_memory", "browser_tabs"]);
 // Read-only/observational tools still surface RECALL hints, but never trigger the
 // record nudge: merely looking at a page is not a reusable accomplishment worth
-// crystallizing into an SOP — only acting on it is.
+// crystallizing into a reusable fact — only acting on it is.
 const NON_SALIENT_RECORD_TOOLS = new Set(["browser_observe", "browser_screenshot", "browser_wait", "browser_frame", "browser_artifact"]);
 const WARNED_AUTOMATIC_INDEX_READ_CAP = 2000;
 const warnedAutomaticIndexReads = new Set<string>();
@@ -101,7 +101,7 @@ function durableEvidencePath(envelope: DistilledEnvelope): string | undefined {
 
 function recordHint(url: string, evidencePath: string | undefined): string {
 	const evidence = evidencePath ? ` evidenceRefs=["${evidencePath}"]` : "";
-	return `record candidate: if you finished a reusable task here, crystallize it — browser_memory action=record kind=sop scopeKind=origin url=${url}${evidence}`;
+	return `record candidate: if this page revealed a stable factual detail, save it — browser_memory action=record kind=fact scopeKind=origin url=${url}${evidence}`;
 }
 
 export async function appendMemoryAutoSurface(options: { cwd?: string; envelope: DistilledEnvelope }): Promise<DistilledEnvelope> {
@@ -118,7 +118,7 @@ export async function appendMemoryAutoSurface(options: { cwd?: string; envelope:
 	const nextActions = Array.isArray(envelope.nextActions) ? [...envelope.nextActions] : [];
 	const before = nextActions.length;
 
-	// Record side: when this origin has no SOP/fact yet, nudge crystallization once
+	// Record side: when this origin has no fact yet, nudge crystallization once
 	// per origin per session after a "doing" tool — GA-style, evidence is optional,
 	// so a successful task can be crystallized without a saved artifact. This is the
 	// write-loop ignition the recall side alone cannot start.

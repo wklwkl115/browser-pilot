@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
+import type { CommandObservationSnapshotInfo } from "../../ports/BrowserCommandRuntimePort.js";
 import { createCodedError } from "../../utils/codedError.js";
 import { containsSensitiveEvidence } from "../../utils/redaction.js";
 import { computeEtag } from "../../utils/fileFreshness.js";
@@ -12,13 +12,15 @@ import { resolveResourceUri } from "../../resources/resourceRefs.js";
 export type MemoryResolvedEvidenceRef = MemoryEvidenceRef;
 export type MemoryResultResourceResolution = { ok: true; path: string; etag?: string; bytes?: number } | { ok: false; code: string; error: string };
 export type MemoryResultResourceResolver = (uri: string) => Promise<MemoryResultResourceResolution>;
+export type MemorySnapshotResolver = Pick<{ getObservationSnapshot(snapshotId: string): CommandObservationSnapshotInfo | undefined }, "getObservationSnapshot">;
 
 // Block crystallizing anti-bot EVASION know-how, but not defensive mentions.
-// "stealth"/"human behavior" read as evasion intent inside a recorded automation
-// SOP, so they are hard-blocked. "captcha" has a legitimate defensive use ("if a
+// "stealth"/"human behavior" read as evasion intent inside recorded memory,
+// so they are hard-blocked. "captcha" has a legitimate defensive use ("if a
 // captcha appears, stop and ask the user"), so it is blocked only when it co-occurs
 // with an evasion verb (bypass/solve/defeat/evade/…).
 const BLOCKED_CONTENT_RE = /\b(stealth|human[\s-]?behavior)\b/i;
+const SOP_CONTENT_RE = /(?:\b(?:SOP|standard[\s-]+operating[\s-]+procedure|workflow|playbook|runbook|procedure|checklist|step[\s-]*by[\s-]*step)\b|\b(?:steps?|instructions?)\s*[:：])/i;
 // Evasion verbs only — bare "solve" is excluded so defensive guidance ("ask the
 // user to solve the captcha") is allowed while "captcha solver"/"auto-solve"/
 // "bypass captcha" stay blocked.
@@ -46,7 +48,7 @@ async function resolveArtifactRef(cwd: string | undefined, ref: Extract<MemoryEv
 	return { kind: "artifact", path: filePath, etag, bytes };
 }
 
-async function resolveSnapshotRef(server: BrowserCommandRuntimePort | undefined, ref: Extract<MemoryEvidenceRef, { kind: "snapshot" }>): Promise<MemoryResolvedEvidenceRef> {
+async function resolveSnapshotRef(server: MemorySnapshotResolver | undefined, ref: Extract<MemoryEvidenceRef, { kind: "snapshot" }>): Promise<MemoryResolvedEvidenceRef> {
 	if (!server) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNRESOLVABLE", message: "snapshot evidence requires a live browser runtime", details: { snapshotId: ref.snapshotId } });
 	const snapshot = server.getObservationSnapshot(ref.snapshotId);
 	if (!snapshot) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNREADABLE", message: "memory snapshot evidence was not found", details: { snapshotId: ref.snapshotId } });
@@ -69,7 +71,7 @@ function resolveOperationRef(ref: Extract<MemoryEvidenceRef, { kind: "operation"
 
 export async function resolveMemoryEvidenceRefs(options: {
 	cwd?: string;
-	server?: BrowserCommandRuntimePort;
+	server?: MemorySnapshotResolver;
 	resolver?: MemoryResultResourceResolver;
 	evidenceRefs: Array<string | MemoryEvidenceRef>;
 }): Promise<MemoryResolvedEvidenceRef[]> {
@@ -125,6 +127,7 @@ export function checkEvidenceExpiryWarnings(resolvedRefs: MemoryResolvedEvidence
 }
 
 export function validateMemoryRecordPayloadShape(payload: MemoryRecordPayload): { scopeKey: string; scopeKind: "origin" | "task" | "project"; confidence: MemoryConfidence } {
+	if (payload.kind !== "fact") throw createCodedError({ name: "MemoryValidationError", code: "MEMORY_SCHEMA_INVALID", message: "browser_memory record only supports kind=fact" });
 	const scopeKind = payload.scopeKind ?? "origin";
 	const scopeKey = scopeKind === "origin"
 		? (payload.scopeKey?.trim() || (payload.url ? normalizeOriginKeyFromUrl(payload.url) : ""))
@@ -137,9 +140,10 @@ export function validateMemoryRecordPayloadShape(payload: MemoryRecordPayload): 
 	}
 	const body = String(payload.body || "");
 	if (!body.trim()) throw createCodedError({ name: "MemoryValidationError", code: "MEMORY_SCHEMA_INVALID", message: "browser_memory record requires body" });
-	const lineCap = payload.kind === "fact" ? 160 : 120;
+	const lineCap = 160;
 	if (body.split(/\r?\n/).length > lineCap || body.length > 16 * 1024) throw createCodedError({ name: "MemoryValidationError", code: "MEMORY_SCHEMA_INVALID", message: "browser_memory body exceeds size caps", details: { lineCap, chars: body.length } });
 	const blockedHaystack = `${title}\n${payload.triggers.join(" ")}\n${body}`;
+	if (SOP_CONTENT_RE.test(blockedHaystack)) throw createCodedError({ name: "MemoryValidationError", code: "MEMORY_SCHEMA_INVALID", message: "browser_memory records durable facts only; SOP, workflow, playbook, checklist, or instruction content is not supported" });
 	if (containsSensitiveEvidence(title) || containsSensitiveEvidence(payload.triggers) || containsSensitiveEvidence(body) || BLOCKED_CONTENT_RE.test(blockedHaystack) || CAPTCHA_EVASION_RE.test(blockedHaystack)) throw createCodedError({ name: "MemoryValidationError", code: "MEMORY_SECRET_DETECTED", message: "browser_memory payload contains blocked or sensitive content" });
 	return { scopeKey, scopeKind, confidence: payload.confidence ?? "verified" };
 }
