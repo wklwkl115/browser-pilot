@@ -114,8 +114,7 @@ npm install
 ```
 
 `npm install` runs the `prepare` script, which builds both the CLI (`npm run build`)
-and the Chrome extension bundles (`npm run build:bridge`) automatically. To rebuild
-manually after editing source, run those two commands.
+and the Chrome extension bundles (`npm run build:bridge`) automatically. These are install/rebuild scripts, not contributor validation gates; use the `mise` gates documented in [REPO_GOVERNANCE.md](REPO_GOVERNANCE.md) for development completion claims.
 
 ### Load the Browser Extension
 
@@ -199,9 +198,9 @@ for the current URL — so the agent doesn't re-derive the same action sequence 
 Stable `tabHandle`/`targetRef` identifiers survive tab replacements, MV3 service worker
 restarts, and extension reconnects. Your agent doesn't lose track of tabs.
 
-### Four Pure-Logic Kernels
+### Main Pure-Logic Perception Stages
 
-The core perception pipeline runs in four CI-boundary-locked kernels with zero
+The core perception pipeline is organized around four pure-logic stages with zero
 browser/Node dependencies:
 
 | Kernel | Purpose |
@@ -210,6 +209,8 @@ browser/Node dependencies:
 | **ABML** (perceive) | Entity extraction, diffing, templating, relations, causal |
 | **Distill** (express) | Token economy, salience renderer, fact allocator |
 | **Memory** (retain) | Profile distillation, recall scoring, staleness verification |
+
+The repository also contains additional pure kernels for refs, session, security, and temporal logic; see [CODE_WIKI.md](CODE_WIKI.md) for the code-level map.
 
 ## Security Testing
 
@@ -234,12 +235,15 @@ npx browser-pilot sqli --url "https://example.com/search?q=test" --json
 
 ## Development
 
+Use `mise` for project validation gates:
+
 ```bash
-npm run build:bridge      # Build the Chrome extension
-npm run build             # Compile Node.js source to dist/
-npm run lint              # ESLint
-npm run typecheck         # TypeScript project check
+mise run dev          # Local developer gate
+mise run affected     # Changed-file validation
+mise run verify       # Release-readiness gate
 ```
+
+Lower-level npm scripts still exist for focused maintenance tasks, but they are not the completion gate. See [REPO_GOVERNANCE.md](REPO_GOVERNANCE.md) for the canonical workflow and [CODE_WIKI.md](CODE_WIKI.md) for the architecture/development map.
 
 ## Documentation
 

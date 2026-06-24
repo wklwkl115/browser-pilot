@@ -27,7 +27,6 @@ export type BrowserPilotBridgeResponse<T = unknown> = {
 };
 
 
-export type BrowserPilotBridgeDict = JsonRecord;
 export type BrowserPilotChromeMessageSender = BrowserPilotBridgeSender;
 export type BrowserPilotBridgeWebSocketLike = BrowserPilotWebSocketLike;
 export type BrowserPilotChromeAlarm = { name?: string };
@@ -415,20 +414,6 @@ export type BrowserPilotCdpDomainRef = {
   disableToken?: number;
 };
 
-export type BrowserPilotLegacyCommandSurface = Partial<Record<
-  | "cleanupNetworkRecorderTab"
-  | "browserPilotBridgeInfo"
-  | "ensureBrowserPilotDispatcher"
-  | "handleBrowserPilotHookCommand"
-  | "handleBrowserPilotEvidenceCommand"
-  | "handleBrowserPilotFrameCommand"
-  | "handleBrowserPilotTransferCommand"
-  | "handleNetworkRecorderCommand"
-  | "handleBrowserPilotHtml"
-  | "captureScreenshotWithRetry",
-  (...args: unknown[]) => unknown
->>;
-
 export type BrowserPilotChromeEvent<TListener extends (...args: never[]) => unknown = (...args: never[]) => unknown> = {
   addListener(listener: TListener): void;
   removeListener(listener: TListener): void;
@@ -480,8 +465,6 @@ export type BrowserPilotWebSocketLike = {
   readyState: number;
   send(data: string): void;
 };
-
-export type BrowserPilotBridgeWebSocket = WebSocket & BrowserPilotWebSocketLike;
 
 export type BrowserPilotChromePort = {
   name?: string;

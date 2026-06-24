@@ -32,7 +32,7 @@ export function positiveIntParam(value: unknown, fallback: number, min: number, 
 	return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
-function lineWindow(line: string, start: number, length: number) {
+export function lineWindow(line: string, start: number, length: number) {
 	const lineLength = line.length;
 	const columnStart = Math.max(0, Math.min(lineLength, Math.floor(start)));
 	const columnEnd = Math.max(columnStart, Math.min(lineLength, columnStart + Math.max(0, Math.floor(length))));

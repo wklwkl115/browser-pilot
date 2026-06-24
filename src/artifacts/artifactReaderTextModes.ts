@@ -1,13 +1,6 @@
 import type { BrowserArtifactParams, SampleSnippet } from "./artifactReaderShared.js";
 import { summaryFromStats } from "./artifactReaderShared.js";
-import { boundedJoin, eachLine, positiveIntParam, textLineWindow } from "./artifactReaderLineUtils.js";
-
-function lineWindow(line: string, start: number, length: number) {
-	const lineLength = line.length;
-	const columnStart = Math.max(0, Math.min(lineLength, Math.floor(start)));
-	const columnEnd = Math.max(columnStart, Math.min(lineLength, columnStart + Math.max(0, Math.floor(length))));
-	return { text: line.slice(columnStart, columnEnd), columnStart, columnEnd, lineLength, truncatedBefore: columnStart > 0, truncatedAfter: columnEnd < lineLength };
-}
+import { boundedJoin, eachLine, lineWindow, positiveIntParam, textLineWindow } from "./artifactReaderLineUtils.js";
 
 export async function readTextRange(absPath: string, fileSize: number, params: BrowserArtifactParams, maxChars: number) {
 	const offset = Math.max(1, Math.floor(Number(params.offset || 1)));

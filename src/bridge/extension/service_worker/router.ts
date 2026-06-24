@@ -3,7 +3,7 @@ import { BROWSER_PILOT_ERROR_CODES, bridgeError, isBrowserPilotNativeCommand } f
 import { enableCspBypassForTab } from "./bridge_info";
 import { dispatchBrowserPilotBridgeCommand, validateBrowserPilotBridgeProtocolMessage } from "./core_commands";
 import { handleWsExec } from "./exec";
-import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeDict, BrowserPilotBridgeResponse, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeMessageSender } from "./types";
+import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeMessageSender } from "./types";
 
 // router.js - protocol validation and command dispatch for Browser Pilot Bridge messages.
 
@@ -35,8 +35,8 @@ function installBrowserPilotBridgeRouter() {
   if (browserPilotBridgeRouterInstalled) return false;
   chrome.runtime.onMessage.addListener((msg: unknown, sender: BrowserPilotChromeMessageSender, sendResponse: (response: unknown) => void) => {
     // Pass-through guard: let transport.ts handle offscreen-prefixed messages.
-    if (msg && typeof msg === 'object' && typeof (msg as BrowserPilotBridgeDict).type === 'string' && String((msg as BrowserPilotBridgeDict).type).startsWith('browser-pilot-offscreen-')) return false;
-    const msgType = msg && typeof msg === 'object' ? String((msg as BrowserPilotBridgeDict).type ?? '') : '';
+    if (msg && typeof msg === 'object' && typeof (msg as JsonRecord).type === 'string' && String((msg as JsonRecord).type).startsWith('browser-pilot-offscreen-')) return false;
+    const msgType = msg && typeof msg === 'object' ? String((msg as JsonRecord).type ?? '') : '';
     // Popup→SW consent messages
     if (msgType === 'browser-pilot-consent-poll') {
       const storage = getStorageLocal();
@@ -54,7 +54,7 @@ function installBrowserPilotBridgeRouter() {
       return true;
     }
     if (msgType === 'browser-pilot-consent-decide') {
-      const { pairingId, decision } = msg as BrowserPilotBridgeDict & { pairingId?: string; decision?: string };
+      const { pairingId, decision } = msg as JsonRecord & { pairingId?: string; decision?: string };
       getTransportSocket?.()?.send(JSON.stringify({ type: 'consent-response', pairingId, decision }));
       cachedConsentPending = null;
       void getStorageLocal()?.remove('browser_pilot_consent_pending');
@@ -62,7 +62,7 @@ function installBrowserPilotBridgeRouter() {
       return true;
     }
     if (msgType === 'browser-pilot-consent-revoke') {
-      const { pairingId } = msg as BrowserPilotBridgeDict & { pairingId?: string };
+      const { pairingId } = msg as JsonRecord & { pairingId?: string };
       getTransportSocket?.()?.send(JSON.stringify({ type: 'revoke-request', pairingId }));
       sendResponse({ ok: true });
       return true;
@@ -81,8 +81,8 @@ function sendBrowserPilotBridgeWsCommandResult(socket: BrowserPilotBridgeWebSock
   else socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id, result, error: res.error ?? res.message }));
 }
 
-/** @param {BrowserPilotBridgeWebSocketLike} socket @param {string | number} id @param {string} error @param {BrowserPilotBridgeDict=} details */
-function sendBrowserPilotBridgeWsInputError(socket: BrowserPilotBridgeWebSocketLike, id: string | number, error: string, details: BrowserPilotBridgeDict = {}) {
+/** @param {BrowserPilotBridgeWebSocketLike} socket @param {string | number} id @param {string} error @param {JsonRecord=} details */
+function sendBrowserPilotBridgeWsInputError(socket: BrowserPilotBridgeWebSocketLike, id: string | number, error: string, details: JsonRecord = {}) {
   socket.send(JSON.stringify({ type: 'error', id, error, details: details || {} }));
 }
 
@@ -109,13 +109,13 @@ async function handleBrowserPilotBridgeWsMessage(data: BrowserPilotBridgeWsEnvel
   if (typeof code === 'string') {
     try {
       const p: unknown = JSON.parse(code);
-      if (p && typeof p === 'object' && !Array.isArray(p) && typeof (p as BrowserPilotBridgeDict).cmd === 'string') code = p;
+      if (p && typeof p === 'object' && !Array.isArray(p) && typeof (p as JsonRecord).cmd === 'string') code = p;
     } catch (_error) {
       /* best-effort command envelope parse */
     }
   }
   if (typeof code === 'object' && code !== null) {
-    const codeObj = code as BrowserPilotBridgeDict & { cmd?: unknown; tabId?: unknown };
+    const codeObj = code as JsonRecord & { cmd?: unknown; tabId?: unknown };
     if (typeof codeObj.cmd !== 'string' || !codeObj.cmd.trim()) {
       sendBrowserPilotBridgeWsInputError(socket, data.id, 'Message object must contain a non-empty "cmd" field', { codeType: 'object' });
       return;

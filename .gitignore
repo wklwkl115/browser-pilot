@@ -31,14 +31,14 @@ subagent-blind-round2/
 # nested export repo must never be used as a second source tree
 /.pi/public-export/
 
-# Development-only docs (local only, not for public repo)
+# Retired/local development docs (do not reintroduce as canonical docs)
 .plan/
 agent-audits/
 docs/archive/
 skills/browser-pilot-audit-fix/
 skills/browser-pilot-blind-eval/
 skills/pi-kernel-audit/
-AGENTS.md
+.claude/
 CLAUDE.md
 CURRENT.md
 TODO.md

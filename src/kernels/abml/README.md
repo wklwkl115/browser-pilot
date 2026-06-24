@@ -86,8 +86,7 @@ runtime, Node-only, or npm dependency import is a boundary violation.
   Otherwise the consumer belongs in the runtime layer, not here.
 
 For repo-wide contributor workflow, canonical gates, and validation expectations, start with
-[`REPO_GOVERNANCE.md`](../../../REPO_GOVERNANCE.md). After any change here, run `mise run verify`
-plus any focused manual verification needed for the touched surface.
+[`REPO_GOVERNANCE.md`](../../../REPO_GOVERNANCE.md). During development, use the affected gate for the touched scope; before claiming completion, run `mise run verify` plus any focused manual verification needed for the touched surface.
 
 ## Consumers
 

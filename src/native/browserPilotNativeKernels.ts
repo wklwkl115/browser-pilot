@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { Entity } from "../kernels/abml/entity.js";
 import type { EntityDiff, EntityDiffOptions } from "../kernels/abml/diff.js";
 import type { TreeDiff, TreeDiffOptions } from "../kernels/abml/treeDiff.js";
-import type { JsAstAnalysisOptions, JsAstReductionFact } from "../commands/webSecurity/shared/jsAstTypes.js";
+import type { JsAstAnalysisOptions, JsAstReductionFact } from "../kernels/security/jsAstTypes.js";
 
 type NativeKernelCommand = "abml.diff" | "abml.treeDiff" | "jsAst.reduce";
 

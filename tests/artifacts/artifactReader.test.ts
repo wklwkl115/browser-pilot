@@ -125,6 +125,22 @@ test("single-line search windows preserve truncation metadata", async () => {
 	assert.match(result.snippets[0]?.text ?? "", /1: xxx/);
 });
 
+test("single-line sample windows preserve truncation metadata", async () => {
+	const { cwd, root } = makeArtifactRoot();
+	writeFileSync(path.join(root, "long.txt"), `${"a".repeat(120)}${"b".repeat(120)}${"c".repeat(120)}\n`, "utf8");
+	const result = await readBrowserArtifact({ path: ".browser-pilot/artifacts/long.txt", mode: "sample", contextChars: 80, maxChars: 500 }, { cwd });
+	assert.equal(result.mode, "sample");
+	assert.equal(result.summary.sample.singleLineWindows, true);
+	assert.equal(result.snippets.length, 3);
+	assert.deepEqual(result.snippets.map((snippet) => snippet.section), ["head", "middle", "tail"]);
+	assert.equal(result.snippets[0]?.truncatedBefore, false);
+	assert.equal(result.snippets[0]?.truncatedAfter, true);
+	assert.equal(result.snippets[1]?.truncatedBefore, true);
+	assert.equal(result.snippets[1]?.truncatedAfter, true);
+	assert.equal(result.snippets[2]?.truncatedBefore, true);
+	assert.equal(result.snippets[2]?.truncatedAfter, false);
+});
+
 test("artifactReader refactor target stays within the file-size budget", () => {
 	const filePath = path.join(process.cwd(), "src/artifacts/artifactReader.ts");
 	const lines = readFileSync(filePath, "utf8").split(/\r?\n/).length;
