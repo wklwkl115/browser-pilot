@@ -1,8 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
+import { buildActionableLocators, buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities } from "../../src/kernels/abml/entity.ts";
+import { axBackendNodeId, axName, axNodeId, axRole, axValue, boxModelToGeometry, buildAxEntityFromNode, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities } from "../../src/kernels/abml/ax.ts";
+import { addEntityRelations, buildRelationSummary, derivePaintOrderRelationAnchors, deriveStateRelationAnchors, materializeRelationGraph } from "../../src/kernels/abml/relations.ts";
+import { buildInferenceSummary, entitiesForInferenceEvidence, inferenceEvidenceRefs } from "../../src/kernels/abml/inference.ts";
+import type { EntityDiff } from "../../src/kernels/abml/diff.ts";
 import { displayEntityText, groupEntities, isActionableOrStructural, isPureTextLeaf, normalizeEntityText, structureScopeKey, suppressNestedNonControlGroups, templateGroupDescriptorForEntity } from "../../src/kernels/abml/grouping.ts";
 import { buildCollectionModels, summarizeCollectionCompleteness } from "../../src/kernels/abml/collections.ts";
+import { firstSafeSemanticText, isItemLikePreview, safeContainerLabelText, sanitizeSemanticText } from "../../src/kernels/abml/semanticText.ts";
 import { buildSnapshotProjection } from "../../src/kernels/abml/snapshotProjection.ts";
 import { buildIdentityGraph, identityGraphSummary } from "../../src/kernels/abml/identityGraph.ts";
 import { buildEventEntity, buildNetworkEntryEntity, createCaptureRef, mapCaptureState } from "../../src/kernels/abml/stream.ts";
@@ -11,6 +17,7 @@ import { allocateTemporalBudget, classifyDeadlinePressure } from "../../src/kern
 import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity } from "../../src/kernels/temporal/estimate.ts";
 import { TEMPORAL_REASON_MODEL_CAP, type TemporalAnchor, type TemporalStamp } from "../../src/kernels/temporal/types.ts";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../src/capture/inject.ts";
+import { buildScanEntities } from "../../src/scan/summary.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 
 function entity(ref: string, overrides: Partial<Entity> = {}): Entity {
@@ -217,6 +224,20 @@ test("ABML stream helpers normalize capture, network, and event boundary inputs"
 	assert.equal(event.descriptor.semantic.value, "innerHTML assigned");
 });
 
+test("ABML semantic text rejects unsafe names and item-like previews for container labels", () => {
+	const pricingCard = "Kimi K2 Turbo model billing per 1M tokens input $0.60 output $2.50 cache write $0.15 cache read $0.05 context 128k";
+	assert.equal(isItemLikePreview(pricingCard), true);
+	assert.equal(isItemLikePreview("API price: $0.60, output: $2.50, cache: $0.05"), true);
+	assert.equal(isItemLikePreview("个人中心"), false);
+	assert.equal(isItemLikePreview("全部供应商 30"), false);
+	assert.equal(isItemLikePreview("All latest topics"), false);
+	assert.equal(safeContainerLabelText(pricingCard), undefined);
+	assert.equal(safeContainerLabelText("个人中心"), "个人中心");
+	assert.equal(safeContainerLabelText("全部供应商 30"), "全部供应商 30");
+	assert.equal(safeContainerLabelText("All latest topics"), "All latest topics");
+	assert.equal(firstSafeSemanticText(["<svg><path d=\"M0 0\" /></svg>", "Safe label"]), "Safe label");
+});
+
 test("ABML collections and snapshot projection handle empty, repeated, and boundary-sized trees", () => {
 	assert.deepEqual(buildSnapshotProjection([]), {
 		summary: { templateCount: 0, instanceCount: 0, projectedInstanceRefCount: 0 },
@@ -285,6 +306,63 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	assert.equal(models[0]!.completeness, "lazy");
 	assert.equal(models[0]!.paginationControl?.kind, "next");
 	assert.equal(models[0]!.paginationControl?.ref, "bp-ref://control/next");
+	const labelled = buildCollectionModels({
+		entities: [],
+		scanEvidence: { listHints: [{ itemCount: 6, hiddenCount: 2, containerLabel: "Orders", selector: "#orders > li", firstItemPreview: "<svg><path d=\"M0 0\" /></svg>" }] },
+	});
+	assert.equal(labelled[0]!.containerName, "Orders");
+	assert.equal(labelled[0]!.evidence[0]!.summary, "scan list hint");
+	const fallback = buildCollectionModels({
+		entities: [],
+		scanEvidence: { listHints: [{ itemCount: 6, firstItemPreview: "<path d=\"M0 0\" />" }] },
+	});
+	assert.equal(fallback[0]!.containerName, "list-0");
+	const pricingPreview = "Kimi K2 Turbo model billing per 1M tokens input $0.60 output $2.50 cache write $0.15 cache read $0.05 context 128k";
+	const pricing = buildCollectionModels({
+		entities: [],
+		scanEvidence: { listHints: [{ itemCount: 8, hiddenCount: 5, firstItemPreview: pricingPreview }] },
+	});
+	assert.equal(pricing[0]!.containerName, "list-0");
+	assert.equal(pricing[0]!.evidence[0]!.summary.includes("Kimi K2 Turbo"), true);
+	assert.equal(buildRegionEntityFromListHint({ selector: "#pricing", firstItemPreview: pricingPreview }, { observationId: "obs-list", capturedAt: 1 }, 1).entity.name, "list-1");
+	assert.equal(buildRegionEntityFromListHint({ selector: "#providers", firstItemPreview: "全部供应商 30" }, { observationId: "obs-list", capturedAt: 1 }, 3).entity.name, "全部供应商 30");
+	assert.equal(buildRegionEntityFromListHint({ selector: "#icons", firstItemPreview: "<path d=\"M0 0\" />" }, { observationId: "obs-list", capturedAt: 1 }, 2).entity.name, "list-2");
+	assert.equal(buildRegionEntityFromListHint({ selector: "#icons", containerLabel: "Toolbar", firstItemPreview: "<path d=\"M0 0\" />" }, { observationId: "obs-list", capturedAt: 1 }, 2).entity.name, "Toolbar");
+	const duplicateCollections = buildCollectionModels({
+		entities: [],
+		scanEvidence: {
+			listHints: [
+				{ itemCount: 3, containerLabel: "Cards", selector: "#featured-cards > li", firstItemPreview: "Alpha" },
+				{ itemCount: 4, containerLabel: "Cards", selector: "#archived-cards > li", firstItemPreview: "Beta" },
+			],
+		},
+	});
+	assert.deepEqual(duplicateCollections.map((collection) => collection.containerName), ["Cards (archived cards)", "Cards (featured cards)"]);
+	assert.deepEqual(duplicateCollections.map((collection) => collection.containerNameSource), ["disambiguated", "disambiguated"]);
+	const duplicateListRegions = buildScanEntities({ list_hints: [
+		{ itemCount: 2, containerLabel: "Cards", selector: "#featured-cards > li", firstItemPreview: "Alpha" },
+		{ itemCount: 2, containerLabel: "Cards", selector: "#archived-cards > li", firstItemPreview: "Beta" },
+	] }, { entityContext: { observationId: "obs-dup", capturedAt: 10 } }).listEntities;
+	assert.deepEqual(duplicateListRegions.map((region) => region.name), ["Cards (featured cards)", "Cards (archived cards)"]);
+	const unsafeDuplicate = buildCollectionModels({
+		entities: [],
+		scanEvidence: { listHints: [
+			{ itemCount: 1, containerLabel: "Cards", selector: "svg > path", firstItemPreview: "Alpha" },
+			{ itemCount: 1, containerLabel: "Cards", selector: "svg > path", firstItemPreview: "Beta" },
+		] },
+	});
+	assert.deepEqual(unsafeDuplicate.map((collection) => collection.containerName), ["Cards (1)", "Cards (2)"]);
+	assert.deepEqual(unsafeDuplicate.map((collection) => collection.containerNameSource), ["disambiguated", "disambiguated"]);
+	const observeDuplicateCollections = buildCollectionModels({
+		entities: [],
+		scanEvidence: { listHints: [
+			{ itemCount: 1, containerLabel: "筛选", selector: "div > div.flex", firstItemPreview: "Alpha" },
+			{ itemCount: 2, containerLabel: "筛选", selector: "section > div.flex", firstItemPreview: "Beta" },
+		] },
+	});
+	assert.deepEqual(observeDuplicateCollections.map((collection) => collection.containerName), ["筛选 (flex) (1)", "筛选 (flex) (2)"]);
+	assert.equal(new Set(observeDuplicateCollections.map((collection) => collection.containerName)).size, observeDuplicateCollections.length);
+	assert.deepEqual(observeDuplicateCollections.map((collection) => collection.containerNameSource), ["disambiguated", "disambiguated"]);
 });
 
 test("ABML identity graph ignores malformed relations and summarizes duplicate node identities", () => {
@@ -326,6 +404,198 @@ test("ABML identity graph ignores malformed relations and summarizes duplicate n
 	});
 });
 
+test("ABML entity builders handle malformed inputs, fallback roles, refs, and dedupe keys", () => {
+	const context = { observationId: "obs-entity", capturedAt: 2_000, url: "notaurl", browserSessionId: "session-1", tabId: 3, targetId: "target-1" };
+	assert.deepEqual(buildActionableLocators({ backendNodeId: "7", selector: " #save ", action: " Save ", role: "button", point: { x: 10.4, y: 20.6 } }), [
+		{ by: "backendNodeId", value: 7 },
+		{ by: "css", value: "#save" },
+		{ by: "textAnchor", value: "Save", role: "button", exact: false },
+		{ by: "point", x: 10, y: 21 },
+	]);
+	assert.deepEqual(buildActionableLocators({ backendNodeId: 0, selector: " ", point: { x: "bad" } }), []);
+	const action = buildDomEntityFromScanActionable({ tag: "a", index: "2", text: "Open", value: "href", rect: { x: 1.2, y: 2.8, width: 10.2, height: 20.1 }, current: "page", hitOk: false, occluderSelector: "#modal", controlsSelectors: ["#panel", "", 1], ownsSelectors: ["#owned"], expandedTargetSelectors: ["#expanded"], backendNodeIdBootstrap: { from: "snapshot" }, inputKind: "search" }, context);
+	assert.equal(action.entity.kind, "control");
+	assert.equal(action.entity.role, "link");
+	assert.equal(action.entity.state.current, "page");
+	assert.equal(action.entity.state.occluded, true);
+	assert.equal(action.entity.hints?.occluderSelector, "#modal");
+	assert.deepEqual(action.entity.hints?.controlsSelectors, ["#panel"]);
+	assert.equal(action.descriptor.owner.topLevelOrigin, undefined);
+	const editable = buildDomEntityFromScanActionable({ tag: "input", editable: true, current: "false", value: "secret", point: { x: 3, y: 4 } }, { ...context, url: "https://example.test/form" });
+	assert.equal(editable.entity.value, undefined);
+	assert.equal(editable.entity.state.current, undefined);
+	assert.equal(editable.descriptor.owner.topLevelOrigin, "https://example.test");
+	const list = buildRegionEntityFromListHint({ selector: "#items", firstItemPreview: " First ", hiddenCount: "5" }, context, 4);
+	assert.equal(list.entity.name, "First");
+	assert.equal(list.entity.hints?.hiddenCount, 5);
+	assert.equal(buildRegionEntityFromListHint({}, context, 8).entity.name, "list-8");
+	assert.equal(sanitizeSemanticText("<path d=\"M10 10 L20 20\"></path>"), undefined);
+	assert.equal(firstSafeSemanticText(["<svg><path d=\"M0 0\" /></svg>", "Upload file"]), "Upload file");
+	const noisy = buildDomEntityFromScanActionable({ tag: "button", role: "button", action: "<path d=\"M0 0 L1 1\" />", label: "", text: "", displayLabel: "Open menu" }, context);
+	assert.equal(noisy.entity.name, "Open menu");
+	assert.deepEqual(noisy.entity.locators?.filter((locator) => locator.by === "textAnchor"), [{ by: "textAnchor", value: "Open menu", role: "button", exact: false }]);
+	assert.equal(noisy.descriptor.semantic.name, "Open menu");
+	const unnamedIcon = buildDomEntityFromScanActionable({ tag: "button", role: "button", action: "<svg><path d=\"M0 0\" /></svg>", label: "", text: "" }, context);
+	assert.equal(unnamedIcon.entity.name, undefined);
+	assert.deepEqual(unnamedIcon.entity.locators, []);
+	const editableWithSecret = buildDomEntityFromScanActionable({ tag: "input", editable: true, label: "Search", value: "private query" }, context);
+	assert.equal(editableWithSecret.entity.name, "Search");
+	assert.equal(editableWithSecret.entity.value, undefined);
+	assert.equal(buildControlsSourceEntity({ sourceSelector: "#tabs", sourceRole: "tablist", sourceName: "Tabs", controlsSelectors: ["#panel"] }, context).entity.kind, "element");
+	assert.equal(buildControlsSourceEntity({ sourceRole: "heading" }, context).entity.kind, "text");
+	const target = buildReferencedTargetEntity({ selector: "#dialog", role: "dialog", hidden: true }, context);
+	assert.equal(target.entity.kind, "region");
+	assert.equal(target.entity.state.visible, false);
+	const vision = buildVisionRegionFromCanvasActionable({ rect: { x: 0, y: 0, w: 20, h: 10 }, hitOk: false }, context);
+	assert.deepEqual(vision.entity.locators, [{ by: "point", x: 10, y: 5 }]);
+	assert.equal(vision.entity.state.occluded, true);
+	const deduped = dedupeEntities([
+		{ kind: "control", hints: { selector: "#same", jsonPath: "a" } },
+		{ kind: "control", hints: { selector: "#same", jsonPath: "b" } },
+		{ kind: "region", hints: { jsonPath: "r1", listContainer: true }, locators: [{ by: "css", value: "#list" }] },
+		{ kind: "region", hints: { jsonPath: "r2", listContainer: true }, locators: [{ by: "css", value: "#list" }] },
+	]);
+	assert.equal(deduped.length, 2);
+});
+
+test("ABML AX helpers cover malformed nodes, structure properties, relation anchors, and merge ambiguity", () => {
+	const node = {
+		role: { value: "checkbox" },
+		name: { value: " Accept " },
+		value: { value: "on" },
+		nodeId: "ax-1",
+		backendDOMNodeId: "11",
+		properties: [
+			{ name: "checked", value: { value: "true" } },
+			{ name: "disabled", value: true },
+			{ name: "focused", value: { value: false } },
+			{ name: "level", value: { value: "2" } },
+			{ name: "setsize", value: { value: 4 } },
+			{ name: "posinset", value: { value: 1 } },
+			{ name: "sort", value: { value: "ascending" } },
+			{ name: "controls", value: { relatedNodes: [{ backendDOMNodeId: 22 }, { backendNodeId: "23" }, {}] } },
+			{ name: "expanded", value: { value: "false" } },
+		],
+	};
+	assert.equal(axRole(node), "checkbox");
+	assert.equal(axName(node), "Accept");
+	assert.equal(axValue(node), "on");
+	assert.equal(axNodeId(node), "ax-1");
+	assert.equal(axBackendNodeId(node), 11);
+	assert.equal(isInterestingAxNode({ role: { value: "generic" }, name: "" }), false);
+	assert.equal(isInterestingAxNode({ ignored: true, role: "button", name: "Save" }), false);
+	assert.equal(isInterestingAxNode({ role: "generic", backendDOMNodeId: 44, value: "fallback" }), true);
+	assert.equal(boxModelToGeometry({ border: [0, 0, 10, 0, 10, 20, 0, 20] })?.point?.y, 10);
+	assert.equal(boxModelToGeometry({ border: [0, Number.NaN] }), undefined);
+	assert.deepEqual(extractAxPropertyRelationAnchors(node), [
+		{ type: "controls", targetKey: "b:22" },
+		{ type: "controls", targetKey: "b:23" },
+		{ type: "expandedTarget", targetKey: "b:22" },
+		{ type: "expandedTarget", targetKey: "b:23" },
+	]);
+	const built = buildAxEntityFromNode(node, { observationId: "obs-ax", capturedAt: 10, url: "https://example.test/page", tabId: 2 }, { box: { x: 0, y: 0, w: 10, h: 20 }, point: { x: 5, y: 10 } });
+	assert.equal(built.entity.kind, "control");
+	assert.equal(built.entity.state.checked, true);
+	assert.equal(built.entity.state.expanded, false);
+	assert.equal(built.entity.structure?.sort, "ascending");
+	assert.equal(built.descriptor.owner.topLevelOrigin, "https://example.test");
+	const dom = [entity("bp-ref://dom/1", { role: "button", name: "Save", geometry: { point: { x: 100, y: 100 } } }), entity("bp-ref://dom/2", { role: "button", name: "Save", geometry: { point: { x: 101, y: 101 } } })];
+	const ambiguousAx = buildAxEntityFromNode({ role: "button", name: "Save" }, { observationId: "obs-ax", capturedAt: 10 });
+	assert.equal(mergeDomAndAxEntities(dom, [ambiguousAx]).unmatchedAx.length, 1);
+	const backendMerged = mergeDomAndAxEntities([entity("bp-ref://dom/backend", { role: "button", name: "Old", locators: [{ by: "backendNodeId", value: 99 }], state: { ...entity("x").state, pressed: false } })], [buildAxEntityFromNode({ role: "button", name: "New", backendDOMNodeId: 99, properties: [{ name: "pressed", value: { value: "true" } }] }, { observationId: "obs-ax", capturedAt: 10 })]);
+	assert.equal(backendMerged.merged[0]!.name, "New");
+	assert.equal(backendMerged.merged[0]!.state.pressed, true);
+	assert.deepEqual(backendMerged.merged[0]!.hints?.stateSource, { pressed: "ax" });
+});
+
+test("ABML relations materialize fallbacks, paint-order occlusion, graph dedupe, caps, and summaries", () => {
+	const source = entity("bp-ref://control/source", { locators: [{ by: "backendNodeId", value: 1, targetId: "target-a" }], hints: { targetId: "target-a", selector: "#source", backendNodeId: 1, currentContainerKeys: ["b:404", "s:#nav"], controlsSelectors: ["#panel"], occluderSelector: "#overlay" }, state: { ...entity("x").state, current: "page", occluded: true } });
+	const panel = entity("bp-ref://region/panel", { kind: "region", role: "region", hints: { selector: "#panel" } });
+	const nav = entity("bp-ref://region/nav", { kind: "region", role: "navigation", hints: { selector: "#nav" } });
+	const overlay = entity("bp-ref://region/overlay", { kind: "region", role: "dialog", hints: { selector: "#overlay" } });
+	const anchors = deriveStateRelationAnchors([source, panel, nav, overlay]);
+	assert.equal(anchors.length, 4);
+	const materialized = materializeRelationGraph([source, panel, nav, overlay], anchors);
+	assert.equal(materialized.graph.edgeCount, 4);
+	assert.equal(materialized.entities[0]!.relations?.some((relation) => relation.type === "currentIn" && relation.targetRef === "bp-ref://region/nav"), true);
+	assert.equal(materialized.entities[0]!.relations?.some((relation) => relation.type === "controls" && relation.targetRef === "bp-ref://region/panel"), true);
+	const paintEntities = [
+		entity("bp-ref://paint/lower", { locators: [{ by: "backendNodeId", value: 10 }], geometry: { box: { x: 0, y: 0, w: 100, h: 100 } } }),
+		entity("bp-ref://paint/upper-near", { locators: [{ by: "backendNodeId", value: 11 }], geometry: { box: { x: 5, y: 5, w: 90, h: 90 } } }),
+		entity("bp-ref://paint/upper-far", { locators: [{ by: "backendNodeId", value: 12 }], geometry: { box: { x: 500, y: 500, w: 10, h: 10 } } }),
+		entity("bp-ref://paint/text", { kind: "text", role: "StaticText", locators: [{ by: "backendNodeId", value: 13 }] }),
+	];
+	const paintAnchors = derivePaintOrderRelationAnchors(paintEntities, [
+		{ backendNodeId: 10, paintOrder: 1, bounds: { x: 0, y: 0, w: 100, h: 100 } },
+		{ backendNodeId: 11, paintOrder: 2, bounds: { x: 5, y: 5, w: 90, h: 90 } },
+		{ backendNodeId: 12, paintOrder: 3, bounds: { x: 500, y: 500, w: 10, h: 10 } },
+		{ backendNodeId: 13, paintOrder: 4, bounds: { x: 0, y: 0, w: 100, h: 100 } },
+	]);
+	assert.equal(paintAnchors.length, 2);
+	assert.equal(paintAnchors[0]!.type, "coveredBy");
+	assert.equal(paintAnchors[0]!.evidence?.overlapRatio, 1);
+	const relationRich = addEntityRelations(entity("bp-ref://control/rich"), [
+		{ type: "owns", targetRef: "bp-ref://target/b", source: "dom", confidence: "medium" },
+		{ type: "controls", targetRef: "bp-ref://target/a", source: "ax", confidence: "high", evidence: { ax: true } },
+		{ type: "controls", targetRef: "bp-ref://target/a", source: "dom", confidence: "low", evidence: { dom: true } },
+		...Array.from({ length: 10 }, (_, index) => ({ type: "labelledBy" as const, targetRef: `bp-ref://label/${index}`, source: "ax" as const, confidence: "high" as const })),
+	]);
+	assert.equal(relationRich.relations?.length, 8);
+	assert.deepEqual(relationRich.relations?.[0], { type: "controls", targetRef: "bp-ref://target/a", source: "ax", confidence: "high", evidence: { ax: true } });
+	const summary = buildRelationSummary([relationRich, entity("bp-ref://cell/1", { relations: [{ type: "cellOf", targetRef: "bp-ref://table/1", source: "ax", confidence: "high" }] })]);
+	assert.equal(summary.summary.controls, 1);
+	assert.equal(summary.summary.tableCells, 1);
+	assert.equal(summary.highlights.some((highlight) => highlight.type === "cellOf"), false);
+});
+
+test("ABML inference detects anchored intents, dedupes evidence refs, and handles diff fallbacks", () => {
+	const baseSummary = { summary: { expandedTarget: 2, currentIn: 1, tableCells: 51 }, highlights: [] };
+	const entities = [
+		entity("bp-ref://input/password", { role: "textbox", state: { ...entity("x").state, editable: true }, hints: { inputKind: "password" } }),
+		entity("bp-ref://button/login", { role: "button", name: "Sign in", state: { ...entity("x").state, inViewport: true } }),
+		entity("bp-ref://search/box", { role: "searchbox", state: { ...entity("x").state, editable: true } }),
+		...Array.from({ length: 7 }, (_, index) => entity(`bp-ref://filter/${index}`, { role: index % 2 ? "checkbox" : "button", name: `Filter ${index}`, hints: { containerRole: "group", containerName: "Filters" } })),
+		entity("bp-ref://radio/group", { role: "radiogroup" }),
+		entity("bp-ref://expand/1", { role: "button", state: { ...entity("x").state, expanded: false }, relations: [{ type: "expandedTarget", targetRef: "bp-ref://panel/1", source: "dom", confidence: "high" }] }),
+		entity("bp-ref://expand/2", { role: "button", state: { ...entity("x").state, expanded: true }, relations: [{ type: "expandedTarget", targetRef: "bp-ref://panel/2", source: "dom", confidence: "high" }] }),
+		entity("bp-ref://grid/main", { role: "grid" }),
+		entity("bp-ref://nav/current", { role: "link", state: { ...entity("x").state, current: "page" }, relations: [{ type: "currentIn", targetRef: "bp-ref://nav/main", source: "ax", confidence: "high" }] }),
+		entity("bp-ref://dialog/main", { kind: "region", role: "dialog" }),
+		entity("bp-ref://tabs/list", { kind: "region", role: "tablist" }),
+		entity("bp-ref://tab/1", { role: "tab" }),
+		entity("bp-ref://tab/2", { role: "tab" }),
+		entity("bp-ref://alert/status", { kind: "region", role: "status", name: "Saved" }),
+		entity("bp-ref://input/required", { role: "textbox", state: { ...entity("x").state, editable: true, focused: false } }),
+		entity("bp-ref://button/submit", { role: "button", name: "Submit" }),
+	];
+	const diff: EntityDiff = {
+		appeared: ["bp-ref://alert/status"],
+		disappeared: [],
+		focusedRef: "bp-ref://input/required",
+		changed: [{ ref: "bp-ref://button/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } }],
+	};
+	const summary = buildInferenceSummary(entities, baseSummary, diff);
+	assert.deepEqual(summary.intents.map((intent) => intent.intent), ["login", "filter-panel", "single-choice", "multi-choice", "expandable", "data-grid", "navigation", "dialog", "tabbed-interface", "alert-region", "form-dependency"]);
+	assert.equal(summary.intents.find((intent) => intent.intent === "filter-panel")?.evidence?.controlCount, 7);
+	assert.equal(summary.intents.find((intent) => intent.intent === "alert-region")?.evidence?.fresh, "appeared");
+	assert.equal(summary.intents.find((intent) => intent.intent === "form-dependency")?.evidence?.focusSignal, "focusedRef");
+	assert.equal(inferenceEvidenceRefs(summary).includes("bp-ref://button/submit"), true);
+	assert.equal(entitiesForInferenceEvidence(entities, summary, 3).length, 3);
+	const weakLogin = buildInferenceSummary([entity("bp-ref://password/only", { role: "textbox", state: { ...entity("x").state, editable: true }, hints: { inputKind: "password" } }), entity("bp-ref://oauth", { role: "button", name: "Forgot password" })], { summary: {}, highlights: [] });
+	assert.equal(weakLogin.intents[0]?.confidence, "medium");
+	assert.equal(weakLogin.intents[0]?.evidence, undefined);
+	const transitionDiff: EntityDiff = { appeared: [], disappeared: [], changed: [
+		{ ref: "bp-ref://button/enabled", kind: "state-changed", before: { disabled: true }, after: { disabled: false } },
+		{ ref: "bp-ref://input/lost", kind: "state-changed", before: { focused: true }, after: { focused: false } },
+	] };
+	const transition = buildInferenceSummary([
+		entity("bp-ref://button/enabled", { role: "button" }),
+		entity("bp-ref://input/lost", { role: "textbox", state: { ...entity("x").state, editable: true } }),
+	], { summary: {}, highlights: [] }, transitionDiff);
+	assert.equal(transition.intents.find((intent) => intent.intent === "form-dependency")?.confidence, "medium");
+	assert.deepEqual(buildInferenceSummary([], { summary: {}, highlights: [] }).intents, []);
+});
+
 function projectionKey(containerRole: string, containerName: string, itemRole: string, declaredTotal: number): string {
 	return [undefined, containerRole, containerName, itemRole, `total:${declaredTotal}`, undefined].filter((item): item is string => !!item).join("\u0000");
 }
@@ -347,6 +617,25 @@ test("scan script builder clamps options and injects scan helper blocks determin
 		assert.match(script, /const waitMs = 80;/);
 		assert.match(script, /signals: \{ fingerprint: piScanFingerprint \}/);
 		assert.match(script, /growthProbe,/);
+		assert.match(script, /function safePreviewOf\(el\) \{/);
+		assert.match(script, /function conciseContainerLabel\(text\) \{/);
+		assert.match(script, /function headingLabelNear\(el\) \{/);
+		assert.match(script, /function containerLabelOf\(el\) \{/);
+		assert.match(script, /getAttribute\('aria-labelledby'\)/);
+		assert.match(script, /\[aria-selected="true"\]/);
+		assert.match(script, /computeAccessibleName/);
+		assert.match(script, /function computedAccessibleName\(el, max = 160\) \{/);
+		assert.match(script, /accessibleNameCount >= ACCESSIBLE_NAME_LIMIT/);
+		assert.match(script, /catch \(_\) \{ return ''; \}/);
+		assert.match(script, /function safeSemanticLabel\(text, max = 160\) \{/);
+		assert.match(script, /moneyTokens >= 2/);
+		assert.match(script, /const computedName = computedAccessibleName\(el, 160\)/);
+		assert.match(script, /const computedName = computedAccessibleName\(el, 120\)/);
+		assert.match(script, /\['button','link','menuitem','tab','checkbox','radio','switch','option'\]\.includes\(role\)/);
+		assert.match(script, /\.sr-only,\.visually-hidden,\.screen-reader-text/);
+		assert.match(script, /const containerLabel = containerLabelOf\(container\)/);
+		assert.match(script, /\.\.\.\(containerLabel \? \{ containerLabel \} : \{\}\)/);
+		assert.match(script, /firstItemPreview: safePreviewOf\(items\[0\]\)/);
 		process.env.BROWSER_PILOT_GROWTH_PROBE_WAIT_MS = "125.9";
 		assert.match(buildScanScript(), /const waitMs = 125;/);
 		process.env.BROWSER_PILOT_GROWTH_PROBE_WAIT_MS = "bad";

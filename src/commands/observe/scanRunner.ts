@@ -12,7 +12,8 @@ import { buildIdentityGraph, identityGraphSummary } from "../../kernels/abml/ide
 import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
 import { createBrowserAbmlIntegration } from "../../browser-command-runtime/abml/integration.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
-import { parseJsonOrThrow } from "../../utils/json.js";
+import { parseJsonOrThrow, stableJson, truncateText } from "../../utils/json.js";
+import { compactError } from "../../utils/errors.js";
 import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
 import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
@@ -23,7 +24,7 @@ import { buildScanEntities, scanEntitiesFromGroups, summarizeScanData } from "..
 import { artifactFallbackName, bridgeNestedErrorResult, jsonCommandResult, resolveLocalTargetTabId, targetTabId, textCommandResult, commandMaxChars, commandTimeoutMs, withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS } from "../commandShared.js";
 import { buildEntityOutline, buildPageGist, sortEntitiesBySalience } from "./entityViews.js";
-import { cachedEnvelopeFromArtifact, modeInferredDetails, modeInferredSummary, observeRenderParamsSignature, renderCacheMatches, scanCommandName, sessionDeltaEnabled } from "./renderCache.js";
+import { cachedEnvelopeFromArtifact, legacyProjectionDetails, legacyProjectionSummary, modeInferredDetails, modeInferredSummary, observeCacheTtlMs, observeRenderParamsSignature, renderCacheMatches, scanCommandName, sessionDeltaEnabled } from "./renderCache.js";
 import { entityRefs, mergeEntitiesByRef, resolveBaselineEntities, type BaselineResolution } from "./baseline.js";
 import { buildMemoryAugmentationPlan, consumeMemoryProfileDiagnostics, memoryWarmStartTerms, recordMemoryProfileFrame } from "./memoryAugmentation.js";
 import { factsFromObservedEntities, stableRefsFromCommandFrames } from "./perceptionLedgerProjection.js";
@@ -32,7 +33,7 @@ import { addBridgeRoundTrips, elapsedMs, finalizedObserveTimings, type ObserveTi
 import { currentObserveSnapshotMeta, withObservationMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
 import type { CommandFactGranularity } from "../resultTypes.js";
 import { buildNativeTreeDiff } from "../../native/browserPilotNativeKernels.js";
-import { attachAbmlArtifactHints, buildObserveAbmlDetails, buildObserveArtifactProjection, buildScanNextActionHints } from "./scanProjection.js";
+import { attachAbmlArtifactHints, buildObserveAbmlDetails, buildObserveArtifactProjection, buildPageObservation, buildScanNextActionHints } from "./scanProjection.js";
 
 // Build the envelope `causal` block when a baseline is supplied. Passive (no control attribution):
 // "requests fired since the baseline observation". Emits `unavailable` when no recorder is active
@@ -64,6 +65,19 @@ function tabUrlForLedger(tabs: unknown[], tabId: number | undefined, fallbackTab
 	const wanted = tabId ?? fallbackTabId;
 	const tab = tabs.find((item) => isRecord(item) && Number(item.tabId ?? item.id) === wanted);
 	return isRecord(tab) && typeof tab.url === "string" ? tab.url : undefined;
+}
+
+export function cachedObserveResultFromEnvelope(envelope: Record<string, unknown>, details: Record<string, unknown>, maxChars: number): import("../../utils/toolResult.js").BrowserTextCommandResult {
+	const rendered = stableJson(envelope);
+	const preview = truncateText(rendered, maxChars);
+	return {
+		content: [{ type: "text", text: preview.text }],
+		details: {
+			...details,
+			truncated: preview.truncated,
+			originalLength: preview.originalLength,
+		},
+	};
 }
 
 function scanResultFingerprint(value: unknown) {
@@ -112,10 +126,55 @@ function scanCollectionEvidence(data: unknown) {
 	};
 }
 
+type ObservationProviderFailure = {
+	provider: string;
+	code: string;
+	message?: string;
+	details?: Record<string, unknown>;
+};
+
+function providerFailure(provider: string, code: string, message?: string, details?: Record<string, unknown>): ObservationProviderFailure {
+	return {
+		provider,
+		code,
+		...(message ? { message } : {}),
+		...(details && Object.keys(details).length ? { details } : {}),
+	};
+}
+
+function providerFailureFromError(provider: string, error: unknown, fallbackCode: string): ObservationProviderFailure {
+	const compact = compactError(error, fallbackCode);
+	return providerFailure(
+		provider,
+		typeof compact.code === "string" ? compact.code : fallbackCode,
+		typeof compact.message === "string" ? compact.message : undefined,
+		isRecord(compact.details) ? compact.details : undefined,
+	);
+}
+
+function providerFailureFromAbmlRead(abmlRead: unknown): ObservationProviderFailure | undefined {
+	if (!isRecord(abmlRead) || abmlRead.ok === true) return undefined;
+	const error = isRecord(abmlRead.error) ? abmlRead.error : abmlRead;
+	const code = typeof error.code === "string" ? error.code : "ABML_READ_FAILED";
+	const message = typeof error.message === "string" ? error.message : undefined;
+	const details = isRecord(error.details) ? error.details : undefined;
+	return providerFailure("abml-read", code, message, details);
+}
+
+function hasArtifactPath(path: unknown): path is string {
+	return typeof path === "string" && path.trim().length > 0;
+}
+
 export async function runScanObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, mode: Extract<ObserveMode, "scan" | "text" | "tabs">, onUpdate?: CommandOnUpdate) {
 	const observeTimings: ObserveTimingMetrics = {};
+	const providerFailures: ObservationProviderFailure[] = [];
 	const tabRefreshStartedAt = Date.now();
-	const tabs = await server.refreshTabs(5_000, { browserSessionId: params.browserSessionId }).catch(() => server.getTabs());
+	let tabsRefreshDegraded = false;
+	const tabs = await server.refreshTabs(5_000, { browserSessionId: params.browserSessionId }).catch((error: unknown) => {
+		tabsRefreshDegraded = true;
+		providerFailures.push(providerFailureFromError("tabs-refresh", error, "TABS_REFRESH_FAILED"));
+		return server.getTabs();
+	});
 	observeTimings.tabRefreshMs = elapsedMs(tabRefreshStartedAt);
 	const maxChars = commandMaxChars(params, "browser_observe");
 	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
@@ -123,6 +182,8 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
 	const fallbackName = artifactFallbackName(mode === "tabs" ? "observe-tabs" : mode === "text" ? "observe-text" : "observe-scan");
 	const outputPath = params.outputPath ?? resolveArtifactPath(ctx, undefined, fallbackName);
+	const artifactAvailable = hasArtifactPath(outputPath);
+	if (!artifactAvailable) providerFailures.push(providerFailure("artifact", "ARTIFACT_UNAVAILABLE", "PageObservation artifact path is unavailable"));
 	const resultParams = { ...params, outputPath };
 	if (mode === "tabs") {
 		const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
@@ -155,10 +216,10 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 				command: "scan.tabs",
 				maxChars,
 				fallbackName,
-				details: { mode: "tabs", modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "tabs.list" },
+				details: { mode: "tabs", modeInferred: modeInferredDetails(params), ...legacyProjectionDetails(params, "tabs"), sourceMode: "scan", sourceCommand: "tabs.list" },
 				operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId },
 				snapshot: snapshotMeta,
-				distill: (value) => summarizeObserveTabsData(value),
+				distill: (value) => ({ ...summarizeObserveTabsData(value), ...legacyProjectionSummary(params, "tabs") }),
 				artifactValue: { ...tabsOnlyData, operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId }, snapshot: snapshotMeta },
 			});
 		});
@@ -190,7 +251,14 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 				const cachedArtifact = parseJsonOrThrow(await readFile(priorPath, "utf8"), "browser_observe cached snapshot artifact");
 				const cachedEnvelope = cachedEnvelopeFromArtifact(cachedArtifact);
 				if (cachedEnvelope) {
-					const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, cacheFingerprint.url);
+					const cachedRecorderStartedAt = Date.now();
+					const [cachedNetworkState, cachedHookState] = await Promise.all([
+						readNetworkRecorderSeq(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId, timeoutMs }),
+						readHookRecorderSeq(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId, timeoutMs }),
+					]);
+					observeTimings.recorderMs = elapsedMs(cachedRecorderStartedAt);
+					addBridgeRoundTrips(observeTimings, 2);
+					const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, cacheFingerprint.url, cachedNetworkState.lastSeq, cachedHookState.lastSeq);
 					const { result: cachedResult } = await withTrackedOperation(server, {
 						commandName: "browser_observe",
 						command: mode === "text" ? "scan.text" : "scan",
@@ -204,19 +272,49 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 						sourceMode: "scan",
 					}, onUpdate, async (handle): Promise<import("../../utils/toolResult.js").BrowserTextCommandResult> => {
 						await handle.update({ progress: 100, details: { fromCache: true, changeSeq: cacheFingerprint.changeSeq } });
-						const value = { ...cachedEnvelope, fromCache: true, cache: { reason: "content-fingerprint-unchanged", changeSeq: cacheFingerprint.changeSeq, priorSnapshotId: ledgerFrame.snapshotId } };
+						const isCanonical = mode === "scan" && !params.modeExplicit;
+						const cacheMeta = { reason: "content-fingerprint-unchanged" as const, changeSeq: cacheFingerprint.changeSeq, priorSnapshotId: ledgerFrame.snapshotId };
 						const memoryProfileWarnings = consumeMemoryProfileDiagnostics(ctx?.cwd);
-						return await jsonCommandResult(value, resultParams, ctx, {
-							commandName: "browser_observe",
-							command: mode === "text" ? "scan.text" : "scan",
-							maxChars,
-							fallbackName,
-							details: { mode, modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "content.fingerprint", fromCache: true, priorSnapshotId: ledgerFrame.snapshotId, ...(memoryProfileWarnings.length ? { memory: { warnings: memoryProfileWarnings } } : {}) },
+						const cachedSummary = isRecord(cachedEnvelope.summary) ? { ...cachedEnvelope.summary } as Record<string, unknown> : {};
+						const cachedPageObservation = isRecord(cachedSummary.pageObservation) ? { ...cachedSummary.pageObservation } as Record<string, unknown> : undefined;
+						if (cachedPageObservation) {
+							const cachedPageDiagnostics = isRecord(cachedPageObservation.diagnostics) ? cachedPageObservation.diagnostics as Record<string, unknown> : {};
+							cachedPageObservation.snapshot = snapshotMeta;
+							cachedPageObservation.diagnostics = {
+								...cachedPageDiagnostics,
+								cache: cacheMeta,
+								fromCache: true,
+							};
+						}
+						const cachedSummaryWithCache = {
+							...cachedSummary,
+							...(cachedPageObservation ? { pageObservation: cachedPageObservation } : {}),
+							fromCache: true,
+							cache: cacheMeta,
+							priorSnapshotId: ledgerFrame.snapshotId,
+							...(isCanonical ? {} : legacyProjectionSummary(params, mode)),
+						};
+						const value = {
+							...cachedEnvelope,
+							fromCache: true,
+							cache: cacheMeta,
+							delta: "session" as const,
+							baselineSnapshotId: ledgerFrame.snapshotId,
 							operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId },
 							snapshot: snapshotMeta,
-							distill: () => ({ mode, sourceMode: "scan", fromCache: true, cache: value.cache, priorSnapshotId: ledgerFrame.snapshotId }),
-							artifactValue: { ...value, operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId }, snapshot: snapshotMeta },
-						});
+							summary: cachedSummaryWithCache,
+						};
+						return cachedObserveResultFromEnvelope(value, {
+							mode,
+							modeInferred: modeInferredDetails(params),
+							...(isCanonical ? { model: "PageObservation", canonical: true } : legacyProjectionDetails(params, mode)),
+							sourceMode: "scan",
+							sourceCommand: "content.fingerprint",
+							fromCache: true,
+							priorSnapshotId: ledgerFrame.snapshotId,
+							renderCache: { hit: true, ttlMs: observeCacheTtlMs(), ...cacheMeta },
+							...(memoryProfileWarnings.length ? { memory: { warnings: memoryProfileWarnings } } : {}),
+						}, maxChars);
 					});
 					if (plannedLedgerKey && typeof server.recordPerceptionLedgerFrame === "function") {
 						server.recordPerceptionLedgerFrame({
@@ -356,6 +454,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 			scanEntities: summaryScanEntities,
 			relevance: relevance?.result,
 		}), mode, "scan"),
+		...(mode === "scan" && !params.modeExplicit ? { model: "PageObservation", canonical: true } : legacyProjectionSummary(params, mode)),
 		browserSessionId: bridge.browserSessionId,
 		tabId,
 		selectionVersion: bridge.selectionVersion,
@@ -363,6 +462,8 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		selectionVersionAtResolve: bridge.selectionVersion,
 	});
 	const abmlEntities = observation.abmlRead?.ok === true ? (observation.abmlRead.entities ?? []) : null;
+	const abmlProviderFailure = providerFailureFromAbmlRead(observation.abmlRead);
+	if (abmlProviderFailure) providerFailures.push(abmlProviderFailure);
 	const abmlDiff: EntityDiff | undefined = observation.abmlRead?.ok === true ? observation.abmlRead.diff : undefined;
 	const abmlDiffSummary = abmlDiff ? summarizeEntityDiff(abmlDiff, baseline?.entities, observation.abmlRead?.ok === true ? observation.abmlRead.entities ?? [] : []) : undefined;
 	const envelopeDiff = abmlDiff ? { ...abmlDiff, ...(abmlDiffSummary ? { summary: abmlDiffSummary } : {}) } : undefined;
@@ -505,7 +606,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		artifactIdentityGraph,
 		artifactRelationGraph,
 		artifactRelations,
-		artifactEnvelopeMirror,
 	} = buildObserveArtifactProjection({
 		summaryRecord,
 		summary: summaryRecord,
@@ -542,8 +642,38 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		observeTimings: finalizedObserveTimings(observeTimings, data, observation.abmlRead),
 		...(baselineDiagnostics ? { baseline: baselineDiagnostics } : {}),
 		...(summaryTruncation?.actionablesTruncated === true ? { actionablesTruncated: true, actionablesScanned: summaryTruncation.actionablesScanned, actionablesReturned: summaryTruncation.actionablesReturned } : {}),
+		...(providerFailures.length ? { providerFailures } : {}),
 		...(allWarnings.length ? { warnings: allWarnings } : {}),
 	};
+	const isCanonicalPageObservation = mode === "scan" && !params.modeExplicit;
+	const pageObservation = isCanonicalPageObservation ? buildPageObservation({
+		mode,
+		canonical: true,
+		summary: summaryRecord,
+		entities: envelopeEntities,
+		content,
+		url: pageUrl,
+		tabs,
+		activeTabId: bridge.defaultTabId,
+		snapshot: snapshotMeta,
+		diff: envelopeDiff,
+		treeDiff: abmlTreeDiff,
+		causal,
+		artifactPath: artifactAvailable ? outputPath : undefined,
+		abmlIntegrated: attributedEntities !== null,
+		tabsRefreshDegraded,
+		providerStatuses: {
+			structure: observation.abmlRead?.ok === true ? "executed" : "failed",
+			content: "scan-backed",
+			text: "scan-backed",
+			html: artifactAvailable ? "scan-backed" : "failed",
+			evidence: artifactAvailable ? "scan-backed" : "failed",
+			tabs: tabsRefreshDegraded ? "degraded" : "executed",
+		},
+		providerFailures,
+		diagnostics: observeDiagnostics,
+	}) : undefined;
+	if (pageObservation) summaryRecord.pageObservation = pageObservation;
 	const abmlDetails = buildObserveAbmlDetails({
 		abmlRead: observation.abmlRead,
 		diagnostics: observeDiagnostics.observeTimings,
@@ -551,6 +681,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const resultDetails = {
 		mode,
 		modeInferred: modeInferredDetails(params),
+		...(mode === "scan" && !params.modeExplicit ? { model: "PageObservation", canonical: true } : legacyProjectionDetails(params, mode)),
 		sourceMode: "scan",
 		sourceCommand: "scan_extract",
 		...(hasNavigation ? { navigation: observation.navigationData } : {}),
@@ -567,13 +698,13 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const artifactValue = {
 		...observation.result,
 		...(hasNavigation ? { navigation: observation.navigationData } : {}),
+		...(pageObservation ? { pageObservation } : {}),
 		tabs_count: tabs.length,
 		tabs,
 		active_tab: bridge.defaultTabId,
 		browserSessionId: bridge.browserSessionId,
 		operation,
 		snapshot: snapshotMeta,
-		envelope: artifactEnvelopeMirror,
 		...(envelopeDiff ? { diff: envelopeDiff } : {}),
 		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 		...(artifactRelations ? { relations: artifactRelations } : {}),

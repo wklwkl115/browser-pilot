@@ -8,6 +8,7 @@ import type { SnapshotProjection, SnapshotProjectionTemplate } from "./snapshotP
 import type { StructureTemplate } from "./templating.js";
 import type { TreeDiff } from "./treeDiff.js";
 import { mintRef } from "../refs/core.js";
+import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
 
 export type CollectionCompleteness =
 	| "complete"
@@ -55,6 +56,8 @@ export type CollectionModel = {
 	containerRef?: string;
 	containerRole?: string;
 	containerName?: string;
+	containerNameContext?: string;
+	containerNameSource?: "safe-label" | "safe-preview" | "fallback" | "disambiguated";
 	itemRole?: string;
 
 	observedCount: number;
@@ -108,6 +111,8 @@ type DraftCollection = {
 	containerRef?: string;
 	containerRole?: string;
 	containerName?: string;
+	containerNameContext?: string;
+	containerNameSource?: NonNullable<CollectionModel["containerNameSource"]>;
 	itemRole?: string;
 	observedCount: number;
 	itemRefs: string[];
@@ -196,6 +201,33 @@ function collectionKey(parts: { containerRef?: string; containerRole?: string; c
 	].filter((item): item is string => !!item).join("\u0000") || "unknown";
 }
 
+function normalizeNameKey(value: string | undefined): string {
+	return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function collectionNameContext(parts: Array<string | undefined>): string | undefined {
+	const text = sanitizeSemanticText(parts.filter(Boolean).join(" "), 80);
+	return text && text.length >= 2 ? text : undefined;
+}
+
+function selectorContext(value: unknown): string | undefined {
+	const selector = stringValue(value);
+	if (!selector) return undefined;
+	const match = selector.match(/(?:#([A-Za-z0-9_-]{2,})|\.([A-Za-z0-9_-]{2,}))/);
+	return match ? collectionNameContext([(match[1] ?? match[2])?.replace(/[-_]+/g, " ")]) : undefined;
+}
+
+type ListHintNameParts = {
+	name: string;
+	context?: string;
+	source: NonNullable<CollectionModel["containerNameSource"]>;
+};
+
+function disambiguatedCollectionName(name: string | undefined, context: string | undefined): string | undefined {
+	if (!name || !context) return name;
+	return normalizeNameKey(name) === normalizeNameKey(context) ? name : `${name} (${context})`;
+}
+
 function templateKey(template: Pick<StructureTemplate, "container" | "containerName" | "role" | "setSize">): string {
 	return collectionKey({
 		containerRole: template.container,
@@ -219,7 +251,7 @@ function entityCollectionKey(entity: Entity): string | undefined {
 	const role = normalizeRole(entity.role);
 	const setSize = numberValue(entity.structure?.setSize);
 	const containerRole = normalizeRole(entity.hints?.containerRole);
-	const containerName = stringValue(entity.hints?.containerName);
+	const containerName = sanitizeSemanticText(entity.hints?.containerName, 160);
 	const listContainer = entity.hints?.listContainer === true;
 	if (containerRole || setSize !== undefined) {
 		return collectionKey({ containerRole, containerName, itemRole: role, declaredTotal: setSize });
@@ -263,6 +295,8 @@ function addDraft(map: Map<string, DraftCollection>, key: string, draft: DraftCo
 		containerRef: existing.containerRef ?? draft.containerRef,
 		containerRole: existing.containerRole ?? draft.containerRole,
 		containerName: existing.containerName ?? draft.containerName,
+		containerNameContext: existing.containerNameContext ?? draft.containerNameContext,
+		containerNameSource: existing.containerNameSource ?? draft.containerNameSource,
 		itemRole: existing.itemRole ?? draft.itemRole,
 		observedCount: Math.max(existing.observedCount, draft.observedCount),
 		itemRefs: refs,
@@ -355,7 +389,7 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 		const first = members[0]!;
 		const role = normalizeRole(first.role);
 		const containerRole = normalizeRole(first.hints?.containerRole) ?? (first.hints?.listContainer === true ? role : undefined);
-		const containerName = stringValue(first.hints?.containerName) ?? first.name;
+		const containerName = sanitizeSemanticText(first.hints?.containerName, 160) ?? sanitizeSemanticText(first.name, 160);
 		const declaredTotal = numberValue(first.structure?.setSize);
 		const positions = new Set(members.map((entity) => numberValue(entity.structure?.posInSet)).filter((item): item is number => item !== undefined && item > 0));
 		const hiddenCount = Math.max(...members.map((entity) => numberValue(entity.hints?.hiddenCount) ?? 0), 0);
@@ -411,10 +445,30 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 	return drafts;
 }
 
+function listHintNameParts(hint: Record<string, unknown>, index: number): ListHintNameParts {
+	const label = firstSafeSemanticText([hint.containerLabel, hint.containerName, hint.label], 80);
+	const preview = safeContainerLabelText(hint.firstItemPreview, 80);
+	const fallback = `list-${index}`;
+	const context = collectionNameContext([
+		selectorContext(hint.selector),
+		sanitizeSemanticText(hint.heading, 40),
+		sanitizeSemanticText(hint.nearestHeading, 40),
+		sanitizeSemanticText(hint.landmarkName, 40),
+		sanitizeSemanticText(hint.parentLabel, 40),
+	]);
+	if (label) return { name: label, ...(context ? { context } : {}), source: "safe-label" };
+	if (preview) return { name: preview, ...(context ? { context } : {}), source: "safe-preview" };
+	return { name: fallback, ...(context ? { context } : {}), source: "fallback" };
+}
+
+function listHintName(hint: Record<string, unknown>, index: number): string {
+	return listHintNameParts(hint, index).name;
+}
+
 function listHintKey(hint: Record<string, unknown>, index: number): string {
 	return collectionKey({
 		containerRole: "list",
-		containerName: stringValue(hint.firstItemPreview) ?? stringValue(hint.selector) ?? `list-${index}`,
+		containerName: listHintName(hint, index),
 		jsonPath: `data.list_hints[${index}]`,
 	});
 }
@@ -422,12 +476,14 @@ function listHintKey(hint: Record<string, unknown>, index: number): string {
 function listHintDraft(hint: Record<string, unknown>, index: number): DraftCollection {
 	const observedCount = numberValue(hint.itemCount) ?? 0;
 	const hiddenCount = numberValue(hint.hiddenCount) ?? 0;
-	const selector = stringValue(hint.selector);
-	const firstItem = stringValue(hint.firstItemPreview);
+	const firstItem = sanitizeSemanticText(hint.firstItemPreview, 160);
+	const nameParts = listHintNameParts(hint, index);
 	return {
 		kind: "list",
 		containerRole: "list",
-		containerName: firstItem ?? selector ?? `list-${index}`,
+		containerName: nameParts.name,
+		containerNameContext: nameParts.context,
+		containerNameSource: nameParts.source,
 		observedCount,
 		itemRefs: [],
 		itemRefCount: 0,
@@ -620,13 +676,17 @@ function inferScrollDirection(probe: Record<string, unknown> | undefined): Scrol
 	return undefined;
 }
 
-function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>, rawGrowthProbe?: Record<string, unknown>): CollectionModel {
+function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>, rawGrowthProbe?: Record<string, unknown>, ambiguousNames?: Set<string>): CollectionModel {
 	const collectionId = `c${index + 1}`;
 	const classified = completenessForDraft(draft, edge, growth);
 	const evidence = [...draft.evidence];
 	if (edge) evidence.push({ source: "relations", summary: edge.summary, jsonPath: edge.jsonPath });
 	if (growth) evidence.push({ source: "growthProbe", summary: growth.summary, jsonPath: "scanEvidence.growthProbe" });
 	const estimatedTotal = draft.estimatedTotal ?? (draft.declaredTotal !== undefined ? draft.declaredTotal : undefined);
+	const hasAmbiguousName = !!draft.containerName && ambiguousNames?.has(normalizeNameKey(draft.containerName));
+	const safeContext = hasAmbiguousName ? draft.containerNameContext : undefined;
+	const containerName = hasAmbiguousName ? disambiguatedCollectionName(draft.containerName, safeContext) : draft.containerName;
+	const containerNameSource = hasAmbiguousName && containerName !== draft.containerName ? "disambiguated" : draft.containerNameSource;
 
 	const pageSize = inferPageSize(draft, rawGrowthProbe);
 	const paginationControl = edge?.control;
@@ -637,7 +697,9 @@ function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType
 		kind: draft.kind,
 		...(draft.containerRef ? { containerRef: draft.containerRef } : {}),
 		...(draft.containerRole ? { containerRole: draft.containerRole } : {}),
-		...(draft.containerName ? { containerName: draft.containerName } : {}),
+		...(containerName ? { containerName } : {}),
+		...(safeContext && containerName === draft.containerName ? { containerNameContext: safeContext } : {}),
+		...(containerNameSource ? { containerNameSource } : {}),
 		...(draft.itemRole ? { itemRole: draft.itemRole } : {}),
 		observedCount: draft.observedCount,
 		itemRefCount: draft.itemRefCount ?? draft.itemRefs.length,
@@ -683,6 +745,44 @@ export function summarizeCollectionCompleteness(model: CollectionModel): {
 	}
 }
 
+function ambiguousContainerNames(drafts: DraftCollection[]): Set<string> {
+	const counts = new Map<string, number>();
+	for (const draft of drafts) {
+		const key = normalizeNameKey(draft.containerName);
+		if (!key) continue;
+		counts.set(key, (counts.get(key) ?? 0) + 1);
+	}
+	return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
+}
+
+function uniqueCollectionNames(models: CollectionModel[]): CollectionModel[] {
+	const counts = new Map<string, number>();
+	for (const model of models) {
+		const key = normalizeNameKey(model.containerName);
+		if (!key) continue;
+		counts.set(key, (counts.get(key) ?? 0) + 1);
+	}
+	const duplicateKeys = new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
+	if (!duplicateKeys.size) return models;
+	const used = new Set(models.map((model) => normalizeNameKey(model.containerName)).filter(Boolean));
+	const seen = new Map<string, number>();
+	return models.map((model) => {
+		const key = normalizeNameKey(model.containerName);
+		if (!key || !duplicateKeys.has(key) || !model.containerName) return model;
+		const next = (seen.get(key) ?? 0) + 1;
+		seen.set(key, next);
+		used.delete(key);
+		let suffix = next;
+		let containerName = `${model.containerName} (${suffix})`;
+		while (used.has(normalizeNameKey(containerName))) {
+			suffix += 1;
+			containerName = `${model.containerName} (${suffix})`;
+		}
+		used.add(normalizeNameKey(containerName));
+		return { ...model, containerName, containerNameSource: "disambiguated" };
+	});
+}
+
 export function buildCollectionModels(input: BuildCollectionModelsInput): CollectionModel[] {
 	const drafts = new Map<string, DraftCollection>();
 	for (const template of input.snapshotProjection?.templates ?? []) {
@@ -698,9 +798,11 @@ export function buildCollectionModels(input: BuildCollectionModelsInput): Collec
 	const edge = paginationEdge(input.scanEvidence?.actionables);
 	const rawGrowthProbe = input.scanEvidence?.growthProbe;
 	const growth = growthProbeEvidence(rawGrowthProbe);
-	return [...drafts.values()]
+	const sortedDrafts = [...drafts.values()]
 		.filter((draft) => draft.observedCount > 0 || (draft.hiddenCount ?? 0) > 0 || draft.itemRefs.length > 0)
 		.sort((a, b) => a.sourceRank - b.sourceRank || b.observedCount - a.observedCount || (b.declaredTotal ?? 0) - (a.declaredTotal ?? 0))
-		.slice(0, MAX_COLLECTIONS)
-		.map((draft, index) => modelFromDraft(index, draft, edge, growth, rawGrowthProbe));
+		.slice(0, MAX_COLLECTIONS);
+	const outputAmbiguousNames = ambiguousContainerNames(sortedDrafts);
+	const inputAmbiguousNames = ambiguousContainerNames([...drafts.values()]);
+	return uniqueCollectionNames(sortedDrafts.map((draft, index) => modelFromDraft(index, draft, edge, growth, rawGrowthProbe, outputAmbiguousNames.has(normalizeNameKey(draft.containerName)) ? outputAmbiguousNames : inputAmbiguousNames)));
 }

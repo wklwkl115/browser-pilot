@@ -158,8 +158,8 @@ function selectorTimeoutRecovery(command: BridgeCommand, error: unknown): Record
 		...(typeof lastState?.found === "boolean" ? { lastProbeFound: lastState.found } : {}),
 		recoveryCommands: [
 			`browser_wait action=diagnose params={"waitId":"${String(command.waitId ?? command.wait_id ?? "<waitId>")}"}`,
-			"browser_observe mode=scan to refresh actionables/selectors",
-			"browser_observe mode=html selector=<nearby-or-parent-selector> or browser_frame list when iframe placement is suspected",
+			"browser_observe to refresh actionables/selectors",
+			"browser_frame list when iframe placement is suspected; explicit legacy/debug projection browser_observe mode=html selector=<nearby-or-parent-selector> can inspect an exact DOM match",
 		],
 	};
 }

@@ -20,7 +20,7 @@ Everything a human can do in DevTools, your agent can do through composable
 > Your agent reads the DOM as a semantic model and writes JavaScript like a developer in DevTools.
 
 ```
-$ browser-pilot observe --mode scan --json | jq '.summary.gist'
+$ browser-pilot observe --json | jq '.summary.pageObservation.gist'
 "Forum topic list with 14 visible rows, navigation sidebar, user menu.
  3 forms (search, login, compose), 47 actionable elements."
 
@@ -37,9 +37,8 @@ $ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].u
 Most browser automation tools give agents a **screenshot and a click coordinate**.
 Browser Pilot gives agents what they actually need:
 
-- **Structured perception** — DOM scanning with entity extraction, accessibility tree
-  fusion, structural diff, and template compression. Your agent sees the page as a semantic
-  model, not pixels.
+- **Structured perception** — canonical ABML page observations with entity extraction, accessibility tree
+  fusion, structural diff, content/text digests, evidence artifacts, and template compression. Your agent sees one semantic page model, not pixels or competing modes.
 - **Direct execution** — run arbitrary JavaScript in the page, not just click/type macros.
   Agents write the same DOM code a developer would write in DevTools.
 - **Physical input escape** — when trusted-event-gated controls ignore synthetic clicks,
@@ -133,7 +132,7 @@ user-local daemon manages the bridge server — it auto-starts on first use.
 npx browser-pilot connect --wait --json
 
 # Observe the page
-npx browser-pilot observe --mode scan --json
+npx browser-pilot observe --json
 
 # Execute JavaScript
 npx browser-pilot execute --script "document.title" --json
@@ -162,7 +161,7 @@ sqli, template, cookie-analyze, http-replay, and callback-oast. Use
 
 ```
 1. tabs list          → find the target tab
-2. observe --mode scan → understand the page structure
+2. observe            → read the canonical ABML page model
 3. execute            → click, type, scroll (JavaScript)
 4. wait               → wait for navigation / selector / network idle
 5. observe / network / evidence → verify the result
@@ -177,13 +176,12 @@ or `input.keys` (CDP physical input).
 
 ### Structured DOM Perception
 
-`browser_observe` returns a semantic model of the page — not raw HTML, not a screenshot.
-It fuses the accessibility tree with DOM structure, extracts entities and relations,
-compresses repeated patterns (lists, tables), and tracks changes across scans.
+`browser_observe` returns the canonical ABML page model — not raw HTML, not a screenshot, and not a caller-selected extraction strategy.
+It fuses accessibility/DOM structure with actionables, refs, relations, collections, scan-backed content/text digests, tab context, evidence artifacts, and diagnostics in one stable observation envelope. Omit `mode` for canonical semantics; any explicit `mode` value is marked as legacy/debug/projection, with `mode=content/html/text/tabs` kept only for compatibility projections. Provider diagnostics report truthful execution states such as `executed`, `scan-backed`, `skipped`, `failed`, or `degraded` rather than implying a provider ran successfully when it was only derived from scan evidence or skipped.
 
 ### Session Delta
 
-Repeated `browser_observe mode=scan` on the same tab produces compact delta frames
+Repeated `browser_observe` on the same tab produces compact delta frames
 (`delta:"session"`) containing only what changed. Multi-step workflows stay
 token-efficient without sacrificing completeness.
 

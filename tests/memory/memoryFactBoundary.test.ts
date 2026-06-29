@@ -8,7 +8,7 @@ import { buildMemoryAugmentationPlan } from "../../src/commands/observe/memoryAu
 import { readBrowserMemory, readBrowserMemoryResource } from "../../src/commands/memory/reader.ts";
 import { recallMemory, recordMemoryEntry, validateMemoryRecord } from "../../src/commands/memory/store.ts";
 import { validateMemoryRecordPayloadShape } from "../../src/commands/memory/evidence.ts";
-import { drainMemoryProfileFlushes, recordMemoryProfileFrame, readCachedMemoryProfile } from "../../src/memory/profileService.ts";
+import { consumeMemoryProfileDiagnostics, drainMemoryProfileFlushes, recordMemoryProfileFrame, readCachedMemoryProfile, recordMemoryProfileStrike } from "../../src/memory/profileService.ts";
 import { parseMemoryEntry, serializeMemoryEntry } from "../../src/memory/frontmatter.ts";
 import { readMemoryIndex, writeDerivedMemoryIndex } from "../../src/memory/indexStore.ts";
 import { hmacMemoryStamp } from "../../src/memory/hashStamp.ts";
@@ -251,6 +251,32 @@ test("browser-result resources expose stable handles and stale freshness after a
 	clearResourceStore();
 });
 
+test("memory validation keeps evidence paths inside the active workspace", async () => {
+	clearResourceStore();
+	const firstCwd = makeMemoryRoot();
+	const secondCwd = makeMemoryRoot();
+	const firstArtifact = resolveMemoryPath(firstCwd, "evidence-secret.json");
+	writeFileSync(firstArtifact, JSON.stringify({ ok: true }), "utf8");
+	const uri = registerBrowserResultResource({ kind: "evidence", artifactPath: firstArtifact, name: "evidence" });
+
+	const accepted = await validateMemoryRecord({ cwd: firstCwd, resolver: resolveBrowserResultEvidence, payload: basePayload({ evidenceRefs: [uri] }) });
+	assert.equal(accepted.entry.evidenceRefs[0]?.kind, "browser-result");
+
+	await assert.rejects(
+		validateMemoryRecord({ cwd: secondCwd, resolver: resolveBrowserResultEvidence, payload: basePayload({ evidenceRefs: [uri] }) }),
+		(error: unknown) => (error as { code?: string }).code === "MEMORY_EVIDENCE_UNRESOLVABLE" && /outside workspace/.test((error as Error).message) && !/evidence-secret|browser-pilot-memory/i.test((error as Error).message),
+	);
+	await assert.rejects(
+		validateMemoryRecord({ cwd: secondCwd, payload: basePayload({ evidenceRefs: [{ kind: "artifact", path: firstArtifact }] }) }),
+		(error: unknown) => (error as { code?: string }).code === "MEMORY_EVIDENCE_UNRESOLVABLE" && /outside workspace/.test((error as Error).message) && !/evidence-secret|browser-pilot-memory/i.test((error as Error).message),
+	);
+	await assert.rejects(
+		validateMemoryRecord({ cwd: secondCwd, payload: basePayload({ evidenceRefs: [{ kind: "operation", operationId: "op-1", path: firstArtifact }] }) }),
+		(error: unknown) => (error as { code?: string }).code === "MEMORY_EVIDENCE_UNRESOLVABLE" && /outside workspace/.test((error as Error).message) && !/evidence-secret|browser-pilot-memory/i.test((error as Error).message),
+	);
+	clearResourceStore();
+});
+
 test("memory validation rejects missing browser-result resources through resolver boundary", async () => {
 	clearResourceStore();
 	const cwd = makeMemoryRoot();
@@ -395,4 +421,60 @@ test("frontmatter rejects legacy SOP kind instead of reinterpreting it as fact",
 	);
 	const index = await writeDerivedMemoryIndex(cwd);
 	assert.deepEqual(index.entries, []);
+});
+
+test("memory profile service handles disabled kernel, diagnostics consumption, and strike flushing", async () => {
+	const cwd = makeMemoryRoot();
+	const previous = process.env.BROWSER_PILOT_MEMORY;
+	process.env.BROWSER_PILOT_MEMORY = "0";
+	try {
+		await recordMemoryProfileFrame({
+			cwd,
+			frame: {
+				key: { browserSessionId: "disabled-session", navigationEpoch: "nav-disabled" },
+				snapshotId: "snapshot-disabled",
+				capturedAt: 1,
+				facts: {},
+				pageFingerprint: { changeSeq: 1, url: "https://disabled.test/app" },
+			},
+		});
+		await recordMemoryProfileStrike({ cwd, origin: "https://disabled.test", entryId: "fact-1", status: "stale" });
+		assert.equal(await readCachedMemoryProfile(cwd, "https://disabled.test"), undefined);
+	} finally {
+		if (previous === undefined) delete process.env.BROWSER_PILOT_MEMORY;
+		else process.env.BROWSER_PILOT_MEMORY = previous;
+	}
+
+	assert.deepEqual(consumeMemoryProfileDiagnostics(cwd), []);
+	const profilePath = memoryProfileFilePath(cwd, "https://example.test");
+	mkdirSync(path.dirname(profilePath), { recursive: true });
+	writeFileSync(profilePath, "{broken", "utf8");
+	assert.equal(await readCachedMemoryProfile(cwd, "https://example.test"), undefined);
+	assert.deepEqual(consumeMemoryProfileDiagnostics(cwd), ["memory_profile_unreadable"]);
+	assert.deepEqual(consumeMemoryProfileDiagnostics(cwd), []);
+
+	await recordMemoryProfileStrike({ cwd, origin: "https://example.test", entryId: "fact-1", status: "stale" });
+	await drainMemoryProfileFlushes();
+	let profile = (await readMemoryProfile(cwd, "https://example.test")).profile;
+	assert.equal(profile?.strikes["fact-1"], 1);
+	await recordMemoryProfileStrike({ cwd, origin: "https://example.test", entryId: "fact-1", status: "stale" });
+	await drainMemoryProfileFlushes();
+	profile = (await readMemoryProfile(cwd, "https://example.test")).profile;
+	assert.equal(profile?.strikes["fact-1"], 1);
+});
+
+test("memory secret reader ignores malformed secrets and disabled creation", async () => {
+	const cwd = makeMemoryRoot();
+	const secretPath = memorySecretPath(cwd);
+	mkdirSync(path.dirname(secretPath), { recursive: true });
+	writeFileSync(secretPath, "not-a-hex-secret", "utf8");
+	assert.equal(await readMemorySecret(cwd), undefined);
+	const previous = process.env.BROWSER_PILOT_MEMORY;
+	process.env.BROWSER_PILOT_MEMORY = "0";
+	try {
+		assert.equal(await readOrCreateMemorySecret(cwd), undefined);
+	} finally {
+		if (previous === undefined) delete process.env.BROWSER_PILOT_MEMORY;
+		else process.env.BROWSER_PILOT_MEMORY = previous;
+	}
 });

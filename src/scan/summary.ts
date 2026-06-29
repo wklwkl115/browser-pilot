@@ -1,6 +1,7 @@
 import { truncateText } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../kernels/abml/entity.js";
+import { sanitizeSemanticText } from "../kernels/abml/semanticText.js";
 import { summaryRefIdForDescriptor } from "../kernels/refs/refId.js";
 
 export type Summary = Record<string, unknown>;
@@ -117,6 +118,10 @@ function cleanInlineText(value: unknown, maxChars = 160): string {
 	return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
 }
 
+function cleanSemanticText(value: unknown, maxChars = 160): string {
+	return sanitizeSemanticText(value, maxChars) || "";
+}
+
 function normalizeText(value: unknown): string {
 	return cleanInlineText(value, 240).toLowerCase().replace(/[\d$€£¥.,:;!?()[\]{}]+/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -161,9 +166,9 @@ function actionIntent(node: Record<string, unknown>): string | undefined {
 
 function actionDisplayName(node: Record<string, unknown>): string {
 	const editable = node.editable === true;
-	const candidates = editable ? [node.displayLabel, node.action, node.role, node.tag, node.selector] : [node.displayLabel, node.action, node.label, node.text, node.role, node.tag, node.selector];
+	const candidates = editable ? [node.displayLabel, node.action, node.role, node.tag] : [node.displayLabel, node.action, node.label, node.text, node.role, node.tag];
 	for (const candidate of candidates) {
-		const text = cleanInlineText(candidate, 96);
+		const text = cleanSemanticText(candidate, 96);
 		if (!text) continue;
 		return text;
 	}
@@ -324,14 +329,17 @@ function summarizeForms(prepared: PreparedForm | undefined, limit: number): Reco
 function prepareListSummaries(listHints: Record<string, unknown>[]): Record<string, unknown>[] {
 	return listHints.map((item, index) => {
 		const hidden = Number(item.hiddenCount || 0);
-		const sampleHidden = asArray(item.sampleHidden).map((entry) => cleanInlineText(entry, 90)).filter(Boolean).slice(0, 2);
+		const sampleHidden = asArray(item.sampleHidden).map((entry) => cleanSemanticText(entry, 90)).filter(Boolean).slice(0, 2);
+		const sample = cleanSemanticText(item.firstItemPreview, 120);
+		const containerLabel = cleanSemanticText(item.containerLabel ?? item.containerName ?? item.label, 120);
 		const out: Record<string, unknown> = {
 			i: index,
 			sel: selectorTail(item.selector) || "",
 			n: Number(item.itemCount || 0),
-			sample: cleanInlineText(item.firstItemPreview, 120),
 			jsonPath: `data.list_hints[${index}]`,
 		};
+		if (containerLabel) out.name = containerLabel;
+		if (sample) out.sample = sample;
 		if (hidden > 0) out.compressed = hidden;
 		if (sampleHidden.length) out.more = sampleHidden;
 		return out;
@@ -448,6 +456,22 @@ function dedupeEntitiesByRef(entities: Entity[]): Entity[] {
 	return out;
 }
 
+function listHintDuplicateNames(listHints: Record<string, unknown>[]): Set<string> {
+	const counts = new Map<string, number>();
+	for (const [index, item] of listHints.entries()) {
+		const built = buildRegionEntityFromListHint(item, { observationId: "scan:list-hint-name", capturedAt: 0 }, index);
+		const key = normalizeText(built.entity.name ?? "");
+		if (!key) continue;
+		counts.set(key, (counts.get(key) ?? 0) + 1);
+	}
+	return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
+}
+
+function buildListRegionEntity(node: Record<string, unknown>, context: ScanEntityContext, index: number, duplicateNames: ReadonlySet<string>): Entity {
+	const built = buildRegionEntityFromListHint(node, context, index, duplicateNames);
+	return withRegisteredRef(built.entity, nodeRefId(node, built, "listRegion"));
+}
+
 export function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[]; referencedEntities: Entity[]; controlsSources: Entity[] } {
 	const context = scanEntityContext(item, options);
 	const actionables = asArray(item.actionables).filter(isRecord);
@@ -476,10 +500,8 @@ export function buildScanEntities(item: Record<string, unknown>, options: ScanSu
 			const built = buildVisionRegionFromCanvasActionable(node, context);
 			return withRegisteredRef(built.entity, nodeRefId(node, built, "visionRegion"));
 		}));
-	const listEntities = dedupeEntities(listHints.map((node, index) => {
-		const built = buildRegionEntityFromListHint(node, context, index);
-		return withRegisteredRef(built.entity, nodeRefId(node, built, "listRegion"));
-	}));
+	const duplicateListNames = listHintDuplicateNames(listHints);
+	const listEntities = dedupeEntities(listHints.map((node, index) => buildListRegionEntity(node, context, index, duplicateListNames)));
 	// Hidden/collapsed targets (aria-controls/owns) need their own entities since they're not in
 	// actionEntities. For visible targets that were also scanned as actionables, the actionable
 	// entity takes precedence via dedupeEntities; the referenced entity is redundant. Keep only

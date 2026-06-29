@@ -18,8 +18,9 @@ All notable changes to this project will be documented in this file.
   causal network attribution, template compression for large lists/tables,
   snapshot projection for O(change) re-observation, backendNodeId identity lattice.
   Internal substrate only — no public ABML tool surface.
-- **Session delta** — repeated `browser_observe mode=scan` on the same tab produces
-  compact P-frames with `delta:"session"`, reducing token cost for multi-step workflows.
+- **Session delta** — repeated no-mode `browser_observe` on the same tab produces
+  compact P-frames with `delta:"session"`; use `diff:true`, `baselineSnapshotId`, or
+  `baselinePath` for explicit incremental comparison, reducing token cost for multi-step workflows.
 - **Task-conditioned relevance** — URL cold-start, behavioral trace, and intent signals
   reorder scan results within salience ranks. Disabled with `BROWSER_PILOT_RELEVANCE=0`.
 - **Browser memory** — local `.browser-pilot/memory/` store with auto-recall on

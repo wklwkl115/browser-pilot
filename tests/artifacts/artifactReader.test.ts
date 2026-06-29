@@ -145,7 +145,10 @@ test("missing artifact reads keep coded not-found recovery metadata", async () =
 	const { cwd } = makeArtifactRoot();
 	await assert.rejects(
 		readBrowserArtifact({ path: ".browser-pilot/artifacts/missing.json", mode: "json" }, { cwd }),
-		(error: unknown) => error instanceof ArtifactReaderError && error.code === "ARTIFACT_NOT_FOUND" && Array.isArray((error.details as { recovery?: { nextActions?: unknown[] } }).recovery?.nextActions),
+		(error: unknown) => {
+			const nextActions = error instanceof ArtifactReaderError ? (error.details as { recovery?: { nextActions?: unknown[] } }).recovery?.nextActions : undefined;
+			return error instanceof ArtifactReaderError && error.code === "ARTIFACT_NOT_FOUND" && Array.isArray(nextActions) && nextActions.includes("browser-pilot observe --json") && !nextActions.some((action) => typeof action === "string" && action.includes("observe --mode scan"));
+		},
 	);
 });
 

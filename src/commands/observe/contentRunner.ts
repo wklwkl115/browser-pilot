@@ -9,7 +9,7 @@ import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
 import { summarizeContentData } from "../summaries/index.js";
 import { artifactFallbackName, resolveLocalTargetTabId, targetTabId, textCommandResult, commandMaxChars, withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
-import { modeInferredDetails, modeInferredSummary } from "./renderCache.js";
+import { legacyProjectionDetails, legacyProjectionSummary, modeInferredDetails, modeInferredSummary } from "./renderCache.js";
 import { currentObserveSnapshotMeta, normalizeContentTimeoutMs, withObservationMeta, type ObserveToolParams } from "./common.js";
 
 export async function runContentObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, onUpdate?: CommandOnUpdate) {
@@ -59,6 +59,7 @@ export async function runContentObservation(server: BrowserCommandRuntimePort, p
 	const summary = {
 		...withObservationMeta(summarizeContentData(data), "content", "content"),
 		...modeInferredSummary(params),
+		...legacyProjectionSummary(params, "content"),
 		browserSessionId: bridge.browserSessionId,
 		tabId,
 		selectionVersion: bridge.selectionVersion,
@@ -71,7 +72,7 @@ export async function runContentObservation(server: BrowserCommandRuntimePort, p
 		maxChars,
 		fallbackName,
 		summary,
-		details: { mode: "content", modeInferred: modeInferredDetails(params), sourceMode: "content", sourceCommand: "content_extract", url: params.url, selector: params.selector, navigation: result.navigationData, content: meta },
+		details: { mode: "content", modeInferred: modeInferredDetails(params), ...legacyProjectionDetails(params, "content"), sourceMode: "content", sourceCommand: "content_extract", url: params.url, selector: params.selector, navigation: result.navigationData, content: meta },
 		operation,
 		snapshot: snapshotMeta,
 		artifactValue: { ...result.result, navigation: result.navigationData, operation, snapshot: snapshotMeta },

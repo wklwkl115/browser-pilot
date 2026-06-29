@@ -1,4 +1,5 @@
 import { ACTIONABLE_ATTRIBUTE_NAMES, ACTIONABLE_HIGH_INTENT_PATTERN, ACTIONABLE_KEYWORD_PATTERN, ACTIONABLE_PRIMARY_INTENT_PATTERN, FRAMEWORK_ACTION_HANDLER_PATTERN, FRAMEWORK_HANDLER_OWNER_PATTERN } from "./actionableRules.js";
+import { DOM_ACCESSIBILITY_API_BUNDLE } from "./domAccessibilityApiBundle.js";
 import { BROWSER_NOISE_ATTRIBUTE_NAMES, BROWSER_NOISE_ATTRIBUTE_PREFIXES, BROWSER_NOISE_CLASS_PATTERNS, SCAN_EXTENSION_URL_PATTERN, SCAN_IGNORE_IDS, SCAN_IGNORE_SELECTORS, SCAN_IGNORE_TAGS } from "./noiseRules.js";
 import { jsonForInlineScript as captureJsonForInlineScript, renderCaptureTemplate } from "../capture/inject.js";
 import { SCAN_TEMPLATE } from "../../capture-src/entries/scanTemplate.js";
@@ -14,6 +15,26 @@ export type BrowserScanOptions = {
 
 export function jsonForInlineScript(value: unknown): string {
 	return captureJsonForInlineScript(value);
+}
+
+function injectAccessibleNameProvider(script: string): string {
+	const markerStart = "  const options = ";
+	const markerEnd = ";\n";
+	const markerIndex = script.indexOf(markerStart);
+	if (markerIndex < 0) throw new Error("scan template options marker missing; update accessible-name provider injection");
+	const markerEndIndex = script.indexOf(markerEnd, markerIndex);
+	if (markerEndIndex < 0) throw new Error("scan template options terminator missing; update accessible-name provider injection");
+	const insertionIndex = markerEndIndex + markerEnd.length;
+	const injected = `  const BrowserPilotDomAccessibilityApi = (() => {
+    try {
+      ${DOM_ACCESSIBILITY_API_BUNDLE}
+      return typeof BrowserPilotDomAccessibilityApi === 'object' && BrowserPilotDomAccessibilityApi ? BrowserPilotDomAccessibilityApi : null;
+    } catch (_) {
+      return null;
+    }
+  })();
+`;
+	return script.slice(0, insertionIndex) + injected + script.slice(insertionIndex);
 }
 
 function injectScanSignals(script: string): string {
@@ -227,5 +248,5 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
 		frameworkOwnerPatternJson: jsonForInlineScript(FRAMEWORK_HANDLER_OWNER_PATTERN),
 		frameworkActionPatternJson: jsonForInlineScript(FRAMEWORK_ACTION_HANDLER_PATTERN),
 	});
-	return injectScanSignals(injectGrowthProbe(rendered, probeWaitMs));
+	return injectScanSignals(injectGrowthProbe(injectAccessibleNameProvider(rendered), probeWaitMs));
 }

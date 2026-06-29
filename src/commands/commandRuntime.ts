@@ -66,9 +66,13 @@ type JsonCommandResultOptions = {
 	snapshot?: Record<string, unknown>;
 	diagnostics?: Record<string, unknown>;
 	artifactValue?: unknown;
+	entities?: Array<Record<string, unknown>>;
 	distill?: DistillFn;
 	artifactThreshold?: number;
 	maxChars?: number;
+	granularityCeiling?: Exclude<CommandFactGranularity, "omit">;
+	stableRefs?: Set<string>;
+	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
 	activeContext?: Record<string, unknown>;
 };
@@ -238,8 +242,9 @@ export function buildActiveContext(server: BrowserCommandRuntimePort, params: Pi
 	const tabId = resolveLocalTargetTabId(server, params.targetRef ?? params.tabId, browserSessionId) ?? snapshot.defaultTabId;
 	const tab = (snapshot.tabs as BrowserTabLike[] | undefined)?.find((entry) => typeof entry.tabId === "number" && entry.tabId === tabId);
 	const targetRef = (tab?.targetRef ?? tab?.tabHandle ?? (tabId === snapshot.defaultTabId ? snapshot.defaultTabHandle : undefined)) || undefined;
-	// Match observe --diff's baseline filter (incl. saved.path) so the echoed id is always a usable baseline.
-	const lastObservationSnapshotId = server.listObservationSnapshots().find((snap) => snap.tabId === tabId && snap.sourceMode === "scan" && !snap.expired && Boolean(snap.saved?.path))?.snapshotId;
+	// Match observe --diff's baseline filter (incl. browserSessionId isolation + saved.path) so the echoed id is always a usable baseline.
+	const effectiveBrowserSessionId = snapshot.browserSessionId;
+	const lastObservationSnapshotId = server.listObservationSnapshots().find((snap) => snap.browserSessionId === effectiveBrowserSessionId && snap.tabId === tabId && snap.sourceMode === "scan" && !snap.expired && Boolean(snap.saved?.path))?.snapshotId;
 	const context: Record<string, unknown> = {
 		...(snapshot.browserSessionId ? { browserSessionId: snapshot.browserSessionId } : {}),
 		...(typeof tabId === "number" ? { tabId } : {}),
@@ -299,8 +304,12 @@ export async function jsonCommandResult(value: unknown, params: Pick<StandardToo
 		snapshot: options.snapshot,
 		diagnostics: options.diagnostics,
 		artifactValue: options.artifactValue,
+		entities: options.entities,
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
+		granularityCeiling: options.granularityCeiling,
+		stableRefs: options.stableRefs,
+		onAllocation: options.onAllocation,
 		memoryAugmentationPlan: options.memoryAugmentationPlan,
 		activeContext: options.activeContext,
 		redact: params.redact,

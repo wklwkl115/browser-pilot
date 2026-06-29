@@ -131,8 +131,8 @@ function cliActionFromText(action: string, savedPath?: string): Record<string, u
 		const snapshotId = baseline[1] ?? baseline[2];
 		return {
 			kind: "observe-baseline",
-			command: `browser-pilot observe --mode scan --baseline-snapshot-id ${snapshotId} --json`,
-			argv: ["browser-pilot", "observe", "--mode", "scan", "--baseline-snapshot-id", snapshotId, "--json"],
+			command: `browser-pilot observe --baseline-snapshot-id ${snapshotId} --json`,
+			argv: ["browser-pilot", "observe", "--baseline-snapshot-id", snapshotId, "--json"],
 			source: action,
 		};
 	}
@@ -184,8 +184,8 @@ function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 	if (typeof snapshot?.snapshotId === "string") {
 		cliNextActions.push({
 			kind: "observe-baseline",
-			command: `browser-pilot observe --mode scan --baseline-snapshot-id ${snapshot.snapshotId} --json`,
-			argv: ["browser-pilot", "observe", "--mode", "scan", "--baseline-snapshot-id", snapshot.snapshotId, "--json"],
+			command: `browser-pilot observe --baseline-snapshot-id ${snapshot.snapshotId} --json`,
+			argv: ["browser-pilot", "observe", "--baseline-snapshot-id", snapshot.snapshotId, "--json"],
 			source: "snapshot.snapshotId",
 		});
 	}

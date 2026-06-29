@@ -18,6 +18,21 @@ function annotateNode(node: Record<string, unknown>, slot: string, refId: string
 	return { ...node, __browserPilotEntityRefs: { ...refs, [slot]: refId } };
 }
 
+function normalizeNameKey(value: string | undefined): string {
+	return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function listHintDuplicateNames(listHints: Record<string, unknown>[], context: ScanEntityContext): Set<string> {
+	const counts = new Map<string, number>();
+	for (const [index, item] of listHints.entries()) {
+		const name = buildRegionEntityFromListHint(item, context, index).entity.name;
+		const key = normalizeNameKey(name);
+		if (!key) continue;
+		counts.set(key, (counts.get(key) ?? 0) + 1);
+	}
+	return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
+}
+
 function annotateArray(value: unknown, slot: string, build: BuildFn): unknown {
 	if (!Array.isArray(value)) return value;
 	return value.map((item, index) => {
@@ -31,7 +46,9 @@ export function registerScanEntityRefs(data: Record<string, unknown>, context: S
 	next.actionables = annotateArray(data.actionables, "domAction", (node) => buildDomEntityFromScanActionable(node, context));
 	next.references = annotateArray(data.references, "referencedTarget", (node) => buildReferencedTargetEntity(node, context));
 	next.controls_pairs = annotateArray(data.controls_pairs, "controlsSource", (node) => buildControlsSourceEntity(node, context));
-	next.list_hints = annotateArray(data.list_hints, "listRegion", (node, index) => buildRegionEntityFromListHint(node, context, index));
+	const listHints = asRecordArray(data.list_hints);
+	const duplicateListNames = listHintDuplicateNames(listHints, context);
+	next.list_hints = annotateArray(data.list_hints, "listRegion", (node, index) => buildRegionEntityFromListHint(node, context, index, duplicateListNames));
 
 	const canvasRegions = asRecordArray(data.canvas_regions);
 	if (canvasRegions.length) {

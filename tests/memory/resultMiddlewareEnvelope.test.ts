@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -22,6 +22,50 @@ async function renderEnvelope(value: unknown, options: Partial<Parameters<typeof
 	});
 	return JSON.parse(result.content[0]?.text || "{}") as Envelope;
 }
+
+function largeCanonicalObservationSummary(): Record<string, unknown> {
+	return {
+		ok: true,
+		model: "PageObservation",
+		canonical: true,
+		pageObservation: {
+			model: "PageObservation",
+			canonical: true,
+			entities: Array.from({ length: 120 }, (_, index) => ({ ref: `bp-ref://element/${index}`, name: "Checkout field ".repeat(20), role: "textbox" })),
+			content: { text: "visible page copy ".repeat(500) },
+		},
+		focus: {
+			gist: { title: "Checkout", description: "checkout page ".repeat(200) },
+			primary_entities: Array.from({ length: 80 }, (_, index) => ({ ref: `bp-ref://element/${index}`, kind: "control", role: "button", name: "Pay now ".repeat(20) })),
+		},
+	};
+}
+
+test("result middleware characterization: default observe budget preserves final no-mode canonical marker", async () => {
+	const envelope = await renderEnvelope({ ok: true }, {
+		commandName: "browser_observe",
+		command: "scan",
+		maxChars: 35_000,
+		distill: largeCanonicalObservationSummary,
+	});
+	const summary = envelope.summary as Record<string, unknown>;
+	const pageObservation = summary.pageObservation as Record<string, unknown>;
+	assert.equal(summary.model, "PageObservation");
+	assert.equal(summary.canonical, true);
+	assert.equal(pageObservation.model, "PageObservation");
+	assert.equal(pageObservation.canonical, true);
+});
+
+test("result middleware characterization: low observe budget preserves final no-mode canonical marker", async () => {
+	const envelope = await renderEnvelope({ ok: true }, {
+		commandName: "browser_observe",
+		command: "scan",
+		maxChars: 1_000,
+		distill: largeCanonicalObservationSummary,
+	});
+	const summary = envelope.summary as Record<string, unknown>;
+	assert.deepEqual(summary.pageObservation, { model: "PageObservation", canonical: true });
+});
 
 test("result middleware characterization: redaction keeps model-facing pointers and privacy metadata", async () => {
 	const outputPath = await testArtifactPath("redacted-result.json");
@@ -50,6 +94,23 @@ test("result middleware characterization: redaction keeps model-facing pointers 
 	assert.equal(postData.kind, "postData");
 	assert.equal(postData.jsonPath, "postData");
 	assert.deepEqual((envelope.evidence as Record<string, unknown>).redaction, { applied: true });
+});
+
+test("result middleware characterization: saved artifacts include the final rendered envelope", async () => {
+	const outputPath = await testArtifactPath("observe-result.json");
+	const rawValue = { data: { content: "hello" }, pageObservation: { model: "PageObservation", canonical: true } };
+	const envelope = await renderEnvelope(rawValue, {
+		commandName: "browser_observe",
+		command: "scan",
+		outputPath,
+		artifactThreshold: 1,
+		distill: () => ({ ok: true, pageObservation: rawValue.pageObservation }),
+	});
+	const artifact = JSON.parse(await readFile(outputPath, "utf8")) as Record<string, unknown>;
+	assert.deepEqual(artifact.data, rawValue.data);
+	assert.deepEqual(artifact.envelope, envelope);
+	assert.equal((artifact.envelope as Record<string, unknown>).tool, "browser_observe");
+	assert.deepEqual(((artifact.envelope as Record<string, unknown>).summary as Record<string, unknown>).pageObservation, rawValue.pageObservation);
 });
 
 test("result middleware characterization: summary fitting strips inline nextActions and emits recovery actions", async () => {

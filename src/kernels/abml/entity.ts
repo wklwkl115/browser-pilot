@@ -1,6 +1,7 @@
 import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import type { Locator, RefDescriptor, RefKind } from "./types.js";
 import { isRecord } from "../../utils/records.js";
+import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
 
 export type EntityKind = Extract<RefKind, "element" | "control" | "text" | "region" | "media" | "frame" | "network-entry" | "event" | "signal">;
 export type EntitySource = "dom" | "ax" | "vision" | "network" | "hook" | "evidence";
@@ -224,7 +225,7 @@ export function buildActionableLocators(node: Record<string, unknown>): Locator[
 	const targetId = stringValue(node.targetId ?? node.cdpTargetId);
 	const selector = stringValue(node.selector);
 	const role = stringValue(node.role) || roleForTag(stringValue(node.tag));
-	const name = stringValue(node.action) || stringValue(node.label) || stringValue(node.text);
+	const name = firstSafeSemanticText([node.action, node.label, node.displayLabel, node.text], 160);
 	const point = geometryPoint(node.point)?.point;
 	if (backendNodeId !== undefined && backendNodeId > 0) locators.push({ by: "backendNodeId", value: backendNodeId, ...(targetId ? { targetId } : {}) });
 	if (selector) locators.push({ by: "css", value: selector });
@@ -236,7 +237,7 @@ export function buildActionableLocators(node: Record<string, unknown>): Locator[
 export function buildListHintLocators(node: Record<string, unknown>): Locator[] {
 	const locators: Locator[] = [];
 	const selector = stringValue(node.selector);
-	const sample = stringValue(node.firstItemPreview);
+	const sample = sanitizeSemanticText(node.firstItemPreview, 160);
 	if (selector) locators.push({ by: "css", value: selector });
 	if (sample) locators.push({ by: "textAnchor", value: sample, role: "list", exact: false });
 	return dedupeLocators(locators);
@@ -250,8 +251,8 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 		...(geometryFromRect(node.rect) || {}),
 		...(geometryPoint(node.point) || {}),
 	};
-	const name = stringValue(node.action) || stringValue(node.label) || stringValue(node.text);
-	const value = node.editable === true ? undefined : stringValue(node.value);
+	const name = firstSafeSemanticText([node.action, node.label, node.displayLabel, node.text], 160);
+	const value = node.editable === true ? undefined : sanitizeSemanticText(node.value, 160);
 	const controlsSelectors = stringArray(node.controlsSelectors);
 	const ownsSelectors = stringArray(node.ownsSelectors);
 	const expandedTargetSelectors = stringArray(node.expandedTargetSelectors);
@@ -318,9 +319,35 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 	};
 }
 
-export function buildRegionEntityFromListHint(node: Record<string, unknown>, context: ScanEntityContext, index: number): BuiltEntity {
+function listHintNameParts(node: Record<string, unknown>, index: number): { name: string; context?: string; source: "safe-label" | "safe-preview" | "fallback" } {
+	const name = firstSafeSemanticText([node.containerLabel, node.containerName, node.label], 80);
+	const preview = safeContainerLabelText(node.firstItemPreview, 80);
+	const context = safeContainerLabelText(selectorContext(node.selector), 40) ?? firstSafeSemanticText([node.heading, node.nearestHeading, node.landmarkName, node.parentLabel], 40);
+	if (name) return { name, ...(context ? { context } : {}), source: "safe-label" };
+	if (preview) return { name: preview, ...(context ? { context } : {}), source: "safe-preview" };
+	return { name: `list-${index}`, ...(context ? { context } : {}), source: "fallback" };
+}
+
+function selectorContext(value: unknown): string | undefined {
+	const selector = stringValue(value);
+	if (!selector) return undefined;
+	const match = selector.match(/(?:#([A-Za-z0-9_-]{2,})|\.([A-Za-z0-9_-]{2,}))/);
+	return (match?.[1] ?? match?.[2])?.replace(/[-_]+/g, " ");
+}
+
+function normalizeNameKey(value: string | undefined): string {
+	return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function disambiguatedName(name: string, context: string | undefined): string {
+	if (!context || normalizeNameKey(name) === normalizeNameKey(context)) return name;
+	return `${name} (${context})`;
+}
+
+export function buildRegionEntityFromListHint(node: Record<string, unknown>, context: ScanEntityContext, index: number, duplicateNames?: ReadonlySet<string>): BuiltEntity {
 	const locators = buildListHintLocators(node);
-	const name = stringValue(node.firstItemPreview) || stringValue(node.selector) || `list-${index}`;
+	const nameParts = listHintNameParts(node, index);
+	const name = duplicateNames?.has(normalizeNameKey(nameParts.name)) ? disambiguatedName(nameParts.name, nameParts.context) : nameParts.name;
 	const hiddenCount = numberValue(node.hiddenCount);
 	const entity: Omit<Entity, "ref"> = {
 		kind: "region",
@@ -341,6 +368,8 @@ export function buildRegionEntityFromListHint(node: Record<string, unknown>, con
 			...(hiddenCount !== undefined ? { hiddenCount } : {}),
 			jsonPath: `data.list_hints[${index}]`,
 			selector: stringValue(node.selector),
+			...(nameParts.context && name === nameParts.name ? { containerNameContext: nameParts.context } : {}),
+			containerNameSource: name !== nameParts.name ? "disambiguated" : nameParts.source,
 		},
 	};
 	const capturedAt = context.capturedAt;

@@ -1,3 +1,4 @@
+import { artifactHints } from "../summaries/common.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import type { EntityDiff } from "../../kernels/abml/diff.js";
 import type { TreeDiff } from "../../kernels/abml/treeDiff.js";
@@ -9,7 +10,91 @@ import { scanCommandName } from "./renderCache.js";
 
 export type ObserveCausalBlock = { causal?: CausalSummary };
 
+type PageObservationInput = {
+	mode: Extract<ObserveMode, "scan" | "text">;
+	canonical: boolean;
+	summary: Record<string, unknown>;
+	entities: Entity[];
+	content: string;
+	url?: string;
+	tabs: unknown[];
+	activeTabId?: unknown;
+	snapshot: Record<string, unknown>;
+	diff?: EntityDiff & { summary?: unknown };
+	treeDiff?: TreeDiff;
+	causal?: CausalSummary;
+	artifactPath?: string;
+	abmlIntegrated: boolean;
+	tabsRefreshDegraded?: boolean;
+	structFailed?: boolean;
+	providerStatuses?: Partial<ProviderDiagnostics>;
+	providerFailures?: ProviderFailureReason[];
+	diagnostics: Record<string, unknown>;
+};
+
 type ArtifactHintRead = { label: string; jsonPath: string; kind?: string };
+
+type ProviderStatus = "executed" | "scan-backed" | "skipped" | "failed" | "degraded";
+
+type ProviderFailureReason = {
+	provider: string;
+	code: string;
+	message?: string;
+	details?: Record<string, unknown>;
+};
+
+type ProviderDiagnostics = {
+	structure: ProviderStatus;
+	content: ProviderStatus;
+	text: ProviderStatus;
+	html: ProviderStatus;
+	evidence: ProviderStatus;
+	tabs: ProviderStatus;
+};
+
+export type PageObservationProviderInput = {
+	tabCount: number;
+	tabRefreshAttempted?: boolean;
+	tabsRefreshDegraded?: boolean;
+	tabFallbackUsed?: boolean;
+	tabListAvailable?: boolean;
+	tabCountAvailable?: boolean;
+	abmlIntegrated?: boolean;
+	contentLength?: number;
+	artifactPath?: string;
+	structFailed?: boolean;
+	structureStatus?: ProviderStatus;
+	contentStatus?: ProviderStatus;
+	textStatus?: ProviderStatus;
+	htmlStatus?: ProviderStatus;
+	evidenceStatus?: ProviderStatus;
+	tabsStatus?: ProviderStatus;
+};
+
+export function buildPageObservationProviders(input: PageObservationProviderInput): ProviderDiagnostics {
+	const structureStatus: ProviderStatus = input.structureStatus
+		?? (input.structFailed ? "failed" : input.abmlIntegrated === true ? "executed" : input.abmlIntegrated === false ? "degraded" : "scan-backed");
+	const contentStatus: ProviderStatus = input.contentStatus ?? (typeof input.contentLength === "number" ? input.contentLength > 0 ? "scan-backed" : "skipped" : "scan-backed");
+	const textStatus: ProviderStatus = input.textStatus ?? (typeof input.contentLength === "number" ? input.contentLength > 0 ? "scan-backed" : "skipped" : "scan-backed");
+	const htmlStatus: ProviderStatus = input.htmlStatus ?? (typeof input.artifactPath === "string" ? input.artifactPath ? "scan-backed" : "skipped" : input.contentLength === 0 ? "skipped" : "scan-backed");
+	const evidenceStatus: ProviderStatus = input.evidenceStatus ?? (typeof input.artifactPath === "string" ? input.artifactPath ? "scan-backed" : "skipped" : input.contentLength === 0 ? "skipped" : "scan-backed");
+	const tabsStatus: ProviderStatus = input.tabsStatus
+		?? (input.tabListAvailable === false || input.tabCountAvailable === false
+			? "failed"
+			: input.tabCount <= 0 || input.tabFallbackUsed || input.tabsRefreshDegraded
+				? "degraded"
+				: input.tabRefreshAttempted === false
+					? "skipped"
+					: "executed");
+	return {
+		structure: structureStatus,
+		content: contentStatus,
+		text: textStatus,
+		html: htmlStatus,
+		evidence: evidenceStatus,
+		tabs: tabsStatus,
+	};
+}
 
 function addArtifactHint(summary: Record<string, unknown>, key: string, read: ArtifactHintRead, position: "front" | "back" = "back"): void {
 	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints as Record<string, unknown> : undefined;
@@ -23,6 +108,77 @@ function addArtifactHint(summary: Record<string, unknown>, key: string, read: Ar
 	}
 	hints.jsonPaths = jsonPaths;
 	hints.preferredReads = preferredReads;
+}
+
+export function buildPageObservation(input: PageObservationInput): Record<string, unknown> {
+	const focus = isRecord(input.summary.focus) ? input.summary.focus as Record<string, unknown> : {};
+	const gist = isRecord(focus.gist) ? focus.gist : undefined;
+	const outline = Array.isArray(focus.outline) ? focus.outline : undefined;
+	const contentPreview = input.content.replace(/\s+/g, " ").trim().slice(0, 1_000);
+	const context = {
+		url: input.url,
+		activeTabId: input.activeTabId,
+		tabCount: input.tabs.length,
+	};
+	const evidenceReads = [
+		{ label: "response envelope", jsonPath: "envelope", kind: "browser-observe-envelope" },
+		{ label: "saved observation artifact", jsonPath: "pageObservation", kind: "abml-page-observation" },
+		{ label: "raw scan evidence", jsonPath: "data", kind: "scan-evidence" },
+		{ label: "saved observation content", jsonPath: "pageObservation.content", kind: "content-digest" },
+		{ label: "saved observation text", jsonPath: "pageObservation.text", kind: "text-index" },
+	];
+	return {
+		model: "PageObservation",
+		canonical: input.canonical,
+		mode: input.mode,
+		sourceMode: "scan",
+		context,
+		...(gist ? { gist } : {}),
+		...(outline ? { outline } : {}),
+		entities: input.entities.slice(0, 12),
+		actionables: Array.isArray(focus.primary_entities) ? focus.primary_entities : [],
+		refs: input.entities.map((entity) => entity.ref).filter((ref): ref is string => typeof ref === "string").slice(0, 50),
+		...(isRecord(focus.relations) ? { relations: focus.relations } : {}),
+		...(Array.isArray(input.summary.collections) ? { collections: input.summary.collections } : {}),
+		content: {
+			chars: input.content.length,
+			preview: contentPreview,
+			artifact: input.artifactPath ? { path: input.artifactPath, jsonPath: "pageObservation.content" } : undefined,
+		},
+		text: {
+			chars: input.content.length,
+			preview: contentPreview,
+			artifact: input.artifactPath ? { path: input.artifactPath, jsonPath: "pageObservation.text" } : undefined,
+		},
+		evidence: {
+			artifact: input.artifactPath ? { path: input.artifactPath, jsonPath: "envelope" } : undefined,
+		},
+		snapshot: input.snapshot,
+		...(input.diff ? { diff: input.diff } : {}),
+		...(input.treeDiff ? { treeDiff: input.treeDiff } : {}),
+		...(input.causal ? { causal: input.causal } : {}),
+		...(isRecord(input.summary.memory) ? { memory: input.summary.memory } : {}),
+		diagnostics: {
+			...input.diagnostics,
+			abmlIntegrated: input.abmlIntegrated,
+			providers: buildPageObservationProviders({
+				abmlIntegrated: input.abmlIntegrated,
+				contentLength: input.content.length,
+				artifactPath: input.artifactPath,
+				tabCount: input.tabs.length,
+				tabsRefreshDegraded: input.tabsRefreshDegraded,
+				structFailed: input.structFailed,
+				structureStatus: input.providerStatuses?.structure,
+				contentStatus: input.providerStatuses?.content,
+				textStatus: input.providerStatuses?.text,
+				htmlStatus: input.providerStatuses?.html,
+				evidenceStatus: input.providerStatuses?.evidence,
+				tabsStatus: input.providerStatuses?.tabs,
+			}),
+			...(input.providerFailures?.length ? { providerFailures: input.providerFailures } : {}),
+		},
+		...artifactHints(evidenceReads),
+	};
 }
 
 export function attachAbmlArtifactHints(summary: Record<string, unknown>): void {
@@ -52,7 +208,7 @@ export function buildScanNextActionHints(input: {
 	const hints: string[] = [];
 	const sid = typeof input.snapshotId === "string" ? input.snapshotId : undefined;
 	if (!input.hasBaseline && sid) {
-		hints.push(`to see what CHANGES after you act here: re-run browser_observe mode=scan baseline:"${sid}" → envelope.treeDiff (template-level appeared/disappeared, cleaner than re-extracting before/after)${input.recorderActive ? "; + envelope.causal.requests = which requests your action fired" : ""}`);
+		hints.push(`to see what CHANGES after you act here: re-run browser_observe baselineSnapshotId:"${sid}" or browser_observe diff:true → envelope.treeDiff (template-level appeared/disappeared, cleaner than re-extracting before/after)${input.recorderActive ? "; + envelope.causal.requests = which requests your action fired" : ""}`);
 	}
 	if (input.hasBaseline && input.causal) {
 		const firedHint = causalFiredHint(input.causal);

@@ -86,7 +86,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 							reason: "snapshot_not_found",
 							recovery: {
 								nextActions: [
-									"browser-pilot observe --mode scan --json",
+									"browser-pilot observe --json",
 									"browser-pilot tabs --action snapshot --json",
 								],
 							},
@@ -100,7 +100,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 								nextActions: [
 									"browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json",
 									"browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
-									"browser-pilot observe --mode scan --json",
+									"browser-pilot observe --json",
 								],
 							},
 						});

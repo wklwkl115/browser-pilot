@@ -17,12 +17,20 @@ export function modeInferredSummary(params: ObserveToolParams): Record<string, u
 	return params.modeInferred ? { modeInferred: params.modeInferred.mode } : {};
 }
 
+export function legacyProjectionDetails(params: ObserveToolParams, _mode: ObserveMode): Record<string, unknown> {
+	return params.modeExplicit ? { projection: "legacy", canonical: false, modeExplicit: true, semantics: ["legacy", "debug", "projection"] } : {};
+}
+
+export function legacyProjectionSummary(params: ObserveToolParams, _mode: ObserveMode): Record<string, unknown> {
+	return params.modeExplicit ? { projection: "legacy", canonical: false, modeExplicit: true, semantics: ["legacy", "debug", "projection"] } : {};
+}
+
 export function scanCommandName(mode: Extract<ObserveMode, "scan" | "text">, hasNavigation: boolean): string {
 	if (hasNavigation) return mode === "text" ? "navigate+text" : "navigate+scan";
 	return mode === "text" ? "scan.text" : "scan";
 }
 
-function observeCacheTtlMs(): number {
+export function observeCacheTtlMs(): number {
 	const raw = process.env.BROWSER_PILOT_OBSERVE_CACHE_TTL_MS;
 	if (raw === undefined) return 2_000;
 	const value = Number(raw);
@@ -128,10 +136,14 @@ export function stripCachedObserveMeta(record: Record<string, unknown>): Record<
 	return rest;
 }
 
+function canonicalCachedEnvelope(record: Record<string, unknown>): Record<string, unknown> | undefined {
+	const envelope = isRecord(record.envelope) ? record.envelope as Record<string, unknown> : undefined;
+	if (!envelope) return undefined;
+	return stripCachedObserveMeta(envelope);
+}
+
 export function cachedEnvelopeFromArtifact(value: unknown): Record<string, unknown> | undefined {
 	const record = isRecord(value) ? value : undefined;
 	if (!record) return undefined;
-	if (isRecord(record.envelope)) return stripCachedObserveMeta(record.envelope as Record<string, unknown>);
-	if (record.tool === "browser_observe") return stripCachedObserveMeta(record);
-	return undefined;
+	return canonicalCachedEnvelope(record);
 }

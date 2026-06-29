@@ -1,0 +1,22 @@
+# Checklist
+
+- [x] 已检查 `dom-accessibility-api` license、browser compatibility、入口和 bundle 影响。
+- [x] 已确认 extension scan bundle 能打包该依赖且不引入 Node-only API。
+- [x] `dom-accessibility-api` 已作为项目依赖加入并更新 lockfile。
+- [x] browser-side scan 存在 bounded accessible-name wrapper 或等价 provider。
+- [x] `labelOf(el)` 或等价命名路径优先使用 safe `computeAccessibleName` 结果。
+- [x] accessible-name provider 只用于 actionables、list container candidates、heading/container label candidates 等 bounded candidate sets。
+- [x] computed accessible name 会经过现有 semantic sanitizer / concise label 过滤。
+- [x] computed accessible name 为空、不安全或低价值时会 fallback 到现有命名逻辑。
+- [x] editable value、long item/card preview、SVG/path、HTML-like、selector-like 字符串不会通过 computed name 进入 ABML semantic names。
+- [x] 新增或更新测试覆盖 labelled-by/icon-only/actionable 使用 computed accessible name。
+- [x] 新增或更新测试覆盖 computed name 不安全时 fallback。
+- [x] observe regression benchmark 包含 accessible-name behavior 或 fallback safety case。
+- [x] `npm run build:bridge` 已通过。
+- [x] extension dist 体积变化已检查并记录是否可接受。
+- [x] Edge no-mode observe 实测成功，扩展能连接并完成 scan。
+- [x] 实测 artifact 中无 `<path`/`<svg` 污染，collection names 和 actionables 未明显退化。
+- [x] 相关 owner 文档或长期优化记录已同步。
+- [x] 新增 accessible-name/benchmark focused tests 已通过。
+- [x] `mise run affected` 已通过。
+- [x] `mise run verify` 已通过，或有明确记录说明无法运行的原因与剩余风险。

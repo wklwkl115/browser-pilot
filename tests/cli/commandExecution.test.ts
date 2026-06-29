@@ -8,6 +8,7 @@ import { CommandManifestIndex, type CommandDefinition } from "../../src/commands
 import { defineExecuteCommand } from "../../src/commands/executeCommand.ts";
 import { defineMemoryCommand } from "../../src/commands/memoryCommand.ts";
 import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
+import { defineObserveCommand } from "../../src/commands/observeCommand.ts";
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
@@ -157,6 +158,36 @@ test("commands execution: browser_tabs runtime failure is returned as structured
 	assert.deepEqual((details.diagnostics as Record<string, unknown>).target, { tabId: 99 });
 });
 
+test("commands execution: missing browser_tabs snapshot recovery uses ordinary no-mode observe CLI", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineTabsCommand(context), runtime);
+	const result = await command.execute("tool-1", { action: "snapshot", snapshotId: "missing-snap" });
+	const body = parseResult(result);
+	const details = result.details?.error as Record<string, unknown>;
+	const nextActions = ((details.details as Record<string, unknown>).recovery as Record<string, unknown>).nextActions as string[];
+	assert.equal(body.code, "INVALID_RULE");
+	assert.deepEqual(nextActions, ["browser-pilot observe --json", "browser-pilot tabs --action snapshot --json"]);
+});
+
+test("commands execution: stale browser_tabs snapshot recovery uses ordinary no-mode observe CLI", async () => {
+	const runtime = createRuntime({
+		getObservationSnapshot() {
+			return { snapshotId: "stale-snap", expired: true, invalidatedReason: "ttl", saved: { path: ".browser-pilot/artifacts/observe.json" } };
+		},
+	});
+	const command = defineCommand((context) => defineTabsCommand(context), runtime);
+	const result = await command.execute("tool-1", { action: "snapshot", snapshotId: "stale-snap" });
+	const body = parseResult(result);
+	const details = result.details?.error as Record<string, unknown>;
+	const nextActions = ((details.details as Record<string, unknown>).recovery as Record<string, unknown>).nextActions as string[];
+	assert.equal(body.code, "INVALID_RULE");
+	assert.deepEqual(nextActions, [
+		"browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json",
+		"browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
+		"browser-pilot observe --json",
+	]);
+});
+
 test("commands execution: browser_command sends validated native command and emits distilled operation envelope", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
@@ -211,6 +242,30 @@ test("commands execution: browser_execute rejects command-shaped scripts with re
 	assert.match(String(body.message), /only accepts JavaScript/);
 	assert.deepEqual(details.recovery, { useTool: "browser_command" });
 	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), false);
+});
+
+test("commands execution: explicit observe mode=scan rejects canonical-only diff and skips baseline resolution", async () => {
+	const runtime = createRuntime({
+		listObservationSnapshots() {
+			throw new Error("diff baseline lookup should not run for explicit mode=scan");
+		},
+	});
+	const command = defineCommand((context) => defineObserveCommand(context), runtime);
+	const result = await command.execute("tool-1", { mode: "scan", diff: true });
+	const body = parseResult(result);
+	assert.equal(body.code, "INVALID_RULE");
+	assert.match(String(body.message), /mode=scan does not accept diff/);
+	assert.equal(runtime.calls.some((call) => call.name === "sendCommand"), false);
+});
+
+test("commands execution: explicit observe mode=scan rejects by-reference baselines before mapping them onto canonical baseline", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineObserveCommand(context), runtime);
+	const result = await command.execute("tool-1", { mode: "scan", baselineSnapshotId: "snap-1" });
+	const body = parseResult(result);
+	assert.equal(body.code, "INVALID_RULE");
+	assert.match(String(body.message), /mode=scan does not accept baselineSnapshotId/);
+	assert.equal(runtime.calls.some((call) => call.name === "sendCommand"), false);
 });
 
 test("commands execution: browser_artifact reads JSON path and returns bounded inline result", async () => {

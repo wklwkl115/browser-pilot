@@ -57,6 +57,7 @@
     "prepack": "npm run build && node scripts/build-native.mjs --quiet && node scripts/build-bridge.mjs --quiet"
   },
   "dependencies": {
+    "dom-accessibility-api": "^0.7.1",
     "js-yaml": "^4.1.1",
     "typebox": "^1.0.55",
     "typescript": "^6.0.3",
@@ -104,4 +105,3 @@
     "tsconfig.bridge-src.json"
   ]
 }
-

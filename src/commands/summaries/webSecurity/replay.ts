@@ -1,4 +1,4 @@
-import { asArray, bodyPreview, isRecord, summaryTable, type Summary } from "./shared.js";
+import { asArray, bodyPreview, isRecord, redactSensitiveSummaryTextValue, summaryTable, type Summary } from "./shared.js";
 
 export function summarizeHttpReplayData(value: unknown): Summary {
 	const request = isRecord(value) && isRecord(value.request) ? value.request : {};
@@ -21,7 +21,7 @@ export function summarizeHttpReplayData(value: unknown): Summary {
 		} : undefined,
 		request: {
 			method: request.method,
-			url: request.url,
+			url: redactSensitiveSummaryTextValue(request.url),
 			headerCount: Array.isArray(request.headerNames) ? request.headerNames.length : undefined,
 			omittedHeaderNames: request.omittedHeaderNames,
 			bodyBytes: request.bodyBytes,
@@ -32,7 +32,7 @@ export function summarizeHttpReplayData(value: unknown): Summary {
 		response: {
 			status: response.status,
 			statusText: response.statusText,
-			url: response.url,
+			url: redactSensitiveSummaryTextValue(response.url),
 			headerCount: Array.isArray(response.headerNames) ? response.headerNames.length : undefined,
 			bodyBytes: isRecord(response.body) ? response.body.bytes : undefined,
 			bodySha256: isRecord(response.body) ? response.body.sha256 : undefined,
@@ -58,7 +58,7 @@ export function summarizeHttpReplayData(value: unknown): Summary {
 			{ key: "index", value: (step) => step.index },
 			{ key: "source", value: (step) => step.source },
 			{ key: "method", value: (step) => isRecord(step.request) ? step.request.method : undefined },
-			{ key: "url", value: (step) => isRecord(step.request) ? step.request.url : undefined },
+			{ key: "url", value: (step) => isRecord(step.request) ? redactSensitiveSummaryTextValue(step.request.url) : undefined },
 			{ key: "status", value: (step) => isRecord(step.response) ? step.response.status : undefined },
 			{ key: "bodyBytes", value: (step) => isRecord(step.response) && isRecord(step.response.body) ? step.response.body.bytes : undefined },
 			{ key: "multipartCase", value: (step) => isRecord(step.multipartMatrixCase) ? `${step.multipartMatrixCase.fieldName}:${step.multipartMatrixCase.kind}:${step.multipartMatrixCase.fileCount}` : undefined },
@@ -67,7 +67,7 @@ export function summarizeHttpReplayData(value: unknown): Summary {
 			{ key: "capturedVariables", value: (step) => step.capturedVariableNames },
 			{ key: "persistedVariables", value: (step) => step.persistedVariableNames },
 			{ key: "delta", value: (step) => step.delta },
-			{ key: "error", value: (step) => step.error },
+			{ key: "error", value: (step) => redactSensitiveSummaryTextValue(step.error) },
 		], 20),
 		redirects: isRecord(value) && Array.isArray(value.redirects) ? value.redirects.length : 0,
 		nextActions: [

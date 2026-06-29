@@ -106,8 +106,8 @@ export function nextActionsForExecutionEffect(effect: ExecutionEffectRecoveryLik
 	const actions = uniqueRecoveryActions([
 		effect.navigated || effect.targetDelta ? "tab identity may have changed; list tabs and use targetRef/tabHandle before the next tab-scoped call if targeting is ambiguous" : undefined,
 		(effect.requestsFired ?? 0) > 0 || (effect.hookEventsFired ?? 0) > 0 ? "effect anchor is available for browser_observe baseline/causal follow-up" : undefined,
-		Array.isArray(effect.temporal?.verdict?.reasons) && effect.temporal.verdict.reasons.includes("target_stale_before_dispatch") ? "target ref was stale before dispatch; refresh with browser_observe mode=scan before retrying the same bp-ref" : undefined,
-		effect.targetRegionDirty === true ? "target ref region changed after the action; refresh with browser_observe mode=scan before reusing the same bp-ref" : undefined,
+		Array.isArray(effect.temporal?.verdict?.reasons) && effect.temporal.verdict.reasons.includes("target_stale_before_dispatch") ? "target ref was stale before dispatch; refresh with browser_observe before retrying the same bp-ref" : undefined,
+		effect.targetRegionDirty === true ? "target ref region changed after the action; refresh with browser_observe before reusing the same bp-ref" : undefined,
 	]);
 	return actions.length ? actions : undefined;
 }
@@ -117,7 +117,7 @@ function abmlRecoveryActions(code: string, details: Record<string, unknown>): st
 	const ref = typeof details.ref === "string" ? redactSensitiveText(details.ref) : undefined;
 	const uri = typeof details.uri === "string" ? redactSensitiveText(details.uri) : undefined;
 	return uniqueRecoveryActions([
-		["REF_NOT_FOUND", "REF_STALE", "HANDLE_NOT_FOUND", "HANDLE_EXPIRED", "HANDLE_ETAG_MISMATCH"].includes(code) ? "browser_observe mode=scan to re-capture fresh ABML refs/resources" : undefined,
+		["REF_NOT_FOUND", "REF_STALE", "HANDLE_NOT_FOUND", "HANDLE_EXPIRED", "HANDLE_ETAG_MISMATCH"].includes(code) ? "browser_observe to re-capture fresh ABML refs/resources" : undefined,
 		code === "REF_AMBIGUOUS" ? "narrow the ABML ref with role/name/text or re-run browser_observe for current candidates" : undefined,
 		code === "REF_SCOPE_VIOLATION" ? "switch to the owning browser session/tab or re-capture the ref in the current scope" : undefined,
 		code === "HANDLE_KIND_MISMATCH" || code === "INVALID_INPUT" ? "retry with a ref/handle and parameters that match the requested ABML operation" : undefined,
@@ -182,7 +182,7 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 		...memoryRecoveryActions(code, details),
 		["NO_TAB", "TAB_NOT_FOUND", "INVALID_TAB_ID", "TAB_ID_REQUIRED", "BROWSER_NOT_FOUND"].includes(code) ? "browser_tabs action=list" : undefined,
 		code === "AMBIGUOUS_TAB_ID" ? "browser_tabs action=selectBrowser then retry with explicit targetRef/tabHandle" : undefined,
-		["SELECTOR_NOT_FOUND", "INVALID_SELECTOR", "ELEMENT_NOT_FOUND"].includes(code) ? "browser_observe mode=scan|html" : undefined,
+		["SELECTOR_NOT_FOUND", "INVALID_SELECTOR", "ELEMENT_NOT_FOUND"].includes(code) ? "browser_observe to refresh the page model; explicit legacy/debug projection browser_observe mode=html can inspect exact DOM evidence" : undefined,
 		selector ? `verify selector=${selector} against the current DOM` : undefined,
 		["BODY_UNAVAILABLE", "REQUEST_NOT_FOUND", "NETWORK_RECORDER_NOT_STARTED"].includes(code) ? "browser_network action=list|body with a fresh recorder session" : undefined,
 		["NO_SESSION", "NOT_INSTALLED"].includes(code) ? "set the target tab (pass targetRef/tabHandle) and install a hook session (browser_hook action=installTargets) before collect/status/evaluate" : undefined,
@@ -198,7 +198,7 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=list to target an unleased tab, or retry after the lease's remainingMs elapses" : undefined,
 		code === "INVALID_BROWSER_COMMAND" ? "use browser_command with a validated command object" : undefined,
 		code === "BROWSER_COMMAND_FAILED" ? "use browser_command with a validated command object" : undefined,
-		code === "BROWSER_EXECUTION_ERROR" ? "inspect the page error in this result; if selectors targeted stale DOM, refresh with browser_observe mode=scan" : undefined,
+		code === "BROWSER_EXECUTION_ERROR" ? "inspect the page error in this result; if selectors targeted stale DOM, refresh with browser_observe" : undefined,
 		code === "FRAME_DETACHED" ? "browser_frame action=list" : undefined,
 		["SESSION_NOT_FOUND", "TAB_CRASHED"].includes(code) ? "browser_tabs action=list" : undefined,
 		["MATURE_BRIDGE_LAUNCHER_NOT_FOUND", "MATURE_BRIDGE_LAUNCHER_PROBE_FAILED", "MATURE_BRIDGE_LAUNCH_FAILED"].includes(code) ? "configure sqlmapPath/nucleiPath or the matching BROWSER_PILOT_*_PATH environment variable, then retry" : undefined,

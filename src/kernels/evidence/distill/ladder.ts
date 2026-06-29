@@ -104,9 +104,28 @@ function scalarIdentityFields(summary: DistilledSummary): DistilledSummary {
 	return out;
 }
 
+function canonicalPageObservationMarker(summary: DistilledSummary): DistilledSummary | undefined {
+	const pageObservation = summary.pageObservation;
+	if (isRecord(pageObservation) && pageObservation.model === "PageObservation" && pageObservation.canonical === true) return { model: "PageObservation", canonical: true };
+	return undefined;
+}
+
+function withCanonicalPageObservationMarker(candidate: DistilledSummary, source: DistilledSummary, budget: number): DistilledSummary {
+	const marker = canonicalPageObservationMarker(source);
+	if (!marker) return candidate;
+	if (isRecord(candidate.pageObservation) && candidate.pageObservation.model === "PageObservation" && candidate.pageObservation.canonical === true) return candidate;
+	const withMarker = { ...candidate, pageObservation: marker };
+	if (stableJsonLength(withMarker) <= budget) return withMarker;
+	const withoutPreview = { ...candidate };
+	delete withoutPreview.preview;
+	const compact = { ...withoutPreview, pageObservation: marker };
+	return stableJsonLength(compact) <= budget ? compact : candidate;
+}
+
 export function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledSummary {
 	const original = measureSummary(summary);
 	const workingSummary = original.summary;
+	const finalize = (candidate: DistilledSummary): DistilledSummary => withCanonicalPageObservationMarker(candidate, workingSummary, budget);
 	if (original.length <= budget) return workingSummary;
 	for (const limits of [
 		{ stringChars: 800, arrayItems: 20, tableRows: 20 },
@@ -115,11 +134,11 @@ export function fitSummaryBudget(summary: DistilledSummary, budget: number): Dis
 		{ stringChars: 120, arrayItems: 5, tableRows: 5 },
 	]) {
 		const compacted = measureSummary(compactSummaryValue(workingSummary, limits) as DistilledSummary);
-		if (compacted.length <= budget) return compacted.summary;
+		if (compacted.length <= budget) return finalize(compacted.summary);
 	}
 	const compact120 = compactSummaryValue(workingSummary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary;
 	const dropped = dropLowPrioritySummaryFields(compact120, budget);
-	if (dropped.length <= budget) return dropped.summary;
+	if (dropped.length <= budget) return finalize(dropped.summary);
 	const keptScalars = scalarIdentityFields(workingSummary);
 	const droppedKeys = Object.keys(workingSummary).filter((key) => !(key in keptScalars));
 	const scalarBase: DistilledSummary = { ...keptScalars, summaryTruncatedToBudget: true, ...(droppedKeys.length ? { summaryOmitted: droppedKeys } : {}) };
@@ -135,10 +154,10 @@ export function fitSummaryBudget(summary: DistilledSummary, budget: number): Dis
 	let previewChars = Math.max(0, Math.min(previewSource.length, budget, PREVIEW_FALLBACK_CHARS));
 	while (previewChars >= 0) {
 		const candidate = previewChars > 0 ? { ...minimalBase, preview: previewSource.slice(0, previewChars) } : minimalBase;
-		if (stableJson(candidate).length <= budget) return candidate;
+		if (stableJson(candidate).length <= budget) return finalize(candidate);
 		previewChars = previewChars <= 32 ? -1 : Math.floor(previewChars * 0.75);
 	}
-	return { summaryTruncatedToBudget: true };
+	return finalize({ summaryTruncatedToBudget: true });
 }
 
 function compactEntityForEnvelope(entity: Record<string, unknown>): Record<string, unknown> {
@@ -224,7 +243,7 @@ function compactLiftedEnvelopeValue(key: string, value: unknown): unknown {
 	}
 	if (key === "collections" && Array.isArray(value)) {
 		return value.slice(0, 4).filter(isRecord).map((collection) => ({
-			...pickDefined(collection, ["collectionId", "kind", "containerRef", "containerRole", "containerName", "itemRole", "observedCount", "itemRefCount", "declaredTotal", "estimatedTotal", "hiddenCount", "completeness", "confidence"]),
+			...pickDefined(collection, ["collectionId", "kind", "containerRef", "containerRole", "containerName", "containerNameContext", "containerNameSource", "itemRole", "observedCount", "itemRefCount", "declaredTotal", "estimatedTotal", "hiddenCount", "completeness", "confidence"]),
 			...(Array.isArray(collection.itemRefs) ? { itemRefs: collection.itemRefs.slice(0, 6) } : {}),
 			...(isRecord(collection.continuation) ? { continuation: pickDefined(collection.continuation, ["kind", "handle", "confidence", "evidenceRefs"]) } : {}),
 			...(Array.isArray(collection.evidence) ? { evidence: collection.evidence.slice(0, 3).filter(isRecord).map((item) => pickDefined(item, ["source", "summary", "jsonPath", "ref"])) } : {}),

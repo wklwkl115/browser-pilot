@@ -6,7 +6,7 @@ import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation
 import { summarizeHtmlSnapshot } from "../summaries/index.js";
 import { artifactFallbackName, jsonCommandResult, resolveLocalTargetTabId, targetTabId, textCommandResult, commandMaxChars, commandTimeoutMs, withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "../commandShared.js";
-import { modeInferredDetails, modeInferredSummary } from "./renderCache.js";
+import { legacyProjectionDetails, legacyProjectionSummary, modeInferredDetails, modeInferredSummary } from "./renderCache.js";
 import { currentObserveSnapshotMeta, withObservationMeta, type ObserveToolParams } from "./common.js";
 
 export async function runHtmlObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, onUpdate?: CommandOnUpdate) {
@@ -57,6 +57,7 @@ export async function runHtmlObservation(server: BrowserCommandRuntimePort, para
 		const summary = {
 			...withObservationMeta(summarizeHtmlSnapshot(html, data), "html", "html"),
 			...modeInferredSummary(params),
+			...legacyProjectionSummary(params, "html"),
 			browserSessionId: bridge.browserSessionId,
 			tabId,
 			selectionVersion: bridge.selectionVersion,
@@ -69,7 +70,7 @@ export async function runHtmlObservation(server: BrowserCommandRuntimePort, para
 			maxChars,
 			fallbackName: textFallbackName,
 			summary,
-			details: { mode: "html", modeInferred: modeInferredDetails(params), sourceMode: "html", sourceCommand: commandName, command: commandName, navigation: result.navigationData, result: resultMeta },
+			details: { mode: "html", modeInferred: modeInferredDetails(params), ...legacyProjectionDetails(params, "html"), sourceMode: "html", sourceCommand: commandName, command: commandName, navigation: result.navigationData, result: resultMeta },
 			operation,
 			snapshot: snapshotMeta,
 			artifactValue: { ...result.result, navigation: result.navigationData, operation, snapshot: snapshotMeta },
@@ -81,7 +82,7 @@ export async function runHtmlObservation(server: BrowserCommandRuntimePort, para
 		defaultDetailLevel: "preview",
 		maxChars,
 		fallbackName: resultFallbackName,
-		details: { mode: "html", modeInferred: modeInferredDetails(params), sourceMode: "html", sourceCommand: commandName, command: commandName, navigation: result.navigationData },
+		details: { mode: "html", modeInferred: modeInferredDetails(params), ...legacyProjectionDetails(params, "html"), sourceMode: "html", sourceCommand: commandName, command: commandName, navigation: result.navigationData },
 		operation,
 		snapshot: snapshotMeta,
 		artifactValue: { ...result.result, navigation: result.navigationData, operation, snapshot: snapshotMeta },

@@ -1,10 +1,10 @@
-import { artifactPath, asArray, bridgeArtifacts, hostOf, increment, isRecord, summaryTable, topCounts, type Summary } from "./shared.js";
+import { artifactPath, asArray, bridgeArtifacts, hostOf, increment, isRecord, redactSensitiveSummaryTextValue, redactSensitiveSummaryValue, summaryTable, topCounts, type Summary } from "./shared.js";
 
 export function summarizeSqlmapBridgeData(value: unknown): Summary {
 	const runs = isRecord(value) ? asArray(value.runs).filter(isRecord) : [];
 	const findings = isRecord(value) ? asArray(value.findings).filter(isRecord) : [];
 	const failures = isRecord(value) ? asArray(value.failures).filter(isRecord) : [];
-	const artifacts = bridgeArtifacts(value, runs);
+	const artifacts = redactSensitiveSummaryValue(bridgeArtifacts(value, runs));
 	const dbmsCounts: Record<string, number> = {};
 	const parameterCounts: Record<string, number> = {};
 	for (const item of findings) {
@@ -40,7 +40,7 @@ export function summarizeSqlmapBridgeData(value: unknown): Summary {
 		runs: summaryTable(runs, [
 			{ key: "index", value: (item) => item.index },
 			{ key: "source", value: (item) => item.source },
-			{ key: "url", value: (item) => item.targetUrl },
+			{ key: "url", value: (item) => redactSensitiveSummaryTextValue(item.targetUrl) },
 			{ key: "exitCode", value: (item) => item.exitCode },
 			{ key: "durationMs", value: (item) => item.durationMs },
 			{ key: "vulnerable", value: (item) => item.vulnerable },
@@ -55,17 +55,17 @@ export function summarizeSqlmapBridgeData(value: unknown): Summary {
 		], 20),
 		findings: summaryTable(findings, [
 			{ key: "run", value: (item) => item.runIndex },
-			{ key: "url", value: (item) => item.targetUrl },
+			{ key: "url", value: (item) => redactSensitiveSummaryTextValue(item.targetUrl) },
 			{ key: "param", value: (item) => item.parameter },
 			{ key: "place", value: (item) => item.place },
 			{ key: "type", value: (item) => item.type },
 			{ key: "title", value: (item) => item.title },
-			{ key: "payload", value: (item) => item.payload },
+			{ key: "payload", value: (item) => redactSensitiveSummaryTextValue(item.payload) },
 		], 30),
 		failures: summaryTable(failures, [
 			{ key: "index", value: (item) => item.index },
 			{ key: "source", value: (item) => item.source },
-			{ key: "error", value: (item) => item.error },
+			{ key: "error", value: (item) => redactSensitiveSummaryTextValue(item.error) },
 		], 10),
 		nextActions: [
 			"read stdout, stderr, or request artifacts with browser_artifact before broadening sqlmap scope",
@@ -78,7 +78,7 @@ export function summarizeNucleiBridgeData(value: unknown): Summary {
 	const runs = isRecord(value) ? asArray(value.runs).filter(isRecord) : [];
 	const matches = isRecord(value) ? asArray(value.matches).filter(isRecord) : [];
 	const failures = isRecord(value) ? asArray(value.failures).filter(isRecord) : [];
-	const artifacts = bridgeArtifacts(value, runs);
+	const artifacts = redactSensitiveSummaryValue(bridgeArtifacts(value, runs));
 	const severityCounts: Record<string, number> = {};
 	const templateCounts: Record<string, number> = {};
 	const hostCounts: Record<string, number> = {};
@@ -121,7 +121,7 @@ export function summarizeNucleiBridgeData(value: unknown): Summary {
 		runs: summaryTable(runs, [
 			{ key: "index", value: (item) => item.index },
 			{ key: "source", value: (item) => item.source },
-			{ key: "url", value: (item) => item.targetUrl },
+			{ key: "url", value: (item) => redactSensitiveSummaryTextValue(item.targetUrl) },
 			{ key: "exitCode", value: (item) => item.exitCode },
 			{ key: "durationMs", value: (item) => item.durationMs },
 			{ key: "matched", value: (item) => item.matched },
@@ -134,20 +134,20 @@ export function summarizeNucleiBridgeData(value: unknown): Summary {
 		], 20),
 		matches: summaryTable(matches, [
 			{ key: "run", value: (item) => item.runIndex },
-			{ key: "url", value: (item) => item.targetUrl },
+			{ key: "url", value: (item) => redactSensitiveSummaryTextValue(item.targetUrl) },
 			{ key: "templateId", value: (item) => item.templateId },
 			{ key: "name", value: (item) => item.templateName },
 			{ key: "severity", value: (item) => item.severity },
-			{ key: "matchedAt", value: (item) => item.matchedAt },
+			{ key: "matchedAt", value: (item) => redactSensitiveSummaryTextValue(item.matchedAt) },
 			{ key: "matcher", value: (item) => item.matcherName },
 			{ key: "extractor", value: (item) => item.extractorName },
-			{ key: "extracts", value: (item) => Array.isArray(item.extractedResults) ? item.extractedResults.slice(0, 4) : undefined },
-			{ key: "requestPreview", value: (item) => item.requestPreview },
+			{ key: "extracts", value: (item) => Array.isArray(item.extractedResults) ? redactSensitiveSummaryValue(item.extractedResults.slice(0, 4)) : undefined },
+			{ key: "requestPreview", value: (item) => redactSensitiveSummaryTextValue(item.requestPreview) },
 		], 30),
 		failures: summaryTable(failures, [
 			{ key: "index", value: (item) => item.index },
 			{ key: "source", value: (item) => item.source },
-			{ key: "error", value: (item) => item.error },
+			{ key: "error", value: (item) => redactSensitiveSummaryTextValue(item.error) },
 		], 10),
 		nextActions: [
 			"read nuclei stdout, stderr, or jsonl artifacts with browser_artifact before widening template scope",

@@ -1,0 +1,22 @@
+# Checklist
+
+- [x] 存在 deterministic、纯逻辑的 item-like preview 判定规则。
+- [x] 长 pricing/model-card 文本会被判定为不适合作为 container name。
+- [x] 短稳定 label，例如 `个人中心`、`全部供应商 30`、`所有最新话题`，仍可作为 container name。
+- [x] `buildRegionEntityFromListHint` 不再把长 item/card preview 用作 list region name。
+- [x] `collection.containerName` 不再把长 item/card preview 用作容器名。
+- [x] first item preview 被拒绝为容器名时，仍保留为 evidence/sample。
+- [x] collection key 不再依赖长 item/card preview，避免不稳定 key。
+- [x] `containerLabelOf` 或等价采集逻辑优先返回 aria/labelled-by/heading/group label 等短容器语义。
+- [x] 容器 label 候选也会经过 concise-container-label 过滤，不会返回整段卡片文本。
+- [x] 新增或更新测试覆盖 Krill pricing 风格长卡片 preview。
+- [x] 新增或更新测试覆盖短 label 正例。
+- [x] 新增或更新测试覆盖 evidence sample 保留。
+- [x] 新增或更新测试覆盖 scan template/container label 相关行为或构建产物。
+- [x] no-mode `browser_observe` 仍保持 canonical PageObservation 路径。
+- [x] 实际 Krill AI pricing 页面复验中，模型卡片列表的 `collection.containerName` 不再是完整首个 pricing card 文本。
+- [x] 实际复验中 item preview 仍可在 evidence/sample 中查看。
+- [x] 实际复验中 `<path`/`<svg` 污染仍为 0 matches。
+- [x] 相关 focused tests 已通过。
+- [x] `mise run affected` 已通过。
+- [x] `mise run verify` 已通过，或有明确记录说明无法运行的原因与剩余风险。

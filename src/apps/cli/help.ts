@@ -19,7 +19,7 @@ export const COMMAND_SUMMARIES: CliCommandSummary[] = [
 	{ subcommand: "http-replay", name: "browser_http_replay", description: "Replay raw or structured HTTP requests with method/header/body mutation, HAR dependency graph evidence, artifact output, and optional browser-session cookie injection." },
 	{ subcommand: "memory", name: "browser_memory", description: "Record, recall, read, or validate local browser memory entries with local-only persistence, near-duplicate dedup, optional provenance evidence, and bounded reads." },
 	{ subcommand: "network", name: "browser_network", description: "Native Network recorder commands: start, stop, status, clear, list, get, body, exportHar, wait." },
-	{ subcommand: "observe", name: "browser_observe", description: "Observe browser tabs, simplified page structure, readable content, or exact HTML/text through an explicit observation mode." },
+	{ subcommand: "observe", name: "browser_observe", description: "Observe the current page as the canonical ABML page model; omit mode for ordinary use, with explicit modes reserved for legacy/debug projections." },
 	{ subcommand: "screenshot", name: "browser_screenshot", description: "Native screenshot capture. Saves the image to disk by default and returns the file path." },
 	{ subcommand: "sqli", name: "browser_sqli", description: "Probe SQL injection or run bounded sqlmap automation from explicit scoped request templates with boolean/error/time/union evidence, mature-engine findings, and artifacts." },
 	{ subcommand: "tabs", name: "browser_tabs", description: "List, switch, create, close, or snapshot browser tabs; advanced actions manage scoped browser sessions and tab leases through the Browser Pilot bridge." },

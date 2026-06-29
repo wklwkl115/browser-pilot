@@ -8,6 +8,7 @@ export type ObserveMode = "scan" | "content" | "html" | "text" | "tabs";
 
 export type ObserveToolParams = {
 	mode?: string;
+	modeExplicit?: boolean;
 	browserSessionId?: string;
 	tabId?: number | string;
 	targetRef?: string;

@@ -514,6 +514,8 @@ TS adapter 位于 [`src/native/browserPilotNativeKernels.ts`](src/native/browser
 | `SessionKernel` | [`src/kernels/session/SessionKernel.ts`](src/kernels/session/SessionKernel.ts) | session/lease/operation/snapshot kernel 聚合。 |
 | `mintRef()` / `parseRef()` | [`src/kernels/refs/core.ts`](src/kernels/refs/core.ts) | `bp-ref://` URI 创建与解析。 |
 | `createBrowserAbmlRuntime()` | [`src/browser-runtime/abml/runtime.ts`](src/browser-runtime/abml/runtime.ts) | 创建 ABML runtime context。 |
+| `buildScanScript()` | [`src/scan/buildScanScript.ts`](src/scan/buildScanScript.ts) | 渲染 scan 页面脚本，并注入 scan signals、growth probe 与 accessible-name provider。 |
+| `DOM_ACCESSIBILITY_API_BUNDLE` | [`src/scan/domAccessibilityApiBundle.ts`](src/scan/domAccessibilityApiBundle.ts) | `dom-accessibility-api` 的页面世界 bundle，用于 scan 命名链路。 |
 | `renderCaptureTemplate()` | [`src/capture/inject.ts`](src/capture/inject.ts) | capture template 参数注入。 |
 | `invokeNativeKernel()` | [`src/native/browserPilotNativeKernels.ts`](src/native/browserPilotNativeKernels.ts) | 调用 Rust native binary，失败返回 `undefined`。 |
 
@@ -632,13 +634,9 @@ Envelope 常见字段：
 
 #### `browser_observe`
 
-用于页面感知。支持：
+用于读取当前浏览器状态的 canonical ABML `PageObservation` 页面模型。正常 agent 工作流应省略 `mode`，只传目标、时间、预算和增量边界（如 `tabId`、`targetRef`、`url`、`fresh`、`diff`、`baseline*`、`timeoutMs`、`maxChars`、`detailLevel`）。返回模型以 ABML/scan 为结构权威来源，并把 target/context、gist、outline、entities、actionables/refs、relations、collections、snapshot、diff/treeDiff、causal、memory、scan-backed content/text digest、evidence/artifact 引用和 diagnostics 组织为一个稳定 envelope。`diff:true` 的自动 baseline 只会从相同 `browserSessionId` 与 effective tab 的最近 scan snapshot 中选择，避免跨 session 复用同 tabId snapshot。
 
-- `scan`：结构化页面感知，ABML、actionables、entities、diff、causal；
-- `content`：可读正文；
-- `html`：精确 HTML/text slice；
-- `text`：可见文本优先观察；
-- `tabs`：tab inventory。
+任何显式 `mode` 都是 legacy/debug/projection 兼容入口，并在 summary/details/diagnostics 可见面中标记为非 canonical；这包括显式 `mode=scan`。显式 `mode=content/html/text/tabs` 只能作为正文、可见文本、精确 DOM/HTML evidence 或 tab context/diagnostics 投影来源，不能替代省略 `mode` 的 canonical 页面模型。
 
 `scan` / `text` 会通过 observe memory augmentation 自动在结果 envelope 的 `memory` 字段暴露匹配的本地 fact memory。该自动暴露面只面向 `kind=fact` 的事实卡片：首次匹配可内联 bounded body，后续/折叠视图只给 handle 与元数据；SOP、workflow、playbook、checklist、步骤或 agent 指令不应被记录，也不会作为 observe 行为指南暴露。
 
@@ -756,7 +754,9 @@ browser-runtime ──imports──▶ kernels
 
 ### 9.2 ABML
 
-ABML 是 Browser Pilot 的页面感知核心，负责：
+ABML 是 Browser Pilot 的 agent-native 页面统一建模层，把面向人类的浏览器页面编译为可行动、可引用、可增量比较的结构化页面事实。`browser_observe` 是公开读取入口；省略 `mode` 时返回 canonical ABML `PageObservation`，由 ABML/scan 负责结构、actionables、refs 和 actionability 权威，content/text/html/tabs 只作为 digest、evidence 或 context provider 融合进同一模型。PageObservation 的 provider diagnostics 使用 `executed`、`scan-backed`、`skipped`、`failed`、`degraded` 等执行状态表达来源真实性，而不是把 scan 派生或跳过的 provider 标成已成功执行。
+
+ABML 负责：
 
 - entity extraction；
 - DOM ↔ AX merge；
@@ -797,6 +797,8 @@ Runtime 层可以做浏览器 I/O，并将采集结果输入 kernel。典型职�
 
 模板不是 kernel，也不是 bridge。它只负责页面上下文中的数据采集。
 
+Scan 命名链路由 `src/scan/buildScanScript.ts` 负责组装：构建阶段把 `dom-accessibility-api` 打包产物注入页面世界，`capture-src/entries/scanTemplate.ts` 中的 `computedAccessibleName()` 优先调用 `computeAccessibleName()`，再回退到 `aria-label`/`title`/`alt`/`placeholder`、HTML label、可见文本、pseudo text 和 hit-target 借名等本地启发式。该命名结果会进入 `actionables.label`、`actionables.displayLabel`、`list_hints.containerLabel`、`controls_pairs.sourceName` 与 reference target `name`，随后由 ABML entity/relations/collections 纯逻辑消费；kernel 层不得直接依赖 `dom-accessibility-api` 或页面 DOM。
+
 ### 9.5 Native kernels
 
 Native kernels 是优化，不是正确性唯一来源。
@@ -836,6 +838,7 @@ kernels ──▶ kernels 内部纯模块
 ### 10.2 禁止或高风险依赖
 
 - `src/kernels/*` 不应导入 `src/commands/*`、`src/bridge/*`、`src/browser-runtime/*`。
+- `dom-accessibility-api` 是 scan/capture 命名链路的运行时依赖，只能通过 `src/scan/domAccessibilityApiBundle.ts` 注入页面世界供 scan template 使用；不要把它引入 ABML kernels 或 extension/bridge 公共协议。
 - `src/commands/memory/*` 只能记录与召回 `kind=fact` 的本地事实记忆；不得把 SOP、workflow、playbook、checklist、步骤或 agent 指令语义写入 memory。record/validate 会拒绝非 fact kind 与 SOP-like 内容；`browser_observe` 只自动暴露匹配到的 fact memory，不把 memory 当作流程指南。需要 daemon/bridge 信息时优先依赖窄接口，例如 snapshot evidence 只依赖 `getObservationSnapshot()`。
 - `bridge/browser_pilot_bridge/` 和 `dist/` 是生成产物，不手改。
 - `src/bridge/protocol/native-command.schema.json` 是 native protocol 源头。
@@ -1007,16 +1010,17 @@ Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级
 
 ## 13. 测试体系
 
-测试使用 Node built-in test runner + `tsx`，脚本位于 [`scripts/run-tests.mjs`](scripts/run-tests.mjs)。覆盖率观测使用 Node 22 test runner 内置 V8 coverage，脚本位于 [`scripts/run-coverage.mjs`](scripts/run-coverage.mjs)，只生成报告与 `coverage/` 下的 V8 JSON，不设置全仓库硬阈值，也不改变默认测试或 `mise run affected` / `mise run verify` 行为。
+测试使用 Node built-in test runner + `tsx`，脚本位于 [`scripts/run-tests.mjs`](scripts/run-tests.mjs)。覆盖率验证使用 Node 22 test runner 内置 V8 coverage，脚本位于 [`scripts/run-coverage.mjs`](scripts/run-coverage.mjs)，会生成报告与 `coverage/` 下的 V8 JSON，并通过 `--test-coverage-lines=80`、`--test-coverage-branches=80`、`--test-coverage-functions=80` 机械化要求全仓库行、分支、函数覆盖率均不低于 80%。该专项阈值由 `mise run coverage` 执行，不改变默认测试或 `mise run affected` / `mise run verify` 行为。当前 Task1 基线为行 64.60%、分支 64.69%、函数 54.78%，后续补测需优先处理 Web Security browserNative/shared/bridges、ABML kernel 等低覆盖热点。
 
 测试分组：
 
 | Scope | 目录 |
 |---|---|
-| `all` | `bootstrap`、`cli`、`artifacts`、`js-ast`、`governance` |
+| `all` | `bootstrap`、`cli`、`artifacts`、`js-ast`、`memory`、`governance` |
 | `cli` | `bootstrap`、`cli` |
 | `artifacts` | `bootstrap`、`artifacts` |
 | `js-ast` | `bootstrap`、`js-ast` |
+| `memory` | `bootstrap`、`memory` |
 | `governance` | `bootstrap`、`governance` |
 
 运行示例：
@@ -1024,10 +1028,13 @@ Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级
 ```bash
 node scripts/run-tests.mjs all
 node scripts/run-tests.mjs cli
+node scripts/run-tests.mjs memory
 node --import tsx --test tests/bootstrap/smoke.test.ts
 mise run coverage
 node scripts/run-coverage.mjs all
 ```
+
+Observe regression benchmark 位于 [`tests/memory/observeRegressionBenchmark.test.ts`](tests/memory/observeRegressionBenchmark.test.ts)，随 `memory`/`all` scope 运行。新增 case 应继续使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖；常用 expectation 覆盖 markup pollution、collection name 长度/唯一性、rejected containerName 片段、evidence/sample 保留和 canonical PageObservation shape。
 
 CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)，核心步骤是：
 

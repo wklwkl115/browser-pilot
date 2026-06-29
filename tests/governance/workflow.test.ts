@@ -12,6 +12,7 @@ const codeWikiPath = path.join(root, "CODE_WIKI.md");
 const commandSharedPath = path.join(root, "src/commands/commandShared.ts");
 const commandMetadataPath = path.join(root, "src/apps/cli/commandMetadata.ts");
 const commandRuntimePath = path.join(root, "src/commands/commandRuntime.ts");
+const changelogPath = path.join(root, "CHANGELOG.md");
 const kernelRoot = path.join(root, "src", "kernels");
 const sessionKernelRoot = path.join(kernelRoot, "session");
 
@@ -25,6 +26,22 @@ function walkSourceFiles(dir: string): string[] {
 		if (entry.isDirectory()) return walkSourceFiles(filePath);
 		return entry.isFile() && /\.(?:ts|tsx|js|mjs|cjs)$/.test(entry.name) ? [filePath] : [];
 	});
+}
+
+function scanTextFiles(dir: string): string[] {
+	const ignoredDirs = new Set([".git", "node_modules", "dist", "browser_pilot_bridge"]);
+	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+		if (ignoredDirs.has(entry.name)) return [];
+		const filePath = path.join(dir, entry.name);
+		if (entry.isDirectory()) return scanTextFiles(filePath);
+		return entry.isFile() && /\.(?:ts|tsx|js|mjs|cjs|md|json)$/.test(entry.name) ? [filePath] : [];
+	});
+}
+
+const observeModeRecommendationPattern = /(?:browser_observe[^\n]*(?:mode=|mode:|mode\s)|browser-pilot\s+observe\s+--mode\b)/;
+
+function lineAllowsObserveModeRecommendation(line: string): boolean {
+	return /legacy|debug|projection|compatibility|兼容|投影|schema|metadata|displayName|modeExplicit|no-mode|INVALID_RULE|invokeTool|normalization|characterization|doesNotMatch|assert\.|command:\s*"browser_observe"|observeModeRecommendationPattern/i.test(line);
 }
 
 test("repo governance uses mise-first gate commands", () => {
@@ -104,6 +121,37 @@ test("code wiki documents memory fact-only behavior and observe fact exposure", 
 	assert.match(wiki, /kind=fact/);
 	assert.match(wiki, /SOP、workflow、playbook、checklist/);
 	assert.match(wiki, /browser_observe[\s\S]{0,160}fact memory/i);
+});
+
+test("public docs describe browser_observe as canonical ABML observation with legacy projections isolated", () => {
+	const readme = text(readmePath);
+	const wiki = text(codeWikiPath);
+	assert.match(readme, /browser_observe[`\s\S]{0,120}canonical ABML page model/i);
+	assert.match(readme, /Omit `mode`[\s\S]{0,120}any explicit `mode` value[\s\S]{0,120}legacy\/debug\/projection/i);
+	assert.match(readme, /mode=content\/html\/text\/tabs`[\s\S]{0,120}compatibility projections/i);
+	assert.match(wiki, /browser_observe[`\s\S]{0,120}canonical ABML `PageObservation`/i);
+	assert.match(wiki, /正常 agent 工作流应省略 `mode`/);
+	assert.match(wiki, /任何显式 `mode` 都是 legacy\/debug\/projection/);
+	assert.match(wiki, /显式 `mode=scan`/);
+	assert.match(wiki, /mode=content\/html\/text\/tabs`[\s\S]{0,120}投影来源/);
+});
+
+test("agent-facing guidance does not recommend browser_observe mode outside explicit legacy projection contexts", () => {
+	const files = [
+		...scanTextFiles(path.join(root, "src")),
+		...scanTextFiles(path.join(root, "tests")),
+		readmePath,
+		codeWikiPath,
+		changelogPath,
+	].filter((filePath, index, all) => all.indexOf(filePath) === index);
+	const offenders: string[] = [];
+	for (const filePath of files) {
+		const relative = path.relative(root, filePath);
+		text(filePath).split(/\r?\n/).forEach((line, index) => {
+			if (observeModeRecommendationPattern.test(line) && !lineAllowsObserveModeRecommendation(line)) offenders.push(`${relative}:${index + 1}: ${line.trim()}`);
+		});
+	}
+	assert.deepEqual(offenders, []);
 });
 
 test("code wiki documents the session kernel node crypto exception", () => {

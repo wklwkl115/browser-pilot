@@ -93,8 +93,8 @@ function baselineRecovery(extra: Record<string, unknown> = {}): Record<string, u
 		...extra,
 		recovery: {
 			retryable: true,
-			hint: "Re-capture the baseline with browser_observe mode=scan, then pass the fresh snapshotId or saved observe artifact as baseline.",
-			nextActions: ["browser_observe mode=scan", "use the new snapshotId or saved artifact as baseline"],
+			hint: "Re-capture the baseline with browser_observe, then pass the fresh snapshotId or saved observe artifact as baselineSnapshotId, baselinePath, or baseline.",
+			nextActions: ["browser_observe", "use the new snapshotId or saved artifact as baselineSnapshotId, baselinePath, or baseline"],
 		},
 	};
 }

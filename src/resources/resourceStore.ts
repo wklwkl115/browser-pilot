@@ -122,12 +122,12 @@ function resolveStoredResourceUriDetailed(uri: string):
 	| { ok: true; resource: BrowserResultResource }
 	| { ok: false; code: "HANDLE_NOT_FOUND" | "HANDLE_EXPIRED"; error: string } {
 	const id = parseResourceUri(uri);
-	if (!id) return { ok: false, code: "HANDLE_NOT_FOUND", error: `Unrecognized resource URI: ${uri}` };
+	if (!id) return { ok: false, code: "HANDLE_NOT_FOUND", error: "Unrecognized resource URI" };
 	const resource = resourceStore.get(id);
-	if (!resource) return { ok: false, code: "HANDLE_NOT_FOUND", error: `Resource not found: ${uri}` };
+	if (!resource) return { ok: false, code: "HANDLE_NOT_FOUND", error: "Resource not found" };
 	if (Date.now() > resource.expiresAt) {
 		resourceStore.delete(id);
-		return { ok: false, code: "HANDLE_EXPIRED", error: `Resource expired: ${uri}` };
+		return { ok: false, code: "HANDLE_EXPIRED", error: "Resource expired" };
 	}
 	return { ok: true, resource };
 }
@@ -136,10 +136,10 @@ function resolveStoredRefRecordDetailed(parsed: { id: string }):
 	| { ok: true; record: RegisteredRefRecord }
 	| { ok: false; code: "REF_STALE" | "HANDLE_NOT_FOUND"; error: string } {
 	const record = refStore.get(parsed.id);
-	if (!record) return { ok: false, code: "HANDLE_NOT_FOUND", error: `Ref not found: ${parsed.id}` };
+	if (!record) return { ok: false, code: "HANDLE_NOT_FOUND", error: "Ref not found" };
 	if (Date.now() > record.descriptor.createdAt + record.descriptor.ttlMs) {
 		refStore.delete(parsed.id);
-		return { ok: false, code: "REF_STALE", error: `Ref expired: ${record.refId}` };
+		return { ok: false, code: "REF_STALE", error: "Ref expired" };
 	}
 	return { ok: true, record };
 }
@@ -148,7 +148,7 @@ function normalizeResolvedRef(record: RegisteredRefRecord): ResolveRefResult {
 	if (Date.now() > record.descriptor.createdAt + record.descriptor.ttlMs) {
 		const parsed = parseBrowserPilotRefUri(record.refId);
 		if (parsed) refStore.delete(parsed.id);
-		return { ok: false, code: "REF_STALE", error: `Ref expired: ${record.refId}` };
+		return { ok: false, code: "REF_STALE", error: "Ref expired" };
 	}
 	if (record.artifactPath) {
 		return {
@@ -273,7 +273,7 @@ export function resolveRefUriDetailed(uri: string): ResolveRefResult {
 		return resolved.ok ? { ok: true, ref: resourceToResolvedRef(resolved.resource) } : resolved;
 	}
 	const parsed = parseBrowserPilotRefUri(uri);
-	if (!parsed) return { ok: false, code: "HANDLE_NOT_FOUND", error: `Unrecognized ref URI: ${uri}` };
+	if (!parsed) return { ok: false, code: "HANDLE_NOT_FOUND", error: "Unrecognized ref URI" };
 	const stored = resolveStoredRefRecordDetailed(parsed);
 	if (stored.ok) return normalizeResolvedRef(stored.record);
 	if (stored.code === "REF_STALE") return stored;
@@ -281,7 +281,7 @@ export function resolveRefUriDetailed(uri: string): ResolveRefResult {
 		const wrapped = resolveStoredResourceUriDetailed(makeUri(parsed.id));
 		return wrapped.ok ? { ok: true, ref: resourceToResolvedRef(wrapped.resource) } : wrapped;
 	}
-	return { ok: false, code: "HANDLE_NOT_FOUND", error: `Ref not found: ${uri}` };
+	return { ok: false, code: "HANDLE_NOT_FOUND", error: "Ref not found" };
 }
 
 /** List all non-expired resources. */

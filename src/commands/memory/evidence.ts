@@ -37,35 +37,48 @@ function normalizedEvidenceRef(ref: string | MemoryEvidenceRef): MemoryEvidenceR
 }
 
 async function ensureReadableFile(filePath: string): Promise<{ etag?: string; bytes?: number }> {
-	await readFile(filePath, "utf8").catch(() => { throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNREADABLE", message: "memory evidence path is unreadable", details: { path: filePath } }); });
+	await readFile(filePath, "utf8").catch(() => { throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNREADABLE", message: "memory evidence path is unreadable" }); });
 	const info = await stat(filePath).catch(() => undefined);
 	return { etag: computeEtag(filePath), bytes: info?.size };
 }
 
+function ensureWorkspaceEvidencePath(cwd: string | undefined, filePath: string): void {
+	const base = path.resolve(cwd || process.cwd());
+	const target = path.resolve(filePath);
+	const relative = path.relative(base, target);
+	if (relative && (relative.startsWith("..") || path.isAbsolute(relative))) {
+		throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNRESOLVABLE", message: "memory evidence path is outside workspace" });
+	}
+}
+
 async function resolveArtifactRef(cwd: string | undefined, ref: Extract<MemoryEvidenceRef, { kind: "artifact" }>): Promise<MemoryResolvedEvidenceRef> {
 	const filePath = path.isAbsolute(ref.path) ? path.normalize(ref.path) : resolveArtifactPath({ cwd }, ref.path, path.basename(ref.path));
+	ensureWorkspaceEvidencePath(cwd, filePath);
 	const { etag, bytes } = await ensureReadableFile(filePath);
 	return { kind: "artifact", path: filePath, etag, bytes };
 }
 
-async function resolveSnapshotRef(server: MemorySnapshotResolver | undefined, ref: Extract<MemoryEvidenceRef, { kind: "snapshot" }>): Promise<MemoryResolvedEvidenceRef> {
+async function resolveSnapshotRef(cwd: string | undefined, server: MemorySnapshotResolver | undefined, ref: Extract<MemoryEvidenceRef, { kind: "snapshot" }>): Promise<MemoryResolvedEvidenceRef> {
 	if (!server) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNRESOLVABLE", message: "snapshot evidence requires a live browser runtime", details: { snapshotId: ref.snapshotId } });
 	const snapshot = server.getObservationSnapshot(ref.snapshotId);
 	if (!snapshot) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNREADABLE", message: "memory snapshot evidence was not found", details: { snapshotId: ref.snapshotId } });
 	if (snapshot.expired) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_STALE", message: "memory snapshot evidence is stale", details: { snapshotId: ref.snapshotId, invalidatedReason: snapshot.invalidatedReason } });
 	if (!snapshot.saved?.path) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNREADABLE", message: "memory snapshot evidence has no saved artifact path", details: { snapshotId: ref.snapshotId } });
+	ensureWorkspaceEvidencePath(cwd, snapshot.saved.path);
 	const { etag, bytes } = await ensureReadableFile(snapshot.saved.path);
 	return { kind: "snapshot", snapshotId: ref.snapshotId, path: snapshot.saved.path, etag, bytes };
 }
 
-async function resolveResultRef(resolver: MemoryResultResourceResolver | undefined, ref: Extract<MemoryEvidenceRef, { kind: "browser-result" }>): Promise<MemoryResolvedEvidenceRef> {
+async function resolveResultRef(cwd: string | undefined, resolver: MemoryResultResourceResolver | undefined, ref: Extract<MemoryEvidenceRef, { kind: "browser-result" }>): Promise<MemoryResolvedEvidenceRef> {
 	if (!resolver) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNRESOLVABLE", message: "browser-result evidence requires a resource resolver", details: { uri: ref.uri } });
 	const resolved = await resolver(ref.uri);
 	if (!resolved.ok) throw createCodedError({ name: "MemoryEvidenceError", code: resolved.code, message: resolved.error, details: { uri: ref.uri } });
+	ensureWorkspaceEvidencePath(cwd, resolved.path);
 	return { kind: "browser-result", uri: ref.uri, path: resolved.path, etag: resolved.etag, bytes: resolved.bytes };
 }
 
-function resolveOperationRef(ref: Extract<MemoryEvidenceRef, { kind: "operation" }>): MemoryResolvedEvidenceRef {
+function resolveOperationRef(cwd: string | undefined, ref: Extract<MemoryEvidenceRef, { kind: "operation" }>): MemoryResolvedEvidenceRef {
+	if (ref.path) ensureWorkspaceEvidencePath(cwd, ref.path);
 	return { kind: "operation", operationId: ref.operationId, path: ref.path, etag: ref.etag, bytes: ref.bytes };
 }
 
@@ -86,14 +99,14 @@ export async function resolveMemoryEvidenceRefs(options: {
 			continue;
 		}
 		if (ref.kind === "browser-result") {
-			resolved.push(await resolveResultRef(options.resolver, ref));
+			resolved.push(await resolveResultRef(options.cwd, options.resolver, ref));
 			continue;
 		}
 		if (ref.kind === "snapshot") {
-			resolved.push(await resolveSnapshotRef(options.server, ref));
+			resolved.push(await resolveSnapshotRef(options.cwd, options.server, ref));
 			continue;
 		}
-		resolved.push(resolveOperationRef(ref));
+		resolved.push(resolveOperationRef(options.cwd, ref));
 	}
 	return resolved;
 }

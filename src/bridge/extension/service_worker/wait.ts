@@ -321,8 +321,8 @@ async function diagnoseSelectorForWait(tabId: number, msg: BrowserPilotBridgeCom
     lastState: details.last_state || details.snapshot || null,
     current: data,
     recoveryCommands: [
-      `browser_observe mode=scan to refresh selectors around ${selector}`,
-      `browser_observe mode=html selector=${selector} to inspect the current DOM match`,
+      `browser_observe to refresh selectors around ${selector}`,
+      `explicit legacy/debug projection browser_observe mode=html selector=${selector} can inspect the current DOM match`,
       'browser_frame list when iframe placement is suspected',
     ],
   };

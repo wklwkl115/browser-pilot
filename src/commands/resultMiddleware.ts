@@ -53,7 +53,7 @@ export type DistilledEnvelope = {
 	diff?: Record<string, unknown>;
 	// R3.x causal plane — network requests fired since the baseline observation (passive,
 	// no control attribution): { sinceSeq, requests[] } or { unavailable }. Present only when
-	// browser_observe(mode:scan) is given a baseline. Lifted here so the budget never hides it.
+	// browser_observe is given a baseline. Lifted here so the budget never hides it.
 	causal?: Record<string, unknown>;
 	// ABML mechanism arm M1 — structure templates (repeated list/table/card folded to template +
 	// instances + handles). Lifted here so the budget never hides the large-page compression.
@@ -145,6 +145,12 @@ function forcedArtifactPlan(options: DistillBaseOptions, raw: string, reason: Ar
 async function executeArtifactPlan(options: DistillBaseOptions, plan: ArtifactPlan | undefined): Promise<Record<string, unknown> | undefined> {
 	if (!plan) return undefined;
 	return await saveTextArtifact(options.ctx, plan.outputPath, plan.fallbackName, plan.text);
+}
+
+async function saveFinalEnvelopeArtifact(options: DistillBaseOptions, saved: Record<string, unknown> | undefined, rawValue: unknown, envelope: DistilledEnvelope): Promise<Record<string, unknown> | undefined> {
+	if (!saved || !isRecord(rawValue) || typeof saved.path !== "string") return saved;
+	const content = stableJson({ ...rawValue, envelope });
+	return await saveTextArtifact(options.ctx, saved.path, options.fallbackName, content);
 }
 
 function firstDefined(record: Record<string, unknown>, keys: string[]): unknown {
@@ -450,6 +456,7 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
 		envelope = renderedEnvelope.envelope;
 		const rendered = renderedEnvelope.rendered;
+		await saveFinalEnvelopeArtifact(options, saved, rawValue, envelope);
 		reportAllocation(options, envelope, rendered);
 		return {
 			content: [{ type: "text", text: rendered }],
@@ -488,6 +495,7 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
 		envelope = renderedEnvelope.envelope;
 		const rendered = renderedEnvelope.rendered;
+		await saveFinalEnvelopeArtifact(options, saved, rawValue, envelope);
 		reportAllocation(options, envelope, rendered);
 		return {
 			content: [{ type: "text", text: rendered }],

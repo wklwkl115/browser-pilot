@@ -1,4 +1,5 @@
 import { asArray, increment, isRecord, summaryTable, textPreview, topCounts, type Summary } from "../common.js";
+import { redactSensitiveText as redactCommonSensitiveText, redactSensitiveValue } from "../../../utils/redaction.js";
 
 export { asArray, increment, isRecord, summaryTable, textPreview, topCounts, type Summary };
 
@@ -21,10 +22,15 @@ export function fingerprintPreview(value: unknown): string {
 }
 
 export function redactSensitiveText(text: string): string {
-	return text
-		.replace(/((?:^|[\r\n])\s*(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
-		.replace(/("(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token)"\s*:\s*)"[^"]*"/gi, "$1\"[redacted]\"")
-		.replace(/((?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token)\s*=\s*)[^;\s,"'}]+/gi, "$1[redacted]");
+	return redactCommonSensitiveText(text);
+}
+
+export function redactSensitiveSummaryValue<T>(value: T): T {
+	return redactSensitiveValue(value) as T;
+}
+
+export function redactSensitiveSummaryTextValue(value: unknown): unknown {
+	return typeof value === "string" ? redactSensitiveText(value) : redactSensitiveValue(value);
 }
 
 export function bodyPreview(body: unknown): string {

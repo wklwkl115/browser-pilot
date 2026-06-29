@@ -116,6 +116,8 @@ export const CollectionSummarySchema = Type.Object({
 	containerRef: Type.Optional(Type.String()),
 	containerRole: Type.Optional(Type.String()),
 	containerName: Type.Optional(Type.String()),
+	containerNameContext: Type.Optional(Type.String()),
+	containerNameSource: Type.Optional(Type.String()),
 	itemRole: Type.Optional(Type.String()),
 	observedCount: Type.Number(),
 	itemRefCount: Type.Number(),
