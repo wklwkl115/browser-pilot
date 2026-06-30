@@ -638,8 +638,25 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const summaryTruncation = isRecord(summaryFocus?.actionablesTruncation) ? summaryFocus!.actionablesTruncation as Record<string, unknown> : undefined;
 	const summaryWarnings = Array.isArray(summaryRecord.warnings) ? summaryRecord.warnings.filter((w): w is string => typeof w === "string") : [];
 	const allWarnings = [...baselineWarnings, ...summaryWarnings];
+	const axFusionDiagnostics = observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axFusion) ? observation.abmlRead.data.axFusion : undefined;
+	const axDiagnostics = observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axDiagnostics) ? observation.abmlRead.data.axDiagnostics : undefined;
+	const axReadUnavailable = axDiagnostics?.snapshotGeometryUnavailable === true && Number(axDiagnostics?.nodeCount || 0) === 0;
+	const axProviderStatus = observation.abmlRead?.ok === true
+		? axFusionDiagnostics
+			? axReadUnavailable
+				? "degraded"
+				: axFusionDiagnostics.degraded === true
+					? "degraded"
+					: Number(axFusionDiagnostics.axEnriched || 0) > 0
+						? "ax-enriched"
+						: Number(axFusionDiagnostics.axOnly || 0) > 0
+							? "ax-only"
+							: "scan-backed"
+			: "skipped"
+		: undefined;
 	const observeDiagnostics = {
 		observeTimings: finalizedObserveTimings(observeTimings, data, observation.abmlRead),
+		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axFusion) ? { axFusion: observation.abmlRead.data.axFusion } : {}),
 		...(baselineDiagnostics ? { baseline: baselineDiagnostics } : {}),
 		...(summaryTruncation?.actionablesTruncated === true ? { actionablesTruncated: true, actionablesScanned: summaryTruncation.actionablesScanned, actionablesReturned: summaryTruncation.actionablesReturned } : {}),
 		...(providerFailures.length ? { providerFailures } : {}),
@@ -669,6 +686,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 			html: artifactAvailable ? "scan-backed" : "failed",
 			evidence: artifactAvailable ? "scan-backed" : "failed",
 			tabs: tabsRefreshDegraded ? "degraded" : "executed",
+			...(axProviderStatus ? { ax: axProviderStatus } : {}),
 		},
 		providerFailures,
 		diagnostics: observeDiagnostics,

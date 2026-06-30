@@ -34,7 +34,7 @@ type PageObservationInput = {
 
 type ArtifactHintRead = { label: string; jsonPath: string; kind?: string };
 
-type ProviderStatus = "executed" | "scan-backed" | "skipped" | "failed" | "degraded";
+type ProviderStatus = "executed" | "scan-backed" | "ax-enriched" | "ax-only" | "skipped" | "failed" | "degraded";
 
 type ProviderFailureReason = {
 	provider: string;
@@ -50,6 +50,7 @@ type ProviderDiagnostics = {
 	html: ProviderStatus;
 	evidence: ProviderStatus;
 	tabs: ProviderStatus;
+	ax?: ProviderStatus;
 };
 
 export type PageObservationProviderInput = {
@@ -69,6 +70,7 @@ export type PageObservationProviderInput = {
 	htmlStatus?: ProviderStatus;
 	evidenceStatus?: ProviderStatus;
 	tabsStatus?: ProviderStatus;
+	axStatus?: ProviderStatus;
 };
 
 export function buildPageObservationProviders(input: PageObservationProviderInput): ProviderDiagnostics {
@@ -93,6 +95,7 @@ export function buildPageObservationProviders(input: PageObservationProviderInpu
 		html: htmlStatus,
 		evidence: evidenceStatus,
 		tabs: tabsStatus,
+		...(input.axStatus ? { ax: input.axStatus } : {}),
 	};
 }
 
@@ -174,6 +177,7 @@ export function buildPageObservation(input: PageObservationInput): Record<string
 				htmlStatus: input.providerStatuses?.html,
 				evidenceStatus: input.providerStatuses?.evidence,
 				tabsStatus: input.providerStatuses?.tabs,
+				axStatus: input.providerStatuses?.ax,
 			}),
 			...(input.providerFailures?.length ? { providerFailures: input.providerFailures } : {}),
 		},

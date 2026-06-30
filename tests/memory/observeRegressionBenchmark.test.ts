@@ -26,6 +26,8 @@ type ObserveRegressionExpectations = {
 	rejectCollectionNameIncludes?: string[];
 	requireEvidenceIncludes?: string[];
 	canonicalShape?: boolean;
+	requireAxProvider?: string;
+	requireAxFusion?: { axEnriched?: number; axOnly?: number; degraded?: boolean; skipped?: Partial<Record<"ambiguousBackend" | "ambiguousGeometry" | "ambiguousSemantic" | "unsafeSemantic", number>> };
 };
 
 type ObserveRegressionCase = {
@@ -121,17 +123,38 @@ const cases: ObserveRegressionCase[] = [
 		},
 	},
 	{
-		name: "canonical no-mode PageObservation shape remains available offline",
+		name: "AX fusion diagnostics are represented in canonical PageObservation",
 		fixture: {
 			pageObservation: {
-				entities: [entity("bp-ref://element/pay", { name: "Pay now" })],
-				content: "Checkout Pay now",
-				url: "https://example.test/checkout",
+				entities: [entity("bp-ref://control/save", { name: "Save", hints: { mergedSources: ["dom", "ax"], selector: "#save" } })],
+				content: "Save",
+				url: "https://example.test/settings",
 			},
 		},
 		expect: {
 			canonicalShape: true,
 			noMarkupPollution: true,
+			requireAxProvider: "ax-enriched",
+			requireAxFusion: { axEnriched: 1, axOnly: 0, degraded: false },
+		},
+	},
+	{
+		name: "AX fusion degraded diagnostics include skipped ambiguity counts",
+		fixture: {
+			pageObservation: {
+				entities: [
+					entity("bp-ref://control/filter-a", { name: "Filter", hints: { selector: "#filter-a" } }),
+					entity("bp-ref://control/filter-b", { name: "Filter", hints: { selector: "#filter-b" } }),
+				],
+				content: "Filter Filter",
+				url: "https://example.test/filters",
+			},
+		},
+		expect: {
+			canonicalShape: true,
+			noMarkupPollution: true,
+			requireAxProvider: "degraded",
+			requireAxFusion: { axEnriched: 0, axOnly: 1, degraded: true, skipped: { ambiguousSemantic: 1 } },
 		},
 	},
 ];
@@ -147,6 +170,13 @@ function buildObservation(caseDef: ObserveRegressionCase, collections: Collectio
 	const fixture = caseDef.fixture.pageObservation;
 	if (!fixture) return undefined;
 	const entities = fixture.entities ?? caseDef.fixture.entities ?? [];
+	const axFusion = caseDef.expect.requireAxFusion;
+	const skipped = {
+		ambiguousBackend: axFusion?.skipped?.ambiguousBackend ?? 0,
+		ambiguousGeometry: axFusion?.skipped?.ambiguousGeometry ?? 0,
+		ambiguousSemantic: axFusion?.skipped?.ambiguousSemantic ?? 0,
+		unsafeSemantic: axFusion?.skipped?.unsafeSemantic ?? 0,
+	};
 	return buildPageObservation({
 		mode: "scan",
 		canonical: true,
@@ -162,7 +192,11 @@ function buildObservation(caseDef: ObserveRegressionCase, collections: Collectio
 		snapshot: { snapshotId: `offline-${caseDef.name.replace(/\W+/g, "-").toLowerCase()}` },
 		artifactPath: "artifacts/offline-observe-regression.json",
 		abmlIntegrated: true,
-		diagnostics: { offlineBenchmark: true },
+		diagnostics: {
+			offlineBenchmark: true,
+			...(axFusion ? { axFusion: { scanBacked: entities.length, axEnriched: axFusion.axEnriched ?? 0, axOnly: axFusion.axOnly ?? 0, degraded: axFusion.degraded ?? false, skipped } } : {}),
+		},
+		...(caseDef.expect.requireAxProvider ? { providerStatuses: { ax: caseDef.expect.requireAxProvider as "ax-enriched" | "ax-only" | "degraded" | "skipped" | "scan-backed" | "failed" } } : {}),
 	});
 }
 
@@ -190,7 +224,7 @@ function assertCollectionMetrics(collections: CollectionModel[], expect: Observe
 	for (const required of expect.requireEvidenceIncludes ?? []) assert.match(evidenceText, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
 
-function assertCanonicalShape(observation: Record<string, unknown> | undefined): void {
+function assertCanonicalShape(observation: Record<string, unknown> | undefined, expect: ObserveRegressionExpectations = {}): void {
 	assert.ok(observation, "case must build a PageObservation");
 	assert.equal(observation.model, "PageObservation");
 	assert.equal(observation.canonical, true);
@@ -201,7 +235,18 @@ function assertCanonicalShape(observation: Record<string, unknown> | undefined):
 	assert.ok(Array.isArray(observation.actionables));
 	assert.ok(Array.isArray(observation.refs));
 	assert.ok(observation.diagnostics && typeof observation.diagnostics === "object");
-	assert.equal(((observation.diagnostics as Record<string, unknown>).providers as Record<string, unknown>).structure, "executed");
+	const diagnostics = observation.diagnostics as Record<string, unknown>;
+	const providers = diagnostics.providers as Record<string, unknown>;
+	assert.equal(providers.structure, "executed");
+	if (expect.requireAxProvider) assert.equal(providers.ax, expect.requireAxProvider);
+	if (expect.requireAxFusion) {
+		const axFusion = diagnostics.axFusion as Record<string, unknown>;
+		if (expect.requireAxFusion.axEnriched !== undefined) assert.equal(axFusion.axEnriched, expect.requireAxFusion.axEnriched);
+		if (expect.requireAxFusion.axOnly !== undefined) assert.equal(axFusion.axOnly, expect.requireAxFusion.axOnly);
+		if (expect.requireAxFusion.degraded !== undefined) assert.equal(axFusion.degraded, expect.requireAxFusion.degraded);
+		const skipped = axFusion.skipped as Record<string, unknown>;
+		for (const [key, value] of Object.entries(expect.requireAxFusion.skipped ?? {})) assert.equal(skipped[key], value);
+	}
 }
 
 test("observe regression benchmark cases are offline and deterministic", () => {
@@ -211,7 +256,7 @@ test("observe regression benchmark cases are offline and deterministic", () => {
 		const collections = buildCollections(caseDef);
 		const observation = buildObservation(caseDef, collections);
 		assertCollectionMetrics(collections, caseDef.expect);
-		if (caseDef.expect.canonicalShape) assertCanonicalShape(observation);
+		if (caseDef.expect.canonicalShape) assertCanonicalShape(observation, caseDef.expect);
 		if (caseDef.expect.noMarkupPollution) assertNoMarkupPollution({ collections, observation });
 	}
 });

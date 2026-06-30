@@ -20,6 +20,7 @@ export function finalizedObserveTimings(metrics: ObserveTimingMetrics, data: unk
 	const dataRecord = isRecord(data) ? data : undefined;
 	const abmlData = isRecord(abmlRead) && abmlRead.ok === true && isRecord(abmlRead.data) ? abmlRead.data : undefined;
 	const axDiagnostics = isRecord(abmlData?.axDiagnostics) ? abmlData.axDiagnostics : undefined;
+	const axFusion = isRecord(abmlData?.axFusion) ? abmlData.axFusion : undefined;
 	const nodeCount = numericMetric(dataRecord?.node_count ?? dataRecord?.nodeCount);
 	const axNodeCount = numericMetric(axDiagnostics?.nodeCount);
 	const axMs = numericMetric(axDiagnostics?.axMs);
@@ -34,6 +35,11 @@ export function finalizedObserveTimings(metrics: ObserveTimingMetrics, data: unk
 	}
 	if (axGeometryCdpCalls !== undefined) out.axGeometryCdpCalls = axGeometryCdpCalls;
 	if (typeof axDiagnostics?.cacheHit === "boolean") out.axCacheHit = axDiagnostics.cacheHit;
+	const axEnriched = numericMetric(axFusion?.axEnriched);
+	const axOnly = numericMetric(axFusion?.axOnly);
+	if (axEnriched !== undefined) out.axEnriched = axEnriched;
+	if (axOnly !== undefined) out.axOnly = axOnly;
+	if (typeof axFusion?.degraded === "boolean") out.axFusionDegraded = axFusion.degraded;
 	const transportMs = ["navigationMs", "pageScriptMs", "abmlMs", "recorderMs", "causalMs", "eventCausalMs"]
 		.reduce((sum, key) => sum + (numericMetric(out[key]) ?? 0), 0);
 	if (transportMs > 0) out.transportMs = transportMs;

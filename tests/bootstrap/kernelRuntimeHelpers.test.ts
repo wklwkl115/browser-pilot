@@ -461,7 +461,7 @@ test("ABML entity builders handle malformed inputs, fallback roles, refs, and de
 test("ABML AX helpers cover malformed nodes, structure properties, relation anchors, and merge ambiguity", () => {
 	const node = {
 		role: { value: "checkbox" },
-		name: { value: " Accept " },
+		name: { value: "Enable" },
 		value: { value: "on" },
 		nodeId: "ax-1",
 		backendDOMNodeId: "11",
@@ -478,7 +478,7 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 		],
 	};
 	assert.equal(axRole(node), "checkbox");
-	assert.equal(axName(node), "Accept");
+	assert.equal(axName(node), "Enable");
 	assert.equal(axValue(node), "on");
 	assert.equal(axNodeId(node), "ax-1");
 	assert.equal(axBackendNodeId(node), 11);
@@ -496,16 +496,62 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 	const built = buildAxEntityFromNode(node, { observationId: "obs-ax", capturedAt: 10, url: "https://example.test/page", tabId: 2 }, { box: { x: 0, y: 0, w: 10, h: 20 }, point: { x: 5, y: 10 } });
 	assert.equal(built.entity.kind, "control");
 	assert.equal(built.entity.state.checked, true);
+	assert.equal(built.entity.state.disabled, true);
+	assert.equal(built.entity.state.focused, false);
 	assert.equal(built.entity.state.expanded, false);
+	assert.equal(built.entity.structure?.level, 2);
+	assert.equal(built.entity.structure?.setSize, 4);
+	assert.equal(built.entity.structure?.posInSet, 1);
 	assert.equal(built.entity.structure?.sort, "ascending");
 	assert.equal(built.descriptor.owner.topLevelOrigin, "https://example.test");
 	const dom = [entity("bp-ref://dom/1", { role: "button", name: "Save", geometry: { point: { x: 100, y: 100 } } }), entity("bp-ref://dom/2", { role: "button", name: "Save", geometry: { point: { x: 101, y: 101 } } })];
 	const ambiguousAx = buildAxEntityFromNode({ role: "button", name: "Save" }, { observationId: "obs-ax", capturedAt: 10 });
-	assert.equal(mergeDomAndAxEntities(dom, [ambiguousAx]).unmatchedAx.length, 1);
-	const backendMerged = mergeDomAndAxEntities([entity("bp-ref://dom/backend", { role: "button", name: "Old", locators: [{ by: "backendNodeId", value: 99 }], state: { ...entity("x").state, pressed: false } })], [buildAxEntityFromNode({ role: "button", name: "New", backendDOMNodeId: 99, properties: [{ name: "pressed", value: { value: "true" } }] }, { observationId: "obs-ax", capturedAt: 10 })]);
+	const ambiguousSemanticMerge = mergeDomAndAxEntities(dom, [ambiguousAx]);
+	assert.equal(ambiguousSemanticMerge.unmatchedAx.length, 1);
+	assert.deepEqual(ambiguousSemanticMerge.diagnostics.skipped, { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 1, unsafeSemantic: 0 });
+	assert.equal(ambiguousSemanticMerge.diagnostics.degraded, true);
+	const ambiguousBackendMerge = mergeDomAndAxEntities([
+		entity("bp-ref://dom/backend-a", { locators: [{ by: "backendNodeId", value: 88 }] }),
+		entity("bp-ref://dom/backend-b", { locators: [{ by: "backendNodeId", value: 88 }] }),
+	], [buildAxEntityFromNode({ role: "button", name: "Save", backendDOMNodeId: 88 }, { observationId: "obs-ax", capturedAt: 10 })]);
+	assert.equal(ambiguousBackendMerge.diagnostics.skipped.ambiguousBackend, 1);
+	assert.equal(ambiguousBackendMerge.diagnostics.axOnly, 1);
+	assert.equal(ambiguousBackendMerge.diagnostics.degraded, true);
+	const ambiguousGeometryMerge = mergeDomAndAxEntities([
+		entity("bp-ref://dom/geo-a", { role: "button", name: "Save", geometry: { point: { x: 100, y: 100 } } }),
+		entity("bp-ref://dom/geo-b", { role: "button", name: "Save", geometry: { point: { x: 100, y: 100 } } }),
+	], [buildAxEntityFromNode({ role: "button", name: "Save" }, { observationId: "obs-ax", capturedAt: 10 }, { point: { x: 100, y: 100 } })]);
+	assert.equal(ambiguousGeometryMerge.diagnostics.skipped.ambiguousGeometry, 1);
+	assert.equal(ambiguousGeometryMerge.diagnostics.axOnly, 1);
+	assert.equal(ambiguousGeometryMerge.diagnostics.degraded, true);
+	const backendMerged = mergeDomAndAxEntities([entity("bp-ref://dom/backend", { role: "button", name: "Old", locators: [{ by: "backendNodeId", value: 99 }, { by: "css", value: "#save" }], hints: { selector: "#save" }, state: { ...entity("x").state, pressed: false } })], [buildAxEntityFromNode({ role: "button", name: "New", backendDOMNodeId: 99, properties: [{ name: "pressed", value: { value: "true" } }] }, { observationId: "obs-ax", capturedAt: 10 })]);
 	assert.equal(backendMerged.merged[0]!.name, "New");
 	assert.equal(backendMerged.merged[0]!.state.pressed, true);
+	assert.deepEqual(backendMerged.merged[0]!.locators, [{ by: "backendNodeId", value: 99 }, { by: "css", value: "#save" }]);
 	assert.deepEqual(backendMerged.merged[0]!.hints?.stateSource, { pressed: "ax" });
+	assert.equal(backendMerged.diagnostics.axEnriched, 1);
+	assert.deepEqual(backendMerged.diagnostics, {
+		scanBacked: 1,
+		axEnriched: 1,
+		axOnly: 0,
+		degraded: false,
+		skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, unsafeSemantic: 0 },
+	});
+	const stateNode = buildAxEntityFromNode({ role: "option", name: "Filter", backendDOMNodeId: 101, properties: [{ name: "selected", value: { value: "true" } }, { name: "disabled", value: { value: "true" } }, { name: "checked", value: { value: "false" } }, { name: "level", value: { value: "3" } }, { name: "posinset", value: { value: 2 } }, { name: "setsize", value: { value: 6 } }, { name: "expanded", value: { value: true } }, { name: "current", value: { value: "page" } }] }, { observationId: "obs-ax", capturedAt: 10 });
+	assert.equal(stateNode.entity.state.selected, true);
+	assert.equal(stateNode.entity.state.disabled, true);
+	assert.equal(stateNode.entity.state.checked, false);
+	assert.equal(stateNode.entity.state.expanded, true);
+	assert.equal(stateNode.entity.state.current, "page");
+	assert.deepEqual(stateNode.entity.structure, { level: 3, setSize: 6, posInSet: 2 });
+	const unsafeNode = buildAxEntityFromNode({ role: "button", name: "<svg><path d=\"M10 10\" /></svg>", backendDOMNodeId: 102 }, { observationId: "obs-ax", capturedAt: 10 });
+	assert.equal(unsafeNode.entity.name, undefined);
+	assert.equal(unsafeNode.entity.hints?.unsafeNameSkipped, true);
+	const unsafeMerge = mergeDomAndAxEntities([entity("bp-ref://dom/unsafe", { locators: [{ by: "backendNodeId", value: 102 }], hints: { selector: "#unsafe" } })], [unsafeNode]);
+	assert.equal(unsafeMerge.merged[0]!.hints?.selector, "#unsafe");
+	assert.equal(unsafeMerge.diagnostics.skipped.unsafeSemantic, 1);
+	assert.equal(unsafeMerge.diagnostics.axOnly, 0);
+	assert.equal(unsafeMerge.diagnostics.degraded, true);
 });
 
 test("ABML relations materialize fallbacks, paint-order occlusion, graph dedupe, caps, and summaries", () => {

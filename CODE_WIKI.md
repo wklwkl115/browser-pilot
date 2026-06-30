@@ -412,7 +412,7 @@ Kernels 是纯逻辑层。这里的代码不做浏览器 I/O、不读写文件�
 
 ### 5.7 `src/browser-runtime` 与 `src/browser-command-runtime`
 
-`browser-runtime` 是 kernel 的浏览器 I/O 适配层，负责调用 bridge/CDP/scan/screenshot/resource，然后把采集结果交给 kernel 纯函数处理。
+`browser-runtime` 是 kernel 的浏览器 I/O 适配层，负责调用 bridge/CDP/scan/screenshot/resource，然后把采集结果交给 kernel 纯函数处理。ABML structure 读取会先取得 DOM scan 与 observation snapshot，再通过 CDP `Accessibility.getFullAXTree` 和 `DOMSnapshot.captureSnapshot` 采集 AX tree/geometry；runtime 负责 bounded CDP fallback、diagnostics 与 ref/resource 注册，纯合并策略仍在 ABML kernel 中执行。DOM scan 的 selector/ref/actionability/evidence 是执行权威，AX 只做 role/name/description/state/structure enrichment 或追加 AX-only entity；backendNodeId 优先匹配，其次保守 geometry，无歧义时才允许 semantic fallback，歧义、缺失几何或 unsafe semantic name 会被记录为 skipped/degraded。
 
 关键文件：
 
@@ -754,7 +754,7 @@ browser-runtime ──imports──▶ kernels
 
 ### 9.2 ABML
 
-ABML 是 Browser Pilot 的 agent-native 页面统一建模层，把面向人类的浏览器页面编译为可行动、可引用、可增量比较的结构化页面事实。`browser_observe` 是公开读取入口；省略 `mode` 时返回 canonical ABML `PageObservation`，由 ABML/scan 负责结构、actionables、refs 和 actionability 权威，content/text/html/tabs 只作为 digest、evidence 或 context provider 融合进同一模型。PageObservation 的 provider diagnostics 使用 `executed`、`scan-backed`、`skipped`、`failed`、`degraded` 等执行状态表达来源真实性，而不是把 scan 派生或跳过的 provider 标成已成功执行。
+ABML 是 Browser Pilot 的 agent-native 页面统一建模层，把面向人类的浏览器页面编译为可行动、可引用、可增量比较的结构化页面事实。`browser_observe` 是公开读取入口；省略 `mode` 时返回 canonical ABML `PageObservation`，由 ABML/scan 负责结构、actionables、refs 和 actionability 权威，content/text/html/tabs 只作为 digest、evidence 或 context provider 融合进同一模型。PageObservation 的 provider diagnostics 使用 `executed`、`scan-backed`、`skipped`、`failed`、`degraded` 等执行状态表达来源真实性，而不是把 scan 派生或跳过的 provider 标成已成功执行。AX fusion 的正确性边界是 bounded enrichment：保留 DOM scan 的执行 ref 与 actionability，AX 只补强语义、状态、层级和 AX-only 结构；无法安全匹配或清洗的 AX 信息必须降级并进入 diagnostics。
 
 ABML 负责：
 
@@ -785,7 +785,9 @@ Runtime 层可以做浏览器 I/O，并将采集结果输入 kernel。典型职�
 
 - `sendCommand`；
 - CDP `Accessibility.getFullAXTree` / `DOMSnapshot.captureSnapshot`；
+- bounded `DOM.getBoxModel` geometry fallback；
 - scan/content/vision script 执行；
+- AX/DOM fusion diagnostics、degraded/skipped 计数与 provider 状态汇总；
 - screenshot；
 - resource ref 注册；
 - artifact 保存；

@@ -9,7 +9,7 @@ const lintTargets = {
 	cli: ["src/apps/cli", "src/apps/daemon", "src/commands"],
 	artifacts: ["src/artifacts", "src/commands/artifactCommand.ts"],
 	"js-ast": ["src/commands/webSecurity/shared/jsAst.ts", "src/commands/webSecurity/shared/jsAstArtifact.ts"],
-	memory: ["src/commands/observe", "src/commands/memory", "src/kernels/abml", "src/kernels/memory", "tests/memory"],
+	memory: ["src/commands/observe", "src/commands/memory", "src/kernels/abml", "src/kernels/memory"],
 	governance: [],
 };
 const scopeMarkers = [

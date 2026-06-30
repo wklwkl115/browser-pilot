@@ -62,6 +62,16 @@ ABML / observe 是 Browser Pilot 的页面理解层，长期目标是把真实 W
 ### P2: 引入 CDP Accessibility tree 与 DOM scan fusion
 目标：用浏览器原生 AX tree 改善 role/name/state 可靠性。
 
+状态：已进入实现/试点，接入 `browser_observe` canonical ABML structure 输出。
+
+已落地：
+- `src/browser-runtime/abml/axRuntime.ts` 读取 CDP `Accessibility.getFullAXTree` 与 `DOMSnapshot.captureSnapshot`，并在 bounded 上限内使用 geometry fallback。
+- `src/browser-runtime/abml/runtime.ts` 在 structure 读取路径中复用 scan 数据、bootstrap backendNodeId，并将 AX diagnostics/provider 状态写入 PageObservation。
+- `src/kernels/abml/ax.ts` 保持纯逻辑融合：backendNodeId 优先，保守 geometry 其次，仅在无歧义时允许 semantic fallback。
+- DOM scan 的 selector/ref/actionability/evidence 保持执行权威；AX enrichment 只补充 role/name/description/states/structure 或追加 AX-only entity。
+- ambiguous match、missing geometry、unsafe semantic name、provider partial failure 均进入 skipped/degraded diagnostics。
+- focused tests 与 observe regression benchmark 已覆盖 scan-backed、ax-enriched、ax-only、degraded/skipped 等代表路径。
+
 推荐融合模型：
 - DOM scan: selector、ref、rect、hit-test、event handlers、visibility、execution target
 - AX tree: role、name、description、states、setsize、posinset、level、expanded、selected、checked、disabled
@@ -73,6 +83,13 @@ ABML / observe 是 Browser Pilot 的页面理解层，长期目标是把真实 W
 - `Accessibility.getFullAXTree`
 - `Accessibility.getPartialAXTree`
 - `DOMSnapshot.captureSnapshot`
+
+后续关注项：
+- 大页面 AX latency、node count、geometry fallback call count 与 bounded truncate 行为。
+- AX-only entity 数量与输出预算，避免 artifact 被低价值节点稀释。
+- ambiguous semantic/geometry skip 比例，持续用 regression benchmark 防回归。
+- `getPartialAXTree` 是否可用于后续局部 observe/pierce 优化。
+- 不让 SVG/path、HTML-like、selector-like、long preview 或 editable value 污染 semantic names。
 
 ### P3: 引入 `aria-query` 辅助 role mapping
 候选库：

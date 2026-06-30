@@ -3,7 +3,7 @@ import { isRecord } from "../../utils/records.js";
 import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { registerRefDescriptor } from "../../resources/resourceRefs.js";
 import type { Entity } from "../../kernels/abml/entity.js";
-import { axBackendNodeId, axName, axNodeId, axRole, buildAxEntityFromNode, boxModelToGeometry, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities, type AxContext } from "../../kernels/abml/ax.js";
+import { axBackendNodeId, axName, axNodeId, axRole, buildAxEntityFromNode, boxModelToGeometry, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities, type AxContext, type AxFusionDiagnostics } from "../../kernels/abml/ax.js";
 import type { BuiltEntity } from "../../kernels/abml/entity.js";
 import type { SnapshotGeometryEntry } from "../../kernels/abml/identityBootstrap.js";
 import type { PaintOrderEntry, RelationAnchor } from "../../kernels/abml/relations.js";
@@ -202,6 +202,7 @@ export type AxReadDiagnostics = {
 	nodeCount: number;
 	interestingNodeCount: number;
 	cacheHit: boolean;
+	bounded: { maxGeometryCdpCalls: number; geometryFallbackTruncated: boolean };
 };
 
 export type AxReadResult = { entities: BuiltEntity[]; anchors: RelationAnchor[]; snapshotGeometryEntries?: SnapshotGeometryEntry[]; paintOrderEntries?: PaintOrderEntry[]; diagnostics?: AxReadDiagnostics };
@@ -215,6 +216,7 @@ type AxRawCacheEntry = {
 };
 
 const AX_RAW_CACHE_MAX = 16;
+const AX_GEOMETRY_FALLBACK_MAX_CALLS = 64;
 const axRawCache = new Map<string, AxRawCacheEntry>();
 
 function axRawCacheKey(options: AxReadRuntimeOptions): string | undefined {
@@ -388,12 +390,13 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	const currentContainerCandidatesByKey = new Map<string, string[]>();
 	const interestingNodes = nodes.filter(isInterestingAxNode);
 	const geometryByNode = new Map<Record<string, unknown>, ReturnType<typeof boxModelToGeometry> | undefined>();
-	let snapshotGeometryCount = 0;
+	let snapshotGeometryCount = cachedRaw?.snapshotGeometryEntries?.length ?? 0;
 	let snapshotGeometryUnavailable = false;
 	let snapshotStartedAt: string | undefined;
 	let snapshotEndedAt: string | undefined;
 	let paintOrderSnapshotUnsupported = false;
 	let paintOrderGeometryFallbackUsed = false;
+	let geometryFallbackTruncated = false;
 	if (!cachedRaw) {
 		let snapshotData: unknown;
 		try {
@@ -437,6 +440,7 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 			}
 		}
 	}
+	let geometryFallbackAttempts = 0;
 	await Promise.all(interestingNodes.map(async (node) => {
 		const backendNodeId = Number(node.backendDOMNodeId ?? node.backendNodeId);
 		if (Number.isFinite(backendNodeId) && backendNodeId > 0) {
@@ -444,6 +448,12 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 				geometryByNode.set(node, rawGeometryByBackend.get(backendNodeId));
 				return;
 			}
+			if (geometryFallbackAttempts >= AX_GEOMETRY_FALLBACK_MAX_CALLS) {
+				geometryFallbackTruncated = true;
+				geometryByNode.set(node, undefined);
+				return;
+			}
+			geometryFallbackAttempts += 1;
 			try {
 				const box = await sendCdp({
 					browserSessionId: options.browserSessionId,
@@ -506,15 +516,16 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 			nodeCount: nodes.length,
 			interestingNodeCount: interestingNodes.length,
 			cacheHit: !!cachedRaw,
+			bounded: { maxGeometryCdpCalls: AX_GEOMETRY_FALLBACK_MAX_CALLS, geometryFallbackTruncated },
 		},
 	};
 }
 
-export function mergeAxIntoDomEntities(domEntities: Entity[], axEntities: BuiltEntity[]): Entity[] {
+export function mergeAxIntoDomEntities(domEntities: Entity[], axEntities: BuiltEntity[]): { entities: Entity[]; diagnostics: AxFusionDiagnostics } {
 	const merged = mergeDomAndAxEntities(domEntities, axEntities);
 	const appended = merged.unmatchedAx.map((item) => {
 		const refId = registerRefDescriptor({ descriptor: item.descriptor, name: item.entity.name || item.entity.role });
 		return { ...item.entity, ref: refId };
 	});
-	return [...merged.merged, ...appended];
+	return { entities: [...merged.merged, ...appended], diagnostics: merged.diagnostics };
 }

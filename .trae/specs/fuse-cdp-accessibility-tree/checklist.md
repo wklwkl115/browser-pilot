@@ -1,0 +1,33 @@
+# Checklist
+
+- [x] 已调研 `CODE_WIKI.md` 中 ABML、Runtime、Capture、依赖边界相关章节。
+- [x] 已梳理现有 AX runtime 与 observe scan/ABML 调用链。
+- [x] 已确认 scan 数据中用于 fusion 的稳定字段与缺口。
+- [x] 已明确不新增 public command、不做业务数据抽取、不引入站点 hardcode。
+- [x] 已实现 DOM scan entity 与 AX entity 的 bounded match 策略。
+- [x] backendNodeId/ref descriptor match 优先于 geometry fallback。
+- [x] geometry fallback 保守且能跳过 ambiguous match。
+- [x] AX role/name/description/states 已安全映射到 ABML-compatible entity 字段。
+- [x] DOM scan selector/ref/actionability/evidence 仍是执行权威，未被 AX 覆盖。
+- [x] provider diagnostics 能表达 scan-backed、ax-enriched、ax-only、degraded、skipped 或等价状态。
+- [x] CDP AX provider 失败时 observe 仍返回 scan-only PageObservation。
+- [x] no-mode `browser_observe` canonical PageObservation 能消费 fusion 结果。
+- [x] artifact 与 summary 输出保持既有 schema 兼容，新增字段 bounded。
+- [x] render cache / axCacheKey 不会复用过期 AX tree。
+- [x] AX name/description 经过 semantic safety 过滤。
+- [x] SVG/path、HTML-like、selector-like、long item/card preview、editable value 不会通过 AX fusion 进入 semantic names。
+- [x] `src/kernels/*` 仍保持纯逻辑边界，不调用 CDP/browser/bridge/page DOM。
+- [x] AX fusion 避免 unbounded per-node CDP 调用，并暴露调用次数/耗时/节点数/fusion count 诊断。
+- [x] 新增或更新测试覆盖 backendNodeId match、safe enrichment、ambiguous match skip。
+- [x] 新增或更新测试覆盖代表性 AX states 映射。
+- [x] 新增或更新测试覆盖 provider failure/degraded diagnostics。
+- [x] observe regression benchmark 包含 AX fusion fixture 或 diagnostics expectation。
+- [x] focused AX fusion tests 已通过。
+- [x] `npm run build:bridge` 已通过。
+- [x] Edge no-mode observe 实测成功，扩展能连接并完成 scan/AX fusion。
+- [x] 实测 artifact 中有 AX/fusion diagnostics，且无 `<path`/`<svg` 污染。
+- [x] collection names 与 actionables 未明显退化。
+- [x] `CODE_WIKI.md` 或相关 owner 文档已同步。
+- [x] 长期优化记录 P2 状态已同步。
+- [x] `mise run affected` 已通过。
+- [x] `mise run verify` 已通过，或有明确记录说明无法运行的原因与剩余风险。

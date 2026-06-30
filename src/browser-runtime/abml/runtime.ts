@@ -509,7 +509,7 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			capturedAt: snapshot.capturedAt,
 			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
 			cacheKey: input.axCacheKey,
-		}).catch((): AxReadResult => ({ entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, nodeCount: 0, interestingNodeCount: 0, cacheHit: false } }));
+		}).catch((): AxReadResult => ({ entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, cacheHit: false, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } }));
 		const axRead = await axReadPromise;
 		const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries || [], {
 			scanCapturedAt: snapshot.capturedAt,
@@ -524,7 +524,8 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			entityContext,
 		});
 		const entities = scanEntitiesForEnvelope(summaryData, { entityContext });
-		const mergedEntitiesRaw = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : entities;
+		const fusion = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : undefined;
+		const mergedEntitiesRaw = fusion ? fusion.entities : entities;
 		const mergedEntities = remintSemanticTemplateRefs(mergedEntitiesRaw, {
 			browserSessionId: bridge.browserSessionId,
 			tabId: target.tabId,
@@ -574,6 +575,7 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 				backendNodeIdBootstrap: bootstrapped.stats,
 				listenerOracle: listenerProbe.stats,
 				axDiagnostics: axRead.diagnostics,
+				axFusion: fusion?.diagnostics ?? { scanBacked: entities.length, axEnriched: 0, axOnly: 0, degraded: axRead.entities.length > 0, skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, unsafeSemantic: 0 } },
 				...(paintOrderEvidence ? { paintOrderEvidence } : {}),
 			},
 		};

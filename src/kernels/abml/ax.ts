@@ -2,6 +2,7 @@ import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import { isRecord } from "../../utils/records.js";
 import type { BuiltEntity, Entity, EntityKind, EntityState, EntityStructure, RelationType } from "./entity.js";
 import type { Locator } from "./types.js";
+import { sanitizeSemanticText } from "./semanticText.js";
 
 export type AxTreeNode = Record<string, unknown>;
 export type AxContext = {
@@ -19,6 +20,40 @@ type EntityMatchInfo = {
 	point?: { x: number; y: number };
 	box?: { x: number; y: number; w: number; h: number };
 };
+
+export type AxFusionDiagnostics = {
+	scanBacked: number;
+	axEnriched: number;
+	axOnly: number;
+	degraded: boolean;
+	skipped: {
+		ambiguousBackend: number;
+		ambiguousGeometry: number;
+		ambiguousSemantic: number;
+		unsafeSemantic: number;
+	};
+};
+
+export type AxFusionResult = {
+	merged: Entity[];
+	unmatchedAx: BuiltEntity[];
+	diagnostics: AxFusionDiagnostics;
+};
+
+function emptyFusionDiagnostics(scanBacked: number): AxFusionDiagnostics {
+	return {
+		scanBacked,
+		axEnriched: 0,
+		axOnly: 0,
+		degraded: false,
+		skipped: {
+			ambiguousBackend: 0,
+			ambiguousGeometry: 0,
+			ambiguousSemantic: 0,
+			unsafeSemantic: 0,
+		},
+	};
+}
 
 const CONTROL_AX_ROLES = new Set(["button", "link", "textbox", "searchbox", "combobox", "checkbox", "radio", "switch", "tab", "listbox", "menuitem", "option", "slider", "spinbutton"]);
 const TEXT_AX_ROLES = new Set(["statictext", "text", "labeltext", "heading"]);
@@ -79,7 +114,7 @@ function axValueText(value: unknown): string | undefined {
 	if (typeof value === "number" || typeof value === "boolean") return String(value);
 	const record = asRecord(value);
 	if (!record) return undefined;
-	return stringValue(record.value) || stringValue(record.text) || stringValue(record.name);
+	return axValueText(record.value) || axValueText(record.text) || axValueText(record.name);
 }
 
 function axPropertyMap(node: AxTreeNode): AxPropertyMap {
@@ -116,19 +151,25 @@ function axPropertyBool(node: AxTreeNode, propertyName: string, propertyMap?: Ax
 	return boolValue(asRecord(value)?.value ?? value);
 }
 
+function safeAxSemanticText(value: unknown): string | undefined {
+	return sanitizeSemanticText(value, 160);
+}
+
 export function axRole(node: AxTreeNode): string {
-	return axValueText(node.role) || "generic";
+	return safeAxSemanticText(axValueText(node.role)) || "generic";
 }
 
 export function axName(node: AxTreeNode): string | undefined {
-	return axValueText(node.name);
+	return safeAxSemanticText(axValueText(node.name));
 }
 
 export function axValue(node: AxTreeNode, propertyMap?: AxPropertyMap): string | undefined {
-	return axValueText(node.value)
+	return safeAxSemanticText(
+		axValueText(node.value)
 		|| axValueText(axProperty(node, "value", propertyMap))
 		|| axValueText(axProperty(node, "valuetext", propertyMap))
-		|| axValueText(axProperty(node, "valuenow", propertyMap));
+		|| axValueText(axProperty(node, "valuenow", propertyMap)),
+	);
 }
 
 export function axNodeId(node: AxTreeNode): string | undefined {
@@ -266,8 +307,13 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 	const propertyMap = axPropertyMap(node);
 	const origin = memoizedTopLevelOrigin(context.url);
 	const structure = axStructure(node, role, propertyMap);
-	const name = axName(node);
-	const value = axValue(node, propertyMap);
+	const rawName = axValueText(node.name);
+	const rawValue = axValueText(node.value)
+		|| axValueText(axProperty(node, "value", propertyMap))
+		|| axValueText(axProperty(node, "valuetext", propertyMap))
+		|| axValueText(axProperty(node, "valuenow", propertyMap));
+	const name = safeAxSemanticText(rawName);
+	const value = safeAxSemanticText(rawValue);
 	const kind = kindForAxRole(role);
 	const locators = buildAxLocators(node, propertyMap);
 	const capturedAt = context.capturedAt;
@@ -306,6 +352,8 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 			hints: {
 				axNodeId: axNodeId(node),
 				backendNodeId: axBackendNodeId(node),
+				...(rawName && !name ? { unsafeNameSkipped: true } : {}),
+				...(rawValue && !value ? { unsafeValueSkipped: true } : {}),
 			},
 		},
 		descriptor: {
@@ -368,7 +416,6 @@ function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number 
 }
 
 function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
-	const mergedLocators = dedupeLocators([...(base.locators || []), ...(ax.locators || [])]);
 	const mergedState: EntityState = { ...base.state };
 	const stateSource: Record<string, "ax"> = {};
 	for (const key of AX_AUTHORITATIVE_STATE) {
@@ -385,11 +432,15 @@ function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 		value: ax.value ?? base.value,
 		state: mergedState,
 		...(ax.structure || base.structure ? { structure: { ...(base.structure || {}), ...(ax.structure || {}) } } : {}),
-		locators: mergedLocators,
+		locators: base.locators,
 		geometry: base.geometry || ax.geometry,
 		hints: {
 			...(base.hints || {}),
-			...(ax.hints || {}),
+			axNodeId: ax.hints?.axNodeId,
+			axBackendNodeId: ax.hints?.backendNodeId,
+			...(ax.hints?.containerRole ? { containerRole: ax.hints.containerRole } : {}),
+			...(ax.hints?.containerName ? { containerName: ax.hints.containerName } : {}),
+			...(ax.hints?.currentContainerKeys ? { currentContainerKeys: ax.hints.currentContainerKeys } : {}),
 			mergedSources: ["dom", "ax"],
 			...(Object.keys(stateSource).length ? { stateSource } : {}),
 		},
@@ -425,24 +476,30 @@ function axMatchScore(dom: EntityMatchInfo, ax: EntityMatchInfo): { score: numbe
 	return undefined;
 }
 
-export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEntity[]): { merged: Entity[]; unmatchedAx: BuiltEntity[] } {
+export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEntity[]): AxFusionResult {
 	const merged: Entity[] = domEntities.map((entity) => ({ ...entity, ...(entity.hints ? { hints: { ...entity.hints } } : {}) }));
+	const diagnostics = emptyFusionDiagnostics(domEntities.length);
 	const domPrepared = merged.map((entity) => buildEntityMatchInfo(entity));
 	const axPrepared = axEntities.map((ax) => buildEntityMatchInfo(ax.entity));
 	const usedAx = new Set<number>();
 	const usedDom = new Set<number>();
-	// AX and DOM are two projections of the same node tree, so a DOM entity fuses with at most one
-	// AX node. Consuming the DOM on commit enforces that 1:1 invariant — it stops several AX nodes
-	// from piling their (distinct) authoritative state onto a single DOM entity.
+	const unsafeAx = new Set<number>();
+	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
+		const hints = axEntities[axIndex]!.entity.hints;
+		if (hints?.unsafeNameSkipped === true || hints?.unsafeValueSkipped === true) {
+			unsafeAx.add(axIndex);
+			diagnostics.skipped.unsafeSemantic += 1;
+		}
+	}
 	const commit = (axIndex: number, domIndex: number): void => {
 		merged[domIndex] = mergedEntity(merged[domIndex]!, axEntities[axIndex]!.entity);
 		domPrepared[domIndex] = buildEntityMatchInfo(merged[domIndex]!);
 		usedAx.add(axIndex);
 		usedDom.add(domIndex);
+		diagnostics.axEnriched += 1;
 	};
-	// Pass 0 — exact backendNodeId bootstrap. Once DOM scan entities are stamped from DOMSnapshot,
-	// this is the identity join and should beat all geometry/name heuristics.
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
+		if (unsafeAx.has(axIndex)) continue;
 		const axBackendNodeId = entityBackendNodeId(axEntities[axIndex]!.entity);
 		if (axBackendNodeId === undefined) continue;
 		let matchIndex = -1;
@@ -454,31 +511,30 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 			else matchIndex = domIndex;
 		}
 		if (matchIndex >= 0 && !ambiguous) commit(axIndex, matchIndex);
+		else if (matchIndex >= 0) diagnostics.skipped.ambiguousBackend += 1;
 	}
-	// Pass 1 — geometry-backed matches (box IoU or coincident point). These are high-confidence, so
-	// they claim their DOM first: a reliable spatial match must always win a DOM over a weaker
-	// geometry-less one that merely shares a role.
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
+		if (usedAx.has(axIndex) || unsafeAx.has(axIndex)) continue;
 		let bestIndex = -1;
 		let bestScore = 0;
+		let ambiguous = false;
 		for (let domIndex = 0; domIndex < merged.length; domIndex += 1) {
 			if (usedDom.has(domIndex)) continue;
 			const match = axMatchScore(domPrepared[domIndex]!, axPrepared[axIndex]!);
-			if (match?.geometryBacked && match.score > bestScore) {
+			if (!match?.geometryBacked) continue;
+			if (match.score > bestScore) {
 				bestScore = match.score;
 				bestIndex = domIndex;
+				ambiguous = false;
+			} else if (match.score === bestScore && bestIndex >= 0) {
+				ambiguous = true;
 			}
 		}
-		if (bestIndex >= 0) commit(axIndex, bestIndex);
+		if (bestIndex >= 0 && !ambiguous) commit(axIndex, bestIndex);
+		else if (bestIndex >= 0) diagnostics.skipped.ambiguousGeometry += 1;
 	}
-	// Pass 2 — geometry-less matches (role, or role+name, with no shared point). With no geometry to
-	// disambiguate, a tie among same-role candidates is a coin-flip that used to glue the AX node
-	// onto whichever DOM entity came first in array order, mis-attributing its widget state to the
-	// wrong sibling. Commit such a match ONLY when its best candidate is unambiguous; otherwise leave
-	// the AX node unmatched so it is appended as its own entity (lossless) rather than corrupting a
-	// sibling. This dissolves the whole geometry-less mis-association class, not one instance.
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
-		if (usedAx.has(axIndex)) continue;
+		if (usedAx.has(axIndex) || unsafeAx.has(axIndex)) continue;
 		let bestIndex = -1;
 		let bestScore = 0;
 		let ambiguous = false;
@@ -495,6 +551,10 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 			}
 		}
 		if (bestIndex >= 0 && !ambiguous) commit(axIndex, bestIndex);
+		else if (bestIndex >= 0) diagnostics.skipped.ambiguousSemantic += 1;
 	}
-	return { merged, unmatchedAx: axEntities.filter((_, index) => !usedAx.has(index)) };
+	const unmatchedAx = axEntities.filter((_, index) => !usedAx.has(index) && !unsafeAx.has(index));
+	diagnostics.axOnly = unmatchedAx.length;
+	diagnostics.degraded = Object.values(diagnostics.skipped).some((count) => count > 0);
+	return { merged, unmatchedAx, diagnostics };
 }
