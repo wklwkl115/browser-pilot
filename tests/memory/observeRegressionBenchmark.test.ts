@@ -27,7 +27,16 @@ type ObserveRegressionExpectations = {
 	requireEvidenceIncludes?: string[];
 	canonicalShape?: boolean;
 	requireAxProvider?: string;
+	requireReadabilityProvider?: string;
+	rejectStructuralReadabilityText?: string[];
+	rejectStructuralPartialAxText?: string[];
+	rejectPartialAxProvider?: boolean;
 	requireAxFusion?: { axEnriched?: number; axOnly?: number; degraded?: boolean; skipped?: Partial<Record<"ambiguousBackend" | "ambiguousGeometry" | "ambiguousSemantic" | "unsafeSemantic", number>> };
+	requireProviderTelemetry?: Record<string, { status: string; requested?: boolean; budget?: Record<string, unknown>; truncated?: boolean; degraded?: boolean; reason?: string; counts?: Record<string, number> }>;
+	rejectProviderTelemetry?: string[];
+	requireActionableRoles?: string[];
+	rejectActionableRoles?: string[];
+	rejectCollectionRoles?: string[];
 };
 
 type ObserveRegressionCase = {
@@ -157,6 +166,83 @@ const cases: ObserveRegressionCase[] = [
 			requireAxFusion: { axEnriched: 0, axOnly: 1, degraded: true, skipped: { ambiguousSemantic: 1 } },
 		},
 	},
+	{
+		name: "role provider landmarks do not pollute actionables or collections",
+		fixture: {
+			entities: [
+				entity("bp-ref://control/search", { role: "searchbox", name: "Search docs", state: { ...baseState, editable: true }, hints: { selector: "#q", jsonPath: "data.actionables[0]", inputKind: "search" } }),
+				entity("bp-ref://control/open-details", { role: "button", name: "More details", hints: { selector: "details > summary", jsonPath: "data.actionables[1]" } }),
+			],
+			pageObservation: {
+				content: "Search docs More details Navigation Main Region Form Banner Footer",
+				url: "https://example.test/roles",
+			},
+			scanEvidence: {
+				listHints: [{ itemCount: 6, containerLabel: "Navigation", selector: "nav > a.item", firstItemPreview: "Role mapping fixture item" }],
+			},
+		},
+		expect: {
+			canonicalShape: true,
+			noMarkupPollution: true,
+			requireActionableRoles: ["searchbox", "button"],
+			rejectActionableRoles: ["navigation", "main", "region", "form", "banner", "contentinfo"],
+			rejectCollectionRoles: ["navigation", "main", "region", "form", "banner", "contentinfo"],
+		},
+	},
+	{
+		name: "readability content-plane provider is recorded without entering structural benchmark authority",
+		fixture: {
+			pageObservation: {
+				entities: [entity("bp-ref://control/pay", { name: "Pay invoice", hints: { selector: "#pay" } })],
+				content: "Subscribe now Navigation Advertisement Cookie banner Related links Footer Article body about river restoration and habitat work",
+				url: "https://example.test/article",
+			},
+		},
+		expect: {
+			canonicalShape: true,
+			noMarkupPollution: true,
+			requireReadabilityProvider: "executed",
+			rejectStructuralReadabilityText: ["Article body about river restoration", "habitat work"],
+		},
+	},
+	{
+		name: "provider budget telemetry fixture is compact and independent from live providers",
+		fixture: {
+			pageObservation: {
+				entities: [entity("bp-ref://control/export", { name: "Export report", hints: { selector: "#export" } })],
+				content: "Export report Article summary remains content-plane only",
+				url: "https://example.test/report",
+			},
+		},
+		expect: {
+			canonicalShape: true,
+			noMarkupPollution: true,
+			requireReadabilityProvider: "degraded",
+			requireProviderTelemetry: {
+				structure: { status: "executed" },
+				content: { status: "scan-backed", counts: { chars: "Export report Article summary remains content-plane only".length } },
+				readability: { status: "degraded", requested: true, budget: { maxInlineChars: 96 }, truncated: true, degraded: true, reason: "truncated", counts: { textLength: 1200, contentLength: 1800 } },
+			},
+			rejectProviderTelemetry: ["axe", "partialAx", "partial-ax"],
+			rejectStructuralReadabilityText: ["Article summary remains content-plane only"],
+		},
+	},
+	{
+		name: "partial AX pierce diagnostics stay scoped and do not enter canonical page-wide structure",
+		fixture: {
+			pageObservation: {
+				entities: [entity("bp-ref://control/settings", { name: "Open settings", hints: { selector: "#settings", backendNodeId: 42 } })],
+				content: "Open settings Local partial AX candidate Admin-only hidden menu Imported AX-only sibling",
+				url: "https://example.test/settings",
+			},
+		},
+		expect: {
+			canonicalShape: true,
+			noMarkupPollution: true,
+			rejectPartialAxProvider: true,
+			rejectStructuralPartialAxText: ["Local partial AX candidate", "Admin-only hidden menu", "Imported AX-only sibling"],
+		},
+	},
 ];
 
 function buildCollections(caseDef: ObserveRegressionCase): CollectionModel[] {
@@ -171,12 +257,7 @@ function buildObservation(caseDef: ObserveRegressionCase, collections: Collectio
 	if (!fixture) return undefined;
 	const entities = fixture.entities ?? caseDef.fixture.entities ?? [];
 	const axFusion = caseDef.expect.requireAxFusion;
-	const skipped = {
-		ambiguousBackend: axFusion?.skipped?.ambiguousBackend ?? 0,
-		ambiguousGeometry: axFusion?.skipped?.ambiguousGeometry ?? 0,
-		ambiguousSemantic: axFusion?.skipped?.ambiguousSemantic ?? 0,
-		unsafeSemantic: axFusion?.skipped?.unsafeSemantic ?? 0,
-	};
+	const readabilityTelemetry = caseDef.expect.requireProviderTelemetry?.readability;
 	return buildPageObservation({
 		mode: "scan",
 		canonical: true,
@@ -194,9 +275,17 @@ function buildObservation(caseDef: ObserveRegressionCase, collections: Collectio
 		abmlIntegrated: true,
 		diagnostics: {
 			offlineBenchmark: true,
-			...(axFusion ? { axFusion: { scanBacked: entities.length, axEnriched: axFusion.axEnriched ?? 0, axOnly: axFusion.axOnly ?? 0, degraded: axFusion.degraded ?? false, skipped } } : {}),
+			...(axFusion ? { axFusion: { scanBacked: entities.length, axEnriched: axFusion.axEnriched ?? 0, axOnly: axFusion.axOnly ?? 0, degraded: axFusion.degraded ?? false, skipped: { ambiguousBackend: axFusion.skipped?.ambiguousBackend ?? 0, ambiguousGeometry: axFusion.skipped?.ambiguousGeometry ?? 0, ambiguousSemantic: axFusion.skipped?.ambiguousSemantic ?? 0, unsafeSemantic: axFusion.skipped?.unsafeSemantic ?? 0 } } } : {}),
+			...(readabilityTelemetry ? { readability: { requested: readabilityTelemetry.requested === true, ms: 24, ...(readabilityTelemetry.counts ?? {}), bounded: readabilityTelemetry.budget, truncated: readabilityTelemetry.truncated === true, degraded: readabilityTelemetry.degraded === true } } : {}),
 		},
-		...(caseDef.expect.requireAxProvider ? { providerStatuses: { ax: caseDef.expect.requireAxProvider as "ax-enriched" | "ax-only" | "degraded" | "skipped" | "scan-backed" | "failed" } } : {}),
+		...(caseDef.expect.requireAxProvider || caseDef.expect.requireReadabilityProvider
+			? {
+					providerStatuses: {
+						...(caseDef.expect.requireAxProvider ? { ax: caseDef.expect.requireAxProvider as "ax-enriched" | "ax-only" | "degraded" | "skipped" | "scan-backed" | "failed" } : {}),
+						...(caseDef.expect.requireReadabilityProvider ? { readability: caseDef.expect.requireReadabilityProvider as "executed" | "degraded" | "skipped" | "failed" } : {}),
+					},
+				}
+			: {}),
 	});
 }
 
@@ -239,6 +328,8 @@ function assertCanonicalShape(observation: Record<string, unknown> | undefined, 
 	const providers = diagnostics.providers as Record<string, unknown>;
 	assert.equal(providers.structure, "executed");
 	if (expect.requireAxProvider) assert.equal(providers.ax, expect.requireAxProvider);
+	if (expect.requireReadabilityProvider) assert.equal(providers.readability, expect.requireReadabilityProvider);
+	if (expect.rejectPartialAxProvider) assert.equal("partialAx" in providers || "partial-ax" in providers, false);
 	if (expect.requireAxFusion) {
 		const axFusion = diagnostics.axFusion as Record<string, unknown>;
 		if (expect.requireAxFusion.axEnriched !== undefined) assert.equal(axFusion.axEnriched, expect.requireAxFusion.axEnriched);
@@ -247,6 +338,32 @@ function assertCanonicalShape(observation: Record<string, unknown> | undefined, 
 		const skipped = axFusion.skipped as Record<string, unknown>;
 		for (const [key, value] of Object.entries(expect.requireAxFusion.skipped ?? {})) assert.equal(skipped[key], value);
 	}
+	const providerTelemetry = Array.isArray(diagnostics.providerBudgetTelemetry) ? diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>> : [];
+	for (const [provider, required] of Object.entries(expect.requireProviderTelemetry ?? {})) {
+		const item = providerTelemetry.find((candidate) => candidate.provider === provider);
+		assert.ok(item, `missing provider telemetry: ${provider}`);
+		assert.equal(item.status, required.status);
+		if (required.requested !== undefined) assert.equal(item.requested, required.requested);
+		if (required.budget) assert.deepEqual(item.budget, required.budget);
+		if (required.truncated !== undefined) assert.equal(item.truncated, required.truncated);
+		if (required.degraded !== undefined) assert.equal(item.degraded, required.degraded);
+		if (required.reason !== undefined) assert.equal(item.reason, required.reason);
+		if (required.counts) assert.deepEqual(item.counts, required.counts);
+	}
+	for (const provider of expect.rejectProviderTelemetry ?? []) assert.equal(providerTelemetry.some((item) => item.provider === provider), false, `unexpected provider telemetry: ${provider}`);
+	const actionables = observation.actionables as Record<string, unknown>[];
+	const actionableRoles = actionables.map((item) => String(item.role || "").toLowerCase()).filter(Boolean);
+	for (const role of expect.requireActionableRoles ?? []) assert.ok(actionableRoles.includes(role), `missing actionable role: ${role}; got ${actionableRoles.join(", ")}`);
+	for (const role of expect.rejectActionableRoles ?? []) assert.equal(actionableRoles.includes(role), false, `unexpected actionable role: ${role}`);
+	const structuralText = collectStrings({ actionables: observation.actionables, refs: observation.refs, entities: observation.entities, collections: observation.collections }).join("\n");
+	for (const rejected of expect.rejectStructuralReadabilityText ?? []) assert.equal(structuralText.includes(rejected), false, `readability content entered structural model: ${rejected}`);
+	for (const rejected of expect.rejectStructuralPartialAxText ?? []) assert.equal(structuralText.includes(rejected), false, `partial AX local data entered canonical structural model: ${rejected}`);
+}
+
+function assertRoleBoundary(collections: CollectionModel[], expect: ObserveRegressionExpectations): void {
+	if (!expect.rejectCollectionRoles?.length) return;
+	const collectionText = collectStrings(collections).join("\n").toLowerCase();
+	for (const role of expect.rejectCollectionRoles) assert.equal(collectionText.includes(role), false, `collection leaked role provider structural role: ${role}`);
 }
 
 test("observe regression benchmark cases are offline and deterministic", () => {
@@ -256,6 +373,7 @@ test("observe regression benchmark cases are offline and deterministic", () => {
 		const collections = buildCollections(caseDef);
 		const observation = buildObservation(caseDef, collections);
 		assertCollectionMetrics(collections, caseDef.expect);
+		assertRoleBoundary(collections, caseDef.expect);
 		if (caseDef.expect.canonicalShape) assertCanonicalShape(observation, caseDef.expect);
 		if (caseDef.expect.noMarkupPollution) assertNoMarkupPollution({ collections, observation });
 	}

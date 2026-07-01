@@ -77,14 +77,15 @@ function withCommaSplit(spec: FlagSpec): FlagSpec {
 }
 
 export function buildCommandFlagSpecs(cmd: CliCommand): FlagSpec[] {
-	const specs = buildFlagSpecs(cmd.parameters);
+	const specs = buildFlagSpecs(cmd.parameters).map((spec) => cmd.name === "browser_command" && spec.name === "command" ? { ...spec, valueReferences: false, description: `${spec.description ?? "Bridge command object."} CLI accepts inline JSON only; use browser_execute --program @file or execute --script-file <path> for large Windows inputs.` } : spec);
 	if (cmd.name === "browser_execute") {
 		specs.push({
 			name: "scriptFile",
 			flag: "--script-file",
 			kind: "string",
-			description: "Read JavaScript source from a local file and pass it as --script. CLI-only; cannot be combined with --script.",
+			description: "Read JavaScript source from this local file path and pass it as --script. CLI-only; cannot be combined with --script.",
 			required: false,
+			valueReferences: false,
 		});
 	}
 	return specs.map(withCommaSplit);
@@ -201,6 +202,8 @@ export function printCommandHelp(cmd: CliCommand, natural?: { action: string }):
 		lines.push("", "Per-action --params keys (a JSON object; optional keys may also apply — see the action list above):", ...actionParams);
 	}
 	if (natural) lines.push("", `Advanced equivalent: browser-pilot ${cmd.subcommand} --action ${natural.action} --params <json>`);
+	if (!natural && cmd.name === "browser_command") lines.push("", "File input note: --command accepts inline JSON only; do not use --command @file.");
+	if (!natural && cmd.name === "browser_execute") lines.push("", "File input note: use --program @file for JSON/newline program frames, or --script-file <path> to load JavaScript source from a file path.");
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
@@ -227,17 +230,20 @@ export function artifactBehaviorMetadata(): ArtifactBehavior {
 
 export function flagMetadata(cmd: CliCommand, naturalAction?: string): Record<string, unknown>[] {
 	const specs = naturalAction ? actionSpecificFlagSpecs(cmd, naturalAction) : buildCommandFlagSpecs(cmd);
-	return specs.map((spec) => ({
-		name: spec.name,
-		flag: spec.flag,
-		kind: spec.kind,
-		required: spec.required,
-		paramClass: paramClassFor(cmd, spec.name),
-		...(spec.choices ? { choices: spec.choices } : {}),
-		...(spec.split ? { split: spec.split } : {}),
-		...(spec.description ? { description: spec.description } : {}),
-		inputs: ["inline", ...(spec.kind === "json" || spec.kind === "array" || spec.kind === "string" ? ["@file", "stdin"] : [])],
-	}));
+	return specs.map((spec) => {
+		const referenceInputs = spec.valueReferences === false ? [] : spec.kind === "json" || spec.kind === "array" || spec.kind === "string" ? ["@file", "stdin"] : [];
+		return {
+			name: spec.name,
+			flag: spec.flag,
+			kind: spec.kind,
+			required: spec.required,
+			paramClass: paramClassFor(cmd, spec.name),
+			...(spec.choices ? { choices: spec.choices } : {}),
+			...(spec.split ? { split: spec.split } : {}),
+			...(spec.description ? { description: spec.description } : {}),
+			inputs: ["inline", ...referenceInputs],
+		};
+	});
 }
 
 export function naturalSubcommandMetadata(cmd: CliCommand): Record<string, unknown>[] | undefined {

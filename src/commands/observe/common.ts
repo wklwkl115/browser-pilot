@@ -17,6 +17,8 @@ export type ObserveToolParams = {
 	timeoutMs?: number;
 	maxChars?: number;
 	selector?: string;
+	content?: string;
+	readability?: boolean;
 	url?: string;
 	includeLinks?: boolean;
 	maxNodes?: number;
@@ -30,6 +32,10 @@ export type ObserveToolParams = {
 	actionRef?: string;
 	fresh?: boolean;
 	diff?: boolean;
+	diagnostics?: string | boolean;
+	debug?: string | boolean;
+	axe?: boolean;
+	axeDiagnostics?: boolean;
 	modeInferred?: { mode: ObserveMode; reason: string } | null;
 };
 

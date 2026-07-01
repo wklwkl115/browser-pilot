@@ -56,7 +56,8 @@ export function executeArtifactHints(data: unknown): Record<string, unknown> | u
 	} else if (data !== undefined) {
 		preferredReads.push({ label: "script return value", jsonPath: "data", kind: "execute-result" });
 	}
-	return preferredReads.length ? { preferredReads } : undefined;
+	if (!preferredReads.length) return undefined;
+	return { jsonPaths: Object.fromEntries(preferredReads.map((read) => [read.label, read.jsonPath])), preferredReads };
 }
 
 export function executeSummaryDataInline(data: unknown): boolean {
@@ -197,8 +198,13 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 								...(record.actionRef ? { actionRef: record.actionRef } : {}),
 								...(warning ? { warning } : {}),
 							} as Record<string, unknown>;
-							if (effHints) base.nextActions = [...(Array.isArray(base.nextActions) ? base.nextActions : []), ...effHints];
 							const mon = isRecord(record.monitor) ? record.monitor : undefined;
+							const artifactReads: Array<{ label: string; jsonPath: string; kind?: string; count?: number }> = [];
+							if (executedFrames.length) artifactReads.push({ label: "program frames", jsonPath: "executed", kind: "program-frames", count: executedFrames.length });
+							if (record.result !== undefined) artifactReads.push({ label: "program final result", jsonPath: "result", kind: "execute-result" });
+							if (mon) artifactReads.push({ label: "program monitor", jsonPath: "monitor", kind: "execute-monitor" });
+							if (artifactReads.length) base.artifact_hints = { jsonPaths: Object.fromEntries(artifactReads.map((read) => [read.label, read.jsonPath])), preferredReads: artifactReads };
+							if (effHints) base.nextActions = [...(Array.isArray(base.nextActions) ? base.nextActions : []), ...effHints];
 							if (mon) base.monitorSource = { before: mon.beforeSource, after: mon.afterSource, changed: mon.changed, top_change: mon.top_change, ...(mon.navigated === true ? { navigated: true, urlBefore: mon.urlBefore, urlAfter: mon.urlAfter } : {}) };
 							return base;
 						},

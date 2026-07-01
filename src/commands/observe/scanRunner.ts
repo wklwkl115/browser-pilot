@@ -31,6 +31,8 @@ import { factsFromObservedEntities, stableRefsFromCommandFrames } from "./percep
 import { buildObserveRelevance, observeIntent, relevanceEnabled, type ObserveRelevance } from "./relevanceFusion.js";
 import { addBridgeRoundTrips, elapsedMs, finalizedObserveTimings, type ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, withObservationMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
+import { runAxeDiagnostics, shouldRunAxeDiagnostics } from "./axeDiagnosticsRunner.js";
+import { runReadability, shouldRunReadability } from "./readabilityRunner.js";
 import type { CommandFactGranularity } from "../resultTypes.js";
 import { buildNativeTreeDiff } from "../../native/browserPilotNativeKernels.js";
 import { attachAbmlArtifactHints, buildObserveAbmlDetails, buildObserveArtifactProjection, buildPageObservation, buildScanNextActionHints } from "./scanProjection.js";
@@ -48,6 +50,9 @@ async function buildObserveCausal(server: BrowserCommandRuntimePort, params: Obs
 		return causalUnavailable("network recorder delta query failed");
 	}
 }
+
+const DEFAULT_AXE_DIAGNOSTICS_TIMEOUT_MS = 4_000;
+const DEFAULT_READABILITY_PROVIDER_TIMEOUT_MS = 3_000;
 
 function ledgerKey(browserSessionId: string | undefined, tabId: number | undefined, url: string | undefined): CommandPerceptionLedgerKey | undefined {
 	if (!url) return undefined;
@@ -185,6 +190,8 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const artifactAvailable = hasArtifactPath(outputPath);
 	if (!artifactAvailable) providerFailures.push(providerFailure("artifact", "ARTIFACT_UNAVAILABLE", "PageObservation artifact path is unavailable"));
 	const resultParams = { ...params, outputPath };
+	const axeDiagnosticsRequested = mode === "scan" && params.modeExplicit !== true && shouldRunAxeDiagnostics(params);
+	const readabilityRequested = mode === "scan" && params.modeExplicit !== true && shouldRunReadability(params);
 	if (mode === "tabs") {
 		const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 		const tabsOnlyData = {
@@ -429,6 +436,36 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 			if (ev.events.length) causal = { ...causal, ...ev };
 		} catch { /* event delta is additive; never fail the observe on it */ }
 	}
+	const axeDiagnosticsStartedAt = Date.now();
+	const axeDiagnostics = await runAxeDiagnostics(server, {
+		requested: axeDiagnosticsRequested,
+		browserSessionId: params.browserSessionId,
+		tabId: typeof rawTargetRef === "number" || typeof rawTargetRef === "string" ? rawTargetRef : undefined,
+		timeoutMs: Math.min(DEFAULT_AXE_DIAGNOSTICS_TIMEOUT_MS, Math.max(500, Math.floor((params.timeoutMs ?? DEFAULT_AXE_DIAGNOSTICS_TIMEOUT_MS) / 2))),
+		artifactPath: artifactAvailable ? outputPath : undefined,
+		maxResults: (() => {
+			const nested = isRecord(params.params) ? params.params : undefined;
+			return typeof nested?.axeMaxResults === "number" ? nested.axeMaxResults : undefined;
+		})(),
+	});
+	if (axeDiagnosticsRequested) observeTimings.axeMs = elapsedMs(axeDiagnosticsStartedAt);
+	if (axeDiagnosticsRequested) addBridgeRoundTrips(observeTimings, 1);
+	if (axeDiagnostics.failure) providerFailures.push(axeDiagnostics.failure);
+	const readabilityStartedAt = Date.now();
+	const nestedParams = isRecord(params.params) ? params.params : undefined;
+	const readability = await runReadability(server, {
+		requested: readabilityRequested,
+		browserSessionId: params.browserSessionId,
+		tabId: typeof rawTargetRef === "number" || typeof rawTargetRef === "string" ? rawTargetRef : undefined,
+		timeoutMs: Math.min(DEFAULT_READABILITY_PROVIDER_TIMEOUT_MS, Math.max(500, Math.floor((params.timeoutMs ?? DEFAULT_READABILITY_PROVIDER_TIMEOUT_MS) / 2))),
+		artifactPath: artifactAvailable ? outputPath : undefined,
+		maxInlineChars: typeof nestedParams?.readabilityMaxInlineChars === "number" ? nestedParams.readabilityMaxInlineChars : undefined,
+		maxContentChars: typeof nestedParams?.readabilityMaxContentChars === "number" ? nestedParams.readabilityMaxContentChars : undefined,
+		maxElemsToParse: typeof nestedParams?.readabilityMaxElemsToParse === "number" ? nestedParams.readabilityMaxElemsToParse : undefined,
+	});
+	if (readabilityRequested) observeTimings.readabilityMs = elapsedMs(readabilityStartedAt);
+	if (readabilityRequested) addBridgeRoundTrips(observeTimings, 1);
+	if (readability.failure) providerFailures.push(readability.failure);
 	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined, recorderState.lastSeq, hookState.lastSeq);
 	const renderStartedAt = Date.now();
 	const scanEntityContext = {
@@ -656,6 +693,8 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		: undefined;
 	const observeDiagnostics = {
 		observeTimings: finalizedObserveTimings(observeTimings, data, observation.abmlRead),
+		...(axeDiagnosticsRequested ? { axe: axeDiagnostics.summary } : {}),
+		...(readabilityRequested ? { readability: readability.summary } : {}),
 		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axFusion) ? { axFusion: observation.abmlRead.data.axFusion } : {}),
 		...(baselineDiagnostics ? { baseline: baselineDiagnostics } : {}),
 		...(summaryTruncation?.actionablesTruncated === true ? { actionablesTruncated: true, actionablesScanned: summaryTruncation.actionablesScanned, actionablesReturned: summaryTruncation.actionablesReturned } : {}),
@@ -687,6 +726,8 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 			evidence: artifactAvailable ? "scan-backed" : "failed",
 			tabs: tabsRefreshDegraded ? "degraded" : "executed",
 			...(axProviderStatus ? { ax: axProviderStatus } : {}),
+			...(axeDiagnosticsRequested ? { axe: axeDiagnostics.status } : {}),
+			...(readabilityRequested ? { readability: readability.status } : {}),
 		},
 		providerFailures,
 		diagnostics: observeDiagnostics,
@@ -731,6 +772,8 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		...(artifactCollections?.length ? { collections: artifactCollections } : {}),
 		...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}),
 		...(artifactRelevance ? { relevance: artifactRelevance } : {}),
+		...(axeDiagnostics.artifact ? { axe: axeDiagnostics.artifact } : {}),
+		...(readability.artifact ? { readability: readability.artifact } : {}),
 		...causalBlock,
 		abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection, collections: artifactCollections, relationGraph: artifactRelationGraph } : observation.abmlRead,
 	};

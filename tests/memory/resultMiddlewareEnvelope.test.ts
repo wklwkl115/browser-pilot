@@ -41,6 +41,20 @@ function largeCanonicalObservationSummary(): Record<string, unknown> {
 	};
 }
 
+function artifactHintFields(envelope: Envelope) {
+	const hints = envelope.artifact_hints as Record<string, unknown>;
+	return {
+		hints,
+		paths: hints.jsonPaths as Record<string, unknown>,
+		reads: hints.preferredReads as Array<Record<string, unknown>>,
+	};
+}
+
+function assertPathHint(hints: ReturnType<typeof artifactHintFields>, label: string, jsonPath: string, kind: string) {
+	assert.equal(hints.paths[label], jsonPath);
+	assert.ok(hints.reads.some((read) => read.label === label && read.jsonPath === jsonPath && read.kind === kind));
+}
+
 test("result middleware characterization: default observe budget preserves final no-mode canonical marker", async () => {
 	const envelope = await renderEnvelope({ ok: true }, {
 		commandName: "browser_observe",
@@ -139,7 +153,7 @@ test("result middleware characterization: saved artifacts drive nextActions and 
 	const outputPath = await testArtifactPath("large-result.json");
 	const largePayload = { items: Array.from({ length: 60 }, (_, index) => ({ ref: `bp-ref://network-entry/${index}`, text: "payload".repeat(20) })) };
 	const envelope = await renderEnvelope(largePayload, {
-		maxChars: 4_000,
+		maxChars: 8_000,
 		artifactThreshold: 100,
 		outputPath,
 		operation: { operationId: "op-1", snapshotId: "snap-op" },
@@ -167,6 +181,113 @@ test("result middleware characterization: saved artifacts drive nextActions and 
 	assert.equal(artifacts[0]?.path, path.resolve(outputPath));
 	assert.ok(Array.isArray(evidence.runtimeRefs));
 	assert.ok((evidence.runtimeRefs as string[]).includes("bp-ref://network-entry/1"));
+});
+
+test("result middleware emits compact artifact schema and path hints without nonexistent paths", async () => {
+	const outputPath = await testArtifactPath("hinted-result.json");
+	const rawValue = { data: { content: "hello", actionables: [{ ref: "bp-ref://element/1" }] }, items: [{ id: 1 }] };
+	const envelope = await renderEnvelope(rawValue, {
+		outputPath,
+		artifactThreshold: 1,
+		distill: () => ({ ok: true, artifact_hints: { jsonPaths: { content: "data.content", missing: "data.nope" }, preferredReads: [{ label: "content", jsonPath: "data.content", kind: "text" }, { label: "missing", jsonPath: "data.nope", kind: "missing" }] } }),
+	});
+	const hints = artifactHintFields(envelope);
+	assert.equal(hints.hints.kind, "BrowserCommandResult");
+	assert.equal(hints.hints.schemaVersion, 1);
+	assertPathHint(hints, "data", "data", "primary-data");
+	assertPathHint(hints, "items", "items", "primary-items");
+	assertPathHint(hints, "content text", "data.content", "text");
+	assert.equal(hints.paths.content, "data.content");
+	assert.equal(hints.paths.missing, undefined);
+	assert.equal(hints.reads.some((read) => read.jsonPath === "data.nope"), false);
+	assert.equal((hints.hints.saved as Record<string, unknown>).path, path.resolve(outputPath));
+	assert.equal(JSON.stringify(hints.hints).includes("hello"), false);
+});
+
+test("result middleware emits observe artifact hints while preserving existing jsonPath compatibility", async () => {
+	const outputPath = await testArtifactPath("observe-hints.json");
+	const rawValue = {
+		data: { content: "visible text", actionables: [{ ref: "bp-ref://element/submit" }], list_hints: [{ ref: "bp-ref://list/cart" }], rows: [{ id: "row-1" }], media_candidates: [{ src: "hero.png" }] },
+		pageObservation: { content: { artifact: { path: outputPath, jsonPath: "pageObservation.content" } } },
+		envelope: { summary: { pageObservation: { content: { artifact: { path: outputPath, jsonPath: "summary.pageObservation.content" } } } } },
+	};
+	const envelope = await renderEnvelope(rawValue, {
+		commandName: "browser_observe",
+		command: "scan",
+		maxChars: 12_000,
+		outputPath,
+		artifactThreshold: 1,
+		distill: () => ({ ok: true, artifact_hints: { jsonPaths: { legacyContent: "pageObservation.content", missingLegacy: "pageObservation.missing" }, preferredReads: [{ label: "legacy content", jsonPath: "pageObservation.content", kind: "compat-jsonPath" }, { label: "missing", jsonPath: "pageObservation.missing", kind: "missing" }] } }),
+	});
+	const hints = artifactHintFields(envelope);
+	assert.equal(hints.hints.kind, "PageObservation");
+	assertPathHint(hints, "data", "data", "primary-data");
+	assertPathHint(hints, "content text", "data.content", "text");
+	assertPathHint(hints, "actionables", "data.actionables", "primary-items");
+	assertPathHint(hints, "list hints", "data.list_hints", "primary-items");
+	assertPathHint(hints, "rows", "data.rows", "primary-items");
+	assertPathHint(hints, "media candidates", "data.media_candidates", "primary-items");
+	assert.equal(hints.paths.legacyContent, "pageObservation.content");
+	assert.ok(hints.reads.some((read) => read.jsonPath === "pageObservation.content"));
+	assert.equal(hints.paths.missingLegacy, undefined);
+	assert.equal(hints.reads.some((read) => read.jsonPath === "pageObservation.missing"), false);
+	assert.equal(JSON.stringify(hints.hints).includes("visible text"), false);
+});
+
+test("result middleware emits crawl artifact hints for summary items and body without copying payload", async () => {
+	const outputPath = await testArtifactPath("crawl-hints.json");
+	const rawValue = {
+		summary: { discovered: 2, seed: "https://example.test" },
+		pages: [{ url: "https://example.test" }, { url: "https://example.test/login" }],
+		body: "crawl response body ".repeat(100),
+		text: "crawl visible text ".repeat(100),
+		providerArtifacts: { har: outputPath },
+	};
+	const envelope = await renderEnvelope(rawValue, {
+		commandName: "browser_crawl",
+		command: "crawl",
+		outputPath,
+		artifactThreshold: 1,
+		distill: () => ({ ok: true, artifact_hints: { jsonPaths: { providerArtifacts: "providerArtifacts", missingProvider: "providerArtifacts.nope" }, preferredReads: [{ label: "provider artifacts", jsonPath: "providerArtifacts", kind: "provider-artifacts" }, { label: "missing provider", jsonPath: "providerArtifacts.nope", kind: "provider-artifacts" }] } }),
+	});
+	const hints = artifactHintFields(envelope);
+	assert.equal(hints.hints.kind, "CrawlResult");
+	assertPathHint(hints, "summary", "summary", "summary");
+	assertPathHint(hints, "pages", "pages", "primary-items");
+	assertPathHint(hints, "body", "body", "body");
+	assertPathHint(hints, "text", "text", "text");
+	assert.equal(hints.paths.providerArtifacts, "providerArtifacts");
+	assert.equal(hints.paths.missingProvider, undefined);
+	assert.equal(hints.reads.some((read) => read.jsonPath === "providerArtifacts.nope"), false);
+	assert.equal(JSON.stringify(hints.hints).includes("crawl response body"), false);
+});
+
+test("result middleware emits execute artifact hints for result program frames and monitor data", async () => {
+	const outputPath = await testArtifactPath("execute-hints.json");
+	const rawValue = {
+		executed: [{ frameId: 0, ok: true }],
+		result: { value: "execution result", nested: { count: 1 } },
+		monitor: { events: [{ type: "console", text: "hello" }] },
+		data: { records: [1, 2, 3] },
+		largePayload: "execute payload ".repeat(100),
+	};
+	const envelope = await renderEnvelope(rawValue, {
+		commandName: "browser_execute",
+		command: "program",
+		outputPath,
+		artifactThreshold: 1,
+		distill: () => ({ ok: true, artifact_hints: { jsonPaths: { nestedResult: "result.nested", missingResult: "result.missing" }, preferredReads: [{ label: "nested result", jsonPath: "result.nested", kind: "execute-result" }, { label: "missing result", jsonPath: "result.missing", kind: "execute-result" }] } }),
+	});
+	const hints = artifactHintFields(envelope);
+	assert.equal(hints.hints.kind, "ExecuteProgramResult");
+	assertPathHint(hints, "data", "data", "primary-data");
+	assertPathHint(hints, "executed", "executed", "program-frames");
+	assertPathHint(hints, "result", "result", "execute-result");
+	assertPathHint(hints, "monitor", "monitor", "execute-monitor");
+	assert.equal(hints.paths.nestedResult, "result.nested");
+	assert.equal(hints.paths.missingResult, undefined);
+	assert.equal(hints.reads.some((read) => read.jsonPath === "result.missing"), false);
+	assert.equal(JSON.stringify(hints.hints).includes("execute payload"), false);
 });
 
 test("result middleware characterization: memory fitting preserves live planes when memory fits", async () => {

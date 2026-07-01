@@ -1,16 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveDaemonStartCommand } from "../../src/apps/daemon/daemonControl.ts";
 
-function runCli(args: string[]) {
-	return spawnSync("node", ["--import", "tsx", "src/apps/cli/bin.ts", ...args], {
-		cwd: process.cwd(),
+function runNode(args: string[], cwd = process.cwd()) {
+	return spawnSync("node", args, {
+		cwd,
 		encoding: "utf8",
 	});
+}
+
+function runCli(args: string[]) {
+	return runNode(["--import", "tsx", "src/apps/cli/bin.ts", ...args]);
 }
 
 test("schema execute emits local JSON metadata", () => {
@@ -127,6 +132,82 @@ test("pairings and execute keep their local help surfaces", () => {
 	assert.equal(execute.status, 0);
 	assert.match(execute.stdout, /^browser-pilot execute/u);
 	assert.match(execute.stdout, /--script-file <string>/);
+});
+
+test("schema command marks --command as inline-only", () => {
+	const result = runCli(["schema", "command", "--json"]);
+	const body = JSON.parse(result.stdout);
+	const commandFlag = body.flags.find((flag: { name: string }) => flag.name === "command");
+	assert.equal(result.status, 0);
+	assert.deepEqual(commandFlag.inputs, ["inline"]);
+	assert.match(commandFlag.description, /inline JSON only/);
+});
+
+test("command help rejects --command @file guidance and execute help recommends real file inputs", () => {
+	const command = runCli(["command", "--help"]);
+	const execute = runCli(["execute", "--help"]);
+	assert.equal(command.status, 0);
+	assert.match(command.stdout, /--command <json>/);
+	assert.match(command.stdout, /inline JSON only/);
+	assert.match(command.stdout, /do not use --command @file/);
+	assert.equal(execute.status, 0);
+	assert.match(execute.stdout, /--program <array>/);
+	assert.match(execute.stdout, /--script-file <string>/);
+	assert.match(execute.stdout, /--program @file/);
+	assert.match(execute.stdout, /--script-file <path>/);
+});
+
+test("command --command @file fails as inline-only", () => {
+	const dir = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-cli-"));
+	const commandPath = path.join(dir, "command.json");
+	writeFileSync(commandPath, JSON.stringify({ cmd: "tabs", method: "list" }), "utf8");
+	const result = runCli(["command", "--command", `@${commandPath}`, "--json"]);
+	const body = JSON.parse(result.stdout);
+	assert.equal(result.status, 2);
+	assert.equal(body.code, "CLI_USAGE_ERROR");
+	assert.match(body.message, /inline JSON/);
+});
+
+test("package layout keeps Windows bin target and help imports aligned when built", () => {
+	const pkg = JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
+	const binTarget = pkg.bin["browser-pilot"] as string;
+	assert.equal(binTarget.replaceAll("\\", "/"), "./dist/src/apps/cli/bin.js");
+	const builtEntry = path.join(process.cwd(), binTarget);
+	assert.equal(existsSync(builtEntry), true);
+	const helpImport = path.join(path.dirname(builtEntry), "help.js");
+	const mainImport = path.join(path.dirname(builtEntry), "main.js");
+	assert.equal(existsSync(helpImport), true);
+	assert.equal(existsSync(mainImport), true);
+	const source = readFileSync(builtEntry, "utf8");
+	assert.match(source, /import\("\.\/help\.js"\)/);
+	assert.match(source, /import\("\.\/main\.js"\)/);
+});
+
+test("built package bin --help works from a Windows-style global shim layout", () => {
+	const pkg = JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
+	const binTarget = pkg.bin["browser-pilot"] as string;
+	const packageRoot = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-package-"));
+	const cliDir = path.join(packageRoot, "dist", "src", "apps", "cli");
+	mkdirSync(cliDir, { recursive: true });
+	for (const fileName of ["bin.js", "help.js", "main.js"]) copyFileSync(path.join(process.cwd(), "dist", "src", "apps", "cli", fileName), path.join(cliDir, fileName));
+	const result = runNode([path.join(packageRoot, binTarget), "--help"], packageRoot);
+	assert.equal(result.status, 0);
+	assert.equal(result.stderr, "");
+	assert.match(result.stdout, /^Usage:/m);
+	assert.match(result.stdout, /^Commands:/m);
+});
+
+test("built package bin gives recovery guidance when adjacent files are not built", () => {
+	const packageRoot = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-unbuilt-"));
+	const cliDir = path.join(packageRoot, "dist", "src", "apps", "cli");
+	mkdirSync(cliDir, { recursive: true });
+	copyFileSync(path.join(process.cwd(), "dist", "src", "apps", "cli", "bin.js"), path.join(cliDir, "bin.js"));
+	const result = runNode([path.join(cliDir, "bin.js"), "--help"], packageRoot);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /browser-pilot CLI is missing built files required by the package entrypoint/);
+	assert.match(result.stderr, /npm run build/);
+	assert.match(result.stderr, /reinstall browser-pilot/);
+	assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND|Cannot find module/);
 });
 
 test("bin --help prints top-level usage and exits cleanly", () => {

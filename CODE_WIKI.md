@@ -412,7 +412,7 @@ Kernels 是纯逻辑层。这里的代码不做浏览器 I/O、不读写文件�
 
 ### 5.7 `src/browser-runtime` 与 `src/browser-command-runtime`
 
-`browser-runtime` 是 kernel 的浏览器 I/O 适配层，负责调用 bridge/CDP/scan/screenshot/resource，然后把采集结果交给 kernel 纯函数处理。ABML structure 读取会先取得 DOM scan 与 observation snapshot，再通过 CDP `Accessibility.getFullAXTree` 和 `DOMSnapshot.captureSnapshot` 采集 AX tree/geometry；runtime 负责 bounded CDP fallback、diagnostics 与 ref/resource 注册，纯合并策略仍在 ABML kernel 中执行。DOM scan 的 selector/ref/actionability/evidence 是执行权威，AX 只做 role/name/description/state/structure enrichment 或追加 AX-only entity；backendNodeId 优先匹配，其次保守 geometry，无歧义时才允许 semantic fallback，歧义、缺失几何或 unsafe semantic name 会被记录为 skipped/degraded。
+`browser-runtime` 是 kernel 的浏览器 I/O 适配层，负责调用 bridge/CDP/scan/screenshot/resource，然后把采集结果交给 kernel 纯函数处理。ABML structure 读取会先取得 DOM scan 与 observation snapshot，再通过 CDP `Accessibility.getFullAXTree` 和 `DOMSnapshot.captureSnapshot` 采集页面级 AX tree/geometry；runtime 负责 bounded CDP fallback、diagnostics 与 ref/resource 注册，纯合并策略仍在 ABML kernel 中执行。DOM scan 的 selector/ref/actionability/evidence 是执行权威，full AX 只做 page-wide role/name/description/state/structure enrichment 或追加 AX-only entity；backendNodeId 优先匹配，其次保守 geometry，无歧义时才允许 semantic fallback，歧义、缺失几何或 unsafe semantic name 会被记录为 skipped/degraded。`Accessibility.getPartialAXTree` 只作为 runtime 层局部优化，用于已有可靠 `backendNodeId` 的 local read/pierce refinement 或 action-adjacent enrichment；它默认 `fetchRelatives:false`、短 timeout、小节点上限，diagnostics 使用 `provider:"partial-ax"` 与 `ok/skipped/failed/degraded` 状态表达 missing backend、empty、unsupported/error 或 over-budget，不替代 canonical no-mode observe 的 full AX fusion，也不创建请求 scope 外的 page-wide AX-only entities。
 
 关键文件：
 
@@ -627,24 +627,31 @@ Envelope 常见字段：
 - `saved`
 - `memory`
 - `evidence`
+- `artifact_hints`
 
-大结果会保存 artifact，并在输出中给出读取方式。
+大结果会保存 artifact，并在输出中给出读取方式。`artifact_hints` 是 compact descriptor：包含 `kind`、`schemaVersion`、可用 `jsonPaths`、`preferredReads` 和可选 `saved` descriptor，只指向实际存在的 summary / primary items / body-text / provider-specific / saved artifact 路径，不复制大型 artifact 内容；既有 `PageObservation.artifact_hints.jsonPaths` 与 `preferredReads` 继续兼容。
 
 ### 7.5 关键工具说明
 
 #### `browser_observe`
 
-用于读取当前浏览器状态的 canonical ABML `PageObservation` 页面模型。正常 agent 工作流应省略 `mode`，只传目标、时间、预算和增量边界（如 `tabId`、`targetRef`、`url`、`fresh`、`diff`、`baseline*`、`timeoutMs`、`maxChars`、`detailLevel`）。返回模型以 ABML/scan 为结构权威来源，并把 target/context、gist、outline、entities、actionables/refs、relations、collections、snapshot、diff/treeDiff、causal、memory、scan-backed content/text digest、evidence/artifact 引用和 diagnostics 组织为一个稳定 envelope。`diff:true` 的自动 baseline 只会从相同 `browserSessionId` 与 effective tab 的最近 scan snapshot 中选择，避免跨 session 复用同 tabId snapshot。
+用于读取当前浏览器状态的 canonical ABML `PageObservation` 页面模型。正常 agent 工作流应省略 `mode`，只传目标、时间、预算和增量边界（如 `tabId`、`targetRef`、`url`、`fresh`、`diff`、`baseline*`、`timeoutMs`、`maxChars`、`detailLevel`）或显式可选 add-on（如 `content:"readability"` / `readability:true`）。返回模型以 ABML/scan 为结构权威来源，并把 target/context、gist、outline、entities、actionables/refs、relations、collections、snapshot、diff/treeDiff、causal、memory、scan-backed content/text digest、evidence/artifact 引用和 diagnostics 组织为一个稳定 envelope。`diff:true` 的自动 baseline 只会从相同 `browserSessionId` 与 effective tab 的最近 scan snapshot 中选择，避免跨 session 复用同 tabId snapshot。
+
+Provider budget telemetry summary 是 canonical observe diagnostics 的稳定、bounded 摘要，JSON path 为 `pageObservation.diagnostics.providerBudgetTelemetry`，CLI/result summary 中对应 `summary.pageObservation.diagnostics.providerBudgetTelemetry`，saved observe artifact 中对应同一 `pageObservation.diagnostics.providerBudgetTelemetry`。每个 item 由 [`observe/scanProjection.ts`](src/commands/observe/scanProjection.ts) 从已有 provider diagnostics 派生，包含 `provider`、归一化 `status`（`executed` / `scan-backed` / `skipped` / `failed` / `degraded`），以及可选 `requested`、`durationMs`、compact `counts`、compact `budget`、`truncated`、`degraded`、`reason`、`errorCode` 和 artifact 引用。它只表达来源真实性、耗时、计数、预算、截断/降级和 fallback reason，不复制 axe/readability/full AX 大型原始结果，也不改变 `diagnostics.providers`、provider-specific diagnostics 或公共 tool surface。telemetry 中的 artifact 引用复用 saved observe artifact 路径：HTML provider 指向 `data.html`，evidence 指向 `envelope`，axe/readability 指向各自 runner 写入的 artifact/jsonPath/kind；需要详细内容应通过 `browser_artifact` 按这些稳定 JSON path 定向读取。该 summary 属于 diagnostics-only boundary：任何 `skipped`、`failed`、`degraded` 或预算信息都不得创建、删除、重排或重命名 actionables、refs、entities、relations、collections，也不得改变 content plane、scan/ABML 结构权威、AX/DOM fusion actionability 或 artifact redaction 关系。
 
 任何显式 `mode` 都是 legacy/debug/projection 兼容入口，并在 summary/details/diagnostics 可见面中标记为非 canonical；这包括显式 `mode=scan`。显式 `mode=content/html/text/tabs` 只能作为正文、可见文本、精确 DOM/HTML evidence 或 tab context/diagnostics 投影来源，不能替代省略 `mode` 的 canonical 页面模型。
 
 `scan` / `text` 会通过 observe memory augmentation 自动在结果 envelope 的 `memory` 字段暴露匹配的本地 fact memory。该自动暴露面只面向 `kind=fact` 的事实卡片：首次匹配可内联 bounded body，后续/折叠视图只给 handle 与元数据；SOP、workflow、playbook、checklist、步骤或 agent 指令不应被记录，也不会作为 observe 行为指南暴露。
 
-关键文件：[`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts)、[`observe/memoryAugmentation.ts`](src/commands/observe/memoryAugmentation.ts)。
+可选 accessibility diagnostics 通过 `diagnostics:"axe"`、`diagnostics:"accessibility"`、`debug:"axe"`、`axe:true` 或 `axeDiagnostics:true` 在省略 `mode` 的 canonical observe 路径显式触发。实现位于 [`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)，按需从 `axe-core` 读取浏览器脚本并通过现有 page runtime 注入当前页面，使用独立小超时、最大 inline sample 数与 fail-closed fallback。axe 结果只进入 `PageObservation.diagnostics.axe`、`PageObservation.diagnostics.providers.axe` 和 saved observe artifact 的 `axe` 节点；默认未请求时不运行也不暗示已执行。axe node/html/snippet 不进入 inline summary，完整原始结果只随 observe artifact 保存并经过现有 artifact/redaction envelope；axe issue 不创建、删除或重排 actionables、refs、entities、relations、collections，Browser Pilot 的 scan/ABML actionability、hit-test、editable、visibility 与 AX/DOM fusion 仍是结构和执行权威。2026-06-30 Edge live 试点在 `https://example.com/` 验证：显式 `--axe` 产出 artifact/provider diagnostics，默认 no-mode `--fresh` observe 的 providers 中不含 `axe` 且 canonical PageObservation 保持稳定。
+
+可选 Readability content-plane provider 通过 `content:"readability"` 或 `readability:true` 在省略 `mode` 的 canonical observe 路径显式触发。实现位于 [`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts)，按需从 `@mozilla/readability` 读取浏览器脚本并通过现有 page runtime 在 DOM clone 上运行，使用独立小超时、`maxElemsToParse`、最大 inline/content 字符数与 fail-closed fallback。Readability 结果只进入 `PageObservation.diagnostics.readability`、`PageObservation.diagnostics.providers.readability`、saved observe artifact 的 `readability` 节点，以及 artifact hints/preferred reads 的 `Readability article`；默认未请求时不运行也不暗示已执行。Readability HTML 会移除 script/style/noscript/template 等不安全片段并经过现有 redaction；它不创建、删除或重排 actionables、refs、entities、relations、collections，scan/ABML、AX/DOM fusion、hit-test、editable 与 visibility 仍是结构和执行权威。2026-06-30 Edge live 试点在 `https://linux.do/t/topic/2502552` 验证：显式 `--content readability` 产出 `providers.readability:"executed"`、`readability.summary` 和 `Readability article` artifact hint；默认 no-mode `--fresh` observe 的 providers 中不含 `readability` 且 canonical PageObservation 保持稳定。强 CSP 页面要求 runner 避免页面内字符串 eval，Readability CJS 源码以同一 CDP evaluation 表达式直接执行。
+
+关键文件：[`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts)、[`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts)、[`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)、[`observe/memoryAugmentation.ts`](src/commands/observe/memoryAugmentation.ts)。
 
 #### `browser_execute`
 
-用于在真实 tab 执行 JavaScript，或执行结构化 physical input program。
+用于在真实 tab 执行 JavaScript，或执行结构化 physical input program。CLI 大输入在 Windows 上应优先使用 `--program @file` 读取 JSON array / newline program frames，或使用 `--script-file <path>` 从该路径读取 JavaScript source；`--script-file @file` 不表示加载 JS 文件，只会把文件内容当成路径字符串解析，因此不作为推荐用法。
 
 规则：
 
@@ -657,7 +664,7 @@ Envelope 常见字段：
 
 #### `browser_command`
 
-底层 native bridge command escape hatch。它发送 `{ cmd, ... }` 对象到 extension，但仍经过 schema 校验和安全拒绝逻辑。
+底层 native bridge command escape hatch。它发送 `{ cmd, ... }` 对象到 extension，但仍经过 schema 校验和安全拒绝逻辑。CLI `--command` 只接受内联 JSON，不支持也不推荐 `--command @file`；需要文件化的大段交互应改用 `browser_execute --program @file` 或 `browser-pilot execute --script-file <path>`。
 
 关键文件：[`nativeCommand.ts`](src/commands/nativeCommand.ts)。
 
@@ -754,7 +761,7 @@ browser-runtime ──imports──▶ kernels
 
 ### 9.2 ABML
 
-ABML 是 Browser Pilot 的 agent-native 页面统一建模层，把面向人类的浏览器页面编译为可行动、可引用、可增量比较的结构化页面事实。`browser_observe` 是公开读取入口；省略 `mode` 时返回 canonical ABML `PageObservation`，由 ABML/scan 负责结构、actionables、refs 和 actionability 权威，content/text/html/tabs 只作为 digest、evidence 或 context provider 融合进同一模型。PageObservation 的 provider diagnostics 使用 `executed`、`scan-backed`、`skipped`、`failed`、`degraded` 等执行状态表达来源真实性，而不是把 scan 派生或跳过的 provider 标成已成功执行。AX fusion 的正确性边界是 bounded enrichment：保留 DOM scan 的执行 ref 与 actionability，AX 只补强语义、状态、层级和 AX-only 结构；无法安全匹配或清洗的 AX 信息必须降级并进入 diagnostics。
+ABML 是 Browser Pilot 的 agent-native 页面统一建模层，把面向人类的浏览器页面编译为可行动、可引用、可增量比较的结构化页面事实。`browser_observe` 是公开读取入口；省略 `mode` 时返回 canonical ABML `PageObservation`，由 ABML/scan 负责结构、actionables、refs 和 actionability 权威，content/text/html/tabs 只作为 digest、evidence 或 context provider 融合进同一模型。PageObservation 是 task entry point map：默认输出结构入口、refs、relations、content/artifact hints、diagnostics 和 evidence，精确业务值或大段内容应通过 `browser_execute` 或 `browser_artifact` 定向读取，不应被默认抽取进 actionables/refs/entities。ABML 的 P6 design reference oracle 已把 Playwright、Testing Library、browser-use 与 Stagehand 的可借鉴点沉淀为 repository-local guardrails，而不是 runtime dependency 或替代 API：query priority 以面向用户的 role/name/label/textAnchor 为稳定语义锚，过滤 selector-like、framework/generated class、long preview、SVG/path、HTML-like 噪声；locator/ref stability oracle 要保护 concise user-facing semantics，避免运行时 CSS、backendNodeId 或点位变化污染可复用 ref；Playwright auto-wait 只作为 action target 应接近执行时解析并防 stale ref 的设计参考，不给 `browser_observe` 增加隐式等待；Stagehand 风格 observe/action/extract 分层只强化边界，即 observe 负责 sensing 与 task entry points，动作仍走 `browser_execute`/`browser_command`，精确抽取走 `browser_execute` 或 artifact reads。PageObservation 的 provider diagnostics 使用 `executed`、`scan-backed`、`skipped`、`failed`、`degraded` 等执行状态表达来源真实性，而不是把 scan 派生或跳过的 provider 标成已成功执行。Provider budget telemetry summary 固定在 `pageObservation.diagnostics.providerBudgetTelemetry`，只作为 diagnostics-only、bounded、artifact-aware 的 provider 摘要记录 status、duration、counts、budget、truncation/degradation、reason/errorCode 和 artifact read pointer，不进入 kernel，也不改变结构模型、content plane、refs/actionability 或 artifact redaction。Readability 是显式 content-plane provider，只能补充 readable article artifact/digest 和 provider diagnostics，不能进入 structural authority。AX fusion 的正确性边界是 bounded enrichment：保留 DOM scan 的执行 ref 与 actionability，full AX 负责 canonical no-mode observe 的页面级语义、状态、层级和 AX-only 结构补强；partial AX 只在已有 backendNodeId 的局部 read/pierce 或 action-adjacent refinement 中尝试，失败时回落 full AX 或 scan-only，不改变 page-wide structure，不扩大 scope 外实体。无法安全匹配或清洗的 AX 信息必须降级并进入 diagnostics。
 
 ABML 负责：
 
@@ -784,10 +791,11 @@ ABML 负责：
 Runtime 层可以做浏览器 I/O，并将采集结果输入 kernel。典型职责：
 
 - `sendCommand`；
-- CDP `Accessibility.getFullAXTree` / `DOMSnapshot.captureSnapshot`；
+- CDP `Accessibility.getFullAXTree` / `DOMSnapshot.captureSnapshot` for canonical page-wide AX fusion；
+- CDP `Accessibility.getPartialAXTree` for scoped local read/pierce refinement when a reliable `backendNodeId` is already available；
 - bounded `DOM.getBoxModel` geometry fallback；
 - scan/content/vision script 执行；
-- AX/DOM fusion diagnostics、degraded/skipped 计数与 provider 状态汇总；
+- full AX/DOM fusion diagnostics、partial AX diagnostics、degraded/skipped 计数与 provider 状态汇总；
 - screenshot；
 - resource ref 注册；
 - artifact 保存；
@@ -799,7 +807,7 @@ Runtime 层可以做浏览器 I/O，并将采集结果输入 kernel。典型职�
 
 模板不是 kernel，也不是 bridge。它只负责页面上下文中的数据采集。
 
-Scan 命名链路由 `src/scan/buildScanScript.ts` 负责组装：构建阶段把 `dom-accessibility-api` 打包产物注入页面世界，`capture-src/entries/scanTemplate.ts` 中的 `computedAccessibleName()` 优先调用 `computeAccessibleName()`，再回退到 `aria-label`/`title`/`alt`/`placeholder`、HTML label、可见文本、pseudo text 和 hit-target 借名等本地启发式。该命名结果会进入 `actionables.label`、`actionables.displayLabel`、`list_hints.containerLabel`、`controls_pairs.sourceName` 与 reference target `name`，随后由 ABML entity/relations/collections 纯逻辑消费；kernel 层不得直接依赖 `dom-accessibility-api` 或页面 DOM。
+Scan 命名与 role mapping 链路由 `src/scan/buildScanScript.ts` 负责组装：构建阶段把 `dom-accessibility-api` 打包产物注入页面世界，`capture-src/entries/scanTemplate.ts` 中的 `computedAccessibleName()` 优先调用 `computeAccessibleName()`，再回退到 `aria-label`/`title`/`alt`/`placeholder`、HTML label、可见文本、pseudo text 和 hit-target 借名等本地启发式。`roleOf(el)` 的顺序是 safe explicit `role`、provider implicit role、Browser Pilot legacy fallback；首个 provider 复用已注入的 `BrowserPilotDomAccessibilityApi.getRole(el)`，并过滤 `generic`、`presentation`、`none` 等低价值结果。role 只补强 `actionables`、reference targets、`controls_pairs` 与 scan summary 的语义，不自动扩大 clickable/editable/actionability；是否可执行仍由 Browser Pilot 的 visibility、hit-test、handler、tag 与 control 逻辑决定。命名与 role 结果随后由 ABML entity/relations/collections 纯逻辑消费；kernel 层不得直接依赖 `dom-accessibility-api`、`aria-query` 或页面 DOM。
 
 ### 9.5 Native kernels
 
@@ -840,7 +848,9 @@ kernels ──▶ kernels 内部纯模块
 ### 10.2 禁止或高风险依赖
 
 - `src/kernels/*` 不应导入 `src/commands/*`、`src/bridge/*`、`src/browser-runtime/*`。
-- `dom-accessibility-api` 是 scan/capture 命名链路的运行时依赖，只能通过 `src/scan/domAccessibilityApiBundle.ts` 注入页面世界供 scan template 使用；不要把它引入 ABML kernels 或 extension/bridge 公共协议。
+- `dom-accessibility-api` 是 scan/capture 命名与 role provider 链路的运行时依赖，只能通过 `src/scan/domAccessibilityApiBundle.ts` 注入页面世界供 scan template 使用；不要把它引入 ABML kernels 或 extension/bridge 公共协议。`aria-query` 目前只作为后续 role metadata/provider 候选，不是已接入运行时依赖。
+- `axe-core` 是 `browser_observe` accessibility diagnostics 的运行时依赖，只能作为显式 diagnostics-only add-on 经 `src/commands/observe/axeDiagnosticsRunner.ts` 按需读取并注入页面运行；不要把它引入 ABML kernels、extension service worker 常驻 bundle、command catalog 或 bridge/native 公共协议。默认 no-mode observe 不运行 axe，axe 输出只进入 provider diagnostics 与 artifact，不改变结构模型或 actionability。
+- `@mozilla/readability` 是 `browser_observe` content plane 的运行时依赖，只能作为显式 Readability add-on 经 `src/commands/observe/readabilityRunner.ts` 按需读取并注入页面运行；不要把它引入 ABML kernels、extension service worker 常驻 bundle、command catalog 或 bridge/native 公共协议。默认 no-mode observe 不运行 Readability，Readability 输出只进入 provider diagnostics、content artifact hints 与 saved artifact 的 `readability` 节点，不改变结构模型或 actionability。
 - `src/commands/memory/*` 只能记录与召回 `kind=fact` 的本地事实记忆；不得把 SOP、workflow、playbook、checklist、步骤或 agent 指令语义写入 memory。record/validate 会拒绝非 fact kind 与 SOP-like 内容；`browser_observe` 只自动暴露匹配到的 fact memory，不把 memory 当作流程指南。需要 daemon/bridge 信息时优先依赖窄接口，例如 snapshot evidence 只依赖 `getObservationSnapshot()`。
 - `bridge/browser_pilot_bridge/` 和 `dist/` 是生成产物，不手改。
 - `src/bridge/protocol/native-command.schema.json` 是 native protocol 源头。
@@ -946,7 +956,11 @@ npm run cli -- --help
 npm run cli -- commands
 ```
 
-### 11.4 扩展构建
+### 11.4 Windows/global CLI package layout
+
+npm package 的 `bin.browser-pilot` 固定指向 `./dist/src/apps/cli/bin.js`。Windows 全局安装会生成 `.cmd` / PowerShell shim 并执行这个 built entry，因此 package/global 布局必须同时包含 `dist/src/apps/cli/bin.js`、相邻的 `help.js` 与 `main.js`；top-level `browser-pilot --help` 会先动态导入 `help.js`，再按需导入 `main.js`。构建/打包逻辑需要保证删除 `dist/` 后不会被 stale incremental build info 误判为 up-to-date。若源码 checkout 未构建或 package 安装缺少 built files，CLI entry 会输出明确 recovery：源码 checkout 运行 `npm run build`，global/package install 重新安装，使 `dist/src/apps/cli/bin.js` 及相邻文件恢复。
+
+### 11.5 扩展构建
 
 扩展打包入口是 [`scripts/build-bridge.mjs`](scripts/build-bridge.mjs)，输出到 `bridge/browser_pilot_bridge/`。
 

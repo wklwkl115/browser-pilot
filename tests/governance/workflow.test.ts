@@ -13,6 +13,11 @@ const commandSharedPath = path.join(root, "src/commands/commandShared.ts");
 const commandMetadataPath = path.join(root, "src/apps/cli/commandMetadata.ts");
 const commandRuntimePath = path.join(root, "src/commands/commandRuntime.ts");
 const changelogPath = path.join(root, "CHANGELOG.md");
+const packageLockPath = path.join(root, "package-lock.json");
+const commandCatalogPath = path.join(root, "src/commands/commandCatalog.ts");
+const nativeCommandSchemaPath = path.join(root, "src/bridge/protocol/native-command.schema.json");
+const generatedBridgeRoot = path.join(root, "bridge", "browser_pilot_bridge");
+const generatedDistRoot = path.join(root, "dist");
 const kernelRoot = path.join(root, "src", "kernels");
 const sessionKernelRoot = path.join(kernelRoot, "session");
 
@@ -38,7 +43,15 @@ function scanTextFiles(dir: string): string[] {
 	});
 }
 
+function packageNames(section: Record<string, unknown> | undefined): string[] {
+	return Object.keys(section ?? {});
+}
+
+const forbiddenReferenceRuntimeDependencies = ["playwright", "@playwright/test", "@testing-library/dom", "@testing-library/user-event", "@browser-use/browser-use", "browser-use", "@browserbasehq/stagehand", "stagehand"];
+const frameworkRuntimeImport = /from\s+["'](?:playwright|@playwright\/test|@testing-library\/dom|@testing-library\/user-event|@browser-use\/browser-use|browser-use|@browserbasehq\/stagehand|stagehand|dom-accessibility-api|aria-query|axe-core|@mozilla\/readability)["']|import\s*\(\s*["'](?:playwright|@playwright\/test|@testing-library\/dom|@testing-library\/user-event|@browser-use\/browser-use|browser-use|@browserbasehq\/stagehand|stagehand|dom-accessibility-api|aria-query|axe-core|@mozilla\/readability)["']\s*\)|require\s*\(\s*["'](?:playwright|@playwright\/test|@testing-library\/dom|@testing-library\/user-event|@browser-use\/browser-use|browser-use|@browserbasehq\/stagehand|stagehand|dom-accessibility-api|aria-query|axe-core|@mozilla\/readability)["']\s*\)/;
+
 const observeModeRecommendationPattern = /(?:browser_observe[^\n]*(?:mode=|mode:|mode\s)|browser-pilot\s+observe\s+--mode\b)/;
+const commandFileReferenceRecommendationPattern = /--command\s+@/;
 
 function lineAllowsObserveModeRecommendation(line: string): boolean {
 	return /legacy|debug|projection|compatibility|兼容|投影|schema|metadata|displayName|modeExplicit|no-mode|INVALID_RULE|invokeTool|normalization|characterization|doesNotMatch|assert\.|command:\s*"browser_observe"|observeModeRecommendationPattern/i.test(line);
@@ -109,6 +122,16 @@ test("package files avoids redundant child entries covered by parent directories
 	}
 });
 
+test("package metadata keeps the Windows shim bin target inside packaged dist", () => {
+	const pkg = JSON.parse(text(packagePath)) as { bin?: Record<string, string>; files?: string[] };
+	const binTarget = pkg.bin?.["browser-pilot"];
+	assert.equal(binTarget, "./dist/src/apps/cli/bin.js");
+	const normalizedFiles = (pkg.files || []).map((entry) => entry.replace(/\\/g, "/").replace(/^\.\//, ""));
+	assert.ok(normalizedFiles.includes("dist/"));
+	assert.ok(normalizedFiles.some((entry) => entry === "src/"));
+	assert.equal(binTarget?.startsWith("./src/"), false);
+});
+
 test("public docs describe memory as fact-only and observe as fact surfacing", () => {
 	const readme = text(readmePath);
 	assert.match(readme, /facts? only/i);
@@ -154,6 +177,24 @@ test("agent-facing guidance does not recommend browser_observe mode outside expl
 	assert.deepEqual(offenders, []);
 });
 
+test("agent-facing guidance does not recommend unsupported command @file input", () => {
+	const files = [
+		...scanTextFiles(path.join(root, "src")),
+		...scanTextFiles(path.join(root, "tests")),
+		readmePath,
+		codeWikiPath,
+		changelogPath,
+	].filter((filePath, index, all) => all.indexOf(filePath) === index);
+	const offenders: string[] = [];
+	for (const filePath of files) {
+		const relative = path.relative(root, filePath);
+		text(filePath).split(/\r?\n/).forEach((line, index) => {
+			if (commandFileReferenceRecommendationPattern.test(line) && !/do not use|不支持也不推荐|rejects --command @file|fails as inline-only|does not recommend|unsupported command @file|commandFileReferenceRecommendationPattern/.test(line)) offenders.push(`${relative}:${index + 1}: ${line.trim()}`);
+		});
+	}
+	assert.deepEqual(offenders, []);
+});
+
 test("code wiki documents the session kernel node crypto exception", () => {
 	const wiki = text(codeWikiPath);
 	assert.match(wiki, /src\/kernels\/session\/\*[\s\S]{0,120}node:crypto/);
@@ -165,6 +206,56 @@ test("kernel source stays isolated from runtime, command, and bridge layers", ()
 	for (const filePath of walkSourceFiles(kernelRoot)) {
 		assert.doesNotMatch(text(filePath), forbidden, path.relative(root, filePath));
 	}
+});
+
+test("reference design tools are not runtime dependencies", () => {
+	const pkg = JSON.parse(text(packagePath)) as { dependencies?: Record<string, unknown>; optionalDependencies?: Record<string, unknown>; peerDependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown> };
+	const lock = JSON.parse(text(packageLockPath)) as { packages?: Record<string, { dependencies?: Record<string, unknown>; optionalDependencies?: Record<string, unknown>; peerDependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown> }> };
+	const runtimeDependencyNames = new Set([
+		...packageNames(pkg.dependencies),
+		...packageNames(pkg.optionalDependencies),
+		...packageNames(lock.packages?.[""]?.dependencies),
+		...packageNames(lock.packages?.[""]?.optionalDependencies),
+	]);
+	const peerDependencyNames = new Set([
+		...packageNames(pkg.peerDependencies),
+		...packageNames(lock.packages?.[""]?.peerDependencies),
+	]);
+	for (const dependency of forbiddenReferenceRuntimeDependencies) {
+		assert.equal(runtimeDependencyNames.has(dependency), false, dependency);
+		assert.equal(peerDependencyNames.has(dependency), false, dependency);
+	}
+});
+
+test("kernel source does not import browser or third-party framework runtime packages", () => {
+	const offenders = walkSourceFiles(kernelRoot)
+		.map((filePath) => [filePath, text(filePath)] as const)
+		.filter(([, source]) => frameworkRuntimeImport.test(source))
+		.map(([filePath]) => path.relative(root, filePath));
+	assert.deepEqual(offenders, []);
+});
+
+test("P6 design reference oracle does not expand command or protocol surfaces", () => {
+	const catalog = text(commandCatalogPath);
+	const nativeCommandSchema = text(nativeCommandSchemaPath);
+	for (const source of [catalog, nativeCommandSchema]) {
+		for (const dependency of forbiddenReferenceRuntimeDependencies) {
+			assert.doesNotMatch(source, new RegExp(dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+		}
+	}
+	for (const source of [catalog, nativeCommandSchema]) {
+		assert.doesNotMatch(source, /getByRole|locator|aria snapshot|testing-library|browser-use|stagehand/i);
+	}
+});
+
+test("P6 design reference oracle does not target generated outputs", () => {
+	const files = scanTextFiles(path.join(root, ".trae", "specs", "pilot-observe-design-reference-oracle"));
+	const generatedPaths = [generatedBridgeRoot, generatedDistRoot].map((filePath) => path.relative(root, filePath).replace(/\\/g, "/"));
+	const offenders = files.flatMap((filePath) => {
+		const relative = path.relative(root, filePath);
+		return text(filePath).split(/\r?\n/).flatMap((line, index) => generatedPaths.some((generatedPath) => line.replace(/\\/g, "/").includes(generatedPath)) ? [`${relative}:${index + 1}: ${line.trim()}`] : []);
+	});
+	assert.deepEqual(offenders, []);
 });
 
 test("only session kernel may import node crypto", () => {

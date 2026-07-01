@@ -20,6 +20,7 @@ export interface FlagSpec {
 	description?: string;
 	required: boolean;
 	split?: "comma";
+	valueReferences?: boolean;
 }
 
 export interface GlobalFlags {
@@ -117,7 +118,7 @@ export function resolveParamValueReferences(
 	for (const [name, value] of Object.entries(raw)) {
 		if (typeof value !== "string" || (value !== "-" && !value.startsWith("@"))) continue;
 		const spec = byName.get(name);
-		if (!spec || !["json", "array", "string"].includes(spec.kind)) continue;
+		if (!spec || !["json", "array", "string"].includes(spec.kind) || spec.valueReferences === false) continue;
 		const parsedValue = parseFlagValue(spec, value, cwd);
 		if (!parsedValue.ok) return { ok: false, error: parsedValue.error };
 		params[name] = parsedValue.value;
@@ -236,6 +237,9 @@ export function parseArgs(specs: FlagSpec[], argv: string[], cwd = process.cwd()
 		if (value === undefined) return fail(`flag "${spec.flag}" needs a value`);
 		if (spec.kind === "enum" && spec.choices && !spec.choices.includes(value)) {
 			return fail(`flag "${spec.flag}" must be one of: ${spec.choices.join(", ")}`);
+		}
+		if (spec.kind === "json" && spec.valueReferences === false && (value === "-" || value.startsWith("@"))) {
+			return fail(`flag "${spec.flag}" expects inline JSON; file references are not supported for this flag`);
 		}
 		if (spec.kind === "array") {
 			const arr = (raw[spec.name] as unknown[] | undefined) ?? [];

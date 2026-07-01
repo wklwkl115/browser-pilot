@@ -53,8 +53,11 @@ export function validateObserveParams(mode: ObserveMode, params: ObserveToolPara
 	if ((mode === "content" || mode === "html") && params.maxNodes !== undefined) rejectModeParam(mode, "maxNodes", "maxNodes is only valid for canonical scan/text observations");
 	if ((mode === "content" || mode === "html") && params.includeIframes !== undefined) rejectModeParam(mode, "includeIframes", "includeIframes is only valid for canonical scan/text observations");
 	if ((mode === "scan" || mode === "text" || mode === "tabs" || mode === "content") && params.htmlMode !== undefined) rejectModeParam(mode, "htmlMode", "htmlMode is only valid for explicit legacy html projection mode");
-	if ((mode === "scan" || mode === "text" || mode === "tabs" || mode === "content") && params.params !== undefined) rejectModeParam(mode, "params", "params is only valid for explicit legacy html projection mode");
+	const paramsAllowed = mode === "html" || (mode === "scan" && !explicitModeSelected);
+	if (!paramsAllowed && params.params !== undefined) rejectModeParam(mode, "params", "params is only valid for canonical no-mode observation add-ons or explicit legacy html projection mode");
+	if ((mode !== "scan" || explicitModeSelected) && (params.content !== undefined || params.readability !== undefined)) rejectModeParam(mode, "readability", "Readability content provider is only valid for the canonical no-mode observation path");
 	if ((mode === "content" || mode === "html" || mode === "tabs") && params.intent !== undefined) rejectModeParam(mode, "intent", "intent relevance is only valid for canonical scan/text observations");
+	if ((mode !== "scan" || explicitModeSelected) && (params.diagnostics !== undefined || params.debug !== undefined || params.axe !== undefined || params.axeDiagnostics !== undefined)) rejectModeParam(mode, "diagnostics", "axe/accessibility diagnostics are only valid for the canonical no-mode observation path");
 	if (mode === "tabs" && params.maxNodes !== undefined) rejectModeParam(mode, "maxNodes", "tabs mode only returns tab inventory");
 	if (mode === "tabs" && params.includeIframes !== undefined) rejectModeParam(mode, "includeIframes", "tabs mode only returns tab inventory");
 }
@@ -77,11 +80,13 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 		promptSnippet: "Observe the current page as the canonical ABML page model with structure, actionables, refs, context, evidence, deltas, and diagnostics.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
-			"Call browser_observe without choosing a mode for normal page understanding. Use canonical-only target/time/budget/delta boundaries such as tabId, targetRef, url, fresh, diff, baseline, baselineSnapshotId, baselinePath, actionRef, timeoutMs, maxChars, detailLevel, or outputPath only on the omitted-mode path. Any explicit mode value, including mode=scan, is marked legacy/debug/projection and rejects canonical-only diff/baseline/actionRef parameters; explicit content/html/text/tabs remain only for compatibility projections.",
+			"Call browser_observe without choosing a mode for normal page understanding. Use canonical-only target/time/budget/delta boundaries such as tabId, targetRef, url, fresh, diff, baseline, baselineSnapshotId, baselinePath, actionRef, timeoutMs, maxChars, detailLevel, outputPath, or explicit optional add-ons such as readability:true/content=readability only on the omitted-mode path. Any explicit mode value, including mode=scan, is marked legacy/debug/projection and rejects canonical-only diff/baseline/actionRef parameters; explicit content/html/text/tabs remain only for compatibility projections.",
 		],
 		parameters: strictCommandParameters({
 			mode: Type.Optional(Type.Union([Type.Literal("scan"), Type.Literal("content"), Type.Literal("html"), Type.Literal("text"), Type.Literal("tabs")], { description: "Legacy/debug/projection override. Omit for the canonical ABML PageObservation; any explicit mode value, including scan, is marked as non-canonical compatibility/debug semantics and cannot use canonical-only diff/baseline/actionRef parameters." })),
 			selector: Type.Optional(Type.String({ description: "Legacy content/html projection only: CSS selector for a target readable root or exact HTML/text slice; not accepted on the canonical no-mode path" })),
+			content: Type.Optional(Type.Literal("readability", { description: "Canonical no-mode content-plane add-on: run bounded Mozilla Readability and attach provider diagnostics/artifact without changing the structural model." })),
+			readability: Type.Optional(Type.Boolean({ description: "Canonical no-mode content-plane add-on: true runs bounded Mozilla Readability and attaches provider diagnostics/artifact without changing actionables, refs, entities, relations, or collections." })),
 			url: Type.Optional(Type.String({ description: "Optional URL to navigate to before returning the canonical no-mode ABML page model" })),
 			includeLinks: Type.Optional(Type.Boolean({ description: "Legacy content projection only: include Markdown links; default true" })),
 			maxNodes: Type.Optional(Type.Number({ description: "Canonical scan/text budget: maximum DOM nodes visited" })),
@@ -95,6 +100,10 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 			intent: Type.Optional(Type.String({ description: "Legacy/debug relevance signal for scan/text ranking; not a required strategy selector for canonical observation" })),
 			fresh: Type.Optional(Type.Boolean({ description: "Canonical no-mode ABML observation, or explicit text re-anchor: force a fresh full-frame observation for this call; ignores the session-delta baseline and render cache without disabling relevance or memory" })),
 			diff: Type.Optional(Type.Boolean({ description: "Canonical no-mode ABML observation only: compute envelope.diff/treeDiff against the most recent prior scan snapshot for this tab as the baseline (auto-resolved; no snapshotId to thread). Explicit baseline/baselineSnapshotId/baselinePath override it; not combinable with fresh:true; rejected when any mode is explicit, including mode=scan." })),
+			diagnostics: Type.Optional(Type.Union([Type.Literal("axe"), Type.Literal("accessibility")], { description: "Canonical no-mode diagnostics-only add-on. Use axe/accessibility to run bounded axe-core diagnostics; results are provider diagnostics/artifact only and never alter actionables, refs, entities, relations, or collections." })),
+			debug: Type.Optional(Type.Union([Type.Literal("axe"), Type.Literal("accessibility")], { description: "Debug alias for diagnostics=axe/accessibility on the canonical no-mode observation path." })),
+			axe: Type.Optional(Type.Boolean({ description: "Canonical no-mode diagnostics-only add-on: true runs bounded axe-core accessibility diagnostics without changing the canonical structural model." })),
+			axeDiagnostics: Type.Optional(Type.Boolean({ description: "Canonical no-mode diagnostics-only add-on: true runs bounded axe-core accessibility diagnostics without changing the canonical structural model." })),
 			...sharedTabScopedToolParams(),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {

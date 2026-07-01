@@ -11,7 +11,7 @@ import { resolveRefUriDetailed, registerRefDescriptor, type ResourceRefDescripto
 import type { Entity } from "../../kernels/abml/entity.js";
 import { createCaptureRef, buildNetworkEntryEntity, buildEventEntity, type CaptureRefContext } from "../../kernels/abml/stream.js";
 import { buildCausalRequest, buildCausalEvent, buildCausalSummary, buildCausalEvents, latestSeq } from "../../kernels/abml/causal.js";
-import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
+import { mergeAxIntoDomEntities, readAxEntities, readPartialAxTree, type AxReadResult, type PartialAxDiagnostics } from "./axRuntime.js";
 import { bootstrapScanBackendNodeIds } from "../../kernels/abml/identityBootstrap.js";
 import { materializeRelationGraph, derivePaintOrderRelationAnchors, deriveStateRelationAnchors } from "../../kernels/abml/relations.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
@@ -93,6 +93,21 @@ function entityBackendNodeId(entity: Entity): number | undefined {
 		if (value !== undefined && value > 0) return value;
 	}
 	return undefined;
+}
+
+function descriptorBackendNodeId(descriptor: RefDescriptor | undefined): number | undefined {
+	for (const locator of descriptor?.locators || []) {
+		if (locator.by !== "backendNodeId") continue;
+		const value = numberValue(locator.value);
+		if (value !== undefined && value > 0) return value;
+	}
+	return undefined;
+}
+
+async function readLocalPartialAxDiagnostics(server: AbmlBrowserRuntimeServer, descriptor: RefDescriptor | undefined, options: { browserSessionId?: string; tabId: number; timeoutMs: number }): Promise<PartialAxDiagnostics | undefined> {
+	const backendNodeId = descriptorBackendNodeId(descriptor);
+	if (backendNodeId === undefined) return undefined;
+	return (await readPartialAxTree(server, { ...options, backendNodeId, timeoutMs: Math.min(options.timeoutMs, 1_500), maxNodes: 8, fetchRelatives: false })).diagnostics;
 }
 
 function listenerProbeCandidates(entities: Entity[]): Array<{ entity: Entity; backendNodeId: number }> {
@@ -501,6 +516,11 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			observationId: snapshot.snapshotId,
 			capturedAt: snapshot.capturedAt,
 		};
+		const partialAxDiagnostics = await readLocalPartialAxDiagnostics(server, descriptor, {
+			browserSessionId: target.browserSessionId,
+			tabId: target.tabId,
+			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
+		}).catch(() => undefined);
 		const axReadPromise = readAxEntities(server, {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
@@ -575,6 +595,7 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 				backendNodeIdBootstrap: bootstrapped.stats,
 				listenerOracle: listenerProbe.stats,
 				axDiagnostics: axRead.diagnostics,
+				...(partialAxDiagnostics ? { partialAx: partialAxDiagnostics } : {}),
 				axFusion: fusion?.diagnostics ?? { scanBacked: entities.length, axEnriched: 0, axOnly: 0, degraded: axRead.entities.length > 0, skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, unsafeSemantic: 0 } },
 				...(paintOrderEvidence ? { paintOrderEvidence } : {}),
 			},

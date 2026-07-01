@@ -35,6 +35,17 @@ export function compactEntityRenderingValue(entity: Record<string, unknown>): Re
 	return out;
 }
 
+function compactProviderTelemetryValue(record: Record<string, unknown>, limits: CompactLimits, depth: number): Record<string, unknown> | undefined {
+	if (typeof record.provider !== "string" || typeof record.status !== "string") return undefined;
+	for (const key of ["title", "byline", "siteName", "textPreview", "impactCounts", "ruleCounts", "samples", "testEngine"]) if (Object.hasOwn(record, key)) return undefined;
+	const out: Record<string, unknown> = {};
+	for (const [key, item] of Object.entries(record)) {
+		if (["provider", "status", "requested", "durationMs", "truncated", "degraded", "reason", "errorCode"].includes(key)) out[key] = compactSummaryValue(item, limits, depth + 1);
+		else if ((key === "counts" || key === "budget" || key === "artifact") && isRecord(item)) out[key] = { ...item };
+	}
+	return Object.keys(out).length ? out : undefined;
+}
+
 export function compactSummaryValue(value: unknown, limits: CompactLimits, depth = 0): unknown {
 	if (value === null || value === undefined) return value;
 	if (typeof value === "string") return value.length > limits.stringChars ? `${value.slice(0, limits.stringChars)}…` : value;
@@ -44,8 +55,10 @@ export function compactSummaryValue(value: unknown, limits: CompactLimits, depth
 		if (depth >= ARRAY_DEPTH_LIMIT) return { type: "array", length: value.length };
 		return value.slice(0, limits.arrayItems).map((item) => compactSummaryValue(item, limits, depth + 1));
 	}
-	if (depth >= OBJECT_DEPTH_LIMIT) return { type: "object", keyCount: Object.keys(value as Record<string, unknown>).length };
 	const record = value as Record<string, unknown>;
+	const telemetryValue = compactProviderTelemetryValue(record, limits, depth);
+	if (telemetryValue) return telemetryValue;
+	if (depth >= OBJECT_DEPTH_LIMIT) return { type: "object", keyCount: Object.keys(record).length };
 	if (Array.isArray(record.columns) && Array.isArray(record.rows)) {
 		const rows = record.rows.slice(0, limits.tableRows).map((row) => Array.isArray(row) ? row.map((cell) => compactSummaryValue(cell, limits, depth + 1)) : row);
 		return { ...record, rows, truncated: Number(record.count || rows.length) > rows.length ? Number(record.count || rows.length) - rows.length : record.truncated };

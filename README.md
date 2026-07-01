@@ -137,6 +137,10 @@ npx browser-pilot observe --json
 # Execute JavaScript
 npx browser-pilot execute --script "document.title" --json
 
+# Use files for larger Windows inputs
+npx browser-pilot execute --program @program.json --json
+npx browser-pilot execute --script-file .\snippet.js --json
+
 # Wait for a selector
 npx browser-pilot wait selector --selector "#result" --json
 
@@ -155,7 +159,7 @@ npx browser-pilot schema observe --json
 Core tools include tabs, observe, execute, command, wait, screenshot, network, hook,
 evidence, frame, artifact, memory, download, and upload. Security tools include crawl, fuzz,
 sqli, template, cookie-analyze, http-replay, and callback-oast. Use
-`browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface.
+`browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface. For native bridge escape-hatch calls, `browser-pilot command --command` accepts inline JSON only; do not use `--command @file`. For large Windows-friendly inputs, use `browser-pilot execute --program @file` or `browser-pilot execute --script-file <path>`.
 
 ## Typical Workflow
 

@@ -1,0 +1,24 @@
+# Checklist
+
+- [x] 已盘点 scan / DOM accessibility / role provider / full AX / partial AX / axe / Readability 的 diagnostics 与 budget 字段。
+- [x] 已盘点 PageObservation diagnostics、artifact hints、saved artifact 与 CLI envelope 输出路径。
+- [x] 已选择并记录最小统一 telemetry 形态、字段映射、缺口、预算策略和风险。
+- [x] provider budget telemetry summary 位于 observe diagnostics/projection 层，未进入 `src/kernels/*`。
+- [x] telemetry 覆盖 executed/skipped/failed/degraded provider 状态。
+- [x] telemetry 覆盖 duration/timing、counts、budgets、truncated/degraded markers 和 fallback reason 中可用字段。
+- [x] inline telemetry bounded，未复制 axe/readability/full AX 大型原始结果。
+- [x] 现有 provider-specific diagnostics 与 artifact links 保持兼容。
+- [x] public `browser_*` command surface 未被不必要扩大。
+- [x] telemetry 不改变 actionables、refs、entities、relations、collections 或 content plane 输出。
+- [x] skipped/failed/degraded 不会被误报为 executed。
+- [x] 默认 no-mode observe 输出稳定，explicit axe/readability provider 仅在请求时进入 telemetry。
+- [x] focused tests 覆盖 executed/skipped/failed/degraded provider telemetry。
+- [x] focused tests 覆盖 budget/truncation/fallback reason 和 inline bounding。
+- [x] observe regression benchmark 或 fixture 覆盖 telemetry shape，且不依赖 live browser-only provider。
+- [x] 边界测试确认 telemetry 不造成 structural output drift。
+- [x] `CODE_WIKI.md` 已同步 provider budget telemetry summary、字段含义、diagnostics-only boundary 和 artifact 关系。
+- [x] `.trae/notes/abml-observe-long-term-optimization.md` 已同步跨 provider budget/latency telemetry guardrail。
+- [x] 如新增稳定 JSON path，相关 owner 文档或测试说明已同步。
+- [x] 新增/相关 focused tests 已通过。
+- [x] `mise run affected` 已通过。
+- [x] `mise run verify` 已通过，或有明确记录说明无法运行的原因与剩余风险。

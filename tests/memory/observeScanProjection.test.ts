@@ -6,6 +6,7 @@ import {
 	buildObserveArtifactProjection,
 	buildPageObservation,
 	buildPageObservationProviders,
+	buildProviderBudgetTelemetry,
 	buildScanNextActionHints,
 } from "../../src/commands/observe/scanProjection.ts";
 import { cachedEnvelopeFromArtifact } from "../../src/commands/observe/renderCache.ts";
@@ -388,6 +389,183 @@ test("observe scan characterization: provider diagnostics express truthful execu
 		evidence: "skipped",
 		tabs: "degraded",
 	});
+});
+
+test("observe scan characterization: provider budget telemetry normalizes statuses and compact budget fields", () => {
+	const telemetry = buildProviderBudgetTelemetry({
+		providers: {
+			structure: "executed",
+			content: "scan-backed",
+			text: "skipped",
+			html: "failed",
+			evidence: "degraded",
+			tabs: "executed",
+			ax: "ax-enriched",
+			axe: "degraded",
+			readability: "failed",
+		},
+		diagnostics: {
+			observeTimings: {
+				abmlMs: 12,
+				nodeCount: 9,
+				tabRefreshMs: 3,
+				axMs: 7,
+				axNodeCount: 5,
+				axCdpCalls: 2,
+				axGeometryCdpCalls: 1,
+				axCacheHit: true,
+				geometryFallbackTruncated: true,
+			},
+			axFusion: { scanBacked: 4, axEnriched: 2, axOnly: 1, degraded: true },
+			axe: { requested: true, ms: 20, counts: { violations: 1, incomplete: 1, passes: 0, inapplicable: 3 }, bounded: { maxInlineResults: 2 }, degraded: true },
+			readability: { requested: true, ms: 31, textLength: 800, contentLength: 1600, bounded: { maxInlineChars: 120 }, error: { code: "READABILITY_PROVIDER_UNAVAILABLE" } },
+		},
+		contentLength: 42,
+		tabCount: 2,
+		artifactPath: "artifacts/observe.json",
+	});
+	assert.deepEqual(telemetry.map((item) => [item.provider, item.status]), [
+		["structure", "executed"],
+		["content", "scan-backed"],
+		["text", "skipped"],
+		["html", "failed"],
+		["evidence", "degraded"],
+		["tabs", "executed"],
+		["ax", "executed"],
+		["axe", "degraded"],
+		["readability", "failed"],
+	]);
+	assert.deepEqual(telemetry.find((item) => item.provider === "structure"), { provider: "structure", status: "executed", durationMs: 12, counts: { nodeCount: 9, axNodeCount: 5, axCdpCalls: 2, axGeometryCdpCalls: 1 } });
+	assert.deepEqual(telemetry.find((item) => item.provider === "content"), { provider: "content", status: "scan-backed", counts: { chars: 42 } });
+	assert.deepEqual(telemetry.find((item) => item.provider === "html"), { provider: "html", status: "failed", artifact: { path: "artifacts/observe.json", jsonPath: "data.html" } });
+	assert.deepEqual(telemetry.find((item) => item.provider === "tabs"), { provider: "tabs", status: "executed", durationMs: 3, counts: { tabs: 2 } });
+	assert.deepEqual(telemetry.find((item) => item.provider === "ax"), {
+		provider: "ax",
+		status: "executed",
+		durationMs: 7,
+		counts: { axNodeCount: 5, axCdpCalls: 2, axGeometryCdpCalls: 1, scanBacked: 4, axEnriched: 2, axOnly: 1 },
+		budget: { axCacheHit: true, geometryFallbackTruncated: true },
+		degraded: true,
+		reason: "ax-fusion-degraded",
+	});
+	assert.deepEqual(telemetry.find((item) => item.provider === "axe"), {
+		provider: "axe",
+		status: "degraded",
+		requested: true,
+		durationMs: 20,
+		counts: { violations: 1, incomplete: 1, passes: 0, inapplicable: 3 },
+		budget: { maxInlineResults: 2 },
+		degraded: true,
+		reason: "incomplete-results",
+		errorCode: undefined,
+		artifact: undefined,
+	});
+	assert.deepEqual(telemetry.find((item) => item.provider === "readability"), {
+		provider: "readability",
+		status: "failed",
+		requested: true,
+		durationMs: 31,
+		counts: { textLength: 800, contentLength: 1600 },
+		budget: { maxInlineChars: 120 },
+		truncated: false,
+		degraded: false,
+		reason: "READABILITY_PROVIDER_UNAVAILABLE",
+		errorCode: "READABILITY_PROVIDER_UNAVAILABLE",
+		artifact: undefined,
+	});
+});
+
+test("observe scan characterization: provider budget telemetry stays diagnostics-only and bounded", () => {
+	const secretArticle = `${"Article body ".repeat(40)}token=secret`;
+	const observation = buildPageObservation({
+		mode: "scan",
+		canonical: true,
+		summary: { focus: { primary_entities: [buttonEntity] }, collections: [{ ref: listEntity.ref, complete: true }] },
+		entities: [buttonEntity, listEntity],
+		content: "Checkout content",
+		url: "https://example.test/checkout",
+		tabs: [{ id: 1 }],
+		activeTabId: 1,
+		snapshot: { snapshotId: "snap-telemetry" },
+		artifactPath: "artifacts/observe-snap-telemetry.json",
+		abmlIntegrated: true,
+		diagnostics: {
+			readability: {
+				requested: true,
+				ms: 45,
+				textLength: secretArticle.length,
+				contentLength: secretArticle.length + 20,
+				bounded: { maxInlineChars: 80 },
+				truncated: true,
+				degraded: true,
+				article: { textContent: secretArticle, content: `<article>${secretArticle}</article>` },
+			},
+			axe: {
+				requested: true,
+				ms: 10,
+				counts: { violations: 2, incomplete: 0, passes: 1, inapplicable: 0 },
+				bounded: { maxInlineResults: 1 },
+				samples: [{ id: "color-contrast", html: "<input value=secret>" }],
+			},
+		},
+		providerStatuses: { readability: "degraded", axe: "executed" },
+	});
+	const diagnostics = observation.diagnostics as Record<string, unknown>;
+	const telemetry = diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>;
+	const readability = telemetry.find((item) => item.provider === "readability") as Record<string, unknown>;
+	const axe = telemetry.find((item) => item.provider === "axe") as Record<string, unknown>;
+	assert.deepEqual(readability, {
+		provider: "readability",
+		status: "degraded",
+		requested: true,
+		durationMs: 45,
+		counts: { textLength: secretArticle.length, contentLength: secretArticle.length + 20 },
+		budget: { maxInlineChars: 80 },
+		truncated: true,
+		degraded: true,
+		reason: "truncated",
+		errorCode: undefined,
+		artifact: undefined,
+	});
+	assert.deepEqual(axe, {
+		provider: "axe",
+		status: "executed",
+		requested: true,
+		durationMs: 10,
+		counts: { violations: 2, incomplete: 0, passes: 1, inapplicable: 0 },
+		budget: { maxInlineResults: 1 },
+		degraded: false,
+		reason: undefined,
+		errorCode: undefined,
+		artifact: undefined,
+	});
+	assert.equal(JSON.stringify(telemetry).includes(secretArticle), false);
+	assert.equal(JSON.stringify(telemetry).includes("token=secret"), false);
+	assert.equal(JSON.stringify(telemetry).includes("samples"), false);
+	assert.equal(JSON.stringify(telemetry).includes("article"), false);
+	assert.deepEqual(observation.actionables, [buttonEntity]);
+	assert.deepEqual(observation.refs, [buttonEntity.ref, listEntity.ref]);
+	assert.deepEqual(observation.entities, [buttonEntity, listEntity]);
+	assert.deepEqual(observation.collections, [{ ref: listEntity.ref, complete: true }]);
+});
+
+test("observe scan characterization: provider budget telemetry omits live-only providers unless requested", () => {
+	const observation = buildPageObservation({
+		mode: "scan",
+		canonical: true,
+		summary: { focus: { primary_entities: [buttonEntity] } },
+		entities: [buttonEntity],
+		content: "Checkout content",
+		tabs: [{ id: 1 }],
+		snapshot: { snapshotId: "snap-default-telemetry" },
+		abmlIntegrated: true,
+		diagnostics: {},
+	});
+	const diagnostics = observation.diagnostics as Record<string, unknown>;
+	const telemetry = diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>;
+	assert.equal(telemetry.some((item) => item.provider === "axe"), false);
+	assert.equal(telemetry.some((item) => item.provider === "readability"), false);
+	assert.deepEqual(telemetry.map((item) => item.provider), ["structure", "content", "text", "html", "evidence", "tabs"]);
 });
 
 test("observe scan characterization: ledger facts preserve stable refs across relation-only enrichment", () => {

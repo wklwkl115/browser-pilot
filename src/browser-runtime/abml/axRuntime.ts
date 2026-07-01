@@ -207,6 +207,24 @@ export type AxReadDiagnostics = {
 
 export type AxReadResult = { entities: BuiltEntity[]; anchors: RelationAnchor[]; snapshotGeometryEntries?: SnapshotGeometryEntry[]; paintOrderEntries?: PaintOrderEntry[]; diagnostics?: AxReadDiagnostics };
 
+export type PartialAxStatus = "ok" | "skipped" | "failed" | "degraded";
+
+export type PartialAxDiagnostics = {
+	provider: "partial-ax";
+	status: PartialAxStatus;
+	backendNodeId?: number;
+	fetchRelatives: boolean;
+	timeoutMs: number;
+	maxNodes: number;
+	cdpCalls: number;
+	nodeCount: number;
+	elapsedMs: number;
+	reason?: "missing-backendNodeId" | "empty" | "over-budget" | "unsupported" | "error";
+	error?: { code?: string; message: string };
+};
+
+export type PartialAxResult = { nodes: Array<Record<string, unknown>>; diagnostics: PartialAxDiagnostics };
+
 type AxRawCacheEntry = {
 	nodes: Array<Record<string, unknown>>;
 	geometryByBackend: Map<number, ReturnType<typeof boxModelToGeometry> | undefined>;
@@ -222,6 +240,59 @@ const axRawCache = new Map<string, AxRawCacheEntry>();
 function axRawCacheKey(options: AxReadRuntimeOptions): string | undefined {
 	if (!options.cacheKey) return undefined;
 	return [options.browserSessionId || "default", options.tabId, options.cacheKey].join("\u0000");
+}
+
+function cdpErrorDetails(error: unknown): { code?: string; message: string } {
+	if (isRecord(error)) {
+		const code = typeof error.code === "string" ? error.code : undefined;
+		const message = typeof error.message === "string" ? error.message : String(error);
+		return { ...(code ? { code } : {}), message };
+	}
+	if (error instanceof Error) return { message: error.message };
+	return { message: String(error) };
+}
+
+function partialAxDiagnostics(input: Omit<PartialAxDiagnostics, "provider">): PartialAxDiagnostics {
+	return { provider: "partial-ax", ...input };
+}
+
+export async function readPartialAxTree(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; backendNodeId?: number; timeoutMs?: number; maxNodes?: number; fetchRelatives?: boolean }): Promise<PartialAxResult> {
+	const startedAt = Date.now();
+	const timeoutMs = Math.max(250, Math.min(options.timeoutMs ?? 1_500, 5_000));
+	const maxNodes = Math.max(1, Math.min(options.maxNodes ?? 12, 100));
+	const fetchRelatives = options.fetchRelatives === true;
+	const backendNodeId = Number(options.backendNodeId);
+	const base = { backendNodeId: Number.isFinite(backendNodeId) && backendNodeId > 0 ? backendNodeId : undefined, fetchRelatives, timeoutMs, maxNodes, cdpCalls: 0, nodeCount: 0, elapsedMs: 0 };
+	if (base.backendNodeId === undefined) {
+		return { nodes: [], diagnostics: partialAxDiagnostics({ ...base, status: "skipped", reason: "missing-backendNodeId", elapsedMs: Date.now() - startedAt }) };
+	}
+	try {
+		const partial = await sendPersistentCdp(server, {
+			browserSessionId: options.browserSessionId,
+			tabId: options.tabId,
+			timeoutMs,
+			cdpMethod: "Accessibility.getPartialAXTree",
+			params: { backendNodeId: base.backendNodeId, fetchRelatives },
+		});
+		const root = valueRecord(partial.data);
+		const rootResult = valueRecord(root.result);
+		const rawNodes = Array.isArray(root.nodes) ? root.nodes : Array.isArray(rootResult.nodes) ? rootResult.nodes : [];
+		const nodeCount = rawNodes.length;
+		if (!nodeCount) {
+			return { nodes: [], diagnostics: partialAxDiagnostics({ ...base, cdpCalls: 1, status: "degraded", reason: "empty", elapsedMs: Date.now() - startedAt }) };
+		}
+		const nodes = rawNodes.filter(isRecord).slice(0, maxNodes).map((node) => ({ ...node }));
+		const overBudget = nodeCount > maxNodes;
+		return {
+			nodes,
+			diagnostics: partialAxDiagnostics({ ...base, cdpCalls: 1, nodeCount, status: overBudget ? "degraded" : "ok", ...(overBudget ? { reason: "over-budget" } : {}), elapsedMs: Date.now() - startedAt }),
+		};
+	} catch (error) {
+		const details = cdpErrorDetails(error);
+		const lowered = details.message.toLowerCase();
+		const unsupported = lowered.includes("wasn't found") || lowered.includes("not found") || lowered.includes("unknown method") || lowered.includes("not supported");
+		return { nodes: [], diagnostics: partialAxDiagnostics({ ...base, cdpCalls: 1, status: "failed", reason: unsupported ? "unsupported" : "error", error: details, elapsedMs: Date.now() - startedAt }) };
+	}
 }
 
 function rememberAxRawCache(key: string, entry: AxRawCacheEntry): void {

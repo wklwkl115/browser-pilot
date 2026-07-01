@@ -1,0 +1,28 @@
+# Checklist
+
+- [x] 已检查 `@mozilla/readability` license、browser/MV3 compatibility、package 入口、bundle size、DOM clone 要求与运行 API。
+- [x] 已选择并记录最小 content provider 方案、触发方式、预算和是否新增依赖。
+- [x] 若新增依赖，`package.json` 与 lockfile 已更新；若不新增依赖，原因已记录。
+- [x] Readability runner 在 browser-compatible 路径中运行，并支持 fail-closed fallback。
+- [x] Readability runner 有超时、最大 inline 字符数或等价预算控制。
+- [x] Readability 输出包含 bounded title/byline/excerpt/textLength/contentLength/siteName 和 artifact 引用。
+- [x] Readability 详细结果写入本地 artifact，并遵循现有 privacy/redaction/readCommands 约定。
+- [x] inline summary 不暴露敏感 token/cookie/authorization 值、scripts/styles 或长 raw HTML snippet。
+- [x] Readability provider 状态能真实表达未请求、executed、skipped、failed 或 degraded。
+- [x] no-mode `browser_observe` 默认路径不会用 Readability 替代 scan/ABML 主结构。
+- [x] Readability 结果不会创建、删除或重排 actionables、refs、entities、relations、collections。
+- [x] Browser Pilot scan/ABML、AX/DOM fusion、hit-test、editable、visibility 仍为结构和执行权威。
+- [x] `src/kernels/*` 未引入 `@mozilla/readability` 或 browser/runtime content provider 依赖。
+- [x] command catalog 或 bridge protocol 未被不必要扩大；如新增公开入口，已有 schema/docs/tests 覆盖。
+- [x] 新增 focused tests 覆盖 runner success、null/failure/unavailable、timeout 或 degraded fallback。
+- [x] 新增 focused tests 覆盖 summary bounding、artifact shape、redaction、script/style stripping 与 provider diagnostics honesty。
+- [x] article/document fixture 能验证 readable content 提取优于 boilerplate-heavy fallback。
+- [x] 已记录是否需要 observe regression benchmark case；若新增则相关 benchmark 通过。
+- [x] extension/content provider 构建检查已通过，MV3 bundle 可用且体积变化已检查。
+- [x] Edge live bounded Readability content 实测成功，或有明确环境阻塞记录。
+- [x] no-mode observe 默认路径实测或测试证明 canonical PageObservation 未明显退化。
+- [x] `CODE_WIKI.md` 已同步 content plane、provider status、artifact hints 与依赖/runtime boundary。
+- [x] `.trae/notes/abml-observe-long-term-optimization.md` 已同步 P5 Readability 线路状态。
+- [x] 新增 Readability focused tests 已通过。
+- [x] `mise run affected` 已通过。
+- [x] `mise run verify` 已通过，或有明确记录说明无法运行的原因与剩余风险。

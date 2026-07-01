@@ -36,6 +36,30 @@ type ArtifactHintRead = { label: string; jsonPath: string; kind?: string };
 
 type ProviderStatus = "executed" | "scan-backed" | "ax-enriched" | "ax-only" | "skipped" | "failed" | "degraded";
 
+type ProviderBudgetTelemetryStatus = Extract<ProviderStatus, "executed" | "scan-backed" | "skipped" | "failed" | "degraded">;
+
+type ProviderBudgetTelemetryItem = {
+	provider: string;
+	status: ProviderBudgetTelemetryStatus;
+	requested?: boolean;
+	durationMs?: number;
+	counts?: Record<string, number>;
+	budget?: Record<string, number | boolean>;
+	truncated?: boolean;
+	degraded?: boolean;
+	reason?: string;
+	errorCode?: string;
+	artifact?: Record<string, unknown>;
+};
+
+type ProviderBudgetTelemetryInput = {
+	providers: Partial<ProviderDiagnostics>;
+	diagnostics: Record<string, unknown>;
+	contentLength: number;
+	tabCount: number;
+	artifactPath?: string;
+};
+
 type ProviderFailureReason = {
 	provider: string;
 	code: string;
@@ -51,6 +75,8 @@ type ProviderDiagnostics = {
 	evidence: ProviderStatus;
 	tabs: ProviderStatus;
 	ax?: ProviderStatus;
+	axe?: ProviderStatus;
+	readability?: ProviderStatus;
 };
 
 export type PageObservationProviderInput = {
@@ -71,6 +97,8 @@ export type PageObservationProviderInput = {
 	evidenceStatus?: ProviderStatus;
 	tabsStatus?: ProviderStatus;
 	axStatus?: ProviderStatus;
+	axeStatus?: ProviderStatus;
+	readabilityStatus?: ProviderStatus;
 };
 
 export function buildPageObservationProviders(input: PageObservationProviderInput): ProviderDiagnostics {
@@ -96,7 +124,110 @@ export function buildPageObservationProviders(input: PageObservationProviderInpu
 		evidence: evidenceStatus,
 		tabs: tabsStatus,
 		...(input.axStatus ? { ax: input.axStatus } : {}),
+		...(input.axeStatus ? { axe: input.axeStatus } : {}),
+		...(input.readabilityStatus ? { readability: input.readabilityStatus } : {}),
 	};
+}
+
+function normalizeTelemetryStatus(status: ProviderStatus): ProviderBudgetTelemetryStatus {
+	if (status === "ax-enriched" || status === "ax-only") return "executed";
+	return status;
+}
+
+function numberFrom(record: Record<string, unknown> | undefined, key: string): number | undefined {
+	const value = record?.[key];
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function compactNumberRecord(record: Record<string, unknown> | undefined, keys: string[]): Record<string, number> | undefined {
+	const entries = keys.flatMap((key) => {
+		const value = numberFrom(record, key);
+		return value === undefined ? [] : [[key, value] as const];
+	});
+	return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function compactBudgetRecord(record: Record<string, unknown> | undefined, keys: string[]): Record<string, number | boolean> | undefined {
+	const entries = keys.flatMap((key) => {
+		const value = record?.[key];
+		return typeof value === "number" && Number.isFinite(value) || typeof value === "boolean" ? [[key, value] as const] : [];
+	});
+	return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function errorCode(record: Record<string, unknown> | undefined): string | undefined {
+	const error = isRecord(record?.error) ? record.error : undefined;
+	return typeof error?.code === "string" ? error.code : undefined;
+}
+
+function artifactRef(record: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+	const artifact = isRecord(record?.artifact) ? record.artifact : undefined;
+	if (!artifact) return undefined;
+	const path = typeof artifact.path === "string" ? artifact.path : undefined;
+	const jsonPath = typeof artifact.jsonPath === "string" ? artifact.jsonPath : undefined;
+	const kind = typeof artifact.kind === "string" ? artifact.kind : undefined;
+	return { ...(path ? { path } : {}), ...(jsonPath ? { jsonPath } : {}), ...(kind ? { kind } : {}) };
+}
+
+function telemetryReason(provider: string, status: ProviderStatus, record: Record<string, unknown> | undefined): string | undefined {
+	const code = errorCode(record);
+	if (code) return code;
+	if (record?.timedOut === true) return "timeout";
+	if (provider === "readability" && record?.truncated === true) return "truncated";
+	if (provider === "axe" && numberFrom(isRecord(record?.counts) ? record.counts : undefined, "incomplete")) return "incomplete-results";
+	if (status === "skipped") return "not-requested";
+	return undefined;
+}
+
+export function buildProviderBudgetTelemetry(input: ProviderBudgetTelemetryInput): ProviderBudgetTelemetryItem[] {
+	const timings = isRecord(input.diagnostics.observeTimings) ? input.diagnostics.observeTimings : undefined;
+	const axFusion = isRecord(input.diagnostics.axFusion) ? input.diagnostics.axFusion : undefined;
+	const axe = isRecord(input.diagnostics.axe) ? input.diagnostics.axe : undefined;
+	const readability = isRecord(input.diagnostics.readability) ? input.diagnostics.readability : undefined;
+	const add = (items: ProviderBudgetTelemetryItem[], provider: string, status: ProviderStatus | undefined, extra: Omit<ProviderBudgetTelemetryItem, "provider" | "status"> = {}) => {
+		if (!status) return;
+		const item: ProviderBudgetTelemetryItem = { provider, status: normalizeTelemetryStatus(status), ...extra };
+		items.push(item);
+	};
+	const items: ProviderBudgetTelemetryItem[] = [];
+	add(items, "structure", input.providers.structure, {
+		durationMs: numberFrom(timings, "abmlMs"),
+		counts: compactNumberRecord(timings, ["nodeCount", "axNodeCount", "axCdpCalls", "axGeometryCdpCalls"]),
+	});
+	add(items, "content", input.providers.content, { counts: { chars: input.contentLength } });
+	add(items, "text", input.providers.text, { counts: { chars: input.contentLength } });
+	add(items, "html", input.providers.html, { artifact: input.artifactPath ? { path: input.artifactPath, jsonPath: "data.html" } : undefined });
+	add(items, "evidence", input.providers.evidence, { artifact: input.artifactPath ? { path: input.artifactPath, jsonPath: "envelope" } : undefined });
+	add(items, "tabs", input.providers.tabs, { durationMs: numberFrom(timings, "tabRefreshMs"), counts: { tabs: input.tabCount } });
+	add(items, "ax", input.providers.ax, {
+		durationMs: numberFrom(timings, "axMs"),
+		counts: compactNumberRecord({ ...timings, ...axFusion }, ["axNodeCount", "axCdpCalls", "axGeometryCdpCalls", "scanBacked", "axEnriched", "axOnly"]),
+		budget: compactBudgetRecord(timings, ["axCacheHit", "geometryFallbackTruncated"]),
+		degraded: axFusion?.degraded === true,
+		reason: axFusion?.degraded === true ? "ax-fusion-degraded" : undefined,
+	});
+	add(items, "axe", input.providers.axe, {
+		requested: axe?.requested === true,
+		durationMs: numberFrom(axe, "ms") ?? numberFrom(timings, "axeMs"),
+		counts: isRecord(axe?.counts) ? compactNumberRecord(axe.counts, ["violations", "incomplete", "passes", "inapplicable"]) : undefined,
+		budget: isRecord(axe?.bounded) ? compactBudgetRecord(axe.bounded, ["maxInlineResults"]) : undefined,
+		degraded: axe?.degraded === true,
+		reason: input.providers.axe ? telemetryReason("axe", input.providers.axe, axe) : undefined,
+		errorCode: errorCode(axe),
+		artifact: artifactRef(axe),
+	});
+	add(items, "readability", input.providers.readability, {
+		requested: readability?.requested === true,
+		durationMs: numberFrom(readability, "ms") ?? numberFrom(timings, "readabilityMs"),
+		counts: compactNumberRecord(readability, ["textLength", "contentLength"]),
+		budget: isRecord(readability?.bounded) ? compactBudgetRecord(readability.bounded, ["maxInlineChars"]) : undefined,
+		truncated: readability?.truncated === true,
+		degraded: readability?.degraded === true,
+		reason: input.providers.readability ? telemetryReason("readability", input.providers.readability, readability) : undefined,
+		errorCode: errorCode(readability),
+		artifact: artifactRef(readability),
+	});
+	return items;
 }
 
 function addArtifactHint(summary: Record<string, unknown>, key: string, read: ArtifactHintRead, position: "front" | "back" = "back"): void {
@@ -129,7 +260,32 @@ export function buildPageObservation(input: PageObservationInput): Record<string
 		{ label: "raw scan evidence", jsonPath: "data", kind: "scan-evidence" },
 		{ label: "saved observation content", jsonPath: "pageObservation.content", kind: "content-digest" },
 		{ label: "saved observation text", jsonPath: "pageObservation.text", kind: "text-index" },
+		...(input.providerStatuses?.readability ? [{ label: "Readability article", jsonPath: "readability", kind: "readability-content" }] : []),
 	];
+	const providers = buildPageObservationProviders({
+		abmlIntegrated: input.abmlIntegrated,
+		contentLength: input.content.length,
+		artifactPath: input.artifactPath,
+		tabCount: input.tabs.length,
+		tabsRefreshDegraded: input.tabsRefreshDegraded,
+		structFailed: input.structFailed,
+		structureStatus: input.providerStatuses?.structure,
+		contentStatus: input.providerStatuses?.content,
+		textStatus: input.providerStatuses?.text,
+		htmlStatus: input.providerStatuses?.html,
+		evidenceStatus: input.providerStatuses?.evidence,
+		tabsStatus: input.providerStatuses?.tabs,
+		axStatus: input.providerStatuses?.ax,
+		axeStatus: input.providerStatuses?.axe,
+		readabilityStatus: input.providerStatuses?.readability,
+	});
+	const providerBudgetTelemetry = buildProviderBudgetTelemetry({
+		providers,
+		diagnostics: input.diagnostics,
+		contentLength: input.content.length,
+		tabCount: input.tabs.length,
+		artifactPath: input.artifactPath,
+	});
 	return {
 		model: "PageObservation",
 		canonical: input.canonical,
@@ -164,21 +320,8 @@ export function buildPageObservation(input: PageObservationInput): Record<string
 		diagnostics: {
 			...input.diagnostics,
 			abmlIntegrated: input.abmlIntegrated,
-			providers: buildPageObservationProviders({
-				abmlIntegrated: input.abmlIntegrated,
-				contentLength: input.content.length,
-				artifactPath: input.artifactPath,
-				tabCount: input.tabs.length,
-				tabsRefreshDegraded: input.tabsRefreshDegraded,
-				structFailed: input.structFailed,
-				structureStatus: input.providerStatuses?.structure,
-				contentStatus: input.providerStatuses?.content,
-				textStatus: input.providerStatuses?.text,
-				htmlStatus: input.providerStatuses?.html,
-				evidenceStatus: input.providerStatuses?.evidence,
-				tabsStatus: input.providerStatuses?.tabs,
-				axStatus: input.providerStatuses?.ax,
-			}),
+			providers,
+			providerBudgetTelemetry,
 			...(input.providerFailures?.length ? { providerFailures: input.providerFailures } : {}),
 		},
 		...artifactHints(evidenceReads),

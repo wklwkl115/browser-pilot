@@ -74,6 +74,7 @@ export type DistilledEnvelope = {
 	snapshot?: Record<string, unknown>;
 	// Read-only "active context" echo: resolved tab + latest scan snapshot to thread forward.
 	activeContext?: Record<string, unknown>;
+	artifact_hints?: Record<string, unknown>;
 	saved?: Record<string, unknown>;
 	memory?: Record<string, unknown>;
 	evidence?: CommandEvidenceEnvelope;
@@ -170,6 +171,75 @@ function pickDefined(record: Record<string, unknown>, keys: string[]): Record<st
 function compactArtifactDescriptor(saved?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (!saved) return undefined;
 	return pickDefined(saved, ["path", "bytes", "chars", "mime"]);
+}
+
+function pathExists(value: unknown, pathExpression: string): boolean {
+	if (!pathExpression) return false;
+	let current = value;
+	const parts = pathExpression.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
+	for (const part of parts) {
+		if (Array.isArray(current) && /^\d+$/.test(part)) current = current[Number(part)];
+		else if (isRecord(current) && Object.hasOwn(current, part)) current = current[part];
+		else return false;
+		if (current === undefined) return false;
+	}
+	return true;
+}
+
+function collectPathHint(paths: Record<string, string>, reads: Array<Record<string, unknown>>, value: unknown, label: string, jsonPath: string, kind?: string): void {
+	if (!pathExists(value, jsonPath)) return;
+	paths[label] = jsonPath;
+	if (!reads.some((read) => read.jsonPath === jsonPath)) reads.push({ label, jsonPath, ...(kind ? { kind } : {}) });
+}
+
+function mergeSummaryArtifactHints(summary: DistilledSummary, paths: Record<string, string>, reads: Array<Record<string, unknown>>, rawValue: unknown): void {
+	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints : undefined;
+	const jsonPaths = isRecord(hints?.jsonPaths) ? hints.jsonPaths as Record<string, unknown> : {};
+	for (const [label, value] of Object.entries(jsonPaths)) if (typeof value === "string" && value && pathExists(rawValue, value)) paths[label] = value;
+	for (const read of asArray(hints?.preferredReads).filter(isRecord)) {
+		const jsonPath = typeof read.jsonPath === "string" ? read.jsonPath : undefined;
+		if (!jsonPath || !pathExists(rawValue, jsonPath) || reads.some((item) => item.jsonPath === jsonPath)) continue;
+		reads.push(pickDefined(read, ["label", "jsonPath", "kind", "count"]));
+	}
+}
+
+function artifactSchemaKind(options: DistillBaseOptions, rawValue: unknown): string {
+	if (options.commandName === "browser_observe") return "PageObservation";
+	if (options.commandName === "browser_execute" && options.command === "program") return "ExecuteProgramResult";
+	if (options.commandName === "browser_execute") return "ExecuteResult";
+	if (options.commandName === "browser_crawl") return "CrawlResult";
+	if (options.commandName === "browser_artifact") return "ArtifactReadResult";
+	if (isRecord(rawValue) && typeof rawValue.type === "string") return rawValue.type;
+	return "BrowserCommandResult";
+}
+
+function compactArtifactHints(options: DistillBaseOptions, summary: DistilledSummary, saved: Record<string, unknown> | undefined, rawValue: unknown): Record<string, unknown> | undefined {
+	const paths: Record<string, string> = {};
+	const preferredReads: Array<Record<string, unknown>> = [];
+	collectPathHint(paths, preferredReads, rawValue, "summary", "summary", "summary");
+	collectPathHint(paths, preferredReads, rawValue, "data", "data", "primary-data");
+	collectPathHint(paths, preferredReads, rawValue, "items", "items", "primary-items");
+	collectPathHint(paths, preferredReads, rawValue, "pages", "pages", "primary-items");
+	collectPathHint(paths, preferredReads, rawValue, "executed", "executed", "program-frames");
+	collectPathHint(paths, preferredReads, rawValue, "result", "result", "execute-result");
+	collectPathHint(paths, preferredReads, rawValue, "monitor", "monitor", "execute-monitor");
+	collectPathHint(paths, preferredReads, rawValue, "body", "body", "body");
+	collectPathHint(paths, preferredReads, rawValue, "text", "text", "text");
+	collectPathHint(paths, preferredReads, rawValue, "content text", "data.content", "text");
+	collectPathHint(paths, preferredReads, rawValue, "actionables", "data.actionables", "primary-items");
+	collectPathHint(paths, preferredReads, rawValue, "list hints", "data.list_hints", "primary-items");
+	collectPathHint(paths, preferredReads, rawValue, "rows", "data.rows", "primary-items");
+	collectPathHint(paths, preferredReads, rawValue, "media candidates", "data.media_candidates", "primary-items");
+	mergeSummaryArtifactHints(summary, paths, preferredReads, rawValue);
+	const savedDescriptor = compactArtifactDescriptor(saved);
+	if (!Object.keys(paths).length && !savedDescriptor) return undefined;
+	return {
+		kind: artifactSchemaKind(options, rawValue),
+		schemaVersion: 1,
+		...(Object.keys(paths).length ? { jsonPaths: paths } : {}),
+		...(preferredReads.length ? { preferredReads } : {}),
+		...(savedDescriptor ? { saved: savedDescriptor } : {}),
+	};
 }
 
 function collectBrowserPilotRefs(value: unknown, refs: string[]): void {
@@ -365,6 +435,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const diagnostics = normalizedDiagnostics(fittedSummary, saved, redactedOperation, redactedSnapshot, options.diagnostics);
 	const target = normalizedTarget(options, fittedSummary);
 	const limits = normalizedLimits(options, fittedSummary);
+	const artifact_hints = compactArtifactHints(options, fittedSummary, saved, options.rawArtifactValue);
 	const privacy = normalizedPrivacy(saved, sensitiveRaw);
 	const nextActions = normalizedNextActions(options, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions, entities);
 	const evidence = buildResultEvidence({
@@ -389,6 +460,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		diagnostics,
 		target,
 		limits,
+		...(artifact_hints ? { artifact_hints } : {}),
 		privacy,
 		...(entities ? { entities } : {}),
 		...(abmlIntegrated !== undefined ? { abmlIntegrated } : {}),

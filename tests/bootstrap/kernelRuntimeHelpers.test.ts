@@ -18,6 +18,11 @@ import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity
 import { TEMPORAL_REASON_MODEL_CAP, type TemporalAnchor, type TemporalStamp } from "../../src/kernels/temporal/types.ts";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../src/capture/inject.ts";
 import { buildScanEntities } from "../../src/scan/summary.ts";
+import { stableRefIdForDescriptor, summaryRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
+import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
+import type { ResourceRefDescriptor } from "../../src/ports/ResourceRefStorePort.ts";
+import { readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
+import { pierceRefEntities } from "../../src/browser-runtime/abml/pierceRuntime.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 
 function entity(ref: string, overrides: Partial<Entity> = {}): Entity {
@@ -55,6 +60,146 @@ function stamp(overrides: Partial<TemporalStamp> = {}): TemporalStamp {
 function anchor(overrides: Partial<TemporalStamp> = {}): TemporalAnchor {
 	return { version: "temporal-anchor/v1", source: "observe", stamp: stamp(overrides) };
 }
+
+type CdpCall = { method: string; params?: Record<string, unknown>; timeoutMs?: number };
+
+type MockCdpResponse = unknown | ((command: BrowserRuntimeCommand) => unknown);
+
+function axNode(backendNodeId: number, role: string, name: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		nodeId: `ax-${backendNodeId}`,
+		backendDOMNodeId: backendNodeId,
+		role: { type: "role", value: role },
+		name: { type: "computedString", value: name },
+		...overrides,
+	};
+}
+
+function boxModel(x: number, y: number, w: number, h: number): Record<string, unknown> {
+	return { border: [x, y, x + w, y, x + w, y + h, x, y + h] };
+}
+
+function createCdpServer(responses: Record<string, MockCdpResponse>) {
+	const calls: CdpCall[] = [];
+	return {
+		calls,
+		async sendCommand(command: BrowserRuntimeCommand): Promise<BrowserBridgeExecutionResult> {
+			const method = typeof command.cdpMethod === "string" ? command.cdpMethod : "";
+			calls.push({ method, params: command.params as Record<string, unknown> | undefined, timeoutMs: typeof command.timeoutMs === "number" ? command.timeoutMs : undefined });
+			const response = responses[method];
+			if (response instanceof Error) throw response;
+			const data = typeof response === "function" ? response(command) : response;
+			return { id: `mock-${calls.length}`, acknowledged: true, data };
+		},
+	};
+}
+
+function bridgeFailure(message: string, code = "BROWSER_COMMAND_FAILED"): Record<string, unknown> {
+	return { ok: false, error: { code, message } };
+}
+
+function descriptorWithBackend(backendNodeId: number): ResourceRefDescriptor {
+	return {
+		refId: "bp-ref://control/target",
+		kind: "control",
+		locators: [{ by: "css", value: "#target" }, { by: "backendNodeId", value: backendNodeId }],
+		owner: { browserSessionId: "session-1", tabId: 7, topLevelOrigin: "https://example.test" },
+		policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
+		semantic: { role: "button", name: "Target" },
+		geometry: { point: { x: 50, y: 20 }, box: { x: 10, y: 10, w: 80, h: 20 } },
+		observationId: "obs-1",
+		createdAt: 1_000,
+		ttlMs: 300_000,
+	};
+}
+
+test("partial AX helper returns bounded successful enrichment diagnostics", async () => {
+	const server = createCdpServer({
+		"Accessibility.getPartialAXTree": { nodes: [axNode(42, "button", "Save changes")] },
+	});
+	const result = await readPartialAxTree(server, { browserSessionId: "session-1", tabId: 7, backendNodeId: 42, timeoutMs: 2_000, maxNodes: 5, fetchRelatives: false });
+	assert.equal(result.nodes.length, 1);
+	assert.equal(result.nodes[0]!.backendDOMNodeId, 42);
+	assert.deepEqual(result.diagnostics, {
+		provider: "partial-ax",
+		status: "ok",
+		backendNodeId: 42,
+		fetchRelatives: false,
+		timeoutMs: 2_000,
+		maxNodes: 5,
+		cdpCalls: 1,
+		nodeCount: 1,
+		elapsedMs: result.diagnostics.elapsedMs,
+	});
+	assert.equal(server.calls[0]!.method, "Accessibility.getPartialAXTree");
+	assert.deepEqual(server.calls[0]!.params, { backendNodeId: 42, fetchRelatives: false });
+});
+
+test("partial AX helper fails closed for missing backend, unsupported, error, timeout, and empty responses", async () => {
+	const missing = await readPartialAxTree(createCdpServer({}), { tabId: 7, maxNodes: 5 });
+	assert.equal(missing.diagnostics.status, "skipped");
+	assert.equal(missing.diagnostics.reason, "missing-backendNodeId");
+	assert.equal(missing.diagnostics.cdpCalls, 0);
+
+	for (const [message, reason] of [["'Accessibility.getPartialAXTree' wasn't found", "unsupported"], ["CDP crashed", "error"], ["bridge timeout after 1500ms", "error"]] as const) {
+		const server = createCdpServer({ "Accessibility.getPartialAXTree": bridgeFailure(message) });
+		const result = await readPartialAxTree(server, { tabId: 7, backendNodeId: 42, timeoutMs: 1_500, maxNodes: 5 });
+		assert.equal(result.nodes.length, 0);
+		assert.equal(result.diagnostics.status, "failed");
+		assert.equal(result.diagnostics.reason, reason);
+		assert.match(result.diagnostics.error?.message ?? "", new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+	}
+
+	const empty = await readPartialAxTree(createCdpServer({ "Accessibility.getPartialAXTree": { nodes: [] } }), { tabId: 7, backendNodeId: 42, maxNodes: 5 });
+	assert.equal(empty.nodes.length, 0);
+	assert.equal(empty.diagnostics.status, "degraded");
+	assert.equal(empty.diagnostics.reason, "empty");
+});
+
+test("partial AX helper truncates over-budget nodes and reports degraded diagnostics", async () => {
+	const nodes = Array.from({ length: 6 }, (_, index) => axNode(100 + index, "button", `Item ${index + 1}`));
+	const result = await readPartialAxTree(createCdpServer({ "Accessibility.getPartialAXTree": { result: { nodes } } }), { tabId: 7, backendNodeId: 100, maxNodes: 3, fetchRelatives: true });
+	assert.equal(result.nodes.length, 3);
+	assert.deepEqual(result.nodes.map((node) => node.backendDOMNodeId), [100, 101, 102]);
+	assert.equal(result.diagnostics.status, "degraded");
+	assert.equal(result.diagnostics.reason, "over-budget");
+	assert.equal(result.diagnostics.nodeCount, 6);
+	assert.equal(result.diagnostics.maxNodes, 3);
+	assert.equal(result.diagnostics.fetchRelatives, true);
+});
+
+test("pierce runtime prefers scoped partial AX enrichment and falls back without expanding page-wide output", async () => {
+	const descriptor = descriptorWithBackend(42);
+	const partialServer = createCdpServer({
+		"Accessibility.getPartialAXTree": { nodes: [axNode(42, "button", "Save changes"), axNode(77, "button", "Outside scope")] },
+		"DOM.getBoxModel": { result: boxModel(10, 10, 80, 20) },
+	});
+	const partial = await pierceRefEntities(partialServer, descriptor, { browserSessionId: "session-1", tabId: 7, observationId: "obs-1", capturedAt: 1_000, timeoutMs: 3_000 });
+	assert.equal(partial.ok, true);
+	if (!partial.ok) return;
+	assert.equal(partial.data.source, "partial-ax");
+	assert.equal(partial.data.transport, "cdp-partial-ax");
+	assert.equal(partial.entities.length, 1);
+	assert.equal(partial.entities[0]!.name, "Save changes");
+	assert.equal(partial.entities[0]!.hints?.axRefinement, "partial-ax");
+	assert.equal(partialServer.calls.some((call) => call.method === "Accessibility.getFullAXTree"), false);
+
+	const fallbackServer = createCdpServer({
+		"Accessibility.getPartialAXTree": { nodes: [] },
+		"Accessibility.getFullAXTree": { nodes: [axNode(42, "button", "Save changes"), axNode(77, "button", "Outside scope")] },
+		"DOM.getBoxModel": (command) => {
+			const params = command.params as Record<string, unknown> | undefined;
+			return { result: Number(params?.backendNodeId) === 42 ? boxModel(10, 10, 80, 20) : boxModel(500, 500, 80, 20) };
+		},
+	});
+	const fallback = await pierceRefEntities(fallbackServer, descriptor, { browserSessionId: "session-1", tabId: 7, observationId: "obs-1", capturedAt: 1_000, timeoutMs: 3_000 });
+	assert.equal(fallback.ok, true);
+	if (!fallback.ok) return;
+	assert.equal(fallback.data.source, "ax");
+	assert.equal((fallback.data.partialAx as { status?: string; reason?: string }).status, "degraded");
+	assert.equal((fallback.data.partialAx as { status?: string; reason?: string }).reason, "empty");
+	assert.deepEqual(fallback.entities.map((item) => item.name), ["Save changes"]);
+});
 
 test("temporal classifier prioritizes deterministic state loss and bounds reason output", () => {
 	assert.deepEqual(classifyStateLoss({ extensionUnavailable: true }), {
@@ -458,6 +603,114 @@ test("ABML entity builders handle malformed inputs, fallback roles, refs, and de
 	assert.equal(deduped.length, 2);
 });
 
+test("ABML query priority oracle prefers user-facing semantics over selector-like and generated candidates", () => {
+	const context = { observationId: "obs-query-priority", capturedAt: 2_000, url: "https://example.test/settings", browserSessionId: "session-1", tabId: 3, targetId: "target-1" };
+	const frameworkClass = "css-1abc23 mui-generated hash_9z9z9z";
+	const longPreview = `${"Verbose marketing copy ".repeat(20)}Submit order`;
+	const button = buildDomEntityFromScanActionable({
+		tag: "button",
+		role: "button",
+		selector: `button.${frameworkClass.replace(/\s+/g, ".")}`,
+		action: "button.css-1abc23 > svg > path",
+		label: "Submit order",
+		displayLabel: longPreview,
+		text: "<svg><path d=\"M10 10 L20 20\" /></svg>",
+		backendNodeId: 42,
+		point: { x: 10, y: 20 },
+	}, context);
+	assert.equal(button.entity.role, "button");
+	assert.equal(button.entity.name, "Submit order");
+	assert.deepEqual(button.entity.locators?.filter((locator) => locator.by === "textAnchor"), [{ by: "textAnchor", value: "Submit order", role: "button", exact: false }]);
+	assert.equal(button.entity.locators?.some((locator) => locator.by === "textAnchor" && locator.value === longPreview), false);
+	assert.equal(button.entity.locators?.some((locator) => locator.by === "textAnchor" && String(locator.value).includes("css-1abc23")), false);
+	assert.equal(button.entity.locators?.some((locator) => locator.by === "textAnchor" && String(locator.value).includes("<svg")), false);
+	assert.equal(button.descriptor.semantic.name, "Submit order");
+	assert.equal(JSON.stringify(button.descriptor.semantic).includes("css-1abc23"), false);
+	assert.equal(JSON.stringify(button.descriptor.semantic).includes("Verbose marketing copy"), false);
+	assert.equal(JSON.stringify(button.descriptor.semantic).includes("<svg"), false);
+
+	const labelledList = buildRegionEntityFromListHint({
+		selector: ".css-1abc23.generated-list > li:nth-child(1)",
+		containerLabel: "Invoices",
+		firstItemPreview: "Invoice #1234 Total $99.00 Due tomorrow Owner Finance Department Status Pending Region West",
+	}, context, 0);
+	assert.equal(labelledList.entity.name, "Invoices");
+	assert.equal(labelledList.entity.hints?.containerNameSource, "safe-label");
+	assert.deepEqual(labelledList.entity.locators?.filter((locator) => locator.by === "textAnchor"), [{ by: "textAnchor", value: "Invoice #1234 Total $99.00 Due tomorrow Owner Finance Department Status Pending Region West", role: "list", exact: false }]);
+	assert.equal(labelledList.descriptor.semantic.name, "Invoices");
+
+	assert.equal(sanitizeSemanticText("button.css-1abc23 > svg > path"), undefined);
+	assert.equal(sanitizeSemanticText("<svg><path d=\"M0 0\" /></svg>"), undefined);
+	assert.equal(firstSafeSemanticText(["button.css-1abc23 > svg > path", "<svg><path d=\"M0 0\" /></svg>", "Open settings"]), "Open settings");
+});
+
+test("ABML ref stability oracle ignores runtime locators when concise semantic anchors are available", () => {
+	const base = {
+		kind: "control" as const,
+		owner: { tabId: 3, topLevelOrigin: "https://example.test" },
+		documentEpoch: { url: "https://example.test/settings" },
+		semantic: { role: "button", name: "Submit order" },
+	};
+	const first = stableRefIdForDescriptor({
+		...base,
+		semantic: { role: "button", name: "Submit order", anchor: { scope: "abml-template", confidence: "high", mintingEligible: true, containerRole: "form", containerName: "Checkout", role: "button", kind: "control", normalizedName: "submit order" } },
+		locators: [
+			{ by: "css" as const, value: ".css-1abc23 > button:nth-child(2)" },
+			{ by: "backendNodeId" as const, value: 101 },
+			{ by: "textAnchor" as const, value: "Submit order", role: "button", exact: false },
+		],
+	});
+	const second = stableRefIdForDescriptor({
+		...base,
+		semantic: { role: "button", name: "Submit order", anchor: { scope: "abml-template", confidence: "high", mintingEligible: true, containerRole: "form", containerName: "Checkout", role: "button", kind: "control", normalizedName: "submit order" } },
+		locators: [
+			{ by: "css" as const, value: ".css-9xyz88 > button:nth-child(4)" },
+			{ by: "backendNodeId" as const, value: 202 },
+			{ by: "textAnchor" as const, value: "Submit order", role: "button", exact: false },
+		],
+	});
+	assert.equal(first, second);
+	assert.equal(typeof first, "string");
+	assert.equal(first!.includes("css-"), false);
+	assert.equal(first!.includes("nth-child"), false);
+	assert.equal(first!.includes("101"), false);
+	assert.equal(first!.includes("202"), false);
+
+	const semanticAnchor = {
+		kind: "control" as const,
+		owner: { tabId: 3, topLevelOrigin: "https://example.test" },
+		documentEpoch: { url: "https://example.test/settings" },
+		locators: [
+			{ by: "css" as const, value: ".css-generated-a" },
+			{ by: "backendNodeId" as const, value: 11 },
+		],
+		semantic: {
+			role: "button",
+			name: "Approve",
+			anchor: {
+				scope: "abml-template",
+				confidence: "high",
+				mintingEligible: true,
+				containerRole: "list",
+				containerName: "Invoices",
+				role: "button",
+				kind: "control",
+				normalizedName: "approve",
+			},
+		},
+	};
+	const anchoredFirst = stableRefIdForDescriptor(semanticAnchor);
+	const anchoredSecond = stableRefIdForDescriptor({
+		...semanticAnchor,
+		locators: [
+			{ by: "css" as const, value: ".css-generated-b" },
+			{ by: "backendNodeId" as const, value: 22 },
+		],
+	});
+	assert.equal(anchoredFirst, anchoredSecond);
+	assert.match(anchoredFirst ?? "", /^bp-ref:\/\/control\/[A-Za-z0-9._~:@/-]+$/);
+});
+
 test("ABML AX helpers cover malformed nodes, structure properties, relation anchors, and merge ambiguity", () => {
 	const node = {
 		role: { value: "checkbox" },
@@ -670,14 +923,23 @@ test("scan script builder clamps options and injects scan helper blocks determin
 		assert.match(script, /getAttribute\('aria-labelledby'\)/);
 		assert.match(script, /\[aria-selected="true"\]/);
 		assert.match(script, /computeAccessibleName/);
+		assert.match(script, /getRole/);
 		assert.match(script, /function computedAccessibleName\(el, max = 160\) \{/);
 		assert.match(script, /accessibleNameCount >= ACCESSIBLE_NAME_LIMIT/);
+		assert.match(script, /function roleProviderRole\(el\) \{/);
+		assert.match(script, /LOW_VALUE_PROVIDER_ROLES/);
+		assert.match(script, /function explicitRoleOf\(el\) \{/);
+		assert.match(script, /function legacyRoleOf\(el\) \{/);
+		assert.match(script, /return explicitRoleOf\(el\) \|\| roleProviderRole\(el\) \|\| legacyRoleOf\(el\)/);
 		assert.match(script, /catch \(_\) \{ return ''; \}/);
+		assert.match(script, /catch \(_\) \{ return null; \}/);
 		assert.match(script, /function safeSemanticLabel\(text, max = 160\) \{/);
 		assert.match(script, /moneyTokens >= 2/);
 		assert.match(script, /const computedName = computedAccessibleName\(el, 160\)/);
 		assert.match(script, /const computedName = computedAccessibleName\(el, 120\)/);
 		assert.match(script, /\['button','link','menuitem','tab','checkbox','radio','switch','option'\]\.includes\(role\)/);
+		assert.doesNotMatch(script, /tag === 'A' \|\| tag === 'BUTTON'/);
+		assert.match(script, /tag === 'A' && el\.hasAttribute && el\.hasAttribute\('href'\)/);
 		assert.match(script, /\.sr-only,\.visually-hidden,\.screen-reader-text/);
 		assert.match(script, /const containerLabel = containerLabelOf\(container\)/);
 		assert.match(script, /\.\.\.\(containerLabel \? \{ containerLabel \} : \{\}\)/);
@@ -690,4 +952,53 @@ test("scan script builder clamps options and injects scan helper blocks determin
 		if (original === undefined) delete process.env.BROWSER_PILOT_GROWTH_PROBE_WAIT_MS;
 		else process.env.BROWSER_PILOT_GROWTH_PROBE_WAIT_MS = original;
 	}
+});
+
+function scanRoleOf(provider: unknown): (el: { tagName: string; type?: string; multiple?: boolean; size?: number; attrs?: Record<string, string> }) => string | null {
+	const script = buildScanScript();
+	const start = script.indexOf("  function clean(");
+	const end = script.indexOf("  function actionNameOf(");
+	assert.ok(start >= 0 && end > start);
+	return Function("BrowserPilotDomAccessibilityApi", `${script.slice(start, end)}\nreturn roleOf;`)(provider) as (el: { tagName: string; type?: string; multiple?: boolean; size?: number; attrs?: Record<string, string> }) => string | null;
+}
+
+function roleFixture(tagName: string, attrs: Record<string, string> = {}, extras: Record<string, unknown> = {}): { tagName: string; attrs: Record<string, string>; getAttribute: (name: string) => string | null; hasAttribute: (name: string) => boolean } & Record<string, unknown> {
+	return {
+		tagName,
+		attrs,
+		getAttribute(name: string) { return Object.hasOwn(this.attrs, name) ? this.attrs[name] ?? null : null; },
+		hasAttribute(name: string) { return Object.hasOwn(this.attrs, name); },
+		...extras,
+	};
+}
+
+test("scan role provider covers representative implicit roles without widening no-role anchors", () => {
+	const roleOf = scanRoleOf({ getRole: (el: { attrs?: Record<string, string> }) => el.attrs?.["data-provider-role"] ?? null });
+	assert.equal(roleOf(roleFixture("A", { href: "/docs", "data-provider-role": "link" })), "link");
+	assert.equal(roleOf(roleFixture("A", { "data-provider-role": "generic" })), null);
+	assert.equal(roleOf(roleFixture("INPUT", { "data-provider-role": "searchbox" }, { type: "search" })), "searchbox");
+	assert.equal(roleOf(roleFixture("INPUT", { list: "choices", "data-provider-role": "combobox" }, { type: "text" })), "combobox");
+	assert.equal(roleOf(roleFixture("IMG", { alt: "", "data-provider-role": "presentation" })), null);
+	assert.equal(roleOf(roleFixture("SUMMARY", { "data-provider-role": "button" })), "button");
+	assert.equal(roleOf(roleFixture("NAV", { "data-provider-role": "navigation" })), "navigation");
+	assert.equal(roleOf(roleFixture("MAIN", { "data-provider-role": "main" })), "main");
+	assert.equal(roleOf(roleFixture("SECTION", { "data-provider-role": "region" })), "region");
+	assert.equal(roleOf(roleFixture("FORM", { "data-provider-role": "form" })), "form");
+	assert.equal(roleOf(roleFixture("HEADER", { "data-provider-role": "banner" })), "banner");
+	assert.equal(roleOf(roleFixture("FOOTER", { "data-provider-role": "contentinfo" })), "contentinfo");
+});
+
+test("scan role provider fails closed and preserves legacy role fallback", () => {
+	for (const provider of [null, {}, { getRole: () => { throw new Error("provider unavailable"); } }, { getRole: () => "generic" }]) {
+		const roleOf = scanRoleOf(provider);
+		assert.equal(roleOf(roleFixture("BUTTON")), "button");
+		assert.equal(roleOf(roleFixture("SUMMARY")), "button");
+		assert.equal(roleOf(roleFixture("TEXTAREA")), "textbox");
+		assert.equal(roleOf(roleFixture("INPUT", {}, { type: "checkbox" })), "checkbox");
+		assert.equal(roleOf(roleFixture("INPUT", {}, { type: "search" })), "searchbox");
+		assert.equal(roleOf(roleFixture("INPUT", { list: "choices" }, { type: "email" })), "combobox");
+		assert.equal(roleOf(roleFixture("SELECT", {}, { multiple: false, size: 1 })), "combobox");
+	}
+	const roleOf = scanRoleOf({ getRole: () => "link" });
+	assert.equal(roleOf(roleFixture("DIV", { role: "button link" })), "button");
 });

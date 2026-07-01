@@ -191,6 +191,7 @@ test("command schema characterization: all explicit browser_observe modes are ma
 test("command schema characterization: browser_observe validation separates canonical boundaries from legacy projections", () => {
 	assert.doesNotThrow(() => validateObserveParams("scan", { url: "https://example.test/", diff: true, maxNodes: 50, includeIframes: true, intent: "find checkout", tabId: 7 }));
 	assert.doesNotThrow(() => validateObserveParams("scan", { baselineSnapshotId: "snap-1", baselinePath: "prior.json", actionRef: "bp-ref://button/checkout" }));
+	assert.doesNotThrow(() => validateObserveParams("scan", { content: "readability", params: { readability: true, readabilityMaxInlineChars: 500 } }));
 	assert.doesNotThrow(() => validateObserveParams("content", { mode: "content", modeExplicit: true, selector: "article", includeLinks: false, url: "https://example.test/" }));
 	assert.doesNotThrow(() => validateObserveParams("html", { mode: "html", modeExplicit: true, selector: "main", htmlMode: "outer", params: { selector: "main" } }));
 	assert.doesNotThrow(() => validateObserveParams("text", { mode: "text", modeExplicit: true, fresh: true, maxNodes: 25, includeIframes: false }));
@@ -204,7 +205,8 @@ test("command schema characterization: browser_observe validation separates cano
 	assert.throws(() => validateObserveParams("scan", { selector: "main" }), /mode=scan does not accept selector/);
 	assert.throws(() => validateObserveParams("scan", { includeLinks: true }), /mode=scan does not accept includeLinks/);
 	assert.throws(() => validateObserveParams("scan", { htmlMode: "raw" }), /mode=scan does not accept htmlMode/);
-	assert.throws(() => validateObserveParams("scan", { params: { selector: "main" } }), /mode=scan does not accept params/);
+	assert.throws(() => validateObserveParams("scan", { modeExplicit: true, params: { readability: true } }), /mode=scan does not accept params/);
+	assert.throws(() => validateObserveParams("scan", { modeExplicit: true, content: "readability" }), /mode=scan does not accept readability/);
 	assert.throws(() => validateObserveParams("tabs", { url: "https:\/\/example.test\/" }), /mode=tabs does not accept url/);
 	assert.throws(() => validateObserveParams("content", { diff: true }), /mode=content does not accept diff/);
 });
