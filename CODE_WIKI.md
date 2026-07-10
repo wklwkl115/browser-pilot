@@ -920,7 +920,7 @@ mise run dev-governance
 | `mise run dev` | 常规本地开发门禁。 |
 | `mise run affected` | 基于 changed files 的影响范围验证。 |
 | `mise run verify` | 发布/完成前完整验证门禁。 |
-| `mise run smoke-browser` | 使用隔离 profile 启动本机 Chrome/Edge/Chromium 与 unpacked MV3 extension，验证真实握手、tabs、execute、canonical observe、network capture 和 extension reload/reconnect。 |
+| `mise run smoke-browser` | 使用隔离 profile 启动本机 Chrome/Edge/Chromium 与 unpacked MV3 extension，验证真实握手、tabs、execute、canonical observe、network capture、hook install/collect/uninstall 和 extension reload/reconnect。 |
 | `mise run dev-governance` | 修改治理、脚本、workflow、README 等时使用。 |
 
 `mise run verify` 包含：
@@ -933,6 +933,7 @@ mise run dev-governance
 - protocol drift check；
 - all tests；
 - executed-source coverage gate；
+- exact complexity ratchet（复杂度 >20 的函数只能递减，>150 行函数保持为 0）；
 - full ESLint；
 - build。
 
@@ -952,6 +953,7 @@ npm run cli
 npm run typecheck
 npm run typecheck:tests
 npm run audit:reachability
+npm run audit:complexity
 npm run lint
 ```
 
@@ -965,7 +967,8 @@ npm run lint
 | `npm run cli` | 从源码运行 CLI：`tsx src/apps/cli/bin.ts`。 |
 | `npm run typecheck` | 主 TypeScript 校验，不含 extension 源码。 |
 | `npm run typecheck:tests` | tests TypeScript 校验，覆盖测试 fixture 与其导入契约。 |
-| `npm run lint` | reachability audit + ESLint。 |
+| `npm run audit:complexity` | 核对复杂度与函数长度精确递减预算。 |
+| `npm run lint` | reachability audit + complexity ratchet + ESLint。 |
 
 ### 11.3 从源码运行 CLI
 

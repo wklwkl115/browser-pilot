@@ -53,7 +53,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:tests": "tsc -p tsconfig.tests.json",
     "audit:reachability": "node scripts/audit-reachability.mjs",
-    "lint": "npm run audit:reachability && eslint .",
+    "audit:complexity": "node scripts/audit-complexity.mjs",
+    "lint": "npm run audit:reachability && npm run audit:complexity && eslint .",
     "lint:fix": "eslint . --fix",
     "prepack": "npm run build && node scripts/build-native.mjs --quiet && node scripts/build-bridge.mjs --quiet"
   },

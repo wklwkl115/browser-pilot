@@ -32,7 +32,7 @@ description = "Run executed-source coverage (lines >=70%, branches >=65%, functi
 run = "node scripts/run-coverage.mjs all"
 
 [tasks.smoke-browser]
-description = "Launch a real Chrome/Edge instance with the unpacked extension and verify handshake, tools, network, and reconnect"
+description = "Launch a real Chrome/Edge instance and verify handshake, tools, network, hooks, and reconnect"
 run = "node --import tsx scripts/run-browser-smoke.mjs --quiet"
 
 [tasks.dev]

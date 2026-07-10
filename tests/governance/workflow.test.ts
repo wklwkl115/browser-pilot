@@ -18,6 +18,8 @@ const packageLockPath = path.join(root, "package-lock.json");
 const commandCatalogPath = path.join(root, "src/commands/commandCatalog.ts");
 const nativeCommandSchemaPath = path.join(root, "src/bridge/protocol/native-command.schema.json");
 const coverageScriptPath = path.join(root, "scripts/run-coverage.mjs");
+const complexityScriptPath = path.join(root, "scripts/audit-complexity.mjs");
+const validationScriptPath = path.join(root, "scripts/run-validation.mjs");
 const browserSmokeScriptPath = path.join(root, "scripts/run-browser-smoke.mjs");
 const eslintConfigPath = path.join(root, "eslint.config.js");
 const misePath = path.join(root, "mise.toml");
@@ -97,6 +99,7 @@ test("real browser smoke gate owns live MV3 acceptance and runs in Windows CI", 
 	assert.match(smoke, /browser_execute/);
 	assert.match(smoke, /browser_observe/);
 	assert.match(smoke, /captureReload/);
+	assert.match(smoke, /browser_hook/);
 	assert.match(smoke, /extension reload reconnect/);
 });
 
@@ -105,6 +108,19 @@ test("coverage module loading counts only eligible source files", () => {
 	assert.match(source, /fileURLToPath/);
 	assert.match(source, /eligibleSourceModules\.has\(sourcePath\)/);
 	assert.doesNotMatch(source, /url\.includes\(["']\/src\/["']\)/);
+});
+
+test("verify owns an exact complexity ratchet", () => {
+	const complexity = text(complexityScriptPath);
+	const validation = text(validationScriptPath);
+	const pkg = JSON.parse(text(packagePath)) as { scripts?: Record<string, string> };
+	assert.match(complexity, /expectedComplexFunctions\s*=\s*95/);
+	assert.match(complexity, /expectedLongFunctions\s*=\s*0/);
+	assert.match(complexity, /assertExactBudget/);
+	assert.match(validation, /scripts\/audit-complexity\.mjs/);
+	assert.match(pkg.scripts?.["audit:complexity"] || "", /scripts\/audit-complexity\.mjs/);
+	assert.match(text(governancePath), /complexity ratchet/);
+	assert.match(text(codeWikiPath), /complexity ratchet/);
 });
 
 test("eslint ignores the generated protocol outputs at their canonical paths", () => {

@@ -91,6 +91,10 @@ async function runReachability() {
 	console.log("ok: audit:reachability");
 }
 
+async function runComplexityAudit() {
+	await run("node", ["scripts/audit-complexity.mjs"], "audit:complexity");
+}
+
 async function runBuild() {
 	await run(npmCommand, ["run", "--silent", "build"], "build");
 	console.log("ok: build");
@@ -140,6 +144,7 @@ if (mode === "verify") {
 	const nativeRequiredEnv = { ...process.env, BROWSER_PILOT_NATIVE_KERNELS_REQUIRED: "1" };
 	await Promise.all([runReachability(), runTypecheck(), runTestTypecheck(), runExtensionTypecheck(), runProtocolCheck(), runTests("all", nativeRequiredEnv)]);
 	await runCoverage(nativeRequiredEnv);
+	await runComplexityAudit();
 	await runFullLint();
 	await runBuild();
 	process.exit(0);
