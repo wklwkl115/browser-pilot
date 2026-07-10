@@ -143,6 +143,7 @@ export default tseslint.config(
 	// monolithic control flow cannot silently accumulate again.
 	{
 		files: [
+			"src/apps/cli/flags.ts",
 			"src/apps/daemon/server.ts",
 			"src/bridge/extension/service_worker/runtime.ts",
 			"src/bridge/extension/service_worker/runtimeSupport.ts",

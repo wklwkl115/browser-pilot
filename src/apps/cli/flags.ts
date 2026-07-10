@@ -204,10 +204,34 @@ const ABSENT_FLAG_HINTS: Record<string, string> = {
 	"--selector": "action tools (wait/hook/frame) take selector inside --params, e.g. --action selector --params '{\"selector\":\"#id\"}'",
 };
 
+function unknownFlagError(token: string, specs: FlagSpec[]): string {
+	const flags = specs.map((spec) => spec.flag);
+	const suggestion = suggestFlag(token, flags);
+	const guidance = ABSENT_FLAG_HINTS[token] ? `${ABSENT_FLAG_HINTS[token]}. ` : suggestion ? `did you mean "${suggestion}"? ` : "";
+	return `unknown flag "${token}"; ${guidance}accepted: ${flags.join(", ") || "(none)"}`;
+}
+
+function assignFlagValue(raw: Record<string, unknown>, spec: FlagSpec, value: string, cwd: string): { ok: true } | { ok: false; error: string } {
+	if (spec.kind === "enum" && spec.choices && !spec.choices.includes(value)) return { ok: false, error: `flag "${spec.flag}" must be one of: ${spec.choices.join(", ")}` };
+	if (spec.kind === "json" && spec.valueReferences === false && (value === "-" || value.startsWith("@"))) return { ok: false, error: `flag "${spec.flag}" expects inline JSON; file references are not supported for this flag` };
+	const parsed = parseFlagValue(spec, value, cwd);
+	if (!parsed.ok) return parsed;
+	if (spec.kind !== "array") {
+		raw[spec.name] = parsed.value;
+		return { ok: true };
+	}
+	const array = (raw[spec.name] as unknown[] | undefined) ?? [];
+	const isReference = value === "-" || value.startsWith("@");
+	if (Array.isArray(parsed.value) && isReference) array.push(...parsed.value);
+	else if (spec.split === "comma") array.push(...String(parsed.value).split(",").map((item) => item.trim()).filter(Boolean));
+	else array.push(String(parsed.value));
+	raw[spec.name] = array;
+	return { ok: true };
+}
+
 /** Collect argv into a raw params object (string/bool/array/json), plus CLI globals. */
 export function parseArgs(specs: FlagSpec[], argv: string[], cwd = process.cwd()): ParseOutcome {
-	const byFlag = new Map<string, FlagSpec>();
-	for (const s of specs) byFlag.set(s.flag, s);
+	const byFlag = new Map(specs.map((spec) => [spec.flag, spec]));
 	const raw: Record<string, unknown> = {};
 	const globals: GlobalFlags = { json: false, text: false, help: false };
 	const fail = (error: string): ParseOutcome => ({ ok: false, error, globals: { ...globals } });
@@ -225,39 +249,12 @@ export function parseArgs(specs: FlagSpec[], argv: string[], cwd = process.cwd()
 			if (positive?.kind === "boolean") { raw[positive.name] = false; continue; }
 		}
 		const spec = byFlag.get(token);
-		if (!spec) {
-			const flags = specs.map((s) => s.flag);
-			const suggestion = suggestFlag(token, flags);
-			const hint = ABSENT_FLAG_HINTS[token];
-			const guidance = hint ? `${hint}. ` : suggestion ? `did you mean "${suggestion}"? ` : "";
-			return fail(`unknown flag "${token}"; ${guidance}accepted: ${flags.join(", ") || "(none)"}`);
-		}
+		if (!spec) return fail(unknownFlagError(token, specs));
 		if (spec.kind === "boolean") { raw[spec.name] = inlineValue === undefined ? true : inlineValue !== "false"; continue; }
 		const value = inlineValue !== undefined ? inlineValue : argv[i += 1];
 		if (value === undefined) return fail(`flag "${spec.flag}" needs a value`);
-		if (spec.kind === "enum" && spec.choices && !spec.choices.includes(value)) {
-			return fail(`flag "${spec.flag}" must be one of: ${spec.choices.join(", ")}`);
-		}
-		if (spec.kind === "json" && spec.valueReferences === false && (value === "-" || value.startsWith("@"))) {
-			return fail(`flag "${spec.flag}" expects inline JSON; file references are not supported for this flag`);
-		}
-		if (spec.kind === "array") {
-			const arr = (raw[spec.name] as unknown[] | undefined) ?? [];
-			const parsedValue = parseFlagValue(spec, value, cwd);
-			if (!parsedValue.ok) return fail(parsedValue.error);
-			if (Array.isArray(parsedValue.value) && (value === "-" || value.startsWith("@"))) arr.push(...parsedValue.value);
-			else if (spec.split === "comma") arr.push(...String(parsedValue.value).split(",").map((item) => item.trim()).filter(Boolean));
-			else arr.push(String(parsedValue.value));
-			raw[spec.name] = arr;
-		} else if (spec.kind === "json") {
-			const parsedValue = parseFlagValue(spec, value, cwd);
-			if (!parsedValue.ok) return fail(parsedValue.error);
-			raw[spec.name] = parsedValue.value;
-		} else {
-			const parsedValue = parseFlagValue(spec, value, cwd);
-			if (!parsedValue.ok) return fail(parsedValue.error);
-			raw[spec.name] = parsedValue.value; // string/number/enum — validateCommandArgs coerces below
-		}
+		const assigned = assignFlagValue(raw, spec, value, cwd);
+		if (!assigned.ok) return fail(assigned.error);
 	}
 	return { ok: true, value: { params: raw, globals } };
 }
