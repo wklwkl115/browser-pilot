@@ -188,7 +188,7 @@ async function renameStateFileWithRetry(tempPath: string, finalPath: string): Pr
 	throw lastError;
 }
 
-function isProcessAlive(pid: unknown): boolean {
+function isPidAlive(pid: unknown): boolean {
 	const n = typeof pid === "number" ? pid : typeof pid === "string" ? Number(pid) : Number.NaN;
 	if (!Number.isInteger(n) || n <= 0) return false;
 	try {
@@ -205,7 +205,7 @@ async function isStaleStateLock(lockPath: string): Promise<boolean> {
 		const acquiredAt = Date.parse(String(parsed.acquiredAt || ""));
 		const ageMs = Number.isFinite(acquiredAt) ? Date.now() - acquiredAt : Number.POSITIVE_INFINITY;
 		const pid = Number(parsed.pid);
-		if (Number.isInteger(pid)) return !isProcessAlive(pid) || ageMs > STATE_LOCK_STALE_MS * 20;
+		if (Number.isInteger(pid)) return !isPidAlive(pid) || ageMs > STATE_LOCK_STALE_MS * 20;
 		return ageMs > STATE_LOCK_STALE_MS;
 	} catch {
 		try {
@@ -358,17 +358,6 @@ export async function loadSessionState(sessionId: string, cwd?: string): Promise
 	return await loadSessionStateByPath(sessionStatePath(sessionId, cwd));
 }
 
-function isPidAlive(pid: unknown): boolean {
-	const n = typeof pid === "number" ? pid : typeof pid === "string" ? Number(pid) : Number.NaN;
-	if (!Number.isInteger(n) || n <= 0) return false;
-	try {
-		process.kill(n, 0);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 export async function refreshSessionState(state: CallbackSessionState | undefined): Promise<CallbackSessionState | undefined> {
 	if (!state) return undefined;
 	if (state.listenerActive === true && !isPidAlive(state.workerPid)) {
@@ -434,14 +423,18 @@ export function filterEvents(state: CallbackSessionState, afterSeq: number): Arr
 	return events.filter((event) => Number((event as Record<string, unknown>).seq) > afterSeq) as Array<Record<string, unknown>>;
 }
 
-export async function waitForState(sessionId: string, predicate: (state: CallbackSessionState) => boolean, timeoutMs = 10_000, cwd?: string): Promise<CallbackSessionState> {
+async function waitForStatePath(statePath: string, predicate: (state: CallbackSessionState) => boolean, timeoutMs: number, label: string): Promise<CallbackSessionState> {
 	const started = Date.now();
 	while (Date.now() - started < timeoutMs) {
-		const state = await refreshSessionState(await loadSessionState(sessionId, cwd));
+		const state = await refreshSessionState(await loadSessionStateByPath(statePath));
 		if (state && predicate(state)) return state;
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
-	throw new Error(`browser_callback_oast timed out waiting for session ${sessionId}`);
+	throw new Error(`browser_callback_oast timed out waiting for ${label}`);
+}
+
+export async function waitForState(sessionId: string, predicate: (state: CallbackSessionState) => boolean, timeoutMs = 10_000, cwd?: string): Promise<CallbackSessionState> {
+	return await waitForStatePath(sessionStatePath(sessionId, cwd), predicate, timeoutMs, `session ${sessionId}`);
 }
 
 export async function createCallbackSession(options: NormalizedCallbackSessionOptions) {
@@ -526,7 +519,7 @@ export async function stopSession(state: CallbackSessionState) {
 		}
 	}
 	try {
-		return await waitForState(state.sessionId, (current) => current.listenerActive !== true, 10_000);
+		return await waitForStatePath(state.statePath, (current) => current.listenerActive !== true, 10_000, `session ${state.sessionId}`);
 	} catch {
 		return await updateSessionStateByPath(state.statePath, (current) => ({ ...current, listenerActive: false, ready: false, recovered: true, stoppedAt: new Date().toISOString(), stopReason: current.stopReason || state.stopReason || "stop-timeout" } as CallbackSessionState))
 			?? { ...state, listenerActive: false, ready: false, recovered: true, stoppedAt: new Date().toISOString(), stopReason: state.stopReason || "stop-timeout" } as CallbackSessionState;
