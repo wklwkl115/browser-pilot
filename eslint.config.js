@@ -143,9 +143,11 @@ export default tseslint.config(
 	// monolithic control flow cannot silently accumulate again.
 	{
 		files: [
+			"src/browser-runtime/abml/runtime.ts",
 			"src/bridge/server/BrowserTemporalCoordinator.ts",
 			"src/bridge/extension/service_worker/exec.ts",
 			"src/bridge/extension/service_worker/network.ts",
+			"src/commands/webSecurity/browserNative/sqliProbe.ts",
 			"src/commands/observeCommand.ts",
 			"src/bridge/extension/service_worker/network_events.ts",
 			"src/bridge/extension/service_worker/hook.ts",

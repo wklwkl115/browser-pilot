@@ -265,6 +265,13 @@ function resolveRefDescriptor(ref: RefDescriptor | string): { ok: true; descript
 	return { ok: true, descriptor: resolved.ref.descriptor };
 }
 
+function resolveOptionalRefDescriptor(ref: RefDescriptor | string | undefined): RefDescriptor | undefined {
+	if (!ref) return undefined;
+	const resolved = resolveRefDescriptor(ref);
+	if (!resolved.ok) throw resolved.error;
+	return resolved.descriptor;
+}
+
 function selectorFromRef(descriptor: RefDescriptor): string | undefined {
 	for (const locator of descriptor.locators) if (locator.by === "css" && locator.value.trim()) return locator.value;
 	return undefined;
@@ -375,10 +382,33 @@ function shapeEventStreamEntity(record: Record<string, unknown>, context: Captur
 	return { ...entityNoValue, ref: refId, ...(causalEv.summary ? { value: causalEv.summary } : {}) };
 }
 
+async function readStreamStatus(server: AbmlBrowserRuntimeServer, plane: StreamPlane, target: { browserSessionId?: string; tabId: number }, timeoutMs: number): Promise<{ active: boolean; highWater?: number }> {
+	try {
+		const command = plane === "network" ? "network.status" : "hook.status";
+		const statusRes = await server.sendCommand({ cmd: command }, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
+		const statusData = isRecord(statusRes.data) ? statusRes.data : {};
+		if (plane === "network") return { active: statusData.active !== false, highWater: typeof statusData.lastSeq === "number" ? statusData.lastSeq : undefined };
+		const highWater = typeof statusData.last_seq === "number" ? statusData.last_seq : undefined;
+		return { active: highWater !== undefined, highWater };
+	} catch {
+		return { active: false };
+	}
+}
+
+async function readStreamRecords(server: AbmlBrowserRuntimeServer, plane: StreamPlane, sinceSeq: number, target: { browserSessionId?: string; tabId: number }, timeoutMs: number): Promise<Array<Record<string, unknown>>> {
+	try {
+		const command = plane === "network" ? { cmd: "network.list", sinceSeq, limit: STREAM_NETWORK_LIMIT } : { cmd: "hook.collect", since_seq: sinceSeq, limit: STREAM_EVENT_LIMIT };
+		const listRes = await server.sendCommand(command, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
+		const listData = isRecord(listRes.data) ? listRes.data : {};
+		const records = plane === "network" ? listData.items : listData.events;
+		return Array.isArray(records) ? records.filter(isRecord) : [];
+	} catch {
+		return [];
+	}
+}
+
 async function readStreamPlane(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions, plane: StreamPlane): Promise<{ entities?: Entity[]; data?: Record<string, unknown> }> {
-	const resolved = input.ref ? resolveRefDescriptor(input.ref) : undefined;
-	if (resolved && !resolved.ok) throw resolved.error;
-	const descriptor = resolved && resolved.ok ? resolved.descriptor : undefined;
+	const descriptor = resolveOptionalRefDescriptor(input.ref);
 	const target = currentTarget(server, options, descriptor);
 	if (!target.tabId) throw new BrowserBridgeError("NO_TAB", `No target browser tab is available for ABML ${plane} stream read`, { browserSessionId: target.browserSessionId });
 	const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
@@ -388,23 +418,8 @@ async function readStreamPlane(server: AbmlBrowserRuntimeServer, input: AbmlRead
 	const arming = sinceSeq === undefined;
 	const countKey = plane === "network" ? "requestCount" : "eventCount";
 
-	// Recorder/hook liveness + current high-water. Best-effort: any failure degrades to "inactive".
-	let active: boolean;
-	let highWater: number | undefined;
-	try {
-		const statusRes = await server.sendCommand({ cmd: plane === "network" ? "network.status" : "hook.status" }, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
-		const statusData = isRecord(statusRes.data) ? statusRes.data : {};
-		if (plane === "network") {
-			active = statusData.active !== false;
-			highWater = typeof statusData.lastSeq === "number" ? statusData.lastSeq : undefined;
-		} else {
-			highWater = typeof statusData.last_seq === "number" ? statusData.last_seq : undefined;
-			active = highWater !== undefined;
-		}
-	} catch {
-		active = false;
-	}
-	if (!active) {
+	const status = await readStreamStatus(server, plane, { ...target, tabId: target.tabId }, timeoutMs);
+	if (!status.active) {
 		const reason = plane === "network"
 			? "network recorder not active — start via browser_network start"
 			: "hook session not armed — install via browser_hook installTargets";
@@ -422,25 +437,14 @@ async function readStreamPlane(server: AbmlBrowserRuntimeServer, input: AbmlRead
 
 	// ARM: pin the cursor at the current high-water (no history replay) and hand back the channel ref.
 	if (arming) {
-		const startSeq = highWater ?? 0;
+		const startSeq = status.highWater ?? 0;
 		const captureRef = mintStreamCapture(startSeq, capturedAt, context);
 		return { entities: [], data: { plane, mode: "stream", armed: true, recorderActive: true, sinceSeq: startSeq, cursor: startSeq, captureRef, [countKey]: 0 } };
 	}
 
 	// DRAIN: pull the delta since the cursor, build redacted stream entities, advance the cursor.
 	const since = sinceSeq as number;
-	let records: Array<Record<string, unknown>>;
-	try {
-		const listRes = await server.sendCommand(
-			plane === "network" ? { cmd: "network.list", sinceSeq: since, limit: STREAM_NETWORK_LIMIT } : { cmd: "hook.collect", since_seq: since, limit: STREAM_EVENT_LIMIT },
-			{ browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs },
-		);
-		const listData = isRecord(listRes.data) ? listRes.data : {};
-		const arr = plane === "network" ? listData.items : listData.events;
-		records = Array.isArray(arr) ? arr.filter(isRecord) : [];
-	} catch {
-		records = [];
-	}
+	const records = await readStreamRecords(server, plane, since, { ...target, tabId: target.tabId }, timeoutMs);
 	const delta = records.filter((record) => { const seq = Number(record.seq); return !Number.isFinite(seq) || seq > since; });
 	const newCursor = latestSeq(delta) ?? since;
 	const startedAt = cursor.startedAt ?? capturedAt;
@@ -453,57 +457,68 @@ async function readStreamPlane(server: AbmlBrowserRuntimeServer, input: AbmlRead
 	};
 }
 
-async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions = {}): Promise<AbmlVerbResult> {
-	return await runAbmlRead(input, async () => {
+async function readSpecialStructureRef(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions, descriptor: RefDescriptor | undefined, target: { browserSessionId?: string; tabId: number }): Promise<{ entities?: Entity[]; data?: Record<string, unknown> } | undefined> {
+	if (!descriptor) return undefined;
+	const access = accessForLiveVerb(descriptor, target, true);
+	if (!access.ok) throw access.error;
+	if (descriptor.kind === "region" && isPointOnlyRegionRef(descriptor)) {
+		const inspected = await inspectVisionRegion(server, descriptor, { ...target, timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS });
+		if (!inspected.ok) throw inspected.error;
+		return { entities: [inspected.entity], data: { ...inspected.data, source: "vision-floor", observationId: descriptor.observationId } };
+	}
+	if (descriptor.kind !== "frame") return undefined;
+	const frameRead = await readFrameEntities(server, { ...target, observationId: descriptor.observationId, capturedAt: descriptor.createdAt, depth: input.depth });
+	const frameId = frameLocatorFromRef(descriptor);
+	const entities = frameId ? frameRead.entities.filter((entity) => entity.hints?.frameId === frameId || entity.value === frameId) : frameRead.entities;
+	return { entities, data: { frameTree: frameRead.frameTree, frameCount: frameRead.frames.length, frameId, source: "frame.list", observationId: descriptor.observationId, tabId: target.tabId } };
+}
+
+function materializeStructureRelations(entities: Entity[], axRead: AxReadResult, descriptor: RefDescriptor | undefined) {
+	const paintOrderEntries = axRead.paintOrderEntries ?? [];
+	const anchors = [
+		...axRead.anchors,
+		...deriveStateRelationAnchors(entities),
+		...derivePaintOrderRelationAnchors(entities, paintOrderEntries),
+	];
+	const materialized = anchors.length ? materializeRelationGraph(entities, anchors) : undefined;
+	const relatedEntities = materialized?.entities ?? entities;
+	const filteredEntities = descriptor ? filterEntitiesForRef(relatedEntities, descriptor) : relatedEntities;
+	const relationCount = relatedEntities.reduce((sum, entity) => sum + (entity.relations?.length ?? 0), 0);
+	const paintOrderEvidence = paintOrderEntries.length ? {
+		entryCount: paintOrderEntries.length,
+		ownerBackendNodeIdCount: new Set(paintOrderEntries.map((entry) => entry.backendNodeId)).size,
+		entries: paintOrderEntries,
+	} : undefined;
+	return { entities: filteredEntities, relationCount, relationGraph: materialized?.graph, paintOrderEvidence };
+}
+
+async function resolveBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions) {
 		if (input.plane === "network" || input.plane === "event") return await readStreamPlane(server, input, options, input.plane);
 		if (input.plane && input.plane !== "structure") throw { code: "BACKEND_UNAVAILABLE", message: `ABML read plane is not implemented yet: ${input.plane}`, details: { plane: input.plane } };
-		const resolved = input.ref ? resolveRefDescriptor(input.ref) : undefined;
-		if (resolved && !resolved.ok) throw resolved.error;
-		const descriptor = resolved && resolved.ok ? resolved.descriptor : undefined;
+		const descriptor = resolveOptionalRefDescriptor(input.ref);
 		const target = currentTarget(server, options, descriptor);
 		if (!target.tabId) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available for ABML read", { browserSessionId: target.browserSessionId });
-		if (descriptor) {
-			const access = accessForLiveVerb(descriptor, target, true);
-			if (!access.ok) throw access.error;
-		}
-		if (descriptor?.kind === "region" && isPointOnlyRegionRef(descriptor)) {
-			const inspected = await inspectVisionRegion(server, descriptor, {
-				browserSessionId: target.browserSessionId,
-				tabId: target.tabId,
-				timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
-			});
-			if (!inspected.ok) throw inspected.error;
-			return {
-				entities: [inspected.entity],
-				data: { ...inspected.data, source: "vision-floor", observationId: descriptor.observationId },
-			};
-		}
-		if (descriptor?.kind === "frame") {
-			const frameRead = await readFrameEntities(server, {
-				browserSessionId: target.browserSessionId,
-				tabId: target.tabId,
-				observationId: descriptor.observationId,
-				capturedAt: descriptor.createdAt,
-				depth: input.depth,
-			});
-			const frameId = frameLocatorFromRef(descriptor);
-			const filteredFrames = frameId ? frameRead.entities.filter((entity) => entity.hints?.frameId === frameId || entity.value === frameId) : frameRead.entities;
-			return {
-				entities: filteredFrames,
-				data: { frameTree: frameRead.frameTree, frameCount: frameRead.frames.length, frameId, source: "frame.list", observationId: descriptor.observationId, tabId: target.tabId },
-			};
-		}
+		const special = await readSpecialStructureRef(server, input, options, descriptor, { ...target, tabId: target.tabId });
+		if (special) return special;
+		return await readStandardStructurePlane(server, input, options, descriptor, { ...target, tabId: target.tabId });
+	}
+
+async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions, descriptor: RefDescriptor | undefined, target: { browserSessionId?: string; tabId: number }) {
+		const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
+		const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
+		const descriptorUrl = descriptor?.documentEpoch?.url;
 		const data = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
-			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
+			timeoutMs,
 			name: "abml_read_scan",
 		})).data as Record<string, unknown>;
+		const url = typeof data.url === "string" ? data.url : descriptorUrl;
 		const bridge = server.snapshot({ browserSessionId: target.browserSessionId });
 		const snapshot = server.createObservationSnapshot({
 			browserSessionId: bridge.browserSessionId,
 			tabId: target.tabId,
-			url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
+			url,
 			frameScope: "tab",
 			selectionVersion: bridge.selectionVersion,
 			sourceMode: "scan",
@@ -512,35 +527,34 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 		const entityContext = {
 			browserSessionId: bridge.browserSessionId,
 			tabId: target.tabId,
-			url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
+			url,
 			observationId: snapshot.snapshotId,
 			capturedAt: snapshot.capturedAt,
 		};
 		const partialAxDiagnostics = await readLocalPartialAxDiagnostics(server, descriptor, {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
-			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
+			timeoutMs,
 		}).catch(() => undefined);
-		const axReadPromise = readAxEntities(server, {
+		const axRead = await readAxEntities(server, {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			observationId: snapshot.snapshotId,
-			url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
+			url,
 			capturedAt: snapshot.capturedAt,
-			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
+			timeoutMs,
 			cacheKey: input.axCacheKey,
 		}).catch((): AxReadResult => ({ entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, cacheHit: false, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } }));
-		const axRead = await axReadPromise;
-		const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries || [], {
+		const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries ?? [], {
 			scanCapturedAt: snapshot.capturedAt,
 			scanCapturedAtIso: new Date(snapshot.capturedAt).toISOString(),
 			snapshotStartedAt: axRead.diagnostics?.snapshotStartedAt,
 			snapshotEndedAt: axRead.diagnostics?.snapshotEndedAt,
 		});
 		const summaryData = registerScanEntityRefs(bootstrapped.data, entityContext);
-		const summary = summarizeScanData(summaryData, bridge.tabs || [], {
+		const summary = summarizeScanData(summaryData, bridge.tabs ?? [], {
 			detailLevel: "summary",
-			maxChars: options.maxChars ?? DEFAULT_MAX_CHARS,
+			maxChars,
 			entityContext,
 		});
 		const entities = scanEntitiesForEnvelope(summaryData, { entityContext });
@@ -549,58 +563,41 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 		const mergedEntities = remintSemanticTemplateRefs(mergedEntitiesRaw, {
 			browserSessionId: bridge.browserSessionId,
 			tabId: target.tabId,
-			url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
+			url,
 			observationId: snapshot.snapshotId,
 			capturedAt: snapshot.capturedAt,
 		});
 		const listenerProbe = await annotateListenerHints(server, mergedEntities, {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
-			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
+			timeoutMs,
 		});
 		const entitiesWithListenerHints = listenerProbe.entities;
-		// AX anchors (property/table) + DOM-sourced anchors derived from the merged entities'
-		// own state (currentIn from aria-current, occludes/coveredBy from the hit-test) +
-		// DOMSnapshot paint-order anchors. Materialize to typed bp-ref edges only after the merge
-		// mints final refs, so backendNodeId never leaks into public relation targets.
-		const allAnchors = [
-			...axRead.anchors,
-			...deriveStateRelationAnchors(entitiesWithListenerHints),
-			...derivePaintOrderRelationAnchors(entitiesWithListenerHints, axRead.paintOrderEntries || []),
-		];
-		const relationMaterialization = allAnchors.length ? materializeRelationGraph(entitiesWithListenerHints, allAnchors) : undefined;
-		const relatedEntities = relationMaterialization?.entities ?? entitiesWithListenerHints;
-		const relationGraph = relationMaterialization?.graph;
-		const relationCount = relatedEntities.reduce((sum, entity) => sum + (entity.relations?.length ?? 0), 0);
-		const filtered = descriptor ? filterEntitiesForRef(relatedEntities, descriptor) : relatedEntities;
-		const paintOrderEvidence = axRead.paintOrderEntries?.length
-			? {
-				entryCount: axRead.paintOrderEntries.length,
-				ownerBackendNodeIdCount: new Set(axRead.paintOrderEntries.map((entry) => entry.backendNodeId)).size,
-				entries: axRead.paintOrderEntries,
-			}
-			: undefined;
+		const relations = materializeStructureRelations(entitiesWithListenerHints, axRead, descriptor);
 		return {
-			entities: filtered,
+			entities: relations.entities,
 			data: {
 				summary,
 				snapshotId: snapshot.snapshotId,
 				observationId: snapshot.snapshotId,
 				tabId: target.tabId,
-				url: data?.url,
+				url: data.url,
 				axEntityCount: axRead.entities.length,
 				mergedEntityCount: mergedEntities.length,
-				relationCount,
-				...(relationGraph && relationGraph.edgeCount ? { relationGraph } : {}),
+				relationCount: relations.relationCount,
+				...(relations.relationGraph?.edgeCount ? { relationGraph: relations.relationGraph } : {}),
 				backendNodeIdBootstrap: bootstrapped.stats,
 				listenerOracle: listenerProbe.stats,
 				axDiagnostics: axRead.diagnostics,
 				...(partialAxDiagnostics ? { partialAx: partialAxDiagnostics } : {}),
 				axFusion: fusion?.diagnostics ?? { scanBacked: entities.length, axEnriched: 0, axOnly: 0, degraded: axRead.entities.length > 0, skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, unsafeSemantic: 0 } },
-				...(paintOrderEvidence ? { paintOrderEvidence } : {}),
+				...(relations.paintOrderEvidence ? { paintOrderEvidence: relations.paintOrderEvidence } : {}),
 			},
 		};
-	});
+	}
+
+async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions = {}): Promise<AbmlVerbResult> {
+	return await runAbmlRead(input, async () => await resolveBrowserAbmlRead(server, input, options));
 }
 
 function filterEntitiesForRef(entities: Entity[], descriptor: RefDescriptor): Entity[] {
