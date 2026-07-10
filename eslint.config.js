@@ -162,6 +162,7 @@ export default tseslint.config(
 			"src/commands/webSecurity/browserNative/crawl.ts",
 			"src/commands/webSecurity/browserNative/callbackOast.ts",
 			"src/commands/webSecurity/browserNative/fuzzPaths.ts",
+			"src/commands/webSecurity/browserNative/fuzzVhosts.ts",
 			"src/commands/webSecurity/shared/cookieTokens.ts",
 			"src/commands/webSecurity/shared/railsCookieTokens.ts",
 			"src/commands/webSecurity/shared/template.ts",

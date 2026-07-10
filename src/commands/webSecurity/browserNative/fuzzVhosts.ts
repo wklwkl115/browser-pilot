@@ -3,7 +3,7 @@ import https from "node:https";
 import { Buffer } from "node:buffer";
 import { createCodedError } from "../../../utils/codedError.js";
 import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, responseDistance, responsesDiffer, sameBaselineCluster as sameHttpBaselineCluster } from "../shared/baseline.js";
-import { TEXTUAL_CONTENT_TYPE, assertAllowedTargetUrl, compactStep, cookieProviderResultHeader, normalizeHeaders, normalizeProbeTargets, responseFingerprint, sanitizeFetchHeaders } from "../shared/http.js";
+import { TEXTUAL_CONTENT_TYPE, assertAllowedTargetUrl, compactStep, cookieProviderResultHeader, normalizeHeaders, normalizeProbeTargets, redirectLocation, redirectMethod, responseFingerprint, sanitizeFetchHeaders } from "../shared/http.js";
 import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize.js";
 import type { CookieProvider, FetchStep, HeaderMap, RawFuzzVhostsOptions, WebFetchOptions } from "../shared/types.js";
 
@@ -17,10 +17,6 @@ type VhostResponseFingerprint = ReturnType<typeof responseFingerprint> & {
 	tlsSerialNumber?: string;
 };
 type VhostBaselineFingerprint = VhostResponseFingerprint & { host: string; sniName?: string; clusterKey: string };
-
-function fuzzVhostsInputError(message: string, details: Record<string, unknown> = {}): Error {
-	return createCodedError({ name: "FuzzVhostsInputError", code: "INVALID_RULE", message, details, suppressStack: false });
-}
 
 function isIpLikeHost(hostname: string): boolean {
 	return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) || hostname === "localhost" || hostname.includes(":");
@@ -125,21 +121,6 @@ async function fetchSingleWithHost(request: { url: string; method: string; heade
 	});
 }
 
-function redirectLocation(status: number, headers: HeaderMap, url: string): string | undefined {
-	if (status < 300 || status >= 400) return undefined;
-	const location = headers.location || headers.Location;
-	if (!location) return undefined;
-	try {
-		return new URL(location, url).toString();
-	} catch {
-		return undefined;
-	}
-}
-
-function redirectMethod(method: string, status: number): string {
-	return status === 303 || ((status === 301 || status === 302) && method !== "GET" && method !== "HEAD") ? "GET" : method;
-}
-
 async function fetchWithHostRedirects(request: { url: string; method: string; headers: HeaderMap; body?: string | Buffer }, hostHeader: string, options: WebFetchOptions, sniName?: string) {
 	const followRedirects = options.followRedirects === true;
 	const maxRedirects = positiveInt(options.maxRedirects, followRedirects ? 3 : 0);
@@ -190,7 +171,7 @@ function exactBaselineMatch(left: VhostResponseFingerprint, right: VhostBaseline
 	return !responsesDiffer(left, right) && left.certificateKey === right.certificateKey;
 }
 
-function clusterKeyForBaseline(fingerprint: VhostBaselineFingerprint): string {
+function clusterKeyForBaseline(fingerprint: VhostResponseFingerprint): string {
 	return `${baselineClusterKey(fingerprint)}|${fingerprint.certificateKey}`;
 }
 
@@ -255,6 +236,7 @@ type NormalizedFuzzVhostsOptions = {
 	maxRedirects: number;
 	timeoutMs: number;
 	maxBodyBytes: number;
+	allowPrivateTargets: boolean;
 	bindBrowserSession: boolean;
 	cookieProvider?: CookieProvider;
 	matchStatus: number[];
@@ -263,13 +245,13 @@ type NormalizedFuzzVhostsOptions = {
 	filterBaseline: boolean;
 	baselineStrategy: "exact" | "cluster" | "auto";
 	maxCandidates: number;
-	rateLimitPerSecond: number;
 	delayMs: number;
 };
 
 async function normalizeFuzzVhostsOptions(options: RawFuzzVhostsOptions): Promise<NormalizedFuzzVhostsOptions> {
 	const words = [...stringList(options.words), ...stringList(options.wordlist), ...(await readWordlist(options.wordlistPath))];
 	const followRedirects = options.followRedirects === true;
+	const rateLimitPerSecond = positiveInt(options.rateLimitPerSecond, 0);
 	const rawSniMode = String(options.sniMode || "target").trim().toLowerCase();
 	const sniMode = rawSniMode === "none" || rawSniMode === "host" || rawSniMode === "custom" ? rawSniMode : "target";
 	return {
@@ -288,6 +270,7 @@ async function normalizeFuzzVhostsOptions(options: RawFuzzVhostsOptions): Promis
 		maxRedirects: positiveInt(options.maxRedirects, followRedirects ? 3 : 0),
 		timeoutMs: positiveInt(options.timeoutMs, 15_000),
 		maxBodyBytes: positiveInt(options.maxBodyBytes, 256_000),
+		allowPrivateTargets: options.allowPrivateTargets === true,
 		bindBrowserSession: options.bindBrowserSession === true,
 		cookieProvider: options.cookieProvider,
 		matchStatus: numericList(options.matchStatus),
@@ -296,103 +279,111 @@ async function normalizeFuzzVhostsOptions(options: RawFuzzVhostsOptions): Promis
 		filterBaseline: options.filterBaseline !== false,
 		baselineStrategy: normalizeBaselineStrategy(options.baselineStrategy),
 		maxCandidates: Math.min(5_000, positiveInt(options.maxCandidates, 500)),
-		rateLimitPerSecond: positiveInt(options.rateLimitPerSecond, 0),
-		delayMs: positiveInt(options.rateLimitPerSecond, 0) > 0 ? Math.ceil(1000 / positiveInt(options.rateLimitPerSecond, 0)) : 0,
+		delayMs: rateLimitPerSecond > 0 ? Math.ceil(1000 / rateLimitPerSecond) : 0,
+	};
+}
+
+type FuzzVhostRoot = { baseUrl: string; candidates: string[]; baselineHosts: string[] };
+type FuzzVhostRunState = { baselines: Array<Record<string, unknown>>; baselineFingerprints: VhostBaselineFingerprint[]; results: Array<Record<string, unknown>>; failures: Array<Record<string, unknown>>; sent: number };
+
+function fuzzVhostHardCapWarnings(options: RawFuzzVhostsOptions): string[] {
+	const requestedMaxCandidates = positiveInt(options.maxCandidates, 500);
+	return requestedMaxCandidates > 5_000 ? [`maxCandidates capped from ${requestedMaxCandidates} to 5000 (hard limit)`] : [];
+}
+
+function prepareFuzzVhostRoots(options: NormalizedFuzzVhostsOptions): { roots: FuzzVhostRoot[]; truncatedCandidates: number } {
+	const roots: FuzzVhostRoot[] = [];
+	let truncatedCandidates = 0;
+	for (const baseUrl of options.bases) {
+		const allCandidates = buildVhostCandidates(baseUrl, options);
+		if (!allCandidates.length) throw createCodedError({ name: "FuzzVhostsInputError", code: "INVALID_RULE", message: "browser_fuzz_vhosts requires hosts, words, wordlist, or wordlistPath", details: { field: "hosts|words|wordlist|wordlistPath" }, suppressStack: false });
+		const candidates = allCandidates.slice(0, options.maxCandidates);
+		truncatedCandidates += allCandidates.length - candidates.length;
+		const defaultBaselineHost = `__browser_pilot_vhost_baseline__.${new URL(baseUrl).hostname}`;
+		roots.push({ baseUrl, candidates, baselineHosts: [...new Set([...options.baselineHosts, options.baselineHost || defaultBaselineHost].filter(Boolean))] });
+	}
+	return { roots, truncatedCandidates };
+}
+
+async function fetchFuzzVhost(baseUrl: string, host: string, options: NormalizedFuzzVhostsOptions) {
+	const headers = { ...options.baseHeaders };
+	const cookie = cookieProviderResultHeader(options.bindBrowserSession ? await options.cookieProvider?.(baseUrl) : undefined);
+	if (cookie) headers.Cookie = cookie;
+	const sniName = vhostSniName(baseUrl, host, options);
+	const exchange = await fetchWithHostRedirects({ url: baseUrl, method: options.method, headers: sanitizeFetchHeaders(headers).headers }, host, options, sniName);
+	return { exchange, sniName };
+}
+
+async function collectVhostBaselines(root: FuzzVhostRoot, options: NormalizedFuzzVhostsOptions, state: FuzzVhostRunState): Promise<VhostBaselineFingerprint[]> {
+	const currentBaselines: VhostBaselineFingerprint[] = [];
+	for (const host of root.baselineHosts) {
+		try {
+			const { exchange, sniName } = await fetchFuzzVhost(root.baseUrl, host, options);
+			const final = exchange.final;
+			const fingerprint = vhostResponse(final);
+			const record: VhostBaselineFingerprint = { host, sniName, clusterKey: clusterKeyForBaseline(fingerprint), ...fingerprint };
+			currentBaselines.push(record);
+			state.baselineFingerprints.push(record);
+			state.baselines.push({ baseUrl: root.baseUrl, host, sniName, status: final.status, title: fingerprint.title, bodyBytes: final.bodyBytes, bodySha256: fingerprint.bodySha256, location: fingerprint.location, tlsFingerprint256: fingerprint.tlsFingerprint256, tlsSubjectAltName: fingerprint.tlsSubjectAltName, certificateKey: fingerprint.certificateKey, tlsCertificate: final.tlsCertificate, redirects: exchange.chain.slice(0, -1).map(compactStep) });
+		} catch (error) {
+			state.baselines.push({ baseUrl: root.baseUrl, host, error: error instanceof Error ? error.message : String(error) });
+		}
+	}
+	return currentBaselines;
+}
+
+function projectVhostResult(baseUrl: string, host: string, sniName: string | undefined, exchange: Awaited<ReturnType<typeof fetchWithHostRedirects>>, currentBaselines: VhostBaselineFingerprint[], options: NormalizedFuzzVhostsOptions): Record<string, unknown> {
+	const final = exchange.final;
+	const fingerprint = vhostResponse(final);
+	const nearestBaseline = nearestBaselineByDistance(currentBaselines, fingerprint, vhostDistance);
+	const isExactBaseline = currentBaselines.some((baseline) => exactBaselineMatch(fingerprint, baseline));
+	const baselineClusterMatched = currentBaselines.some((baseline) => sameBaselineCluster(fingerprint, baseline));
+	const similarToBaseline = options.baselineStrategy === "exact" ? isExactBaseline : options.baselineStrategy === "cluster" ? baselineClusterMatched : isExactBaseline || baselineClusterMatched;
+	const differentFromBaseline = currentBaselines.length ? !similarToBaseline : true;
+	return {
+		matched: matchesStatusBodyResult(final.status, final.bodyBytes, options) && (!options.filterBaseline || differentFromBaseline),
+		baseUrl, host, sniName, url: final.url, status: final.status, title: fingerprint.title, bodyBytes: final.bodyBytes, bodySha256: fingerprint.bodySha256, bodyTruncated: final.bodyTruncated, location: fingerprint.location,
+		tlsFingerprint256: fingerprint.tlsFingerprint256, certificateKey: fingerprint.certificateKey, tlsCertificate: final.tlsCertificate,
+		differentFromBaseline, baselineClusterMatched, exactBaselineMatch: isExactBaseline,
+		nearestBaseline: nearestBaseline ? { host: nearestBaseline.baseline.host, sniName: nearestBaseline.baseline.sniName, distance: nearestBaseline.distance, tlsFingerprint256: nearestBaseline.baseline.tlsFingerprint256, certificateKey: nearestBaseline.baseline.certificateKey } : undefined,
+		certificateDelta: nearestBaseline ? { fingerprintChanged: fingerprint.certificateKey !== nearestBaseline.baseline.certificateKey, subjectChanged: fingerprint.tlsSubject !== nearestBaseline.baseline.tlsSubject, subjectAltNameChanged: fingerprint.tlsSubjectAltName !== nearestBaseline.baseline.tlsSubjectAltName, serialNumberChanged: fingerprint.tlsSerialNumber !== nearestBaseline.baseline.tlsSerialNumber } : undefined,
+		delta: nearestBaseline ? { ...responseChangeDelta(nearestBaseline.baseline, fingerprint), certificateChanged: fingerprint.certificateKey !== nearestBaseline.baseline.certificateKey } : undefined,
+		redirects: exchange.chain.slice(0, -1).map(compactStep), body: { text: final.bodyText, base64: final.bodyBase64 },
+	};
+}
+
+async function probeFuzzVhost(root: FuzzVhostRoot, host: string, currentBaselines: VhostBaselineFingerprint[], options: NormalizedFuzzVhostsOptions, state: FuzzVhostRunState, totalCandidates: number): Promise<void> {
+	try {
+		const { exchange, sniName } = await fetchFuzzVhost(root.baseUrl, host, options);
+		state.results.push(projectVhostResult(root.baseUrl, host, sniName, exchange, currentBaselines, options));
+	} catch (error) {
+		state.failures.push({ baseUrl: root.baseUrl, host, error: error instanceof Error ? error.message : String(error) });
+	}
+	state.sent += 1;
+	if (options.delayMs > 0 && state.sent < totalCandidates) await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+}
+
+async function runFuzzVhostRoot(root: FuzzVhostRoot, options: NormalizedFuzzVhostsOptions, state: FuzzVhostRunState, totalCandidates: number): Promise<void> {
+	const currentBaselines = await collectVhostBaselines(root, options, state);
+	for (const host of root.candidates) await probeFuzzVhost(root, host, currentBaselines, options, state, totalCandidates);
+}
+
+function fuzzVhostsResult(options: NormalizedFuzzVhostsOptions, state: FuzzVhostRunState, truncatedCandidates: number, warnings: string[]) {
+	const matched = state.results.filter((item) => item.matched === true);
+	return {
+		ok: state.failures.length === 0, generatedAt: new Date().toISOString(), baseCount: options.bases.length, requestCount: state.sent, matchedCount: matched.length, truncatedCandidates,
+		filterBaseline: options.filterBaseline, baselineStrategy: options.baselineStrategy, sniMode: options.sniMode, matchStatus: options.matchStatus, filterStatus: options.filterStatus, filterBodyBytes: options.filterBodyBytes,
+		baselines: state.baselines, baselineClusters: clusterBaselineFingerprints(state.baselineFingerprints), clusters: clusterVhostResponses(state.results), results: state.results, matched, failures: state.failures,
+		...(warnings.length ? { warnings } : {}),
 	};
 }
 
 export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
-	const hardCapWarnings: string[] = [];
-	const requestedMaxCandidates = positiveInt(options.maxCandidates, 500);
-	if (requestedMaxCandidates > 5_000) hardCapWarnings.push(`maxCandidates capped from ${requestedMaxCandidates} to 5000 (hard limit)`);
+	const warnings = fuzzVhostHardCapWarnings(options);
 	const normalized = await normalizeFuzzVhostsOptions(options);
-	const baselines: Array<Record<string, unknown>> = [];
-	const baselineFingerprints: VhostBaselineFingerprint[] = [];
-	const results: Array<Record<string, unknown>> = [];
-	const failures: Array<Record<string, unknown>> = [];
-	let sent = 0;
-	let truncatedCandidates = 0;
-	for (const base of normalized.bases) {
-		const candidates: string[] = [];
-		let totalCandidates = 0;
-		for (const candidate of buildVhostCandidates(base, normalized)) {
-			totalCandidates += 1;
-			if (candidates.length < normalized.maxCandidates) candidates.push(candidate);
-		}
-		truncatedCandidates += Math.max(0, totalCandidates - candidates.length);
-		if (!candidates.length) throw fuzzVhostsInputError("browser_fuzz_vhosts requires hosts, words, wordlist, or wordlistPath", { field: "hosts|words|wordlist|wordlistPath" });
-		const defaultBaselineHost = `__browser_pilot_vhost_baseline__.${new URL(base).hostname}`;
-		const baselineHosts = [...new Set([...normalized.baselineHosts, normalized.baselineHost || defaultBaselineHost].filter(Boolean))];
-		const currentBaselines: VhostBaselineFingerprint[] = [];
-		for (const baselineHost of baselineHosts) {
-			try {
-				const baselineHeaders = { ...normalized.baseHeaders };
-				const baselineCookie = cookieProviderResultHeader(normalized.bindBrowserSession ? await normalized.cookieProvider?.(base) : undefined);
-				if (baselineCookie) baselineHeaders.Cookie = baselineCookie;
-				const sanitizedBaseline = sanitizeFetchHeaders(baselineHeaders);
-				const sniName = vhostSniName(base, baselineHost, normalized);
-				const baselineExchange = await fetchWithHostRedirects({ url: base, method: normalized.method, headers: sanitizedBaseline.headers }, baselineHost, normalized, sniName);
-				const baselineFinal = baselineExchange.final;
-				const fingerprint = vhostResponse(baselineFinal);
-				const record: VhostBaselineFingerprint = { host: baselineHost, sniName, clusterKey: "", ...fingerprint };
-				record.clusterKey = clusterKeyForBaseline(record);
-				currentBaselines.push(record);
-				baselineFingerprints.push(record);
-				baselines.push({ baseUrl: base, host: baselineHost, sniName, status: baselineFinal.status, title: fingerprint.title, bodyBytes: baselineFinal.bodyBytes, bodySha256: fingerprint.bodySha256, location: fingerprint.location, tlsFingerprint256: fingerprint.tlsFingerprint256, tlsSubjectAltName: fingerprint.tlsSubjectAltName, certificateKey: fingerprint.certificateKey, tlsCertificate: baselineFinal.tlsCertificate, redirects: baselineExchange.chain.slice(0, -1).map(compactStep) });
-			} catch (error) {
-				baselines.push({ baseUrl: base, host: baselineHost, error: error instanceof Error ? error.message : String(error) });
-			}
-		}
-		for (const host of candidates) {
-			try {
-				const headers = { ...normalized.baseHeaders };
-				const cookie = cookieProviderResultHeader(normalized.bindBrowserSession ? await normalized.cookieProvider?.(base) : undefined);
-				if (cookie) headers.Cookie = cookie;
-				const sanitized = sanitizeFetchHeaders(headers);
-				const sniName = vhostSniName(base, host, normalized);
-				const exchange = await fetchWithHostRedirects({ url: base, method: normalized.method, headers: sanitized.headers }, host, normalized, sniName);
-				const final = exchange.final;
-				const fingerprint = vhostResponse(final);
-				const nearestBaseline = nearestBaselineByDistance(currentBaselines, fingerprint, vhostDistance);
-				const isExactBaseline = currentBaselines.some((baseline) => exactBaselineMatch(fingerprint, baseline));
-				const isClusterBaseline = currentBaselines.some((baseline) => sameBaselineCluster(fingerprint, baseline));
-				const similarToBaseline = normalized.baselineStrategy === "exact" ? isExactBaseline : normalized.baselineStrategy === "cluster" ? isClusterBaseline : (isExactBaseline || isClusterBaseline);
-				const differentFromBaseline = currentBaselines.length ? !similarToBaseline : true;
-				const statusBodyMatched = matchesStatusBodyResult(final.status, final.bodyBytes, normalized);
-				const matched = statusBodyMatched && (!normalized.filterBaseline || differentFromBaseline);
-				results.push({
-					matched,
-					baseUrl: base,
-					host,
-					sniName,
-					url: final.url,
-					status: final.status,
-					title: fingerprint.title,
-					bodyBytes: final.bodyBytes,
-					bodySha256: fingerprint.bodySha256,
-					bodyTruncated: final.bodyTruncated,
-					location: fingerprint.location,
-					tlsFingerprint256: fingerprint.tlsFingerprint256,
-					certificateKey: fingerprint.certificateKey,
-					tlsCertificate: final.tlsCertificate,
-					differentFromBaseline,
-					baselineClusterMatched: isClusterBaseline,
-					exactBaselineMatch: isExactBaseline,
-					nearestBaseline: nearestBaseline ? { host: nearestBaseline.baseline.host, sniName: nearestBaseline.baseline.sniName, distance: nearestBaseline.distance, tlsFingerprint256: nearestBaseline.baseline.tlsFingerprint256, certificateKey: nearestBaseline.baseline.certificateKey } : undefined,
-					certificateDelta: nearestBaseline ? { fingerprintChanged: fingerprint.certificateKey !== nearestBaseline.baseline.certificateKey, subjectChanged: fingerprint.tlsSubject !== nearestBaseline.baseline.tlsSubject, subjectAltNameChanged: fingerprint.tlsSubjectAltName !== nearestBaseline.baseline.tlsSubjectAltName, serialNumberChanged: fingerprint.tlsSerialNumber !== nearestBaseline.baseline.tlsSerialNumber } : undefined,
-					delta: nearestBaseline ? { ...responseChangeDelta(nearestBaseline.baseline, fingerprint), certificateChanged: fingerprint.certificateKey !== nearestBaseline.baseline.certificateKey } : undefined,
-					redirects: exchange.chain.slice(0, -1).map(compactStep),
-					body: { text: final.bodyText, base64: final.bodyBase64 },
-				});
-			} catch (error) {
-				failures.push({ baseUrl: base, host, error: error instanceof Error ? error.message : String(error) });
-			}
-			sent += 1;
-			if (normalized.delayMs > 0 && sent < normalized.bases.length * candidates.length) await new Promise((resolve) => setTimeout(resolve, normalized.delayMs));
-		}
-	}
-	const matched = results.filter((item) => item.matched === true);
-	const clusters = clusterVhostResponses(results);
-	const baselineClusters = clusterBaselineFingerprints(baselineFingerprints);
-	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseCount: normalized.bases.length, requestCount: sent, matchedCount: matched.length, truncatedCandidates, filterBaseline: normalized.filterBaseline, baselineStrategy: normalized.baselineStrategy, sniMode: normalized.sniMode, matchStatus: normalized.matchStatus, filterStatus: normalized.filterStatus, filterBodyBytes: normalized.filterBodyBytes, baselines, baselineClusters, clusters, results, matched, failures, ...(hardCapWarnings.length ? { warnings: hardCapWarnings } : {}) };
+	const { roots, truncatedCandidates } = prepareFuzzVhostRoots(normalized);
+	const state: FuzzVhostRunState = { baselines: [], baselineFingerprints: [], results: [], failures: [], sent: 0 };
+	const totalCandidates = roots.reduce((sum, root) => sum + root.candidates.length, 0);
+	for (const root of roots) await runFuzzVhostRoot(root, normalized, state, totalCandidates);
+	return fuzzVhostsResult(normalized, state, truncatedCandidates, warnings);
 }
