@@ -37,6 +37,7 @@ import {
 	PAIRING_TOKEN_HEADER,
 	PAIR_PENDING_TTL_MS,
 	ENV_REQUIRE_PAIRING,
+	type AgentRecord,
 	type PairingSummary,
 } from "./authTypes.js";
 import type { ConsentDecision } from "./authTypes.js";
@@ -77,13 +78,10 @@ type CliInvokeMetadata = {
 
 type JsonSender = (status: number, obj: Record<string, unknown>) => void;
 
-export type InvokePipelineContext = {
+export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName" | "tenantLease" | "usageEnabled"> & {
 	req: http.IncomingMessage;
 	send: JsonSender;
 	body: Record<string, unknown>;
-	toolByName: Map<string, CommandDefinition>;
-	tenantLease: TenantLeaseRegistry;
-	usageEnabled: boolean;
 };
 
 type PreparedInvoke = {
@@ -93,6 +91,24 @@ type PreparedInvoke = {
 	def: CommandDefinition;
 	args: Record<string, unknown>;
 	strippedDeprecatedParams: string[];
+};
+
+type PairResult = { decision: ConsentDecision; token?: string };
+type PairingAuthorization =
+	| { ok: true; record: AgentRecord }
+	| { ok: false; status: number; body: Record<string, unknown> };
+type DaemonControlContext = {
+	token: string;
+	bridgeServer: BrowserBridgeServer;
+	tenantLease: TenantLeaseRegistry;
+	ensureStarted: EnsureStarted;
+	toolByName: Map<string, CommandDefinition>;
+	toolCount: number;
+	usageEnabled: boolean;
+	pendingPairResults: Map<string, Promise<PairResult>>;
+	composeSummaries: () => PairingSummary[];
+	close: () => Promise<void>;
+	onShutdown: StartDaemonOptions["onShutdown"];
 };
 
 let hooksRegistered = false;
@@ -129,19 +145,11 @@ function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 	});
 }
 
-export interface DaemonBridgeStatusPort {
-	readonly running: boolean;
-	readonly port: number;
-	snapshot(): BrowserBridgeSnapshot;
-	getTabs(): BrowserTabInfo[];
-	getLastTabSyncAt(): number | undefined;
-}
-
-function safeTabs(server: DaemonBridgeStatusPort): unknown[] {
+function safely<T>(read: () => T, fallback: T): T {
 	try {
-		return server.getTabs();
+		return read();
 	} catch {
-		return [];
+		return fallback;
 	}
 }
 
@@ -149,15 +157,45 @@ function activeTabFrom(tabs: unknown[]): unknown {
 	return tabs.find((tab) => typeof tab === "object" && tab && (tab as { active?: unknown }).active === true) ?? tabs[0] ?? null;
 }
 
-function bridgeStatusPayload(server: DaemonBridgeStatusPort, toolCount: number, includeTabs: boolean): Record<string, unknown> {
-	const tabs = safeTabs(server);
-	let snapshot;
-	try {
-		snapshot = server.snapshot();
-	} catch {
-		snapshot = undefined;
-	}
+function ageMs(timestamp: unknown, now: number): number | undefined {
+	return typeof timestamp === "number" ? Math.max(0, now - timestamp) : undefined;
+}
+
+function extensionStatusPayload(extension: BrowserBridgeSnapshot["extension"]): Record<string, unknown> | undefined {
+	return extension ? {
+		id: extension.extensionId,
+		name: extension.name,
+		version: extension.version,
+		build: extension.build,
+		extensionStale: extension.extensionStale,
+		expectedBuild: extension.expectedBuild,
+		reportedBuild: extension.reportedBuild,
+		buildManifestPath: extension.buildManifestPath,
+	} : undefined;
+}
+
+function bridgeHealthPayload(snapshot: BrowserBridgeSnapshot | undefined, lastTabSyncAt: number | undefined, now: number): Record<string, unknown> {
 	const extension = snapshot?.extension;
+	return {
+		connectedAt: extension?.connectedAt,
+		lastSeenAt: extension?.lastSeenAt,
+		lastPingAt: extension?.lastPingAt,
+		lastPongAt: extension?.lastPongAt,
+		connectedForMs: ageMs(extension?.connectedAt, now),
+		tabSyncAt: lastTabSyncAt,
+		tabSyncAgeMs: ageMs(lastTabSyncAt, now),
+		connectedClients: snapshot?.connectedClients,
+		lastDisconnectReason: snapshot?.lastDisconnectReason,
+		lastDisconnectAt: snapshot?.lastDisconnectAt,
+		lastDisconnectAgeMs: ageMs(snapshot?.lastDisconnectAt, now),
+		connectionMetrics: snapshot?.connectionMetrics,
+		requestMetrics: snapshot?.requestMetrics,
+	};
+}
+
+function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, includeTabs: boolean): Record<string, unknown> {
+	const tabs: BrowserTabInfo[] = safely(() => server.getTabs(), []);
+	const snapshot = safely<BrowserBridgeSnapshot | undefined>(() => server.snapshot(), undefined);
 	const lastTabSyncAt = server.getLastTabSyncAt();
 	const now = Date.now();
 	const readiness = deriveBridgeReadiness({
@@ -173,49 +211,31 @@ function bridgeStatusPayload(server: DaemonBridgeStatusPort, toolCount: number, 
 		running: server.running,
 		readiness,
 		extensionConnected: snapshot?.extensionConnected === true,
-		extension: extension ? {
-			id: extension.extensionId,
-			name: extension.name,
-			version: extension.version,
-			build: extension.build,
-			extensionStale: extension.extensionStale,
-			expectedBuild: extension.expectedBuild,
-			reportedBuild: extension.reportedBuild,
-			buildManifestPath: extension.buildManifestPath,
-		} : undefined,
+		extension: extensionStatusPayload(snapshot?.extension),
 		tabCount: tabs.length,
 		activeTab: activeTabFrom(tabs),
-		health: {
-			connectedAt: extension?.connectedAt,
-			lastSeenAt: extension?.lastSeenAt,
-			lastPingAt: extension?.lastPingAt,
-			lastPongAt: extension?.lastPongAt,
-			connectedForMs: typeof extension?.connectedAt === "number" ? Math.max(0, now - extension.connectedAt) : undefined,
-			tabSyncAt: lastTabSyncAt,
-			tabSyncAgeMs: typeof lastTabSyncAt === "number" ? Math.max(0, now - lastTabSyncAt) : undefined,
-			connectedClients: snapshot?.connectedClients,
-			lastDisconnectReason: snapshot?.lastDisconnectReason,
-			lastDisconnectAt: snapshot?.lastDisconnectAt,
-			lastDisconnectAgeMs: typeof snapshot?.lastDisconnectAt === "number" ? Math.max(0, now - snapshot.lastDisconnectAt) : undefined,
-			connectionMetrics: snapshot?.connectionMetrics,
-			requestMetrics: snapshot?.requestMetrics,
-		},
+		health: bridgeHealthPayload(snapshot, lastTabSyncAt, now),
 		...(includeTabs ? { tabs } : {}),
 		tools: toolCount,
 	};
 }
 
-function authorizeInvoke(req: http.IncomingMessage, tenantLease: TenantLeaseRegistry): { ok: true } | { ok: false; status: number; body: Record<string, unknown> } {
-	const requirePairing = process.env[ENV_REQUIRE_PAIRING] === "1" || authStore.hasActiveAgents();
-	if (!requirePairing) return { ok: true };
+function authorizePairing(req: http.IncomingMessage): PairingAuthorization {
 	const ptoken = req.headers[PAIRING_TOKEN_HEADER];
 	const rec = authStore.findByToken(typeof ptoken === "string" ? ptoken : undefined);
 	if (!rec) return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid } };
 	if (rec.status === "revoked") return { ok: false, status: 403, body: { ok: false, code: AUTH_ERROR_CODES.pairingRevoked } };
 	if (rec.status !== "active") return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid } };
-	const held = tenantLease.ensureHeld(rec.pairingId, rec.label);
-	if (!held.ok) return { ok: false, status: 409, body: { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: (held as { ok: false; heldBy: unknown }).heldBy } };
-	authStore.touch(rec.pairingId);
+	return { ok: true, record: rec };
+}
+
+function authorizeInvoke(req: http.IncomingMessage, tenantLease: TenantLeaseRegistry): { ok: true } | { ok: false; status: number; body: Record<string, unknown> } {
+	if (process.env[ENV_REQUIRE_PAIRING] !== "1" && !authStore.hasActiveAgents()) return { ok: true };
+	const auth = authorizePairing(req);
+	if (!auth.ok) return auth;
+	const held = tenantLease.ensureHeld(auth.record.pairingId, auth.record.label);
+	if (!held.ok) return { ok: false, status: 409, body: { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: held.heldBy } };
+	authStore.touch(auth.record.pairingId);
 	return { ok: true };
 }
 
@@ -262,6 +282,140 @@ export async function handleInvokeRoute({ req, send, body, toolByName, tenantLea
 	return send(200, await executeInvoke(prepared, usageEnabled));
 }
 
+async function handleConnectRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {
+	const body = await readBody(req);
+	const wait = body.wait === true;
+	const timeoutMs = Math.max(0, Math.min(120_000, Math.floor(Number(body.timeoutMs ?? 0) || 0)));
+	const includeTabs = body.tabs === true;
+	const wasRunning = context.bridgeServer.running;
+	try {
+		await context.ensureStarted();
+	} catch (error) {
+		return send(503, {
+			ok: false,
+			code: "CLI_BRIDGE_START_FAILED",
+			error: error instanceof Error ? error.message : String(error),
+			status: bridgeStatusPayload(context.bridgeServer, context.toolCount, includeTabs),
+		});
+	}
+	if (wait) {
+		await context.bridgeServer.waitForExtensionReady(undefined, timeoutMs);
+		try { context.bridgeServer.broadcastPairedAgents(context.composeSummaries()); } catch { /* best-effort */ }
+	}
+	const status = bridgeStatusPayload(context.bridgeServer, context.toolCount, includeTabs);
+	return send(200, { ok: true, startedBridge: !wasRunning && context.bridgeServer.running, status });
+}
+
+async function handlePairStartRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {
+	const { label } = await readBody(req);
+	if (!context.bridgeServer.hasConsentSurface()) return send(409, { ok: false, code: AUTH_ERROR_CODES.pairNoExtension });
+	authStore.sweepExpiredPending();
+	const { pairingId, code } = authStore.mintPending(String(label ?? "agent"));
+	const result = context.bridgeServer.sendConsentRequest({ pairingId, label: String(label ?? "agent"), code, expiresAt: new Date(Date.now() + PAIR_PENDING_TTL_MS).toISOString(), timeoutMs: PAIR_PENDING_TTL_MS })
+		.then(async (decision: ConsentDecision): Promise<PairResult> => {
+			if (decision !== "approve") {
+				await authStore.deny(pairingId);
+				return { decision };
+			}
+			const approved = await authStore.approve(pairingId);
+			context.bridgeServer.broadcastPairedAgents(context.composeSummaries());
+			return { decision, token: approved?.token };
+		})
+		.catch(async (): Promise<PairResult> => {
+			await authStore.deny(pairingId);
+			return { decision: "timeout" };
+		});
+	context.pendingPairResults.set(pairingId, result);
+	return send(200, { ok: true, pairingId, code });
+}
+
+async function handlePairWaitRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {
+	const { pairingId } = await readBody(req);
+	const key = String(pairingId);
+	const pending = context.pendingPairResults.get(key);
+	if (!pending) return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
+	const result = await pending;
+	context.pendingPairResults.delete(key);
+	if (result.decision === "approve" && result.token) return send(200, { ok: true, token: result.token });
+	if (result.decision === "deny") return send(403, { ok: false, code: AUTH_ERROR_CODES.pairDenied });
+	return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
+}
+
+async function handleLeaseRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {
+	const auth = authorizePairing(req);
+	if (!auth.ok) return send(auth.status, auth.body);
+	const { action, ttlMs } = await readBody(req);
+	if (action === "acquire") {
+		const result = context.tenantLease.acquire(auth.record.pairingId, auth.record.label, typeof ttlMs === "number" ? ttlMs : undefined);
+		return result.ok
+			? send(200, { ok: true, lease: result.lease })
+			: send(409, { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: result.heldBy });
+	}
+	if (action === "release") {
+		context.tenantLease.release(auth.record.pairingId);
+		return send(200, { ok: true });
+	}
+	if (action === "status") {
+		const lease = context.tenantLease.status();
+		return send(200, { ok: true, lease, self: lease?.pairingId === auth.record.pairingId });
+	}
+	return send(400, { ok: false, error: `unknown lease action: ${String(action)}` });
+}
+
+function scheduleShutdown(context: DaemonControlContext): void {
+	setImmediate(() => {
+		let done = false;
+		const finish = () => { if (done) return; done = true; context.onShutdown?.(); };
+		const force = setTimeout(finish, 1_500);
+		force.unref?.();
+		void context.close().then(() => { clearTimeout(force); finish(); }, () => { clearTimeout(force); finish(); });
+	});
+}
+
+async function handleControlRequest(context: DaemonControlContext, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+	const send: JsonSender = (status, obj) => {
+		const body = JSON.stringify(obj);
+		res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
+		res.end(body);
+	};
+	if (req.headers["x-browser-pilot-daemon-token"] !== context.token) return send(401, { ok: false, error: "unauthorized" });
+	const url = new URL(req.url ?? "/", "http://127.0.0.1");
+	try {
+		switch (`${req.method} ${url.pathname}`) {
+			case "GET /status":
+				return send(200, bridgeStatusPayload(context.bridgeServer, context.toolCount, url.searchParams.get("tabs") === "1"));
+			case "POST /shutdown":
+				send(200, { ok: true });
+				scheduleShutdown(context);
+				return;
+			case "POST /connect":
+				return await handleConnectRoute(context, req, send);
+			case "POST /invoke":
+				return await handleInvokeRoute({ req, send, body: await readBody(req), toolByName: context.toolByName, tenantLease: context.tenantLease, usageEnabled: context.usageEnabled });
+			case "POST /pair/start":
+				return await handlePairStartRoute(context, req, send);
+			case "POST /pair/wait":
+				return await handlePairWaitRoute(context, req, send);
+			case "POST /lease":
+				return await handleLeaseRoute(context, req, send);
+			case "POST /revoke": {
+				const { pairingId } = await readBody(req);
+				if (!authStore.revoke(String(pairingId))) return send(404, { ok: false, code: AUTH_ERROR_CODES.pairingNotFound });
+				context.tenantLease.release(String(pairingId));
+				context.bridgeServer.broadcastPairedAgents(context.composeSummaries());
+				return send(200, { ok: true, revoked: pairingId });
+			}
+			case "GET /pairings":
+				authStore.sweepExpiredPending();
+				return send(200, { ok: true, agents: context.composeSummaries() });
+			default:
+				return send(404, { ok: false, error: `not found: ${req.method} ${url.pathname}` });
+		}
+	} catch (error) {
+		return send(500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+	}
+}
+
 /** Construct the daemon, start its control server, and (optionally) write the lockfile. */
 export async function startDaemon(options: StartDaemonOptions = {}): Promise<DaemonHandle> {
 	const writeLock = options.writeLock ?? true;
@@ -283,11 +437,11 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 
 	bridgeServer.onRevokeRequest((pairingId: string) => {
 		authStore.revoke(pairingId);
-		tenantLease.forceRelease(pairingId);
+		tenantLease.release(pairingId);
 		bridgeServer.broadcastPairedAgents(composeSummaries());
 	});
 
-	const pendingPairResults = new Map<string, Promise<{ decision: ConsentDecision; token?: string }>>();
+	const pendingPairResults = new Map<string, Promise<PairResult>>();
 
 	let startPromise: Promise<void> | undefined;
 	const ensureStarted: EnsureStarted = async () => {
@@ -326,146 +480,8 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		if (writeLock) removeLockfile();
 	};
 
-	const server = http.createServer((req, res) => {
-		void handleControlRequest(req, res);
-	});
-
-	async function handleControlRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-		const send = (status: number, obj: Record<string, unknown>): void => {
-			const body = JSON.stringify(obj);
-			res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
-			res.end(body);
-		};
-		// Loopback + token are the only auth — never expose this server off 127.0.0.1.
-		if (req.headers["x-browser-pilot-daemon-token"] !== token) return send(401, { ok: false, error: "unauthorized" });
-		const url = new URL(req.url ?? "/", "http://127.0.0.1");
-		const pathname = url.pathname;
-		try {
-			if (req.method === "GET" && pathname === "/status") {
-				return send(200, bridgeStatusPayload(bridgeServer, toolCount, url.searchParams.get("tabs") === "1"));
-			}
-			if (req.method === "POST" && pathname === "/shutdown") {
-				send(200, { ok: true });
-				setImmediate(() => {
-					// Fire onShutdown (process.exit for the foreground daemon) even if close()
-					// hangs on a slow bridge stop — a wedged close must never keep the daemon alive.
-					let done = false;
-					const finish = () => { if (done) return; done = true; options.onShutdown?.(); };
-					const force = setTimeout(finish, 1_500);
-					force.unref?.();
-					void close().then(() => { clearTimeout(force); finish(); }, () => { clearTimeout(force); finish(); });
-				});
-				return;
-			}
-			if (req.method === "POST" && pathname === "/connect") {
-				const body = await readBody(req);
-				const wait = body.wait === true;
-				const timeoutMs = Math.max(0, Math.min(120_000, Math.floor(Number(body.timeoutMs ?? 0) || 0)));
-				const includeTabs = body.tabs === true;
-				const wasRunning = bridgeServer.running;
-				try {
-					await ensureStarted();
-				} catch (error) {
-					return send(503, {
-						ok: false,
-						code: "CLI_BRIDGE_START_FAILED",
-						error: error instanceof Error ? error.message : String(error),
-						status: bridgeStatusPayload(bridgeServer, toolCount, includeTabs),
-					});
-				}
-				if (wait) {
-					await bridgeServer.waitForExtensionReady(undefined, timeoutMs);
-					// Best-effort: push the current paired-agent list to the freshly-connected extension.
-					try { bridgeServer.broadcastPairedAgents(composeSummaries()); } catch { /* best-effort */ }
-				}
-				const status = bridgeStatusPayload(bridgeServer, toolCount, includeTabs);
-				return send(200, { ok: true, startedBridge: !wasRunning && bridgeServer.running, status });
-			}
-			if (req.method === "POST" && pathname === "/invoke") {
-				const body = await readBody(req);
-				return handleInvokeRoute({ req, send, body, toolByName, tenantLease, usageEnabled });
-			}
-			if (req.method === "POST" && pathname === "/pair/start") {
-					const { label } = await readBody(req);
-					if (!bridgeServer.hasConsentSurface()) {
-						return send(409, { ok: false, code: AUTH_ERROR_CODES.pairNoExtension });
-					}
-					authStore.sweepExpiredPending();
-					const { pairingId, code } = authStore.mintPending(String(label ?? "agent"));
-					const expiresAt = new Date(Date.now() + PAIR_PENDING_TTL_MS).toISOString();
-					const resultP = bridgeServer
-						.sendConsentRequest({ pairingId, label: String(label ?? "agent"), code, expiresAt, timeoutMs: PAIR_PENDING_TTL_MS })
-						.then(async (decision: ConsentDecision) => {
-							if (decision === "approve") {
-								const r = await authStore.approve(pairingId);
-								bridgeServer.broadcastPairedAgents(composeSummaries());
-								return { decision, token: r?.token };
-							}
-							await authStore.deny(pairingId);
-							return { decision };
-						})
-						.catch(async (): Promise<{ decision: ConsentDecision; token?: string }> => {
-							await authStore.deny(pairingId);
-							return { decision: "timeout" as ConsentDecision };
-						});
-					pendingPairResults.set(pairingId, resultP);
-					return send(200, { ok: true, pairingId, code });
-				}
-				if (req.method === "POST" && pathname === "/pair/wait") {
-					const { pairingId } = await readBody(req);
-					const p = pendingPairResults.get(String(pairingId));
-					if (!p) return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
-					const res = await p;
-					pendingPairResults.delete(String(pairingId));
-					if (res.decision === "approve" && res.token) {
-						return send(200, { ok: true, token: res.token });
-					}
-					if (res.decision === "deny") {
-						return send(403, { ok: false, code: AUTH_ERROR_CODES.pairDenied });
-					}
-					return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
-				}
-				if (req.method === "POST" && pathname === "/lease") {
-					const pairingToken = req.headers[PAIRING_TOKEN_HEADER];
-					const rec = authStore.findByToken(typeof pairingToken === "string" ? pairingToken : undefined);
-					if (!rec) return send(401, { ok: false, code: AUTH_ERROR_CODES.pairingInvalid });
-					if (rec.status === "revoked") return send(403, { ok: false, code: AUTH_ERROR_CODES.pairingRevoked });
-					if (rec.status !== "active") return send(401, { ok: false, code: AUTH_ERROR_CODES.pairingInvalid });
-					const { action, ttlMs } = await readBody(req);
-					if (action === "acquire") {
-						const r = tenantLease.acquire(rec.pairingId, rec.label, typeof ttlMs === "number" ? ttlMs : undefined);
-						if (!r.ok) {
-							return send(409, { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: (r as { ok: false; heldBy: unknown }).heldBy });
-						}
-						return send(200, { ok: true, lease: r.lease });
-					}
-					if (action === "release") {
-						tenantLease.release(rec.pairingId);
-						return send(200, { ok: true });
-					}
-					if (action === "status") {
-						const lease = tenantLease.status();
-						return send(200, { ok: true, lease, self: lease?.pairingId === rec.pairingId });
-					}
-					return send(400, { ok: false, error: `unknown lease action: ${String(action)}` });
-				}
-				if (req.method === "POST" && pathname === "/revoke") {
-					const { pairingId } = await readBody(req);
-					const found = authStore.revoke(String(pairingId));
-					if (!found) return send(404, { ok: false, code: AUTH_ERROR_CODES.pairingNotFound });
-					tenantLease.forceRelease(String(pairingId));
-					bridgeServer.broadcastPairedAgents(composeSummaries());
-					return send(200, { ok: true, revoked: pairingId });
-				}
-				if (req.method === "GET" && pathname === "/pairings") {
-					authStore.sweepExpiredPending();
-					return send(200, { ok: true, agents: composeSummaries() });
-				}
-				return send(404, { ok: false, error: `not found: ${req.method} ${pathname}` });
-		} catch (error) {
-			return send(500, { ok: false, error: error instanceof Error ? error.message : String(error) });
-		}
-	}
+	const controlContext: DaemonControlContext = { token, bridgeServer, tenantLease, ensureStarted, toolByName, toolCount, usageEnabled, pendingPairResults, composeSummaries, close, onShutdown: options.onShutdown };
+	const server = http.createServer((req, res) => void handleControlRequest(controlContext, req, res));
 
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);

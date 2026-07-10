@@ -86,25 +86,8 @@ export class TenantLeaseRegistry {
 		return { ok: false, heldBy: result.heldBy };
 	}
 
-	/** Extend the expiry if the caller is the current holder. */
-	refresh(pairingId: string, ttlMs: number = TENANT_LEASE_TTL_MS): void {
-		if (this.current?.pairingId === pairingId) {
-			this.current = {
-				...this.current,
-				expiresAt: new Date(Date.now() + ttlMs).toISOString(),
-			};
-		}
-	}
-
 	/** Release the lease if the caller is the current holder. */
 	release(pairingId: string): void {
-		if (this.current?.pairingId === pairingId) {
-			this.current = null;
-		}
-	}
-
-	/** Force-release the lease if the caller is the current holder (used on revoke). */
-	forceRelease(pairingId: string): void {
 		if (this.current?.pairingId === pairingId) {
 			this.current = null;
 		}

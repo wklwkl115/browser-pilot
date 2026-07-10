@@ -108,6 +108,25 @@ async function startDaemonForRouteTest() {
 	return startDaemon({ writeLock: false, startBridgeEagerly: false });
 }
 
+async function rawControlRequest(handle: Awaited<ReturnType<typeof startDaemonForRouteTest>>, route: string, body: string) {
+	return await new Promise<{ status: number; json: Record<string, unknown> }>((resolve, reject) => {
+		const req = http.request({
+			host: handle.controlHost,
+			port: handle.controlPort,
+			path: route,
+			method: "POST",
+			headers: { "x-browser-pilot-daemon-token": handle.token, "content-type": "application/json" },
+		}, (res) => {
+			let response = "";
+			res.setEncoding("utf8");
+			res.on("data", (chunk: string) => { response += chunk; });
+			res.on("end", () => resolve({ status: res.statusCode ?? 0, json: JSON.parse(response) as Record<string, unknown> }));
+		});
+		req.on("error", reject);
+		req.end(body);
+	});
+}
+
 test.afterEach(() => {
 	authStore.loadStore().agents.splice(0);
 	restoreEnv();
@@ -326,6 +345,63 @@ test("daemon lease route transfers lease after release", async () => {
 		const transferred = await controlRequest(handle, "POST", "/lease", { action: "acquire", ttlMs: 30_000 }, 1_000, { pairingToken: contender.token });
 		assert.equal(transferred.status, 200);
 		assert.equal(((transferred.json?.lease as Record<string, unknown>)?.pairingId), contender.pairingId);
+	} finally {
+		await handle.close();
+	}
+});
+
+test("daemon status, connect, and unknown routes preserve control contracts", async () => {
+	isolateAuthStore();
+	const handle = await startDaemonForRouteTest();
+	try {
+		const unauthorized = await controlRequest({ ...handle, token: "wrong-token" }, "GET", "/status", undefined, 1_000);
+		assert.deepEqual(unauthorized, { status: 401, json: { ok: false, error: "unauthorized" } });
+
+		const initial = await controlRequest(handle, "GET", "/status?tabs=1", undefined, 1_000);
+		assert.equal(initial.status, 200);
+		assert.equal(initial.json?.running, false);
+		assert.deepEqual(initial.json?.tabs, []);
+		const malformed = await rawControlRequest(handle, "/connect", "{");
+		assert.equal(malformed.status, 500);
+		assert.equal(malformed.json.ok, false);
+		assert.equal(typeof malformed.json.error, "string");
+
+		const connected = await controlRequest(handle, "POST", "/connect", { wait: false, tabs: true }, 2_000);
+		assert.equal(connected.status, 200);
+		assert.equal(connected.json?.startedBridge, true);
+		assert.equal((connected.json?.status as Record<string, unknown>)?.running, true);
+
+		const missing = await controlRequest(handle, "GET", "/missing", undefined, 1_000);
+		assert.deepEqual(missing, { status: 404, json: { ok: false, error: "not found: GET /missing" } });
+	} finally {
+		await handle.close();
+	}
+});
+
+test("daemon pairing routes preserve pending, listing, and revoke contracts", async () => {
+	isolateAuthStore();
+	const pair = await activePairing("route-agent");
+	const handle = await startDaemonForRouteTest();
+	try {
+		const unavailable = await controlRequest(handle, "POST", "/pair/start", { label: "new-agent" }, 1_000);
+		assert.equal(unavailable.status, 409);
+		assert.equal(unavailable.json?.code, AUTH_ERROR_CODES.pairNoExtension);
+
+		const pending = await controlRequest(handle, "POST", "/pair/wait", { pairingId: "missing" }, 1_000);
+		assert.equal(pending.status, 408);
+		assert.equal(pending.json?.code, AUTH_ERROR_CODES.pairTimeout);
+
+		const before = await controlRequest(handle, "GET", "/pairings", undefined, 1_000);
+		assert.equal(before.status, 200);
+		assert.deepEqual((before.json?.agents as Array<Record<string, unknown>>).map(({ pairingId, status, leaseHeld }) => ({ pairingId, status, leaseHeld })), [{ pairingId: pair.pairingId, status: "active", leaseHeld: false }]);
+
+		const missing = await controlRequest(handle, "POST", "/revoke", { pairingId: "missing" }, 1_000);
+		assert.equal(missing.status, 404);
+		assert.equal(missing.json?.code, AUTH_ERROR_CODES.pairingNotFound);
+
+		const revoked = await controlRequest(handle, "POST", "/revoke", { pairingId: pair.pairingId }, 1_000);
+		assert.deepEqual(revoked, { status: 200, json: { ok: true, revoked: pair.pairingId } });
+		assert.equal(authStore.listAgents().find((agent) => agent.pairingId === pair.pairingId)?.status, "revoked");
 	} finally {
 		await handle.close();
 	}

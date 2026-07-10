@@ -143,6 +143,7 @@ export default tseslint.config(
 	// monolithic control flow cannot silently accumulate again.
 	{
 		files: [
+			"src/apps/daemon/server.ts",
 			"src/browser-runtime/abml/axRuntime.ts",
 			"src/browser-runtime/abml/runtime.ts",
 			"src/bridge/server/BrowserTabSessionRouter.ts",
