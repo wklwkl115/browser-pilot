@@ -1,8 +1,8 @@
 import { responseReplayDelta } from "../shared/baseline.js";
 import { createCodedError } from "../../../utils/codedError.js";
-import { compactStep, extractTitle, mergeCookieHeaders, redactHeaders, responseBodyHash, responseFingerprint, setCookieHeader } from "../shared/http.js";
+import { compactStep, extractTitle, mergeCookieHeaders, redactHeaders, redirectLocation, responseBodyHash, responseFingerprint, setCookieHeader } from "../shared/http.js";
 import { asString, isRecord, positiveInt, stringList } from "../shared/normalize.js";
-import { applyReplayVariables, buildHarDependencyGraph, buildReplayRequest, cookieHeaderFromSetCookie, extractReplayVariables, normalizeReplayOptions, normalizeReplayVariableScope, replayInputOptions, replaySequenceInputs, replayStepExtractors, sendReplayLikeRequest } from "../shared/replay.js";
+import { applyReplayVariables, buildHarDependencyGraph, buildReplayRequest, cookieHeaderFromSetCookie, extractReplayVariables, normalizeReplayOptions, normalizeReplayVariableScope, replayInputOptions, replaySequenceInputs, replayStepExtractors, replayVariableMap, sendReplayLikeRequest } from "../shared/replay.js";
 import type { FetchStep, ReplayOptions, ReplayRequest } from "../shared/types.js";
 
 function clusterReplayResponses(steps: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
@@ -47,15 +47,7 @@ function replayResponseRecord(final: FetchStep) {
 		status: final.status,
 		statusText: final.statusText,
 		title: extractTitle(final.bodyText),
-		location: (() => {
-			const location = final.headers.location || final.headers.Location;
-			if (!location) return undefined;
-			try {
-				return new URL(location, final.url).toString();
-			} catch {
-				return undefined;
-			}
-		})(),
+		location: redirectLocation(final.status, final.headers, final.url),
 		headers: redactHeaders(final.headers),
 		headerNames: Object.keys(final.headers),
 		body: { bytes: final.bodyBytes, sha256: responseBodyHash(final), truncated: final.bodyTruncated, text: final.bodyText, base64: final.bodyBase64 },
@@ -98,6 +90,19 @@ function normalizeMatrixFileDescriptor(template: Record<string, unknown>, fieldN
 	return { ...template, name: fieldName, content: typeof value === "string" ? value : JSON.stringify(value) };
 }
 
+function multipartMatrixCase(template: Record<string, unknown>, fieldName: string, rawValue: unknown) {
+	const rawFiles = Array.isArray(rawValue) ? rawValue : [rawValue];
+	const files = rawFiles.map((item) => normalizeMatrixFileDescriptor(template, fieldName, item));
+	const filenames = files.map((file) => asString(file.filename)?.trim() || "blob");
+	const contentTypes = [...new Set(files.map((file) => asString(file.contentType)?.trim() || asString(template.contentType)?.trim() || "application/octet-stream"))];
+	const nestedMultipartFileCount = files.filter((file) => /^multipart\//i.test(asString(file.contentType) || "")).length;
+	return {
+		files,
+		info: { fieldName, fileCount: files.length, filenames, contentTypes, nestedMultipartFileCount, kind: nestedMultipartFileCount ? "nested-multipart" : files.length > 1 ? "multi-file" : "single-file" },
+		label: `field=${fieldName} files=${files.length} ${filenames.slice(0, 3).join(",")}`,
+	};
+}
+
 function buildMultipartFileFieldMatrixSequence(options: ReplayOptions) {
 	const multipart = baseMultipartDescriptor(options.multipart);
 	const source = isRecord(options.multipart) && isRecord(options.multipart.multipart) ? options.multipart.multipart : options.multipart;
@@ -116,20 +121,7 @@ function buildMultipartFileFieldMatrixSequence(options: ReplayOptions) {
 	let truncatedCases = 0;
 	outer: for (const fieldName of fieldNames) {
 		for (const rawValue of rawFileValues) {
-			const rawFiles = Array.isArray(rawValue) ? rawValue : [rawValue];
-			const files = rawFiles.map((item) => normalizeMatrixFileDescriptor(template, fieldName, item));
-			const filenames = files.map((file) => asString(file.filename)?.trim() || "blob");
-			const contentTypes = Array.from(new Set(files.map((file) => asString(file.contentType)?.trim() || asString(template.contentType)?.trim() || "application/octet-stream")));
-			const nestedMultipartFileCount = files.filter((file) => /^multipart\//i.test(asString(file.contentType) || "")).length;
-			const caseInfo = {
-				fieldName,
-				fileCount: files.length,
-				filenames,
-				contentTypes,
-				nestedMultipartFileCount,
-				kind: nestedMultipartFileCount ? "nested-multipart" : files.length > 1 ? "multi-file" : "single-file",
-			};
-			const label = `field=${fieldName} files=${files.length} ${filenames.slice(0, 3).join(",")}`;
+			const matrixCase = multipartMatrixCase(template, fieldName, rawValue);
 			const stepInput: Record<string, unknown> = {
 				...options,
 				requests: undefined,
@@ -137,10 +129,10 @@ function buildMultipartFileFieldMatrixSequence(options: ReplayOptions) {
 				har: undefined,
 				harPath: undefined,
 				multipart,
-				mutations: { ...baseMutations, multipart: { ...multipart, files } },
-				multipartMatrixCase: caseInfo,
+				mutations: { ...baseMutations, multipart: { ...multipart, files: matrixCase.files } },
+				multipartMatrixCase: matrixCase.info,
 			};
-			sequence.push({ input: stepInput, source: "multipart-matrix", label });
+			sequence.push({ input: stepInput, source: "multipart-matrix", label: matrixCase.label });
 			if (sequence.length >= maxCases) {
 				truncatedCases = Math.max(0, fieldNames.length * rawFileValues.length - sequence.length);
 				break outer;
@@ -159,66 +151,68 @@ function buildMultipartFileFieldMatrixSequence(options: ReplayOptions) {
 	};
 }
 
-async function executeReplaySequence(sequence: Array<{ input: unknown; source: string; label?: string }>, options: ReplayOptions, normalized: ReturnType<typeof normalizeReplayOptions>, extra: { mode?: string; multipartMatrix?: Record<string, unknown> } = {}) {
-	const steps: Array<Record<string, unknown>> = [];
-	const failures: Array<Record<string, unknown>> = [];
-	const dependencyGraph = buildHarDependencyGraph(sequence, { baseUrl: options.baseUrl, defaultScheme: options.defaultScheme });
-	let sequenceCookieHeader: string | undefined;
-	let sequenceVariables = { ...normalized.variables };
-	for (let i = 0; i < sequence.length; i += 1) {
-		const item = sequence[i];
-		const stepOptions = replayInputOptions(item.input, options);
-		const stepVariableOverrides = isRecord(item.input) ? Object.fromEntries(Object.entries(item.input.variables || {}).map(([k, v]) => [k, typeof v === "string" ? v : asString(v) ?? JSON.stringify(v)])) : {};
-		const stepVariables = { ...sequenceVariables, ...stepVariableOverrides };
-		const stepVariableScope = normalizeReplayVariableScope(isRecord(item.input) ? item.input.variableScope ?? item.input.captureScope : undefined, normalized.variableScope);
-		const interpolatedStepOptions = applyReplayVariables(stepOptions, stepVariables) as ReplayOptions;
-		const stepNormalized = normalizeReplayOptions(interpolatedStepOptions);
-		try {
-			const request = buildReplayRequest(interpolatedStepOptions);
-			if (stepNormalized.sequenceCookies && sequenceCookieHeader) setCookieHeader(request.headers, mergeCookieHeaders(request.headers.Cookie ?? request.headers.cookie, sequenceCookieHeader));
-			let baseline: Record<string, unknown> | undefined;
-			let baselineFinal: FetchStep | undefined;
-			if (stepNormalized.compareBaseline) {
-				const baselineRequest = buildReplayRequest({ ...interpolatedStepOptions, mutations: undefined });
-				if (stepNormalized.sequenceCookies && sequenceCookieHeader) setCookieHeader(baselineRequest.headers, mergeCookieHeaders(baselineRequest.headers.Cookie ?? baselineRequest.headers.cookie, sequenceCookieHeader));
-				const baselineExecuted = await executeReplayRequest(baselineRequest, stepNormalized);
-				baselineFinal = baselineExecuted.final;
-				baseline = { request: baselineExecuted.request, response: baselineExecuted.response, redirects: baselineExecuted.redirects };
-			}
-			const executed = await executeReplayRequest(request, stepNormalized);
-			const capturedVariables = extractReplayVariables(replayStepExtractors(item.input), executed.final);
-			const persistedVariableNames = stepVariableScope === "sequence" ? Object.keys(capturedVariables) : [];
-			if (persistedVariableNames.length) sequenceVariables = { ...sequenceVariables, ...capturedVariables };
-			const setCookie = stepNormalized.sequenceCookies ? cookieHeaderFromSetCookie(executed.final.setCookie) : undefined;
-			if (setCookie) sequenceCookieHeader = mergeCookieHeaders(sequenceCookieHeader, setCookie);
-			steps.push({ index: i, source: item.source, label: item.label, ok: executed.ok, request: executed.request, response: executed.response, redirects: executed.redirects, baseline, delta: baselineFinal ? replayDeltaRecord(baselineFinal, executed.final) : undefined, variableScope: stepVariableScope, usedVariableNames: Object.keys(stepVariables), capturedVariableNames: Object.keys(capturedVariables), persistedVariableNames, capturedVariables, multipartMatrixCase: isRecord(item.input) ? item.input.multipartMatrixCase : undefined });
-		} catch (error) {
-			const failure = { index: i, source: item.source, label: item.label, variableScope: stepVariableScope, multipartMatrixCase: isRecord(item.input) ? item.input.multipartMatrixCase : undefined, error: error instanceof Error ? error.message : String(error) };
-			failures.push(failure);
-			steps.push({ ...failure, ok: false });
-			if (stepNormalized.continueOnError !== true) break;
-		}
+type ReplaySequenceItem = { input: unknown; source: string; label?: string };
+type ReplaySequenceState = { steps: Array<Record<string, unknown>>; failures: Array<Record<string, unknown>>; variables: Record<string, string>; cookieHeader?: string };
+
+function applySequenceCookie(request: ReplayRequest, options: ReturnType<typeof normalizeReplayOptions>, cookieHeader?: string): void {
+	if (options.sequenceCookies && cookieHeader) setCookieHeader(request.headers, mergeCookieHeaders(request.headers.Cookie ?? request.headers.cookie, cookieHeader));
+}
+
+function replayBaselineRecord(executed: Awaited<ReturnType<typeof executeReplayRequest>>) {
+	return { request: executed.request, response: executed.response, redirects: executed.redirects };
+}
+
+async function executeReplayComparison(options: ReplayOptions, normalized: ReturnType<typeof normalizeReplayOptions>, sequenceCookieHeader?: string) {
+	const request = buildReplayRequest(options);
+	applySequenceCookie(request, normalized, sequenceCookieHeader);
+	const baselineExecuted = normalized.compareBaseline ? await executeReplayRequest(buildReplayBaselineRequest(options, normalized, sequenceCookieHeader), normalized) : undefined;
+	const executed = await executeReplayRequest(request, normalized);
+	return { executed, baseline: baselineExecuted ? replayBaselineRecord(baselineExecuted) : undefined, delta: baselineExecuted ? replayDeltaRecord(baselineExecuted.final, executed.final) : undefined };
+}
+
+function buildReplayBaselineRequest(options: ReplayOptions, normalized: ReturnType<typeof normalizeReplayOptions>, sequenceCookieHeader?: string): ReplayRequest {
+	const request = buildReplayRequest({ ...options, mutations: undefined });
+	applySequenceCookie(request, normalized, sequenceCookieHeader);
+	return request;
+}
+
+function prepareReplaySequenceStep(item: ReplaySequenceItem, parentOptions: ReplayOptions, parentNormalized: ReturnType<typeof normalizeReplayOptions>, state: ReplaySequenceState) {
+	const input = isRecord(item.input) ? item.input : undefined;
+	const variables = { ...state.variables, ...replayVariableMap(input?.variables) };
+	const variableScope = normalizeReplayVariableScope(input?.variableScope ?? input?.captureScope, parentNormalized.variableScope);
+	const options = applyReplayVariables(replayInputOptions(item.input, parentOptions), variables) as ReplayOptions;
+	return { input, variables, variableScope, options, normalized: normalizeReplayOptions(options) };
+}
+
+async function executeReplaySequenceStep(index: number, item: ReplaySequenceItem, parentOptions: ReplayOptions, parentNormalized: ReturnType<typeof normalizeReplayOptions>, state: ReplaySequenceState): Promise<boolean> {
+	const step = prepareReplaySequenceStep(item, parentOptions, parentNormalized, state);
+	try {
+		const comparison = await executeReplayComparison(step.options, step.normalized, state.cookieHeader);
+		const capturedVariables = extractReplayVariables(replayStepExtractors(item.input), comparison.executed.final);
+		const persistedVariableNames = step.variableScope === "sequence" ? Object.keys(capturedVariables) : [];
+		if (persistedVariableNames.length) state.variables = { ...state.variables, ...capturedVariables };
+		const setCookie = step.normalized.sequenceCookies ? cookieHeaderFromSetCookie(comparison.executed.final.setCookie) : undefined;
+		if (setCookie) state.cookieHeader = mergeCookieHeaders(state.cookieHeader, setCookie);
+		state.steps.push({ index, source: item.source, label: item.label, ok: comparison.executed.ok, request: comparison.executed.request, response: comparison.executed.response, redirects: comparison.executed.redirects, baseline: comparison.baseline, delta: comparison.delta, variableScope: step.variableScope, usedVariableNames: Object.keys(step.variables), capturedVariableNames: Object.keys(capturedVariables), persistedVariableNames, capturedVariables, multipartMatrixCase: step.input?.multipartMatrixCase });
+		return true;
+	} catch (error) {
+		const failure = { index, source: item.source, label: item.label, variableScope: step.variableScope, multipartMatrixCase: step.input?.multipartMatrixCase, error: error instanceof Error ? error.message : String(error) };
+		state.failures.push(failure);
+		state.steps.push({ ...failure, ok: false });
+		return step.normalized.continueOnError;
 	}
-	const last = [...steps].reverse().find((step) => isRecord(step.response));
-	const clusters = clusterReplayResponses(steps);
+}
+
+async function executeReplaySequence(sequence: ReplaySequenceItem[], options: ReplayOptions, normalized: ReturnType<typeof normalizeReplayOptions>, extra: { mode?: string; multipartMatrix?: Record<string, unknown> } = {}) {
+	const dependencyGraph = buildHarDependencyGraph(sequence, { baseUrl: options.baseUrl, defaultScheme: options.defaultScheme });
+	const state: ReplaySequenceState = { steps: [], failures: [], variables: { ...normalized.variables } };
+	for (let index = 0; index < sequence.length; index += 1) if (!await executeReplaySequenceStep(index, sequence[index], options, normalized, state)) break;
+	const last = [...state.steps].reverse().find((step) => isRecord(step.response));
 	return {
-		ok: failures.length === 0 && steps.every((step) => step.ok !== false),
-		generatedAt: new Date().toISOString(),
-		mode: extra.mode || "sequence",
-		stepCount: steps.length,
-		failureCount: failures.length,
-		sequenceCookies: normalized.sequenceCookies,
-		variableScope: normalized.variableScope,
-		variableNames: Object.keys(sequenceVariables),
-		variables: sequenceVariables,
-		request: isRecord(last) ? last.request : undefined,
-		response: isRecord(last) ? last.response : undefined,
-		redirects: isRecord(last) && Array.isArray(last.redirects) ? last.redirects : [],
-		dependencyGraph,
-		multipartMatrix: extra.multipartMatrix,
-		clusters,
-		steps,
-		failures,
+		ok: state.failures.length === 0 && state.steps.every((step) => step.ok !== false), generatedAt: new Date().toISOString(), mode: (extra.mode || "sequence") as "sequence" | "multipart-matrix", stepCount: state.steps.length, failureCount: state.failures.length,
+		sequenceCookies: normalized.sequenceCookies, variableScope: normalized.variableScope, variableNames: Object.keys(state.variables), variables: state.variables,
+		request: isRecord(last) ? last.request : undefined, response: isRecord(last) ? last.response : undefined, redirects: isRecord(last) && Array.isArray(last.redirects) ? last.redirects : [],
+		dependencyGraph, multipartMatrix: extra.multipartMatrix, clusters: clusterReplayResponses(state.steps), steps: state.steps, failures: state.failures,
 	};
 }
 
@@ -233,15 +227,6 @@ export async function runHttpReplay(options: ReplayOptions) {
 	if (sequence.length) return executeReplaySequence(sequence, options, normalized, { mode: multipartMatrix ? "multipart-matrix" : "sequence", multipartMatrix: multipartMatrix?.info });
 	const interpolatedOptions = applyReplayVariables(options, normalized.variables) as ReplayOptions;
 	const singleNormalized = normalizeReplayOptions(interpolatedOptions);
-	const request = buildReplayRequest(interpolatedOptions);
-	let baseline: Record<string, unknown> | undefined;
-	let baselineFinal: FetchStep | undefined;
-	if (singleNormalized.compareBaseline) {
-		const baselineRequest = buildReplayRequest({ ...interpolatedOptions, mutations: undefined });
-		const baselineExecuted = await executeReplayRequest(baselineRequest, singleNormalized);
-		baselineFinal = baselineExecuted.final;
-		baseline = { request: baselineExecuted.request, response: baselineExecuted.response, redirects: baselineExecuted.redirects };
-	}
-	const executed = await executeReplayRequest(request, singleNormalized);
-	return { ok: executed.ok, generatedAt: new Date().toISOString(), mode: "single", variableScope: normalized.variableScope, variableNames: Object.keys(normalized.variables), variables: normalized.variables, request: executed.request, response: executed.response, redirects: executed.redirects, baseline, delta: baselineFinal ? replayDeltaRecord(baselineFinal, executed.final) : undefined };
+	const comparison = await executeReplayComparison(interpolatedOptions, singleNormalized);
+	return { ok: comparison.executed.ok, generatedAt: new Date().toISOString(), mode: "single" as const, variableScope: normalized.variableScope, variableNames: Object.keys(normalized.variables), variables: normalized.variables, request: comparison.executed.request, response: comparison.executed.response, redirects: comparison.executed.redirects, baseline: comparison.baseline, delta: comparison.delta };
 }
