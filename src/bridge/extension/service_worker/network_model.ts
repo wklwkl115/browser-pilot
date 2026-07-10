@@ -94,6 +94,11 @@ function truncateBase64Body(body: unknown, maxBytes: unknown): { value: string; 
     return { value:text.slice(0, chars), truncated:true, originalLength, bytes:Math.floor(chars * 3 / 4) };
   }
 }
+function networkRecordFilterView(rec: NetworkRecord) {
+  const request = asRecord(rec.request);
+  const response = asRecord(rec.response);
+  return { url:String(request.url || rec.url || ''), type:String(rec.type || rec.resourceType || '').toLowerCase(), method:String(request.method || rec.method || 'GET').toUpperCase(), status:Number(response.status ?? rec.status) };
+}
 function makeNetworkRecorderFilter(config: NetworkRecorderConfig): NetworkRecorderConfig["filter"] {
   const includeUrls = Array.isArray(config.includeUrls) ? config.includeUrls.map(String) : [];
   const excludeUrls = Array.isArray(config.excludeUrls) ? config.excludeUrls.map(String) : [];
@@ -102,16 +107,13 @@ function makeNetworkRecorderFilter(config: NetworkRecorderConfig): NetworkRecord
   const methods = new Set((Array.isArray(config.methods) ? config.methods : []).map(x => String(x).toUpperCase()));
   const statuses = new Set((Array.isArray(config.statuses) ? config.statuses : []).map(x => Number(x)).filter(Number.isFinite));
   return function networkRecorderFilter(rec: NetworkRecord, phase: string): NetworkFilterDecision {
-    const url = rec?.request?.url || rec?.url || '';
-    const type = String(rec?.type || rec?.resourceType || '').toLowerCase();
-    const method = String(rec?.request?.method || rec?.method || 'GET').toUpperCase();
-    const status = Number(rec?.response?.status ?? rec?.status);
-    if (includeUrls.length && !includeUrls.some(p => matchNetworkPattern(url, p))) return { match:false, reason:'include_url' };
-    if (excludeUrls.length && excludeUrls.some(p => matchNetworkPattern(url, p))) return { match:false, reason:'exclude_url' };
-    if (resourceTypes.size && !allResourceTypes && !resourceTypes.has(type)) return { match:false, reason:'resource_type' };
-    if (methods.size && !methods.has(method)) return { match:false, reason:'method' };
-    if (phase === 'body' || Number.isFinite(status)) {
-      if (statuses.size && !statuses.has(status)) return { match:false, reason:'status' };
+    const view = networkRecordFilterView(rec);
+    if (includeUrls.length && !includeUrls.some(p => matchNetworkPattern(view.url, p))) return { match:false, reason:'include_url' };
+    if (excludeUrls.length && excludeUrls.some(p => matchNetworkPattern(view.url, p))) return { match:false, reason:'exclude_url' };
+    if (resourceTypes.size && !allResourceTypes && !resourceTypes.has(view.type)) return { match:false, reason:'resource_type' };
+    if (methods.size && !methods.has(view.method)) return { match:false, reason:'method' };
+    if (phase === 'body' || Number.isFinite(view.status)) {
+      if (statuses.size && !statuses.has(view.status)) return { match:false, reason:'status' };
     }
     return { match:true, reason:'matched' };
   };
@@ -158,36 +160,41 @@ function setNetworkBodyAvailability(rec: NetworkRecord | null | undefined, avail
   rec.bodyUnavailableReason = reason || null;
   if (extra && typeof extra === 'object') Object.assign(rec, extra);
 }
+function networkConfigValue(msg: BrowserPilotBridgeCommand | JsonRecord, ...names: string[]): unknown {
+  for (const name of names) if (msg[name] !== undefined && msg[name] !== null) return msg[name];
+  return undefined;
+}
+function networkConfigArray(msg: BrowserPilotBridgeCommand | JsonRecord, ...names: string[]): NetworkStringList {
+  for (const name of names) if (Array.isArray(msg[name])) return msg[name];
+  return [];
+}
+function networkConfigEnabled(msg: BrowserPilotBridgeCommand | JsonRecord, ...names: string[]): boolean { return names.every(name => msg[name] !== false); }
 function normalizeNetworkRecorderConfig(msg: BrowserPilotBridgeCommand | JsonRecord = {}): NetworkRecorderConfig {
   msg = msg || {};
-  const pickArr = (...names: string[]): NetworkStringList => {
-    for (const name of names) if (Array.isArray(msg[name])) return msg[name];
-    return [];
-  };
   const sessionId = defaultNetworkSessionId(msg);
-  const maxEntries = numberInRange(msg.maxEntries ?? msg.max_entries, BROWSER_PILOT_NETWORK_DEFAULT_MAX_ENTRIES, 1, 20000);
-  const maxAgeMs = numberInRange(msg.maxAgeMs ?? msg.max_age_ms, BROWSER_PILOT_NETWORK_DEFAULT_MAX_AGE_MS, 0, 24 * 60 * 60 * 1000);
-  const maxBodyBytes = numberInRange(msg.maxBodyBytes ?? msg.max_body_bytes, BROWSER_PILOT_NETWORK_DEFAULT_MAX_BODY_BYTES, 0, 10 * 1024 * 1024);
-  const maxPostDataBytes = numberInRange(msg.maxPostDataBytes ?? msg.max_post_data_bytes, Math.min(maxBodyBytes, 65536), 0, 1024 * 1024);
-  const maxFrames = numberInRange(msg.maxFrames ?? msg.max_frames ?? msg.maxWebSocketFrames ?? msg.max_websocket_frames, BROWSER_PILOT_NETWORK_MAX_WS_FRAMES, 0, 5000);
-  const maxFrameBytes = numberInRange(msg.maxFrameBytes ?? msg.max_frame_bytes ?? msg.maxWebSocketFrameBytes ?? msg.max_websocket_frame_bytes, 65536, 0, 1024 * 1024);
-  const maxSseEvents = numberInRange(msg.maxSseEvents ?? msg.max_sse_events, BROWSER_PILOT_NETWORK_MAX_SSE_EVENTS, 0, 5000);
-  const captureBodies = msg.captureBodies !== false && msg.capture_bodies !== false;
-  const captureRequestPostData = msg.captureRequestPostData !== false && msg.capture_request_post_data !== false;
-  const includeWebSocketFrames = msg.includeWebSocketFrames !== false && msg.include_websocket_frames !== false;
-  const includeSse = msg.includeSse !== false && msg.include_sse !== false;
-  const bodyTimeoutMs = numberInRange(msg.bodyTimeoutMs ?? msg.body_timeout_ms, 3000, 100, 30000);
-  const rawResourceTypes = pickArr('resourceTypes', 'resource_types');
+  const maxEntries = numberInRange(networkConfigValue(msg, 'maxEntries', 'max_entries'), BROWSER_PILOT_NETWORK_DEFAULT_MAX_ENTRIES, 1, 20000);
+  const maxAgeMs = numberInRange(networkConfigValue(msg, 'maxAgeMs', 'max_age_ms'), BROWSER_PILOT_NETWORK_DEFAULT_MAX_AGE_MS, 0, 24 * 60 * 60 * 1000);
+  const maxBodyBytes = numberInRange(networkConfigValue(msg, 'maxBodyBytes', 'max_body_bytes'), BROWSER_PILOT_NETWORK_DEFAULT_MAX_BODY_BYTES, 0, 10 * 1024 * 1024);
+  const maxPostDataBytes = numberInRange(networkConfigValue(msg, 'maxPostDataBytes', 'max_post_data_bytes'), Math.min(maxBodyBytes, 65536), 0, 1024 * 1024);
+  const maxFrames = numberInRange(networkConfigValue(msg, 'maxFrames', 'max_frames', 'maxWebSocketFrames', 'max_websocket_frames'), BROWSER_PILOT_NETWORK_MAX_WS_FRAMES, 0, 5000);
+  const maxFrameBytes = numberInRange(networkConfigValue(msg, 'maxFrameBytes', 'max_frame_bytes', 'maxWebSocketFrameBytes', 'max_websocket_frame_bytes'), 65536, 0, 1024 * 1024);
+  const maxSseEvents = numberInRange(networkConfigValue(msg, 'maxSseEvents', 'max_sse_events'), BROWSER_PILOT_NETWORK_MAX_SSE_EVENTS, 0, 5000);
+  const captureBodies = networkConfigEnabled(msg, 'captureBodies', 'capture_bodies');
+  const captureRequestPostData = networkConfigEnabled(msg, 'captureRequestPostData', 'capture_request_post_data');
+  const includeWebSocketFrames = networkConfigEnabled(msg, 'includeWebSocketFrames', 'include_websocket_frames');
+  const includeSse = networkConfigEnabled(msg, 'includeSse', 'include_sse');
+  const bodyTimeoutMs = numberInRange(networkConfigValue(msg, 'bodyTimeoutMs', 'body_timeout_ms'), 3000, 100, 30000);
+  const rawResourceTypes = networkConfigArray(msg, 'resourceTypes', 'resource_types');
   const resourceTypes = rawResourceTypes.length ? rawResourceTypes : (captureBodies ? BROWSER_PILOT_NETWORK_DEFAULT_BODY_RESOURCE_TYPES : []);
   const config: NetworkRecorderConfig = {
     sessionId, maxEntries, maxAgeMs, maxBodyBytes, maxPostDataBytes, maxFrames, maxFrameBytes, maxSseEvents,
     captureBodies, captureRequestPostData, includeWebSocketFrames, includeSse, bodyTimeoutMs,
     bodyMimeAllow: normalizeNetworkBodyMimeAllow(msg),
-    includeUrls: pickArr('includeUrls', 'include_urls'),
-    excludeUrls: pickArr('excludeUrls', 'exclude_urls'),
+    includeUrls: networkConfigArray(msg, 'includeUrls', 'include_urls'),
+    excludeUrls: networkConfigArray(msg, 'excludeUrls', 'exclude_urls'),
     resourceTypes,
-    methods: pickArr('methods'),
-    statuses: pickArr('statuses'),
+    methods: networkConfigArray(msg, 'methods'),
+    statuses: networkConfigArray(msg, 'statuses'),
     clearOnStart: msg.clear !== false,
     storeHeaders: msg.storeHeaders !== false && msg.store_headers !== false,
     storePostData: captureRequestPostData,
@@ -286,23 +293,30 @@ function pruneNetworkRecorder(recorder: NetworkRecorder | null | undefined): voi
   }
   if (removed) recorder.overflowCount += removed;
 }
-function networkRecordMatchesList(rec: NetworkRecord, filters: JsonRecord | null | undefined): boolean {
-  filters = filters || {};
+function networkRecordMatchesIdentity(rec: NetworkRecord, filters: JsonRecord): boolean {
   if (filters.sinceSeq !== undefined && Number(rec.seq) <= Number(filters.sinceSeq)) return false;
   if (filters.requestId && String(rec.requestId) !== String(filters.requestId)) return false;
-  const urlFilter = filters.url ?? filters.urlContains ?? filters.url_contains;
-  if (urlFilter && !String(rec.request?.url || '').includes(String(urlFilter))) return false;
-  const urlPattern = filters.urlPattern ?? filters.url_pattern;
-  if (urlPattern && !matchNetworkPattern(rec.request?.url || '', String(urlPattern))) return false;
   if (filters.method && String(rec.request?.method || '').toUpperCase() !== String(filters.method).toUpperCase()) return false;
   if (filters.type && String(rec.type || '').toLowerCase() !== String(filters.type).toLowerCase()) return false;
+  return true;
+}
+function networkRecordMatchesUrl(rec: NetworkRecord, filters: JsonRecord): boolean {
+  const url = String(rec.request?.url || '');
+  const urlFilter = filters.url ?? filters.urlContains ?? filters.url_contains;
+  if (urlFilter && !url.includes(String(urlFilter))) return false;
+  const urlPattern = filters.urlPattern ?? filters.url_pattern;
+  if (urlPattern && !matchNetworkPattern(url, String(urlPattern))) return false;
+  if (Array.isArray(filters.includeUrls) && filters.includeUrls.length && !filters.includeUrls.some(p => matchNetworkPattern(url, String(p)))) return false;
+  if (Array.isArray(filters.excludeUrls) && filters.excludeUrls.length && filters.excludeUrls.some(p => matchNetworkPattern(url, String(p)))) return false;
+  return true;
+}
+function networkRecordMatchesResponse(rec: NetworkRecord, filters: JsonRecord): boolean {
   const mime = filters.mime || filters.mimeType || filters.mime_type;
   if (mime && !matchNetworkPattern(String(rec.response?.mimeType || getHeaderValue(rec.response?.headers, 'content-type') || ''), String(mime))) return false;
   if (filters.status !== undefined && Number(rec.response?.status) !== Number(filters.status)) return false;
-  if (Array.isArray(filters.includeUrls) && filters.includeUrls.length && !filters.includeUrls.some(p => matchNetworkPattern(rec.request?.url || '', String(p)))) return false;
-  if (Array.isArray(filters.excludeUrls) && filters.excludeUrls.length && filters.excludeUrls.some(p => matchNetworkPattern(rec.request?.url || '', String(p)))) return false;
   return true;
 }
+function networkRecordMatchesList(rec: NetworkRecord, filters: JsonRecord | null | undefined): boolean { const normalized = filters || {}; return networkRecordMatchesIdentity(rec, normalized) && networkRecordMatchesUrl(rec, normalized) && networkRecordMatchesResponse(rec, normalized); }
 function networkCriterionMatchesText(value: unknown, criterion: unknown): boolean {
   if (criterion === undefined || criterion === null || criterion === '') return true;
   return matchNetworkPattern(String(value == null ? '' : value), String(criterion));
@@ -333,18 +347,27 @@ function networkSseEventMatches(event: NetworkFrameRecord, criterion: unknown): 
   }
   return networkCriterionMatchesText([event.eventName, event.eventId, event.data].join('\n'), criterion);
 }
+function networkRecordResponseSummary(rec: NetworkRecord): JsonRecord {
+  const response = asRecord(rec.response);
+  return { status:response.status, statusText:response.statusText, mimeType:response.mimeType, protocol:response.protocol, fromCache:!!rec.fromCache, fromServiceWorker:!!response.fromServiceWorker, failed:rec.failed, errorText:rec.errorText || null, canceled:!!rec.canceled, blockedReason:rec.blockedReason || null };
+}
+function networkRecordBodySummary(rec: NetworkRecord): JsonRecord {
+  const bodyRef = rec.bodyRef || null;
+  return { bodyRef, bodyPreview:rec.bodyPreview || null, bodyTruncated:!!rec.bodyTruncated, bodyError:rec.bodyError || null, bodyPending:!!rec.bodyPending, bodyAvailability:rec.bodyAvailability || (bodyRef ? 'captured' : 'not_requested'), bodyUnavailableReason:rec.bodyUnavailableReason || null };
+}
+function networkRecordTrafficSummary(rec: NetworkRecord): JsonRecord {
+  const request = asRecord(rec.request);
+  const data = asRecord(rec.data);
+  return { encodedDataLength:data.encodedDataLength || 0, dataLength:data.dataLength || 0, hasPostData:!!request.hasPostData || request.postData !== undefined, postDataTruncated:!!request.postDataTruncated, postDataBytes:request.postData !== undefined ? estimateStringBytes(request.postData) : undefined, redirects:(rec.redirects || []).length, wsFrameCount:(rec.wsFrames || []).length, sseEventCount:(rec.sseEvents || []).length };
+}
 function networkRecordSummary(rec: NetworkRecord, options: { includeDetails?: boolean; includeBody?: boolean } = {}): NetworkRecordSummary {
   options = options || {};
   const out: NetworkRecordSummary = {
     ...rec,
-    id:rec.id, requestId:rec.requestId, seq:rec.seq, tabId:rec.tabId, sessionId:rec.sessionId, type:rec.type || rec.resourceType || '', phase:rec.phase,
-    status:rec.response?.status, statusText:rec.response?.statusText, mimeType:rec.response?.mimeType, protocol:rec.response?.protocol,
-    fromCache:!!rec.fromCache, fromServiceWorker:!!rec.response?.fromServiceWorker, failed:rec.failed, errorText:rec.errorText || null, canceled:!!rec.canceled, blockedReason:rec.blockedReason || null,
-    createdAt:rec.createdAt, updatedAt:rec.updatedAt, wallTime:rec.wallTime, timestamp:rec.timestamp, encodedDataLength:rec.data?.encodedDataLength || 0, dataLength:rec.data?.dataLength || 0,
-    bodyRef:rec.bodyRef || null, bodyPreview:rec.bodyPreview || null, bodyTruncated:!!rec.bodyTruncated, bodyError:rec.bodyError || null, bodyPending:!!rec.bodyPending,
-    bodyAvailability:rec.bodyAvailability || (rec.bodyRef ? 'captured' : 'not_requested'), bodyUnavailableReason:rec.bodyUnavailableReason || null,
-    hasPostData:!!rec.request?.hasPostData || rec.request?.postData !== undefined, postDataTruncated:!!rec.request?.postDataTruncated, postDataBytes:rec.request?.postData !== undefined ? estimateStringBytes(rec.request.postData) : undefined,
-    redirects:(rec.redirects || []).length, wsFrameCount:(rec.wsFrames || []).length, sseEventCount:(rec.sseEvents || []).length
+    type:rec.type || rec.resourceType || '',
+    ...networkRecordResponseSummary(rec),
+    ...networkRecordBodySummary(rec),
+    ...networkRecordTrafficSummary(rec)
   };
   if (options.includeDetails) Object.assign(out, networkRecordClone(rec, { includeBody: options.includeBody }));
   return redactSensitive(out) as NetworkRecordSummary;

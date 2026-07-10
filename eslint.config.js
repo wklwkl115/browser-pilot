@@ -158,6 +158,7 @@ export default tseslint.config(
 			"src/bridge/extension/service_worker/exec.ts",
 			"src/bridge/extension/service_worker/frame.ts",
 			"src/bridge/extension/service_worker/network.ts",
+			"src/bridge/extension/service_worker/network_model.ts",
 			"src/commands/webSecurity/browserNative/sqliProbe.ts",
 			"src/commands/webSecurity/browserNative/crawl.ts",
 			"src/commands/webSecurity/browserNative/callbackOast.ts",
