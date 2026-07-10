@@ -62,7 +62,6 @@ import {
 import {
 	absoluteUrl,
 	assertAllowedTargetUrl,
-	browserCookiesToHeader,
 	browserCookiesToProviderResult,
 	compactStep,
 	contentTypeOf,
@@ -93,7 +92,6 @@ import {
 	analyzeCookieSample,
 	tokenFormatOf,
 	tokenMutationToken,
-	tokenPayloadOf,
 	tokenVerifiedOf,
 } from "../../src/commands/webSecurity/shared/cookieTokens.ts";
 import { parseSqlmapOutput } from "../../src/commands/webSecurity/bridges/sqlmapBridge.ts";
@@ -208,7 +206,6 @@ test("HTTP shared helpers normalize targets, cookies, redirects, tech hints, and
 	assert.equal(cookieHeaders.Cookie, "sid=2");
 	assert.deepEqual(deriveCsrfReflection("XSRF-TOKEN=a%20b; sid=1"), { cookie: "XSRF-TOKEN", header: "X-XSRF-TOKEN", value: "a b" });
 	const browserCookies = [{ name: "sid", value: "1", domain: "example.test" }, { name: "theme", value: "dark" }];
-	assert.equal(browserCookiesToHeader(browserCookies), "sid=1; theme=dark");
 	const provider = browserCookiesToProviderResult({ data: browserCookies }, "https://example.test/");
 	assert.equal(cookieProviderResultHeader(provider), "sid=1; theme=dark");
 	assert.equal(cookieProviderResultCookies(provider).length, 2);
@@ -303,7 +300,7 @@ test("cookie token helpers decode, verify, and mutate JWT samples offline", asyn
 	const result = await analyzeCookieSample({ source: "cookie", name: "session", value: jwt }, ["secret"], { admin: true });
 	assert.equal(tokenFormatOf(result), "jwt");
 	assert.equal(tokenVerifiedOf(result), true);
-	assert.equal(tokenPayloadOf(result)?.sub, "alice");
+	assert.equal((result.token as { payload?: Record<string, unknown> } | undefined)?.payload?.sub, "alice");
 	assert.match(tokenMutationToken(result) ?? "", /^[^.]+\.[^.]+\.[^.]+$/);
 });
 

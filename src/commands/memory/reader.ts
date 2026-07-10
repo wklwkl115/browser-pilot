@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { ArtifactReaderError } from "../../artifacts/artifactReader.js";
 import { computeEtag } from "../../utils/fileFreshness.js";
 import { createCodedError } from "../../utils/codedError.js";
 import { getJsonPath } from "../../utils/jsonPath.js";
@@ -102,24 +101,4 @@ export async function readBrowserMemory(options: {
 		return { mode: "json", summary: { path: absPath, etag: currentEtag }, jsonPath: options.jsonPath, value: jsonPathReadValue(value, options.jsonPath) };
 	}
 	return lineSlice(entry.body, options.offset || 1, options.limit || 120);
-}
-
-export async function readBrowserMemoryResource(uri: string, cwd?: string): Promise<{ ok: true; content: { uri: string; mimeType?: string; text: string } } | { ok: false; error: string; code: string }> {
-	try {
-		const target = parseBrowserMemoryUri(uri);
-		if (!target) return { ok: false, error: `Unrecognized resource: ${uri}`, code: "MEMORY_ENTRY_NOT_FOUND" };
-		const query = Object.fromEntries(new URLSearchParams(uri.includes("?") ? uri.slice(uri.indexOf("?") + 1) : ""));
-		const jsonPath = query.jsonPath || undefined;
-		const requestedMode = String(query.mode || "").trim().toLowerCase();
-		const mode = requestedMode === "json" ? "json" : requestedMode === "text" ? "text" : jsonPath ? "json" : "text";
-		const result = await readBrowserMemory({ cwd, uri, mode, offset: query.offset ? Number(query.offset) : undefined, limit: query.limit ? Number(query.limit) : undefined, jsonPath });
-		const text = result.mode === "json" ? JSON.stringify(result.value, null, 2) : result.snippets.map((item) => item.text).join("\n");
-		return { ok: true, content: { uri, mimeType: result.mode === "json" ? "application/json" : "text/plain", text } };
-	} catch (error) {
-		if (error instanceof ArtifactReaderError) return { ok: false, error: error.message, code: error.code };
-		if (error && typeof error === "object" && "code" in error && typeof (error as { code?: unknown }).code === "string") {
-			return { ok: false, error: error instanceof Error ? error.message : String(error), code: String((error as { code?: unknown }).code) };
-		}
-		return { ok: false, error: String(error), code: "MEMORY_SCHEMA_INVALID" };
-	}
 }

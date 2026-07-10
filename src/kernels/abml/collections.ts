@@ -722,29 +722,6 @@ function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType
 	return continuation ? { ...model, continuation } : model;
 }
 
-export function summarizeCollectionCompleteness(model: CollectionModel): {
-	completeness: CollectionCompleteness;
-	reason: string;
-	confidence: CollectionConfidence;
-} {
-	switch (model.completeness) {
-		case "complete":
-			return { completeness: model.completeness, confidence: model.confidence, reason: `observed ${model.observedCount}${model.declaredTotal !== undefined ? ` of declared ${model.declaredTotal}` : ""}` };
-		case "folded":
-			return { completeness: model.completeness, confidence: model.confidence, reason: `inline refs capped at ${model.itemRefs.length} for ${model.itemRefCount} observed items` };
-		case "virtualized":
-			return { completeness: model.completeness, confidence: model.confidence, reason: model.declaredTotal !== undefined ? `observed ${model.observedCount} of declared ${model.declaredTotal}` : "growth/window evidence indicates more items than the observed window" };
-		case "lazy":
-			return { completeness: model.completeness, confidence: model.confidence, reason: model.hiddenCount !== undefined ? `hidden/lazy count ${model.hiddenCount}` : "lazy placeholder or load-more evidence" };
-		case "paginated":
-			return { completeness: model.completeness, confidence: model.confidence, reason: "pagination edge is visible for this collection" };
-		case "viewport-window":
-			return { completeness: model.completeness, confidence: model.confidence, reason: "visible viewport window without terminal boundary proof" };
-		default:
-			return { completeness: model.completeness, confidence: model.confidence, reason: "insufficient evidence to prove collection completeness" };
-	}
-}
-
 function ambiguousContainerNames(drafts: DraftCollection[]): Set<string> {
 	const counts = new Map<string, number>();
 	for (const draft of drafts) {

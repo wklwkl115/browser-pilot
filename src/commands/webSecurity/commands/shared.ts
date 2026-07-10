@@ -5,7 +5,7 @@ import { runWebSecurityCommand as runWebSecurityCommandAdapter, sharedTabScopedT
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, enumOrEnumArrayParam, enumParam } from "../../commandShared.js";
 import type { EnsureStarted } from "../../commandShared.js";
 import { browserCookiesToProviderResult } from "../shared/http.js";
-import type { CookieProvider, RawCallbackOastOptions, RawCookieAnalyzeOptions, RawCrawlOptions, RawFuzzParamsOptions, RawFuzzPathsOptions, RawFuzzVhostsOptions, RawNucleiBridgeOptions, RawProbeOptions, RawReplayOptions, RawSqliProbeOptions, RawSqlmapBridgeOptions, RawTemplateCheckOptions } from "../shared/types.js";
+import type { CookieProvider, RawCallbackOastOptions, RawCookieAnalyzeOptions, RawReplayOptions } from "../shared/types.js";
 import type { ToolResultBudgetName } from "../../budgets.js";
 import { webSecurityToolError } from "../shared/diagnostics.js";
 
@@ -84,10 +84,6 @@ export function headerRecordParam(description: string) {
 
 export function stringOrStringArrayParam(description: string) {
 	return Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())], { description }));
-}
-
-export function webSecurityDefaultSchemeParam(description = "http | https for host-only input; default https.") {
-	return enumParam(["http", "https"], description);
 }
 
 export function webSecurityCookieModeParam(description = "merge | replace | preserve for browser cookie injection into HTTP requests; default merge.") {
@@ -169,46 +165,6 @@ export function requestSequenceParams(options: { requestsDescription: string; se
 	};
 }
 
-export function boundedExecutionParams(options: { timeoutSecondsDescription: string }) {
-	void options;
-	return {};
-}
-
-export function redirectControlParams(options: { followRedirectsDescription: string; maxRedirectsDescription: string }) {
-	void options;
-	return {};
-}
-
-export function rateLimitPerSecondParam(description: string) {
-	void description;
-	return {};
-}
-
-export function maxCasesParam(description: string) {
-	void description;
-	return {};
-}
-
-export function maxCandidatesParam(description: string) {
-	void description;
-	return {};
-}
-
-export function maxDepthParam(description: string) {
-	void description;
-	return {};
-}
-
-export function maxPagesParam(description: string) {
-	void description;
-	return {};
-}
-
-export function maxTemplatesParam(description: string) {
-	void description;
-	return {};
-}
-
 export type WebSecuritySharedToolParams = {
 	browserSessionId?: string;
 	tabId?: number | string;
@@ -220,17 +176,8 @@ export type WebSecuritySharedToolParams = {
 	maxBodyBytes?: number;
 };
 
-export type ReconProbeToolParams = WebSecuritySharedToolParams & RawProbeOptions;
-export type CrawlToolParams = WebSecuritySharedToolParams & RawCrawlOptions;
-export type FuzzPathsToolParams = WebSecuritySharedToolParams & RawFuzzPathsOptions;
-export type FuzzVhostsToolParams = WebSecuritySharedToolParams & RawFuzzVhostsOptions;
-export type SqliProbeToolParams = WebSecuritySharedToolParams & RawSqliProbeOptions;
-export type SqlmapBridgeToolParams = WebSecuritySharedToolParams & RawSqlmapBridgeOptions;
-export type NucleiBridgeToolParams = WebSecuritySharedToolParams & RawNucleiBridgeOptions;
-export type TemplateCheckToolParams = WebSecuritySharedToolParams & RawTemplateCheckOptions;
 export type CallbackOastToolParams = WebSecuritySharedToolParams & RawCallbackOastOptions & { triggerTimeoutMs?: unknown };
 export type CookieAnalyzeToolParams = WebSecuritySharedToolParams & RawCookieAnalyzeOptions;
-export type FuzzParamsToolParams = WebSecuritySharedToolParams & RawFuzzParamsOptions;
 export type HttpReplayToolParams = WebSecuritySharedToolParams & RawReplayOptions;
 
 type WebSecurityShellConfig<TParams extends WebSecuritySharedToolParams, TRunParams extends TParams, TResult> = {

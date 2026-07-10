@@ -7,13 +7,13 @@ import { addEntityRelations, buildRelationSummary, derivePaintOrderRelationAncho
 import { buildInferenceSummary, entitiesForInferenceEvidence, inferenceEvidenceRefs } from "../../src/kernels/abml/inference.ts";
 import type { EntityDiff } from "../../src/kernels/abml/diff.ts";
 import { displayEntityText, groupEntities, isActionableOrStructural, isPureTextLeaf, normalizeEntityText, structureScopeKey, suppressNestedNonControlGroups, templateGroupDescriptorForEntity } from "../../src/kernels/abml/grouping.ts";
-import { buildCollectionModels, summarizeCollectionCompleteness } from "../../src/kernels/abml/collections.ts";
+import { buildCollectionModels } from "../../src/kernels/abml/collections.ts";
 import { firstSafeSemanticText, isItemLikePreview, safeContainerLabelText, sanitizeSemanticText } from "../../src/kernels/abml/semanticText.ts";
 import { buildSnapshotProjection } from "../../src/kernels/abml/snapshotProjection.ts";
 import { buildIdentityGraph, identityGraphSummary } from "../../src/kernels/abml/identityGraph.ts";
-import { buildEventEntity, buildNetworkEntryEntity, createCaptureRef, mapCaptureState } from "../../src/kernels/abml/stream.ts";
+import { buildEventEntity, buildNetworkEntryEntity, createCaptureRef } from "../../src/kernels/abml/stream.ts";
 import { classifyStaleness, classifyStateLoss, classifyTimeout, diagnoseWaitTimeout } from "../../src/kernels/temporal/classify.ts";
-import { allocateTemporalBudget, classifyDeadlinePressure } from "../../src/kernels/temporal/budget.ts";
+import { classifyDeadlinePressure } from "../../src/kernels/temporal/budget.ts";
 import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity } from "../../src/kernels/temporal/estimate.ts";
 import { TEMPORAL_REASON_MODEL_CAP, type TemporalAnchor, type TemporalStamp } from "../../src/kernels/temporal/types.ts";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../src/capture/inject.ts";
@@ -243,7 +243,7 @@ test("temporal classifier handles empty, malformed-adjacent, and boundary wait s
 	});
 });
 
-test("temporal estimate and budget helpers handle missing anchors, fallback sources, and budget clamps", () => {
+test("temporal estimates handle missing anchors, fallback sources, and deadline clamps", () => {
 	assert.deepEqual(estimateTargetContinuity({ current: stamp() }), {
 		verdict: { status: "unknown", confidence: "partial", reasons: ["unknown_due_to_missing_anchor"] },
 		frontier: { next: "reobserve" },
@@ -268,28 +268,6 @@ test("temporal estimate and budget helpers handle missing anchors, fallback sour
 		verdict: { status: "possibly_stale", confidence: "bounded", reasons: ["selector_unstable"] },
 		frontier: { next: "retry_same_wait" },
 		source: "poll_fallback",
-	});
-	assert.deepEqual(allocateTemporalBudget({ remainingMs: 50, reserveMs: 100, candidates: [{ action: "wait", reason: "same_target", cost: { wallMs: 1, bridgeRoundTrips: 1, expectedToolCalls: 1, tokenChars: 1, confidenceLoss: 0 }, expectedEvidence: ["driver_snapshot"] }] }), {
-		action: "fail_closed",
-		budgetMs: 0,
-		reason: "queue_delay_budget_exceeded",
-		expectedEvidence: [],
-		frontier: { next: "fail_closed" },
-	});
-	assert.deepEqual(allocateTemporalBudget({
-		remainingMs: 200,
-		reserveMs: -100,
-		candidates: [
-			{ action: "wait", reason: "network_active", cost: { wallMs: 250, bridgeRoundTrips: 2, expectedToolCalls: 2, tokenChars: 100, confidenceLoss: 2 }, expectedEvidence: ["page_signal"] },
-			{ action: "immediate_probe", reason: "same_target", cost: { wallMs: 20, bridgeRoundTrips: 1, expectedToolCalls: 1, tokenChars: 300, confidenceLoss: 0 }, expectedEvidence: ["driver_snapshot"], frontierNext: "reuse_target" },
-		],
-	}), {
-		action: "immediate_probe",
-		budgetMs: 20,
-		reason: "same_target",
-		expectedEvidence: ["driver_snapshot"],
-		frontier: { next: "reuse_target" },
-		verdict: undefined,
 	});
 	assert.equal(classifyDeadlinePressure({ remainingMs: 10, requiredMs: 20 }).frontier.next, "fail_closed");
 	assert.equal(classifyDeadlinePressure({ remainingMs: -1, requiredMs: -2 }).verdict.status, "fresh");
@@ -348,9 +326,6 @@ test("ABML stream helpers normalize capture, network, and event boundary inputs"
 	assert.equal(capture.ttlMs, 1);
 	assert.equal(capture.owner.topLevelOrigin, "https://example.test");
 	assert.equal(capture.streamState.lastSeq, 3);
-	assert.equal(mapCaptureState(" stopped ", 10, 20), "stopped");
-	assert.equal(mapCaptureState("unexpected", 21, 20), "expired");
-	assert.equal(mapCaptureState(undefined, 10, 20), "active");
 
 	const network = buildNetworkEntryEntity({ request: { url: "https://api.example.test/items", method: "POST" }, response: { status: "201" }, _bodyRef: "artifact://body", _requestId: "req-1", updatedAt: "1234" }, context);
 	assert.equal(network.entity.name, "POST https://api.example.test/items");
@@ -433,7 +408,6 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	assert.equal(collections[0]!.pageSize, 10);
 	assert.equal(collections[0]!.scrollDirection, "vertical");
 	assert.equal(collections[0]!.continuation?.kind, "virtual-window");
-	assert.deepEqual(summarizeCollectionCompleteness(collections[0]!), { completeness: "virtualized", confidence: "high", reason: "observed 25 of declared 100" });
 });
 
 test("ABML collections absorb malformed scan evidence and pagination edges", () => {

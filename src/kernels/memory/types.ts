@@ -55,52 +55,6 @@ export type MemoryTraceView = {
 	terms: PersistableMemoryTerm[];
 };
 
-export type MemoryPerceptionLedgerKey = {
-	browserSessionId?: string;
-	tabId?: number;
-	navigationEpoch?: string;
-};
-
-export type MemoryPerceptionLedgerFactState = {
-	versionStamp: string;
-	stableStamp?: string;
-	lastShownGranularity: "full" | "compact" | "line" | "ref";
-};
-
-export type MemoryPerceptionLedgerFrame = {
-	key: MemoryPerceptionLedgerKey;
-	snapshotId: string;
-	capturedAt: number;
-	facts: Record<string, MemoryPerceptionLedgerFactState>;
-	pageFingerprint?: {
-		changeSeq: number;
-		url?: string;
-		title?: string;
-		readyState?: string;
-		visibleCount?: number;
-		interactiveCount?: number;
-		capturedAt?: number;
-		dirty?: {
-			roots: string[];
-			overflow: boolean;
-			sinceSeq?: number;
-		};
-	};
-};
-
-export type MemoryPerceptionTraceTerm = {
-	term: string;
-	kind: string;
-	weight?: number;
-	at: number;
-	seq: number;
-};
-
-export type MemoryPerceptionTraceSnapshot = {
-	terms: MemoryPerceptionTraceTerm[];
-	latestSeq: number;
-};
-
 export type MemoryAnchors = {
 	canonicalUrl?: string;
 	fingerprintSummary?: Record<string, unknown>;

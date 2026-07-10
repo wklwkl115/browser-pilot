@@ -86,10 +86,6 @@ function countTruncationMarkersInText(text: string): number {
 	return (text.match(/truncated|omitted|…|\.\.\./gi) || []).length;
 }
 
-export function countDistillTruncationMarkers(value: unknown): number {
-	return countTruncationMarkersInText(stableJson(value));
-}
-
 function acceptedCandidate<T extends BudgetedEnvelope>(salience: T, ladder: T, salienceText?: string, ladderText?: string): T {
 	for (const key of REQUIRED_CONTINUITY_KEYS) {
 		if (salience[key] === undefined && ladder[key] !== undefined) return ladder;

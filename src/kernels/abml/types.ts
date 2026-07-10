@@ -92,14 +92,6 @@ export type RefDescriptor = {
 	stabilityScore?: number;
 };
 
-export type ResolveStatus =
-	| "unique"
-	| "ambiguous"
-	| "stale"
-	| "scopeViolation"
-	| "privacyBlocked"
-	| "backendUnavailable";
-
 export type CandidateSource = "dom" | "ax" | "vision" | "region" | "network" | "hook" | "evidence";
 
 export type CandidateSummary = {
@@ -111,24 +103,6 @@ export type CandidateSummary = {
 	source?: CandidateSource;
 	geometry?: RefGeometry;
 	documentOrder?: number;
-};
-
-export type ResolveResult =
-	| { status: "unique"; ref: RefDescriptor; candidate: CandidateSummary; refreshed?: RefDescriptor }
-	| { status: "ambiguous"; ref: RefDescriptor; candidates: CandidateSummary[]; reason: string }
-	| { status: "stale"; ref: RefDescriptor; reason: string }
-	| { status: "scopeViolation"; ref: RefDescriptor; reason: string; expected: RefOwner; actual: RefOwner }
-	| { status: "privacyBlocked"; ref: RefDescriptor; reason: string }
-	| { status: "backendUnavailable"; ref: RefDescriptor; backend: string; reason: string };
-
-export type ResolveContext = {
-	browserSessionId?: string;
-	tabId?: number;
-	frameId?: string;
-	topLevelOrigin?: string;
-	now: number;
-	requestedRedaction: "default" | "disabled";
-	explicitSensitiveAccess: boolean;
 };
 
 export type ActionabilityPredicate =

@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import { summarizeSqlmapBridgeData, summarizeSqliProbeData } from "../../summaries/index.js";
 import { runSqlmapBridge } from "../bridges/sqlmapBridge.js";
 import { runSqliProbe } from "../browserNative/sqliProbe.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxCasesParam, rawRequestParams, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateSqliParams, sqliProbeTypesParam, fuzzLocationParam, enumParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, rawRequestParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateSqliParams, sqliProbeTypesParam, fuzzLocationParam, enumParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
 import type { RawSqlmapBridgeOptions, RawSqliProbeOptions } from "../shared/types.js";
@@ -63,12 +63,6 @@ export function defineSqliCommand({ commands, ensureStarted }: CommandRegistrarC
 			timeThresholdMs: Type.Optional(Type.Number({ description: "engine:builtin only: elapsed-time delta threshold for time oracle matches; default 2000." })),
 			baselineRepeats: Type.Optional(Type.Number({ description: "engine:builtin only: baseline request repetitions; default 1, hard-capped at 10." })),
 			stopOnFirstMatch: Type.Optional(Type.Boolean({ description: "engine:builtin only: stop probing a confirmed vulnerable parameter after the first oracle match; default false." })),
-			...redirectControlParams({
-				followRedirectsDescription: "engine:builtin only: follow redirects; default false.",
-				maxRedirectsDescription: "engine:builtin only: maximum redirects when followRedirects is true; default 3.",
-			}),
-			...maxCasesParam("engine:builtin only: maximum probe cases; default 100, hard-capped at 5000."),
-			...rateLimitPerSecondParam("engine:builtin only: sequential request rate cap per second; default unlimited sequential."),
 			sqlmapPath: Type.Optional(Type.String({ description: "engine:sqlmap only: optional sqlmap executable or launcher command. Default auto-detects sqlmap in PATH or python -m sqlmap." })),
 			sqlmapArgs: Type.Optional(Type.Array(Type.String(), { description: "engine:sqlmap only: optional launcher arguments prepended before generated sqlmap flags." })),
 			extraArgs: Type.Optional(Type.Array(Type.String(), { description: "engine:sqlmap only: additional sqlmap CLI arguments appended after generated flags." })),
@@ -77,7 +71,6 @@ export function defineSqliCommand({ commands, ensureStarted }: CommandRegistrarC
 			level: Type.Optional(Type.Number({ description: "engine:sqlmap only: sqlmap --level; default 1, clamped to 1-5." })),
 			risk: Type.Optional(Type.Number({ description: "engine:sqlmap only: sqlmap --risk; default 1, clamped to 1-3." })),
 			threads: Type.Optional(Type.Number({ description: "engine:sqlmap only: sqlmap --threads; default 1, clamped to 1-10." })),
-			...boundedExecutionParams({ timeoutSecondsDescription: "engine:sqlmap only: sqlmap per-request timeout seconds; default derived from timeoutMs." }),
 			retries: Type.Optional(Type.Number({ description: "engine:sqlmap only: sqlmap --retries; default 3." })),
 			batch: Type.Optional(Type.Boolean({ description: "engine:sqlmap only: run sqlmap in batch mode; default true." })),
 			flushSession: Type.Optional(Type.Boolean({ description: "engine:sqlmap only: pass --flush-session before testing; default false." })),

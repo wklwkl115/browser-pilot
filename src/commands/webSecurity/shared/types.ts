@@ -307,15 +307,11 @@ export type RawCallbackOastOptions = {
 export type ProbeOptions = RawProbeOptions;
 export type ReplayOptions = RawReplayOptions;
 export type CrawlOptions = RawCrawlOptions;
-export type FuzzPathsOptions = RawFuzzPathsOptions;
 export type FuzzParamsOptions = RawFuzzParamsOptions;
-export type FuzzVhostsOptions = RawFuzzVhostsOptions;
-export type CookieAnalyzeOptions = RawCookieAnalyzeOptions;
 export type SqliProbeOptions = RawSqliProbeOptions;
 export type TemplateCheckOptions = RawTemplateCheckOptions;
 export type SqlmapBridgeOptions = RawSqlmapBridgeOptions;
 export type NucleiBridgeOptions = RawNucleiBridgeOptions;
-export type CallbackOastOptions = RawCallbackOastOptions;
 
 export type FetchRequest = {
 	url: string;

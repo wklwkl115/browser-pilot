@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCliCommands, collectCommandDefs } from "../../src/apps/cli/registry.ts";
-import { WEB_SECURITY_TOOL_NAMES } from "../../src/commands/commandCatalog.ts";
 import { validateCommandArgs } from "../../src/validation/commandArgs.ts";
 import { dispatchProgramElement, validateProgram } from "../../src/browser-command-runtime/programDispatcher.ts";
 import { PROGRAM_OP_DISCRIMINATORS } from "../../src/browser-command-runtime/programOps.ts";
@@ -58,15 +57,6 @@ test("command catalog characterization: public browser tool names are stable, un
 	]);
 	assert.equal(new Set(names).size, names.length);
 	for (const name of names) assert.match(name, /^browser_[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*$/);
-	assert.deepEqual([...WEB_SECURITY_TOOL_NAMES].sort(), [
-		"browser_callback_oast",
-		"browser_cookie_analyze",
-		"browser_crawl",
-		"browser_fuzz",
-		"browser_http_replay",
-		"browser_sqli",
-		"browser_template",
-	].sort());
 });
 
 test("command catalog characterization: CLI subcommands are derived one-to-one from browser tool names", () => {

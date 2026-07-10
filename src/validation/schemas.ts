@@ -65,10 +65,6 @@ const MultipartFileType = Type.Object({
 	contentType: Type.Optional(Type.String()),
 }, { additionalProperties: false });
 
-export const MultipartFileSchema = createSchema(MultipartFileType, {
-	refinements: [{ check: (value: Record<string, unknown>) => value.content !== undefined || value.contentBase64 !== undefined, message: "Either content or contentBase64 must be provided" }],
-});
-
 export type ValidatedMultipart = {
 	fields?: Array<{ name: string; value: string; contentType?: string }>;
 	files?: Array<{ name: string; filename: string; content?: string; contentBase64?: string; contentType?: string }>;
@@ -127,8 +123,6 @@ const CookieType = Type.Object({
 	sameSite: Type.Optional(Type.Union([Type.Literal("Strict"), Type.Literal("Lax"), Type.Literal("None")])),
 }, { additionalProperties: true });
 
-export const CookieSchema = createSchema<ValidatedCookie>(CookieType);
-export const SetCookieSchema = createSchema<string>(Type.String({ minLength: 1 }));
 export const CookiesInputSchema = createSchema<string | string[] | ValidatedCookie[] | Record<string, string>>(Type.Union([
 	Type.String(),
 	Type.Array(Type.String()),
@@ -151,8 +145,6 @@ const TemplateMatcherType = Type.Object({
 	negative: Type.Optional(Type.Boolean()),
 }, { additionalProperties: true });
 
-export const TemplateMatcherSchema = createSchema(TemplateMatcherType);
-
 const TemplateExtractorType = Type.Object({
 	type: Type.Union([Type.Literal("regex"), Type.Literal("kval"), Type.Literal("json"), Type.Literal("xpath")]),
 	name: Type.Optional(Type.String()),
@@ -164,8 +156,6 @@ const TemplateExtractorType = Type.Object({
 	part: Type.Optional(Type.Union([Type.Literal("body"), Type.Literal("header"), Type.Literal("all")])),
 	internal: Type.Optional(Type.Boolean()),
 }, { additionalProperties: true });
-
-export const TemplateExtractorSchema = createSchema(TemplateExtractorType);
 
 const TemplateType = Type.Object({
 	id: Type.String({ minLength: 1 }),
@@ -187,7 +177,6 @@ const TemplateType = Type.Object({
 }, { additionalProperties: true });
 
 export type ValidatedTemplate = Record<string, unknown> & { id: string };
-export const TemplateSchema = createSchema<ValidatedTemplate>(TemplateType);
 const TemplatesInputType = Type.Union([
 	TemplateType,
 	Type.Array(TemplateType),

@@ -24,24 +24,6 @@ const warnedAutomaticIndexReads = new Set<string>();
 const RECORD_SUGGESTED_CAP = 2000;
 const recordSuggested = new Set<string>();
 
-// Test hook: clear session-scoped record-suggestion memory.
-export function __resetMemoryAutoSurfaceState(): void {
-	recordSuggested.clear();
-	warnedAutomaticIndexReads.clear();
-}
-
-// Read the derived index fresh on every call. The file is tiny and command results
-// are agent-paced, so a single read is cheaper than the staleness it removes:
-// a process-lifetime cache made freshly recorded memory invisible until restart.
-// When no index.json exists no memory was ever recorded — return empty without
-// materializing the file (avoids creating .browser-pilot/memory/ for non-users).
-export async function loadMemoryIndex(cwd?: string): Promise<MemoryIndex> {
-	const indexPath = resolveMemoryPath(cwd, "index.json");
-	const exists = await stat(indexPath).then(() => true).catch(() => false);
-	if (!exists) return EMPTY_MEMORY_INDEX;
-	return (await readMemoryIndexNoRepair(cwd)).index;
-}
-
 async function loadMemoryIndexForAutoSurface(cwd?: string): Promise<{ index: MemoryIndex; warning?: string }> {
 	const indexPath = resolveMemoryPath(cwd, "index.json");
 	const exists = await stat(indexPath).then(() => true).catch(() => false);

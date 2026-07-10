@@ -116,14 +116,6 @@ function sortRelations(relations: EntityRelation[]): EntityRelation[] {
 	});
 }
 
-// Convert anchors → typed relations on entities. Builds a node-key → ref map from the final
-// (merged + ref-minted) entity list, resolves each anchor's source/target to refs, drops
-// unresolved or self edges, dedupes, and caps per entity. Returns a new entity list; entities
-// with no relations are returned unchanged.
-export function materializeRelations(entities: Entity[], anchors: RelationAnchor[]): Entity[] {
-	return materializeRelationGraph(entities, anchors).entities;
-}
-
 // Relations derived from a merged entity's own scalar state + stashed keys — the DOM-sourced arm of
 // R1 (batch 2). currentIn: an aria-current entity → its owning nav/list container (key stashed from
 // the AX walk, since Chrome's getFullAXTree doesn't expose aria-current). coveredBy/occludes: an

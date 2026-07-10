@@ -3,7 +3,7 @@ import { summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsDat
 import { runFuzzParams } from "../browserNative/fuzzParams.js";
 import { runFuzzPaths } from "../browserNative/fuzzPaths.js";
 import { runFuzzVhosts } from "../browserNative/fuzzVhosts.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCandidatesParam, maxCasesParam, maxDepthParam, rateLimitPerSecondParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateFuzzParams, headerRecordParam, stringNumberOrListParam, fuzzLocationParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateFuzzParams, headerRecordParam, stringNumberOrListParam, fuzzLocationParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
 import type { RawFuzzParamsOptions, RawFuzzPathsOptions, RawFuzzVhostsOptions } from "../shared/types.js";
@@ -30,24 +30,17 @@ export function defineFuzzCommand({ commands, ensureStarted }: CommandRegistrarC
 			wordlistPath: Type.Optional(Type.String({ description: "Optional local wordlist file path; one entry per line." })),
 			method: Type.Optional(Type.String({ description: "HTTP method; default GET in path/vhost modes, override request method in param mode." })),
 			headers: headerRecordParam("Optional request headers object or overrides."),
-			...redirectControlParams({
-				followRedirectsDescription: "Follow redirects. path/vhost/param modes default false for stable matching except explicit current-mode overrides.",
-				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",
-			}),
 			matchStatus: stringNumberOrListParam("Optional status matcher list/string."),
 			filterStatus: stringNumberOrListParam("Optional status filter list/string."),
 			filterBodyBytes: stringNumberOrListParam("Optional body byte-size filter list/string for noisy baselines."),
-			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
 			...browserCookieBindingParams("Inject browser cookies into outgoing HTTP request headers; default false.", { includeCookieMode: false }),
 			paths: Type.Optional(Type.Array(Type.String(), { description: "path mode only: explicit candidate paths/routes to request." })),
 			extensions: Type.Optional(Type.Array(Type.String(), { description: "path mode only: optional extensions for extension fuzzing, e.g. php,json,txt." })),
 			appendSlash: Type.Optional(Type.Boolean({ description: "path mode only: also test trailing-slash directory variants." })),
 			recursive: Type.Optional(Type.Boolean({ description: "path mode only: recursively fuzz discovered directory-like paths; default false." })),
-			...maxDepthParam("path mode only: maximum recursive directory depth when recursive is enabled; default 2, hard-capped at 5."),
 			filterBaseline: Type.Optional(Type.Boolean({ description: "path/vhost modes only: only return candidates that differ from baseline status/title/body/hash; default false for path, true for vhost." })),
 			baselinePath: Type.Optional(Type.String({ description: "path mode only: optional baseline path/word used for automatic baseline comparison." })),
 			baselineStrategy: enumParam(["exact", "cluster", "auto"], "path/vhost modes only: baseline comparison mode: exact | cluster | auto. Default auto."),
-			...maxCandidatesParam("path/vhost modes only: maximum candidates per base; default 500, hard-capped at 5000."),
 			hosts: Type.Optional(Type.Array(Type.String(), { description: "vhost mode only: explicit Host header candidate values." })),
 			baseDomain: Type.Optional(Type.String({ description: "vhost mode only: base domain used to expand words as word.baseDomain." })),
 			template: Type.Optional(Type.String({ description: "vhost mode only: host template containing FUZZ, e.g. FUZZ.example.test." })),
@@ -66,7 +59,6 @@ export function defineFuzzCommand({ commands, ensureStarted }: CommandRegistrarC
 			jsonValues: Type.Optional(Type.Object({}, { additionalProperties: true, description: "param mode only: JSON values for JSON or multipart parameter fuzzing." })),
 			operations: Type.Optional(Type.Array(Type.String(), { description: "param mode only: parameter operations: set, add, delete. Default set." })),
 			contentTypeVariants: Type.Optional(Type.Array(Type.String(), { description: "param mode only: multipart Content-Type variants: normal, quoted, missing-boundary, mismatch." })),
-			...maxCasesParam("param mode only: maximum location*param*operation*value cases; default 500, hard-capped at 5000."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const current = normalizeWebSecurityToolParams<FuzzToolParams>(params);

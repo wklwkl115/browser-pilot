@@ -91,11 +91,6 @@ export type CommandEvidenceEnvelope = {
 	};
 };
 
-export type CommandResult<T> = {
-	data: T;
-	evidence: CommandEvidenceEnvelope;
-};
-
 export type CommandEvidenceEnvelopeInput = {
 	summary?: Record<string, unknown>;
 	runtimeRefs?: string[];

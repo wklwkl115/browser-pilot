@@ -80,7 +80,7 @@ export function ensureBuiltinDistillers(): void {
 		factify: (value, command) => factifySummary("browser_memory", unwrapDistillData(value), command, memoryDistiller, { structure: 160 }),
 	});
 
-	// Legacy command distillers (no schema — outside Phase-2 scope).
+	// Remaining command distillers emit summaries without a registered schema.
 	registerCommandDistiller("evidence.collect", (command) => command === "evidence.collect", evidenceDistiller);
 	registerCommandDistiller("network.*", (command) => command.startsWith("network."), networkDistiller);
 	registerCommandDistiller("hook.dom-flow", (command) => DOM_FLOW_COMMANDS.has(command), domFlowDistiller);

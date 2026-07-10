@@ -54,9 +54,6 @@ export const TEMPORAL_REASONS = [
 ] as const;
 export type TemporalReason = (typeof TEMPORAL_REASONS)[number];
 
-export const TEMPORAL_PLAN_ACTIONS = ["none", "immediate_probe", "wait", "diagnose", "quiet_read", "reobserve_required", "fail_closed"] as const;
-export type TemporalPlanAction = (typeof TEMPORAL_PLAN_ACTIONS)[number];
-
 export const TEMPORAL_REASON_MODEL_CAP = 3;
 
 export type TemporalClockDomain = "driver_wall" | "bridge_worker_wall" | "page_wall";
@@ -123,48 +120,4 @@ export type TemporalDecision = {
 	verdict: TemporalVerdict;
 	frontier: TemporalFrontier;
 	source: TemporalSource;
-};
-
-export type TemporalCost = {
-	wallMs: number;
-	bridgeRoundTrips: number;
-	expectedToolCalls: number;
-	tokenChars: number;
-	confidenceLoss: 0 | 1 | 2 | 3;
-};
-
-export type TemporalPlan = {
-	action: TemporalPlanAction;
-	budgetMs: number;
-	reason: TemporalReason;
-	expectedEvidence: TemporalSource[];
-	frontier?: TemporalFrontier;
-	verdict?: TemporalVerdict;
-};
-
-export type TemporalObservation = {
-	anchor?: TemporalAnchor;
-	current?: TemporalStamp;
-	source: TemporalSource;
-	rawSignals?: TemporalReason[];
-};
-
-export type TemporalProfileSample = {
-	operationId?: string;
-	tool: string;
-	command?: string;
-	target?: { browserSessionId?: string; tabId?: number; targetRef?: string };
-	deadlineMs?: number;
-	elapsedMs: number;
-	bridgeRoundTrips?: number;
-	queueDepthAtEnqueue?: number;
-	queueDepthAtStart?: number;
-	queueDelayMs?: number;
-	waitAttempts?: number;
-	workerRestarts?: number;
-	historyLost?: boolean;
-	rawSignals?: string[];
-	verdict?: TemporalVerdictStatus;
-	reasons?: TemporalReason[];
-	recovery?: TemporalFrontierNext;
 };

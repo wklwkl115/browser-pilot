@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mintRef, parseRef, isBrowserPilotRef, normalizeRef } from "../../src/kernels/refs/core.ts";
 import { projectJsonValue } from "../../src/kernels/evidence/distill/projection.ts";
 import { computeRelevanceMap } from "../../src/kernels/evidence/distill/relevance.ts";
-import { countDistillTruncationMarkers, fitSalienceEnvelopeBudget } from "../../src/kernels/evidence/distill/salienceEnvelope.ts";
+import { fitSalienceEnvelopeBudget } from "../../src/kernels/evidence/distill/salienceEnvelope.ts";
 import type { BudgetedEnvelope } from "../../src/kernels/evidence/distill/ladder.ts";
 import { toPersistableMemoryTerm } from "../../src/kernels/memory/terms.ts";
 import { buildMemoryRoutingIndex, memoryRoutingTokens, routeByTokens, situationTokens } from "../../src/kernels/memory/routing.ts";
@@ -96,7 +96,6 @@ test("evidence salience envelope fits summary budgets and falls back on sparse o
 	assert.equal(fitted.tool, "browser_observe");
 	assert.ok(JSON.stringify(fitted).length <= 1_500);
 	assert.ok(fitted.summary.rendererOmitted === undefined || Array.isArray(fitted.summary.rendererOmitted));
-	assert.equal(countDistillTruncationMarkers(fitted) >= 0, true);
 
 	const sparse = fitSalienceEnvelopeBudget({ ...envelope, summary: { textPreview: "x".repeat(5_000) }, snapshotProjection: undefined, collections: undefined, diff: { summary: { changed: 1 } }, treeDiff: { summary: { changed: 1 } } }, 1);
 	assert.ok(JSON.stringify(sparse).length <= 1_000);

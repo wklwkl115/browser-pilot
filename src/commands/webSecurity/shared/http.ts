@@ -283,10 +283,6 @@ function cookiesToHeader(cookies: unknown): string | undefined {
 	return pairs.length ? pairs.join("; ") : undefined;
 }
 
-export function browserCookiesToHeader(cookies: unknown): string | undefined {
-	return cookiesToHeader(cookies);
-}
-
 export function browserCookiesToProviderResult(cookies: unknown, url?: string): BrowserCookieProviderResult | undefined {
 	const items = browserCookieItems(cookies);
 	const header = cookiesToHeader(items);

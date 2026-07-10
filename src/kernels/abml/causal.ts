@@ -52,11 +52,6 @@ export function causalRequestsFiredCount(causal: CausalSummary): number {
 	return typeof causal.requestCount === "number" ? causal.requestCount : causal.requests.length;
 }
 
-export function causalUserTriggeredCount(causal: CausalSummary): number {
-	if (!("requests" in causal)) return 0;
-	return causal.requests.filter((r) => !r.passive).length;
-}
-
 // The agent-facing "what fired since baseline" hint line. Reports the TRUE fired count and, when the
 // inline `requests` preview is capped below that total, says where the rest live (browser_network list)
 // — so the agent isn't left wondering whether the unseen requests are pageable (they are not; the

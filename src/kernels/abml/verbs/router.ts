@@ -1,7 +1,6 @@
 import type { Entity } from "../entity.js";
 import type { EntityDiff, EntityDiffOptions } from "../diff.js";
 import type { ActionabilityReport, RefDescriptor, VerificationResult } from "../types.js";
-import { isActionVerb, failedChecksFromReport, actionabilityFailureReason, type AbmlActionVerb } from "../actionabilityModel.js";
 import { normalizeAbmlError } from "../errors.js";
 
 export type AbmlRuntimeContext = {
@@ -32,11 +31,6 @@ export type AbmlFrameInput = {
 	depth?: number;
 };
 
-export type AbmlVerbRequest =
-	| { verb: "read"; input: AbmlReadInput }
-	| { verb: "pierce"; input: AbmlPierceInput }
-	| { verb: "frame"; input: AbmlFrameInput };
-
 export type AbmlVerbSuccess = {
 	ok: true;
 	verb: string;
@@ -58,26 +52,3 @@ export type AbmlVerbFailure = {
 };
 
 export type AbmlVerbResult = AbmlVerbSuccess | AbmlVerbFailure;
-
-export function actionabilityFailure(verb: AbmlActionVerb, report: ActionabilityReport): AbmlVerbFailure {
-	const blockerCodes = new Set(report.blockers.map((item) => item.code));
-	const code = blockerCodes.has("occluded") ? "TARGET_OCCLUDED"
-		: blockerCodes.has("disabled") ? "TARGET_DISABLED"
-			: blockerCodes.has("not_editable") ? "TARGET_NOT_EDITABLE"
-				: "ACTIONABILITY_TIMEOUT";
-	const failedChecks = failedChecksFromReport(report);
-	const reason = actionabilityFailureReason(report);
-	const message = reason ? `${verb} actionability failed: ${reason}` : `${verb} actionability failed`;
-	const error = normalizeAbmlError({ code, message }, { actionability: report });
-	return { ok: false, verb, error, nextActions: error.recovery.nextActions, meta: { blockerCount: report.blockers.length, failedChecks, ...(reason ? { reason } : {}) } };
-}
-
-export function verificationFailure(verb: string, verification: VerificationResult): AbmlVerbFailure {
-	const code = verification.status === "inconclusive" ? "VERIFY_INCONCLUSIVE" : "VERIFY_FAILED";
-	const error = normalizeAbmlError({ code, message: `${verb} verification ${verification.status}` }, { verification });
-	return { ok: false, verb, error, nextActions: error.recovery.nextActions };
-}
-
-export function isAbmlActionVerb(value: string): value is AbmlActionVerb {
-	return isActionVerb(value);
-}

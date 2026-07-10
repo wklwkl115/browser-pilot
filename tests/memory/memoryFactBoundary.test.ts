@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildMemoryAugmentationPlan } from "../../src/commands/observe/memoryAugmentation.ts";
-import { readBrowserMemory, readBrowserMemoryResource } from "../../src/commands/memory/reader.ts";
+import { readBrowserMemory } from "../../src/commands/memory/reader.ts";
 import { recallMemory, recordMemoryEntry, validateMemoryRecord } from "../../src/commands/memory/store.ts";
 import { validateMemoryRecordPayloadShape } from "../../src/commands/memory/evidence.ts";
 import { consumeMemoryProfileDiagnostics, drainMemoryProfileFlushes, recordMemoryProfileFrame, readCachedMemoryProfile, recordMemoryProfileStrike } from "../../src/memory/profileService.ts";
@@ -172,13 +172,6 @@ test("memory secrets stay cwd scoped and stamps do not echo raw stable values", 
 	const stamp = await hmacMemoryStamp(firstCwd, "https://example.test", "raw-version-stamp");
 	assert.match(stamp ?? "", /^[a-f0-9]{32}$/);
 	assert.notEqual(stamp, "raw-version-stamp");
-});
-
-test("memory read rejects traversal-like fact URIs through normalized not-found handling", async () => {
-	const cwd = makeMemoryRoot();
-	const result = await readBrowserMemoryResource("browser-memory://fact/../../outside?mode=json", cwd);
-	assert.equal(result.ok, false);
-	assert.equal(result.code, "MEMORY_ENTRY_NOT_FOUND");
 });
 
 test("memory index derivation ignores malformed records while preserving valid facts", async () => {

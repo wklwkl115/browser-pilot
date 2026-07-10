@@ -76,10 +76,6 @@ function ancestorContainerContext(node: Record<string, unknown>, parentByChildId
 	return { ...(nearest ? { nearest } : {}), currentContainerKeys };
 }
 
-export function nearestContainer(node: Record<string, unknown>, parentByChildId: Map<string, Record<string, unknown>>): { role: string; name: string | undefined } | undefined {
-	return ancestorContainerContext(node, parentByChildId).nearest;
-}
-
 function collectTableRows(table: Record<string, unknown>, nodeById: Map<string, Record<string, unknown>>): Array<Record<string, unknown>> {
 	const rows: Array<Record<string, unknown>> = [];
 	const visit = (node: Record<string, unknown>, depth: number) => {

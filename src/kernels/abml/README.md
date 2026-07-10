@@ -49,12 +49,12 @@ The modules below make up the kernel's public surface — consumers import them 
 | `identityBootstrap.ts` | Best-effort scan rect ↔ DOMSnapshot backendNodeId bootstrap with fail-open diagnostics. |
 | `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
 | `treeDiff.ts` | Template-level living diff over repeated structures; O(change) projection without ref-mint changes. |
-| `semanticRefAnchor.ts` | M2b semantic ref-anchor candidate + shadow-hash input derivation; high-confidence anchors feed gated ref minting in runtime. |
+| `semanticRefAnchor.ts` | Semantic ref-anchor candidate derivation for repeated structures. |
 | `snapshotProjection.ts` | M2c living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
 | `collections.ts` | Collection completeness and read-only continuation evidence for long/virtualized/lazy/paginated structures. |
-| `actionabilityModel.ts` | Verb → actionability-spec mapping; action-verb classification. |
+| `actionabilityModel.ts` | Actionability blocker diagnostics and failure-reason shaping. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping. |
-| `verbs/router.ts` | Verb input/result/runtime types + actionability/verification failure helpers. |
+| `verbs/router.ts` | Verb input/result/runtime types shared by pure decisions and browser runtime. |
 | `verbs/{read,frame,pierce}.ts` | Per-verb **decision** logic (no browser call). |
 
 Generic ref URI minting, stable ref IDs, and ref-access policy live in

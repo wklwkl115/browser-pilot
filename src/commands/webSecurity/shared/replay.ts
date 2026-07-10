@@ -28,7 +28,7 @@ export type NormalizedReplayOptions = {
 	cookieProvider?: CookieProvider;
 };
 
-export { buildReplayRequest, parseRawHttpRequest } from "./requestTemplate.js";
+export { buildReplayRequest } from "./requestTemplate.js";
 
 function replayInputError(message: string, details: Record<string, unknown> = {}): Error {
 	return createCodedError({ name: "ReplayInputError", code: "INVALID_RULE", message, details, suppressStack: false });
@@ -354,7 +354,7 @@ export function cookieHeaderFromSetCookie(lines: string[]): string | undefined {
 	return pairs.length ? pairs.join("; ") : undefined;
 }
 
-export { buildHarDependencyGraph, harDependencyRequestInfo, harDependencyResponseInfo, harEntriesFromOptions, harHeaderValues, MAX_HAR_FILTER_CANDIDATE_ENTRIES, MAX_HAR_URL_MATCH_CHARS, MAX_HAR_URL_PATTERN_CHARS } from "./har.js";
+export { buildHarDependencyGraph, harEntriesFromOptions } from "./har.js";
 
 export function replayInputOptions(input: unknown, parent: ReplayOptions): ReplayOptions {
 	const common: ReplayOptions = { ...parent, url: undefined, rawRequest: undefined, request: undefined, body: undefined, bodyBase64: undefined, multipart: undefined, requests: undefined, sequence: undefined, har: undefined, harPath: undefined };
@@ -370,4 +370,3 @@ export async function replaySequenceInputs(options: ReplayOptions): Promise<Arra
 	const harEntries = await harEntriesFromOptions(options);
 	return harEntries.map((entry, index) => ({ input: entry, source: "har", label: asString(isRecord(entry.request) ? entry.request.url : undefined) || `har-${index + 1}` }));
 }
-

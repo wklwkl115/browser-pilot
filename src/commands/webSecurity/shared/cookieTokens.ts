@@ -360,12 +360,7 @@ function signFlaskToken(payload: Record<string, unknown>, timestampPart: string,
 	return `${signedValue}.${signature}`;
 }
 
-
 const { verifyRailsEncryptedToken, verifyRailsSignedToken, verifyRailsLegacyCbcPayload, signRailsSignedToken, encryptRailsToken, encryptRailsLegacyCbcToken } = createRailsCookieTokenFns({ decodePrintableJsonValue, secretByteCandidates });
-
-function structuredPayloadClaims(payload: unknown) {
-	return isRecord(payload) ? payload : undefined;
-}
 
 function mutationRecord(payload: unknown, claimMutations: unknown, build: (claims: Record<string, unknown>) => string | undefined): Record<string, unknown> | undefined {
 	if (!isRecord(claimMutations)) return undefined;
@@ -381,11 +376,6 @@ async function mutationRecordAsync(payload: unknown, claimMutations: unknown, bu
 	const claims = { ...payload, ...claimMutations };
 	const token = await build(claims);
 	return token ? { claims: claimMutations, payload: claims, token, tokenSha256: sha256Hex(token) } : { claims: claimMutations, error: "Token format is unsupported or no matching secret was supplied" };
-}
-
-function tokenPayload(token: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-	if (!isRecord(token)) return undefined;
-	return structuredPayloadClaims(token.payload);
 }
 
 function tokenVerified(token: Record<string, unknown>): boolean {
@@ -620,11 +610,6 @@ export function tokenMutationToken(result: Record<string, unknown>): string | un
 	const token = isRecord(result.token) ? result.token : isRecord(result.jwt) ? result.jwt : undefined;
 	if (!isRecord(token) || !isRecord(token.mutation)) return undefined;
 	return asString(token.mutation.token);
-}
-
-export function tokenPayloadOf(result: Record<string, unknown>): Record<string, unknown> | undefined {
-	const token = isRecord(result.token) ? result.token : isRecord(result.jwt) ? result.jwt : undefined;
-	return tokenPayload(token);
 }
 
 export function tokenFormatOf(result: Record<string, unknown>): string | undefined {

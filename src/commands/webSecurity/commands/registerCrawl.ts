@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import { summarizeBrowserCrawlData, summarizeWebReconProbeData } from "../../summaries/index.js";
 import { runBrowserCrawl } from "../browserNative/crawl.js";
 import { runReconProbe } from "../browserNative/recon.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxDepthParam, maxPagesParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateCrawlParams, headerRecordParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateCrawlParams, headerRecordParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
 import type { RawCrawlOptions, RawProbeOptions } from "../shared/types.js";
@@ -28,12 +28,6 @@ export function defineCrawlCommand({ commands, ensureStarted }: CommandRegistrar
 			schemes: Type.Optional(Type.Array(Type.String(), { description: "fingerprint mode only: optional schemes to expand, e.g. [http, https]." })),
 			includeFaviconHash: Type.Optional(Type.Boolean({ description: "fingerprint mode only: fetch /favicon.ico for each final origin and include favicon hash metadata; default false." })),
 			includeTlsCertificate: Type.Optional(Type.Boolean({ description: "fingerprint mode only: inspect HTTPS peer certificate metadata for final URLs; default false." })),
-			...redirectControlParams({
-				followRedirectsDescription: "fingerprint mode: follow redirects and record the chain; default true. crawl mode: internal fetch follows redirects for crawl collection.",
-				maxRedirectsDescription: "fingerprint mode: maximum redirects per URL; default 5 when followRedirects is true.",
-			}),
-			...maxDepthParam("crawl mode only: maximum crawl depth; default 2, hard-capped at 5."),
-			...maxPagesParam("crawl mode only: maximum pages/resources fetched; default 50, hard-capped at 500."),
 			sameOrigin: Type.Optional(Type.Boolean({ description: "crawl mode only: stay within seed origins; default true." })),
 			knownFiles: enumParam(["none", "robotstxt", "sitemapxml", "all"], "crawl mode only: none | robotstxt | sitemapxml | all. Adds common known-file seeds."),
 			extractJs: Type.Optional(Type.Boolean({ description: "crawl mode only: extract JS endpoint hints and crawl same-origin script files; default true." })),

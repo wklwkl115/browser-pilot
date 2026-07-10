@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import { summarizeNucleiBridgeData, summarizeTemplateCheckData } from "../../summaries/index.js";
 import { runNucleiBridge } from "../bridges/nucleiBridge.js";
 import { runTemplateCheck } from "../browserNative/templateCheck.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxTemplatesParam, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateTemplateParams, headerRecordParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateTemplateParams, headerRecordParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
 import type { RawNucleiBridgeOptions, RawTemplateCheckOptions } from "../shared/types.js";
@@ -37,13 +37,7 @@ export function defineTemplateCommand({ commands, ensureStarted }: CommandRegist
 			templatePath: Type.Optional(Type.String({ description: "builtin mode only: local JSON or YAML template file path containing a template object, array, or {templates}." })),
 			variables: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Null()]), { description: "builtin mode only: template variable values for {{name}} substitution." })),
 			tech: Type.Optional(Type.Object({}, { additionalProperties: true, description: "builtin mode only: optional technology hints retained for template selection workflows." })),
-			...redirectControlParams({
-				followRedirectsDescription: "builtin mode: follow redirects; default false. nuclei mode: follow redirects; default false.",
-				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",
-			}),
-			...maxTemplatesParam("builtin mode only: maximum templates to run; default 100, hard-capped at 1000."),
 			maxRequests: Type.Optional(Type.Number({ description: "builtin mode only: maximum total HTTP requests across all expanded template/target combinations; default 2000, hard-capped at 10000." })),
-			...rateLimitPerSecondParam("builtin mode or nuclei mode: request rate cap per second; default unlimited sequential. nuclei mode maps to -rl."),
 			nucleiPath: Type.Optional(Type.String({ description: "nuclei mode only: optional nuclei executable or launcher command. Default auto-detects nuclei in PATH." })),
 			nucleiArgs: Type.Optional(Type.Array(Type.String(), { description: "nuclei mode only: optional launcher arguments prepended before generated nuclei flags." })),
 			extraArgs: Type.Optional(Type.Array(Type.String(), { description: "nuclei mode only: additional nuclei CLI arguments appended after generated flags." })),
@@ -62,7 +56,6 @@ export function defineTemplateCommand({ commands, ensureStarted }: CommandRegist
 				requestsDescription: "nuclei mode only: request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Each selected entry is sent to nuclei as a separate target.",
 				sequenceDescription: "nuclei mode only: alias for requests; each selected entry is sent to nuclei as a separate target.",
 			}),
-			...boundedExecutionParams({ timeoutSecondsDescription: "nuclei mode only: per-request timeout seconds; default derived from timeoutMs." }),
 			retries: Type.Optional(Type.Number({ description: "nuclei mode only: retry count; default 1." })),
 			concurrency: Type.Optional(Type.Number({ description: "nuclei mode only: concurrency via -c; default 10, clamped to 1-100." })),
 			bulkSize: Type.Optional(Type.Number({ description: "nuclei mode only: bulk size via -bs; default 10, clamped to 1-100." })),

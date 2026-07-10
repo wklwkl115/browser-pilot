@@ -49,16 +49,6 @@ export const BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = [
 	...WEB_SECURITY_COMMAND_REGISTRARS,
 ];
 
-export const WEB_SECURITY_TOOL_NAMES = new Set([
-	"browser_crawl",
-	"browser_fuzz",
-	"browser_sqli",
-	"browser_template",
-	"browser_callback_oast",
-	"browser_cookie_analyze",
-	"browser_http_replay",
-]);
-
 export function resolveBrowserCommandRegistrars(): readonly CommandRegistrar[] {
 	return BROWSER_COMMAND_REGISTRARS;
 }

@@ -544,7 +544,3 @@ export type BrowserPilotChromeApi = {
 };
 
 export type ChromeApi = BrowserPilotChromeApi;
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

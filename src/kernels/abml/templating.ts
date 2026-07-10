@@ -10,16 +10,7 @@
 // from the P3-2 AX-membership merge) or a declared `aria-setsize`, plus the same `role` + `kind`.
 // No tag/class/selector-prefix matching (that overfits a framework's DOM). Pure: zero browser/Node deps.
 import type { Entity, EntityKind } from "./entity.js";
-import {
-	groupEntities,
-	isActionableOrStructural,
-	isPureTextLeaf,
-	structureScopeKey,
-	templateGroupDescriptorForEntity,
-} from "./grouping.js";
-
-export { MIN_TEMPLATE_INSTANCES, isActionableOrStructural, isPureTextLeaf, structureScopeKey, templateGroupDescriptorForEntity } from "./grouping.js";
-export type { TemplateGroupDescriptor } from "./grouping.js";
+import { isPureTextLeaf, templateGroupDescriptorForEntity } from "./grouping.js";
 
 // Handles are lossless but capped — the true size is always `count`; beyond the cap the model pages
 // via the listed refs / a fresh observe.
@@ -44,8 +35,6 @@ export type StructureTemplate = {
 	instanceRefs: string[]; // member refs (capped at MAX_TEMPLATE_INSTANCE_REFS; true size = count)
 	sample?: { ref: string; name?: string; value?: string }; // one representative instance
 };
-
-export type TemplateSummary = { templates: StructureTemplate[] };
 
 export function templateFieldValue(entity: Entity, field: TemplateVaryField): unknown {
 	if (field === "name") return entity.name;
@@ -100,21 +89,4 @@ export function templateRank(template: Pick<StructureTemplate, "role" | "kind">)
 	if (template.kind === "element" && !isPureTextLeaf(template)) return 1;
 	if (template.kind === "region") return 1;
 	return 2;
-}
-
-// Fold repeated sibling entities (same AX container or aria-setsize set + same role/kind, ≥
-// MIN_TEMPLATE_INSTANCES) into structure templates. This is currently contract-test surface for
-// the M1 folding engine; the default observe projection intentionally omits focus.templates.
-// Sorted by instance count desc, capped at MAX_TEMPLATES. Empty when nothing repeats.
-export function buildTemplateSummary(entities: Entity[]): TemplateSummary {
-	const rawGroups = groupEntities(entities);
-	const scopesWithStructuralTemplates = new Set(rawGroups
-		.filter((group) => isActionableOrStructural(group.descriptor))
-		.map((group) => structureScopeKey(group.descriptor)));
-	const templates = rawGroups
-		.filter((group) => !(isPureTextLeaf(group.descriptor) && scopesWithStructuralTemplates.has(structureScopeKey(group.descriptor))))
-		.map((group) => buildTemplate(group.members.map((member) => member.entity)))
-		.sort((a, b) => templateRank(a) - templateRank(b) || b.count - a.count)
-		.slice(0, MAX_TEMPLATES);
-	return { templates };
 }

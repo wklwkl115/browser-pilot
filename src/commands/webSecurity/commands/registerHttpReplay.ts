@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeHttpReplayData } from "../../summaries/index.js";
 import { runHttpReplay } from "../browserNative/httpReplay.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateHttpReplayParams, headerRecordParam, type HttpReplayToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateHttpReplayParams, headerRecordParam, type HttpReplayToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
 import { validateOptionalParams } from "../../validationMiddleware.js";
@@ -39,10 +39,6 @@ export function defineHttpReplayCommand({ commands, ensureStarted }: CommandRegi
 			body: Type.Optional(Type.String({ description: "Text request body override." })),
 			bodyBase64: Type.Optional(Type.String({ description: "Base64 request body override for binary-ish payloads." })),
 			mutations: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Optional mutation object with url, method, headers, body, bodyBase64, or multipart." })),
-			...redirectControlParams({
-				followRedirectsDescription: "Follow redirects; default false for replay determinism.",
-				maxRedirectsDescription: "Maximum redirects when followRedirects is true.",
-			}),
 			...browserCookieBindingParams("Merge browser cookies into outgoing HTTP request headers for the request URL; default false."),
 			reflectCsrf: Type.Optional(Type.Boolean({ description: "When bindBrowserSession is true, reflect a double-submit CSRF cookie (e.g. XSRF-TOKEN) into its matching request header; default true. Set false to send the bound session without a CSRF header (e.g. to test CSRF protection)." })),
 			csrfCookie: Type.Optional(Type.String({ description: "Exact CSRF cookie name to reflect, overriding auto-detection (xsrf-token/csrf-token/csrftoken/_csrf/csrf_token)." })),

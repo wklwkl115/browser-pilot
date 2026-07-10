@@ -3,12 +3,12 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { allocateTemporalBudget, classifyDeadlinePressure, compareTemporalCost } from "../../src/kernels/temporal/budget.ts";
+import { classifyDeadlinePressure } from "../../src/kernels/temporal/budget.ts";
 import { classifyStateLoss, classifyStaleness, classifyTimeout, diagnoseWaitTimeout } from "../../src/kernels/temporal/classify.ts";
 import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity } from "../../src/kernels/temporal/estimate.ts";
-import type { TemporalAnchor, TemporalCost, TemporalStamp } from "../../src/kernels/temporal/types.ts";
+import type { TemporalAnchor, TemporalStamp } from "../../src/kernels/temporal/types.ts";
 import { fitInlineJsonToBudgetMeasured } from "../../src/kernels/evidence/distill/fit.ts";
-import { countDistillTruncationMarkers, fitSalienceEnvelopeBudget } from "../../src/kernels/evidence/distill/salienceEnvelope.ts";
+import { fitSalienceEnvelopeBudget } from "../../src/kernels/evidence/distill/salienceEnvelope.ts";
 import type { BudgetedEnvelope } from "../../src/kernels/evidence/distill/ladder.ts";
 import { applyVerificationStrike, memoryStampSetId, transitionStrikeCount, verifyMemoryAnchors } from "../../src/kernels/memory/staleness.ts";
 import { clearResourceStore, listResources, parseBrowserPilotRefUri, parseResourceUri, pruneExpired, registerBrowserResultResource, registerRefDescriptor, resolveRefUriDetailed, resolveResourceUri, resourceRefStore, stats } from "../../src/resources/resourceRefs.ts";
@@ -59,7 +59,7 @@ test("temporal estimates classify continuity, staleness, and wait recovery bound
 	assert.equal(estimateWaitContinuity({ eventSource: "wait_supervisor" }).verdict.status, "fresh");
 });
 
-test("temporal classifiers and budget planner cover timeout priorities and deadline fallbacks", () => {
+test("temporal classifiers cover timeout priorities and deadline fallbacks", () => {
 	assert.equal(classifyStateLoss({ extensionUnavailable: true }).verdict.reasons[0], "extension_unavailable");
 	assert.equal(classifyStateLoss({ tabDisconnected: true }).verdict.status, "stale");
 	assert.equal(classifyStateLoss({ clientDisconnected: true }).source, "wait_supervisor");
@@ -91,11 +91,6 @@ test("temporal classifiers and budget planner cover timeout priorities and deadl
 	assert.equal(classifyStaleness({ targetRegionDirty: true, stableLocator: true, cssOnlyLocator: false }).verdict.status, "stale");
 	assert.equal(classifyStaleness({ dirtyRootsOverflow: true }).verdict.status, "possibly_stale");
 
-	const cheap: TemporalCost = { wallMs: 50, bridgeRoundTrips: 1, expectedToolCalls: 1, tokenChars: 100, confidenceLoss: 1 };
-	const expensive: TemporalCost = { wallMs: 60, bridgeRoundTrips: 1, expectedToolCalls: 1, tokenChars: 100, confidenceLoss: 1 };
-	assert.ok(compareTemporalCost(cheap, expensive) < 0);
-	assert.equal(allocateTemporalBudget({ remainingMs: 10, reserveMs: 5, candidates: [{ action: "reobserve", reason: "target_possibly_stale", cost: cheap, expectedEvidence: ["page_signal"] }] }).action, "fail_closed");
-	assert.equal(allocateTemporalBudget({ remainingMs: 100, candidates: [{ action: "diagnose", reason: "signal_unavailable", cost: expensive, expectedEvidence: ["driver_snapshot"] }, { action: "reobserve", reason: "target_possibly_stale", cost: cheap, expectedEvidence: ["page_signal"], frontierNext: "reobserve", verdict: { status: "possibly_stale", confidence: "bounded", reasons: ["target_possibly_stale"] } }] }).action, "reobserve");
 	assert.equal(classifyDeadlinePressure({ remainingMs: 100, requiredMs: 10, queueDelayMs: 200 }).verdict.reasons[0], "queue_delay_budget_exceeded");
 	assert.equal(classifyDeadlinePressure({ remainingMs: 100, requiredMs: 10, queueDepthAtEnqueue: 3 }).verdict.reasons[0], "queue_saturated");
 	assert.equal(classifyDeadlinePressure({ remainingMs: 10, requiredMs: 100 }).frontier.next, "fail_closed");
@@ -149,7 +144,6 @@ test("evidence fit trims array/object payloads and salience envelope prefers str
 	assert.ok(JSON.stringify(fitted).length <= 1_500);
 	assert.equal(typeof fitted.summary, "object");
 	assert.deepEqual(fitted.nextActions, envelope.nextActions);
-	assert.equal(countDistillTruncationMarkers({ text: "truncated ... omitted …" }), 4);
 
 	const ladderFallback = fitSalienceEnvelopeBudget({ ...envelope, summary: { textPreview: "x".repeat(10_000) } }, 50);
 	assert.equal(ladderFallback.summary.summaryTruncatedToBudget === true || JSON.stringify(ladderFallback).length <= 1_000, true);

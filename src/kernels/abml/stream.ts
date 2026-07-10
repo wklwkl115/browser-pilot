@@ -65,13 +65,6 @@ export function createCaptureRef(params: {
 	};
 }
 
-export function mapCaptureState(value: unknown, now: number, expiresAt?: number): CaptureState {
-	const text = stringValue(value)?.toLowerCase();
-	if (text === "active" || text === "stopped" || text === "expired" || text === "lost") return text;
-	if (expiresAt !== undefined && now > expiresAt) return "expired";
-	return "active";
-}
-
 export function buildNetworkEntryEntity(entry: Record<string, unknown>, context: CaptureRefContext): { entity: Omit<Entity, "ref">; descriptor: Omit<RefDescriptor, "refId"> } {
 	const request = isRecord(entry.request) ? entry.request : {};
 	const response = isRecord(entry.response) ? entry.response : {};

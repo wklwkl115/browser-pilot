@@ -113,10 +113,6 @@ function bucketKey(cwd: string, runId: string): string {
 	return `${cwd}\u0000${runId}`;
 }
 
-export function compactTemporalDecision(decision: TemporalDecision, handle?: string): CompactTemporalDecision {
-	return compact(decision, handle);
-}
-
 export function queueTemporalDiagnostics(input: QueueTemporalProfileInput): { temporal?: CompactTemporalDecision; temporalProfile: Record<string, unknown> } {
 	const temporalProfile = {
 		...(input.queueDepthAtEnqueue !== undefined ? { queueDepthAtEnqueue: input.queueDepthAtEnqueue } : {}),

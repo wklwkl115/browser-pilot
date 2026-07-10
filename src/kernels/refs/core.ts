@@ -76,7 +76,3 @@ export function normalizeRef(ref: BrowserPilotRef): BrowserPilotRef {
 		...(ref.scope ? { scope: ref.scope } : {}),
 	};
 }
-
-export function refKind(value: string): BrowserPilotRefKind {
-	return parseRef(value).kind;
-}
