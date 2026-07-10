@@ -19,7 +19,7 @@ function firstTabId(...values: unknown[]): number | undefined {
 	return undefined;
 }
 
-function copyDefined(source: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+function copyDefined(source: Record<string, unknown>, keys = Object.keys(source)): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	for (const key of keys) {
 		if (source[key] !== undefined) out[key] = source[key];
@@ -52,30 +52,19 @@ export function publicCreateTabResult(result: unknown): Record<string, unknown> 
 	const createdTarget = compactTarget(recordValue(raw.createdTarget));
 	const rawCreatedTab = recordValue(raw.createdTab);
 	const createdTab = rawCreatedTab ? compactTabForList(rawCreatedTab) : undefined;
-	const targetRef = firstString(createdTarget?.targetRef, createdTarget?.tabHandle, createdTab?.targetRef, createdTab?.tabHandle, data?.targetRef, data?.tabHandle);
-	const tabId = firstTabId(createdTarget?.tabId, createdTab?.tabId, data?.tabId, data?.id, raw.tabId);
+	const targetValues = createdTarget || {}, tabValues = createdTab || {}, dataValues = data || {};
+	const targetRef = firstString(targetValues.targetRef, targetValues.tabHandle, tabValues.targetRef, tabValues.tabHandle, dataValues.targetRef, dataValues.tabHandle);
+	const tabId = firstTabId(targetValues.tabId, tabValues.tabId, dataValues.tabId, dataValues.id, raw.tabId);
 	const id = targetRef ?? tabId ?? raw.id;
-	const browserSessionId = firstString(createdTarget?.browserSessionId, data?.browserSessionId);
-	const browserId = firstString(createdTarget?.browserId, createdTab?.browserId, data?.browserId);
-	const url = firstString(data?.url, createdTab?.url, createdTarget?.url);
-	const title = firstString(data?.title, createdTab?.title);
-	return {
-		...(id !== undefined ? { id } : {}),
-		...(targetRef ? { targetRef, tabHandle: targetRef } : {}),
-		...(tabId !== undefined ? { tabId } : {}),
-		...(browserSessionId ? { browserSessionId } : {}),
-		...(browserId ? { browserId } : {}),
-		...(url ? { url } : {}),
-		...(title ? { title } : {}),
-		...(raw.id !== undefined && raw.id !== id ? { requestId: raw.id } : {}),
-		...(raw.acknowledged !== undefined ? { acknowledged: raw.acknowledged } : {}),
-		...(createdTarget ? { createdTarget } : {}),
-		...(createdTab ? { createdTab } : {}),
-		...(data ? { data } : {}),
-		...(raw.target !== undefined ? { target: raw.target } : {}),
-		...(raw.newTabs !== undefined ? { newTabs: raw.newTabs } : {}),
-		...(raw.diagnostics !== undefined ? { diagnostics: raw.diagnostics } : {}),
-	};
+	const browserSessionId = firstString(targetValues.browserSessionId, dataValues.browserSessionId);
+	const browserId = firstString(targetValues.browserId, tabValues.browserId, dataValues.browserId);
+	const url = firstString(dataValues.url, tabValues.url, targetValues.url);
+	const title = firstString(dataValues.title, tabValues.title);
+	return copyDefined({
+		id, targetRef, tabHandle: targetRef, tabId, browserSessionId, browserId, url, title,
+		requestId: raw.id !== undefined && raw.id !== id ? raw.id : undefined, acknowledged: raw.acknowledged,
+		createdTarget, createdTab, data, target: raw.target, newTabs: raw.newTabs, diagnostics: raw.diagnostics,
+	});
 }
 
 export function publicSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {

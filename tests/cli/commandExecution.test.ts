@@ -11,6 +11,7 @@ import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
 import { defineNetworkCommand } from "../../src/commands/nativeActionCommands.ts";
 import { defineObserveCommand } from "../../src/commands/observeCommand.ts";
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
+import { publicCreateTabResult } from "../../src/commands/tabsProjection.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
 import { BrowserBridgeError } from "../../src/utils/errors.ts";
@@ -94,15 +95,15 @@ function createRuntime(overrides: Partial<BrowserCommandRuntimePort> = {}): Mock
 			calls.push({ name: "closeTab", args });
 			return { id: "close-1", acknowledged: true, tabId: Number(args[0]), data: { closed: true } } as BrowserBridgeExecutionResult;
 		},
-		listBrowserSessions() { return []; },
-		createBrowserSession(name) { return { browserSessionId: "session-new", name }; },
-		selectBrowserSession(browserSessionId) { return { browserSessionId }; },
-		closeBrowserSession(browserSessionId) { return { browserSessionId, closed: true }; },
-		attachTabToBrowserSession(tabId) { return { tabId: Number(tabId), tabHandle: `tab-${tabId}` }; },
-		detachTabFromBrowserSession(tabId) { return { tabId, detached: true }; },
-		selectBrowser(browserId) { return { browserId }; },
-		leaseTab(tabId) { return { id: "lease-secret", browserSessionId: "session-1", tabSessionId: "tab-session-1", browserId: "browser-1", tabId: Number(tabId), explicit: true, createdAt: 1, lastSeenAt: 1 }; },
-		releaseTab(tabId) { return { id: "lease-secret", browserSessionId: "session-1", tabSessionId: "tab-session-1", browserId: "browser-1", tabId: Number(tabId), explicit: true, createdAt: 1, lastSeenAt: 1 }; },
+		listBrowserSessions() { calls.push({ name: "listBrowserSessions", args: [] }); return []; },
+		createBrowserSession(name) { calls.push({ name: "createBrowserSession", args: [name] }); return { browserSessionId: "session-new", name }; },
+		selectBrowserSession(browserSessionId) { calls.push({ name: "selectBrowserSession", args: [browserSessionId] }); return { browserSessionId }; },
+		closeBrowserSession(browserSessionId) { calls.push({ name: "closeBrowserSession", args: [browserSessionId] }); return { browserSessionId, closed: true }; },
+		attachTabToBrowserSession(tabId, options) { calls.push({ name: "attachTabToBrowserSession", args: [tabId, options] }); return { tabId: Number(tabId), tabHandle: `tab-${tabId}` }; },
+		detachTabFromBrowserSession(tabId, options) { calls.push({ name: "detachTabFromBrowserSession", args: [tabId, options] }); return { tabId, detached: true }; },
+		selectBrowser(browserId, options) { calls.push({ name: "selectBrowser", args: [browserId, options] }); return { browserId }; },
+		leaseTab(tabId, options) { calls.push({ name: "leaseTab", args: [tabId, options] }); return { id: "lease-secret", browserSessionId: "session-1", tabSessionId: "tab-session-1", browserId: "browser-1", tabId: Number(tabId), explicit: true, createdAt: 1, lastSeenAt: 1 }; },
+		releaseTab(tabId, options) { calls.push({ name: "releaseTab", args: [tabId, options] }); return { id: "lease-secret", browserSessionId: "session-1", tabSessionId: "tab-session-1", browserId: "browser-1", tabId: Number(tabId), explicit: true, createdAt: 1, lastSeenAt: 1 }; },
 		acquireUiLock(browserSessionId, commandName) { return { browserSessionId: browserSessionId || "session-1", commandName, createdAt: 1, lastSeenAt: 1, count: 1 }; },
 		releaseUiLock(browserSessionId) { return { browserSessionId: browserSessionId || "session-1", commandName: "browser_execute", createdAt: 1, lastSeenAt: 1, count: 0 }; },
 		queueDepth(...args) { calls.push({ name: "queueDepth", args }); return 0; },
@@ -187,6 +188,89 @@ test("commands execution: stale browser_tabs snapshot recovery uses ordinary no-
 		"browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
 		"browser-pilot observe --json",
 	]);
+	const allowed = parseResult(await command.execute("tool-1", { action: "snapshot", snapshotId: "stale-snap", allowExpired: true }));
+	assert.equal((allowed.snapshot as Record<string, unknown>).snapshotId, "stale-snap");
+	const inventory = parseResult(await command.execute("tool-1", { action: "snapshot" }));
+	assert.equal((inventory.bridge as Record<string, unknown>).defaultTabHandle, "tab-7");
+	assert.deepEqual(inventory.observationSnapshots, []);
+});
+
+test("commands execution: browser_tabs common and advanced actions preserve runtime dispatch", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineTabsCommand(context), runtime);
+	const create = parseResult(await command.execute("tool-1", { action: "create", url: "https://example.test/new", active: false, incognito: true, browserSessionId: "session-1" }));
+	assert.equal(create.id, 8);
+	assert.equal(create.requestId, "create-1");
+	assert.deepEqual(runtime.calls.find((call) => call.name === "createTab")?.args, ["https://example.test/new", false, 5_000, { browserSessionId: "session-1", incognito: true }]);
+	await command.execute("tool-2", { action: "switch", targetRef: "tab-7", browserSessionId: "session-1" });
+	await command.execute("tool-3", { action: "close", tabId: 7, browserSessionId: "session-1" });
+	assert.deepEqual(runtime.calls.find((call) => call.name === "switchTab")?.args, ["tab-7", 5_000, { browserSessionId: "session-1" }]);
+	assert.deepEqual(runtime.calls.find((call) => call.name === "closeTab")?.args, [7, 5_000, { browserSessionId: "session-1" }]);
+
+	for (const params of [
+		{ action: "listSessions" },
+		{ action: "createSession", name: "isolated" },
+		{ action: "selectSession", browserSessionId: "session-1" },
+		{ action: "closeSession", browserSessionId: "session-1" },
+		{ action: "attachTab", targetRef: "tab-7", browserSessionId: "session-1", browserId: "browser-1" },
+		{ action: "detachTab", targetRef: "tab-7", browserSessionId: "session-1" },
+		{ action: "leaseTab", targetRef: "tab-7", browserSessionId: "session-1" },
+		{ action: "releaseTab", targetRef: "tab-7", browserSessionId: "session-1" },
+		{ action: "selectBrowser", browserId: "browser-1", browserSessionId: "session-1" },
+	]) {
+		const body = parseResult(await command.execute("tool-advanced", params));
+		assert.equal(body.code, undefined, String(params.action));
+	}
+	assert.deepEqual(runtime.calls.find((call) => call.name === "attachTabToBrowserSession")?.args, ["tab-7", { browserSessionId: "session-1", browserId: "browser-1" }]);
+	const projectedLease = parseResult(await command.execute("tool-lease", { action: "leaseTab", targetRef: 7 })).lease as Record<string, unknown>;
+	assert.equal(projectedLease.id, "lease-secret");
+	assert.equal("browserSessionId" in projectedLease, false);
+	assert.equal("tabSessionId" in projectedLease, false);
+});
+
+test("commands execution: browser_tabs rejects invalid targets, URLs, and actions before dispatch", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineTabsCommand(context), runtime);
+	for (const [params, code] of [
+		[{ action: "close" }, "TAB_ID_REQUIRED"],
+		[{ action: "create", url: "/relative" }, "INVALID_TAB_URL"],
+		[{ action: "create", url: "javascript:alert(1)" }, "INVALID_TAB_URL"],
+		[{ action: "unknown" }, "INVALID_RULE"],
+	] as Array<[Record<string, unknown>, string]>) {
+		assert.equal(parseResult(await command.execute("tool-invalid", params)).code, code);
+	}
+	assert.equal(runtime.calls.some((call) => ["closeTab", "createTab"].includes(call.name)), false);
+});
+
+test("tabs create projection keeps stable identity precedence and strips nested transport noise", () => {
+	assert.deepEqual(publicCreateTabResult({
+		id: "request-1",
+		acknowledged: true,
+		tabId: 9,
+		createdTarget: { browserSessionId: "session-1", browserId: "browser-1", tabId: 9, tabHandle: "tab-9", targetRef: "tab-9", url: "https://target.test/", ignored: "target-noise" },
+		createdTab: { id: "tab-session-9", tabId: 9, tabHandle: "tab-9", targetRef: "tab-9", url: "https://tab.test/", title: "Created", active: true, bridge: { token: "noise" } },
+		data: { tabId: 10, tabHandle: "tab-data", url: "https://data.test/", title: "Data" },
+		target: { tabId: 9 },
+		newTabs: [{ tabId: 9 }],
+		diagnostics: { latency: 1 },
+	}), {
+		id: "tab-9",
+		targetRef: "tab-9",
+		tabHandle: "tab-9",
+		tabId: 9,
+		browserSessionId: "session-1",
+		browserId: "browser-1",
+		url: "https://data.test/",
+		title: "Data",
+		requestId: "request-1",
+		acknowledged: true,
+		createdTarget: { browserSessionId: "session-1", browserId: "browser-1", tabId: 9, tabHandle: "tab-9", targetRef: "tab-9", url: "https://target.test/" },
+		createdTab: { id: "tab-9", tabSessionId: "tab-session-9", tabId: 9, tabHandle: "tab-9", targetRef: "tab-9", url: "https://tab.test/", title: "Created", active: true },
+		data: { tabId: 10, tabHandle: "tab-data", url: "https://data.test/", title: "Data" },
+		target: { tabId: 9 },
+		newTabs: [{ tabId: 9 }],
+		diagnostics: { latency: 1 },
+	});
 });
 
 test("commands execution: browser_command sends validated native command and emits distilled operation envelope", async () => {

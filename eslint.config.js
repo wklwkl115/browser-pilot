@@ -157,6 +157,8 @@ export default tseslint.config(
 			"src/commands/webSecurity/shared/cookieTokens.ts",
 			"src/commands/webSecurity/shared/template.ts",
 			"src/commands/observeCommand.ts",
+			"src/commands/tabsCommand.ts",
+			"src/commands/tabsProjection.ts",
 			"src/commands/executionEffect.ts",
 			"src/commands/executionJournal.ts",
 			"src/bridge/extension/service_worker/network_events.ts",
