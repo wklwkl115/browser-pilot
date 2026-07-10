@@ -149,6 +149,7 @@ export default tseslint.config(
 			"src/bridge/extension/service_worker/state_store.ts",
 			"src/bridge/extension/service_worker/tab_sync.ts",
 			"src/bridge/extension/service_worker/transfer.ts",
+			"src/bridge/extension/service_worker/wait_selector.ts",
 			"src/browser-runtime/abml/axRuntime.ts",
 			"src/browser-runtime/abml/runtime.ts",
 			"src/bridge/server/BrowserTabSessionRouter.ts",
