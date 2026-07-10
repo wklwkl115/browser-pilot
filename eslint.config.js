@@ -152,6 +152,8 @@ export default tseslint.config(
 			"src/commands/webSecurity/browserNative/sqliProbe.ts",
 			"src/commands/webSecurity/browserNative/crawl.ts",
 			"src/commands/observeCommand.ts",
+			"src/commands/executionEffect.ts",
+			"src/commands/executionJournal.ts",
 			"src/bridge/extension/service_worker/network_events.ts",
 			"src/bridge/extension/service_worker/hook.ts",
 			"src/commands/observe/scanRunner.ts",

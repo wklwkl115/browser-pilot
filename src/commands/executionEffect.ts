@@ -7,7 +7,7 @@ import { readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint, type 
 import type { ExecuteEffect } from "./executionJournal.js";
 import type { ExecuteStdlibTargetRef } from "../browser-command-runtime/executeStdlib.js";
 
-type ExecutionSignalSnapshot = {
+export type ExecutionSignalSnapshot = {
 	fingerprint?: PageFingerprint;
 	network: RecorderSeq;
 	hook: RecorderSeq;
@@ -111,45 +111,59 @@ function targetDirtyBeforeDispatch(targetRefs: ExecuteStdlibTargetRef[] | undefi
 	};
 }
 
-function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnapshot, quiet: ExecutionSignalSnapshot | undefined, options: Pick<EffectOptions, "targetRefs"> = {}): ExecuteEffect {
+function fingerprintPairEffect(beforeFp: PageFingerprint | undefined, afterFp: PageFingerprint | undefined, quietFp: PageFingerprint | undefined): Partial<ExecuteEffect> & Pick<ExecuteEffect, "navigated"> {
+	if (!beforeFp || !afterFp) return { signals: "partial", navigated: false };
+	const mutations = delta(afterFp.changeSeq, beforeFp.changeSeq) ?? 0;
+	const quietDelta = quietFp ? delta(quietFp.changeSeq, afterFp.changeSeq) : undefined;
+	return {
+		mutations,
+		settled: mutations === 0 || quietDelta === 0,
+		navigated: Boolean(beforeFp.url && afterFp.url && beforeFp.url !== afterFp.url),
+		visibleDelta: delta(afterFp.visibleCount, beforeFp.visibleCount) ?? 0,
+		interactiveDelta: delta(afterFp.interactiveCount, beforeFp.interactiveCount) ?? 0,
+	};
+}
+
+function fingerprintContextEffect(beforeFp: PageFingerprint | undefined, afterFp: PageFingerprint | undefined, quietFp: PageFingerprint | undefined, dirty: PageFingerprint["dirty"] | undefined): Partial<ExecuteEffect> {
+	const url = quietFp?.url ?? afterFp?.url ?? beforeFp?.url;
+	return {
+		...(url ? { url } : {}),
+		...(dirty?.overflow === true ? { signals: "partial" as const, coverage: "overflow" as const } : {}),
+		...(dirty && (dirty.roots.length > 0 || dirty.overflow) ? { dirty } : {}),
+	};
+}
+
+function signalDeltaEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnapshot, quietFp: PageFingerprint | undefined): Partial<ExecuteEffect> {
+	const effect: Partial<ExecuteEffect> = {};
+	const requestsFired = before.network.active && after.network.active ? delta(after.network.lastSeq, before.network.lastSeq) : undefined;
+	const hookEventsFired = before.hook.active && after.hook.active ? delta(after.hook.lastSeq, before.hook.lastSeq) : undefined;
+	if (requestsFired !== undefined) effect.requestsFired = requestsFired;
+	if (hookEventsFired !== undefined) effect.hookEventsFired = hookEventsFired;
+	const targetDelta: NonNullable<ExecuteEffect["targetDelta"]> = {};
+	if (before.selectionVersion !== after.selectionVersion) Object.assign(targetDelta, { selectionVersionBefore: before.selectionVersion, selectionVersionAfter: after.selectionVersion });
+	if (before.defaultTabId !== after.defaultTabId) Object.assign(targetDelta, { tabIdBefore: before.defaultTabId, tabIdAfter: after.defaultTabId });
+	if (Object.keys(targetDelta).length) effect.targetDelta = targetDelta;
+	const anchor: NonNullable<ExecuteEffect["anchor"]> = {};
+	const changeSeq = quietFp?.changeSeq ?? after.fingerprint?.changeSeq;
+	if (changeSeq !== undefined) anchor.changeSeq = changeSeq;
+	if (after.network.lastSeq !== undefined) anchor.networkSeq = after.network.lastSeq;
+	if (after.hook.lastSeq !== undefined) anchor.hookSeq = after.hook.lastSeq;
+	if (Object.keys(anchor).length) effect.anchor = anchor;
+	return effect;
+}
+
+export function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnapshot, quiet: ExecutionSignalSnapshot | undefined, options: Pick<EffectOptions, "targetRefs"> = {}): ExecuteEffect {
 	const beforeFp = before.fingerprint;
 	const afterFp = after.fingerprint;
 	const quietFp = quiet?.fingerprint;
-	const url = quietFp?.url ?? afterFp?.url ?? beforeFp?.url;
-	const hasFingerprintPair = beforeFp !== undefined && afterFp !== undefined;
-	const mutations = hasFingerprintPair ? delta(afterFp.changeSeq, beforeFp.changeSeq) : undefined;
-	const quietDelta = quietFp && afterFp ? delta(quietFp.changeSeq, afterFp.changeSeq) : undefined;
 	const dirty = quietFp?.dirty ?? afterFp?.dirty;
-	const dirtyOverflow = dirty?.overflow === true;
-	const requestsFired = before.network.active && after.network.active ? delta(after.network.lastSeq, before.network.lastSeq) : undefined;
-	const hookEventsFired = before.hook.active && after.hook.active ? delta(after.hook.lastSeq, before.hook.lastSeq) : undefined;
-	const targetDelta = {
-		...(before.selectionVersion !== after.selectionVersion ? { selectionVersionBefore: before.selectionVersion, selectionVersionAfter: after.selectionVersion } : {}),
-		...(before.defaultTabId !== after.defaultTabId ? { tabIdBefore: before.defaultTabId, tabIdAfter: after.defaultTabId } : {}),
-	};
-	const changeSeq = quietFp?.changeSeq ?? afterFp?.changeSeq;
-	const anchor = {
-		...(changeSeq !== undefined ? { changeSeq } : {}),
-		...(after.network.lastSeq !== undefined ? { networkSeq: after.network.lastSeq } : {}),
-		...(after.hook.lastSeq !== undefined ? { hookSeq: after.hook.lastSeq } : {}),
-	};
-	const preDispatchTemporal = targetDirtyBeforeDispatch(options.targetRefs, beforeFp?.dirty);
+	const temporal = targetDirtyBeforeDispatch(options.targetRefs, beforeFp?.dirty);
 	return {
-		...(url ? { url } : {}),
-		...(!hasFingerprintPair || dirtyOverflow ? { signals: "partial" as const } : {}),
-		...(dirtyOverflow ? { coverage: "overflow" as const } : {}),
-		...(mutations !== undefined ? { mutations } : {}),
-		...(mutations !== undefined ? { settled: mutations === 0 || quietDelta === 0 } : {}),
-		navigated: !!(beforeFp?.url && afterFp?.url && beforeFp.url !== afterFp.url),
-		...(hasFingerprintPair ? { visibleDelta: delta(afterFp.visibleCount, beforeFp.visibleCount) ?? 0 } : {}),
-		...(hasFingerprintPair ? { interactiveDelta: delta(afterFp.interactiveCount, beforeFp.interactiveCount) ?? 0 } : {}),
-		...(dirty && (dirty.roots.length || dirty.overflow) ? { dirty } : {}),
-		...(requestsFired !== undefined ? { requestsFired } : {}),
-		...(hookEventsFired !== undefined ? { hookEventsFired } : {}),
-		...(Object.keys(targetDelta).length ? { targetDelta } : {}),
-		...(Object.keys(anchor).length ? { anchor } : {}),
+		...fingerprintPairEffect(beforeFp, afterFp, quietFp),
+		...fingerprintContextEffect(beforeFp, afterFp, quietFp, dirty),
+		...signalDeltaEffect(before, after, quietFp),
 		...targetFeedbackForDirtyWindow(options.targetRefs, dirty),
-		...(preDispatchTemporal ? { temporal: preDispatchTemporal } : {}),
+		...(temporal ? { temporal } : {}),
 	};
 }
 

@@ -1,6 +1,7 @@
 import type { BrowserBridgeTargetInfo } from "../ports/BrowserRuntimeTypes.js";
 import type { CommandTemporalConfidence, CommandTemporalFrontierNext, CommandTemporalReason, CommandTemporalVerdictStatus } from "../ports/BrowserCommandRuntimePort.js";
 import { isRecord } from "../utils/params.js";
+import { pickDefined } from "../utils/records.js";
 
 export type ExecuteEffect = {
 	url?: string;
@@ -74,26 +75,15 @@ export type ExecutionJournal = {
 
 export function compactExecutionEffect(effect: ExecuteEffect | undefined): Record<string, unknown> | undefined {
 	if (!effect) return undefined;
-	return {
-		...(effect.signals ? { signals: effect.signals } : {}),
-		...(effect.coverage ? { coverage: effect.coverage } : {}),
-		...(effect.mutations !== undefined ? { mutations: effect.mutations } : {}),
-		...(effect.settled !== undefined ? { settled: effect.settled } : {}),
-		...(effect.navigated ? { navigated: true } : {}),
-		...(effect.visibleDelta !== undefined ? { visibleDelta: effect.visibleDelta } : {}),
-		...(effect.interactiveDelta !== undefined ? { interactiveDelta: effect.interactiveDelta } : {}),
-		...(effect.dirty && (effect.dirty.roots.length || effect.dirty.overflow) ? { dirty: effect.dirty } : {}),
-		...(effect.requestsFired !== undefined ? { requestsFired: effect.requestsFired } : {}),
-		...(effect.hookEventsFired !== undefined ? { hookEventsFired: effect.hookEventsFired } : {}),
-		...(effect.targetDelta && Object.keys(effect.targetDelta).length ? { targetDelta: effect.targetDelta } : {}),
-		...(effect.anchor ? { anchor: effect.anchor } : {}),
-		...(effect.targetObservedAt !== undefined ? { targetObservedAt: effect.targetObservedAt } : {}),
-		...(effect.targetObservationId ? { targetObservationId: effect.targetObservationId } : {}),
-		...(effect.targetRef ? { targetRef: effect.targetRef } : {}),
-		...(effect.targetRegionDirty === true ? { targetRegionDirty: true } : {}),
-		...(effect.targetDirtyRoots?.length ? { targetDirtyRoots: effect.targetDirtyRoots } : {}),
-		...(effect.temporal ? { temporal: effect.temporal } : {}),
-	};
+	const compact = pickDefined(effect as unknown as Record<string, unknown>, ["signals", "coverage", "mutations", "settled", "navigated", "visibleDelta", "interactiveDelta", "dirty", "requestsFired", "hookEventsFired", "targetDelta", "anchor", "targetObservedAt", "targetObservationId", "targetRef", "targetRegionDirty", "targetDirtyRoots", "temporal"]);
+	if (!effect.navigated) delete compact.navigated;
+	if (!effect.dirty?.roots.length && effect.dirty?.overflow !== true) delete compact.dirty;
+	if (!effect.targetDelta || Object.keys(effect.targetDelta).length === 0) delete compact.targetDelta;
+	if (!effect.targetObservationId) delete compact.targetObservationId;
+	if (!effect.targetRef) delete compact.targetRef;
+	if (effect.targetRegionDirty !== true) delete compact.targetRegionDirty;
+	if (!effect.targetDirtyRoots?.length) delete compact.targetDirtyRoots;
+	return compact;
 }
 
 export function targetForExecutionJournal(target: BrowserBridgeTargetInfo | undefined): ExecutionJournal["target"] | undefined {
