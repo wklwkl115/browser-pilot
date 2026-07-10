@@ -133,134 +133,79 @@ export type DiagnoseWaitTimeoutInput = {
 	bridgeTimeout?: boolean;
 };
 
-export function diagnoseWaitTimeout(input: DiagnoseWaitTimeoutInput): WaitTimeoutDiagnosis {
-	const command = input.command;
-	const primaryReason = input.reasons[0];
+function waitDiagnosis(waitType: string, condition: string, observedState: string, suggestion: string): WaitTimeoutDiagnosis {
+	return { waitType, condition, observedState, suggestion };
+}
 
-	// selector waits
-	if (command === "wait.selector" || command === "wait.any" || command === "wait.all") {
-		const selectorLabel = input.selector ? `"${input.selector}"` : "target selector";
-		if (input.selectorMissing || primaryReason === "selector_missing") {
-			return {
-				waitType: "selector",
-				condition: `element matching ${selectorLabel} to appear`,
-				observedState: "element not found in document",
-				suggestion: `element not found — verify selector is correct, re-observe the page with browser_observe, or check if the element is inside an iframe`,
-			};
-		}
-		if (primaryReason === "selector_unstable") {
-			return {
-				waitType: "selector",
-				condition: `element matching ${selectorLabel} to stabilize`,
-				observedState: "element found but condition not met — element is unstable or state did not reach target",
-				suggestion: `element was found but its state is fluctuating — the page may still be rendering; try increasing timeout or waiting for a more specific selector`,
-			};
-		}
-		const stateDesc = input.selectorState || "attached";
-		if (input.selectorFound === true) {
-			return {
-				waitType: "selector",
-				condition: `element matching ${selectorLabel} to reach state "${stateDesc}"`,
-				observedState: `element found but condition "${stateDesc}" not met`,
-				suggestion: `element exists but did not reach "${stateDesc}" state — check if the element is hidden, disabled, or obscured by an overlay`,
-			};
-		}
-		return {
-			waitType: "selector",
-			condition: `element matching ${selectorLabel} to reach state "${stateDesc}"`,
-			observedState: "element not found or condition not met before deadline",
-			suggestion: `verify selector is correct — re-observe the page with browser_observe to find the current selectors`,
-		};
+function selectorTimeoutDiagnosis(input: DiagnoseWaitTimeoutInput, primaryReason?: TemporalReason): WaitTimeoutDiagnosis {
+	const selectorLabel = input.selector ? `"${input.selector}"` : "target selector";
+	if (input.selectorMissing || primaryReason === "selector_missing") {
+		return waitDiagnosis("selector", `element matching ${selectorLabel} to appear`, "element not found in document", "element not found — verify selector is correct, re-observe the page with browser_observe, or check if the element is inside an iframe");
 	}
-
-	// networkIdle waits
-	if (command === "wait.networkIdle" || command === "network.wait") {
-		const pending = input.pendingRequests;
-		const pendingDesc = typeof pending === "number" ? `${pending} network request${pending !== 1 ? "s" : ""} still pending` : "network requests still in-flight";
-		return {
-			waitType: "networkIdle",
-			condition: "network to become idle (no in-flight requests)",
-			observedState: pendingDesc,
-			suggestion: typeof pending === "number"
-				? `${pending} network request${pending !== 1 ? "s" : ""} still pending — the page may have long-polling, SSE, or WebSocket connections; consider waiting for a specific selector instead`
-				: "network did not reach idle state — the page may have persistent connections; consider waiting for a specific selector instead",
-		};
+	if (primaryReason === "selector_unstable") {
+		return waitDiagnosis("selector", `element matching ${selectorLabel} to stabilize`, "element found but condition not met — element is unstable or state did not reach target", "element was found but its state is fluctuating — the page may still be rendering; try increasing timeout or waiting for a more specific selector");
 	}
+	const state = input.selectorState || "attached";
+	return input.selectorFound === true
+		? waitDiagnosis("selector", `element matching ${selectorLabel} to reach state "${state}"`, `element found but condition "${state}" not met`, `element exists but did not reach "${state}" state — check if the element is hidden, disabled, or obscured by an overlay`)
+		: waitDiagnosis("selector", `element matching ${selectorLabel} to reach state "${state}"`, "element not found or condition not met before deadline", "verify selector is correct — re-observe the page with browser_observe to find the current selectors");
+}
 
-	// loadState waits
-	if (command === "wait.loadState") {
-		const targetState = input.loadStateTarget || "load";
-		const currentState = input.loadState || "unknown";
-		return {
-			waitType: "loadState",
-			condition: `page load state to reach "${targetState}"`,
-			observedState: `page load state is "${currentState}"`,
-			suggestion: currentState === "loading"
-				? `page load state is "${currentState}" — increase timeout or wait for a specific selector instead`
-				: `page did not reach "${targetState}" state (currently "${currentState}") — the page may have stalled resources; try waiting for a specific selector instead`,
-		};
+function networkIdleTimeoutDiagnosis(input: DiagnoseWaitTimeoutInput): WaitTimeoutDiagnosis {
+	const count = input.pendingRequests;
+	const pending = typeof count === "number" ? `${count} network request${count !== 1 ? "s" : ""} still pending` : undefined;
+	return waitDiagnosis(
+		"networkIdle",
+		"network to become idle (no in-flight requests)",
+		pending || "network requests still in-flight",
+		pending ? `${pending} — the page may have long-polling, SSE, or WebSocket connections; consider waiting for a specific selector instead` : "network did not reach idle state — the page may have persistent connections; consider waiting for a specific selector instead",
+	);
+}
+
+function loadStateTimeoutDiagnosis(input: DiagnoseWaitTimeoutInput): WaitTimeoutDiagnosis {
+	const target = input.loadStateTarget || "load";
+	const current = input.loadState || "unknown";
+	const suggestion = current === "loading"
+		? `page load state is "${current}" — increase timeout or wait for a specific selector instead`
+		: `page did not reach "${target}" state (currently "${current}") — the page may have stalled resources; try waiting for a specific selector instead`;
+	return waitDiagnosis("loadState", `page load state to reach "${target}"`, `page load state is "${current}"`, suggestion);
+}
+
+function navigationTimeoutDiagnosis(input: DiagnoseWaitTimeoutInput, primaryReason?: TemporalReason): WaitTimeoutDiagnosis {
+	if (input.urlChanged || primaryReason === "url_changed" || primaryReason === "url_mismatch") {
+		const url = input.urlAfter ? ` (now at "${input.urlAfter}")` : "";
+		return waitDiagnosis("navigation", "navigation to complete", `URL changed${url} but page did not finish loading`, "navigation started but the page did not fully load — increase timeout or wait for a specific element on the target page");
 	}
+	return waitDiagnosis("navigation", "navigation to occur", "no URL change detected", "no navigation was detected — verify the URL is correct, or the navigation trigger (click/form submission) actually initiates a page navigation");
+}
 
-	// navigation waits
-	if (command === "wait.navigation" || command === "wait.navigate" || command === "wait.navigateAndWait") {
-		if (input.urlChanged || primaryReason === "url_changed" || primaryReason === "url_mismatch") {
-			const urlDesc = input.urlAfter ? ` (now at "${input.urlAfter}")` : "";
-			return {
-				waitType: "navigation",
-				condition: "navigation to complete",
-				observedState: `URL changed${urlDesc} but page did not finish loading`,
-				suggestion: "navigation started but the page did not fully load — increase timeout or wait for a specific element on the target page",
-			};
-		}
-		return {
-			waitType: "navigation",
-			condition: "navigation to occur",
-			observedState: "no URL change detected",
-			suggestion: "no navigation was detected — verify the URL is correct, or the navigation trigger (click/form submission) actually initiates a page navigation",
-		};
-	}
-
-	// infrastructure-level issues
+function infrastructureTimeoutDiagnosis(input: DiagnoseWaitTimeoutInput): WaitTimeoutDiagnosis | undefined {
+	const waitType = commandToWaitType(input.command);
 	if (input.historyLost || (input.workerRestarts ?? 0) > 0) {
-		return {
-			waitType: commandToWaitType(command),
-			condition: "wait to complete",
-			observedState: "browser extension worker restarted during wait — wait history was lost",
-			suggestion: "the browser extension service worker restarted and lost wait state — retry the wait command",
-		};
+		return waitDiagnosis(waitType, "wait to complete", "browser extension worker restarted during wait — wait history was lost", "the browser extension service worker restarted and lost wait state — retry the wait command");
 	}
-	if (input.clientDisconnected) {
-		return {
-			waitType: commandToWaitType(command),
-			condition: "wait to complete",
-			observedState: "browser extension disconnected during wait",
-			suggestion: "the browser extension disconnected — verify the extension is still loaded and the browser is still running",
-		};
-	}
-	if (input.bridgeTimeout) {
-		return {
-			waitType: commandToWaitType(command),
-			condition: "wait to complete",
-			observedState: "bridge communication timed out — command was acknowledged but no result received",
-			suggestion: "the bridge timed out after acknowledging the command — the page may be unresponsive; try reloading the page",
-		};
-	}
-	if (input.backgroundThrottling) {
-		return {
-			waitType: commandToWaitType(command),
-			condition: "wait to complete",
-			observedState: "browser tab may be throttled (background tab or minimized window)",
-			suggestion: "the browser may be throttling the background tab — ensure the tab is focused and the browser window is not minimized",
-		};
-	}
+	if (input.clientDisconnected) return waitDiagnosis(waitType, "wait to complete", "browser extension disconnected during wait", "the browser extension disconnected — verify the extension is still loaded and the browser is still running");
+	if (input.bridgeTimeout) return waitDiagnosis(waitType, "wait to complete", "bridge communication timed out — command was acknowledged but no result received", "the bridge timed out after acknowledging the command — the page may be unresponsive; try reloading the page");
+	if (input.backgroundThrottling) return waitDiagnosis(waitType, "wait to complete", "browser tab may be throttled (background tab or minimized window)", "the browser may be throttling the background tab — ensure the tab is focused and the browser window is not minimized");
+	return undefined;
+}
 
-	// generic fallback
-	return {
-		waitType: commandToWaitType(command),
-		condition: "wait condition to be satisfied",
-		observedState: primaryReason ? `wait ended with reason: ${primaryReason}` : "wait deadline reached without condition being met",
-		suggestion: "the wait timed out — try increasing the timeout, verify the page state, or use browser_observe to inspect current page content",
-	};
+const SELECTOR_WAIT_COMMANDS = new Set(["wait.selector", "wait.any", "wait.all"]);
+const NETWORK_WAIT_COMMANDS = new Set(["wait.networkIdle", "network.wait"]);
+const NAVIGATION_WAIT_COMMANDS = new Set(["wait.navigation", "wait.navigate", "wait.navigateAndWait"]);
+
+export function diagnoseWaitTimeout(input: DiagnoseWaitTimeoutInput): WaitTimeoutDiagnosis {
+	const primaryReason = input.reasons[0];
+	if (SELECTOR_WAIT_COMMANDS.has(input.command)) return selectorTimeoutDiagnosis(input, primaryReason);
+	if (NETWORK_WAIT_COMMANDS.has(input.command)) return networkIdleTimeoutDiagnosis(input);
+	if (input.command === "wait.loadState") return loadStateTimeoutDiagnosis(input);
+	if (NAVIGATION_WAIT_COMMANDS.has(input.command)) return navigationTimeoutDiagnosis(input, primaryReason);
+	return infrastructureTimeoutDiagnosis(input) ?? waitDiagnosis(
+		commandToWaitType(input.command),
+		"wait condition to be satisfied",
+		primaryReason ? `wait ended with reason: ${primaryReason}` : "wait deadline reached without condition being met",
+		"the wait timed out — try increasing the timeout, verify the page state, or use browser_observe to inspect current page content",
+	);
 }
 
 function commandToWaitType(command: string): string {

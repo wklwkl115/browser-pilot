@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const complexityLimit = 20;
-const expectedComplexFunctions = 88;
+const expectedComplexFunctions = 87;
 const functionLineLimit = 150;
 const expectedLongFunctions = 0;
 

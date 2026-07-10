@@ -111,6 +111,12 @@ test("wait diagnostics render selector, network, load-state, navigation, and gen
 	assert.match(diagnoseWaitTimeout({ command: "other", reasons: [], workerRestarts: 2 }).observedState, /restarted/);
 	assert.match(diagnoseWaitTimeout({ command: "other", reasons: [], backgroundThrottling: true }).suggestion, /background tab/);
 	assert.match(diagnoseWaitTimeout({ command: "other", reasons: [], bridgeTimeout: true }).observedState, /bridge/);
+	assert.deepEqual(diagnoseWaitTimeout({ command: "custom.network.wait", reasons: ["signal_unavailable"] }), {
+		waitType: "networkIdle",
+		condition: "wait condition to be satisfied",
+		observedState: "wait ended with reason: signal_unavailable",
+		suggestion: "the wait timed out — try increasing the timeout, verify the page state, or use browser_observe to inspect current page content",
+	});
 });
 
 test("evidence fit trims array/object payloads and salience envelope prefers structural compact candidates", () => {
