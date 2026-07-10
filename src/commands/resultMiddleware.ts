@@ -359,37 +359,27 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		memorySource: isRecord(redactedSummary.memory) ? redactedSummary.memory as Record<string, unknown> : undefined,
 		redactionApplied: sensitiveRaw || Boolean(privacy),
 	});
+	const envelopeMetadata = pickDefined({ renderer: rendererMarker(), delta, baselineSnapshotId }, ["renderer", "delta", "baselineSnapshotId"]);
+	const envelopeArtifact = pickDefined({ artifact_hints }, ["artifact_hints"]);
+	const envelopePlanes = pickDefined({ entities, abmlIntegrated, gist, outline, relations, identity, diff, causal, treeDiff, snapshotProjection, collections, error }, ["entities", "abmlIntegrated", "gist", "outline", "relations", "identity", "diff", "causal", "treeDiff", "snapshotProjection", "collections", "error"]);
+	const envelopeTail = pickDefined({ activeContext: redactedActiveContext, correlation: Object.keys(correlation).length ? correlation : undefined }, ["activeContext", "correlation"]);
 	return fitResponseEnvelopeWithMemory({
 		tool: options.commandName,
 		command: options.command,
 		browserSessionId: options.browserSessionId,
 		detailLevel: normalizeDetailLevel(options.detailLevel),
-		...(rendererMarker() ? { renderer: rendererMarker() } : {}),
-		...(delta ? { delta } : {}),
-		...(baselineSnapshotId ? { baselineSnapshotId } : {}),
+		...envelopeMetadata,
 		summary: fittedSummary,
 		diagnostics,
 		target,
 		limits,
-		...(artifact_hints ? { artifact_hints } : {}),
+		...envelopeArtifact,
 		privacy,
-		...(entities ? { entities } : {}),
-		...(abmlIntegrated !== undefined ? { abmlIntegrated } : {}),
-		...(gist ? { gist } : {}),
-		...(outline ? { outline } : {}),
-		...(relations ? { relations } : {}),
-		...(identity ? { identity } : {}),
-		...(diff ? { diff } : {}),
-		...(causal ? { causal } : {}),
-		...(treeDiff ? { treeDiff } : {}),
-		...(snapshotProjection ? { snapshotProjection } : {}),
-		...(collections ? { collections } : {}),
-		...(error ? { error } : {}),
+		...envelopePlanes,
 		nextActions,
 		operation: redactedOperation,
 		snapshot: redactedSnapshot,
-		...(redactedActiveContext ? { activeContext: redactedActiveContext } : {}),
-		...(Object.keys(correlation).length ? { correlation } : {}),
+		...envelopeTail,
 		saved,
 		evidence,
 	}, options.maxChars, options);
@@ -416,6 +406,10 @@ function renderEnvelopeWithSerializeTiming(envelope: DistilledEnvelope, options:
 	const withTiming = attachSerializeTiming(envelope, options, Date.now() - serializeStartedAt);
 	if (withTiming === envelope) return { envelope, rendered: renderedWithoutTiming };
 	return { envelope: withTiming, rendered: stableJson(withTiming) };
+}
+
+function textResultSummary(text: string, options: DistilledTextOptions): Record<string, unknown> {
+	return options.summary || options.distill?.(text) || summarizeHtmlSnapshot(text);
 }
 
 export async function distilledJsonResult(value: unknown, options: DistilledJsonOptions): Promise<BrowserTextCommandResult> {
@@ -461,7 +455,7 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 export async function distilledTextResult(text: string, options: DistilledTextOptions): Promise<BrowserTextCommandResult> {
 	const level = normalizeDetailLevel(options.detailLevel);
 	const maxChars = Math.max(1, Math.floor(options.maxChars));
-	const summary = options.summary || options.distill?.(text) || summarizeHtmlSnapshot(text);
+	const summary = textResultSummary(text, options);
 	const rawValue = options.artifactValue ?? text;
 	const raw = typeof rawValue === "string" ? rawValue : stableJson(rawValue);
 	const threshold = Math.max(1, options.artifactThreshold ?? maxChars);

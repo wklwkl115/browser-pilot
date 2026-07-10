@@ -171,6 +171,7 @@ export default tseslint.config(
 			"src/commands/webSecurity/shared/railsCookieTokens.ts",
 			"src/commands/webSecurity/shared/template.ts",
 			"src/commands/observeCommand.ts",
+			"src/commands/resultMiddleware.ts",
 			"src/commands/resultNextActions.ts",
 			"src/commands/tabsCommand.ts",
 			"src/commands/tabsProjection.ts",

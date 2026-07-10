@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { distilledJsonResult } from "../../src/commands/resultMiddleware.ts";
+import { distilledJsonResult, distilledTextResult } from "../../src/commands/resultMiddleware.ts";
 
 type Envelope = Record<string, unknown>;
 
@@ -18,6 +18,18 @@ async function renderEnvelope(value: unknown, options: Partial<Parameters<typeof
 		detailLevel: "summary",
 		maxChars: 4_000,
 		fallbackName: "result.json",
+		...options,
+	});
+	return JSON.parse(result.content[0]?.text || "{}") as Envelope;
+}
+
+async function renderTextEnvelope(value: string, options: Partial<Parameters<typeof distilledTextResult>[1]> = {}): Promise<Envelope> {
+	const result = await distilledTextResult(value, {
+		commandName: "browser_observe",
+		command: "html",
+		detailLevel: "summary",
+		maxChars: 4_000,
+		fallbackName: "page.html",
 		...options,
 	});
 	return JSON.parse(result.content[0]?.text || "{}") as Envelope;
@@ -79,6 +91,83 @@ test("result middleware characterization: low observe budget preserves final no-
 	});
 	const summary = envelope.summary as Record<string, unknown>;
 	assert.deepEqual(summary.pageObservation, { model: "PageObservation", canonical: true });
+});
+
+test("result middleware characterization: text summary precedence stays explicit, custom, then HTML fallback", async () => {
+	let distillCalls = 0;
+	const explicit = await renderTextEnvelope("<title>ignored</title>", {
+		summary: { source: "explicit" },
+		distill: () => { distillCalls += 1; return { source: "custom" }; },
+	});
+	assert.equal((explicit.summary as Record<string, unknown>).source, "explicit");
+	assert.equal(distillCalls, 0);
+
+	const custom = await renderTextEnvelope("<title>ignored</title>", {
+		distill: () => { distillCalls += 1; return { source: "custom" }; },
+	});
+	assert.equal((custom.summary as Record<string, unknown>).source, "custom");
+	assert.equal(distillCalls, 1);
+
+	const fallback = await renderTextEnvelope("<html><head><title>Fallback</title></head><body><a>Link</a></body></html>");
+	const fallbackSummary = fallback.summary as Record<string, unknown>;
+	assert.deepEqual(fallbackSummary.titles, ["Fallback"]);
+	assert.equal((fallbackSummary.counts as Record<string, unknown>).links, 1);
+});
+
+test("result middleware characterization: structural envelope planes and correlation stay aligned", async () => {
+	const envelope = await renderEnvelope({ ok: true }, {
+		commandName: "browser_observe",
+		command: "scan",
+		browserSessionId: "browser-session-1",
+		maxChars: 35_000,
+		entities: [{ ref: "bp-ref://element/explicit", kind: "control" }],
+		error: { error_code: "EXPLICIT_ERROR", message: "explicit" },
+		operation: { operationId: "operation-1", snapshotId: "operation-snapshot", sourceMode: "execute" },
+		snapshot: { snapshotId: "snapshot-1", sourceMode: "observe" },
+		activeContext: { tabId: 7, targetRef: "tab-7" },
+		diagnostics: { phase: "projection" },
+		distill: () => ({
+			ok: true,
+			requestId: "request-1",
+			waitId: "wait-1",
+			listenerId: "listener-1",
+			sessionId: "session-1",
+			selectionVersionAtDispatch: 2,
+			selectionVersionAtResolve: 3,
+			sourceMode: "scan",
+			abmlIntegrated: false,
+			delta: "session",
+			baselineSnapshotId: "baseline-1",
+			focus: {
+				gist: { title: "Checkout" },
+				outline: [{ ref: "bp-ref://region/main", name: "Main" }],
+				relations: { summary: { controls: 1 } },
+				diff: { summary: { changed: 1 } },
+				treeDiff: { summary: { appeared: 1 } },
+				snapshotProjection: { summary: { templateCount: 1 } },
+				collections: [{ ref: "bp-ref://collection/items", count: 2 }],
+			},
+			identity: { stable: true },
+			causal: { requests: [{ requestId: "request-1" }] },
+		}),
+	});
+	assert.equal(envelope.renderer, "salience-v1");
+	assert.equal(envelope.delta, "session");
+	assert.equal(envelope.baselineSnapshotId, "baseline-1");
+	assert.equal(envelope.abmlIntegrated, false);
+	assert.deepEqual(envelope.gist, { title: "Checkout" });
+	assert.deepEqual(envelope.outline, [{ ref: "bp-ref://region/main", name: "Main" }]);
+	assert.deepEqual(envelope.relations, { summary: { controls: 1 } });
+	assert.deepEqual(envelope.identity, { stable: true });
+	assert.deepEqual(envelope.diff, { summary: { changed: 1 } });
+	assert.deepEqual(envelope.causal, { requests: [{ requestId: "request-1" }] });
+	assert.deepEqual(envelope.treeDiff, { summary: { appeared: 1 } });
+	assert.deepEqual(envelope.snapshotProjection, { summary: { templateCount: 1 } });
+	assert.deepEqual(envelope.collections, [{ ref: "bp-ref://collection/items", count: 2 }]);
+	assert.deepEqual(envelope.error, { error_code: "EXPLICIT_ERROR", message: "explicit" });
+	assert.deepEqual(envelope.activeContext, { tabId: 7, targetRef: "tab-7" });
+	assert.deepEqual(envelope.correlation, { requestId: "request-1", waitId: "wait-1", listenerId: "listener-1", sessionId: "session-1", selectionVersionAtDispatch: 2, selectionVersionAtResolve: 3, sourceMode: "observe", operationId: "operation-1", snapshotId: "snapshot-1" });
+	assert.ok((envelope.entities as Array<Record<string, unknown>>).some((entity) => entity.ref === "bp-ref://element/explicit"));
 });
 
 test("result middleware characterization: redaction keeps model-facing pointers and privacy metadata", async () => {
