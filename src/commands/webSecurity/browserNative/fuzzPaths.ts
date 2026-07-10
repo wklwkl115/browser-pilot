@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createCodedError } from "../../../utils/codedError.js";
 import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, responsesDiffer, sameBaselineCluster } from "../shared/baseline.js";
-import { compactStep, contentTypeOf, cookieProviderResultHeader, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseFingerprint, sanitizeFetchHeaders } from "../shared/http.js";
+import { compactStep, contentTypeOf, cookieProviderResultHeader, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseFingerprint, sanitizeFetchHeaders } from "../shared/http.js";
 import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize.js";
 import type { CookieProvider, HeaderMap, RawFuzzPathsOptions } from "../shared/types.js";
 
@@ -43,19 +43,15 @@ function normalizeRecursiveBaseUrl(url: string): string {
 	return parsed.toString();
 }
 
-function replaceFuzzSequential(baseUrl: string, values: string[]): string {
-	let index = 0;
-	return baseUrl.replace(/FUZZ/g, () => encodeURIComponent(values[Math.min(index++, values.length - 1)] || ""));
-}
-
-function buildFuzzUrls(baseUrl: string, candidate: string): string[] {
+function buildFuzzUrl(baseUrl: string, candidate: string): string {
 	if (baseUrl.includes("FUZZ")) {
 		const count = (baseUrl.match(/FUZZ/g) || []).length;
 		const tuple = candidate.split("::").map((item) => item.trim()).filter(Boolean);
-		const replaced = count > 1 && tuple.length === count ? replaceFuzzSequential(baseUrl, tuple) : baseUrl.replaceAll("FUZZ", encodeURIComponent(candidate));
-		return [normalizeUrlForVisit(replaced)];
+		let tupleIndex = 0;
+		const replaced = count > 1 && tuple.length === count ? baseUrl.replace(/FUZZ/g, () => encodeURIComponent(tuple[Math.min(tupleIndex++, tuple.length - 1)] || "")) : baseUrl.replaceAll("FUZZ", encodeURIComponent(candidate));
+		return normalizeUrlForVisit(replaced);
 	}
-	return [normalizeUrlForVisit(new URL(candidate.replace(/^\/+/, ""), baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`).toString())];
+	return normalizeUrlForVisit(new URL(candidate.replace(/^\/+/, ""), baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`).toString());
 }
 
 function buildFuzzBaselineUrl(baseUrl: string, baselinePath: string): string {
@@ -119,11 +115,6 @@ function clusterBaselineFingerprints(baselines: FuzzPathFingerprint[]): Array<Re
 	return Array.from(clusters.values()).sort((a, b) => b.count - a.count).slice(0, 20);
 }
 
-function recursiveBaseBudget(candidateCount: number, recursive: boolean): number {
-	if (!recursive) return 1;
-	return Math.max(1, Math.min(50, Math.floor(BASELINE_REQUEST_BUDGET_PER_ROOT / Math.max(1, candidateCount))));
-}
-
 function buildBaselineSamples(stem: string, extensions: string[], appendSlash: boolean): string[] {
 	const cleaned = stem.replace(/^\/+/, "").replace(/\/+$/, "") || `__browser_pilot_fuzz_baseline_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 	const ext = extensions[0] || "txt";
@@ -155,6 +146,7 @@ type NormalizedFuzzPathsOptions = {
 	maxRedirects: number;
 	timeoutMs: number;
 	maxBodyBytes: number;
+	allowPrivateTargets: boolean;
 	bindBrowserSession: boolean;
 	cookieProvider?: CookieProvider;
 	matchStatus: number[];
@@ -170,14 +162,10 @@ type NormalizedFuzzPathsOptions = {
 	delayMs: number;
 };
 
-function fuzzPathsInputError(message: string, details: Record<string, unknown> = {}): Error {
-	return createCodedError({ name: "FuzzPathsInputError", code: "INVALID_RULE", message, details, suppressStack: false });
-}
-
 async function normalizeFuzzPathsOptions(options: RawFuzzPathsOptions): Promise<NormalizedFuzzPathsOptions> {
 	const bases = normalizeProbeTargets({ url: options.url, urls: options.urls, defaultScheme: options.defaultScheme });
 	const explicit = [...stringList(options.paths), ...stringList(options.words), ...stringList(options.wordlist), ...(await readWordlist(options.wordlistPath))];
-	if (!explicit.length) throw fuzzPathsInputError("browser_fuzz_paths requires paths, words, wordlist, or wordlistPath", { field: "paths|words|wordlist|wordlistPath" });
+	if (!explicit.length) throw createCodedError({ name: "FuzzPathsInputError", code: "INVALID_RULE", message: "browser_fuzz_paths requires paths, words, wordlist, or wordlistPath", details: { field: "paths|words|wordlist|wordlistPath" }, suppressStack: false });
 	const extensions = stringList(options.extensions).map((item) => item.replace(/^\./, "")).filter(Boolean);
 	const appendSlash = options.appendSlash === true;
 	const maxCandidates = Math.min(5_000, positiveInt(options.maxCandidates, 500));
@@ -206,6 +194,7 @@ async function normalizeFuzzPathsOptions(options: RawFuzzPathsOptions): Promise<
 		maxRedirects: positiveInt(options.maxRedirects, followRedirects ? 3 : 0),
 		timeoutMs: positiveInt(options.timeoutMs, 15_000),
 		maxBodyBytes: positiveInt(options.maxBodyBytes, 256_000),
+		allowPrivateTargets: options.allowPrivateTargets === true,
 		bindBrowserSession: options.bindBrowserSession === true,
 		cookieProvider: options.cookieProvider,
 		matchStatus: numericList(options.matchStatus),
@@ -222,146 +211,154 @@ async function normalizeFuzzPathsOptions(options: RawFuzzPathsOptions): Promise<
 	};
 }
 
-export async function runFuzzPaths(options: RawFuzzPathsOptions) {
-	const hardCapWarnings: string[] = [];
+type FuzzPathBase = { baseUrl: string; depth: number };
+type FuzzPathRunState = { baselines: Array<Record<string, unknown>>; results: Array<Record<string, unknown>>; failures: Array<Record<string, unknown>>; sent: number; visitedBaseCount: number; discoveredDirectoryCount: number; truncatedDiscoveredDirectories: number };
+
+function fuzzPathsHardCapWarnings(options: RawFuzzPathsOptions): string[] {
+	const warnings: string[] = [];
 	const requestedMaxCandidates = positiveInt(options.maxCandidates, 500);
-	if (requestedMaxCandidates > 5_000) hardCapWarnings.push(`maxCandidates capped from ${requestedMaxCandidates} to 5000 (hard limit)`);
+	if (requestedMaxCandidates > 5_000) warnings.push(`maxCandidates capped from ${requestedMaxCandidates} to 5000 (hard limit)`);
 	const requestedMaxDepth = positiveInt(options.maxDepth, options.recursive === true ? 2 : 1);
-	if (requestedMaxDepth > MAX_FUZZ_DEPTH) hardCapWarnings.push(`maxDepth capped from ${requestedMaxDepth} to ${MAX_FUZZ_DEPTH} (hard limit)`);
-	const normalized = await normalizeFuzzPathsOptions(options);
-	const baselines: Array<Record<string, unknown>> = [];
-	const baselineFingerprints: FuzzPathFingerprint[] = [];
-	const results: Array<Record<string, unknown>> = [];
-	const failures: Array<Record<string, unknown>> = [];
-	let sent = 0;
-	let visitedBaseCount = 0;
-	let discoveredDirectoryCount = 0;
-	let truncatedDiscoveredDirectories = 0;
-	for (const rootBase of normalized.bases) {
-		const queue = [{ baseUrl: rootBase, depth: 0 }];
-		const seenBases = new Set<string>([normalizeRecursiveBaseUrl(rootBase)]);
-		const maxVisitedBases = recursiveBaseBudget(normalized.candidates.length, normalized.recursive);
-		while (queue.length) {
-			const current = queue.shift();
-			if (!current) break;
-			visitedBaseCount += 1;
-			const currentBaselines: FuzzPathFingerprint[] = [];
-			for (const sample of normalized.baselineSamples) {
-				const baselineUrl = buildFuzzBaselineUrl(current.baseUrl, sample);
-				try {
-					const headers = { ...normalized.baseHeaders };
-					const cookie = cookieProviderResultHeader(normalized.bindBrowserSession ? await normalized.cookieProvider?.(baselineUrl) : undefined);
-					if (cookie) headers.Cookie = cookie;
-					const sanitized = sanitizeFetchHeaders(headers);
-					const baselineExchange = await fetchWithRedirects({ url: baselineUrl, method: normalized.method, headers: sanitized.headers }, normalized);
-					const final = baselineExchange.final;
-					const fingerprint = responseFingerprint(final);
-					const item: FuzzPathFingerprint = { baseUrl: current.baseUrl, url: final.url, sample, depth: current.depth + 1, clusterKey: baselineClusterKey(fingerprint), ...fingerprint };
-					currentBaselines.push(item);
-					baselineFingerprints.push(item);
-					baselines.push({ baseUrl: current.baseUrl, sample, depth: current.depth + 1, url: final.url, status: final.status, title: fingerprint.title, bodyBytes: final.bodyBytes, bodySha256: fingerprint.bodySha256, location: fingerprint.location, clusterKey: item.clusterKey, redirects: baselineExchange.chain.slice(0, -1).map(compactStep) });
-				} catch (error) {
-					baselines.push({ baseUrl: current.baseUrl, sample, depth: current.depth + 1, url: baselineUrl, error: error instanceof Error ? error.message : String(error) });
-				}
-			}
-			for (const candidate of normalized.candidates) {
-				const targets = buildFuzzUrls(current.baseUrl, candidate);
-				for (const target of targets) {
-					try {
-						const headers = { ...normalized.baseHeaders };
-						const cookie = cookieProviderResultHeader(normalized.bindBrowserSession ? await normalized.cookieProvider?.(target) : undefined);
-						if (cookie) headers.Cookie = cookie;
-						const sanitized = sanitizeFetchHeaders(headers);
-						const exchange = await fetchWithRedirects({ url: target, method: normalized.method, headers: sanitized.headers }, normalized);
-						const final = exchange.final;
-						const fingerprint = responseFingerprint(final);
-						const nearestBaseline = nearestBaselineByDistance(currentBaselines, fingerprint);
-						const exactBaselineMatch = currentBaselines.some((baseline) => !responsesDiffer(fingerprint, baseline));
-						const baselineClusterMatched = currentBaselines.some((baseline) => sameBaselineCluster(fingerprint, baseline));
-						const similarToBaseline = normalized.baselineStrategy === "exact" ? exactBaselineMatch : normalized.baselineStrategy === "cluster" ? baselineClusterMatched : (exactBaselineMatch || baselineClusterMatched);
-						const differentFromBaseline = currentBaselines.length ? !similarToBaseline : undefined;
-						const statusBodyMatched = matchesStatusBodyResult(final.status, final.bodyBytes, normalized);
-						const matched = statusBodyMatched && (!normalized.filterBaseline || differentFromBaseline !== false);
-						const resultDepth = current.depth + 1;
-						results.push({
-							matched,
-							baseUrl: current.baseUrl,
-							candidate,
-							depth: resultDepth,
-							url: final.url,
-							status: final.status,
-							contentType: contentTypeOf(final.headers),
-							title: extractTitle(final.bodyText),
-							bodyBytes: final.bodyBytes,
-							bodySha256: fingerprint.bodySha256,
-							bodyTruncated: final.bodyTruncated,
-							location: fingerprint.location,
-							differentFromBaseline,
-							baselineClusterMatched,
-							exactBaselineMatch,
-							nearestBaseline: nearestBaseline ? { url: nearestBaseline.baseline.url, sample: nearestBaseline.baseline.sample, distance: nearestBaseline.distance, clusterKey: nearestBaseline.baseline.clusterKey } : undefined,
-							delta: nearestBaseline ? responseChangeDelta(nearestBaseline.baseline, fingerprint) : undefined,
-							similarityKey: `${fingerprint.status}|${fingerprint.title || ""}|${fingerprint.bodyBytes}|${fingerprint.bodySha256}|${fingerprint.location || ""}`,
-							redirects: exchange.chain.slice(0, -1).map(compactStep),
-							body: { text: final.bodyText, base64: final.bodyBase64 },
-						});
-						if (normalized.recursive && resultDepth < normalized.maxDepth && seenBases.size < maxVisitedBases && differentFromBaseline !== false) {
-							const discoveredBase = discoverDirectoryBase(current.baseUrl, target, final.url);
-							if (discoveredBase) {
-								if (!seenBases.has(discoveredBase)) {
-									seenBases.add(discoveredBase);
-									queue.push({ baseUrl: discoveredBase, depth: current.depth + 1 });
-									discoveredDirectoryCount += 1;
-								} else {
-									truncatedDiscoveredDirectories += 1;
-								}
-							}
-						} else if (normalized.recursive && resultDepth < normalized.maxDepth) {
-							const discoveredBase = discoverDirectoryBase(current.baseUrl, target, final.url);
-							if (discoveredBase && !seenBases.has(discoveredBase)) truncatedDiscoveredDirectories += 1;
-						}
-					} catch (error) {
-						failures.push({ baseUrl: current.baseUrl, candidate, depth: current.depth + 1, url: target, error: error instanceof Error ? error.message : String(error) });
-					}
-					sent += 1;
-					if (normalized.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, normalized.delayMs));
-				}
-			}
+	if (requestedMaxDepth > MAX_FUZZ_DEPTH) warnings.push(`maxDepth capped from ${requestedMaxDepth} to ${MAX_FUZZ_DEPTH} (hard limit)`);
+	return warnings;
+}
+
+async function fetchFuzzPath(url: string, options: NormalizedFuzzPathsOptions) {
+	const headers = { ...options.baseHeaders };
+	const cookie = cookieProviderResultHeader(options.bindBrowserSession ? await options.cookieProvider?.(url) : undefined);
+	if (cookie) headers.Cookie = cookie;
+	return fetchWithRedirects({ url, method: options.method, headers: sanitizeFetchHeaders(headers).headers }, options);
+}
+
+async function collectFuzzPathBaselines(current: FuzzPathBase, options: NormalizedFuzzPathsOptions, state: FuzzPathRunState): Promise<FuzzPathFingerprint[]> {
+	const currentBaselines: FuzzPathFingerprint[] = [];
+	for (const sample of options.baselineSamples) {
+		const baselineUrl = buildFuzzBaselineUrl(current.baseUrl, sample);
+		try {
+			const exchange = await fetchFuzzPath(baselineUrl, options);
+			const final = exchange.final;
+			const fingerprint = responseFingerprint(final);
+			const item: FuzzPathFingerprint = { baseUrl: current.baseUrl, url: final.url, sample, depth: current.depth + 1, clusterKey: baselineClusterKey(fingerprint), ...fingerprint };
+			currentBaselines.push(item);
+			state.baselines.push({ ...item, redirects: exchange.chain.slice(0, -1).map(compactStep) });
+		} catch (error) {
+			state.baselines.push({ baseUrl: current.baseUrl, sample, depth: current.depth + 1, url: baselineUrl, error: error instanceof Error ? error.message : String(error) });
 		}
 	}
-	const uniqueResults = dedupeFuzzPathResults(results);
-	const matched = uniqueResults.filter((item) => item.matched === true);
-	const clusters = clusterFuzzPathResults(results);
-	const baselineClusters = clusterBaselineFingerprints(baselineFingerprints);
+	return currentBaselines;
+}
+
+function projectFuzzPathResult(current: FuzzPathBase, candidate: string, exchange: Awaited<ReturnType<typeof fetchWithRedirects>>, currentBaselines: FuzzPathFingerprint[], options: NormalizedFuzzPathsOptions) {
+	const final = exchange.final;
+	const fingerprint = responseFingerprint(final);
+	const nearestBaseline = nearestBaselineByDistance(currentBaselines, fingerprint);
+	const exactBaselineMatch = currentBaselines.some((baseline) => !responsesDiffer(fingerprint, baseline));
+	const baselineClusterMatched = currentBaselines.some((baseline) => sameBaselineCluster(fingerprint, baseline));
+	const similarToBaseline = options.baselineStrategy === "exact" ? exactBaselineMatch : options.baselineStrategy === "cluster" ? baselineClusterMatched : exactBaselineMatch || baselineClusterMatched;
+	const differentFromBaseline = currentBaselines.length ? !similarToBaseline : undefined;
+	const matched = matchesStatusBodyResult(final.status, final.bodyBytes, options) && (!options.filterBaseline || differentFromBaseline !== false);
+	const resultDepth = current.depth + 1;
 	return {
-		ok: failures.length === 0,
+		matched,
+		baseUrl: current.baseUrl,
+		candidate,
+		depth: resultDepth,
+		url: final.url,
+		contentType: contentTypeOf(final.headers),
+		...fingerprint,
+		bodyTruncated: final.bodyTruncated,
+		differentFromBaseline,
+		baselineClusterMatched,
+		exactBaselineMatch,
+		nearestBaseline: nearestBaseline ? { url: nearestBaseline.baseline.url, sample: nearestBaseline.baseline.sample, distance: nearestBaseline.distance, clusterKey: nearestBaseline.baseline.clusterKey } : undefined,
+		delta: nearestBaseline ? responseChangeDelta(nearestBaseline.baseline, fingerprint) : undefined,
+		similarityKey: `${fingerprint.status}|${fingerprint.title || ""}|${fingerprint.bodyBytes}|${fingerprint.bodySha256}|${fingerprint.location || ""}`,
+		redirects: exchange.chain.slice(0, -1).map(compactStep),
+		body: { text: final.bodyText, base64: final.bodyBase64 },
+	};
+}
+
+function queueDiscoveredFuzzBase(current: FuzzPathBase, target: string, probe: ReturnType<typeof projectFuzzPathResult>, queue: FuzzPathBase[], seenBases: Set<string>, maxVisitedBases: number, options: NormalizedFuzzPathsOptions, state: FuzzPathRunState): void {
+	if (!options.recursive || probe.depth >= options.maxDepth) return;
+	const discoveredBase = discoverDirectoryBase(current.baseUrl, target, probe.url);
+	if (!discoveredBase) return;
+	const canQueue = seenBases.size < maxVisitedBases && probe.differentFromBaseline !== false;
+	const seen = seenBases.has(discoveredBase);
+	if (!seen && canQueue) {
+		seenBases.add(discoveredBase);
+		queue.push({ baseUrl: discoveredBase, depth: current.depth + 1 });
+		state.discoveredDirectoryCount += 1;
+		return;
+	}
+	if (!seen || canQueue) state.truncatedDiscoveredDirectories += 1;
+}
+
+async function probeFuzzPathCandidate(current: FuzzPathBase, candidate: string, currentBaselines: FuzzPathFingerprint[], queue: FuzzPathBase[], seenBases: Set<string>, maxVisitedBases: number, options: NormalizedFuzzPathsOptions, state: FuzzPathRunState): Promise<void> {
+	const target = buildFuzzUrl(current.baseUrl, candidate);
+	try {
+		const exchange = await fetchFuzzPath(target, options);
+		const probe = projectFuzzPathResult(current, candidate, exchange, currentBaselines, options);
+		state.results.push(probe);
+		queueDiscoveredFuzzBase(current, target, probe, queue, seenBases, maxVisitedBases, options, state);
+	} catch (error) {
+		state.failures.push({ baseUrl: current.baseUrl, candidate, depth: current.depth + 1, url: target, error: error instanceof Error ? error.message : String(error) });
+	}
+	state.sent += 1;
+	if (options.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+}
+
+async function runFuzzPathRoot(rootBase: string, options: NormalizedFuzzPathsOptions, state: FuzzPathRunState): Promise<void> {
+	const queue: FuzzPathBase[] = [{ baseUrl: rootBase, depth: 0 }];
+	const seenBases = new Set<string>([normalizeRecursiveBaseUrl(rootBase)]);
+	const maxVisitedBases = options.recursive ? Math.max(1, Math.min(50, Math.floor(BASELINE_REQUEST_BUDGET_PER_ROOT / Math.max(1, options.candidates.length)))) : 1;
+	while (queue.length) {
+		const current = queue.shift()!;
+		state.visitedBaseCount += 1;
+		const currentBaselines = await collectFuzzPathBaselines(current, options, state);
+		for (const candidate of options.candidates) await probeFuzzPathCandidate(current, candidate, currentBaselines, queue, seenBases, maxVisitedBases, options, state);
+	}
+}
+
+function fuzzPathsResult(options: NormalizedFuzzPathsOptions, state: FuzzPathRunState, warnings: string[]) {
+	const uniqueResults = dedupeFuzzPathResults(state.results);
+	const matched = uniqueResults.filter((item) => item.matched === true);
+	return {
+		ok: state.failures.length === 0,
 		generatedAt: new Date().toISOString(),
-		baseCount: normalized.bases.length,
-		candidateCount: normalized.candidates.length,
-		requestCount: sent,
+		baseCount: options.bases.length,
+		candidateCount: options.candidates.length,
+		requestCount: state.sent,
 		matchedCount: matched.length,
 		resultCount: uniqueResults.length,
-		rawResultCount: results.length,
-		deduplicatedResults: results.length - uniqueResults.length,
-		truncatedCandidates: normalized.truncatedCandidates,
-		filterBaseline: normalized.filterBaseline,
-		baselinePath: normalized.baselinePath,
-		baselineStrategy: normalized.baselineStrategy,
-		baselineSampleCount: normalized.baselineSamples.length,
-		baselineClusters,
-		recursive: normalized.recursive,
-		maxDepth: normalized.maxDepth,
-		visitedBaseCount,
-		discoveredDirectoryCount,
-		truncatedDiscoveredDirectories,
-		matchStatus: normalized.matchStatus,
-		filterStatus: normalized.filterStatus,
-		filterBodyBytes: normalized.filterBodyBytes,
-		baselines,
-		clusters,
+		rawResultCount: state.results.length,
+		deduplicatedResults: state.results.length - uniqueResults.length,
+		truncatedCandidates: options.truncatedCandidates,
+		filterBaseline: options.filterBaseline,
+		baselinePath: options.baselinePath,
+		baselineStrategy: options.baselineStrategy,
+		baselineSampleCount: options.baselineSamples.length,
+		baselineClusters: clusterBaselineFingerprints(state.baselines.filter((item) => typeof item.status === "number") as FuzzPathFingerprint[]),
+		recursive: options.recursive,
+		maxDepth: options.maxDepth,
+		visitedBaseCount: state.visitedBaseCount,
+		discoveredDirectoryCount: state.discoveredDirectoryCount,
+		truncatedDiscoveredDirectories: state.truncatedDiscoveredDirectories,
+		matchStatus: options.matchStatus,
+		filterStatus: options.filterStatus,
+		filterBodyBytes: options.filterBodyBytes,
+		baselines: state.baselines,
+		clusters: clusterFuzzPathResults(state.results),
 		results: uniqueResults,
 		matched,
-		failures,
-		...(hardCapWarnings.length ? { warnings: hardCapWarnings } : {}),
+		failures: state.failures,
+		...(warnings.length ? { warnings } : {}),
 	};
+}
+
+export async function runFuzzPaths(options: RawFuzzPathsOptions) {
+	const warnings = fuzzPathsHardCapWarnings(options);
+	const normalized = await normalizeFuzzPathsOptions(options);
+	const state: FuzzPathRunState = { baselines: [], results: [], failures: [], sent: 0, visitedBaseCount: 0, discoveredDirectoryCount: 0, truncatedDiscoveredDirectories: 0 };
+	for (const rootBase of normalized.bases) await runFuzzPathRoot(rootBase, normalized, state);
+	return fuzzPathsResult(normalized, state, warnings);
 }
