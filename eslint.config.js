@@ -180,6 +180,7 @@ export default tseslint.config(
 			"src/bridge/extension/page_scripts/hook_dispatcher.ts",
 			"src/commands/observe/scanRunner.ts",
 			"src/commands/observe/readabilityRunner.ts",
+			"src/commands/summaries/network.ts",
 			"src/commands/observe/scanSession.ts",
 			"src/commands/observe/scanCache.ts",
 			"src/commands/observe/scanCapture.ts",
