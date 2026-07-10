@@ -73,14 +73,15 @@ function splitPathSelectors(value: unknown): string[] {
 }
 
 function stringArray(value: unknown): string[] {
-	if (Array.isArray(value)) return value.map((item) => asString(item)?.trim() || "").filter(Boolean);
-	const single = asString(value)?.trim();
-	if (!single) return [];
-	return single.split(/[\r\n,]+/).map((item) => item.trim()).filter(Boolean);
+	return Array.isArray(value) ? stringList(value) : splitPathSelectors(value);
 }
 
-function normalizeCliArgs(value: unknown): string[] {
-	return parseCommandArgs(value);
+function firstTrimmedString(...values: unknown[]): string | undefined {
+	return stringList(values)[0];
+}
+
+function firstStringArray(...values: unknown[]): string[] {
+	return values.map(stringArray).find((items) => items.length) ?? [];
 }
 
 function nonNegativeInt(value: unknown, fallback: number): number {
@@ -133,8 +134,8 @@ async function normalizeNucleiBridgeOptions(options: NucleiBridgeOptions): Promi
 		concurrency: Math.min(100, Math.max(1, positiveInt(options.concurrency, 10))),
 		bulkSize: Math.min(100, Math.max(1, positiveInt(options.bulkSize, 10))),
 		nucleiPath: asString(options.nucleiPath)?.trim(),
-		nucleiArgs: normalizeCliArgs(options.nucleiArgs),
-		extraArgs: normalizeCliArgs(options.extraArgs),
+		nucleiArgs: parseCommandArgs(options.nucleiArgs),
+		extraArgs: parseCommandArgs(options.extraArgs),
 		allowLauncherOverride: options.allowLauncherOverride === true,
 		sequence,
 		directTargets,
@@ -150,7 +151,7 @@ function detectLauncher(options: NormalizedNucleiBridgeOptions): NucleiLauncher 
 		explicitArgs: options.nucleiArgs,
 		envPathVar: "BROWSER_PILOT_NUCLEI_PATH",
 		envArgsVar: "BROWSER_PILOT_NUCLEI_ARGS",
-		envArgs: normalizeCliArgs(process.env.BROWSER_PILOT_NUCLEI_ARGS),
+		envArgs: parseCommandArgs(process.env.BROWSER_PILOT_NUCLEI_ARGS),
 		autoCandidates: [{ command: "nuclei", preArgs: [], source: "auto" }],
 		versionArgs: ["-version"],
 		successPattern: /nuclei/i,
@@ -207,13 +208,13 @@ function redactSensitiveText(text: string): string {
 		.replace(/((?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token)\s*=\s*)[^;\s,"'}]+/gi, "$1[redacted]");
 }
 
-function previewText(text: string, maxChars = 1_000): string | undefined {
+function previewText(text = "", maxChars = 1_000): string | undefined {
 	const trimmed = redactSensitiveText(text).replace(/\s+/g, " ").trim();
 	if (!trimmed) return undefined;
 	return trimmed.length > maxChars ? `${trimmed.slice(0, maxChars)}…` : trimmed;
 }
 
-function parseNucleiOutput(text: string): { matches: NucleiMatch[]; parseErrorCount: number } {
+export function parseNucleiOutput(text: string): { matches: NucleiMatch[]; parseErrorCount: number } {
 	const matches: NucleiMatch[] = [];
 	let parseErrorCount = 0;
 	for (const line of text.split(/\r?\n/)) {
@@ -228,27 +229,24 @@ function parseNucleiOutput(text: string): { matches: NucleiMatch[]; parseErrorCo
 		}
 		if (!isRecord(parsed)) continue;
 		const info = isRecord(parsed.info) ? parsed.info : {};
-		const tags = stringArray(info.tags);
-		const authors = stringArray(info.authors ?? info.author);
-		const extractedResults = stringArray(parsed["extracted-results"] ?? parsed.extractedResults);
 		matches.push({
-			templateId: asString(parsed["template-id"] ?? parsed.templateId ?? parsed.templateID)?.trim(),
-			templatePath: asString(parsed["template-path"] ?? parsed.templatePath)?.trim(),
-			templateName: asString(info.name ?? parsed["template-name"] ?? parsed.templateName)?.trim(),
-			severity: asString(info.severity ?? parsed.severity)?.trim()?.toLowerCase(),
-			tags,
-			authors,
-			type: asString(parsed.type)?.trim(),
-			host: asString(parsed.host)?.trim(),
-			matchedAt: asString(parsed["matched-at"] ?? parsed.matchedAt ?? parsed.url)?.trim(),
-			ip: asString(parsed.ip)?.trim(),
-			matcherName: asString(parsed["matcher-name"] ?? parsed.matcherName)?.trim(),
-			extractorName: asString(parsed["extractor-name"] ?? parsed.extractorName)?.trim(),
-			extractedResults,
-			timestamp: asString(parsed.timestamp)?.trim(),
-			curlPreview: previewText(asString(parsed["curl-command"] ?? parsed.curlCommand) || ""),
-			requestPreview: previewText(asString(parsed.request) || ""),
-			responsePreview: previewText(asString(parsed.response) || ""),
+			templateId: firstTrimmedString(parsed["template-id"], parsed.templateId, parsed.templateID),
+			templatePath: firstTrimmedString(parsed["template-path"], parsed.templatePath),
+			templateName: firstTrimmedString(info.name, parsed["template-name"], parsed.templateName),
+			severity: firstTrimmedString(info.severity, parsed.severity)?.toLowerCase(),
+			tags: stringArray(info.tags),
+			authors: firstStringArray(info.authors, info.author),
+			type: firstTrimmedString(parsed.type),
+			host: firstTrimmedString(parsed.host),
+			matchedAt: firstTrimmedString(parsed["matched-at"], parsed.matchedAt, parsed.url),
+			ip: firstTrimmedString(parsed.ip),
+			matcherName: firstTrimmedString(parsed["matcher-name"], parsed.matcherName),
+			extractorName: firstTrimmedString(parsed["extractor-name"], parsed.extractorName),
+			extractedResults: firstStringArray(parsed["extracted-results"], parsed.extractedResults),
+			timestamp: firstTrimmedString(parsed.timestamp),
+			curlPreview: previewText(firstTrimmedString(parsed["curl-command"], parsed.curlCommand)),
+			requestPreview: previewText(firstTrimmedString(parsed.request)),
+			responsePreview: previewText(firstTrimmedString(parsed.response)),
 		});
 	}
 	return { matches, parseErrorCount };
