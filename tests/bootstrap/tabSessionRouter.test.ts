@@ -1,0 +1,104 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import type { WebSocket } from "ws";
+import { BrowserBridgeClientRegistry } from "../../src/bridge/server/BrowserBridgeClientRegistry.ts";
+import { BrowserTabSessionRouter } from "../../src/bridge/server/BrowserTabSessionRouter.ts";
+import { SessionRegistry } from "../../src/kernels/session/sessionRegistry.ts";
+
+function fakeSocket(): WebSocket {
+	const ws = {
+		readyState: 1,
+		close() {
+			ws.readyState = 3;
+		},
+	};
+	return ws as unknown as WebSocket;
+}
+
+function connect(clients: BrowserBridgeClientRegistry, extensionId = "extension-1"): WebSocket {
+	const ws = fakeSocket();
+	clients.register(ws);
+	clients.updateClientInfo(ws, { id: extensionId, extensionInstanceId: extensionId });
+	return ws;
+}
+
+function setup() {
+	const clients = new BrowserBridgeClientRegistry(18765);
+	const browserSessions = new SessionRegistry<WebSocket>({ isOpenClient: (client) => client.readyState === 1 });
+	const router = new BrowserTabSessionRouter(clients, browserSessions);
+	return { clients, browserSessions, router };
+}
+
+test("tab session sync normalizes tabs, preserves partial fields, and disconnects stale entries", () => {
+	const { clients, browserSessions, router } = setup();
+	const ws = connect(clients);
+	browserSessions.selectClient(browserSessions.defaultSession(), ws);
+	router.updateTabs([
+		null,
+		{ id: 0 },
+		{ id: 7, url: "https://one.test/", title: "One", active: true, windowId: 1, incognito: false },
+		{ tabId: 8, url: "https://two.test/", title: "Two", active: false, windowId: 1, openerTabId: 7 },
+	], ws);
+
+	assert.equal(router.defaultTabId(), 7);
+	assert.equal(router.latestTabId(), 8);
+	assert.equal(router.getTabs().length, 2);
+	const firstHandle = router.getTabs().find((tab) => tab.tabId === 8)?.tabHandle;
+
+	router.updateTabs([{ id: 8, active: true, windowId: 1 }], ws);
+	const live = router.getTabs();
+	assert.equal(live.length, 1);
+	assert.equal(live[0]?.tabId, 8);
+	assert.equal(live[0]?.url, "https://two.test/");
+	assert.equal(live[0]?.title, "Two");
+	assert.equal(live[0]?.tabHandle, firstHandle);
+	assert.equal(router.defaultTabId(), 8);
+	assert.equal(router.getTabs({ includeDisconnected: true }).find((tab) => tab.tabId === 7)?.disconnectedAt !== undefined, true);
+});
+
+test("tab replacement preserves stable handles and resolves nested or numeric stale targets", () => {
+	const { clients, browserSessions, router } = setup();
+	const ws = connect(clients);
+	browserSessions.selectClient(browserSessions.defaultSession(), ws);
+	router.updateTabs([{ id: 7, url: "https://replace.test/", title: "Before", active: true, windowId: 1 }], ws);
+	const handle = router.defaultTabHandle();
+	assert.ok(handle);
+
+	const replacements = router.applyTabReplacements([{ from: 7, to: 9 }, { from: 0, to: 2 }, { from: 9, to: 9 }], ws);
+	assert.equal(replacements.length, 1);
+	router.updateTabs([{ id: 9, url: "https://replace.test/after", title: "After", active: true, windowId: 1 }], ws);
+
+	const current = router.getTabs()[0];
+	assert.equal(current?.tabId, 9);
+	assert.equal(current?.tabHandle, handle);
+	assert.equal(current?.replacedFromTabId, 7);
+	assert.equal(router.resolveTargetRef(7)?.tabId, 9);
+	assert.equal(router.resolveTargetRef({ createdTarget: { targetRef: handle } })?.tabId, 9);
+});
+
+test("same-extension reconnect adopts identity and migrates secondary session selection", () => {
+	const { clients, browserSessions, router } = setup();
+	const previous = connect(clients);
+	const defaultSession = browserSessions.defaultSession();
+	browserSessions.selectClient(defaultSession, previous);
+	router.updateTabs([{ id: 7, url: "https://reconnect.test/", title: "Page", active: true, windowId: 3 }], previous);
+	const previousTab = router.getTabs()[0];
+	assert.ok(previousTab);
+
+	const secondary = browserSessions.create("secondary");
+	browserSessions.selectClient(secondary, previous);
+	browserSessions.setDefaultTabSessionId(secondary, previousTab.id);
+	browserSessions.setLatestTabSessionId(secondary, previousTab.id);
+
+	const reconnected = connect(clients);
+	browserSessions.selectClient(defaultSession, reconnected);
+	router.updateTabs([{ id: 7, url: "https://reconnect.test/", title: "Page", active: true, windowId: 3 }], reconnected);
+
+	const adopted = Array.from(router.sessions.values()).find((session) => session.client === reconnected);
+	assert.ok(adopted);
+	assert.equal(adopted.tabHandle, previousTab.tabHandle);
+	assert.equal(router.sessions.get(previousTab.id)?.disconnectedAt !== undefined, true);
+	assert.equal(secondary.selectedClient, reconnected);
+	assert.equal(secondary.defaultSessionId, adopted.id);
+	assert.equal(secondary.latestSessionId, adopted.id);
+});

@@ -3,7 +3,7 @@ import { WebSocket } from "ws";
 import { targetHandleNotFoundError } from "../errors.js";
 import { BrowserBridgeError } from "../../utils/errors.js";
 import { browserTabInfo, isOpen, recordValue, tabSessionSummary, toTabId } from "./bridgeUtils.js";
-import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types.js";
+import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types.js";
 import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import { DEFAULT_BROWSER_SESSION_ID, type SessionRegistry } from "../../kernels/session/sessionRegistry.js";
 
@@ -40,7 +40,29 @@ type ReconnectIdentity = Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | 
 	previousClient: WebSocket;
 };
 
+type ReplacementIdentity = Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation" | "openerTabId"> & { replacedFromTabId: number; replacedAt: number };
+type TabIdentity = Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation" | "openerTabId">;
+type TabSyncContext = { ws: WebSocket; browserId: string; bridge?: BrowserBridgeClientInfo; now: number };
+type SyncedTab = { id: string; active: boolean; reconnect?: ReconnectIdentity };
 type TargetInfoExtras = Partial<Pick<BrowserBridgeTargetInfo, "tabHandle" | "targetRef" | "requestedTabId" | "replacedFrom" | "replacedByTabId" | "replacementHops" | "replacementHopsRemaining" | "replacementChainAge" | "browserId" | "openerTabId">>;
+const NESTED_TARGET_KEYS = ["createdTarget", "createdTab", "target", "tab", "data"] as const;
+
+function normalizedReplacement(raw: unknown, now: number): { from: number; to: number; at: number } | undefined {
+	const record = recordValue(raw);
+	if (!record) return undefined;
+	const from = toTabId(record.from ?? record.removedTabId ?? record.oldTabId);
+	const to = toTabId(record.to ?? record.addedTabId ?? record.newTabId);
+	if (!from || !to || from === to) return undefined;
+	return { from, to, at: typeof record.at === "number" && Number.isFinite(record.at) ? record.at : now };
+}
+
+function replacementSessionFields(replacement: ReplacementIdentity | undefined, existing: BrowserTabSession | undefined): Partial<Pick<BrowserTabSession, "replacedFromTabId" | "replacedAt">> {
+	if (replacement) return { replacedFromTabId: replacement.replacedFromTabId, replacedAt: replacement.replacedAt };
+	return existing?.replacedFromTabId ? { replacedFromTabId: existing.replacedFromTabId, replacedAt: existing.replacedAt } : {};
+}
+
+function stringOr(value: unknown, fallback = ""): string { return typeof value === "string" ? value : fallback; }
+function booleanOr(value: unknown, fallback?: boolean): boolean | undefined { return typeof value === "boolean" ? value : fallback; }
 
 export class BrowserTabSessionRouter {
 	readonly sessions = new Map<string, BrowserTabSession>();
@@ -48,7 +70,7 @@ export class BrowserTabSessionRouter {
 	private readonly browserSessions: SessionRegistry<WebSocket>;
 	private lastTabSyncAtValue?: number;
 	private readonly replacements = new Map<string, ReplacementRecord>();
-	private readonly pendingReplacementIdentities = new Map<string, Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation" | "openerTabId"> & { replacedFromTabId: number; replacedAt: number }>();
+	private readonly pendingReplacementIdentities = new Map<string, ReplacementIdentity>();
 
 	constructor(clients: BrowserBridgeClientRegistry, browserSessions: SessionRegistry<WebSocket>) {
 		this.clients = clients;
@@ -139,12 +161,9 @@ export class BrowserTabSessionRouter {
 		const browserId = this.clients.browserIdForClient(ws);
 		const applied: ReplacementRecord[] = [];
 		for (const raw of rawReplacements) {
-			const record = recordValue(raw);
-			if (!record) continue;
-			const from = toTabId(record.from ?? record.removedTabId ?? record.oldTabId);
-			const to = toTabId(record.to ?? record.addedTabId ?? record.newTabId);
-			if (!from || !to || from === to) continue;
-			const at = typeof record.at === "number" && Number.isFinite(record.at) ? record.at : now;
+			const replacementInput = normalizedReplacement(raw, now);
+			if (!replacementInput) continue;
+			const { from, to, at } = replacementInput;
 			const fromSessionId = this.sessionIdForTab(ws, from);
 			const toSessionId = this.sessionIdForTab(ws, to);
 			const oldSession = this.sessions.get(fromSessionId);
@@ -187,59 +206,79 @@ export class BrowserTabSessionRouter {
 		const now = Date.now();
 		this.lastTabSyncAtValue = now;
 		const current = new Set<string>();
-		const browserId = this.clients.browserIdForClient(ws);
-		const clientInfo = this.clients.info(ws);
+		const context: TabSyncContext = { ws, now, browserId: this.clients.browserIdForClient(ws), bridge: this.clients.info(ws) };
 		for (const raw of rawTabs) {
-			const tab = recordValue(raw);
-			if (!tab) continue;
-			const tabId = toTabId(tab.id ?? tab.tabId);
-			if (!tabId) continue;
-			const id = this.sessionIdForTab(ws, tabId);
-			current.add(id);
-			const existing = this.sessions.get(id);
-			const replacementIdentity = this.pendingReplacementIdentities.get(id);
-			const reconnectIdentity = (!existing && !replacementIdentity) ? this.findReconnectIdentity(tabId, clientInfo?.extensionId, tab, now) : undefined;
-			const identity = replacementIdentity ?? existing ?? reconnectIdentity ?? this.newIdentity(browserId);
-			this.pendingReplacementIdentities.delete(id);
-			this.sessions.set(id, {
-				id,
-				browserId,
-				tabId,
-				logicalTabId: identity.logicalTabId,
-				tabHandle: identity.tabHandle,
-				generation: identity.generation,
-				url: typeof tab.url === "string" ? tab.url : existing?.url || "",
-				title: typeof tab.title === "string" ? tab.title : existing?.title || "",
-				active: typeof tab.active === "boolean" ? tab.active : existing?.active,
-				windowId: toTabId(tab.windowId) ?? existing?.windowId,
-				openerTabId: toTabId(tab.openerTabId) ?? replacementIdentity?.openerTabId ?? reconnectIdentity?.openerTabId ?? existing?.openerTabId,
-				...(replacementIdentity ? { replacedFromTabId: replacementIdentity.replacedFromTabId, replacedAt: replacementIdentity.replacedAt } : existing?.replacedFromTabId ? { replacedFromTabId: existing.replacedFromTabId, replacedAt: existing.replacedAt } : {}),
-				incognito: typeof tab.incognito === "boolean" ? tab.incognito : existing?.incognito,
-				type: "ext_ws",
-				connectedAt: existing?.connectedAt || now,
-				bridge: this.clients.info(ws),
-				client: ws,
-			});
-			if (reconnectIdentity && reconnectIdentity.previousSessionId !== id) {
-				const previous = this.sessions.get(reconnectIdentity.previousSessionId);
-				if (previous && !previous.disconnectedAt) previous.disconnectedAt = now;
-				for (const browserSession of this.browserSessions.list()) {
-					if (browserSession.selectedClient === reconnectIdentity.previousClient) this.browserSessions.selectClient(browserSession, ws);
-					if (browserSession.defaultSessionId === reconnectIdentity.previousSessionId) this.setDefaultSessionId(browserSession, id);
-					if (browserSession.latestSessionId === reconnectIdentity.previousSessionId) this.setLatestSessionId(browserSession, id);
-				}
-			}
-			for (const browserSession of this.browserSessions.list()) {
-				const selected = this.browserSessions.selectedOpenClient(browserSession);
-				if (selected && selected !== ws) continue;
-				if (tab.active === true || !browserSession.defaultSessionId) this.setDefaultSessionId(browserSession, id);
-				this.setLatestSessionId(browserSession, id);
-			}
+			const synced = this.syncTab(raw, context);
+			if (!synced) continue;
+			current.add(synced.id);
+			this.migrateReconnect(synced.reconnect, synced.id, context);
+			this.updateBrowserSessionSelection(ws, synced.id, synced.active);
 		}
+		this.disconnectMissingTabs(current, ws, now);
+		this.refreshSelectedSessionRefs();
+	}
+
+	private syncTab(raw: unknown, context: TabSyncContext): SyncedTab | undefined {
+		const tab = recordValue(raw);
+		if (!tab) return undefined;
+		const tabId = toTabId(tab.id ?? tab.tabId);
+		if (!tabId) return undefined;
+		const id = this.sessionIdForTab(context.ws, tabId);
+		const existing = this.sessions.get(id);
+		const replacement = this.pendingReplacementIdentities.get(id);
+		const reconnect = !existing && !replacement ? this.findReconnectIdentity(tabId, context.bridge?.extensionId, tab, context.now) : undefined;
+		const identity = replacement ?? existing ?? reconnect ?? this.newIdentity(context.browserId);
+		this.pendingReplacementIdentities.delete(id);
+		this.sessions.set(id, this.syncedTabSession(tab, tabId, id, identity, existing, replacement, reconnect, context));
+		return { id, active: tab.active === true, reconnect };
+	}
+
+	private syncedTabSession(tab: Record<string, unknown>, tabId: number, id: string, identity: TabIdentity, existing: BrowserTabSession | undefined, replacement: ReplacementIdentity | undefined, reconnect: ReconnectIdentity | undefined, context: TabSyncContext): BrowserTabSession {
+		return {
+			id,
+			browserId: context.browserId,
+			tabId,
+			logicalTabId: identity.logicalTabId,
+			tabHandle: identity.tabHandle,
+			generation: identity.generation,
+			url: stringOr(tab.url, existing?.url),
+			title: stringOr(tab.title, existing?.title),
+			active: booleanOr(tab.active, existing?.active),
+			windowId: toTabId(tab.windowId) ?? existing?.windowId,
+			openerTabId: toTabId(tab.openerTabId) ?? replacement?.openerTabId ?? reconnect?.openerTabId ?? existing?.openerTabId,
+			...replacementSessionFields(replacement, existing),
+			incognito: booleanOr(tab.incognito, existing?.incognito),
+			type: "ext_ws",
+			connectedAt: existing?.connectedAt || context.now,
+			bridge: context.bridge,
+			client: context.ws,
+		};
+	}
+
+	private migrateReconnect(reconnect: ReconnectIdentity | undefined, id: string, context: TabSyncContext): void {
+		if (!reconnect || reconnect.previousSessionId === id) return;
+		const previous = this.sessions.get(reconnect.previousSessionId);
+		if (previous && !previous.disconnectedAt) previous.disconnectedAt = context.now;
+		for (const browserSession of this.browserSessions.list()) {
+			if (browserSession.selectedClient === reconnect.previousClient) this.browserSessions.selectClient(browserSession, context.ws);
+			if (browserSession.defaultSessionId === reconnect.previousSessionId) this.setDefaultSessionId(browserSession, id);
+			if (browserSession.latestSessionId === reconnect.previousSessionId) this.setLatestSessionId(browserSession, id);
+		}
+	}
+
+	private updateBrowserSessionSelection(ws: WebSocket, id: string, active: boolean): void {
+		for (const browserSession of this.browserSessions.list()) {
+			const selected = this.browserSessions.selectedOpenClient(browserSession);
+			if (selected && selected !== ws) continue;
+			if (active || !browserSession.defaultSessionId) this.setDefaultSessionId(browserSession, id);
+			this.setLatestSessionId(browserSession, id);
+		}
+	}
+
+	private disconnectMissingTabs(current: Set<string>, ws: WebSocket, now: number): void {
 		for (const [id, session] of this.sessions) {
 			if (!current.has(id) && session.client === ws && !session.disconnectedAt) session.disconnectedAt = now;
 		}
-		this.refreshSelectedSessionRefs();
 	}
 
 	recordTabActivation(rawActivation: unknown, ws: WebSocket, now = Date.now()): void {
@@ -255,12 +294,7 @@ export class BrowserTabSessionRouter {
 		for (const other of this.sessions.values()) {
 			if (other.id !== session.id && other.client === ws && other.windowId === session.windowId) other.active = false;
 		}
-		for (const browserSession of this.browserSessions.list()) {
-			const selected = this.browserSessions.selectedOpenClient(browserSession);
-			if (selected && selected !== ws) continue;
-			this.setDefaultSessionId(browserSession, session.id);
-			this.setLatestSessionId(browserSession, session.id);
-		}
+		this.updateBrowserSessionSelection(ws, session.id, true);
 	}
 
 	selectBrowser(ws: WebSocket, browserSessionId?: string): string | undefined {
@@ -492,20 +526,15 @@ export class BrowserTabSessionRouter {
 	private targetRefValue(value: unknown): unknown {
 		const record = recordValue(value);
 		if (!record) return value;
-		const createdTarget = recordValue(record.createdTarget);
-		const createdTab = recordValue(record.createdTab);
-		const target = recordValue(record.target);
-		const tab = recordValue(record.tab);
-		const data = recordValue(record.data);
-		return record.targetRef ?? record.tabHandle
-			?? createdTarget?.targetRef ?? createdTarget?.tabHandle ?? createdTarget?.tabId
-			?? createdTab?.targetRef ?? createdTab?.tabHandle ?? createdTab?.tabId
-			?? target?.targetRef ?? target?.tabHandle ?? target?.tabId
-			?? tab?.targetRef ?? tab?.tabHandle ?? tab?.tabId
-			?? data?.targetRef ?? data?.tabHandle ?? data?.tabId
-			?? record.tabId
-			?? record.id
-			?? value;
+		const direct = record.targetRef ?? record.tabHandle;
+		if (direct !== undefined) return direct;
+		for (const key of NESTED_TARGET_KEYS) {
+			const nested = recordValue(record[key]);
+			if (!nested) continue;
+			const target = nested.targetRef ?? nested.tabHandle ?? nested.tabId;
+			if (target !== undefined) return target;
+		}
+		return record.tabId ?? record.id ?? value;
 	}
 
 	private normalizeTabSessionId(value: unknown): string | undefined {

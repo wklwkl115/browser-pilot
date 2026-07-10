@@ -144,6 +144,7 @@ export default tseslint.config(
 	{
 		files: [
 			"src/browser-runtime/abml/runtime.ts",
+			"src/bridge/server/BrowserTabSessionRouter.ts",
 			"src/bridge/server/BrowserTemporalCoordinator.ts",
 			"src/bridge/extension/service_worker/cdp.ts",
 			"src/bridge/extension/service_worker/exec.ts",
