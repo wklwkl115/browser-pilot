@@ -1,9 +1,9 @@
 // transfer.js - upload/download commands for the Browser Pilot bridge.
 
-import { chromeApi as chrome } from "./runtimeEnv";
+import { chromeApi as chrome } from "./runtimeEnv.js";
 import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp } from "./runtimeSupport.js";
-import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
-import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotChromeDownloadItem } from "./types";
+import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp.js";
+import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotChromeDownloadItem, BrowserPilotPersistentCdpBridge } from "./types.js";
 
 const BROWSER_PILOT_FILE_ACCESS_MESSAGE = 'To enable file upload, open chrome://extensions, click Details under Browser Pilot Bridge, and enable "Allow access to file URLs".';
 
@@ -28,6 +28,7 @@ type TransferDownloadSummary = JsonRecord & {
 type TransferPageDownloadEvent = JsonRecord & { method?: string; url?: string; suggestedFilename?: string; guid?: string; frameId?: unknown; pageDownloadError?: string };
 type TransferDownloadOptions = JsonRecord & { url: string; saveAs: boolean; filename?: string; conflictAction?: string };
 type TransferEvalData = JsonRecord & { href?: string; suggestedFilename?: string };
+type TransferCdpBridge = BrowserPilotPersistentCdpBridge & { send: NonNullable<BrowserPilotPersistentCdpBridge["send"]> };
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -183,58 +184,6 @@ function browserPilotTransferWaitDownloadComplete(id: unknown, timeoutMs: number
     chrome.downloads.onChanged.addListener(onChanged);
     tick().catch((error) => { cleanup(); reject(error); });
   });
-}
-
-function browserPilotTransferDownloadCreatedWatcher(timeoutMs: number, matcher?: (item: TransferDownloadSummary | null) => boolean) {
-  let settled = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let resolvePromise: (value: TransferDownloadSummary | null) => void = () => {};
-  let rejectPromise: (reason?: unknown) => void = () => {};
-  const cleanup = () => {
-    clearTimeout(timer);
-    try {
-      chrome.downloads.onCreated.removeListener(onCreated);
-    } catch (_error) {
-      /* best-effort download creation listener cleanup */
-    }
-  };
-  const finishResolve = (value: TransferDownloadSummary | null) => {
-    if (settled) return;
-    settled = true;
-    cleanup();
-    resolvePromise(value);
-  };
-  const finishReject = (value: Error) => {
-    if (settled) return;
-    settled = true;
-    cleanup();
-    rejectPromise(value);
-  };
-  const onCreated = (item: BrowserPilotChromeDownloadItem) => {
-    const normalized = browserPilotTransferDownloadItem(item);
-    try {
-      if (matcher && !matcher(normalized)) return;
-    } catch (_error) {
-      return;
-    }
-    finishResolve(normalized);
-  };
-  const promise = new Promise<TransferDownloadSummary | null>((resolve, reject) => {
-    resolvePromise = resolve;
-    rejectPromise = reject;
-    timer = setTimeout(() => {
-      finishReject(new Error('Timed out after ' + timeoutMs + 'ms waiting for download start'));
-    }, timeoutMs);
-    chrome.downloads.onCreated.addListener(onCreated);
-  });
-  return {
-    promise,
-    cancel() { finishReject(new Error('Download start watcher cancelled')); },
-  };
-}
-
-function browserPilotTransferWaitDownloadCreated(timeoutMs: number, matcher?: (item: TransferDownloadSummary | null) => boolean): Promise<TransferDownloadSummary | null> {
-  return browserPilotTransferDownloadCreatedWatcher(timeoutMs, matcher).promise;
 }
 
 function browserPilotTransferWaitPageDownloadBegin(tabId: number, timeoutMs: number): Promise<TransferPageDownloadEvent> {
@@ -395,14 +344,74 @@ async function browserPilotTransferDownloadWithOptions(options: TransferDownload
   return { ok: true, data: { mode, trigger: trigger || null, download: item, downloadId: item.id, path: item.path || null } };
 }
 
+function browserPilotTransferDownloadOptions(msg: BrowserPilotBridgeCommand, url: string, suggestedFilename?: unknown): TransferDownloadOptions {
+  const options: TransferDownloadOptions = { url, saveAs: msg.saveAs === true };
+  const explicitFilename = typeof msg.filename === 'string' && msg.filename.trim() ? msg.filename.trim() : undefined;
+  const filename = explicitFilename || (typeof suggestedFilename === 'string' ? suggestedFilename.trim() : '');
+  if (filename) options.filename = filename;
+  if (typeof msg.conflictAction === 'string' && ['uniquify', 'overwrite', 'prompt'].includes(msg.conflictAction)) options.conflictAction = msg.conflictAction;
+  return options;
+}
+
+function browserPilotTransferEvaluationError(error: unknown, selector: string): BrowserPilotBridgeResponse {
+  const record = errorRecord(error);
+  return { ok: false, error_code: String(record.code || BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR), error: errorText(error), details: asRecord(record.details || { selector }) };
+}
+
+async function browserPilotTransferEvaluateSelector(tabId: number, expression: string, timeoutMs: number, selector: string): Promise<BrowserPilotBridgeResponse> {
+  try { return await browserPilotTransferEvaluate(tabId, expression, Math.min(timeoutMs, 10000)); }
+  catch (error) { return browserPilotTransferEvaluationError(error, selector); }
+}
+
 async function browserPilotTransferDownloadUrl(msg: BrowserPilotBridgeCommand, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
   const modeCheck = browserPilotTransferNormalizeDownloadMode(msg, 'url');
   if (modeCheck.ok === false) return modeCheck;
   if (!browserPilotTransferIsHttpUrl(msg.url)) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_download url must be http(s)', { url: msg.url });
-  const options: TransferDownloadOptions = { url: String(msg.url), saveAs: msg.saveAs === true };
-  if (typeof msg.filename === 'string' && msg.filename.trim()) options.filename = msg.filename.trim();
-  if (typeof msg.conflictAction === 'string' && ['uniquify', 'overwrite', 'prompt'].includes(msg.conflictAction)) options.conflictAction = msg.conflictAction;
-  return await browserPilotTransferDownloadWithOptions(options, timeoutMs, 'url', null);
+  return await browserPilotTransferDownloadWithOptions(browserPilotTransferDownloadOptions(msg, String(msg.url)), timeoutMs, 'url', null);
+}
+
+async function browserPilotTransferDownloadMedia(tabId: number, msg: BrowserPilotBridgeCommand, selector: string, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
+  const extracted = await browserPilotTransferEvaluateSelector(tabId, browserPilotTransferMediaUrlScript(selector, msg.index, msg.filename), timeoutMs, selector);
+  if (extracted.ok === false) return extracted;
+  const data = responseData(extracted) as TransferEvalData;
+  if (!data.href) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Matched element does not expose a downloadable media URL', { selector });
+  return await browserPilotTransferDownloadWithOptions(browserPilotTransferDownloadOptions(msg, String(data.href), data.suggestedFilename), timeoutMs, 'media', data || null);
+}
+
+async function browserPilotTransferAmbiguousClick(reason: unknown, startedAt: number, details: JsonRecord): Promise<BrowserPilotBridgeResponse> {
+  const candidates = await browserPilotTransferDownloadCandidatesSince(startedAt);
+  return await browserPilotTransferAmbiguousDownload(reason, { ...details, candidate_count: candidates.length, candidate_ids: candidates.slice(0, 10).map(item => item.id) });
+}
+
+async function browserPilotTransferMatchPageDownload(begin: TransferPageDownloadEvent, startedAt: number, timeoutMs: number, details: JsonRecord): Promise<BrowserPilotBridgeResponse> {
+  if (begin.pageDownloadError) return await browserPilotTransferAmbiguousClick(begin.pageDownloadError, startedAt, { ...details, pageDownloadError: begin.pageDownloadError });
+  if (!begin.url) return await browserPilotTransferAmbiguousClick('tab download event did not include a URL', startedAt, { ...details, downloadEvent: begin });
+  try {
+    const item = await browserPilotTransferWaitDownloadForPageEvent(begin, startedAt, timeoutMs);
+    return { ok: true, data: { mode: 'click', ...details, downloadEvent: begin, matchStrategy: 'tab-cdp-download-event', download: item, downloadId: item.id, path: item.path || null } };
+  } catch (error) {
+    return await browserPilotTransferAmbiguousClick(errorText(error), startedAt, { ...details, downloadEvent: begin });
+  }
+}
+
+async function browserPilotTransferTriggerClick(tabId: number, msg: BrowserPilotBridgeCommand, selector: string, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
+  const startedAt = Date.now();
+  const cdp = browserPilotPersistentCdp();
+  if (cdp?.send) await cdp.send(tabId, 'Page.enable', {}, { persistent: true, name: 'transfer_download', timeoutMs: Math.min(timeoutMs, 10000) }).catch(() => null);
+  const pageDownload = browserPilotTransferWaitPageDownloadBegin(tabId, timeoutMs).catch(error => ({ pageDownloadError: errorText(error) } as TransferPageDownloadEvent));
+  const triggered = await browserPilotTransferEvaluateSelector(tabId, browserPilotTransferClickScript(selector, msg.index), timeoutMs, selector);
+  if (triggered.ok === false) return triggered;
+  return await browserPilotTransferMatchPageDownload(await pageDownload, startedAt, timeoutMs, { selector, mode: 'click', trigger: responseData(triggered) || null });
+}
+
+async function browserPilotTransferDownloadClick(tabId: number, msg: BrowserPilotBridgeCommand, selector: string, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
+  const extracted = await browserPilotTransferEvaluateSelector(tabId, browserPilotTransferClickDownloadUrlScript(selector, msg.index, msg.filename), timeoutMs, selector);
+  if (extracted.ok === false) return extracted;
+  const data = responseData(extracted) as TransferEvalData;
+  if (data.href && browserPilotTransferIsHttpUrl(data.href)) {
+    return await browserPilotTransferDownloadWithOptions(browserPilotTransferDownloadOptions(msg, String(data.href), data.suggestedFilename), timeoutMs, 'click', { ...data, directUrl: true });
+  }
+  return await browserPilotTransferTriggerClick(tabId, msg, selector, timeoutMs);
 }
 
 async function browserPilotTransferDownloadFromPage(tabId: number, msg: BrowserPilotBridgeCommand, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
@@ -412,53 +421,9 @@ async function browserPilotTransferDownloadFromPage(tabId: number, msg: BrowserP
   const modeCheck = browserPilotTransferNormalizeDownloadMode(msg, 'selector');
   if (modeCheck.ok === false) return modeCheck;
   if (!('mode' in modeCheck)) return modeCheck;
-  const mode = modeCheck.mode;
-  if (mode === 'media') {
-    const extracted = await browserPilotTransferEvaluate(tabId, browserPilotTransferMediaUrlScript(selector, msg.index, msg.filename), Math.min(timeoutMs, 10000)).catch(error => ({ ok: false, error_code: String(errorRecord(error).code || BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR), error: errorText(error), details: asRecord(errorRecord(error).details || { selector }) } as BrowserPilotBridgeResponse));
-    if (!extracted || extracted.ok === false) return extracted;
-    const extractedData = responseData(extracted) as TransferEvalData;
-    const href = extractedData.href;
-    if (!href) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Matched element does not expose a downloadable media URL', { selector });
-    const options: TransferDownloadOptions = { url: String(href), saveAs: msg.saveAs === true };
-    const suggested = typeof msg.filename === 'string' && msg.filename.trim() ? msg.filename.trim() : extractedData.suggestedFilename;
-    if (typeof suggested === 'string' && suggested.trim()) options.filename = suggested.trim();
-    if (typeof msg.conflictAction === 'string' && ['uniquify', 'overwrite', 'prompt'].includes(msg.conflictAction)) options.conflictAction = msg.conflictAction;
-    return await browserPilotTransferDownloadWithOptions(options, timeoutMs, 'media', extractedData || null);
-  }
-  const extracted = await browserPilotTransferEvaluate(tabId, browserPilotTransferClickDownloadUrlScript(selector, msg.index, msg.filename), Math.min(timeoutMs, 10000)).catch(error => ({ ok: false, error_code: String(errorRecord(error).code || BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR), error: errorText(error), details: asRecord(errorRecord(error).details || { selector }) } as BrowserPilotBridgeResponse));
-  if (!extracted || extracted.ok === false) return extracted;
-  const extractedData = responseData(extracted) as TransferEvalData;
-  const href = extractedData.href;
-  if (href && browserPilotTransferIsHttpUrl(href)) {
-    const options: TransferDownloadOptions = { url: String(href), saveAs: msg.saveAs === true };
-    const suggested = typeof msg.filename === 'string' && msg.filename.trim() ? msg.filename.trim() : extractedData.suggestedFilename;
-    if (typeof suggested === 'string' && suggested.trim()) options.filename = suggested.trim();
-    if (typeof msg.conflictAction === 'string' && ['uniquify', 'overwrite', 'prompt'].includes(msg.conflictAction)) options.conflictAction = msg.conflictAction;
-    return await browserPilotTransferDownloadWithOptions(options, timeoutMs, 'click', { ...(extractedData || {}), directUrl: true });
-  }
-  const startedAt = Date.now();
-  const cdp = browserPilotPersistentCdp();
-  if (cdp?.send) await cdp.send(tabId, 'Page.enable', {}, { persistent: true, name: 'transfer_download', timeoutMs: Math.min(timeoutMs, 10000) }).catch(() => null);
-  const pageDownload = browserPilotTransferWaitPageDownloadBegin(tabId, timeoutMs).catch(error => ({ pageDownloadError: errorText(error) } as TransferPageDownloadEvent));
-  const triggered = await browserPilotTransferEvaluate(tabId, browserPilotTransferClickScript(selector, msg.index), Math.min(timeoutMs, 10000)).catch(error => ({ ok: false, error_code: String(errorRecord(error).code || BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR), error: errorText(error), details: asRecord(errorRecord(error).details || { selector }) } as BrowserPilotBridgeResponse));
-  if (!triggered || triggered.ok === false) return triggered;
-  const triggeredData = responseData(triggered);
-  const begin = await pageDownload;
-  if (begin && !begin.pageDownloadError) {
-    if (!begin.url) {
-      const candidates = await browserPilotTransferDownloadCandidatesSince(startedAt);
-      return await browserPilotTransferAmbiguousDownload('tab download event did not include a URL', { selector, mode, trigger: triggeredData || null, downloadEvent: begin, candidate_count: candidates.length, candidate_ids: candidates.slice(0, 10).map(item => item.id) });
-    }
-    try {
-      const item = await browserPilotTransferWaitDownloadForPageEvent(begin, startedAt, timeoutMs);
-      return { ok: true, data: { mode, trigger: triggeredData || null, downloadEvent: begin, matchStrategy: 'tab-cdp-download-event', download: item, downloadId: item.id, path: item.path || null } };
-    } catch (error) {
-      const candidates = await browserPilotTransferDownloadCandidatesSince(startedAt);
-      return await browserPilotTransferAmbiguousDownload(errorText(error), { selector, mode, trigger: triggeredData || null, downloadEvent: begin, candidate_count: candidates.length, candidate_ids: candidates.slice(0, 10).map(item => item.id) });
-    }
-  }
-  const candidates = await browserPilotTransferDownloadCandidatesSince(startedAt);
-  return await browserPilotTransferAmbiguousDownload(begin?.pageDownloadError || 'tab download event was not observed', { selector, mode, trigger: triggeredData || null, pageDownloadError: begin?.pageDownloadError || null, candidate_count: candidates.length, candidate_ids: candidates.slice(0, 10).map(item => item.id) });
+  return modeCheck.mode === 'media'
+    ? await browserPilotTransferDownloadMedia(tabId, msg, selector, timeoutMs)
+    : await browserPilotTransferDownloadClick(tabId, msg, selector, timeoutMs);
 }
 
 async function handleBrowserPilotTransferDownload(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
@@ -486,6 +451,36 @@ function browserPilotTransferFileChooserEvent(tabId: number, timeoutMs: number):
   });
 }
 
+async function browserPilotTransferEnableFileChooser(cdp: TransferCdpBridge, tabId: number, timeoutMs: number): Promise<BrowserPilotBridgeResponse | undefined> {
+  const options = { persistent: true, name: 'transfer_upload', timeoutMs: Math.min(timeoutMs, 10000) };
+  const pageEnabled = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Page.enable', {}, options));
+  if (pageEnabled.ok === false) return pageEnabled;
+  const intercept = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Page.setInterceptFileChooserDialog', { enabled: true }, options));
+  return intercept.ok === false ? intercept : undefined;
+}
+
+function browserPilotTransferUploadError(error: unknown, selector: string, fileCount: number): BrowserPilotBridgeResponse {
+  const record = errorRecord(error);
+  return errorText(error).includes('Not allowed')
+    ? browserPilotError(BROWSER_PILOT_ERROR_CODES.SAFETY_BLOCKED, BROWSER_PILOT_FILE_ACCESS_MESSAGE, { selector, files_count: fileCount })
+    : browserPilotError(String(record.code || BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR), record.message || errorText(error), asRecord(record.details || { selector, files_count: fileCount }));
+}
+
+async function browserPilotTransferCompleteUpload(cdp: TransferCdpBridge, tabId: number, msg: BrowserPilotBridgeCommand, selector: string, files: string[], chooser: JsonRecord & { backendNodeId?: number; mode?: string }, clicked: BrowserPilotBridgeResponse, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
+  const backendNodeId = Number(chooser.backendNodeId);
+  if (!Number.isInteger(backendNodeId) || backendNodeId <= 0) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'File chooser event did not include backendNodeId', { chooser });
+  const isMultiple = chooser.mode === 'selectMultiple';
+  if (!isMultiple && files.length > 1) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'File chooser does not accept multiple files', { selector, files_count: files.length });
+  const response = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'DOM.setFileInputFiles', { backendNodeId, files }, { persistent: true, name: 'transfer_upload', timeoutMs }));
+  if (response.ok === false) {
+    const message = asRecord(response.error).message || response.message || '';
+    return String(message).includes('Not allowed')
+      ? browserPilotError(BROWSER_PILOT_ERROR_CODES.SAFETY_BLOCKED, BROWSER_PILOT_FILE_ACCESS_MESSAGE, { selector, files_count: files.length })
+      : response;
+  }
+  return { ok: true, data: { selector, index: Number.isInteger(Number(msg.index)) ? Number(msg.index) : 0, files_count: files.length, isMultiple, mode: chooser.mode || null, uploaded: true, trigger: clicked.data || null } };
+}
+
 async function handleBrowserPilotTransferUpload(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
   const files = browserPilotTransferFiles(msg);
   if (!files.length) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_upload requires at least one file', {});
@@ -494,30 +489,16 @@ async function handleBrowserPilotTransferUpload(tabId: number, msg: BrowserPilot
   const timeoutMs = browserPilotTransferTimeoutMs(msg, 30000);
   const cdp = browserPilotPersistentCdp();
   if (!cdp?.send) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'persistent CDP helper is not loaded', { tabId });
-  const pageEnabled = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Page.enable', {}, { persistent: true, name: 'transfer_upload', timeoutMs: Math.min(timeoutMs, 10000) }));
-  if (!pageEnabled || pageEnabled.ok === false) return pageEnabled;
-  const intercept = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Page.setInterceptFileChooserDialog', { enabled: true }, { persistent: true, name: 'transfer_upload', timeoutMs: Math.min(timeoutMs, 10000) }));
-  if (!intercept || intercept.ok === false) return intercept;
+  const transferCdp = cdp as TransferCdpBridge;
+  const setupError = await browserPilotTransferEnableFileChooser(transferCdp, tabId, timeoutMs);
+  if (setupError) return setupError;
   const chooserPromise = browserPilotTransferFileChooserEvent(tabId, timeoutMs);
   try {
     const clicked = await browserPilotTransferEvaluate(tabId, browserPilotTransferClickScript(selector, msg.index), Math.min(timeoutMs, 10000));
     if (!clicked || clicked.ok === false) { chooserPromise.catch(() => {}); return clicked; }
-    const chooser = await chooserPromise;
-    const backendNodeId = Number(chooser.backendNodeId);
-    if (!Number.isInteger(backendNodeId) || backendNodeId <= 0) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'File chooser event did not include backendNodeId', { chooser });
-    const isMultiple = chooser.mode === 'selectMultiple';
-    if (!isMultiple && files.length > 1) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'File chooser does not accept multiple files', { selector, files_count: files.length });
-    const setFiles = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'DOM.setFileInputFiles', { backendNodeId, files }, { persistent: true, name: 'transfer_upload', timeoutMs }));
-    if (!setFiles || setFiles.ok === false) {
-      const msgText = asRecord(setFiles?.error).message || setFiles?.message || '';
-      if (String(msgText).includes('Not allowed')) return browserPilotError(BROWSER_PILOT_ERROR_CODES.SAFETY_BLOCKED, BROWSER_PILOT_FILE_ACCESS_MESSAGE, { selector, files_count: files.length });
-      return setFiles;
-    }
-    return { ok: true, data: { selector, index: Number.isInteger(Number(msg.index)) ? Number(msg.index) : 0, files_count: files.length, isMultiple, mode: chooser.mode || null, uploaded: true, trigger: clicked.data || null } };
+    return await browserPilotTransferCompleteUpload(transferCdp, tabId, msg, selector, files, await chooserPromise, clicked, timeoutMs);
   } catch (e) {
-    const err = errorRecord(e);
-    if (errorText(e).includes('Not allowed')) return browserPilotError(BROWSER_PILOT_ERROR_CODES.SAFETY_BLOCKED, BROWSER_PILOT_FILE_ACCESS_MESSAGE, { selector, files_count: files.length });
-    return browserPilotError(String(err.code || BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR), err.message || errorText(e), asRecord(err.details || { selector, files_count: files.length }));
+    return browserPilotTransferUploadError(e, selector, files.length);
   } finally {
     await cdp.send(tabId, 'Page.setInterceptFileChooserDialog', { enabled: false }, { persistent: true, name: 'transfer_upload_cleanup', timeoutMs: 5000 }).catch(() => {});
   }
@@ -528,6 +509,6 @@ async function handleBrowserPilotTransferCommand(cmd: string, tabId: number, msg
   if (cmd === 'transfer.upload') return await handleBrowserPilotTransferUpload(tabId, msg || {});
   return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unknown transfer command: ' + cmd, { cmd });
 }
-export { BROWSER_PILOT_FILE_ACCESS_MESSAGE, browserPilotTransferTimeoutMs, browserPilotTransferIsHttpUrl, browserPilotTransferNormalizeDownloadMode, browserPilotTransferDownloadItem, browserPilotTransferDownload, browserPilotTransferSearchDownloads, browserPilotTransferSearchDownload, browserPilotTransferDownloadTimeMs, browserPilotTransferDownloadStartedAfter, browserPilotTransferDownloadMatchesPageEvent, browserPilotTransferDownloadCandidatesSince, browserPilotTransferAmbiguousDownload, browserPilotTransferWaitDownloadComplete, browserPilotTransferDownloadCreatedWatcher, browserPilotTransferWaitDownloadCreated, browserPilotTransferWaitPageDownloadBegin, browserPilotTransferWaitDownloadForPageEvent, browserPilotTransferEvaluate, browserPilotTransferClickScript, browserPilotTransferClickDownloadUrlScript, browserPilotTransferMediaUrlScript, browserPilotTransferDownloadWithOptions, browserPilotTransferDownloadUrl, browserPilotTransferDownloadFromPage, handleBrowserPilotTransferDownload, browserPilotTransferFiles, browserPilotTransferFileChooserEvent, handleBrowserPilotTransferUpload, handleBrowserPilotTransferCommand };
+export { handleBrowserPilotTransferCommand };
 // ESM module metadata
-export const __browserPilotBridgeModule_transfer = { name: "transfer", symbols: { BROWSER_PILOT_FILE_ACCESS_MESSAGE, browserPilotTransferTimeoutMs, browserPilotTransferIsHttpUrl, browserPilotTransferNormalizeDownloadMode, browserPilotTransferDownloadItem, browserPilotTransferDownload, browserPilotTransferSearchDownloads, browserPilotTransferSearchDownload, browserPilotTransferDownloadTimeMs, browserPilotTransferDownloadStartedAfter, browserPilotTransferDownloadMatchesPageEvent, browserPilotTransferDownloadCandidatesSince, browserPilotTransferAmbiguousDownload, browserPilotTransferWaitDownloadComplete, browserPilotTransferDownloadCreatedWatcher, browserPilotTransferWaitDownloadCreated, browserPilotTransferWaitPageDownloadBegin, browserPilotTransferWaitDownloadForPageEvent, browserPilotTransferEvaluate, browserPilotTransferClickScript, browserPilotTransferClickDownloadUrlScript, browserPilotTransferMediaUrlScript, browserPilotTransferDownloadWithOptions, browserPilotTransferDownloadUrl, browserPilotTransferDownloadFromPage, handleBrowserPilotTransferDownload, browserPilotTransferFiles, browserPilotTransferFileChooserEvent, handleBrowserPilotTransferUpload, handleBrowserPilotTransferCommand } };
+export const __browserPilotBridgeModule_transfer = { name: "transfer", symbols: { handleBrowserPilotTransferCommand } };
