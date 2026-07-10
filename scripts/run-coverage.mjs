@@ -8,10 +8,10 @@ const testsDir = path.join(root, "tests");
 const coverageDir = path.join(root, "coverage");
 const coverageThresholdPercent = 80;
 const scopeDirs = {
-	all: ["bootstrap", "cli", "artifacts", "js-ast", "memory", "governance"],
+	all: ["bootstrap", "cli", "artifacts", "web-security", "memory", "governance"],
 	cli: ["bootstrap", "cli"],
 	artifacts: ["bootstrap", "artifacts"],
-	"js-ast": ["bootstrap", "js-ast"],
+	"web-security": ["bootstrap", "web-security"],
 	memory: ["bootstrap", "memory"],
 	governance: ["bootstrap", "governance"],
 };

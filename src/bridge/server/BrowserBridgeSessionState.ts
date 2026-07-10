@@ -4,7 +4,7 @@ import { createIntentRefRegistry, type IntentRefRegistry } from "../../kernels/s
 // Bridge-local re-export so the bridge-server main file can annotate its accessor without importing
 // the session kernel directly (architecture boundary: bridge-server-main-to-kernels).
 export type { IntentRefRegistry } from "../../kernels/session/intentRefRegistry.js";
-import { SessionKernel } from "../../kernels/session/index.js";
+import { SessionKernel } from "../../kernels/session/SessionKernel.js";
 import { BrowserTemporalCoordinator } from "./BrowserTemporalCoordinator.js";
 import { isOpen } from "./bridgeUtils.js";
 import type { WebSocket } from "ws";

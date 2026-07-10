@@ -8,15 +8,13 @@ import { defineMemoryCommand } from "./memoryCommand.js";
 import { defineScreenshotCommand } from "./screenshotCommand.js";
 import { defineTabsCommand } from "./tabsCommand.js";
 import { defineDownloadCommand, defineUploadCommand } from "./transferCommands.js";
-import {
-	defineCallbackOastCommand,
-	defineCookieAnalyzeCommand,
-	defineCrawlCommand,
-	defineFuzzCommand,
-	defineHttpReplayCommand,
-	defineSqliCommand,
-	defineTemplateCommand,
-} from "./webSecurityCommands.js";
+import { defineCallbackOastCommand } from "./webSecurity/commands/registerCallbackOast.js";
+import { defineCookieAnalyzeCommand } from "./webSecurity/commands/registerCookieAnalyze.js";
+import { defineCrawlCommand } from "./webSecurity/commands/registerCrawl.js";
+import { defineFuzzCommand } from "./webSecurity/commands/registerFuzz.js";
+import { defineHttpReplayCommand } from "./webSecurity/commands/registerHttpReplay.js";
+import { defineSqliCommand } from "./webSecurity/commands/registerSqli.js";
+import { defineTemplateCommand } from "./webSecurity/commands/registerTemplate.js";
 import type { CommandRegistrar } from "./commandShared.js";
 
 const CORE_BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = [

@@ -19,9 +19,6 @@ import { collectRefs } from "../kernels/refs/text.js";
 
 // Mandatory-read pair with commandRuntime.ts: keep envelope fields, redaction, distillation,
 // artifact fallback, and memory nudge behavior centralized here.
-export { distillValue } from "./distillerRegistry.js";
-export { summarizeHtmlSnapshot } from "./summaries/index.js";
-
 export type DistilledSummary = CommandDistilledSummary;
 export type DistilledEnvelope = {
 	tool: string;

@@ -5,7 +5,6 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Buffer } from "node:buffer";
-import ts from "typescript";
 import {
 	base64UrlEncode,
 	parseCommandArgs,
@@ -107,18 +106,6 @@ import {
 	matureBridgeToolError,
 } from "../../src/commands/webSecurity/shared/matureBridge.ts";
 import { createRailsCookieTokenFns } from "../../src/commands/webSecurity/shared/railsCookieTokens.ts";
-import {
-	collectAliasMap,
-	collectCandidateStringArrayValues,
-	collectConstBindingMap,
-	collectKnownDecoderMap,
-	collectObjectDispatchImplementationMap,
-	evaluateConstantExpression,
-	reductionLiteralText,
-	resolveAliasName,
-	tryDecodeCall,
-	tryObjectDispatchCall,
-} from "../../src/commands/webSecurity/shared/jsAstReductionContext.ts";
 import { summarizeBrowserCrawlData } from "../../src/commands/summaries/webSecurity/crawl.ts";
 import { summarizeCookieAnalyzeData } from "../../src/commands/summaries/webSecurity/cookie.ts";
 import { summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData } from "../../src/commands/summaries/webSecurity/fuzz.ts";
@@ -128,9 +115,6 @@ import { summarizeTemplateCheckData } from "../../src/commands/summaries/webSecu
 import { summarizeWebReconProbeData } from "../../src/commands/summaries/webSecurity/recon.ts";
 import { summarizeSqlmapBridgeData, summarizeNucleiBridgeData } from "../../src/commands/summaries/webSecurity/bridges.ts";
 import { summarizeCallbackOastData } from "../../src/commands/summaries/webSecurity/oast.ts";
-import { summarizeJsAstAnalysisData } from "../../src/commands/summaries/webSecurity/jsAst.ts";
-import { summarizeWasmArtifactData } from "../../src/commands/summaries/webSecurity/wasm.ts";
-import { summarizeWasmWatBridgeData } from "../../src/commands/summaries/webSecurity/wasmBridge.ts";
 import { summarizeWsSessionData } from "../../src/commands/summaries/webSecurity/ws.ts";
 import { redactWebSecurityDiagnosticText, redactWebSecurityDiagnosticValue, webSecurityToolError } from "../../src/commands/webSecurity/shared/diagnostics.ts";
 import { browserArtifactPrivacyMetadata } from "../../src/artifacts/artifactPrivacy.ts";
@@ -165,9 +149,6 @@ test("web security redaction boundaries omit secrets from summaries, diagnostics
 	assert.equal(summarizeCallbackOastData({ ok: true, sessions: [{ sessionId: "s1", eventCount: 2 }], events: [{ sessionId: "s1", type: "http", url: "https://oast.test/cb" }] }).eventCount, 1);
 	assert.equal(summarizeSqlmapBridgeData({ ok: true, runs: [{ index: 0, source: "raw", targetUrl: "https://app.example.test", vulnerable: true, findingCount: 1, dbmsFingerprints: ["PostgreSQL"], stdoutArtifact: { path: "out.txt" } }], findings: [{ runIndex: 0, targetUrl: "https://app.example.test", parameter: "id", place: "GET", type: "boolean", title: "blind", payload: "id=1" }], artifacts: [{ kind: "stdout", label: "out", path: "out.txt", bytes: 10 }] }).findingCount, 1);
 	assert.equal(summarizeNucleiBridgeData({ ok: true, runs: [{ index: 0, source: "url", targetUrl: "https://app.example.test", matched: true, matchCount: 1, matchSeverities: ["high"], matchTemplateIds: ["exposure/test"] }], matches: [{ runIndex: 0, targetUrl: "https://app.example.test", templateId: "exposure/test", templateName: "Exposure", severity: "high", matchedAt: "https://app.example.test/.env", extractedResults: ["APP_KEY"] }] }).matchCount, 1);
-	assert.equal(summarizeJsAstAnalysisData({ ok: true, analysis: { ok: true, summary: { suspicious: { stringArrayCandidates: { count: 1 }, decoderCallCandidates: { count: 1 }, objectDispatchCandidates: { count: 1 } }, imports: { count: 1, entries: [{ kind: "import", from: "x" }] }, exports: { count: 0 }, functions: { total: 1, entries: [{ name: "main", kind: "function" }] }, reduction: { decodedStringCount: 3 } }, parseDiagnostics: [{ code: 1, message: "warn" }] } }).parseDiagnosticsCount, 1);
-	assert.equal(summarizeWasmArtifactData({ input: { path: "a.wasm" }, analysis: { ok: true, format: "wasm", sectionCount: 1, imports: [{ module: "env", name: "log", kind: "func" }], exports: [{ name: "run", kind: "func", index: 0 }], sections: [{ id: 1, name: "type", bytes: 10 }] } }).format, "wasm");
-	assert.equal(summarizeWasmWatBridgeData({ bridge: { tool: "wasm2wat", launcher: { command: "wasm2wat", source: "path" }, watArtifact: { path: "a.wat", bytes: 10 }, stdoutPreview: "module" } }).tool, "wasm2wat");
 	const secrets = ["Bearer raw-auth-secret", "sid=raw-cookie-secret", "set-cookie-secret", "raw-api-key", "raw-query-token", "raw-body-token", "scanner-secret"];
 	const replaySecretSummary = summarizeHttpReplayData({
 		ok: false,
@@ -484,40 +465,8 @@ test("rails cookie token helpers verify signed tokens and expose binary/encrypte
 	assert.equal(await helpers.verifyRailsLegacyCbcPayload("not--a", signed?.matches ?? [], 1), undefined);
 });
 
-test("js ast reduction context resolves aliases, decoders, dispatch tables, and constants", () => {
-	const source = `
-		const STR = ['alpha','beta'];
-		function dec(i) { return STR[i]; }
-		const aliasDec = dec;
-		const truthy = true;
-		const n = 4;
-		const ops = { get: () => aliasDec(1), add() { return n + 3; }, flag: () => !truthy };
-		const aliasOps = ops;
-	`;
-	const sourceFile = ts.createSourceFile("sample.js", source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
-	const candidates = new Map([["STR", { name: "STR", length: 2, topLevel: true, sample: ["alpha", "beta"], line: 2 }]]);
-	const values = collectCandidateStringArrayValues(sourceFile, candidates);
-	const decoderMap = collectKnownDecoderMap(sourceFile, candidates);
-	const aliases = collectAliasMap(sourceFile);
-	const constBindings = collectConstBindingMap(sourceFile);
-	const dispatchMap = collectObjectDispatchImplementationMap(sourceFile, [{ name: "ops", keyCount: 3, topLevel: true, line: 6 }]);
-	assert.deepEqual(values.get("STR"), ["alpha", "beta"]);
-	assert.deepEqual(decoderMap.get("aliasDec"), { arrayName: "STR" });
-	assert.equal(resolveAliasName("aliasOps", aliases), "ops");
-	assert.equal(reductionLiteralText("alpha"), "\"alpha\"");
-	const call = sourceFile.statements.flatMap((statement) => Array.from(statement.getChildren(sourceFile))).find((node) => ts.isVariableDeclarationList(node)) as ts.VariableDeclarationList | undefined;
-	assert.ok(call);
-	assert.equal(evaluateConstantExpression(ts.factory.createIdentifier("n"), decoderMap, values, aliases, constBindings, dispatchMap), 4);
-	assert.equal(evaluateConstantExpression(ts.factory.createPrefixUnaryExpression(ts.SyntaxKind.MinusToken, ts.factory.createNumericLiteral(2)), decoderMap, values, aliases, constBindings, dispatchMap), -2);
-	const decodeCall = ts.factory.createCallExpression(ts.factory.createIdentifier("aliasDec"), undefined, [ts.factory.createNumericLiteral(1)]);
-	assert.equal(tryDecodeCall(decodeCall, decoderMap, values), "beta");
-	assert.equal(evaluateConstantExpression(decodeCall, decoderMap, values, aliases, constBindings, dispatchMap), "beta");
-	const dispatchCall = ts.factory.createCallExpression(ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier("aliasOps"), "add"), undefined, []);
-	assert.equal(tryObjectDispatchCall(dispatchCall, dispatchMap, decoderMap, values, aliases, constBindings, 0), 7);
-});
-
 test("mature bridge and scanner bridges use local stub launchers only", async () => {
-	const stub = path.join(process.cwd(), "tests", "js-ast", "scannerStub.cjs");
+	const stub = path.join(process.cwd(), "tests", "web-security", "scannerStub.cjs");
 	const originalSqlmap = process.env.BROWSER_PILOT_SQLMAP_PATH;
 	const originalSqlmapArgs = process.env.BROWSER_PILOT_SQLMAP_ARGS;
 	const originalNuclei = process.env.BROWSER_PILOT_NUCLEI_PATH;
@@ -536,7 +485,7 @@ test("mature bridge and scanner bridges use local stub launchers only", async ()
 		assert.equal(failure.code, "MATURE_BRIDGE_LAUNCH_FAILED");
 		assert.equal(((failure.details as Record<string, unknown>).nested as Record<string, unknown>).cookie, "[redacted]");
 		process.env.BROWSER_PILOT_SQLMAP_PATH = process.execPath;
-		process.env.BROWSER_PILOT_SQLMAP_ARGS = "tests/js-ast/scannerStub.cjs";
+		process.env.BROWSER_PILOT_SQLMAP_ARGS = "tests/web-security/scannerStub.cjs";
 		process.env.BP_STUB_SCANNER = "sqlmap";
 		process.env.BP_STUB_VERSION = "sqlmap stub";
 		const cwd = await mkdtemp(path.join(os.tmpdir(), "bp-sqlmap-"));
@@ -548,7 +497,7 @@ test("mature bridge and scanner bridges use local stub launchers only", async ()
 		const requestFile = ((sqlmap.runs[0] as Record<string, unknown>).requestFile as string);
 		assert.match(await readFile(requestFile, "utf8"), /Cookie: sid=secret/);
 		process.env.BROWSER_PILOT_NUCLEI_PATH = process.execPath;
-		process.env.BROWSER_PILOT_NUCLEI_ARGS = "tests/js-ast/scannerStub.cjs";
+		process.env.BROWSER_PILOT_NUCLEI_ARGS = "tests/web-security/scannerStub.cjs";
 		process.env.BP_STUB_SCANNER = "nuclei";
 		process.env.BP_STUB_VERSION = "nuclei stub";
 		const nucleiCwd = await mkdtemp(path.join(os.tmpdir(), "bp-nuclei-"));
@@ -577,7 +526,7 @@ test("mature bridge and scanner bridges use local stub launchers only", async ()
 });
 
 test("scanner bridge command contract preserves argv boundaries for injection-like input", async () => {
-	const stub = path.join(process.cwd(), "tests", "js-ast", "scannerStub.cjs");
+	const stub = path.join(process.cwd(), "tests", "web-security", "scannerStub.cjs");
 	const originalSqlmap = process.env.BROWSER_PILOT_SQLMAP_PATH;
 	const originalSqlmapArgs = process.env.BROWSER_PILOT_SQLMAP_ARGS;
 	const originalNuclei = process.env.BROWSER_PILOT_NUCLEI_PATH;
@@ -586,9 +535,9 @@ test("scanner bridge command contract preserves argv boundaries for injection-li
 	const originalMode = process.env.BP_STUB_MODE;
 	try {
 		process.env.BROWSER_PILOT_SQLMAP_PATH = process.execPath;
-		process.env.BROWSER_PILOT_SQLMAP_ARGS = "tests/js-ast/scannerStub.cjs";
+		process.env.BROWSER_PILOT_SQLMAP_ARGS = "tests/web-security/scannerStub.cjs";
 		process.env.BROWSER_PILOT_NUCLEI_PATH = process.execPath;
-		process.env.BROWSER_PILOT_NUCLEI_ARGS = "tests/js-ast/scannerStub.cjs";
+		process.env.BROWSER_PILOT_NUCLEI_ARGS = "tests/web-security/scannerStub.cjs";
 		process.env.BP_STUB_VERSION = "sqlmap stub nuclei stub";
 		process.env.BP_STUB_MODE = "echo-argv";
 		const cwd = await mkdtemp(path.join(os.tmpdir(), "bp-scanner-argv-"));
@@ -634,9 +583,9 @@ test("scanner bridge failure and malformed output contract redacts diagnostics",
 	const secrets = ["stdout-secret-token", "stderr-secret-token", "malformed-secret-token", "raw-query-token", "raw-auth-secret", "raw-cookie-secret"];
 	try {
 		process.env.BROWSER_PILOT_SQLMAP_PATH = process.execPath;
-		process.env.BROWSER_PILOT_SQLMAP_ARGS = "tests/js-ast/scannerStub.cjs";
+		process.env.BROWSER_PILOT_SQLMAP_ARGS = "tests/web-security/scannerStub.cjs";
 		process.env.BROWSER_PILOT_NUCLEI_PATH = process.execPath;
-		process.env.BROWSER_PILOT_NUCLEI_ARGS = "tests/js-ast/scannerStub.cjs";
+		process.env.BROWSER_PILOT_NUCLEI_ARGS = "tests/web-security/scannerStub.cjs";
 		process.env.BP_STUB_VERSION = "sqlmap stub nuclei stub";
 		process.env.BP_STUB_MODE = "fail-secret";
 		const cwd = await mkdtemp(path.join(os.tmpdir(), "bp-scanner-failure-"));

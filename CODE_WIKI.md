@@ -444,7 +444,6 @@ Rust native kernels 是可选加速层，用于：
 
 - `abml.diff`
 - `abml.treeDiff`
-- `jsAst.reduce`
 
 TS adapter 位于 [`src/native/browserPilotNativeKernels.ts`](src/native/browserPilotNativeKernels.ts)。Native 缺失、禁用、spawn 失败、退出非 0、JSON 解析失败时返回 `undefined`，调用方必须回退到 TypeScript 纯实现。
 
@@ -683,7 +682,7 @@ Web Security 工具位于 [`src/commands/webSecurity`](src/commands/webSecurity)
 - `commands/`：工具注册；
 - `browserNative/`：内建 crawl/fuzz/sqli/template/oast/cookie/replay 实现；
 - `bridges/`：sqlmap、nuclei 外部工具桥；
-- `shared/`：HTTP、HAR、request template、JS AST、artifact、diagnostics；
+- `shared/`：HTTP、HAR、request template、artifact、diagnostics；
 - `wordlists/`：SQLi payloads。
 
 ---
@@ -1034,10 +1033,10 @@ Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级
 
 | Scope | 目录 |
 |---|---|
-| `all` | `bootstrap`、`cli`、`artifacts`、`js-ast`、`memory`、`governance` |
+| `all` | `bootstrap`、`cli`、`artifacts`、`web-security`、`memory`、`governance` |
 | `cli` | `bootstrap`、`cli` |
 | `artifacts` | `bootstrap`、`artifacts` |
-| `js-ast` | `bootstrap`、`js-ast` |
+| `web-security` | `bootstrap`、`web-security` |
 | `memory` | `bootstrap`、`memory` |
 | `governance` | `bootstrap`、`governance` |
 

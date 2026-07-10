@@ -5,9 +5,8 @@ import { fileURLToPath } from "node:url";
 import type { Entity } from "../kernels/abml/entity.js";
 import type { EntityDiff, EntityDiffOptions } from "../kernels/abml/diff.js";
 import type { TreeDiff, TreeDiffOptions } from "../kernels/abml/treeDiff.js";
-import type { JsAstAnalysisOptions, JsAstReductionFact } from "../kernels/security/jsAstTypes.js";
 
-type NativeKernelCommand = "abml.diff" | "abml.treeDiff" | "jsAst.reduce";
+type NativeKernelCommand = "abml.diff" | "abml.treeDiff";
 
 type NativeKernelSuccess<T> = {
 	ok: true;
@@ -91,13 +90,4 @@ export function buildNativeEntityDiff(before: Entity[], after: Entity[], options
 
 export function buildNativeTreeDiff(before: Entity[], after: Entity[], options: TreeDiffOptions = {}): TreeDiff | undefined {
 	return invokeNativeKernel<TreeDiff>("abml.treeDiff", { before, after, options });
-}
-
-export function applyNativeJsAstReduction(input: {
-	sourceText: string;
-	candidateNames: string[];
-	objectDispatchNames: string[];
-	options: Required<JsAstAnalysisOptions>;
-}): JsAstReductionFact | undefined {
-	return invokeNativeKernel<JsAstReductionFact>("jsAst.reduce", input);
 }

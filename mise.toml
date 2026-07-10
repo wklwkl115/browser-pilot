@@ -15,9 +15,9 @@ run = "node scripts/run-tests.mjs cli"
 description = "Run bootstrap + artifact characterization tests"
 run = "node scripts/run-tests.mjs artifacts"
 
-[tasks.test-js-ast]
-description = "Run bootstrap + JS AST characterization tests"
-run = "node scripts/run-tests.mjs js-ast"
+[tasks.test-web-security]
+description = "Run bootstrap + Web Security characterization tests"
+run = "node scripts/run-tests.mjs web-security"
 
 [tasks.test-memory]
 description = "Run bootstrap + memory characterization tests"
@@ -43,9 +43,9 @@ run = "node scripts/run-validation.mjs dev cli"
 description = "Fast developer validation for artifact refactor work"
 run = "node scripts/run-validation.mjs dev artifacts"
 
-[tasks.dev-js-ast]
-description = "Fast developer validation for JS AST refactor work"
-run = "node scripts/run-validation.mjs dev js-ast"
+[tasks.dev-web-security]
+description = "Fast developer validation for Web Security refactor work"
+run = "node scripts/run-validation.mjs dev web-security"
 
 [tasks.dev-governance]
 description = "Fast developer validation for governance and workflow changes"

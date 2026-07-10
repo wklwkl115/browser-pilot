@@ -5,10 +5,10 @@ const requestedScope = process.argv[3] || "all";
 const root = process.cwd();
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const lintTargets = {
-	all: ["index.ts", "src/apps/cli", "src/artifacts", "src/commands/artifactCommand.ts", "src/commands/webSecurity/shared/jsAst.ts", "src/commands/webSecurity/shared/jsAstArtifact.ts"],
+	all: ["index.ts", "src/apps/cli", "src/artifacts", "src/commands/artifactCommand.ts", "src/commands/webSecurity", "src/commands/summaries/webSecurity"],
 	cli: ["src/apps/cli", "src/apps/daemon", "src/commands"],
 	artifacts: ["src/artifacts", "src/commands/artifactCommand.ts"],
-	"js-ast": ["src/commands/webSecurity/shared/jsAst.ts", "src/commands/webSecurity/shared/jsAstArtifact.ts"],
+	"web-security": ["src/commands/webSecurity", "src/commands/summaries/webSecurity"],
 	memory: ["src/commands/observe", "src/commands/memory", "src/kernels/abml", "src/kernels/memory"],
 	governance: [],
 };
@@ -20,10 +20,11 @@ const scopeMarkers = [
 	["src/commands/memory/", "memory"],
 	["src/kernels/abml/", "memory"],
 	["src/kernels/memory/", "memory"],
-	["src/commands/webSecurity/shared/jsAst", "js-ast"],
+	["src/commands/webSecurity/", "web-security"],
+	["src/commands/summaries/webSecurity/", "web-security"],
 	["tests/cli/", "cli"],
 	["tests/artifacts/", "artifacts"],
-	["tests/js-ast/", "js-ast"],
+	["tests/web-security/", "web-security"],
 	["tests/memory/", "memory"],
 	["tests/governance/", "governance"],
 	["REPO_GOVERNANCE.md", "governance"],

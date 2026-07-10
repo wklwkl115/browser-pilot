@@ -5,7 +5,7 @@ import { BrowserBridgeError } from "../../utils/errors.js";
 import { browserTabInfo, isOpen, recordValue, tabSessionSummary, toTabId } from "./bridgeUtils.js";
 import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types.js";
 import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
-import { DEFAULT_BROWSER_SESSION_ID, type SessionRegistry } from "../../kernels/session/index.js";
+import { DEFAULT_BROWSER_SESSION_ID, type SessionRegistry } from "../../kernels/session/sessionRegistry.js";
 
 const DISCONNECTED_SESSION_RETENTION_MS = 5 * 60_000;
 const MAX_DISCONNECTED_SESSION_HISTORY = 128;
