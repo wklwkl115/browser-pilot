@@ -37,7 +37,9 @@ test("native ABML entity diff stays aligned with the TS kernel", () => {
 		entity("bp-ref://control/3", "Gamma", 3),
 	];
 	const expected = diffEntities(before, after);
-	const actual = buildNativeEntityDiff(before, after) ?? diffEntities(before, after);
+	const native = buildNativeEntityDiff(before, after);
+	if (process.env.BROWSER_PILOT_NATIVE_KERNELS_REQUIRED === "1") assert.ok(native, "native ABML entity diff must execute in the release gate");
+	const actual = native ?? diffEntities(before, after);
 	assert.deepEqual(actual, expected);
 });
 
@@ -55,6 +57,8 @@ test("native ABML tree diff stays aligned with the TS kernel", () => {
 		entity("bp-ref://control/5-next", "Epsilon", 4),
 	];
 	const expected = buildTreeDiff(before, after);
-	const actual = buildNativeTreeDiff(before, after) ?? buildTreeDiff(before, after);
+	const native = buildNativeTreeDiff(before, after);
+	if (process.env.BROWSER_PILOT_NATIVE_KERNELS_REQUIRED === "1") assert.ok(native, "native ABML tree diff must execute in the release gate");
+	const actual = native ?? buildTreeDiff(before, after);
 	assert.deepEqual(actual, expected);
 });

@@ -22,12 +22,13 @@ function tempArtifact(name: string, value: unknown): string {
 
 function stamp(overrides: Partial<TemporalStamp> = {}): TemporalStamp {
 	return {
+		version: "temporal-stamp/v1",
 		browserSessionId: "session-1",
 		tabHandle: "tab-1",
 		targetRef: "target-1",
 		tabId: 1,
 		url: "https://example.test/app",
-		clockDomain: "dom",
+		clockDomain: "page_wall",
 		capturedAtMs: 1_000,
 		pageEpoch: "page-1",
 		changeSeq: 7,
@@ -36,7 +37,7 @@ function stamp(overrides: Partial<TemporalStamp> = {}): TemporalStamp {
 }
 
 function anchor(overrides: Partial<TemporalStamp> = {}): TemporalAnchor {
-	return { stamp: stamp(overrides) };
+	return { version: "temporal-anchor/v1", source: "observe", stamp: stamp(overrides) };
 }
 
 test("temporal estimates classify continuity, staleness, and wait recovery boundary branches", () => {
@@ -44,12 +45,12 @@ test("temporal estimates classify continuity, staleness, and wait recovery bound
 	assert.equal(estimateTargetContinuity({ anchor: anchor(), current: stamp({ browserSessionId: "session-2" }) }).frontier.next, "fail_closed");
 	assert.equal(estimateTargetContinuity({ anchor: anchor(), current: stamp({ tabHandle: "tab-2" }) }).verdict.reasons[0], "tab_replaced");
 	assert.equal(estimateTargetContinuity({ anchor: anchor({ selectionVersion: 1 }), current: stamp({ selectionVersion: 2 }) }).verdict.reasons[0], "selection_version_changed");
-	assert.equal(estimateTargetContinuity({ anchor: anchor({ clockDomain: "a", tabHandle: undefined, targetRef: undefined, tabId: undefined }), current: stamp({ clockDomain: "b", tabHandle: undefined, targetRef: undefined, tabId: undefined, changeSeq: undefined }) }).verdict.reasons[0], "unknown_due_to_clock_domain");
+	assert.equal(estimateTargetContinuity({ anchor: anchor({ clockDomain: "driver_wall", tabHandle: undefined, targetRef: undefined, tabId: undefined }), current: stamp({ clockDomain: "page_wall", tabHandle: undefined, targetRef: undefined, tabId: undefined, changeSeq: undefined }) }).verdict.reasons[0], "unknown_due_to_clock_domain");
 	assert.equal(estimateTargetContinuity({ anchor: anchor({ pageEpoch: "page-1" }), current: stamp({ pageEpoch: "page-1" }) }).frontier.next, "reuse_target");
 
 	assert.equal(estimatePageFreshness({ anchor: anchor(), current: stamp({ url: "https://example.test/other" }) }).verdict.status, "stale");
 	assert.equal(estimatePageFreshness({ anchor: anchor(), current: stamp({ dirtySinceSeq: 3 }) }).verdict.status, "possibly_stale");
-	assert.equal(estimatePageFreshness({ anchor: anchor({ clockDomain: "a", changeSeq: undefined }), current: stamp({ clockDomain: "b", changeSeq: undefined }) }).verdict.reasons[0], "unknown_due_to_clock_domain");
+	assert.equal(estimatePageFreshness({ anchor: anchor({ clockDomain: "driver_wall", changeSeq: undefined }), current: stamp({ clockDomain: "page_wall", changeSeq: undefined }) }).verdict.reasons[0], "unknown_due_to_clock_domain");
 	assert.equal(estimatePageFreshness({ anchor: anchor(), current: stamp({ capturedAtMs: 10_000 }), maxSameDomainAgeMs: 500 }).verdict.status, "possibly_stale");
 	assert.equal(estimatePageFreshness({ anchor: anchor(), current: stamp() }).frontier.next, "reuse_target");
 
@@ -115,13 +116,14 @@ test("wait diagnostics render selector, network, load-state, navigation, and gen
 test("evidence fit trims array/object payloads and salience envelope prefers structural compact candidates", () => {
 	const arrayResult = { value: { type: "array", offset: 2, count: 10, items: Array.from({ length: 8 }, (_, index) => ({ index, text: "x".repeat(80) })) } };
 	const arrayFit = fitInlineJsonToBudgetMeasured(arrayResult, 400);
-	assert.equal((arrayFit.value as typeof arrayResult).value.budgetTrimmed, true);
-	assert.equal((arrayFit.value as typeof arrayResult).value.nextOffset, 3);
+	const fittedArray = (arrayFit.value as { value: Record<string, unknown> }).value;
+	assert.equal(fittedArray.budgetTrimmed, true);
+	assert.equal(fittedArray.nextOffset, 3);
 	assert.ok(arrayFit.length <= 400);
 
 	const objectResult = { value: { a: "x".repeat(100), b: "y".repeat(100), c: "z".repeat(100), d: "w".repeat(100) } };
 	const objectFit = fitInlineJsonToBudgetMeasured(objectResult, 260);
-	assert.equal(typeof ((objectFit.value as typeof objectResult).value.truncatedKeys), "number");
+	assert.equal(typeof ((objectFit.value as { value: Record<string, unknown> }).value.truncatedKeys), "number");
 	assert.equal(fitInlineJsonToBudgetMeasured({ value: { only: "x".repeat(500) } }, 50).length > 50, true);
 
 	const envelope: BudgetedEnvelope = {
@@ -146,7 +148,7 @@ test("evidence fit trims array/object payloads and salience envelope prefers str
 	assert.deepEqual(fitted.nextActions, envelope.nextActions);
 
 	const ladderFallback = fitSalienceEnvelopeBudget({ ...envelope, summary: { textPreview: "x".repeat(10_000) } }, 50);
-	assert.equal(ladderFallback.summary.summaryTruncatedToBudget === true || JSON.stringify(ladderFallback).length <= 1_000, true);
+	assert.equal((ladderFallback.summary as Record<string, unknown>).summaryTruncatedToBudget === true || JSON.stringify(ladderFallback).length <= 1_000, true);
 });
 
 test("memory staleness kernel verifies anchors, stamp sets, and strike transitions", () => {

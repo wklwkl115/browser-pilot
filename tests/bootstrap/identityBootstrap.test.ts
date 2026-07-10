@@ -10,7 +10,7 @@ test("bootstrapScanBackendNodeIds omits sampleWindowMs when snapshotEndedAt is i
 		snapshotEndedAt: "not-a-date",
 	});
 	assert.equal(result.stats.sampleWindowMs, undefined);
-	assert.equal("sampleWindowMs" in result.data.backendNodeIdBootstrap, false);
+	assert.equal("sampleWindowMs" in (result.data.backendNodeIdBootstrap as Record<string, unknown>), false);
 });
 
 test("bootstrapScanBackendNodeIds keeps diagnostic jsonPath stable when actionable index is invalid", () => {
@@ -33,7 +33,7 @@ test("bootstrapScanBackendNodeIds stays bounded on large exact-match datasets", 
 		rect: { x: index % 500, y: Math.floor(index / 500), width: 10, height: 10 },
 	}));
 	const data = { viewport: { scrollX: 0, scrollY: 0, devicePixelRatio: 1 }, actionables };
-	const maxElapsedMs = process.env.CI ? 1200 : 260;
+	const maxElapsedMs = process.env.BROWSER_PILOT_COVERAGE === "1" ? 2_000 : process.env.CI ? 1_200 : 260;
 	for (let warmup = 0; warmup < 2; warmup += 1) bootstrapScanBackendNodeIds(data, entries);
 	const startedAt = performance.now();
 	const result = bootstrapScanBackendNodeIds(data, entries);

@@ -37,7 +37,7 @@ export class BrowserBridgeServer implements ConsentPort {
 	private readonly extensionReadyWaiters = new Set<() => void>();
 	private readonly consentCoordinator: BrowserBridgeConsentCoordinator;
 
-	constructor(options: { host?: string; port?: number; portRangeEnd?: number } = {}) {
+	constructor(options: { host?: string; port?: number; portRangeEnd?: number; maxPayloadBytes?: number } = {}) {
 		this.host = options.host || process.env.BROWSER_PILOT_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
 		this.requestedPort = options.port || normalizePort(process.env.BROWSER_PILOT_BRIDGE_PORT);
 		this.portRangeEnd = Math.max(this.requestedPort, options.portRangeEnd || normalizePort(process.env.BROWSER_PILOT_BRIDGE_PORT_RANGE_END, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END));
@@ -88,7 +88,7 @@ export class BrowserBridgeServer implements ConsentPort {
 			notifyExtensionReady: () => this.notifyExtensionReady(),
 		});
 		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws, reason) => this.unregisterClient(ws, reason), { onTick: (now) => this.sweepLeases(now) });
-		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd });
+		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd, maxPayloadBytes: options.maxPayloadBytes });
 	}
 
 	get port(): number {

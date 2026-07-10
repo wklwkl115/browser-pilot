@@ -10,7 +10,7 @@ export function jsonForInlineScript(value: unknown): string {
 }
 
 export function renderCaptureTemplate(template: string, values: Record<string, unknown>): string {
-	return template.replace(/\$\{([^}]+)\}/g, (match, expression) => {
+	return template.replace(/\$\{([^}]+)\}/g, (_match, expression) => {
 		const key = String(expression || "").trim();
 		if (!(key in values)) throw new Error(`capture template missing value: ${key}`);
 		return String(values[key]);

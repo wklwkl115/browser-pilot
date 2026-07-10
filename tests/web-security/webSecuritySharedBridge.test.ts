@@ -113,7 +113,6 @@ import { summarizeTemplateCheckData } from "../../src/commands/summaries/webSecu
 import { summarizeWebReconProbeData } from "../../src/commands/summaries/webSecurity/recon.ts";
 import { summarizeSqlmapBridgeData, summarizeNucleiBridgeData } from "../../src/commands/summaries/webSecurity/bridges.ts";
 import { summarizeCallbackOastData } from "../../src/commands/summaries/webSecurity/oast.ts";
-import { summarizeWsSessionData } from "../../src/commands/summaries/webSecurity/ws.ts";
 import { redactWebSecurityDiagnosticText, redactWebSecurityDiagnosticValue, webSecurityToolError } from "../../src/commands/webSecurity/shared/diagnostics.ts";
 import { browserArtifactPrivacyMetadata } from "../../src/artifacts/artifactPrivacy.ts";
 
@@ -417,17 +416,17 @@ test("replay and request-template helpers mutate requests without network I/O", 
 	const changedMultipart = mutateParamRequest(multipartRequest, "multipart", "file", { filename: "b.txt", content: "two", contentType: "text/plain" }, "set", "bare");
 	assert.equal(changedMultipart.multipart?.fileCount, 1);
 	assert.match(String(changedMultipart.headers["Content-Type"]), /^multipart\/form-data; boundary=/);
-	const normalized = normalizeReplayOptions({ followRedirects: true, cookieMode: "replace", timeoutMs: "20", variables: { token: 123 }, variableScope: "local" });
+	const normalized = normalizeReplayOptions({ followRedirects: true, cookieMode: "replace", timeoutMs: "20" as unknown as number, variables: { token: 123 }, variableScope: "local" });
 	assert.equal(normalized.maxRedirects, 5);
 	assert.equal(normalized.cookieMode, "replace");
 	assert.deepEqual(normalized.variables, { token: "123" });
 	assert.equal(normalized.variableScope, "step");
 	assert.deepEqual(applyReplayVariables({ url: "https://{{host}}/a", nested: ["{{id}}"] }, { host: "example.test", id: "42" }), { url: "https://example.test/a", nested: ["42"] });
-	const headers = { Cookie: "XSRF-TOKEN=abc; sid=1" };
+	const headers: Record<string, string> = { Cookie: "XSRF-TOKEN=abc; sid=1" };
 	assert.deepEqual(reflectCsrfIntoHeaders(headers, { bindBrowserSession: true }), { cookie: "XSRF-TOKEN", header: "X-XSRF-TOKEN" });
 	assert.equal(headers["X-XSRF-TOKEN"], "abc");
 	assert.equal(cookieHeaderFromSetCookie(["sid=2; Path=/", "bad", "theme=dark; HttpOnly"]), "sid=2; theme=dark");
-	const final = { headers: { "x-next": "abc", "set-cookie": "sid=3" }, bodyText: JSON.stringify({ csrf: "tok" }), setCookie: ["sid=3; Path=/"], url: "https://example.test", status: 200, statusText: "OK", bodyBytes: 14, bodyTruncated: false, elapsedMs: 1 };
+	const final = { headers: { "x-next": "abc", "set-cookie": "sid=3" }, bodyText: JSON.stringify({ csrf: "tok" }), setCookie: ["sid=3; Path=/"], url: "https://example.test", status: 200, statusText: "OK", ok: true, bodyBytes: 14, bodyTruncated: false, elapsedMs: 1 };
 	assert.deepEqual(extractReplayVariables([{ name: "next", type: "header", header: "x-next" }, { name: "csrf", type: "json", jsonPath: "$.csrf" }], final), { next: "abc", csrf: "tok" });
 	const cookieProvider = async () => undefined;
 	const inputOptions = replayInputOptions({ url: "https://step.test", timeoutMs: 30 }, { timeoutMs: 10, maxBodyBytes: 20, cookieProvider });
@@ -443,7 +442,11 @@ test("rails cookie token helpers verify signed tokens and expose binary/encrypte
 			try {
 				return { text, json: JSON.parse(text) };
 			} catch {
-				return /^[\x09\x0a\x0d\x20-\x7e]*$/.test(text) ? { text } : {};
+				const printable = Array.from(text).every((char) => {
+					const code = char.charCodeAt(0);
+					return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126);
+				});
+				return printable ? { text } : {};
 			}
 		},
 		secretByteCandidates(secret) {
@@ -523,7 +526,6 @@ test("mature bridge and scanner bridges use local stub launchers only", async ()
 });
 
 test("scanner bridge command contract preserves argv boundaries for injection-like input", async () => {
-	const stub = path.join(process.cwd(), "tests", "web-security", "scannerStub.cjs");
 	const originalSqlmap = process.env.BROWSER_PILOT_SQLMAP_PATH;
 	const originalSqlmapArgs = process.env.BROWSER_PILOT_SQLMAP_ARGS;
 	const originalNuclei = process.env.BROWSER_PILOT_NUCLEI_PATH;

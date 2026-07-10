@@ -127,11 +127,11 @@ test("command schema characterization: key commands expose expected top-level pa
 
 test("command schema characterization: browser_observe metadata presents canonical no-mode ABML observation", () => {
 	const observe = command("browser_observe");
-	assert.match(observe.description, /canonical ABML page observation model/i);
-	assert.match(observe.description, /Any explicit mode value is a legacy\/debug\/projection override/i);
-	assert.match(observe.description, /including explicit mode=scan/i);
-	assert.match(observe.promptSnippet, /canonical ABML page model/i);
-	const guidance = observe.promptGuidelines.join("\n");
+	assert.match(observe.description ?? "", /canonical ABML page observation model/i);
+	assert.match(observe.description ?? "", /Any explicit mode value is a legacy\/debug\/projection override/i);
+	assert.match(observe.description ?? "", /including explicit mode=scan/i);
+	assert.match(observe.promptSnippet ?? "", /canonical ABML page model/i);
+	const guidance = (observe.promptGuidelines ?? []).join("\n");
 	assert.match(guidance, /without choosing a mode/i);
 	assert.match(guidance, /Any explicit mode value, including mode=scan, is marked legacy\/debug\/projection and rejects canonical-only diff\/baseline\/actionRef parameters/i);
 	assert.match(guidance, /explicit content\/html\/text\/tabs remain only for compatibility projections/i);
@@ -197,7 +197,7 @@ test("command schema characterization: browser_observe validation separates cano
 	assert.throws(() => validateObserveParams("scan", { htmlMode: "raw" }), /mode=scan does not accept htmlMode/);
 	assert.throws(() => validateObserveParams("scan", { modeExplicit: true, params: { readability: true } }), /mode=scan does not accept params/);
 	assert.throws(() => validateObserveParams("scan", { modeExplicit: true, content: "readability" }), /mode=scan does not accept readability/);
-	assert.throws(() => validateObserveParams("tabs", { url: "https:\/\/example.test\/" }), /mode=tabs does not accept url/);
+	assert.throws(() => validateObserveParams("tabs", { url: "https://example.test/" }), /mode=tabs does not accept url/);
 	assert.throws(() => validateObserveParams("content", { diff: true }), /mode=content does not accept diff/);
 });
 

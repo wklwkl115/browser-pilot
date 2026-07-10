@@ -173,7 +173,7 @@ test("commands execution: missing browser_tabs snapshot recovery uses ordinary n
 test("commands execution: stale browser_tabs snapshot recovery uses ordinary no-mode observe CLI", async () => {
 	const runtime = createRuntime({
 		getObservationSnapshot() {
-			return { snapshotId: "stale-snap", expired: true, invalidatedReason: "ttl", saved: { path: ".browser-pilot/artifacts/observe.json" } };
+			return { snapshotId: "stale-snap", sourceMode: "scan", capturedAt: 1, ttlMs: 1_000, expired: true, invalidatedReason: "ttl", saved: { path: ".browser-pilot/artifacts/observe.json" } };
 		},
 	});
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
@@ -311,11 +311,10 @@ test("commands execution: browser_artifact inspect lists existing hinted paths w
 });
 
 test("commands execution: browser_network captureReload batches start before reload and summarizes guidance", async () => {
-	let runtime: MockRuntime;
-	runtime = createRuntime({
+	const runtime = createRuntime({
 		async sendCommand(command, options) {
 			runtime.calls.push({ name: "sendCommand", args: [command, options] });
-			return { id: "batch-1", acknowledged: true, tabId: 7, target: { tabId: 7 }, diagnostics: { latency: { totalMs: 12, acked: true } }, data: { results: [
+			return { id: "batch-1", acknowledged: true, tabId: 7, target: { tabId: 7, source: "explicit", implicit: false, selectionVersionAtDispatch: 1 }, diagnostics: { latency: { totalMs: 12, acked: true } }, data: { results: [
 				{ ok: true, data: { sessionId: "s1" } },
 				{ ok: true, data: { reloaded: true } },
 				{ ok: true, data: { matched: true } },

@@ -10,18 +10,27 @@ import {
 	buildScanNextActionHints,
 } from "../../src/commands/observe/scanProjection.ts";
 import { cachedEnvelopeFromArtifact } from "../../src/commands/observe/renderCache.ts";
-import { cachedObserveResultFromEnvelope } from "../../src/commands/observe/scanRunner.ts";
+import { cachedObserveResultFromEnvelope } from "../../src/commands/observe/scanCache.ts";
 import { factsFromObservedEntities, stableRefsFromCommandFrames } from "../../src/commands/observe/perceptionLedgerProjection.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
 import type { TreeDiff } from "../../src/kernels/abml/treeDiff.ts";
 import { getJsonPath } from "../../src/utils/jsonPath.ts";
+
+const defaultState: Entity["state"] = {
+	visible: true,
+	occluded: false,
+	disabled: false,
+	focused: false,
+	editable: false,
+	inViewport: true,
+};
 
 const buttonEntity: Entity = {
 	ref: "bp-ref://element/button/submit",
 	kind: "control",
 	role: "button",
 	name: "Submit",
-	state: {},
+	state: defaultState,
 	source: "ax",
 };
 
@@ -30,7 +39,7 @@ const listEntity: Entity = {
 	kind: "region",
 	role: "list",
 	name: "Results",
-	state: {},
+	state: defaultState,
 	source: "dom",
 	hints: { listContainer: true },
 };
@@ -40,7 +49,7 @@ const visualEntity: Entity = {
 	kind: "region",
 	role: "banner",
 	name: "Hero",
-	state: {},
+	state: defaultState,
 	source: "vision",
 };
 
@@ -49,7 +58,7 @@ const frameEntity: Entity = {
 	kind: "frame",
 	role: "frame",
 	name: "Checkout Frame",
-	state: {},
+	state: defaultState,
 	source: "dom",
 };
 
@@ -152,7 +161,7 @@ test("observe scan characterization: artifact projection mirrors envelope fields
 	assert.deepEqual(projection.artifactEnvelopeMirror.entities, [buttonEntity, listEntity]);
 	assert.equal(projection.artifactEnvelopeMirror.diff, diff);
 	assert.equal(projection.artifactEnvelopeMirror.treeDiff?.summary.changedTemplateCount, 4);
-	assert.equal(projection.artifactEnvelopeMirror.relations, summary.focus.relations);
+	assert.equal(projection.artifactEnvelopeMirror.relations, (summary.focus as Record<string, unknown>).relations);
 	assert.equal(projection.artifactEnvelopeMirror.relationGraph, relationGraph);
 	assert.equal(projection.artifactEnvelopeMirror.snapshotProjection, summary.snapshotProjection);
 	assert.deepEqual(projection.artifactEnvelopeMirror.collections, summary.collections);
@@ -162,7 +171,7 @@ test("observe scan characterization: artifact projection mirrors envelope fields
 });
 
 test("observe scan characterization: canonical PageObservation keeps stable fused no-mode shape", () => {
-	const diff = { appeared: [buttonEntity], disappeared: [], changed: [], summary: { changed: 1 } };
+	const diff = { appeared: [buttonEntity.ref], disappeared: [], changed: [] };
 	const observation = buildPageObservation({
 		mode: "scan",
 		canonical: true,

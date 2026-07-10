@@ -4,6 +4,8 @@ import { DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } from "./browserBridgeConfig.js"
 import { BrowserBridgeError } from "../../utils/errors.js";
 import { isAllowedBridgeOrigin, normalizeErrorMessage } from "./bridgeUtils.js";
 
+export const DEFAULT_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES = 32 * 1024 * 1024;
+
 function listen(server: http.Server, port: number, host: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		server.once("error", reject);
@@ -25,11 +27,12 @@ export class BrowserBridgeHttpServer {
 	private activePort: number;
 	private readonly onConnection: (ws: WebSocket) => void;
 	private readonly maxConnections: number;
+	private readonly maxPayloadBytes: number;
 	private httpServer?: http.Server;
 	private wss?: WebSocketServer;
 	private starting?: Promise<void>;
 
-	constructor(host: string, port: number, onConnection: (ws: WebSocket) => void, options: { portRangeEnd?: number; maxConnections?: number } = {}) {
+	constructor(host: string, port: number, onConnection: (ws: WebSocket) => void, options: { portRangeEnd?: number; maxConnections?: number; maxPayloadBytes?: number } = {}) {
 		this.host = host;
 		this.requestedPort = port;
 		this.portRangeEnd = options.portRangeEnd && options.portRangeEnd >= port ? options.portRangeEnd : port;
@@ -38,6 +41,10 @@ export class BrowserBridgeHttpServer {
 		const configuredMax = Number(process.env.BROWSER_PILOT_BRIDGE_MAX_CONNECTIONS ?? options.maxConnections);
 		const fallback = Math.max(8, (this.portRangeEnd - port + 1) * 4 || DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END - port + 1);
 		this.maxConnections = Number.isFinite(configuredMax) && configuredMax > 0 ? Math.floor(configuredMax) : fallback;
+		const configuredMaxPayloadBytes = Number(process.env.BROWSER_PILOT_BRIDGE_MAX_PAYLOAD_BYTES ?? options.maxPayloadBytes);
+		this.maxPayloadBytes = Number.isFinite(configuredMaxPayloadBytes) && configuredMaxPayloadBytes > 0
+			? Math.floor(configuredMaxPayloadBytes)
+			: DEFAULT_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES;
 	}
 
 	get port(): number {
@@ -63,14 +70,14 @@ export class BrowserBridgeHttpServer {
 		const server = http.createServer((req, res) => {
 			if (req.url === "/health" || req.url === "/") {
 				res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-				res.end(JSON.stringify({ ok: true, name: "browser-pilot", port: this.port, activeConnections: this.activeConnectionCount(), maxConnections: this.maxConnections }));
+				res.end(JSON.stringify({ ok: true, name: "browser-pilot", port: this.port, activeConnections: this.activeConnectionCount(), maxConnections: this.maxConnections, maxPayloadBytes: this.maxPayloadBytes }));
 				return;
 			}
 			res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
 			res.end("not found");
 		});
 
-		const wss = new WebSocketServer({ noServer: true });
+		const wss = new WebSocketServer({ noServer: true, maxPayload: this.maxPayloadBytes });
 		server.on("upgrade", (req, socket, head) => {
 			if (!isAllowedBridgeOrigin(req.headers.origin)) {
 				const body = JSON.stringify({ ok: false, error: "Origin not allowed", rejectedOrigin: req.headers.origin ?? null, allowedOrigins: ["chrome-extension://*", "(no origin / null)"], hint: "Only chrome-extension:// origins and requests with no Origin header are accepted. If you are connecting from a web page or another extension, ensure the request originates from an allowed source." });

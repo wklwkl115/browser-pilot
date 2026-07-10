@@ -3,6 +3,8 @@
     "target": "ES2022",
     "strict": true,
     "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "allowJs": false,
     "skipLibCheck": true,
     "types": [

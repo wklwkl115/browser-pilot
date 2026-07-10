@@ -67,8 +67,8 @@ test("drainClient holds an in-flight request, then fails it after the grace wind
 	assert.equal(settled, null, "request is held during the grace window, not failed immediately");
 
 	await delay(60);
-	assert.ok(settled instanceof Error, "request fails after grace expiry");
-	assert.equal((settled as { code: string }).code, "BRIDGE_CLIENT_DISCONNECTED");
+	assert.ok(Object(settled) instanceof Error, "request fails after grace expiry");
+	assert.equal((settled as unknown as { code: string }).code, "BRIDGE_CLIENT_DISCONNECTED");
 });
 
 test("a result arriving during the grace window settles the request normally", async () => {

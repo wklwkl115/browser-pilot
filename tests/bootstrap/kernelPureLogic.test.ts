@@ -99,7 +99,7 @@ test("evidence salience envelope fits summary budgets and falls back on sparse o
 
 	const sparse = fitSalienceEnvelopeBudget({ ...envelope, summary: { textPreview: "x".repeat(5_000) }, snapshotProjection: undefined, collections: undefined, diff: { summary: { changed: 1 } }, treeDiff: { summary: { changed: 1 } } }, 1);
 	assert.ok(JSON.stringify(sparse).length <= 1_000);
-	assert.ok(sparse.diff !== undefined || sparse.treeDiff !== undefined || sparse.summary.summaryTruncatedToBudget === true);
+	assert.ok(sparse.diff !== undefined || sparse.treeDiff !== undefined || (sparse.summary as Record<string, unknown>).summaryTruncatedToBudget === true);
 });
 
 test("memory kernel normalizes persistable terms and routes tokens deterministically", () => {

@@ -32,37 +32,36 @@ export function normalizeObserveMode(value: unknown, _params: ObserveToolParams)
 	return { mode: "scan", inferred: null, explicit: false };
 }
 
-function rejectModeParam(mode: ObserveMode, param: string, reason: string): never {
-	throw new BrowserBridgeError("INVALID_RULE", `browser_observe mode=${mode} does not accept ${param}`, {
-		mode,
-		param,
-		reason,
-	});
-}
+type ObserveValidationRule = readonly [param: string, reason: string, rejects: (mode: ObserveMode, params: ObserveToolParams, canonical: boolean) => boolean];
+
+const OBSERVE_VALIDATION_RULES: readonly ObserveValidationRule[] = [
+	["fresh", "fresh:true cannot be combined with baseline/baselineSnapshotId/baselinePath", (_mode, p) => p.fresh === true && (p.baseline !== undefined || p.baselineSnapshotId !== undefined || p.baselinePath !== undefined)],
+	["fresh", "fresh:true is only valid for scan/text re-anchor observations", (mode, p) => p.fresh === true && !["scan", "text"].includes(mode)],
+	["diff", "diff auto-baseline is only valid for the canonical no-mode observation path", (_mode, p, canonical) => !canonical && p.diff === true],
+	["fresh", "fresh:true cannot be combined with diff:true", (_mode, p) => p.fresh === true && p.diff === true],
+	["baseline", "baseline diff is only valid for the canonical no-mode observation path", (_mode, p, canonical) => !canonical && p.baseline !== undefined],
+	["baselineSnapshotId", "baselineSnapshotId diff is only valid for the canonical no-mode observation path", (_mode, p, canonical) => !canonical && p.baselineSnapshotId !== undefined],
+	["baselinePath", "baselinePath diff is only valid for the canonical no-mode observation path", (_mode, p, canonical) => !canonical && p.baselinePath !== undefined],
+	["actionRef", "actionRef causal attribution is only valid for the canonical no-mode observation path", (_mode, p, canonical) => !canonical && p.actionRef !== undefined],
+	["selector", "selector is only valid for explicit legacy content/html projection modes", (mode, p) => !["content", "html"].includes(mode) && p.selector !== undefined],
+	["url", "url navigation is only valid for canonical scan or explicit legacy content/html/text projection modes", (mode, p) => mode === "tabs" && p.url !== undefined],
+	["includeLinks", "includeLinks is only valid for explicit legacy content projection mode", (mode, p) => mode !== "content" && p.includeLinks !== undefined],
+	["maxNodes", "maxNodes is only valid for canonical scan/text observations", (mode, p) => ["content", "html"].includes(mode) && p.maxNodes !== undefined],
+	["includeIframes", "includeIframes is only valid for canonical scan/text observations", (mode, p) => ["content", "html"].includes(mode) && p.includeIframes !== undefined],
+	["htmlMode", "htmlMode is only valid for explicit legacy html projection mode", (mode, p) => mode !== "html" && p.htmlMode !== undefined],
+	["params", "params is only valid for canonical no-mode observation add-ons or explicit legacy html projection mode", (mode, p, canonical) => !canonical && mode !== "html" && p.params !== undefined],
+	["readability", "Readability content provider is only valid for the canonical no-mode observation path", (_mode, p, canonical) => !canonical && (p.content !== undefined || p.readability !== undefined)],
+	["intent", "intent relevance is only valid for canonical scan/text observations", (mode, p) => ["content", "html", "tabs"].includes(mode) && p.intent !== undefined],
+	["diagnostics", "axe/accessibility diagnostics are only valid for the canonical no-mode observation path", (_mode, p, canonical) => !canonical && (p.diagnostics !== undefined || p.debug !== undefined || p.axe !== undefined || p.axeDiagnostics !== undefined)],
+	["maxNodes", "tabs mode only returns tab inventory", (mode, p) => mode === "tabs" && p.maxNodes !== undefined],
+	["includeIframes", "tabs mode only returns tab inventory", (mode, p) => mode === "tabs" && p.includeIframes !== undefined],
+];
 
 export function validateObserveParams(mode: ObserveMode, params: ObserveToolParams): void {
-	const explicitModeSelected = params.modeExplicit === true;
-	if (params.fresh === true && (params.baseline !== undefined || params.baselineSnapshotId !== undefined || params.baselinePath !== undefined)) rejectModeParam(mode, "fresh", "fresh:true cannot be combined with baseline/baselineSnapshotId/baselinePath");
-	if (params.fresh === true && mode !== "scan" && mode !== "text") rejectModeParam(mode, "fresh", "fresh:true is only valid for scan/text re-anchor observations");
-	if ((mode !== "scan" || explicitModeSelected) && params.diff === true) rejectModeParam(mode, "diff", "diff auto-baseline is only valid for the canonical no-mode observation path");
-	if (params.fresh === true && params.diff === true) rejectModeParam(mode, "fresh", "fresh:true cannot be combined with diff:true");
-	if ((mode !== "scan" || explicitModeSelected) && params.baseline !== undefined) rejectModeParam(mode, "baseline", "baseline diff is only valid for the canonical no-mode observation path");
-	if ((mode !== "scan" || explicitModeSelected) && params.baselineSnapshotId !== undefined) rejectModeParam(mode, "baselineSnapshotId", "baselineSnapshotId diff is only valid for the canonical no-mode observation path");
-	if ((mode !== "scan" || explicitModeSelected) && params.baselinePath !== undefined) rejectModeParam(mode, "baselinePath", "baselinePath diff is only valid for the canonical no-mode observation path");
-	if ((mode !== "scan" || explicitModeSelected) && params.actionRef !== undefined) rejectModeParam(mode, "actionRef", "actionRef causal attribution is only valid for the canonical no-mode observation path");
-	if ((mode === "scan" || mode === "text" || mode === "tabs") && params.selector !== undefined) rejectModeParam(mode, "selector", "selector is only valid for explicit legacy content/html projection modes");
-	if (mode === "tabs" && params.url !== undefined) rejectModeParam(mode, "url", "url navigation is only valid for canonical scan or explicit legacy content/html/text projection modes");
-	if ((mode === "scan" || mode === "text" || mode === "tabs" || mode === "html") && params.includeLinks !== undefined) rejectModeParam(mode, "includeLinks", "includeLinks is only valid for explicit legacy content projection mode");
-	if ((mode === "content" || mode === "html") && params.maxNodes !== undefined) rejectModeParam(mode, "maxNodes", "maxNodes is only valid for canonical scan/text observations");
-	if ((mode === "content" || mode === "html") && params.includeIframes !== undefined) rejectModeParam(mode, "includeIframes", "includeIframes is only valid for canonical scan/text observations");
-	if ((mode === "scan" || mode === "text" || mode === "tabs" || mode === "content") && params.htmlMode !== undefined) rejectModeParam(mode, "htmlMode", "htmlMode is only valid for explicit legacy html projection mode");
-	const paramsAllowed = mode === "html" || (mode === "scan" && !explicitModeSelected);
-	if (!paramsAllowed && params.params !== undefined) rejectModeParam(mode, "params", "params is only valid for canonical no-mode observation add-ons or explicit legacy html projection mode");
-	if ((mode !== "scan" || explicitModeSelected) && (params.content !== undefined || params.readability !== undefined)) rejectModeParam(mode, "readability", "Readability content provider is only valid for the canonical no-mode observation path");
-	if ((mode === "content" || mode === "html" || mode === "tabs") && params.intent !== undefined) rejectModeParam(mode, "intent", "intent relevance is only valid for canonical scan/text observations");
-	if ((mode !== "scan" || explicitModeSelected) && (params.diagnostics !== undefined || params.debug !== undefined || params.axe !== undefined || params.axeDiagnostics !== undefined)) rejectModeParam(mode, "diagnostics", "axe/accessibility diagnostics are only valid for the canonical no-mode observation path");
-	if (mode === "tabs" && params.maxNodes !== undefined) rejectModeParam(mode, "maxNodes", "tabs mode only returns tab inventory");
-	if (mode === "tabs" && params.includeIframes !== undefined) rejectModeParam(mode, "includeIframes", "tabs mode only returns tab inventory");
+	const invalid = OBSERVE_VALIDATION_RULES.find(([, , rejects]) => rejects(mode, params, mode === "scan" && params.modeExplicit !== true));
+	if (!invalid) return;
+	const [param, reason] = invalid;
+	throw new BrowserBridgeError("INVALID_RULE", `browser_observe mode=${mode} does not accept ${param}`, { mode, param, reason });
 }
 
 export function selectDiffBaselineSnapshot(server: BrowserCommandRuntimePort, params: ObserveToolParams): string | undefined {

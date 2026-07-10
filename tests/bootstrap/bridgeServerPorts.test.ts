@@ -33,8 +33,7 @@ async function listenBlocker(host = "127.0.0.1"): Promise<{ port: number; close:
 		});
 	});
 	const address = server.address();
-	assert.equal(typeof address, "object");
-	assert.ok(address);
+	if (!address || typeof address === "string") throw new Error("expected TCP listener address");
 	return {
 		port: address.port,
 		close: () => new Promise<void>((resolve) => server.close(() => resolve())),
@@ -71,6 +70,27 @@ test("BrowserBridgeServer advances to the next configured port when the requeste
 	} finally {
 		await server.stop();
 		await blocker.close();
+	}
+});
+
+test("BrowserBridgeServer reports and enforces the configured websocket payload limit", async () => {
+	const maxPayloadBytes = 512;
+	const server = new BrowserBridgeServer({ port: 0, maxPayloadBytes });
+	await server.start();
+	try {
+		const health = await fetch(`http://${server.host}:${server.port}/health`).then((res) => res.json() as Promise<Record<string, unknown>>);
+		assert.equal(health.maxPayloadBytes, maxPayloadBytes);
+
+		const ws = new WebSocket(bridgeUrl(server));
+		await new Promise<void>((resolve, reject) => {
+			ws.once("open", resolve);
+			ws.once("error", reject);
+		});
+		const closeCode = new Promise<number>((resolve) => ws.once("close", resolve));
+		ws.send("x".repeat(maxPayloadBytes + 1));
+		assert.equal(await closeCode, 1009);
+	} finally {
+		await server.stop();
 	}
 });
 

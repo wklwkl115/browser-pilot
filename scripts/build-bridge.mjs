@@ -30,7 +30,6 @@ const metadataOnlyServiceWorkerCommandModules = [
 const metadataOnlyServiceWorkerStartupModules = [
 	"router", "tab_sync", "transport",
 ];
-const metadataOnlyLegacyServiceWorkerModules = [];
 const entries = [
 	{
 		name: "service-worker",
@@ -156,7 +155,6 @@ async function main() {
 		metadataOnlyServiceWorkerFoundationModules,
 		metadataOnlyServiceWorkerCommandModules,
 		metadataOnlyServiceWorkerStartupModules,
-		metadataOnlyLegacyServiceWorkerModules,
 		pageScriptEntries: entries.filter((entry) => !["service-worker", "offscreen"].includes(entry.name)),
 		offscreenEntry: entries.find((entry) => entry.name === "offscreen"),
 	}, null, 2) + "\n", "utf8");

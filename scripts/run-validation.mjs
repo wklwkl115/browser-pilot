@@ -49,10 +49,11 @@ function scopeFor(modeName, scopeName) {
 	return resolved;
 }
 
-function run(command, args, label) {
+function run(command, args, label, env = process.env) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {
 			cwd: root,
+			env,
 			stdio: "inherit",
 			shell: process.platform === "win32" && command.endsWith(".cmd"),
 		});
@@ -76,8 +77,13 @@ async function runTypecheck() {
 	console.log("ok: typecheck");
 }
 
-async function runTests(scope) {
-	await run("node", ["scripts/run-tests.mjs", scope], `test:${scope}`);
+async function runTestTypecheck() {
+	await run(npmCommand, ["run", "--silent", "typecheck:tests"], "typecheck:tests");
+	console.log("ok: typecheck:tests");
+}
+
+async function runTests(scope, env = process.env) {
+	await run("node", ["scripts/run-tests.mjs", scope], `test:${scope}`, env);
 }
 
 async function runReachability() {
@@ -88,6 +94,16 @@ async function runReachability() {
 async function runBuild() {
 	await run(npmCommand, ["run", "--silent", "build"], "build");
 	console.log("ok: build");
+}
+
+async function runNativeBuild() {
+	await run("node", ["scripts/build-native.mjs", "--required"], "build:native");
+	console.log("ok: build:native");
+}
+
+async function runCoverage(env = process.env) {
+	await run("node", ["scripts/run-coverage.mjs", "all"], "coverage", env);
+	console.log("ok: coverage");
 }
 
 async function runExtensionTypecheck() {
@@ -114,13 +130,16 @@ const scope = scopeFor(mode, requestedScope);
 if (!lintTargets[scope]) throw new Error(`unknown validation scope: ${scope}`);
 
 if (mode === "dev" || mode === "affected") {
-	const checks = scope === "governance" ? [runLint(scope), runTests(scope)] : [runLint(scope), runTypecheck(), runTests(scope)];
+	const checks = scope === "governance" ? [runLint(scope), runTests(scope)] : [runLint(scope), runTypecheck(), runTestTypecheck(), runTests(scope)];
 	await Promise.all(checks);
 	process.exit(0);
 }
 
 if (mode === "verify") {
-	await Promise.all([runReachability(), runTypecheck(), runExtensionTypecheck(), runProtocolCheck(), runTests("all")]);
+	await runNativeBuild();
+	const nativeRequiredEnv = { ...process.env, BROWSER_PILOT_NATIVE_KERNELS_REQUIRED: "1" };
+	await Promise.all([runReachability(), runTypecheck(), runTestTypecheck(), runExtensionTypecheck(), runProtocolCheck(), runTests("all", nativeRequiredEnv)]);
+	await runCoverage(nativeRequiredEnv);
 	await runFullLint();
 	await runBuild();
 	process.exit(0);

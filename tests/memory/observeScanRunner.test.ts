@@ -208,7 +208,7 @@ async function runObserve(options: MockOptions = {}, params: Partial<ObserveTool
 
 test("observe/action/extract boundary oracle keeps observe as structural entry-point map", async () => {
 	const businessValue = "invoice INV-2026-0001 total $9,876.54 token=secret";
-	const { envelope, pageObservation, saved } = await runObserve({ content: businessValue, tabTitle: "Invoices" });
+	const { pageObservation, saved } = await runObserve({ content: businessValue, tabTitle: "Invoices" });
 	const providers = (pageObservation.diagnostics as Record<string, unknown>).providers as Record<string, unknown>;
 	const artifactHints = pageObservation.artifact_hints as Record<string, unknown>;
 	const preferredReads = artifactHints.preferredReads as Array<Record<string, unknown>>;

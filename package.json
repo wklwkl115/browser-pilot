@@ -51,6 +51,7 @@
     "prepare": "tsc -p tsconfig.build.json && node scripts/build-bridge.mjs --quiet",
     "cli": "tsx src/apps/cli/bin.ts",
     "typecheck": "tsc -p tsconfig.json",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
     "audit:reachability": "node scripts/audit-reachability.mjs",
     "lint": "npm run audit:reachability && eslint .",
     "lint:fix": "eslint . --fix",
@@ -60,9 +61,9 @@
     "@mozilla/readability": "^0.6.0",
     "axe-core": "^4.12.1",
     "dom-accessibility-api": "^0.7.1",
-    "js-yaml": "^4.1.1",
+    "js-yaml": "^4.3.0",
     "typebox": "^1.0.55",
-    "ws": "^8.18.0"
+    "ws": "^8.21.0"
   },
   "peerDependencies": {
     "typebox": "^1.0.55"
@@ -77,7 +78,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.12.4",
     "@types/ws": "^8.18.1",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.28.1",
     "eslint": "^10.4.1",
     "globals": "^17.6.0",
     "tsx": "^4.22.3",
@@ -104,6 +105,7 @@
     "tsconfig.json",
     "tsconfig.base.json",
     "tsconfig.build.json",
-    "tsconfig.bridge-src.json"
+    "tsconfig.bridge-src.json",
+    "tsconfig.tests.json"
   ]
 }

@@ -23,15 +23,13 @@ export default tseslint.config(
 			"coverage/**",
 			"**/*.min.js",
 			"docs/**",
-			"tests/**",
-			"scripts/**",
 			"**/*.generated.*",
 			"*.config.js",
 			"*.config.mjs",
 			// Auto-generated from src/bridge/protocol/native-command.schema.json — do not lint.
-			"src/bridge/protocol/nativeProtocol.ts",
-			"src/bridge/protocol/nativeActionMetadata.ts",
-			"src/bridge/protocol/nativeErrorCodes.ts",
+			"src/types/nativeProtocol.ts",
+			"src/commands/nativeActionMetadata.ts",
+			"src/types/nativeErrorCodes.ts",
 			"src/bridge/extension/service_worker/protocol.ts",
 		],
 	},
@@ -60,6 +58,18 @@ export default tseslint.config(
 				tsconfigRootDir: import.meta.dirname,
 			},
 			globals: { ...globals.worker, chrome: "readonly" },
+		},
+	},
+	// Test sources execute in Node but import both Node and extension modules.
+	{
+		files: ["tests/**/*.ts"],
+		languageOptions: {
+			parser: tseslint.parser,
+			parserOptions: {
+				project: "./tsconfig.tests.json",
+				tsconfigRootDir: import.meta.dirname,
+			},
+			globals: { ...globals.node },
 		},
 	},
 	// Page scripts run injected in the page DOM context, not the worker.
@@ -118,6 +128,39 @@ export default tseslint.config(
 		rules: {
 			"@typescript-eslint/no-floating-promises": "off",
 			"@typescript-eslint/no-misused-promises": "off",
+		},
+	},
+	{
+		files: ["tests/**/*.ts"],
+		rules: {
+			// node:test registration returns a promise-like handle that is intentionally
+			// owned by the runner rather than awaited by the declaring module.
+			"@typescript-eslint/no-floating-promises": "off",
+			"@typescript-eslint/no-misused-promises": "off",
+		},
+	},
+	// Refactored orchestration paths keep explicit complexity budgets so their former
+	// monolithic control flow cannot silently accumulate again.
+	{
+		files: [
+			"src/bridge/server/BrowserTemporalCoordinator.ts",
+			"src/bridge/extension/service_worker/exec.ts",
+			"src/bridge/extension/service_worker/network.ts",
+			"src/commands/observeCommand.ts",
+			"src/bridge/extension/service_worker/network_events.ts",
+			"src/bridge/extension/service_worker/hook.ts",
+			"src/commands/observe/scanRunner.ts",
+			"src/commands/observe/scanSession.ts",
+			"src/commands/observe/scanCache.ts",
+			"src/commands/observe/scanCapture.ts",
+			"src/commands/observe/scanProviders.ts",
+			"src/commands/observe/scanAssembly.ts",
+			"src/commands/observe/scanOutput.ts",
+			"src/commands/observe/scanTabs.ts",
+		],
+		rules: {
+			complexity: ["error", 20],
+			"max-lines-per-function": ["error", 150],
 		},
 	},
 );

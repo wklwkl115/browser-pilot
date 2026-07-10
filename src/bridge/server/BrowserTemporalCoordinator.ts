@@ -77,6 +77,37 @@ function bool(value: unknown): boolean | undefined {
 	return typeof value === "boolean" ? value : undefined;
 }
 
+function firstNormalized<T>(normalize: (value: unknown) => T | undefined, ...values: unknown[]): T | undefined {
+	for (const value of values) {
+		const normalized = normalize(value);
+		if (normalized !== undefined) return normalized;
+	}
+	return undefined;
+}
+
+function boundedStrings(value: unknown, limit: number): string[] | undefined {
+	return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").slice(0, limit) : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function profileTarget(input: CommandTemporalProfileSampleInput, effect: Record<string, unknown> | undefined): CommandTemporalProfileSample["target"] {
+	const resultTarget = input.result?.target;
+	const target = input.target ?? (resultTarget ? {
+		browserSessionId: resultTarget.browserSessionId,
+		tabId: resultTarget.tabId,
+		targetRef: resultTarget.targetRef,
+	} : undefined);
+	const targetRef = target?.targetRef || stringValue(effect?.targetRef);
+	return target || targetRef ? { ...target, ...(targetRef ? { targetRef } : {}) } : undefined;
+}
+
+function setSampleValue<K extends keyof CommandTemporalProfileSample>(sample: CommandTemporalProfileSample, key: K, value: CommandTemporalProfileSample[K] | undefined): void {
+	if (value !== undefined) Object.assign(sample, { [key]: value });
+}
+
 function sampleCap(value: number | undefined): number {
 	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) return DEFAULT_RUNTIME_TEMPORAL_PROFILE_SAMPLE_CAP;
 	return value;
@@ -179,45 +210,37 @@ export class BrowserTemporalCoordinator {
 
 	buildProfileSample(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample {
 		const diagnostics = diagnosticsFrom(input);
-		const temporalProfile = temporalProfileFromDiagnostics(diagnostics);
+		const temporalProfile = temporalProfileFromDiagnostics(diagnostics) ?? {};
 		const effect = effectFromResult(input.result);
 		const effectTemporal = temporalFromEffect(effect);
-		const supervisor = supervisorFromData(input.result?.data);
+		const supervisor = supervisorFromData(input.result?.data) ?? {};
+		const diagnosticsTemporal = temporalFromDiagnostics(diagnostics);
 		const temporal = input.tool === "browser_execute"
-			? firstRecord(effectTemporal, temporalFromDiagnostics(diagnostics), supervisor?.temporal)
-			: firstRecord(temporalFromDiagnostics(diagnostics), supervisor?.temporal, effectTemporal);
-		const verdict = isRecord(temporal?.verdict) ? temporal.verdict : undefined;
-		const frontier = isRecord(temporal?.frontier) ? temporal.frontier : undefined;
-		const resultTarget = input.result?.target ? {
-			browserSessionId: input.result.target.browserSessionId,
-			tabId: input.result.target.tabId,
-			targetRef: input.result.target.targetRef,
-		} : undefined;
-		const target = input.target ?? resultTarget;
-		const effectTargetRef = typeof effect?.targetRef === "string" ? effect.targetRef : undefined;
-		const targetWithEffectRef = target || effectTargetRef ? {
-			...(target ?? {}),
-			...(target?.targetRef || !effectTargetRef ? {} : { targetRef: effectTargetRef }),
-		} : undefined;
-		return {
-			...(input.operationId ? { operationId: input.operationId } : {}),
+			? firstRecord(effectTemporal, diagnosticsTemporal, supervisor.temporal)
+			: firstRecord(diagnosticsTemporal, supervisor.temporal, effectTemporal);
+		const temporalRecord = temporal ?? {};
+		const verdict = isRecord(temporalRecord.verdict) ? temporalRecord.verdict : {};
+		const frontier = isRecord(temporalRecord.frontier) ? temporalRecord.frontier : {};
+		const sample: CommandTemporalProfileSample = {
 			tool: input.tool,
-			command: input.command ?? (typeof temporalProfile?.command === "string" ? temporalProfile.command : undefined),
-			...(targetWithEffectRef ? { target: targetWithEffectRef } : {}),
-			...((input.deadlineMs ?? numeric(temporalProfile?.deadlineMs)) !== undefined ? { deadlineMs: input.deadlineMs ?? numeric(temporalProfile?.deadlineMs) } : {}),
+			command: input.command ?? stringValue(temporalProfile.command),
 			elapsedMs: input.elapsedMs,
-			...(numeric(temporalProfile?.bridgeRoundTrips) !== undefined ? { bridgeRoundTrips: numeric(temporalProfile?.bridgeRoundTrips) } : {}),
-			...(numeric(temporalProfile?.queueDepthAtEnqueue) !== undefined ? { queueDepthAtEnqueue: numeric(temporalProfile?.queueDepthAtEnqueue) } : {}),
-			...(numeric(temporalProfile?.queueDepthAtStart) !== undefined ? { queueDepthAtStart: numeric(temporalProfile?.queueDepthAtStart) } : {}),
-			...(numeric(temporalProfile?.queueDelayMs) !== undefined ? { queueDelayMs: numeric(temporalProfile?.queueDelayMs) } : {}),
-			...((numeric(supervisor?.attempts) ?? numeric(temporalProfile?.waitAttempts)) !== undefined ? { waitAttempts: numeric(supervisor?.attempts) ?? numeric(temporalProfile?.waitAttempts) } : {}),
-			...((numeric(supervisor?.workerRestarts) ?? numeric(temporalProfile?.workerRestarts)) !== undefined ? { workerRestarts: numeric(supervisor?.workerRestarts) ?? numeric(temporalProfile?.workerRestarts) } : {}),
-			...((bool(supervisor?.historyLost) ?? bool(temporalProfile?.historyLost)) !== undefined ? { historyLost: bool(supervisor?.historyLost) ?? bool(temporalProfile?.historyLost) } : {}),
-			...(Array.isArray(temporalProfile?.rawSignals) ? { rawSignals: temporalProfile.rawSignals.filter((item): item is string => typeof item === "string").slice(0, 8) } : {}),
-			...(typeof verdict?.status === "string" ? { verdict: verdict.status as CommandTemporalProfileSample["verdict"] } : {}),
-			...(reasons(verdict?.reasons) ? { reasons: reasons(verdict?.reasons) } : {}),
-			...(typeof frontier?.next === "string" ? { recovery: frontier.next as CommandTemporalProfileSample["recovery"] } : {}),
 		};
+		if (input.operationId) sample.operationId = input.operationId;
+		setSampleValue(sample, "target", profileTarget(input, effect));
+		setSampleValue(sample, "deadlineMs", input.deadlineMs ?? numeric(temporalProfile.deadlineMs));
+		setSampleValue(sample, "bridgeRoundTrips", numeric(temporalProfile.bridgeRoundTrips));
+		setSampleValue(sample, "queueDepthAtEnqueue", numeric(temporalProfile.queueDepthAtEnqueue));
+		setSampleValue(sample, "queueDepthAtStart", numeric(temporalProfile.queueDepthAtStart));
+		setSampleValue(sample, "queueDelayMs", numeric(temporalProfile.queueDelayMs));
+		setSampleValue(sample, "waitAttempts", firstNormalized(numeric, supervisor.attempts, temporalProfile.waitAttempts));
+		setSampleValue(sample, "workerRestarts", firstNormalized(numeric, supervisor.workerRestarts, temporalProfile.workerRestarts));
+		setSampleValue(sample, "historyLost", firstNormalized(bool, supervisor.historyLost, temporalProfile.historyLost));
+		setSampleValue(sample, "rawSignals", boundedStrings(temporalProfile.rawSignals, 8));
+		setSampleValue(sample, "verdict", stringValue(verdict.status) as CommandTemporalProfileSample["verdict"]);
+		setSampleValue(sample, "reasons", reasons(verdict.reasons));
+		setSampleValue(sample, "recovery", stringValue(frontier.next) as CommandTemporalProfileSample["recovery"]);
+		return sample;
 	}
 
 	recordProfileSample(sample: CommandTemporalProfileSample, options: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string } = {}): Promise<TemporalProfileArtifactPaths | undefined> {

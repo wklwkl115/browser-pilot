@@ -68,7 +68,6 @@ function entity(ref: string, overrides: Partial<Entity> = {}): Entity {
 		kind: "control",
 		role: "button",
 		name: "Submit",
-		state: baseState,
 		source: "dom",
 		...overrides,
 		state: { ...baseState, ...overrides.state },

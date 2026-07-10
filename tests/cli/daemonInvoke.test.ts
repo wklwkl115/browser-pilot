@@ -341,8 +341,8 @@ test("daemon control request sends pairing token header", async () => {
 		server.listen(0, "127.0.0.1", async () => {
 			try {
 				const address = server.address();
-				assert.equal(typeof address, "object");
-				await controlRequest({ controlHost: "127.0.0.1", controlPort: address!.port, token: "daemon-token" }, "POST", "/invoke", {}, 1_000, { pairingToken: "pair-token" });
+				if (!address || typeof address === "string") throw new Error("expected TCP listener address");
+				await controlRequest({ controlHost: "127.0.0.1", controlPort: address.port, token: "daemon-token" }, "POST", "/invoke", {}, 1_000, { pairingToken: "pair-token" });
 			} catch (error) {
 				reject(error);
 			} finally {

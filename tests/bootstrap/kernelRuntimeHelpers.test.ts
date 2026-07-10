@@ -18,7 +18,7 @@ import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity
 import { TEMPORAL_REASON_MODEL_CAP, type TemporalAnchor, type TemporalStamp } from "../../src/kernels/temporal/types.ts";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../src/capture/inject.ts";
 import { buildScanEntities } from "../../src/scan/summary.ts";
-import { stableRefIdForDescriptor, summaryRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
+import { stableRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
 import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
 import type { ResourceRefDescriptor } from "../../src/ports/ResourceRefStorePort.ts";
 import { readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
@@ -187,7 +187,7 @@ test("pierce runtime prefers scoped partial AX enrichment and falls back without
 	const fallbackServer = createCdpServer({
 		"Accessibility.getPartialAXTree": { nodes: [] },
 		"Accessibility.getFullAXTree": { nodes: [axNode(42, "button", "Save changes"), axNode(77, "button", "Outside scope")] },
-		"DOM.getBoxModel": (command) => {
+		"DOM.getBoxModel": (command: BrowserRuntimeCommand) => {
 			const params = command.params as Record<string, unknown> | undefined;
 			return { result: Number(params?.backendNodeId) === 42 ? boxModel(10, 10, 80, 20) : boxModel(500, 500, 80, 20) };
 		},
@@ -341,7 +341,7 @@ test("ABML stream helpers normalize capture, network, and event boundary inputs"
 	const event = buildEventEntity({ eventType: "dom-sink", phase: "after", handle: "artifact://event", message: "innerHTML assigned", timestamp: "42", originRef: "bp-ref://control/button" }, context);
 	assert.equal(event.entity.value, "innerHTML assigned");
 	assert.deepEqual(event.entity.stream, { at: 42, eventType: "dom-sink", phase: "after", payloadHandle: "artifact://event" });
-	assert.equal(event.descriptor.semantic.value, "innerHTML assigned");
+	assert.equal(event.descriptor.semantic?.value, "innerHTML assigned");
 });
 
 test("ABML semantic text rejects unsafe names and item-like previews for container labels", () => {
@@ -374,7 +374,7 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	}));
 	const projection = buildSnapshotProjection(rows, {
 		treeDiff: {
-			summary: { changedTemplateCount: 1, appeared: 2, disappeared: 0, changed: 1, reordered: 1, partialBaseline: true },
+			summary: { templateCount: 1, changedTemplateCount: 1, appeared: 2, disappeared: 0, changed: 1, reordered: 1, partialBaseline: true },
 			templates: [{
 				templateKey: projectionKey("grid", "Orders", "row", 100),
 				container: "grid",
@@ -383,10 +383,13 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 				kind: "element",
 				beforeCount: 23,
 				afterCount: 25,
-				appeared: { count: 2, instances: [{ ref: "bp-ref://row/23" }, { ref: "bp-ref://row/24" }] },
+				appeared: { count: 2, instances: [
+					{ key: "name:Order 24", ref: "bp-ref://row/23", anchor: "name", confidence: "high", name: "Order 24" },
+					{ key: "name:Order 25", ref: "bp-ref://row/24", anchor: "name", confidence: "high", name: "Order 25" },
+				] },
 				disappeared: { count: 0, instances: [] },
-				changed: { count: 1, instances: [{ ref: "bp-ref://row/1", fields: [{ field: "name", before: "Order 2", after: "Order 2 updated" }] }] },
-				reordered: { count: 2, beforeSample: ["bp-ref://row/1", "bp-ref://row/2"], afterSample: ["bp-ref://row/2", "bp-ref://row/1"] },
+				changed: { count: 1, instances: [{ key: "name:Order 2", beforeRef: "bp-ref://row/1", afterRef: "bp-ref://row/1", anchor: "name", confidence: "high", name: "Order 2", fieldCount: 1, fields: [{ field: "name", before: "Order 2", after: "Order 2 updated" }] }] },
+				reordered: { changed: true, commonCount: 2, beforeSample: ["bp-ref://row/1", "bp-ref://row/2"], afterSample: ["bp-ref://row/2", "bp-ref://row/1"] },
 			}],
 		},
 	});
@@ -412,11 +415,11 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 
 test("ABML collections absorb malformed scan evidence and pagination edges", () => {
 	const models = buildCollectionModels({
-		entities: [entity("bp-ref://list/container", { role: "list", kind: "region", name: "Results", hints: { listContainer: true, itemCount: "4", hiddenCount: "3" } })],
+		entities: [entity("bp-ref://list/container", { role: "list", kind: "region", name: "Results", hints: { listContainer: true, itemCount: "4" as unknown as number, hiddenCount: "3" as unknown as number } })],
 		scanEvidence: {
 			listHints: [{ itemCount: "bad", hiddenCount: -1, selector: "  ", firstItemPreview: "  " }],
 			actionables: [{ text: "Next page", ref: "bp-ref://control/next" }, { text: "Load more" }],
-			growthProbe: { beforeCount: "bad", afterCount: 1, windowShifted: false },
+			growthProbe: { beforeCount: "bad" as unknown as number, afterCount: 1, windowShifted: false },
 		},
 	});
 	assert.equal(models.length, 1);
@@ -505,7 +508,7 @@ test("ABML identity graph ignores malformed relations and summarizes duplicate n
 		}),
 		entity("bp-ref://control/save-copy", { name: "Save", locators: [{ by: "backendNodeId", value: 10, targetId: "target-1" }] }),
 		entity("bp-ref://region/plain", { kind: "region", role: "region", source: "ax" }),
-	]);
+	], undefined);
 	assert.equal(graph.entityCount, 3);
 	assert.equal(graph.backendNodeIdCount, 2);
 	assert.equal(graph.triggeredCount, 2);
@@ -553,7 +556,7 @@ test("ABML entity builders handle malformed inputs, fallback roles, refs, and de
 	const noisy = buildDomEntityFromScanActionable({ tag: "button", role: "button", action: "<path d=\"M0 0 L1 1\" />", label: "", text: "", displayLabel: "Open menu" }, context);
 	assert.equal(noisy.entity.name, "Open menu");
 	assert.deepEqual(noisy.entity.locators?.filter((locator) => locator.by === "textAnchor"), [{ by: "textAnchor", value: "Open menu", role: "button", exact: false }]);
-	assert.equal(noisy.descriptor.semantic.name, "Open menu");
+	assert.equal(noisy.descriptor.semantic?.name, "Open menu");
 	const unnamedIcon = buildDomEntityFromScanActionable({ tag: "button", role: "button", action: "<svg><path d=\"M0 0\" /></svg>", label: "", text: "" }, context);
 	assert.equal(unnamedIcon.entity.name, undefined);
 	assert.deepEqual(unnamedIcon.entity.locators, []);
@@ -598,7 +601,7 @@ test("ABML query priority oracle prefers user-facing semantics over selector-lik
 	assert.equal(button.entity.locators?.some((locator) => locator.by === "textAnchor" && locator.value === longPreview), false);
 	assert.equal(button.entity.locators?.some((locator) => locator.by === "textAnchor" && String(locator.value).includes("css-1abc23")), false);
 	assert.equal(button.entity.locators?.some((locator) => locator.by === "textAnchor" && String(locator.value).includes("<svg")), false);
-	assert.equal(button.descriptor.semantic.name, "Submit order");
+	assert.equal(button.descriptor.semantic?.name, "Submit order");
 	assert.equal(JSON.stringify(button.descriptor.semantic).includes("css-1abc23"), false);
 	assert.equal(JSON.stringify(button.descriptor.semantic).includes("Verbose marketing copy"), false);
 	assert.equal(JSON.stringify(button.descriptor.semantic).includes("<svg"), false);
@@ -611,7 +614,7 @@ test("ABML query priority oracle prefers user-facing semantics over selector-lik
 	assert.equal(labelledList.entity.name, "Invoices");
 	assert.equal(labelledList.entity.hints?.containerNameSource, "safe-label");
 	assert.deepEqual(labelledList.entity.locators?.filter((locator) => locator.by === "textAnchor"), [{ by: "textAnchor", value: "Invoice #1234 Total $99.00 Due tomorrow Owner Finance Department Status Pending Region West", role: "list", exact: false }]);
-	assert.equal(labelledList.descriptor.semantic.name, "Invoices");
+	assert.equal(labelledList.descriptor.semantic?.name, "Invoices");
 
 	assert.equal(sanitizeSemanticText("button.css-1abc23 > svg > path"), undefined);
 	assert.equal(sanitizeSemanticText("<svg><path d=\"M0 0\" /></svg>"), undefined);

@@ -123,114 +123,143 @@ async function ensureBrowserPilotDispatcher(tabId: number): Promise<BrowserPilot
   }
 }
 
+type HookCommandHandler = (cmd: string, tabId: number, msg: BrowserPilotBridgeCommand) => BrowserPilotBridgeResponse | Promise<BrowserPilotBridgeResponse>;
+type HookInstallTargets = { targetOverride?: JsonRecord; expandedTargets?: Array<JsonRecord>; rejectedTargets?: string[]; error?: BrowserPilotBridgeResponse };
+const REJECTED_HOOK_STRATEGY_PRESETS = ['all','auto','aggressive','ctf','exploit','stealth'];
+
+function hookResponseData(response: BrowserPilotBridgeResponse | null | undefined): JsonRecord {
+  return response?.data && typeof response.data === 'object' ? response.data as JsonRecord : {};
+}
+
+function listHookSessions(tabId: number, msg: BrowserPilotBridgeCommand): BrowserPilotBridgeResponse {
+  const explicitTab = msg.tabId !== undefined || msg.targetTabId !== undefined;
+  const matchesTab = ([tid]: [number, unknown]) => !explicitTab || Number(tid) === Number(tabId);
+  const sessionEntries = Array.from(browserPilotSessions.entries()).filter(matchesTab);
+  const queueEntries = Array.from(browserPilotTabQueues.entries()).filter(matchesTab);
+  return { ok:true, data:{ tabId:explicitTab ? Number(tabId) : undefined, sessions:sessionEntries.map(([tid, session]) => ({ tabId:tid, queue:getBrowserPilotQueueStats(tid), ...session })), count:sessionEntries.length, queues:queueEntries.map(([tid]) => ({ tabId:tid, ...getBrowserPilotQueueStats(tid) })) } };
+}
+
+function listHookTargets(): BrowserPilotBridgeResponse {
+  const targets = listBrowserPilotHookTargets();
+  return { ok:true, data:{ targets, count:targets.length, boundary:'static-explicit-targets', rejectedStrategyPresets:REJECTED_HOOK_STRATEGY_PRESETS.slice() } };
+}
+
+function resolveHookInstallTargets(cmd: string, msg: BrowserPilotBridgeCommand): HookInstallTargets {
+  if (cmd !== 'hook.install_targets') return {};
+  const expanded = expandBrowserPilotHookTargets(msg.targets || msg.hookTargets || msg.targetIds);
+  const supported = listBrowserPilotHookTargets().map((item) => item.id);
+  if (expanded.rejected.length) return { error:browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unsupported hook target ids: ' + expanded.rejected.join(', '), { rejected:expanded.rejected, supported }) };
+  if (!expanded.expanded.length) return { error:browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'hook.install_targets requires at least one explicit hook target id', { supported }) };
+  return { targetOverride:expanded.targets, expandedTargets:expanded.expanded, rejectedTargets:expanded.rejected };
+}
+
+function installedHookSession(data: JsonRecord, args: JsonRecord, msg: BrowserPilotBridgeCommand, expandedTargets?: Array<JsonRecord>) {
+  return {
+    session_id:String(data.session_id || args.session_id || ''), state:String(data.state || 'INSTALLED'), installed_at:String(data.installed_at || new Date().toISOString()),
+    targets:args.targets, options:msg.options, buffer_size:msg.buffer_size === undefined ? undefined : Number(msg.buffer_size), dispatcher_version:data.dispatcher_version || data.browser_pilot_version,
+    install_epoch:data.install_epoch, owner_session_id:data.owner_session_id, install_fingerprint:data.install_fingerprint !== undefined ? String(data.install_fingerprint) : (args.install_fingerprint ? String(args.install_fingerprint) : undefined),
+    install_args:args, expanded_targets:expandedTargets,
+  };
+}
+
+async function recordSuccessfulHookInstall(cmd: string, tabId: number, msg: BrowserPilotBridgeCommand, response: BrowserPilotBridgeResponse, beforeStatus: BrowserPilotBridgeResponse | null, args: JsonRecord, targets: HookInstallTargets): Promise<void> {
+  const data = hookResponseData(response);
+  data.reused = data.idempotent === true || data.already_installed === true;
+  data.preinstall_status = beforeStatus?.ok ? 'installed' : beforeStatus?.error_code ? String(beforeStatus.error_code) : 'unknown';
+  data.history_lost = false;
+  if (cmd === 'hook.install_targets') {
+    data.expanded_targets = targets.expandedTargets || [];
+    data.rejected_targets = targets.rejectedTargets || [];
+    data.target_boundary = 'static-explicit-targets';
+    data.rejected_strategy_presets = REJECTED_HOOK_STRATEGY_PRESETS.slice();
+  }
+  browserPilotSessions.set(tabId, installedHookSession(data, args, msg, targets.expandedTargets));
+  const sessionId = String(data.session_id || args.session_id || 'default');
+  try { await persistState('hook', `${Number(tabId)}:${sessionId}`, redactConfig({ sessionId, targets:args.targets, options:msg.options, buffer_size:msg.buffer_size }), { tabId, sessionId, recoveryPolicy:'manual' }); }
+  catch (error) { console.warn('[BROWSER-PILOT-HOOK] Failed to persist hook session state', sessionId, error); }
+}
+
+async function installHook(cmd: string, tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+  const targets = resolveHookInstallTargets(cmd, msg);
+  if (targets.error) return targets.error;
+  const injected = await ensureBrowserPilotDispatcher(tabId);
+  if (!injected.ok) return injected;
+  const args = hookInstallArgsFromMessage(msg, targets.targetOverride);
+  const beforeStatus = await callPageBrowserPilot(tabId, 'hook.status', browserPilotHookSessionArgs(msg), { timeoutMs:msg.timeoutMs ?? msg.timeout_ms }).catch(() => null);
+  const response = await callPageBrowserPilot(tabId, 'hook.install', args);
+  if (!response.ok && response.error_code === BROWSER_PILOT_ERROR_CODES.ALREADY_INSTALLED) {
+    response.details = { ...(response.details || {}), recovery:{ force:true, uninstallFirst:true, message:'Hook dispatcher is already installed with a different session or fingerprint; retry with force:true or uninstall the current hook session first.' } };
+  }
+  if (response.ok) await recordSuccessfulHookInstall(cmd, tabId, msg, response, beforeStatus, args, targets);
+  return response;
+}
+
+async function hookStatus(_cmd: string, tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+  const response = await callPageBrowserPilot(tabId, 'hook.status', browserPilotHookSessionArgs(msg), { timeoutMs:msg.timeoutMs ?? msg.timeout_ms });
+  const session = browserPilotSessions.get(tabId);
+  if (response.ok && session) browserPilotSessions.set(tabId, { ...session, state:String(hookResponseData(response).state || session.state || '') });
+  return response;
+}
+
+async function collectHookEvents(_cmd: string, tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+  return await callPageBrowserPilot(tabId, 'hook.collect', { ...browserPilotHookSessionArgs(msg), since_seq:msg.since_seq, limit:msg.limit, event_types:msg.event_types, timeout_ms:msg.timeout_ms, min_count:msg.min_count }, { timeoutMs:msg.timeoutMs ?? msg.timeout_ms });
+}
+
+async function runHookSessionCommand(cmd: string, tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+  return await callPageBrowserPilot(tabId, cmd, browserPilotHookSessionArgs(msg)) || browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, cmd + ' returned no response', { cmd });
+}
+
+function shouldCleanupHookUninstall(response: BrowserPilotBridgeResponse): boolean {
+  return response.ok || response.error_code === BROWSER_PILOT_ERROR_CODES.NO_SESSION || response.error_code === BROWSER_PILOT_ERROR_CODES.NOT_INSTALLED;
+}
+
+async function cleanupUninstalledHook(tabId: number, msg: BrowserPilotBridgeCommand, response: BrowserPilotBridgeResponse, sessionId: string): Promise<void> {
+  const listenerCleanup: BrowserPilotBridgeResponse | { ok:true; data:{ tabId:number; skipped:true; warning:string } } = typeof cleanupBrowserPilotPageListenersForTab === 'function'
+    ? await (cleanupBrowserPilotPageListenersForTab as (...args: unknown[]) => Promise<BrowserPilotBridgeResponse>)(tabId, 'hook_uninstall', msg.timeoutMs || msg.timeout_ms || 5000).catch((error) => browserPilotError(BROWSER_PILOT_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED, 'hook.uninstall page listener cleanup failed', { tabId, reason:error instanceof Error ? error.message : String(error) }))
+    : { ok:true, data:{ tabId:Number(tabId), skipped:true, warning:'page listener cleanup helper unavailable' } };
+  const cleanup = listenerCleanup.data || listenerCleanup;
+  if (response.ok && response.data && typeof response.data === 'object') (response.data as JsonRecord).listener_cleanup = cleanup;
+  else if (!response.ok) response.details = { ...(response.details || {}), listener_cleanup:cleanup };
+  cleanupWaitsForUninstall(tabId);
+  cleanupBrowserPilotTab(tabId, 'hook_uninstall');
+  try { await forgetState('hook', `${Number(tabId)}:${sessionId}`); }
+  catch (error) { console.warn('[BROWSER-PILOT-HOOK] Failed to forget hook session state', sessionId, error); }
+}
+
+async function uninstallHook(_cmd: string, tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+  const requestedSessionId = browserPilotHookSessionId(msg);
+  const localSession = browserPilotSessions.get(Number(tabId));
+  if (requestedSessionId && localSession?.session_id && String(localSession.session_id) !== requestedSessionId) {
+    return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_SESSION, 'hook.uninstall sessionId does not match the installed tab session', { tabId, session_id:requestedSessionId, current_session_id:localSession.session_id });
+  }
+  const response = await callPageBrowserPilot(tabId, 'hook.uninstall', browserPilotHookSessionArgs(msg));
+  if (shouldCleanupHookUninstall(response)) await cleanupUninstalledHook(tabId, msg, response, localSession?.session_id ? String(localSession.session_id) : 'default');
+  return response;
+}
+
+const HOOK_COMMAND_HANDLERS: Readonly<Record<string, HookCommandHandler>> = {
+  'hook.list_sessions': (_cmd, tabId, msg) => listHookSessions(tabId, msg),
+  'hook.list_targets': () => listHookTargets(),
+  'hook.install': installHook,
+  'hook.install_targets': installHook,
+  'hook.status': hookStatus,
+  'hook.collect': collectHookEvents,
+  'hook.clear_buffer': runHookSessionCommand,
+  'hook.pause': runHookSessionCommand,
+  'hook.resume': runHookSessionCommand,
+  'hook.uninstall': uninstallHook,
+  'hook.evaluate': (_cmd, tabId, msg) => browserPilotEval(tabId, String(msg.expression || ''), msg.awaitPromise !== false, { timeoutMs:msg.timeoutMs ?? msg.timeout_ms }),
+  'hook.getNodeListeners': (_cmd, tabId, msg) => collectNodeListeners(tabId, msg),
+  'hook.getListenerChain': (_cmd, tabId, msg) => collectNodeListenerChain(tabId, msg),
+  'hook.getSinkHints': (_cmd, tabId, msg) => collectNodeSinkHints(tabId, msg),
+  'hook.addEventListener': async (_cmd, tabId, msg) => await addEventListener(tabId, msg) as BrowserPilotBridgeResponse,
+  'hook.removeEventListener': async (_cmd, tabId, msg) => await removeEventListener(tabId, msg) as BrowserPilotBridgeResponse,
+  'hook.getPerformanceEntries': async (_cmd, tabId, msg) => await getPerformanceEntries(tabId, msg) as BrowserPilotBridgeResponse,
+};
+
 async function handleBrowserPilotHookCommand(cmd: string, tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
-  if (cmd === 'hook.list_sessions') {
-    const explicitTab = msg && (msg.tabId !== undefined || msg.targetTabId !== undefined);
-    const sessionEntries = Array.from(browserPilotSessions.entries()).filter(([tid]) => !explicitTab || Number(tid) === Number(tabId));
-    const queueEntries = Array.from(browserPilotTabQueues.entries()).filter(([tid]) => !explicitTab || Number(tid) === Number(tabId));
-    return { ok: true, data: { tabId: explicitTab ? Number(tabId) : undefined, sessions: sessionEntries.map(([tid, s]) => ({ tabId: tid, queue: getBrowserPilotQueueStats(tid), ...s })), count: sessionEntries.length, queues: queueEntries.map(([tid]) => ({ tabId: tid, ...getBrowserPilotQueueStats(tid) })) } };
-  }
-  if (cmd === 'hook.list_targets') return { ok: true, data: { targets: listBrowserPilotHookTargets(), count: listBrowserPilotHookTargets().length, boundary: 'static-explicit-targets', rejectedStrategyPresets: ['all','auto','aggressive','ctf','exploit','stealth'] } };
-  if (cmd === 'hook.install' || cmd === 'hook.install_targets') {
-    let expandedTargets: Array<JsonRecord> | undefined;
-    let rejectedTargets: string[] | undefined;
-    let targetOverride: JsonRecord | undefined;
-    if (cmd === 'hook.install_targets') {
-      const expanded = expandBrowserPilotHookTargets(msg.targets || msg.hookTargets || msg.targetIds);
-      if (expanded.rejected.length) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unsupported hook target ids: ' + expanded.rejected.join(', '), { rejected: expanded.rejected, supported: listBrowserPilotHookTargets().map((item) => item.id) });
-      if (!expanded.expanded.length) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'hook.install_targets requires at least one explicit hook target id', { supported: listBrowserPilotHookTargets().map((item) => item.id) });
-      expandedTargets = expanded.expanded;
-      rejectedTargets = expanded.rejected;
-      targetOverride = expanded.targets;
-    }
-    const injected = await ensureBrowserPilotDispatcher(tabId);
-    if (!injected.ok) return injected;
-    const args = hookInstallArgsFromMessage(msg, targetOverride);
-    const beforeStatus = await callPageBrowserPilot(tabId, 'hook.status', browserPilotHookSessionArgs(msg), { timeoutMs: msg.timeoutMs ?? msg.timeout_ms }).catch(() => null);
-    const res = await callPageBrowserPilot(tabId, 'hook.install', args);
-    if (res && !res.ok && res.error_code === BROWSER_PILOT_ERROR_CODES.ALREADY_INSTALLED) {
-      res.details = {
-        ...(res.details || {}),
-        recovery: {
-          force: true,
-          uninstallFirst: true,
-          message: 'Hook dispatcher is already installed with a different session or fingerprint; retry with force:true or uninstall the current hook session first.',
-        },
-      };
-    }
-    if (res && res.ok) {
-      const data = (res.data && typeof res.data === 'object') ? res.data as JsonRecord : {};
-      data.reused = data.idempotent === true || data.already_installed === true;
-      data.preinstall_status = beforeStatus && beforeStatus.ok ? 'installed' : beforeStatus && beforeStatus.error_code ? String(beforeStatus.error_code) : 'unknown';
-      data.history_lost = false;
-      if (cmd === 'hook.install_targets') {
-        data.expanded_targets = expandedTargets || [];
-        data.rejected_targets = rejectedTargets || [];
-        data.target_boundary = 'static-explicit-targets';
-        data.rejected_strategy_presets = ['all','auto','aggressive','ctf','exploit','stealth'];
-      }
-      browserPilotSessions.set(tabId, {
-      session_id: String(data.session_id || args.session_id || ''),
-      state: String(data.state || 'INSTALLED'),
-      installed_at: String(data.installed_at || new Date().toISOString()),
-      targets: args.targets,
-      options: msg.options,
-      buffer_size: msg.buffer_size === undefined ? undefined : Number(msg.buffer_size),
-      dispatcher_version: data.dispatcher_version || data.browser_pilot_version,
-      install_epoch: data.install_epoch,
-      owner_session_id: data.owner_session_id,
-      install_fingerprint: data.install_fingerprint !== undefined ? String(data.install_fingerprint) : (args.install_fingerprint ? String(args.install_fingerprint) : undefined),
-      install_args: args,
-      expanded_targets: expandedTargets
-    });
-    // Persist hook session metadata for state recovery
-    const sessionId = String(data.session_id || args.session_id || 'default');
-    try { await persistState('hook', `${Number(tabId)}:${sessionId}`, redactConfig({ sessionId, targets: args.targets, options: msg.options, buffer_size: msg.buffer_size }), { tabId, sessionId, recoveryPolicy: 'manual' }); } catch (error) { console.warn('[BROWSER-PILOT-HOOK] Failed to persist hook session state', sessionId, error); }
-    }
-    return res;
-  }
-  if (cmd === 'hook.status') {
-    const res = await callPageBrowserPilot(tabId, 'hook.status', browserPilotHookSessionArgs(msg), { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
-    if (res && res.ok && browserPilotSessions.has(tabId)) { const session = browserPilotSessions.get(tabId); const data = (res.data && typeof res.data === 'object') ? res.data as JsonRecord : {}; if (session) browserPilotSessions.set(tabId, { ...session, state: String(data.state || session.state || '') }); }
-    return res;
-  }
-  if (cmd === 'hook.collect') return await callPageBrowserPilot(tabId, 'hook.collect', { ...browserPilotHookSessionArgs(msg), since_seq: msg.since_seq, limit: msg.limit, event_types: msg.event_types, timeout_ms: msg.timeout_ms, min_count: msg.min_count }, { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
-  if (cmd === 'hook.clear_buffer') return (await callPageBrowserPilot(tabId, 'hook.clear_buffer', browserPilotHookSessionArgs(msg))) || browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'hook.clear_buffer returned no response', { cmd });
-  if (cmd === 'hook.pause') return (await callPageBrowserPilot(tabId, 'hook.pause', browserPilotHookSessionArgs(msg))) || browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'hook.pause returned no response', { cmd });
-  if (cmd === 'hook.resume') return (await callPageBrowserPilot(tabId, 'hook.resume', browserPilotHookSessionArgs(msg))) || browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'hook.resume returned no response', { cmd });
-  if (cmd === 'hook.uninstall') {
-    const requestedSessionId = browserPilotHookSessionId(msg);
-    const localSession = browserPilotSessions.get(Number(tabId));
-    if (requestedSessionId && localSession?.session_id && String(localSession.session_id) !== requestedSessionId) {
-      return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_SESSION, 'hook.uninstall sessionId does not match the installed tab session', { tabId, session_id: requestedSessionId, current_session_id: localSession.session_id });
-    }
-    const res = await callPageBrowserPilot(tabId, 'hook.uninstall', browserPilotHookSessionArgs(msg));
-    const shouldCleanup = res && (res.ok || res.error_code === BROWSER_PILOT_ERROR_CODES.NO_SESSION || res.error_code === BROWSER_PILOT_ERROR_CODES.NOT_INSTALLED);
-    if (shouldCleanup) {
-      const listenerCleanup: BrowserPilotBridgeResponse | { ok: true; data: { tabId: number; skipped: true; warning: string } } | null = typeof cleanupBrowserPilotPageListenersForTab === 'function'
-        ? await (cleanupBrowserPilotPageListenersForTab as (...args: unknown[]) => Promise<BrowserPilotBridgeResponse>)(tabId, 'hook_uninstall', msg.timeoutMs || msg.timeout_ms || 5000).catch((e) => browserPilotError(BROWSER_PILOT_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED, 'hook.uninstall page listener cleanup failed', { tabId, reason:e instanceof Error ? e.message : String(e) }))
-        : { ok:true, data:{ tabId:Number(tabId), skipped:true, warning:'page listener cleanup helper unavailable' } };
-      const hookResponse = /** @type {BrowserPilotBridgeResponse} */ (res);
-      if (hookResponse && typeof hookResponse === 'object') {
-        if (hookResponse.ok && hookResponse.data && typeof hookResponse.data === 'object') (hookResponse.data as JsonRecord).listener_cleanup = listenerCleanup?.data || listenerCleanup;
-        else if (hookResponse.ok === false) hookResponse.details = { ...(hookResponse.details || {}), listener_cleanup: listenerCleanup?.data || listenerCleanup };
-      }
-      cleanupWaitsForUninstall(tabId);
-      cleanupBrowserPilotTab(tabId, 'hook_uninstall');
-      // Forget persisted hook state on uninstall
-      const sessionId = localSession?.session_id ? String(localSession.session_id) : 'default';
-      try { await forgetState('hook', `${Number(tabId)}:${sessionId}`); } catch (error) { console.warn('[BROWSER-PILOT-HOOK] Failed to forget hook session state', sessionId, error); }
-    }
-    return res;
-  }
-  if (cmd === 'hook.evaluate') return await browserPilotEval(tabId, String(msg.expression || ''), msg.awaitPromise !== false, { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
-  if (cmd === 'hook.getNodeListeners') return await collectNodeListeners(tabId, msg);
-  if (cmd === 'hook.getListenerChain') return await collectNodeListenerChain(tabId, msg);
-  if (cmd === 'hook.getSinkHints') return await collectNodeSinkHints(tabId, msg);
-  if (cmd === 'hook.addEventListener') return await addEventListener(tabId, msg) as BrowserPilotBridgeResponse;
-  if (cmd === 'hook.removeEventListener') return await removeEventListener(tabId, msg) as BrowserPilotBridgeResponse;
-  if (cmd === 'hook.getPerformanceEntries') return await getPerformanceEntries(tabId, msg) as BrowserPilotBridgeResponse;
-  return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unknown Browser Pilot hook command: ' + cmd, { cmd });
+  const handler = Object.prototype.hasOwnProperty.call(HOOK_COMMAND_HANDLERS, cmd) ? HOOK_COMMAND_HANDLERS[cmd] : undefined;
+  return handler ? await handler(cmd, tabId, msg) : browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unknown Browser Pilot hook command: ' + cmd, { cmd });
 }
 
 // --- Startup recovery registration ---

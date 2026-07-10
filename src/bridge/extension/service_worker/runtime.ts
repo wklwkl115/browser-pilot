@@ -191,7 +191,7 @@ function redactSensitive(value: unknown, depth = 0, seen?: WeakSet<object>): unk
   if (value == null) return value;
   if (typeof value === 'string') {
     let out = value;
-    for (const re of patterns) out = out.replace(re, (m, p1) => p1 ? p1 + '[REDACTED]' : '[REDACTED]');
+    for (const re of patterns) out = out.replace(re, (_match, p1) => p1 ? p1 + '[REDACTED]' : '[REDACTED]');
     return out;
   }
   if (typeof value === 'number' || typeof value === 'boolean') return value;
@@ -340,7 +340,7 @@ async function handleBrowserPilot(msg: BrowserPilotBridgeCommand, sender: Browse
   if (cmd === 'wait.diagnose') return await handleBrowserPilotImpl(msg, sender, cmd, tabId);
   return await enqueueBrowserPilotCommand(tabId, cmd, () => handleBrowserPilotImpl(msg, sender, cmd, tabId));
 }
-async function handleBrowserPilotImpl(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender, cmd: string, tabId: number): Promise<BrowserPilotBridgeResponse> {
+async function handleBrowserPilotImpl(msg: BrowserPilotBridgeCommand, _sender: BrowserPilotBridgeSender, cmd: string, tabId: number): Promise<BrowserPilotBridgeResponse> {
   try {
     if (cmd.startsWith('hook.')) return await handleBrowserPilotHookCommand(cmd, tabId, msg) as BrowserPilotBridgeResponse;
     if (cmd.startsWith('intercept.')) return await handleBrowserPilotInterceptCommand(cmd, tabId, msg) as BrowserPilotBridgeResponse;

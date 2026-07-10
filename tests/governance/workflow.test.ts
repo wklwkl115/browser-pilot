@@ -17,6 +17,8 @@ const changelogPath = path.join(root, "CHANGELOG.md");
 const packageLockPath = path.join(root, "package-lock.json");
 const commandCatalogPath = path.join(root, "src/commands/commandCatalog.ts");
 const nativeCommandSchemaPath = path.join(root, "src/bridge/protocol/native-command.schema.json");
+const coverageScriptPath = path.join(root, "scripts/run-coverage.mjs");
+const eslintConfigPath = path.join(root, "eslint.config.js");
 const kernelRoot = path.join(root, "src", "kernels");
 const sessionKernelRoot = path.join(kernelRoot, "session");
 
@@ -77,6 +79,26 @@ test("repo governance exposes the canonical local gate sequence", () => {
 	assert.match(governance, /mise run dev/);
 	assert.match(governance, /mise run affected/);
 	assert.match(governance, /mise run verify/);
+});
+
+test("coverage module loading counts only eligible source files", () => {
+	const source = text(coverageScriptPath);
+	assert.match(source, /fileURLToPath/);
+	assert.match(source, /eligibleSourceModules\.has\(sourcePath\)/);
+	assert.doesNotMatch(source, /url\.includes\(["']\/src\/["']\)/);
+});
+
+test("eslint ignores the generated protocol outputs at their canonical paths", () => {
+	const source = text(eslintConfigPath);
+	for (const generatedPath of [
+		"src/bridge/extension/service_worker/protocol.ts",
+		"src/types/nativeProtocol.ts",
+		"src/commands/nativeActionMetadata.ts",
+		"src/types/nativeErrorCodes.ts",
+	]) {
+		assert.match(source, new RegExp(`["']${generatedPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']`));
+	}
+	assert.doesNotMatch(source, /src\/bridge\/protocol\/(?:nativeProtocol|nativeActionMetadata|nativeErrorCodes)\.ts/);
 });
 
 test("abml readme uses canonical mise validation guidance", () => {

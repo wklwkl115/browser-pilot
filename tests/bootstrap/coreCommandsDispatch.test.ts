@@ -164,7 +164,7 @@ test("core command batch cdp preserves result parameter substitution", async () 
 
 test("extension websocket router rejects malformed command envelopes without browser", async () => {
 	cspRuleUpdates.length = 0;
-	const socket = { sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
+	const socket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
 
 	await router.handleBrowserPilotBridgeWsMessage({ id: "empty-cmd", tabId: 7, code: { cmd: "   " } }, socket);
 	await router.handleBrowserPilotBridgeWsMessage({ id: "bad-code", tabId: 7, code: 42 }, socket);
@@ -180,7 +180,7 @@ test("extension websocket router rejects malformed command envelopes without bro
 
 test("extension websocket router acknowledges and shapes native command validation errors", async () => {
 	cspRuleUpdates.length = 0;
-	const socket = { sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
+	const socket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
 
 	await router.handleBrowserPilotBridgeWsMessage({ id: "native-invalid", tabId: 7, code: JSON.stringify({ cmd: "input.pointer" }) }, socket);
 

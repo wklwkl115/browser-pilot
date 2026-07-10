@@ -41,6 +41,7 @@ export type RawProbeOptions = WebFetchOptions & {
 };
 
 export type RawReplayOptions = WebFetchOptions & {
+	cwd?: string;
 	url?: unknown;
 	baseUrl?: unknown;
 	rawRequest?: unknown;

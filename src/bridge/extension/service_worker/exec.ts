@@ -152,142 +152,180 @@ function normalizeExecNavigationUrl(rawUrl: unknown): string {
   return raw;
 }
 
-async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: number; code?: unknown; timeoutMs?: number; timeout_ms?: number }, socket: BrowserPilotWebSocketLike): Promise<void> {
-  const tabId = data.tabId;
-  socket.send(JSON.stringify({ type: 'ack', id: data.id }));
-  if (!tabId) {
-    socket.send(JSON.stringify({ type: 'error', id: data.id, error: 'No tabId provided' }));
-    return;
-  }
-  const codeText = String(data.code || '').trim();
+type ExecRequest = JsonRecord & { id?: string | number; tabId?: number; code?: unknown; timeoutMs?: number; timeout_ms?: number };
+type ExecDiagnostics = { mayOpenNewTab: boolean; newTabObservationWaitTriggered: boolean; newTabObservationWaitMs: number; totalMs?: number };
+
+function execError(error: unknown): { name: string; message: string } {
+  return { name:error instanceof Error ? error.name : 'Error', message:error instanceof Error ? error.message : String(error) };
+}
+
+function sendExecMessage(socket: BrowserPilotWebSocketLike, message: JsonRecord): void {
+  socket.send(JSON.stringify(message));
+}
+
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' ? value as JsonRecord : {};
+}
+
+async function handleExecShortcut(data: ExecRequest, codeText: string, socket: BrowserPilotWebSocketLike): Promise<boolean> {
   const navMatch = codeText.match(/^(?:window\.)?location(?:\.href)?\s*=\s*(['"])(.*?)\1\s*;?$/);
   if (navMatch) {
     try {
       const targetUrl = normalizeExecNavigationUrl(navMatch[2]);
-      await chrome.tabs.update(tabId, { url: targetUrl });
-      socket.send(JSON.stringify({ type: 'result', id: data.id, result: { navigated: true, url: targetUrl } }));
-    } catch (e) {
-      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) } }));
+      await chrome.tabs.update(data.tabId as number, { url: targetUrl });
+      sendExecMessage(socket, { type:'result', id:data.id, result:{ navigated:true, url:targetUrl } });
+    } catch (error) {
+      sendExecMessage(socket, { type:'error', id:data.id, error:execError(error) });
     }
-    return;
+    return true;
   }
   const gmOpenMatch = codeText.match(/^GM_openInTab\(\s*(['"])(.*?)\1\s*\)\s*;?$/);
-  if (gmOpenMatch) {
+  if (!gmOpenMatch) return false;
+  try {
+    const targetUrl = normalizeExecNavigationUrl(gmOpenMatch[2]);
+    const tab = await chrome.tabs.create({ url:targetUrl, active:true });
+    const newTabs = [{ id:tab.id, tabId:tab.id, url:tab.url || targetUrl, title:tab.title || '' }];
+    sendExecMessage(socket, { type:'result', id:data.id, result:{ opened:true, tabId:tab.id, url:targetUrl }, newTabs });
+  } catch (error) {
+    sendExecMessage(socket, { type:'error', id:data.id, error:execError(error) });
+  }
+  return true;
+}
+
+function totalExecTimeoutMs(data: ExecRequest): number {
+  return Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 30000) || 30000));
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutHandle = setTimeout(() => {
+      const error = new Error(message);
+      error.name = 'ExecuteScriptTimeout';
+      reject(error);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+  }
+}
+
+async function executeInMainWorld(tabId: number, executionCode: string, timeoutMs: number): Promise<unknown> {
+  let backgroundTab = false;
+  try {
+    const probe = await chrome.tabs.get(tabId);
+    backgroundTab = probe.active === false;
+  } catch (_probeError) {
+    /* default to foreground path */
+  }
+  if (backgroundTab) return { ok:false, error:{ name:'BackgroundTab', message:'background tab — routing via CDP to avoid timer throttling' }, csp:true };
+  try {
+    const mainWorldTimeoutMs = Math.max(100, Math.min(2500, Math.floor(timeoutMs / 3)));
+    const executePromise = chrome.scripting.executeScript({
+      target:{ tabId },
+      world:'MAIN',
+      func:async (script: string) => await (0, eval)(script),
+      args:[buildPageScript(executionCode)],
+    });
+    const result = await withTimeout(executePromise, mainWorldTimeoutMs, 'chrome.scripting.executeScript timed out after ' + mainWorldTimeoutMs + 'ms');
+    const scriptResults = Array.isArray(result) ? result as Array<{ result?: unknown }> : [];
+    return scriptResults[0]?.result ?? { ok:false, error:{ name:'Error', message:'executeScript returned null (possible CSP or context issue)' }, csp:true };
+  } catch (error) {
+    return { ok:false, error:execError(error), csp:true };
+  }
+}
+
+function needsCdpFallback(result: unknown): boolean {
+  const record = asJsonRecord(result);
+  return Boolean(result && record.ok === false && record.csp);
+}
+
+async function executeThroughCdp(tabId: number, executionCode: string, timeoutMs: number): Promise<unknown> {
+  try {
+    const cdp = browserPilotPersistentCdp();
+    if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
     try {
-      const targetUrl = normalizeExecNavigationUrl(gmOpenMatch[2]);
-      const t = await chrome.tabs.create({ url: targetUrl, active: true });
-      const newTabs = [{ id: t.id, tabId: t.id, url: t.url || targetUrl, title: t.title || '' }];
-      socket.send(JSON.stringify({ type: 'result', id: data.id, result: { opened: true, tabId: t.id, url: targetUrl }, newTabs }));
-    } catch (e) {
-      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) } }));
+      await cdp.send(tabId, 'Emulation.setFocusEmulationEnabled', { enabled:true }, { name:'default', persistent:false, timeoutMs:2000 });
+    } catch (_focusError) {
+      /* best-effort background timer throttle lift */
     }
+    const response = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Runtime.evaluate', {
+      expression:buildCdpScript(executionCode), awaitPromise:true, returnByValue:true,
+    }, { name:'default', persistent:false, timeoutMs }));
+    if (!response || response.ok === false) throw new Error(String(response?.error || response?.message || 'persistent CDP Runtime.evaluate failed'));
+    const responseData = asJsonRecord(response.data);
+    const cdpResult = asJsonRecord(responseData.result || response.result || response.data);
+    const exceptionDetails = cdpResult.exceptionDetails && typeof cdpResult.exceptionDetails === 'object' ? cdpResult.exceptionDetails as JsonRecord : undefined;
+    if (exceptionDetails) {
+      const exception = asJsonRecord(exceptionDetails.exception);
+      return { ok:false, error:{ name:'Error', message:String(exception.description || 'CDP Error') } };
+    }
+    return asJsonRecord(cdpResult.result).value;
+  } catch (error) {
+    return { ok:false, error:{ name:'Error', message:'CDP fallback failed: ' + (error instanceof Error ? error.message : String(error)) } };
+  }
+}
+
+async function observePotentialNewTab(newTabIds: Set<number>, diagnostics: ExecDiagnostics): Promise<void> {
+  if (newTabIds.size || !diagnostics.mayOpenNewTab) return;
+  const waitStartedAt = Date.now();
+  await new Promise((resolve) => setTimeout(resolve, NEW_TAB_OBSERVE_WAIT_MS));
+  diagnostics.newTabObservationWaitTriggered = true;
+  diagnostics.newTabObservationWaitMs = Date.now() - waitStartedAt;
+}
+
+async function collectNewTabs(newTabIds: Set<number>): Promise<JsonRecord[]> {
+  const newTabs: JsonRecord[] = [];
+  for (const id of newTabIds) {
+    try {
+      const tab = await chrome.tabs.get(id);
+      newTabs.push({ id:tab.id, url:tab.url, title:tab.title });
+    } catch (_error) {
+      /* best-effort new tab metadata read */
+    }
+  }
+  return newTabs;
+}
+
+function sendExecOutcome(data: ExecRequest, socket: BrowserPilotWebSocketLike, result: unknown, newTabs: JsonRecord[], diagnostics: ExecDiagnostics): void {
+  const record = asJsonRecord(result);
+  const envelope = { id:data.id, newTabs, diagnostics:{ execute:diagnostics } };
+  if (record.ok) sendExecMessage(socket, { type:'result', ...envelope, result:record.data });
+  else sendExecMessage(socket, { type:'error', ...envelope, error:record.error || 'Unknown error' });
+}
+
+async function handleWsExec(data: ExecRequest, socket: BrowserPilotWebSocketLike): Promise<void> {
+  const tabId = data.tabId;
+  sendExecMessage(socket, { type:'ack', id:data.id });
+  if (!tabId) {
+    sendExecMessage(socket, { type:'error', id:data.id, error:'No tabId provided' });
     return;
   }
+  const codeText = String(data.code || '').trim();
+  if (await handleExecShortcut(data, codeText, socket)) return;
   const newTabIds = new Set<number>();
   const onCreated = (tab: BrowserPilotChromeTab) => { if (tab.id !== undefined) newTabIds.add(tab.id); };
   chrome.tabs.onCreated.addListener(onCreated);
   try {
     const execStartedAt = Date.now();
-    const execDiagnostics: JsonRecord = {
+    const execDiagnostics: ExecDiagnostics = {
       mayOpenNewTab: mayOpenNewTab(data.code),
       newTabObservationWaitTriggered: false,
       newTabObservationWaitMs: 0,
     };
-    let res: unknown;
-    // The caller-supplied timeout is the TOTAL budget for this exec (it is also the outer client
-    // pending-request timeout). chrome.scripting.executeScript (MAIN world) is the fast primary path,
-    // but it can HANG when the debugger is attached / the renderer never acks the MAIN-world injection
-    // on some pages — exactly the case the persistent-CDP Runtime.evaluate fallback below was added for
-    // (browser_observe drives the same CDP eval successfully on those pages). So executeScript must FAIL
-    // FAST and reserve the bulk of the budget for the fallback: cap it to ≤1/3 of the budget and ≤2500ms.
-    // Reusing the full timeoutMs here (the prior bug) let a hung executeScript consume the entire budget
-    // so the fallback never ran and the client only ever saw BRIDGE_TIMEOUT with no result. [F2]
-    const TOTAL_EXEC_TIMEOUT_MS = Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 30000) || 30000));
+    const timeoutMs = totalExecTimeoutMs(data);
     const executionCode = String(data.code || "");
-    // Background (non-foreground) tabs throttle page timers (setTimeout/intervals and any timeout-guarded
-    // fetch/poll), so a MAIN-world chrome.scripting.executeScript async script STALLS. Route straight to
-    // the CDP path (which enables Emulation.setFocusEmulationEnabled to lift the throttle) — this also
-    // avoids double-executing a side-effecting script (the throttled executeScript injection lingering AND
-    // the CDP re-eval). Synchronous scripts are unaffected either way. [bg-throttle]
-    let backgroundTab = false;
-    try { const probe = await chrome.tabs.get(tabId); backgroundTab = probe.active === false; } catch (_probeErr) { /* default to foreground path */ }
-    if (backgroundTab) {
-      res = { ok: false, error: { name: 'BackgroundTab', message: 'background tab — routing via CDP to avoid timer throttling' }, csp: true };
-    } else try {
-      const EXECUTE_SCRIPT_TIMEOUT_MS = Math.max(100, Math.min(2500, Math.floor(TOTAL_EXEC_TIMEOUT_MS / 3)));
-      const executePromise = chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'MAIN',
-        func: async (s: string) => await (0, eval)(s),
-        args: [buildPageScript(executionCode)]
-      });
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => {
-        const err = new Error('chrome.scripting.executeScript timed out after ' + EXECUTE_SCRIPT_TIMEOUT_MS + 'ms');
-        err.name = 'ExecuteScriptTimeout';
-        reject(err);
-      }, EXECUTE_SCRIPT_TIMEOUT_MS));
-      const result = await Promise.race([executePromise, timeoutPromise]);
-      const scriptResults = Array.isArray(result) ? result as Array<{ result?: unknown }> : [];
-      res = scriptResults[0]?.result;
-      if (res === null || res === undefined) {
-        res = { ok: false, error: { name: 'Error', message: 'executeScript returned null (possible CSP or context issue)' }, csp: true };
-      }
-    } catch (e) {
-      res = { ok: false, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) }, csp: true };
-    }
-    const firstRes = res && typeof res === 'object' ? res as JsonRecord : {};
-    if (res && firstRes.ok === false && firstRes.csp) {
-      const wrappedCode = buildCdpScript(executionCode);
-      try {
-        const cdp = browserPilotPersistentCdp();
-        if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
-        // Lift background-tab timer throttling for the focused execution: make the page emulate a focused/visible
-        // state so setTimeout/intervals/fetch run normally. This does NOT steal the user's real focus
-        // (it is per-tab CDP emulation). Best-effort — proceed even if unsupported (older Chrome).
-        try { await cdp.send(tabId, 'Emulation.setFocusEmulationEnabled', { enabled: true }, { name: 'default', persistent: false, timeoutMs: 2000 }); } catch (_focusErr) { /* best-effort throttle lift */ }
-        const resp = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Runtime.evaluate', {
-          expression: wrappedCode, awaitPromise: true, returnByValue: true
-        }, { name: 'default', persistent: false, timeoutMs: TOTAL_EXEC_TIMEOUT_MS }));
-        if (!resp || resp.ok === false) throw new Error(String(resp?.error || resp?.message || 'persistent CDP Runtime.evaluate failed'));
-        const cdpRes = (((resp.data && typeof resp.data === 'object') ? resp.data as JsonRecord : {}).result || resp.result || resp.data) as JsonRecord;
-        const exceptionDetails = cdpRes.exceptionDetails && typeof cdpRes.exceptionDetails === 'object' ? cdpRes.exceptionDetails as JsonRecord : undefined;
-        if (exceptionDetails) {
-          const exception = exceptionDetails.exception && typeof exceptionDetails.exception === 'object' ? exceptionDetails.exception as JsonRecord : {};
-          const desc = String(exception.description || 'CDP Error');
-          res = { ok: false, error: { name: 'Error', message: desc } };
-        } else {
-          const result = cdpRes.result && typeof cdpRes.result === 'object' ? cdpRes.result as JsonRecord : {};
-          res = result.value;
-        }
-      } catch (cdpErr) {
-        res = { ok: false, error: { name: 'Error', message: 'CDP fallback failed: ' + (cdpErr instanceof Error ? cdpErr.message : String(cdpErr)) } };
-      }
-    }
-    if (newTabIds.size === 0 && execDiagnostics.mayOpenNewTab) {
-      const waitStartedAt = Date.now();
-      await new Promise(r => setTimeout(r, NEW_TAB_OBSERVE_WAIT_MS));
-      execDiagnostics.newTabObservationWaitTriggered = true;
-      execDiagnostics.newTabObservationWaitMs = Date.now() - waitStartedAt;
-    }
+    let result = await executeInMainWorld(tabId, executionCode, timeoutMs);
+    if (needsCdpFallback(result)) result = await executeThroughCdp(tabId, executionCode, timeoutMs);
+    await observePotentialNewTab(newTabIds, execDiagnostics);
     chrome.tabs.onCreated.removeListener(onCreated);
-    const newTabs: JsonRecord[] = [];
-    for (const id of newTabIds) {
-      try {
-        const t = await chrome.tabs.get(id);
-        newTabs.push({ id: t.id, url: t.url, title: t.title });
-      } catch (_error) {
-        /* best-effort new tab metadata read */
-      }
-    }
+    const newTabs = await collectNewTabs(newTabIds);
     execDiagnostics.totalMs = Date.now() - execStartedAt;
-    const finalRes = res && typeof res === 'object' ? res as JsonRecord : {};
-    if (finalRes.ok) {
-      socket.send(JSON.stringify({ type: 'result', id: data.id, result: finalRes.data, newTabs, diagnostics: { execute: execDiagnostics } }));
-    } else {
-      socket.send(JSON.stringify({ type: 'error', id: data.id, error: finalRes.error || 'Unknown error', newTabs, diagnostics: { execute: execDiagnostics } }));
-    }
-  } catch (e) {
-    socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) } }));
+    sendExecOutcome(data, socket, result, newTabs, execDiagnostics);
+  } catch (error) {
+    sendExecMessage(socket, { type:'error', id:data.id, error:execError(error) });
   } finally {
     chrome.tabs.onCreated.removeListener(onCreated);
   }

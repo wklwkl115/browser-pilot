@@ -346,8 +346,9 @@ src/bridge/extension/
 | [`service_worker/cdp.ts`](src/bridge/extension/service_worker/cdp.ts) | CDP attach/send/detach/targets/frameTree。 |
 | [`service_worker/input.ts`](src/bridge/extension/service_worker/input.ts) | CDP 输入、pointer/key/touch/ref。 |
 | [`service_worker/network.ts`](src/bridge/extension/service_worker/network.ts) | network recorder、HAR/body/wait。 |
+| [`service_worker/network_events.ts`](src/bridge/extension/service_worker/network_events.ts) | CDP network/page 事件分发与 bounded request/response/WebSocket/SSE 投影。 |
 | [`service_worker/wait.ts`](src/bridge/extension/service_worker/wait.ts) | wait.any/all/cancel/diagnose。 |
-| [`service_worker/hook.ts`](src/bridge/extension/service_worker/hook.ts) | DOM/event hook。 |
+| [`service_worker/hook.ts`](src/bridge/extension/service_worker/hook.ts) | Hook action 分发、安装/卸载生命周期与 session 状态。 |
 | [`service_worker/screenshot.ts`](src/bridge/extension/service_worker/screenshot.ts) | screenshot capture。 |
 
 MV3 service worker 不能稳定持有长期 WebSocket，因此项目使用 offscreen document 作为 WebSocket transport，service worker 专注于命令调度和 Chrome API/CDP 调用。
@@ -391,6 +392,19 @@ Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向�
 | `browser_memory` | [`memoryCommand.ts`](src/commands/memoryCommand.ts) |
 | `browser_download`、`browser_upload` | [`transferCommands.ts`](src/commands/transferCommands.ts) |
 | `browser_screenshot` | [`screenshotCommand.ts`](src/commands/screenshotCommand.ts) |
+
+`browser_observe` 的 scan/text/tabs 实现按阶段拆分，`scanRunner.ts` 只负责编排；这些阶段由 ESLint 约束为单函数复杂度不超过 20、单函数不超过 150 行，避免重新长成单体流程：
+
+| Observe 阶段 | 文件 | 职责 |
+|---|---|---|
+| 编排 | [`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts) | 规范化请求并串联各阶段，不持有投影细节。 |
+| session | [`observe/scanSession.ts`](src/commands/observe/scanSession.ts) | fingerprint、render cache、ledger baseline 与扫描预算准备。 |
+| cache | [`observe/scanCache.ts`](src/commands/observe/scanCache.ts) | render-cache 命中、artifact 恢复与 ledger 延续。 |
+| capture | [`observe/scanCapture.ts`](src/commands/observe/scanCapture.ts) | 可选导航、页面 scan 与 ABML structure 采集。 |
+| providers | [`observe/scanProviders.ts`](src/commands/observe/scanProviders.ts) | recorder 高水位、causal、axe 与 Readability provider。 |
+| assembly | [`observe/scanAssembly.ts`](src/commands/observe/scanAssembly.ts) | entity attribution、diff/treeDiff、relations、identity、relevance 与 summary 组装。 |
+| output | [`observe/scanOutput.ts`](src/commands/observe/scanOutput.ts) | diagnostics、PageObservation、artifact、ledger 与最终 result 输出。 |
+| tabs | [`observe/scanTabs.ts`](src/commands/observe/scanTabs.ts) | tabs-only 兼容投影。 |
 
 ### 5.6 `src/kernels`
 
@@ -645,7 +659,7 @@ Provider budget telemetry summary 是 canonical observe diagnostics 的稳定、
 
 可选 Readability content-plane provider 通过 `content:"readability"` 或 `readability:true` 在省略 `mode` 的 canonical observe 路径显式触发。实现位于 [`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts)，按需从 `@mozilla/readability` 读取浏览器脚本并通过现有 page runtime 在 DOM clone 上运行，使用独立小超时、`maxElemsToParse`、最大 inline/content 字符数与 fail-closed fallback。Readability 结果只进入 `PageObservation.diagnostics.readability`、`PageObservation.diagnostics.providers.readability`、saved observe artifact 的 `readability` 节点，以及 artifact hints/preferred reads 的 `Readability article`；默认未请求时不运行也不暗示已执行。Readability HTML 会移除 script/style/noscript/template 等不安全片段并经过现有 redaction；它不创建、删除或重排 actionables、refs、entities、relations、collections，scan/ABML、AX/DOM fusion、hit-test、editable 与 visibility 仍是结构和执行权威。强 CSP 页面要求 runner 避免页面内字符串 eval，Readability CJS 源码以同一 CDP evaluation 表达式直接执行。
 
-关键文件：[`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts)、[`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts)、[`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)、[`observe/memoryAugmentation.ts`](src/commands/observe/memoryAugmentation.ts)。
+关键入口：[`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts)；scan/text/tabs 内部阶段的所有者见 [5.5 Commands 模块表](#55-srccommands)。可选 provider 的独立 runner 位于 [`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts) 与 [`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)，memory 边界位于 [`observe/memoryAugmentation.ts`](src/commands/observe/memoryAugmentation.ts)。
 
 #### `browser_execute`
 
@@ -907,9 +921,12 @@ mise run dev-governance
 
 - reachability audit；
 - main TypeScript typecheck；
+- tests TypeScript typecheck；
 - extension TypeScript typecheck；
+- required Rust native release build 与 native/TS parity；
 - protocol drift check；
 - all tests；
+- executed-source coverage gate；
 - full ESLint；
 - build。
 
@@ -925,6 +942,7 @@ npm run build:bridge
 npm run build:native
 npm run cli
 npm run typecheck
+npm run typecheck:tests
 npm run audit:reachability
 npm run lint
 ```
@@ -938,6 +956,7 @@ npm run lint
 | `npm run build:native` | 构建 Rust native kernels。 |
 | `npm run cli` | 从源码运行 CLI：`tsx src/apps/cli/bin.ts`。 |
 | `npm run typecheck` | 主 TypeScript 校验，不含 extension 源码。 |
+| `npm run typecheck:tests` | tests TypeScript 校验，覆盖测试 fixture 与其导入契约。 |
 | `npm run lint` | reachability audit + ESLint。 |
 
 ### 11.3 从源码运行 CLI
@@ -983,8 +1002,11 @@ npm package 的 `bin.browser-pilot` 固定指向 `./dist/src/apps/cli/bin.js`。
 - host：`127.0.0.1`
 - port：`18765`
 - port range end：`18784`
+- WebSocket 单消息上限：`33554432` bytes（32 MiB）
 
 配置位置：[`src/bridge/server/browserBridgeConfig.ts`](src/bridge/server/browserBridgeConfig.ts)、[`bridge/browser_bridge_config.json`](bridge/browser_bridge_config.json)。
+
+WebSocket 单消息上限可通过 `BROWSER_PILOT_BRIDGE_MAX_PAYLOAD_BYTES` 覆盖；健康端点的 `maxPayloadBytes` 返回实际生效值。该上限约束单连接内存占用，超限消息以 WebSocket code `1009` 关闭。
 
 ### 12.2 Daemon 状态目录
 
@@ -1020,13 +1042,14 @@ Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级
 | [`tsconfig.base.json`](tsconfig.base.json) | 公共 TypeScript 配置。 |
 | [`tsconfig.json`](tsconfig.json) | 主项目 typecheck，排除 extension 源码。 |
 | [`tsconfig.bridge-src.json`](tsconfig.bridge-src.json) | extension 源码 typecheck。 |
+| [`tsconfig.tests.json`](tsconfig.tests.json) | tests typecheck，并解析测试导入的 Node/extension 契约。 |
 | [`tsconfig.build.json`](tsconfig.build.json) | build 输出配置。 |
 
 ---
 
 ## 13. 测试体系
 
-测试使用 Node built-in test runner + `tsx`，脚本位于 [`scripts/run-tests.mjs`](scripts/run-tests.mjs)。覆盖率验证使用 Node 22 test runner 内置 V8 coverage，脚本位于 [`scripts/run-coverage.mjs`](scripts/run-coverage.mjs)，会生成报告与 `coverage/` 下的 V8 JSON，并通过 `--test-coverage-lines=80`、`--test-coverage-branches=80`、`--test-coverage-functions=80` 机械化要求全仓库行、分支、函数覆盖率均不低于 80%。该专项阈值由 `mise run coverage` 执行，不改变默认测试或 `mise run affected` / `mise run verify` 行为。
+测试使用 Node built-in test runner + `tsx`，脚本位于 [`scripts/run-tests.mjs`](scripts/run-tests.mjs)。覆盖率验证使用 Node 22 test runner 内置 V8 coverage，脚本位于 [`scripts/run-coverage.mjs`](scripts/run-coverage.mjs)，会生成报告与 `coverage/` 下的 V8 JSON。门禁针对测试实际加载的可编辑源码，排除 schema 生成文件，要求至少 90% 的可编辑 `src/**/*.ts` 模块进入 V8 数据，并要求汇总行覆盖率不低于 70%、分支不低于 65%、函数不低于 60%。这不是未加载模块也计为 0 的全仓库静态覆盖率；模块加载比例单独防止通过缩小执行面获得虚高数字。`mise run coverage` 可专项执行，`mise run verify` 也会执行同一门禁。
 
 测试分组：
 
@@ -1052,7 +1075,7 @@ node scripts/run-coverage.mjs all
 
 Observe regression benchmark 位于 [`tests/memory/observeRegressionBenchmark.test.ts`](tests/memory/observeRegressionBenchmark.test.ts)，随 `memory`/`all` scope 运行。新增 case 应使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖，并保护 outline/content hints、actionables/control relations、bounded samples、cross-origin 不越权表达和 provider telemetry 兼容路径。
 
-CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)，核心步骤是：
+CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)，在 Ubuntu 与 Windows 上执行相同门禁，核心步骤是：
 
 ```bash
 npm ci
