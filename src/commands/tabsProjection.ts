@@ -1,4 +1,4 @@
-import { defaultLeaseIdRedactor } from "../kernels/session/leaseDiagnostics.js";
+import { defaultLeaseIdRedactor } from "../kernels/session/leaseRegistry.js";
 import type { CommandTabLeaseInfo as BrowserTabLeaseInfo, CommandUiLockInfo as BrowserUiLockInfo } from "../ports/BrowserCommandRuntimePort.js";
 import { recordValue, toTabId } from "../utils/records.js";
 
