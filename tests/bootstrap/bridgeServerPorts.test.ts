@@ -20,14 +20,16 @@ async function withServer<T>(fn: (server: BrowserBridgeServer) => Promise<T>): P
 	}
 }
 
-async function listenBlocker(host = "127.0.0.1"): Promise<{ port: number; close: () => Promise<void> }> {
+type PortBlocker = { port: number; close: () => Promise<void> };
+
+async function listenBlocker(host = "127.0.0.1", port = 0): Promise<PortBlocker> {
 	const server = http.createServer((_req, res) => {
 		res.writeHead(200);
 		res.end("busy");
 	});
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
-		server.listen(0, host, () => {
+		server.listen(port, host, () => {
 			server.off("error", reject);
 			resolve();
 		});
@@ -38,6 +40,23 @@ async function listenBlocker(host = "127.0.0.1"): Promise<{ port: number; close:
 		port: address.port,
 		close: () => new Promise<void>((resolve) => server.close(() => resolve())),
 	};
+}
+
+async function reserveConsecutivePorts(host = "127.0.0.1"): Promise<{ blocker: PortBlocker; successor: PortBlocker }> {
+	const firstCandidate = 20_000 + (process.pid % 10_000);
+	for (let offset = 0; offset < 512; offset += 2) {
+		let blocker: PortBlocker | undefined;
+		try {
+			blocker = await listenBlocker(host, firstCandidate + offset);
+			const successor = await listenBlocker(host, blocker.port + 1);
+			return { blocker, successor };
+		} catch (error) {
+			if (blocker) await blocker.close();
+			const code = error && typeof error === "object" ? String((error as { code?: unknown }).code || "") : "";
+			if (code !== "EADDRINUSE" && code !== "EACCES") throw error;
+		}
+	}
+	throw new Error("could not reserve consecutive test ports");
 }
 
 async function connectExtension(server: BrowserBridgeServer, tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }]): Promise<WebSocket> {
@@ -57,16 +76,17 @@ async function connectExtension(server: BrowserBridgeServer, tabs: Array<Record<
 }
 
 test("BrowserBridgeServer advances to the next configured port when the requested port is busy", async () => {
-	const blocker = await listenBlocker();
-	const server = new BrowserBridgeServer({ port: blocker.port, portRangeEnd: blocker.port + 1 });
+	const { blocker, successor } = await reserveConsecutivePorts();
+	await successor.close();
+	const server = new BrowserBridgeServer({ port: blocker.port, portRangeEnd: successor.port });
 	try {
 		await server.start();
 		assert.equal(server.running, true);
 		assert.equal(server.requestedPort, blocker.port);
-		assert.equal(server.port, blocker.port + 1);
+		assert.equal(server.port, successor.port);
 		const health = await fetch(`http://${server.host}:${server.port}/health`).then((res) => res.json() as Promise<Record<string, unknown>>);
 		assert.equal(health.ok, true);
-		assert.equal(health.port, blocker.port + 1);
+		assert.equal(health.port, successor.port);
 	} finally {
 		await server.stop();
 		await blocker.close();
