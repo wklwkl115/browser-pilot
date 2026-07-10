@@ -21,7 +21,7 @@ import { buildScanEntities } from "../../src/scan/summary.ts";
 import { stableRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
 import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
 import type { ResourceRefDescriptor } from "../../src/ports/ResourceRefStorePort.ts";
-import { readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
+import { readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
 import { pierceRefEntities } from "../../src/browser-runtime/abml/pierceRuntime.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 
@@ -77,6 +77,20 @@ function axNode(backendNodeId: number, role: string, name: string, overrides: Re
 
 function boxModel(x: number, y: number, w: number, h: number): Record<string, unknown> {
 	return { border: [x, y, x + w, y, x + w, y + h, x, y + h] };
+}
+
+function domSnapshot(includePaintOrder = true): Record<string, unknown> {
+	return {
+		strings: ["id", "save", "class", "primary"],
+		documents: [{
+			nodes: { backendNodeId: [42, 77], attributes: [[0, 1, 2, 3], []] },
+			layout: {
+				nodeIndex: [0, 1],
+				bounds: [[10, 20, 80, 30], [120, 20, 40, 30]],
+				...(includePaintOrder ? { paintOrders: [2, 1] } : {}),
+			},
+		}],
+	};
 }
 
 function createCdpServer(responses: Record<string, MockCdpResponse>) {
@@ -166,6 +180,57 @@ test("partial AX helper truncates over-budget nodes and reports degraded diagnos
 	assert.equal(result.diagnostics.nodeCount, 6);
 	assert.equal(result.diagnostics.maxNodes, 3);
 	assert.equal(result.diagnostics.fetchRelatives, true);
+});
+
+test("full AX reader projects snapshot geometry, paint order, relations, and raw cache", async () => {
+	const nodes = [
+		axNode(42, "button", "Save changes", { properties: [{ name: "controls", value: { relatedNodes: [{ backendDOMNodeId: 77 }] } }] }),
+		axNode(77, "region", "Details"),
+	];
+	const server = createCdpServer({
+		"Accessibility.getFullAXTree": { nodes },
+		"DOMSnapshot.captureSnapshot": domSnapshot(),
+	});
+	const options = { browserSessionId: "session-1", tabId: 7, observationId: "obs-full", capturedAt: 1_000, cacheKey: "full-ax-cache" };
+	const first = await readAxEntities(server, options);
+	assert.equal(first.entities.length, 2);
+	assert.deepEqual(first.entities[0]?.entity.geometry?.box, { x: 10, y: 20, w: 80, h: 30 });
+	assert.equal(first.anchors.some((anchor) => anchor.type === "controls" && anchor.targetKey === "b:77"), true);
+	assert.deepEqual(first.snapshotGeometryEntries?.[0], { backendNodeId: 42, bounds: { x: 10, y: 20, w: 80, h: 30 }, attrs: { id: "save", class: "primary" } });
+	assert.deepEqual(first.paintOrderEntries?.map((entry) => [entry.backendNodeId, entry.paintOrder]), [[42, 2], [77, 1]]);
+	assert.equal(first.diagnostics?.cdpCalls, 2);
+	assert.equal(first.diagnostics?.geometryCdpCalls, 0);
+	assert.equal(first.diagnostics?.cacheHit, false);
+
+	const cached = await readAxEntities(server, options);
+	assert.equal(cached.diagnostics?.cacheHit, true);
+	assert.equal(cached.diagnostics?.cdpCalls, 0);
+	assert.equal(server.calls.length, 2);
+});
+
+test("full AX reader degrades from paint snapshot and falls back to bounded box geometry", async () => {
+	let snapshotCalls = 0;
+	const paintFallbackServer = createCdpServer({
+		"Accessibility.getFullAXTree": { result: { nodes: [axNode(42, "button", "Save changes")] } },
+		"DOMSnapshot.captureSnapshot": () => ++snapshotCalls === 1 ? bridgeFailure("includePaintOrder unsupported") : domSnapshot(false),
+	});
+	const paintFallback = await readAxEntities(paintFallbackServer, { tabId: 7, observationId: "obs-paint-fallback" });
+	assert.equal(paintFallback.diagnostics?.paintOrder?.snapshotUnsupported, true);
+	assert.equal(paintFallback.diagnostics?.paintOrder?.geometryFallbackUsed, true);
+	assert.equal(paintFallback.diagnostics?.snapshotGeometryUnavailable, undefined);
+	assert.equal(paintFallback.diagnostics?.cdpCalls, 3);
+	assert.equal(paintFallback.diagnostics?.geometryCdpCalls, 0);
+
+	const boxFallbackServer = createCdpServer({
+		"Accessibility.getFullAXTree": { nodes: [axNode(42, "button", "Save changes")] },
+		"DOMSnapshot.captureSnapshot": bridgeFailure("snapshot unavailable"),
+		"DOM.getBoxModel": { result: boxModel(5, 6, 70, 20) },
+	});
+	const boxFallback = await readAxEntities(boxFallbackServer, { tabId: 7, observationId: "obs-box-fallback" });
+	assert.deepEqual(boxFallback.entities[0]?.entity.geometry?.box, { x: 5, y: 6, w: 70, h: 20 });
+	assert.equal(boxFallback.diagnostics?.snapshotGeometryUnavailable, true);
+	assert.equal(boxFallback.diagnostics?.cdpCalls, 4);
+	assert.equal(boxFallback.diagnostics?.geometryCdpCalls, 1);
 });
 
 test("pierce runtime prefers scoped partial AX enrichment and falls back without expanding page-wide output", async () => {
