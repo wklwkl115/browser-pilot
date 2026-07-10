@@ -114,7 +114,7 @@ test("verify owns an exact complexity ratchet", () => {
 	const complexity = text(complexityScriptPath);
 	const validation = text(validationScriptPath);
 	const pkg = JSON.parse(text(packagePath)) as { scripts?: Record<string, string> };
-	assert.match(complexity, /expectedComplexFunctions\s*=\s*95/);
+	assert.match(complexity, /expectedComplexFunctions\s*=\s*94/);
 	assert.match(complexity, /expectedLongFunctions\s*=\s*0/);
 	assert.match(complexity, /assertExactBudget/);
 	assert.match(validation, /scripts\/audit-complexity\.mjs/);

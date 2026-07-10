@@ -22,7 +22,7 @@ type MockOptions = {
 	noDefaultTab?: boolean;
 	axePayload?: Record<string, unknown>;
 	axeThrows?: boolean;
-	readabilityPayload?: Record<string, unknown>;
+	readabilityPayload?: unknown;
 	readabilityThrows?: boolean;
 };
 
@@ -374,6 +374,56 @@ test("observe readability content provider: timeout degrades honestly without fa
 	assert.equal("readability" in artifact, false);
 	assertProviderFailure(diagnostics, "readability", "READABILITY_TIMEOUT");
 	assert.equal((diagnostics.providers as Record<string, unknown>).content, "scan-backed");
+});
+
+test("observe readability content provider: malformed success payloads fail closed", async () => {
+	for (const readabilityPayload of [{ ok: true }, { ok: true, article: "not-an-article" }, "not-a-payload"]) {
+		const { pageObservation, saved } = await runObserve({ readabilityPayload }, { readability: true });
+		const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
+		assert.equal((diagnostics.providers as Record<string, unknown>).readability, "failed");
+		assertProviderFailure(diagnostics, "readability", "READABILITY_FAILED");
+		const artifact = JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
+		assert.equal("readability" in artifact, false);
+	}
+});
+
+test("observe readability content provider: explicit payload failures preserve provider diagnostics", async () => {
+	const { pageObservation } = await runObserve({ readabilityPayload: { ok: false, error: { code: "READABILITY_BLOCKED", message: "page blocked extraction" } } }, { readability: true });
+	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
+	const readability = diagnostics.readability as Record<string, unknown>;
+	assert.equal((diagnostics.providers as Record<string, unknown>).readability, "failed");
+	assert.deepEqual(readability.error, { code: "READABILITY_BLOCKED", message: "page blocked extraction" });
+	assertProviderFailure(diagnostics, "readability", "READABILITY_BLOCKED");
+});
+
+test("observe readability content provider: sparse truncated articles derive lengths and stable empty artifact fields", async () => {
+	const article = {
+		title: "  Sparse   article  ",
+		byline: 42,
+		excerpt: "  Short   excerpt  ",
+		textContent: "Sparse article body",
+		content: "<article><p>Sparse article body</p></article>",
+		siteName: "",
+		lang: 42,
+		dir: null,
+		truncated: true,
+	};
+	const { pageObservation, saved } = await runObserve({ readabilityPayload: readabilityPayload(article) }, { readability: true });
+	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
+	const readability = diagnostics.readability as Record<string, unknown>;
+	assert.equal((diagnostics.providers as Record<string, unknown>).readability, "degraded");
+	assert.equal(readability.truncated, true);
+	assert.equal(readability.title, "Sparse article");
+	assert.equal(readability.excerpt, "Short excerpt");
+	assert.equal(readability.byline, undefined);
+	assert.equal(readability.textLength, article.textContent.length);
+	assert.equal(readability.contentLength, article.content.length);
+	const artifact = JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
+	const storedArticle = readabilityArticle(artifact);
+	assert.equal(storedArticle.byline, "");
+	assert.equal(storedArticle.siteName, "");
+	assert.equal(storedArticle.lang, "");
+	assert.equal(storedArticle.dir, "");
 });
 
 test("observe readability content provider: summary bounding strips unsafe artifact html and redacts sensitive values", async () => {

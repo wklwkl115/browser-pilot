@@ -67,29 +67,19 @@ type ReadabilityRunOptions = {
 	artifactPath?: string;
 };
 
-function normalizedTimeoutMs(value: unknown): number {
-	const n = Number(value ?? DEFAULT_READABILITY_TIMEOUT_MS);
-	if (!Number.isFinite(n) || n <= 0) return DEFAULT_READABILITY_TIMEOUT_MS;
-	return Math.max(MIN_READABILITY_TIMEOUT_MS, Math.min(DEFAULT_READABILITY_TIMEOUT_MS, Math.floor(n)));
+type ReadabilityTextField = "title" | "byline" | "excerpt" | "siteName" | "lang" | "dir" | "publishedTime";
+type ReadabilityTextFields = Partial<Record<ReadabilityTextField, string>>;
+type ReadabilityFailureOptions = { timedOut?: boolean; ms?: number; details?: Record<string, unknown> };
+const READABILITY_TEXT_LIMITS: ReadonlyArray<readonly [Exclude<ReadabilityTextField, "excerpt">, number]> = [["title", 240], ["byline", 160], ["siteName", 160], ["lang", 40], ["dir", 16], ["publishedTime", 80]];
+
+function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+	const n = Number(value ?? fallback); return Number.isFinite(n) && n > 0 ? Math.max(min, Math.min(max, Math.floor(n))) : fallback;
 }
 
-function normalizedMaxInlineChars(value: unknown): number {
-	const n = Number(value ?? DEFAULT_MAX_INLINE_CHARS);
-	if (!Number.isFinite(n) || n <= 0) return DEFAULT_MAX_INLINE_CHARS;
-	return Math.max(120, Math.min(MAX_SAFE_INLINE_CHARS, Math.floor(n)));
-}
-
-function normalizedMaxContentChars(value: unknown): number {
-	const n = Number(value ?? DEFAULT_MAX_CONTENT_CHARS);
-	if (!Number.isFinite(n) || n <= 0) return DEFAULT_MAX_CONTENT_CHARS;
-	return Math.max(1_000, Math.min(500_000, Math.floor(n)));
-}
-
-function normalizedMaxElemsToParse(value: unknown): number {
-	const n = Number(value ?? DEFAULT_MAX_ELEMS_TO_PARSE);
-	if (!Number.isFinite(n) || n <= 0) return DEFAULT_MAX_ELEMS_TO_PARSE;
-	return Math.max(500, Math.min(50_000, Math.floor(n)));
-}
+function normalizedTimeoutMs(value: unknown): number { return boundedInteger(value, DEFAULT_READABILITY_TIMEOUT_MS, MIN_READABILITY_TIMEOUT_MS, DEFAULT_READABILITY_TIMEOUT_MS); }
+function normalizedMaxInlineChars(value: unknown): number { return boundedInteger(value, DEFAULT_MAX_INLINE_CHARS, 120, MAX_SAFE_INLINE_CHARS); }
+function normalizedMaxContentChars(value: unknown): number { return boundedInteger(value, DEFAULT_MAX_CONTENT_CHARS, 1_000, 500_000); }
+function normalizedMaxElemsToParse(value: unknown): number { return boundedInteger(value, DEFAULT_MAX_ELEMS_TO_PARSE, 500, 50_000); }
 
 function safeString(value: unknown, maxChars: number): string | undefined {
 	if (typeof value !== "string") return undefined;
@@ -106,9 +96,22 @@ function stripUnsafeHtml(value: string): string {
 		.replace(/<template\b[\s\S]*?<\/template>/gi, "");
 }
 
-function safeArtifactContent(value: unknown): string {
-	if (typeof value !== "string") return "";
-	return redactSensitiveText(stripUnsafeHtml(value));
+function safeArtifactContent(value: unknown): string { return typeof value === "string" ? redactSensitiveText(stripUnsafeHtml(value)) : ""; }
+
+function normalizedArticleText(article: Record<string, unknown>, maxInlineChars: number): ReadabilityTextFields {
+	const text: ReadabilityTextFields = {};
+	for (const [field, maxChars] of READABILITY_TEXT_LIMITS) {
+		const value = safeString(article[field], maxChars);
+		if (value) text[field] = value;
+	}
+	const excerpt = safeString(article.excerpt, maxInlineChars);
+	if (excerpt) text.excerpt = excerpt;
+	return text;
+}
+
+function articleLength(article: Record<string, unknown>, lengthField: "textLength" | "contentLength", valueField: "textContent" | "content"): number | undefined {
+	const length = article[lengthField], value = article[valueField];
+	return typeof length === "number" ? length : typeof value === "string" ? value.length : undefined;
 }
 
 async function loadReadabilityScripts(): Promise<{ readability: string; readerable: string }> {
@@ -168,47 +171,44 @@ return Promise.race([
 })()`;
 }
 
-function normalizeReadabilityPayload(payload: unknown, options: { requested: boolean; maxInlineChars: number; artifactPath?: string }): ReadabilityRunResult {
-	if (!isRecord(payload) || payload.ok !== true) {
-		const payloadRecord = isRecord(payload) ? payload : {};
-		const timedOut = payloadRecord.timedOut === true;
-		const error = isRecord(payloadRecord.error) ? payloadRecord.error : payloadRecord;
-		const code = timedOut ? "READABILITY_TIMEOUT" : typeof error.code === "string" ? error.code : "READABILITY_FAILED";
-		const message = typeof error.message === "string" ? error.message : timedOut ? "Readability content provider timed out" : "Readability content provider failed";
-		return {
-			status: timedOut ? "degraded" : "failed",
-			summary: { provider: "readability", requested: options.requested, status: timedOut ? "degraded" : "failed", timedOut, degraded: timedOut, error: { code, message } },
-			failure: { provider: "readability", code, message },
-		};
-	}
-	if (payload.article === null) {
-		const elapsedMs = typeof payload.elapsedMs === "number" ? payload.elapsedMs : undefined;
-		return {
-			status: "degraded",
-			summary: { provider: "readability", requested: options.requested, status: "degraded", degraded: true, ...(elapsedMs !== undefined ? { ms: elapsedMs } : {}), error: { code: "READABILITY_NULL", message: "Readability returned no article" } },
-			failure: { provider: "readability", code: "READABILITY_NULL", message: "Readability returned no article" },
-		};
-	}
-	const article = isRecord(payload.article) ? payload.article : {};
+function readabilityFailure(status: "failed" | "degraded", requested: boolean, code: string, message: string, options: ReadabilityFailureOptions = {}): ReadabilityRunResult {
+	const details = options.details ? { details: options.details } : {};
+	return {
+		status,
+		summary: {
+			provider: "readability", requested, status,
+			...(status === "degraded" ? { degraded: true } : {}),
+			...(options.timedOut ? { timedOut: true } : {}),
+			...(options.ms !== undefined ? { ms: options.ms } : {}),
+			error: { code, message, ...details },
+		},
+		failure: { provider: "readability", code, message, ...details },
+	};
+}
+
+function failedReadabilityPayload(payload: unknown, requested: boolean): ReadabilityRunResult {
+	const payloadRecord = isRecord(payload) ? payload : {};
+	const timedOut = payloadRecord.timedOut === true;
+	const error = isRecord(payloadRecord.error) ? payloadRecord.error : payloadRecord;
+	const code = timedOut ? "READABILITY_TIMEOUT" : typeof error.code === "string" ? error.code : "READABILITY_FAILED";
+	const message = typeof error.message === "string" ? error.message : timedOut ? "Readability content provider timed out" : "Readability content provider failed";
+	return readabilityFailure(timedOut ? "degraded" : "failed", requested, code, message, { timedOut });
+}
+
+function normalizedReadabilityArticle(payload: Record<string, unknown>, article: Record<string, unknown>, options: { requested: boolean; maxInlineChars: number; artifactPath?: string }): ReadabilityRunResult {
 	const elapsedMs = typeof payload.elapsedMs === "number" ? payload.elapsedMs : undefined;
-	const textLength = typeof article.textLength === "number" ? article.textLength : typeof article.textContent === "string" ? article.textContent.length : undefined;
-	const contentLength = typeof article.contentLength === "number" ? article.contentLength : typeof article.content === "string" ? article.content.length : undefined;
+	const textLength = articleLength(article, "textLength", "textContent");
+	const contentLength = articleLength(article, "contentLength", "content");
 	const textPreview = safeString(article.textContent, options.maxInlineChars);
+	const text = normalizedArticleText(article, options.maxInlineChars);
+	const truncated = article.truncated === true;
 	const summary: ReadabilitySummary = {
-		provider: "readability",
-		requested: options.requested,
-		status: article.truncated === true ? "degraded" : "executed",
-		...(article.truncated === true ? { degraded: true, truncated: true } : {}),
+		provider: "readability", requested: options.requested, status: truncated ? "degraded" : "executed",
+		...(truncated ? { degraded: true, truncated: true } : {}),
 		...(elapsedMs !== undefined ? { ms: elapsedMs } : {}),
-		...(safeString(article.title, 240) ? { title: safeString(article.title, 240) } : {}),
-		...(safeString(article.byline, 160) ? { byline: safeString(article.byline, 160) } : {}),
-		...(safeString(article.excerpt, options.maxInlineChars) ? { excerpt: safeString(article.excerpt, options.maxInlineChars) } : {}),
+		...text,
 		...(textLength !== undefined ? { textLength } : {}),
 		...(contentLength !== undefined ? { contentLength } : {}),
-		...(safeString(article.siteName, 160) ? { siteName: safeString(article.siteName, 160) } : {}),
-		...(safeString(article.lang, 40) ? { lang: safeString(article.lang, 40) } : {}),
-		...(safeString(article.dir, 16) ? { dir: safeString(article.dir, 16) } : {}),
-		...(safeString(article.publishedTime, 80) ? { publishedTime: safeString(article.publishedTime, 80) } : {}),
 		...(textPreview ? { textPreview } : {}),
 		bounded: { maxInlineChars: options.maxInlineChars },
 		...(options.artifactPath ? { artifact: { path: options.artifactPath, jsonPath: "readability", kind: "readability-content" } } : {}),
@@ -217,24 +217,25 @@ function normalizeReadabilityPayload(payload: unknown, options: { requested: boo
 		status: summary.status,
 		summary,
 		artifact: {
-			provider: "readability",
-			summary,
+			provider: "readability", summary,
 			article: {
-				title: safeString(article.title, 240) ?? "",
-				byline: safeString(article.byline, 160) ?? "",
-				excerpt: safeString(article.excerpt, options.maxInlineChars) ?? "",
-				textContent: safeArtifactContent(article.textContent),
-				content: safeArtifactContent(article.content),
-				textLength,
-				contentLength,
-				siteName: safeString(article.siteName, 160) ?? "",
-				lang: safeString(article.lang, 40) ?? "",
-				dir: safeString(article.dir, 16) ?? "",
-				publishedTime: safeString(article.publishedTime, 80) ?? "",
+				title: text.title ?? "", byline: text.byline ?? "", excerpt: text.excerpt ?? "",
+				textContent: safeArtifactContent(article.textContent), content: safeArtifactContent(article.content),
+				textLength, contentLength,
+				siteName: text.siteName ?? "", lang: text.lang ?? "", dir: text.dir ?? "", publishedTime: text.publishedTime ?? "",
 			},
 			bounded: { maxInlineChars: options.maxInlineChars },
 		},
 	};
+}
+
+function normalizeReadabilityPayload(payload: unknown, options: { requested: boolean; maxInlineChars: number; artifactPath?: string }): ReadabilityRunResult {
+	if (!isRecord(payload) || payload.ok !== true) return failedReadabilityPayload(payload, options.requested);
+	if (payload.article === null) {
+		return readabilityFailure("degraded", options.requested, "READABILITY_NULL", "Readability returned no article", { ms: typeof payload.elapsedMs === "number" ? payload.elapsedMs : undefined });
+	}
+	if (!isRecord(payload.article)) return readabilityFailure("failed", options.requested, "READABILITY_FAILED", "Readability returned an invalid article");
+	return normalizedReadabilityArticle(payload, payload.article, options);
 }
 
 export function shouldRunReadability(params: { content?: unknown; readability?: unknown; params?: unknown }): boolean {
@@ -257,11 +258,6 @@ export async function runReadability(server: Pick<BrowserCommandRuntimePort, "se
 		const compact = compactError(error, "READABILITY_FAILED");
 		const code = typeof compact.code === "string" ? compact.code : "READABILITY_FAILED";
 		const message = typeof compact.message === "string" ? compact.message : "Readability content provider failed";
-		const details = isRecord(compact.details) ? compact.details : undefined;
-		return {
-			status: "failed",
-			summary: { provider: "readability", requested: true, status: "failed", error: { code, message, ...(details ? { details } : {}) } },
-			failure: { provider: "readability", code, message, ...(details ? { details } : {}) },
-		};
+		return readabilityFailure("failed", true, code, message, { details: isRecord(compact.details) ? compact.details : undefined });
 	}
 }
