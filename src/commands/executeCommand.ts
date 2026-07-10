@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
+import type { CommandActiveOperationInfo, CommandTemporalProfileSampleInput } from "../ports/BrowserCommandRuntimePort.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { nextActionsForExecutionEffect } from "../kernels/evidence/distill/recovery.js";
 import { tryJson } from "../utils/json.js";
@@ -7,22 +7,26 @@ import { isRecord } from "../utils/records.js";
 import { compactExecutionEffect, buildExecutionJournal, type ExecuteEffect } from "./executionJournal.js";
 import { withExecutionEffect } from "./executionEffect.js";
 import { prepareExecuteStdlib, type ExecuteStdlibTargetRef } from "../browser-command-runtime/executeStdlib.js";
-import { executeProgram, collectProgramTargetRefs, type ProgramContext } from "../browser-command-runtime/programEngine.js";
+import { executeProgram, collectProgramTargetRefs, type ProgramContext, type ProgramResult } from "../browser-command-runtime/programEngine.js";
 import { validateProgram } from "../browser-command-runtime/programDispatcher.js";
 import { summarizeGenericValue } from "./summaries/index.js";
-import { artifactFallbackName, buildActiveContext, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
+import { artifactFallbackName, buildActiveContext, defineBrowserCommand, jsonCommandResult, runBrowserCommand, sharedTabScopedToolParams, targetTabId, type BrowserCommandRunArgs, type StandardToolParams } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
-import { buildExecuteMonitorMetadata, executeJavaScriptWithMonitor, monitorTimeoutMs, readExecuteMonitorScan, type ExecuteMonitorMetadata } from "./execute/monitorAdapter.js";
+import { buildExecuteMonitorMetadata, executeJavaScriptWithMonitor, monitorTimeoutMs, readExecuteMonitorScan, type ExecuteMonitorScanResult, type ExecuteResultWithMonitorFeedback } from "./execute/monitorAdapter.js";
 
 const PROGRAM_MAX_FRAMES = 60;
 const PROGRAM_WARNING_THRESHOLD = 30;
 const PROGRAM_NAV_WARNING = "page navigated — changed count is unreliable; use browser_wait + baseline observe for post-navigation change detection";
 
-type ExecuteResultWithFeedback = BrowserBridgeExecutionResult & {
-	effect?: ExecuteEffect;
-	monitor?: ExecuteMonitorMetadata;
-};
+type ExecuteParams = Partial<StandardToolParams> & { script?: unknown; program?: unknown; monitor?: unknown };
+type PreparedExecuteParams = ExecuteParams & { executeMode: "program" | "javascript"; normalizedScript?: string; normalizedProgram?: unknown[] };
+type PreparedExecuteScript = ReturnType<typeof prepareExecuteStdlib>;
+type ExecuteRunArgs = BrowserCommandRunArgs<ExecuteParams, PreparedExecuteParams>;
+type ProgramRunResult = { executeMode: "program"; programResult: ProgramResult; effect?: ExecuteEffect; before?: ExecuteMonitorScanResult; after?: ExecuteMonitorScanResult };
+type JavaScriptRunResult = { executeMode: "javascript"; jsResult: ExecuteResultWithMonitorFeedback; preparedScript: PreparedExecuteScript };
+type ExecuteRunResult = ProgramRunResult | JavaScriptRunResult;
+type ExecuteFinalizeArgs = ExecuteRunArgs & { result: ExecuteRunResult; operation?: CommandActiveOperationInfo };
 
 function detectCommandLikeScript(script: string): boolean {
 	const trimmed = script.trim();
@@ -71,6 +75,202 @@ export function executeResultNeedsArtifact(value: unknown): boolean {
 	return !!executeArtifactHints(isRecord(value) ? value.data : undefined);
 }
 
+function prepareExecuteParams(params: ExecuteParams): PreparedExecuteParams {
+	const program = Array.isArray(params.program) && params.program.length > 0 ? params.program : undefined;
+	const script = typeof params.script === "string" && params.script.length > 0 ? params.script : undefined;
+	if (program && script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute accepts either script or program, not both", { commandName: "browser_execute" });
+	if (program) {
+		if (program.length > PROGRAM_MAX_FRAMES) throw new BrowserBridgeError("INVALID_RULE", `browser_execute program exceeds ${PROGRAM_MAX_FRAMES} frame limit (got ${program.length})`, { commandName: "browser_execute", frameCount: program.length });
+		const validation = validateProgram(program);
+		if (!validation.ok) throw new BrowserBridgeError("INVALID_RULE", validation.error, { commandName: "browser_execute", step: validation.step });
+		return { ...params, executeMode: "program", normalizedProgram: program };
+	}
+	if (!script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script or program", { commandName: "browser_execute" });
+	if (detectCommandLikeScript(script)) throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { commandName: "browser_execute", recovery: { useTool: "browser_command" } });
+	return { ...params, executeMode: "javascript", normalizedScript: script };
+}
+
+function findProgramActionRef(frames: ProgramResult["frames"], program: unknown[]): string | undefined {
+	const physical = frames.some((frame) => {
+		const kind = String(frame.kind ?? "");
+		return kind.startsWith("mouse:") || kind.startsWith("key:") || kind === "text";
+	});
+	if (!physical) return undefined;
+	for (let index = program.length - 1; index >= 0; index -= 1) {
+		const element = program[index];
+		if (isRecord(element) && typeof element.ref === "string" && element.ref.startsWith("bp-ref://")) return element.ref;
+	}
+	return undefined;
+}
+
+async function runProgramExecution(args: ExecuteRunArgs, signal?: AbortSignal): Promise<ProgramRunResult> {
+	const { server, prepared, browserSessionId, rawTabId, tabId, timeoutMs } = args;
+	const program = prepared.normalizedProgram!;
+	const monitorRequested = prepared.monitor === true;
+	const scanTimeoutMs = monitorTimeoutMs(timeoutMs);
+	await args.handle!.update({ progress: 15 });
+	const before = monitorRequested ? await readExecuteMonitorScan(server, { browserSessionId, tabId: rawTabId, timeoutMs: scanTimeoutMs }) : undefined;
+	const programContext: ProgramContext = {
+		server,
+		tabId,
+		browserSessionId,
+		targetRef: typeof rawTabId === "string" ? rawTabId : undefined,
+		refRegistry: {},
+		contextVars: new Map(),
+		lastEvalResult: undefined,
+		evalTimeoutMs: timeoutMs,
+		signal: signal ?? new AbortController().signal,
+	};
+	const { result: programResult, effect } = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs, targetRefs: collectProgramTargetRefs(program) as unknown as ExecuteStdlibTargetRef[] }, () => executeProgram(program, programContext));
+	const after = monitorRequested ? await readExecuteMonitorScan(server, { browserSessionId, tabId: rawTabId, timeoutMs: scanTimeoutMs }) : undefined;
+	await args.handle!.update({ progress: 85 });
+	return { executeMode: "program", programResult, effect, before, after };
+}
+
+async function executeJavaScriptDirect(args: ExecuteRunArgs, preparedScript: PreparedExecuteScript): Promise<ExecuteResultWithMonitorFeedback> {
+	const { server, browserSessionId, rawTabId, tabId, timeoutMs } = args;
+	const executed = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs, targetRefs: preparedScript.stdlib?.targetRefs }, () => server.executeJavaScript(preparedScript.script, { browserSessionId, tabId: rawTabId as number | string | undefined, timeoutMs }));
+	return { ...executed.result, effect: executed.effect };
+}
+
+async function runJavaScriptExecution(args: ExecuteRunArgs): Promise<JavaScriptRunResult> {
+	const { server, prepared, browserSessionId, rawTabId, timeoutMs } = args;
+	const preparedScript = prepareExecuteStdlib(prepared.normalizedScript!);
+	await args.handle!.update({ progress: prepared.monitor === true ? 15 : 35 });
+	const jsResult = prepared.monitor === true
+		? await executeJavaScriptWithMonitor(server, preparedScript.script, { browserSessionId, tabId: rawTabId, timeoutMs, targetRefs: preparedScript.stdlib?.targetRefs })
+		: await executeJavaScriptDirect(args, preparedScript);
+	await args.handle!.update({ progress: 85, details: { acknowledged: jsResult.acknowledged, target: jsResult.target } });
+	return { executeMode: "javascript", jsResult, preparedScript };
+}
+
+function recordExecuteTemporalSample(args: ExecuteRunArgs, operation: CommandActiveOperationInfo, sample: Pick<CommandTemporalProfileSampleInput, "command" | "result" | "diagnostics">): void {
+	const { server, browserSessionId, rawTabId, tabId, timeoutMs } = args;
+	if (typeof server.buildTemporalProfileSample !== "function" || typeof server.recordTemporalProfileSample !== "function") return;
+	void server.recordTemporalProfileSample(server.buildTemporalProfileSample({
+		operationId: operation.operationId,
+		tool: "browser_execute",
+		...sample,
+		target: { browserSessionId, tabId, targetRef: typeof rawTabId === "string" ? rawTabId : undefined },
+		deadlineMs: timeoutMs,
+		elapsedMs: Math.max(0, operation.updatedAt - operation.startedAt),
+	}), { cwd: args.ctx?.cwd });
+}
+
+function distillProgramResult(value: unknown, operation: CommandActiveOperationInfo, warning?: string): Record<string, unknown> {
+	const record = isRecord(value) ? value : {};
+	const generic = summarizeGenericValue(record.result);
+	const aborted = isRecord(record.aborted) ? record.aborted : undefined;
+	const executedFrames = Array.isArray(record.executed) ? record.executed : [];
+	const okFrames = executedFrames.filter((frame: unknown) => isRecord(frame) && frame.ok === true).length;
+	const failedFrames = executedFrames.filter((frame: unknown) => isRecord(frame) && frame.ok === false).length;
+	const effect = isRecord(record.effect) ? compactExecutionEffect(record.effect as ExecuteEffect) : undefined;
+	const effectHints = nextActionsForExecutionEffect(record.effect as ExecuteEffect | undefined);
+	const base = {
+		...generic,
+		operationId: operation.operationId,
+		sourceMode: operation.sourceMode,
+		mode: "program",
+		frameCount: executedFrames.length,
+		framesOk: okFrames,
+		framesFailed: failedFrames,
+		...(effect ? { effect } : {}),
+		...(aborted ? { aborted: true, abortReason: aborted.reason, abortStep: aborted.atStep, ...(aborted.newUrl ? { newUrl: aborted.newUrl } : {}) } : {}),
+		...(record.actionRef ? { actionRef: record.actionRef } : {}),
+		...(warning ? { warning } : {}),
+	} as Record<string, unknown>;
+	const monitor = isRecord(record.monitor) ? record.monitor : undefined;
+	const artifactReads: Array<{ label: string; jsonPath: string; kind?: string; count?: number }> = [];
+	if (executedFrames.length) artifactReads.push({ label: "program frames", jsonPath: "executed", kind: "program-frames", count: executedFrames.length });
+	if (record.result !== undefined) artifactReads.push({ label: "program final result", jsonPath: "result", kind: "execute-result" });
+	if (monitor) artifactReads.push({ label: "program monitor", jsonPath: "monitor", kind: "execute-monitor" });
+	if (artifactReads.length) base.artifact_hints = { jsonPaths: Object.fromEntries(artifactReads.map((read) => [read.label, read.jsonPath])), preferredReads: artifactReads };
+	if (effectHints) base.nextActions = [...(Array.isArray(base.nextActions) ? base.nextActions : []), ...effectHints];
+	if (monitor) base.monitorSource = { before: monitor.beforeSource, after: monitor.afterSource, changed: monitor.changed, top_change: monitor.top_change, ...(monitor.navigated === true ? { navigated: true, urlBefore: monitor.urlBefore, urlAfter: monitor.urlAfter } : {}) };
+	return base;
+}
+
+function executeResultBase(args: ExecuteRunArgs, operation: CommandActiveOperationInfo, command: string, resultValue: Record<string, unknown>) {
+	return {
+		commandName: "browser_execute", command, defaultDetailLevel: "preview" as const, maxChars: args.maxChars, fallbackName: artifactFallbackName("execute"),
+		operation, activeContext: buildActiveContext(args.server, args.params), artifactValue: { ...resultValue, operation },
+	};
+}
+
+async function finalizeProgramExecution(args: ExecuteFinalizeArgs, result: ProgramRunResult, operation: CommandActiveOperationInfo) {
+	const { params, prepared, ctx } = args;
+	const { programResult, effect, before, after } = result;
+	const frames = Array.isArray(programResult.frames) ? programResult.frames : [];
+	const monitorRequested = prepared.monitor === true;
+	const monitor = monitorRequested && before && after ? buildExecuteMonitorMetadata(before, after, { navigationWarning: PROGRAM_NAV_WARNING }) : undefined;
+	const actionRef = findProgramActionRef(frames, prepared.normalizedProgram!);
+	const execution = buildExecutionJournal({
+		operationId: operation.operationId,
+		dispatch: { kind: "program", command: "program" },
+		effect,
+		monitor,
+		stdlib: { used: frames.some((frame) => frame.kind === "eval") },
+	});
+	const frameCount = frames.length;
+	const warning = frameCount > PROGRAM_WARNING_THRESHOLD ? `program contains ${frameCount} frames — consider splitting into multiple observe+program cycles` : undefined;
+	const resultValue = { executed: frames, result: programResult.result, aborted: programResult.aborted ?? null, ...(effect ? { effect } : {}), ...(monitor ? { monitor } : {}), execution, actionRef: actionRef ?? null };
+	recordExecuteTemporalSample(args, operation, { command: "program", diagnostics: { aborted: !!programResult.aborted, frameCount } });
+	const needsArtifact = frames.some((frame) => { if (frame.result === undefined) return false; try { return JSON.stringify(frame.result).length > 1_000; } catch { return false; } });
+	return await jsonCommandResult(resultValue, params, ctx, {
+		...executeResultBase(args, operation, "program", resultValue),
+		artifactThreshold: needsArtifact ? 1 : undefined,
+		details: { mode: "program", frameCount, aborted: !!programResult.aborted, monitor: monitorRequested, ...(warning ? { warning } : {}) },
+		distill: (value) => distillProgramResult(value, operation, warning),
+	});
+}
+
+function distillJavaScriptResult(value: unknown, operation: CommandActiveOperationInfo, preparedScript: PreparedExecuteScript): Record<string, unknown> {
+	const generic = summarizeGenericValue(value);
+	const dataInline = executeSummaryDataInline(generic.data);
+	const hints = dataInline ? undefined : executeArtifactHints(isRecord(value) ? value.data : undefined);
+	const effect = isRecord(value) ? compactExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
+	const effectHints = isRecord(value) ? nextActionsForExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
+	const url = executeSummaryPageUrl(value);
+	const base = { ...generic, operationId: operation.operationId, sourceMode: operation.sourceMode, ...(url ? { url } : {}), ...(effect ? { effect } : {}), ...(preparedScript.stdlib ? { browserPilotRuntime: "1", refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : {}), ...(dataInline ? { dataInline: true } : {}), ...(hints ? { artifact_hints: hints } : {}) } as Record<string, unknown>;
+	if (effectHints) base.nextActions = [...(Array.isArray(base.nextActions) ? base.nextActions : []), ...effectHints];
+	const monitor = isRecord(value) && isRecord(value.monitor) ? value.monitor : undefined;
+	if (monitor) {
+		base.monitorSource = {
+			before: monitor.beforeSource,
+			after: monitor.afterSource,
+			changed: monitor.changed,
+			top_change: monitor.top_change,
+			...(monitor.navigated === true ? { navigated: true, urlBefore: monitor.urlBefore, urlAfter: monitor.urlAfter, note: "page navigated — the before/after DOM diff does not span navigation; use browser_wait + a baseline observe (treeDiff) for post-navigation change" } : {}),
+			...(monitor.afterUnreliable === true ? { afterUnreliable: true } : {}),
+			abmlIntegrated: monitor.beforeSource === "abml-read" || monitor.afterSource === "abml-read",
+		};
+	}
+	return base;
+}
+
+async function finalizeJavaScriptExecution(args: ExecuteFinalizeArgs, result: JavaScriptRunResult, operation: CommandActiveOperationInfo) {
+	const { params, ctx } = args;
+	const { jsResult, preparedScript } = result;
+	const executeDiagnostics = isRecord(jsResult.diagnostics) ? jsResult.diagnostics : undefined;
+	const execution = buildExecutionJournal({
+		operationId: operation.operationId,
+		target: jsResult.target,
+		dispatch: { kind: "javascript", command: "javascript" },
+		effect: jsResult.effect,
+		monitor: jsResult.monitor,
+		stdlib: preparedScript.stdlib ? { used: true, refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : undefined,
+	});
+	const resultValue = { ...jsResult, execution, ...(preparedScript.stdlib ? { browserPilotRuntime: "1" } : {}) };
+	recordExecuteTemporalSample(args, operation, { command: "javascript", result: jsResult, diagnostics: executeDiagnostics });
+	return await jsonCommandResult(resultValue, params, ctx, {
+		...executeResultBase(args, operation, "javascript", resultValue),
+		artifactThreshold: executeResultNeedsArtifact(resultValue) ? 1 : undefined,
+		details: { mode: "javascript", monitor: params.monitor === true, ...(executeDiagnostics ? { diagnostics: executeDiagnostics } : {}), ...(preparedScript.stdlib ? { browserPilotRuntime: "1" } : {}) },
+		diagnostics: executeDiagnostics,
+		distill: (value) => distillJavaScriptResult(value, operation, preparedScript),
+	});
+}
+
 export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_execute",
@@ -88,222 +288,21 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 			...sharedTabScopedToolParams(),
 			monitor: Type.Optional(Type.Boolean({ description: "Capture compact before/after scan diff. Default false to avoid token and latency overhead." })),
 		}),
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-			return await runCommandHandler(async () => {
-				const program = Array.isArray(params.program) && params.program.length > 0 ? (params.program as unknown[]) : undefined;
-				const script = typeof params.script === "string" && params.script.length > 0 ? params.script : undefined;
-				if (program && script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute accepts either script or program, not both", { commandName: "browser_execute" });
-				const server = await ensureStarted();
-				if (program) {
-					if (program.length > PROGRAM_MAX_FRAMES) throw new BrowserBridgeError("INVALID_RULE", `browser_execute program exceeds ${PROGRAM_MAX_FRAMES} frame limit (got ${program.length})`, { commandName: "browser_execute", frameCount: program.length });
-					const validation = validateProgram(program);
-					if (!validation.ok) throw new BrowserBridgeError("INVALID_RULE", validation.error, { commandName: "browser_execute", step: validation.step });
-					const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
-					const maxChars = commandMaxChars(params, "browser_execute");
-					const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-					const rawTargetRef = targetTabId(params);
-					const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
-					const monitorRequested = params.monitor === true;
-					const scanTimeoutMs = monitorTimeoutMs(timeoutMs);
-					const { result: programOutcome, operation } = await withTrackedOperation(server, {
-						commandName: "browser_execute",
-						command: "program",
-						browserSessionId,
-						tabId,
-						phase: "running",
-						progress: 5,
-						queueDepth: server.queueDepth(browserSessionId, tabId),
-						leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
-					}, _onUpdate, async (handle) => {
-						await handle.update({ progress: 15 });
-						const before = monitorRequested ? await readExecuteMonitorScan(server, { browserSessionId, tabId: rawTargetRef, timeoutMs: scanTimeoutMs }) : undefined;
-						const programCtx: ProgramContext = {
-							server,
-							tabId,
-							browserSessionId,
-							targetRef: typeof rawTargetRef === "string" ? rawTargetRef : undefined,
-							refRegistry: {},
-							contextVars: new Map(),
-							lastEvalResult: undefined,
-							evalTimeoutMs: timeoutMs,
-							signal: signal ?? new AbortController().signal,
-						};
-						// Aggregate effect tracking across the whole program (same signal machinery as the script path).
-						const { result: programResult, effect } = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs, targetRefs: collectProgramTargetRefs(program) as unknown as ExecuteStdlibTargetRef[] }, () => executeProgram(program, programCtx));
-						const after = monitorRequested ? await readExecuteMonitorScan(server, { browserSessionId, tabId: rawTargetRef, timeoutMs: scanTimeoutMs }) : undefined;
-						await handle.update({ progress: 85 });
-						return { programResult, effect, before, after };
-					});
-					const { programResult, effect, before, after } = programOutcome;
-					const frames = Array.isArray(programResult.frames) ? programResult.frames : [];
-					let monitor: ExecuteMonitorMetadata | undefined;
-					if (monitorRequested && before && after) {
-						monitor = buildExecuteMonitorMetadata(before, after, { navigationWarning: PROGRAM_NAV_WARNING });
-					}
-					let actionRef: string | undefined;
-					const lastPhysical = [...frames].reverse().find((f) => { const k = String(f.kind ?? ""); return k.startsWith("mouse:") || k.startsWith("key:") || k === "text"; });
-					if (lastPhysical) for (const element of program) if (isRecord(element) && typeof element.ref === "string" && element.ref.startsWith("bp-ref://")) actionRef = element.ref;
-					const execution = buildExecutionJournal({
-						operationId: operation.operationId,
-						dispatch: { kind: "program", command: "program" },
-						effect,
-						monitor,
-						stdlib: { used: frames.some((f) => f.kind === "eval") },
-					});
-					const frameCount = frames.length;
-					const warning = frameCount > PROGRAM_WARNING_THRESHOLD ? `program contains ${frameCount} frames — consider splitting into multiple observe+program cycles` : undefined;
-					const resultValue = { executed: frames, result: programResult.result, aborted: programResult.aborted ?? null, ...(effect ? { effect } : {}), ...(monitor ? { monitor } : {}), execution, actionRef: actionRef ?? null };
-					if (typeof server.buildTemporalProfileSample === "function" && typeof server.recordTemporalProfileSample === "function") {
-						void server.recordTemporalProfileSample(server.buildTemporalProfileSample({
-							operationId: operation.operationId,
-							tool: "browser_execute",
-							command: "program",
-							target: { browserSessionId, tabId, targetRef: typeof rawTargetRef === "string" ? rawTargetRef : undefined },
-							deadlineMs: timeoutMs,
-							elapsedMs: Math.max(0, operation.updatedAt - operation.startedAt),
-							diagnostics: { aborted: !!programResult.aborted, frameCount: frames.length },
-						}), { cwd: ctx?.cwd });
-					}
-					const needsArtifact = frames.some((f) => { if (f.result === undefined) return false; try { return JSON.stringify(f.result).length > 1_000; } catch { return false; } });
-					return await jsonCommandResult(resultValue, params, ctx, {
-						commandName: "browser_execute",
-						command: "program",
-						defaultDetailLevel: "preview",
-						maxChars,
-						fallbackName: artifactFallbackName("execute"),
-						artifactThreshold: needsArtifact ? 1 : undefined,
-						details: { mode: "program", frameCount, aborted: !!programResult.aborted, monitor: monitorRequested, ...(warning ? { warning } : {}) },
-						operation,
-						activeContext: buildActiveContext(server, params),
-						artifactValue: { ...resultValue, operation },
-						distill: (value) => {
-							const record = isRecord(value) ? value : {};
-							const generic = summarizeGenericValue(record.result);
-							const aborted = isRecord(record.aborted) ? record.aborted : undefined;
-							const executedFrames = Array.isArray(record.executed) ? record.executed : [];
-							const okFrames = executedFrames.filter((f: unknown) => isRecord(f) && f.ok === true).length;
-							const failedFrames = executedFrames.filter((f: unknown) => isRecord(f) && f.ok === false).length;
-							const eff = isRecord(record.effect) ? compactExecutionEffect(record.effect as ExecuteEffect) : undefined;
-							const effHints = nextActionsForExecutionEffect(record.effect as ExecuteEffect | undefined);
-							const base = {
-								...generic,
-								operationId: operation.operationId,
-								sourceMode: operation.sourceMode,
-								mode: "program",
-								frameCount: executedFrames.length,
-								framesOk: okFrames,
-								framesFailed: failedFrames,
-								...(eff ? { effect: eff } : {}),
-								...(aborted ? { aborted: true, abortReason: aborted.reason, abortStep: aborted.atStep, ...(aborted.newUrl ? { newUrl: aborted.newUrl } : {}) } : {}),
-								...(record.actionRef ? { actionRef: record.actionRef } : {}),
-								...(warning ? { warning } : {}),
-							} as Record<string, unknown>;
-							const mon = isRecord(record.monitor) ? record.monitor : undefined;
-							const artifactReads: Array<{ label: string; jsonPath: string; kind?: string; count?: number }> = [];
-							if (executedFrames.length) artifactReads.push({ label: "program frames", jsonPath: "executed", kind: "program-frames", count: executedFrames.length });
-							if (record.result !== undefined) artifactReads.push({ label: "program final result", jsonPath: "result", kind: "execute-result" });
-							if (mon) artifactReads.push({ label: "program monitor", jsonPath: "monitor", kind: "execute-monitor" });
-							if (artifactReads.length) base.artifact_hints = { jsonPaths: Object.fromEntries(artifactReads.map((read) => [read.label, read.jsonPath])), preferredReads: artifactReads };
-							if (effHints) base.nextActions = [...(Array.isArray(base.nextActions) ? base.nextActions : []), ...effHints];
-							if (mon) base.monitorSource = { before: mon.beforeSource, after: mon.afterSource, changed: mon.changed, top_change: mon.top_change, ...(mon.navigated === true ? { navigated: true, urlBefore: mon.urlBefore, urlAfter: mon.urlAfter } : {}) };
-							return base;
-						},
-					});
-				}
-				if (!script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script or program", { commandName: "browser_execute" });
-				if (detectCommandLikeScript(script)) {
-					throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { commandName: "browser_execute", recovery: { useTool: "browser_command" } });
-				}
-				const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
-				const maxChars = commandMaxChars(params, "browser_execute");
-				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-				const rawTargetRef = targetTabId(params);
-				const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
-				const preparedScript = prepareExecuteStdlib(script);
-				const { result: jsResult, operation } = await withTrackedOperation(server, {
-					commandName: "browser_execute",
-					command: "javascript",
-					browserSessionId,
-					tabId,
-					phase: "running",
-					progress: 5,
-					queueDepth: server.queueDepth(browserSessionId, tabId),
-					leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
-				}, _onUpdate, async (handle) => {
-					await handle.update({ progress: params.monitor === true ? 15 : 35 });
-					const result = params.monitor === true
-						? await executeJavaScriptWithMonitor(server, preparedScript.script, { browserSessionId, tabId: rawTargetRef, timeoutMs, targetRefs: preparedScript.stdlib?.targetRefs })
-						: await (async () => {
-							const executed = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs, targetRefs: preparedScript.stdlib?.targetRefs }, () => server.executeJavaScript(preparedScript.script, { browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs }));
-							return { ...executed.result, effect: executed.effect };
-						})();
-					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
-					return result;
-				});
-				const jsFeedback = jsResult as ExecuteResultWithFeedback;
-				const executeDiagnostics = isRecord(jsFeedback.diagnostics) ? jsFeedback.diagnostics : undefined;
-				const execution = buildExecutionJournal({
-					operationId: operation.operationId,
-					target: jsFeedback.target,
-					dispatch: { kind: "javascript", command: "javascript" },
-					effect: jsFeedback.effect,
-					monitor: jsFeedback.monitor,
-					stdlib: preparedScript.stdlib ? { used: true, refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : undefined,
-				});
-				const resultValue = { ...jsResult, execution, ...(preparedScript.stdlib ? { browserPilotRuntime: "1" } : {}) };
-				if (typeof server.buildTemporalProfileSample === "function" && typeof server.recordTemporalProfileSample === "function") {
-					void server.recordTemporalProfileSample(server.buildTemporalProfileSample({
-						operationId: operation.operationId,
-						tool: "browser_execute",
-						command: "javascript",
-						target: { browserSessionId, tabId, targetRef: typeof rawTargetRef === "string" ? rawTargetRef : undefined },
-						deadlineMs: timeoutMs,
-						elapsedMs: Math.max(0, operation.updatedAt - operation.startedAt),
-						result: jsResult,
-						diagnostics: executeDiagnostics,
-					}), { cwd: ctx?.cwd });
-				}
-				const needsResultArtifact = executeResultNeedsArtifact(resultValue);
-				return await jsonCommandResult(resultValue, params, ctx, {
-					commandName: "browser_execute",
-					command: "javascript",
-					defaultDetailLevel: "preview",
-					maxChars,
-					fallbackName: artifactFallbackName("execute"),
-					artifactThreshold: needsResultArtifact ? 1 : undefined,
-					details: { mode: "javascript", monitor: params.monitor === true, ...(executeDiagnostics ? { diagnostics: executeDiagnostics } : {}), ...(preparedScript.stdlib ? { browserPilotRuntime: "1" } : {}) },
-					operation,
-					activeContext: buildActiveContext(server, params),
-					diagnostics: executeDiagnostics,
-					artifactValue: { ...resultValue, operation },
-					distill: (value) => {
-						const generic = summarizeGenericValue(value);
-						// Mark when the script's return value is fully inline in summary.data so
-						// artifactReadActions can suppress the misleading correlation-ID nextActions hints
-						// while large values still collapse to shape placeholders.
-						const data = generic.data;
-						const dataInline = executeSummaryDataInline(data);
-						const hints = dataInline ? undefined : executeArtifactHints(isRecord(value) ? value.data : undefined);
-						const effect = isRecord(value) ? compactExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
-						const effectHints = isRecord(value) ? nextActionsForExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
-						const url = executeSummaryPageUrl(value);
-						const base = { ...generic, operationId: operation.operationId, sourceMode: operation.sourceMode, ...(url ? { url } : {}), ...(effect ? { effect } : {}), ...(preparedScript.stdlib ? { browserPilotRuntime: "1", refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : {}), ...(dataInline ? { dataInline: true } : {}), ...(hints ? { artifact_hints: hints } : {}) } as Record<string, unknown>;
-						if (effectHints) base.nextActions = [...(Array.isArray(base.nextActions) ? base.nextActions : []), ...effectHints];
-						const monitor = isRecord(value) && isRecord(value.monitor) ? value.monitor : undefined;
-						if (monitor) {
-							base.monitorSource = {
-								before: monitor.beforeSource,
-								after: monitor.afterSource,
-								changed: monitor.changed,
-								top_change: monitor.top_change,
-								...(monitor.navigated === true ? { navigated: true, urlBefore: monitor.urlBefore, urlAfter: monitor.urlAfter, note: "page navigated — the before/after DOM diff does not span navigation; use browser_wait + a baseline observe (treeDiff) for post-navigation change" } : {}),
-								...(monitor.afterUnreliable === true ? { afterUnreliable: true } : {}),
-								abmlIntegrated: monitor.beforeSource === "abml-read" || monitor.afterSource === "abml-read",
-							};
-						}
-						return base;
-					},
-				});
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
+			return await runBrowserCommand<ExecuteParams, PreparedExecuteParams, ExecuteRunResult>({
+				ensureStarted,
+				commandName: "browser_execute",
+				budgetName: "browser_execute",
+				params: params as ExecuteParams,
+				ctx,
+				onUpdate,
+				defaultTimeoutMs: DEFAULT_TOOL_TIMEOUT_MS,
+				prepare: ({ params: current }) => prepareExecuteParams(current),
+				operation: { command: (_current, prepared) => prepared.executeMode, tabId: (current) => targetTabId(current), initialProgress: 5 },
+				run: (args) => args.prepared.executeMode === "program" ? runProgramExecution(args, signal) : runJavaScriptExecution(args),
+				finalize: (args) => args.result.executeMode === "program"
+					? finalizeProgramExecution(args, args.result, args.operation!)
+					: finalizeJavaScriptExecution(args, args.result, args.operation!),
 			});
 		},
 	});

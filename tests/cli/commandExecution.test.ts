@@ -317,6 +317,41 @@ test("commands execution: browser_execute summarizes successful JavaScript resul
 	assert.equal((envelope.activeContext as Record<string, unknown>).targetRef, "tab-7");
 });
 
+test("commands execution: browser_execute program path preserves operation and frame summaries", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const result = await command.execute("tool-program", { program: [{ eval: "return 7" }], targetRef: "tab-7", maxChars: 20_000 });
+	const envelope = parseResult(result);
+	const summary = envelope.summary as Record<string, unknown>;
+	const begin = runtime.calls.find((call) => call.name === "beginOperation")?.args[0] as Record<string, unknown>;
+	assert.equal(begin.command, "program");
+	assert.equal(begin.tabId, 7);
+	assert.equal(result.details?.mode, "program");
+	assert.equal(summary.mode, "program");
+	assert.equal(summary.frameCount, 1);
+	assert.equal(summary.framesOk, 1);
+	assert.equal(summary.framesFailed, 0);
+	assert.equal((envelope.operation as Record<string, unknown>).operationId, "op-1");
+	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), true);
+});
+
+test("commands execution: browser_execute rejects invalid program inputs before operation tracking", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const cases: Array<[Record<string, unknown>, RegExp]> = [
+		[{}, /requires script or program/],
+		[{ script: "return 1", program: [{ eval: "return 2" }] }, /either script or program/],
+		[{ program: Array.from({ length: 61 }, () => ({ wait: 1 })) }, /exceeds 60 frame limit/],
+		[{ program: [{ eval: "return 1", wait: 1 }] }, /exactly one required/],
+	];
+	for (const [params, message] of cases) {
+		const body = parseResult(await command.execute("tool-invalid-program", params));
+		assert.equal(body.code, "INVALID_RULE");
+		assert.match(String(body.message), message);
+	}
+	assert.equal(runtime.calls.some((call) => call.name === "beginOperation"), false);
+});
+
 test("commands execution: browser_execute rejects command-shaped scripts with recovery metadata", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
