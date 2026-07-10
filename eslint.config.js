@@ -182,6 +182,7 @@ export default tseslint.config(
 			"src/commands/observe/scanRunner.ts",
 			"src/commands/observe/readabilityRunner.ts",
 			"src/commands/summaries/network.ts",
+			"src/commands/summaries/webSecurity/oast.ts",
 			"src/commands/observe/scanSession.ts",
 			"src/commands/observe/scanCache.ts",
 			"src/commands/observe/scanCapture.ts",

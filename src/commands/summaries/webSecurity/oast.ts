@@ -1,8 +1,15 @@
 import { asArray, increment, isRecord, summaryTable, topCounts, type Summary } from "./shared.js";
 
+const OAST_METADATA_FIELDS = [
+	"ok", "action", "sessionId", "listenHost", "port", "httpsPort", "dnsPort", "correlationId",
+	"callbackUrl", "httpsCallbackUrl", "dnsCallbackHost", "publicCallbackUrl", "publicHttpsCallbackUrl", "publicDnsCallbackHost",
+	"listenerActive", "recovered", "stopReason", "maxRuntimeMs", "enabledProtocols", "nextSeq",
+] as const;
+
 export function summarizeCallbackOastData(value: unknown): Summary {
-	const events = isRecord(value) ? asArray(value.events).filter(isRecord) : [];
-	const sessions = isRecord(value) ? asArray(value.sessions).filter(isRecord) : [];
+	const data = isRecord(value) ? value : {};
+	const events = asArray(data.events).filter(isRecord);
+	const sessions = asArray(data.sessions).filter(isRecord);
 	const methodCounts: Record<string, number> = {};
 	const pathCounts: Record<string, number> = {};
 	const protocolCounts: Record<string, number> = {};
@@ -12,27 +19,8 @@ export function summarizeCallbackOastData(value: unknown): Summary {
 		increment(protocolCounts, event.protocol ?? "http");
 	}
 	return {
-		ok: isRecord(value) ? value.ok : undefined,
-		action: isRecord(value) ? value.action : undefined,
-		sessionId: isRecord(value) ? value.sessionId : undefined,
-		listenHost: isRecord(value) ? value.listenHost : undefined,
-		port: isRecord(value) ? value.port : undefined,
-		httpsPort: isRecord(value) ? value.httpsPort : undefined,
-		dnsPort: isRecord(value) ? value.dnsPort : undefined,
-		correlationId: isRecord(value) ? value.correlationId : undefined,
-		callbackUrl: isRecord(value) ? value.callbackUrl : undefined,
-		httpsCallbackUrl: isRecord(value) ? value.httpsCallbackUrl : undefined,
-		dnsCallbackHost: isRecord(value) ? value.dnsCallbackHost : undefined,
-		publicCallbackUrl: isRecord(value) ? value.publicCallbackUrl : undefined,
-		publicHttpsCallbackUrl: isRecord(value) ? value.publicHttpsCallbackUrl : undefined,
-		publicDnsCallbackHost: isRecord(value) ? value.publicDnsCallbackHost : undefined,
-		listenerActive: isRecord(value) ? value.listenerActive : undefined,
-		recovered: isRecord(value) ? value.recovered : undefined,
-		stopReason: isRecord(value) ? value.stopReason : undefined,
-		maxRuntimeMs: isRecord(value) ? value.maxRuntimeMs : undefined,
-		enabledProtocols: isRecord(value) ? value.enabledProtocols : undefined,
-		eventCount: events.length || (isRecord(value) ? value.eventCount : undefined),
-		nextSeq: isRecord(value) ? value.nextSeq : undefined,
+		...Object.fromEntries(OAST_METADATA_FIELDS.map((key) => [key, data[key]])),
+		eventCount: events.length || data.eventCount,
 		sessions: summaryTable(sessions, [
 			{ key: "sessionId", value: (item) => item.sessionId },
 			{ key: "callbackUrl", value: (item) => item.callbackUrl },
@@ -55,8 +43,8 @@ export function summarizeCallbackOastData(value: unknown): Summary {
 			{ key: "remote", value: (event) => event.remoteAddress },
 		], 30),
 		nextActions: [
-			...(isRecord(value) && value.action === "start" && typeof value.sessionId === "string" && value.sessionId
-				? [`thread sessionId="${value.sessionId}" (the oast-* id, NOT correlationId) into status/collect/trigger/stop for this listener`]
+			...(data.action === "start" && typeof data.sessionId === "string" && data.sessionId
+				? [`thread sessionId="${data.sessionId}" (the oast-* id, NOT correlationId) into status/collect/trigger/stop for this listener`]
 				: []),
 			"inject the generated callback URL or host through browser_http_replay or browser_execute, then collect bounded callback evidence",
 			"read callback artifacts or rerun collect with afterSeq when event details need manual confirmation",
