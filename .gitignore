@@ -3,6 +3,7 @@
 .browser-pilot/
 .agent-workbench/
 node_modules/
+/.worktrees/
 
 # Local environment and secrets
 .env
