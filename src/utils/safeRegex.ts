@@ -12,7 +12,3 @@ export function unsafeRegexReason(pattern: unknown, maxPatternChars = SAFE_REGEX
 	if ((text.match(/\.\*/g) || []).length > 6) return "too_many_wildcards";
 	return undefined;
 }
-
-export function isSafeRegexPattern(pattern: unknown, maxPatternChars = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS): boolean {
-	return unsafeRegexReason(pattern, maxPatternChars) === undefined;
-}

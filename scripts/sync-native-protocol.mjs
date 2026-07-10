@@ -259,12 +259,6 @@ export function validateBridgeCommand(command: unknown, options: { allowMissingT
 	if (spec.tabScoped && !options.allowMissingTabId && toTabId(checked.tabId) === undefined) return { ok: false, error: \`\${cmd} requires tabId\`, details: { cmd, tabId: checked.tabId } };
 	return { ok: true, command: checked, spec, canonicalCmd };
 }
-
-export function nativeBridgeCommandNames(currentSchema = getNativeCommandProtocolSchema()): string[] {
-	return Object.entries(currentSchema.domains)
-		.filter(([domain]) => domain !== "core")
-		.flatMap(([, names]) => names);
-}
 `;
 }
 
@@ -305,8 +299,6 @@ function generateNativeActionMetadataTs() {
 	return `${generatedHeader()}export const nativeToolMetadata = ${metadataText} as const;
 
 export type NativeActionToolName = keyof typeof nativeToolMetadata.nativeActionTools;
-export type NativeCommandToolName = keyof typeof nativeToolMetadata.nativeCommandTools;
-export type NativeTransferToolName = keyof typeof nativeToolMetadata.transferTools;
 
 export function normalizeNativeToolAction(action: string): string {
 	return action.trim().toLowerCase().replace(/[_.-]/g, "");
@@ -321,14 +313,6 @@ export function commandForNativeToolAction(commandName: NativeActionToolName, ac
 
 export const nativeCommandToolMetadata = nativeToolMetadata.nativeCommandTools;
 export const nativeTransferToolMetadata = nativeToolMetadata.transferTools;
-
-export function metadataForNativeCommandTool(commandName: NativeCommandToolName) {
-	return nativeCommandToolMetadata[commandName];
-}
-
-export function metadataForNativeTransferTool(commandName: NativeTransferToolName) {
-	return nativeTransferToolMetadata[commandName];
-}
 `;
 }
 

@@ -570,8 +570,6 @@ export const nativeToolMetadata = {
 } as const;
 
 export type NativeActionToolName = keyof typeof nativeToolMetadata.nativeActionTools;
-export type NativeCommandToolName = keyof typeof nativeToolMetadata.nativeCommandTools;
-export type NativeTransferToolName = keyof typeof nativeToolMetadata.transferTools;
 
 export function normalizeNativeToolAction(action: string): string {
 	return action.trim().toLowerCase().replace(/[_.-]/g, "");
@@ -586,11 +584,3 @@ export function commandForNativeToolAction(commandName: NativeActionToolName, ac
 
 export const nativeCommandToolMetadata = nativeToolMetadata.nativeCommandTools;
 export const nativeTransferToolMetadata = nativeToolMetadata.transferTools;
-
-export function metadataForNativeCommandTool(commandName: NativeCommandToolName) {
-	return nativeCommandToolMetadata[commandName];
-}
-
-export function metadataForNativeTransferTool(commandName: NativeTransferToolName) {
-	return nativeTransferToolMetadata[commandName];
-}

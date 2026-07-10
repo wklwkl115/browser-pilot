@@ -18,19 +18,6 @@ export interface ConsentRequestEnvelope {
   expiresAt: string; // ISO timestamp
 }
 
-export interface ConsentResponseEnvelope {
-  type: "consent-response";
-  pairingId: string;
-  decision: "approve" | "deny";
-}
-
-export interface RevokeRequestEnvelope {
-  type: "revoke-request";
-  pairingId: string;
-}
-
-export type ConsentInboundEnvelope = ConsentResponseEnvelope | RevokeRequestEnvelope;
-
 export interface PairedAgentSummary {
   pairingId: string;
   label: string;

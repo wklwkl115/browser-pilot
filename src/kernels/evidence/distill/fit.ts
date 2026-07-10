@@ -56,7 +56,3 @@ export function fitInlineJsonToBudgetMeasured(result: unknown, maxChars: number)
 	}
 	return { value: result, length: initialLength };
 }
-
-export function fitInlineJsonToBudget(result: unknown, maxChars: number): unknown {
-	return fitInlineJsonToBudgetMeasured(result, maxChars).value;
-}

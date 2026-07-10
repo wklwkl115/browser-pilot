@@ -1,5 +1,4 @@
 const DEFAULT_MAX_CHARS = 50_000;
-let stableJsonInvocationCount = 0;
 
 export function tryJson(text: string): unknown | undefined {
 	try {
@@ -31,17 +30,8 @@ function stableJsonWithReplacer(value: unknown, spaces = 2): string {
 }
 
 export function stableJson(value: unknown, spaces = 2): string {
-	stableJsonInvocationCount += 1;
 	if (value === null || (typeof value !== "object" && typeof value !== "bigint")) return JSON.stringify(value, undefined, spaces) as string;
 	return stableJsonWithReplacer(value, spaces);
-}
-
-export function stableJsonInvocationCounter(): number {
-	return stableJsonInvocationCount;
-}
-
-export function resetStableJsonInvocationCounter(): void {
-	stableJsonInvocationCount = 0;
 }
 
 export function truncateText(text: string, maxChars = DEFAULT_MAX_CHARS): { text: string; truncated: boolean; originalLength: number } {

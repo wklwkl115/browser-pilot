@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { summarizeBrowserCrawlData, summarizeWebReconProbeData } from "../../summaries/index.js";
-import { runBrowserCrawl, runReconProbe } from "../../webSecurityCore.js";
+import { runBrowserCrawl } from "../browserNative/crawl.js";
+import { runReconProbe } from "../browserNative/recon.js";
 import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxDepthParam, maxPagesParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateCrawlParams, headerRecordParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";

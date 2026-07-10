@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { summarizeNucleiBridgeData, summarizeTemplateCheckData } from "../../summaries/index.js";
-import { runNucleiBridge, runTemplateCheck } from "../../webSecurityCore.js";
+import { runNucleiBridge } from "../bridges/nucleiBridge.js";
+import { runTemplateCheck } from "../browserNative/templateCheck.js";
 import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxTemplatesParam, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateTemplateParams, headerRecordParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";

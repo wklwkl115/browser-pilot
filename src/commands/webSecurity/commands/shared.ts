@@ -4,7 +4,7 @@ import { isRecord } from "../../../utils/records.js";
 import { runWebSecurityCommand as runWebSecurityCommandAdapter, sharedTabScopedToolParams, targetTabId, type CommandOnUpdate } from "../../commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, enumOrEnumArrayParam, enumParam } from "../../commandShared.js";
 import type { EnsureStarted } from "../../commandShared.js";
-import { browserCookiesToProviderResult } from "../../webSecurityCore.js";
+import { browserCookiesToProviderResult } from "../shared/http.js";
 import type { CookieProvider, RawCallbackOastOptions, RawCookieAnalyzeOptions, RawCrawlOptions, RawFuzzParamsOptions, RawFuzzPathsOptions, RawFuzzVhostsOptions, RawNucleiBridgeOptions, RawProbeOptions, RawReplayOptions, RawSqliProbeOptions, RawSqlmapBridgeOptions, RawTemplateCheckOptions } from "../shared/types.js";
 import type { ToolResultBudgetName } from "../../budgets.js";
 import { webSecurityToolError } from "../shared/diagnostics.js";

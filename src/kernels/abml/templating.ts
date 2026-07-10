@@ -104,7 +104,7 @@ export function templateRank(template: Pick<StructureTemplate, "role" | "kind">)
 
 // Fold repeated sibling entities (same AX container or aria-setsize set + same role/kind, ≥
 // MIN_TEMPLATE_INSTANCES) into structure templates. This is currently contract-test surface for
-// the M1 folding engine; observeRunners intentionally does not emit focus.templates by default.
+// the M1 folding engine; the default observe projection intentionally omits focus.templates.
 // Sorted by instance count desc, capped at MAX_TEMPLATES. Empty when nothing repeats.
 export function buildTemplateSummary(entities: Entity[]): TemplateSummary {
 	const rawGroups = groupEntities(entities);

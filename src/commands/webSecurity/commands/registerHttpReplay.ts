@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { summarizeHttpReplayData } from "../../summaries/index.js";
-import { runHttpReplay } from "../../webSecurityCore.js";
+import { runHttpReplay } from "../browserNative/httpReplay.js";
 import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateHttpReplayParams, headerRecordParam, type HttpReplayToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";

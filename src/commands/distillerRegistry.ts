@@ -30,17 +30,12 @@ type CommandDistillerRule = {
 	distiller: Distiller;
 };
 
-const distillerRegistry = new Map<string, Distiller>();
 const commandDistillerRules: CommandDistillerRule[] = [];
 const definitionRegistry = new Map<string, DistillerDefinition>();
 let builtinRegistrationState: "uninitialized" | "registering" | "registered" = "uninitialized";
 
 export function unwrapDistillData(value: unknown): unknown {
 	return isRecord(value) && value.data !== undefined ? value.data : value;
-}
-
-export function registerDistiller(commandName: string, distiller: Distiller): void {
-	distillerRegistry.set(commandName, distiller);
 }
 
 export function registerCommandDistiller(label: string, match: (command: string) => boolean, distiller: Distiller): void {
@@ -50,22 +45,10 @@ export function registerCommandDistiller(label: string, match: (command: string)
 	else commandDistillerRules.push(rule);
 }
 
-/**
- * Register a DistillerDefinition — a distiller paired with an explicit
- * summarySchema. Also registers the underlying distill function via the
- * legacy registry path so existing callers continue to work unchanged.
- */
 export function registerDistillerDefinition(def: DistillerDefinition): void {
 	definitionRegistry.set(def.commandName, def);
-	// Keep legacy registry in sync so distillValue() continues to work.
-	distillerRegistry.set(def.commandName, def.distill);
 }
 
-/**
- * Retrieve the DistillerDefinition for a tool, if one was registered with
- * registerDistillerDefinition. Returns undefined for tools that only have a
- * legacy Distiller registered.
- */
 export function getDistillerDefinition(commandName: string): DistillerDefinition | undefined {
 	ensureBuiltinDistillersReady();
 	return definitionRegistry.get(commandName);
@@ -84,7 +67,7 @@ export function ensureBuiltinDistillersReady(): void {
 }
 
 function resolveDistiller(commandName: string, command?: string): Distiller | undefined {
-	const byTool = distillerRegistry.get(commandName);
+	const byTool = definitionRegistry.get(commandName)?.distill;
 	if (byTool) return byTool;
 	const cmd = String(command || "");
 	for (const rule of commandDistillerRules) {

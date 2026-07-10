@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { summarizeCookieAnalyzeData } from "../../summaries/index.js";
-import { runCookieAnalyze } from "../../webSecurityCore.js";
+import { runCookieAnalyze } from "../browserNative/cookieAnalyze.js";
 import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, type CookieAnalyzeToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";

@@ -2,6 +2,7 @@
 .pi/
 .browser-pilot/
 .agent-workbench/
+.trae/
 node_modules/
 
 # Local environment and secrets

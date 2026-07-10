@@ -34,7 +34,6 @@ export interface AuthStore {
 export const TENANT_LEASE_TTL_MS = 120_000;
 export const PAIR_PENDING_TTL_MS = 120_000;
 export const PAIR_WAIT_DEFAULT_MS = 120_000;
-export const PAIR_WAIT_MAX_MS = 300_000;
 
 // ---- Headers / environment variables ----
 export const PAIRING_TOKEN_HEADER = "x-browser-pilot-pairing-token";
@@ -56,14 +55,8 @@ export const AUTH_ERROR_CODES = {
 // CLI-side error code surfaced by invokeTool when a command call hits a held lease (HTTP 409).
 export const CLI_LEASE_BUSY = "CLI_LEASE_BUSY";
 
-// ---- HTTP request/response shapes ----
-export interface PairStartRequest { label: string; }
-export interface PairStartResponse { ok: true; pairingId: string; code: string; }
-export interface PairWaitRequest { pairingId: string; timeoutMs?: number; }
-export interface PairWaitResponse { ok: true; token: string; }
-
+// ---- HTTP response shapes shared with the CLI ----
 export type LeaseAction = "acquire" | "release" | "status";
-export interface LeaseRequest { action: LeaseAction; ttlMs?: number; }
 export interface LeaseInfo {
   leaseId: string;
   pairingId: string;
@@ -79,7 +72,6 @@ export interface LeaseBusyResponse {
   heldBy: { pairingId: string; label: string; since: string; expiresAt: string };
 }
 
-export interface RevokeRequestBody { pairingId: string; }
 export interface RevokeResponse { ok: true; revoked: string; }
 
 export interface PairingSummary {

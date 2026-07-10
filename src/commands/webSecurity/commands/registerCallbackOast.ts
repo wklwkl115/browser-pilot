@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { summarizeCallbackOastData } from "../../summaries/index.js";
-import { runCallbackOast } from "../../webSecurityCore.js";
+import { runCallbackOast } from "../browserNative/callbackOast.js";
 import { executeWebSecurityToolShell, sharedWebSecurityResultParams, normalizeWebSecurityToolParams, validateOastParams, headerRecordParam, type CallbackOastToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";

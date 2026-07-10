@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { summarizeSqlmapBridgeData, summarizeSqliProbeData } from "../../summaries/index.js";
-import { runSqlmapBridge, runSqliProbe } from "../../webSecurityCore.js";
+import { runSqlmapBridge } from "../bridges/sqlmapBridge.js";
+import { runSqliProbe } from "../browserNative/sqliProbe.js";
 import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxCasesParam, rawRequestParams, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateSqliParams, sqliProbeTypesParam, fuzzLocationParam, enumParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";

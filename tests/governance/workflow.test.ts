@@ -17,8 +17,6 @@ const changelogPath = path.join(root, "CHANGELOG.md");
 const packageLockPath = path.join(root, "package-lock.json");
 const commandCatalogPath = path.join(root, "src/commands/commandCatalog.ts");
 const nativeCommandSchemaPath = path.join(root, "src/bridge/protocol/native-command.schema.json");
-const generatedBridgeRoot = path.join(root, "bridge", "browser_pilot_bridge");
-const generatedDistRoot = path.join(root, "dist");
 const kernelRoot = path.join(root, "src", "kernels");
 const sessionKernelRoot = path.join(kernelRoot, "session");
 
@@ -302,16 +300,6 @@ test("P6 design reference oracle does not expand command or protocol surfaces", 
 	for (const source of [catalog, nativeCommandSchema]) {
 		assert.doesNotMatch(source, /getByRole|locator|aria snapshot|testing-library|browser-use|stagehand/i);
 	}
-});
-
-test("P6 design reference oracle does not target generated outputs", () => {
-	const files = scanTextFiles(path.join(root, ".trae", "specs", "pilot-observe-design-reference-oracle"));
-	const generatedPaths = [generatedBridgeRoot, generatedDistRoot].map((filePath) => path.relative(root, filePath).replace(/\\/g, "/"));
-	const offenders = files.flatMap((filePath) => {
-		const relative = path.relative(root, filePath);
-		return text(filePath).split(/\r?\n/).flatMap((line, index) => generatedPaths.some((generatedPath) => line.replace(/\\/g, "/").includes(generatedPath)) ? [`${relative}:${index + 1}: ${line.trim()}`] : []);
-	});
-	assert.deepEqual(offenders, []);
 });
 
 test("only session kernel may import node crypto", () => {

@@ -1,6 +1,9 @@
 import { Type } from "typebox";
 import { BrowserBridgeError } from "../utils/errors.js";
-import { runContentObservation, runHtmlObservation, runScanObservation, observeErrorResult, type ObserveMode, type ObserveToolParams } from "./observeRunners.js";
+import { runContentObservation } from "./observe/contentRunner.js";
+import { runHtmlObservation } from "./observe/htmlRunner.js";
+import { observeErrorResult, runScanObservation } from "./observe/scanRunner.js";
+import type { ObserveMode, ObserveToolParams } from "./observe/common.js";
 import { defineBrowserCommand, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { NativeCommandParamsSchema, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";

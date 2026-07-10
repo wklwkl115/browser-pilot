@@ -1897,9 +1897,3 @@ export function validateBridgeCommand(command: unknown, options: { allowMissingT
 	if (spec.tabScoped && !options.allowMissingTabId && toTabId(checked.tabId) === undefined) return { ok: false, error: `${cmd} requires tabId`, details: { cmd, tabId: checked.tabId } };
 	return { ok: true, command: checked, spec, canonicalCmd };
 }
-
-export function nativeBridgeCommandNames(currentSchema = getNativeCommandProtocolSchema()): string[] {
-	return Object.entries(currentSchema.domains)
-		.filter(([domain]) => domain !== "core")
-		.flatMap(([, names]) => names);
-}

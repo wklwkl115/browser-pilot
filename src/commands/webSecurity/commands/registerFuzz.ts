@@ -1,6 +1,8 @@
 import { Type } from "typebox";
 import { summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData } from "../../summaries/index.js";
-import { runFuzzParams, runFuzzPaths, runFuzzVhosts } from "../../webSecurityCore.js";
+import { runFuzzParams } from "../browserNative/fuzzParams.js";
+import { runFuzzPaths } from "../browserNative/fuzzPaths.js";
+import { runFuzzVhosts } from "../browserNative/fuzzVhosts.js";
 import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCandidatesParam, maxCasesParam, maxDepthParam, rateLimitPerSecondParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateFuzzParams, headerRecordParam, stringNumberOrListParam, fuzzLocationParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";

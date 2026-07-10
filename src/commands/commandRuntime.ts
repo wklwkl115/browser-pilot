@@ -17,7 +17,6 @@ import type { CommandFactGranularity } from "./resultTypes.js";
 
 // Mandatory-read pair with resultMiddleware.ts: this file normalizes params/operation/errors,
 // while resultMiddleware.ts shapes the returned envelope, budgets, redaction, and artifacts.
-export { fitInlineJsonToBudget } from "../kernels/evidence/distill/fit.js";
 
 /** Hard ceiling for any command timeout to prevent unbounded hangs. */
 const MAX_COMMAND_TIMEOUT_MS = 300_000;

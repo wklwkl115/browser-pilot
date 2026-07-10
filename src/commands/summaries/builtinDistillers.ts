@@ -55,7 +55,6 @@ export function ensureBuiltinDistillers(): void {
 	builtinDistillersRegistered = true;
 
 	// Register with summarySchema for structured-result conformance.
-	// Legacy registerDistiller path is kept in sync inside registerDistillerDefinition.
 	registerDistillerDefinition({
 		commandName: "browser_evidence",
 		summarySchema: EvidenceSummarySchema,
