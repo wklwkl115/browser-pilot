@@ -8,10 +8,8 @@ function compactResource(value: unknown): unknown {
 }
 
 /**
- * Distiller for `browser_hook getPerformanceEntries`. Without it the result fell through to the generic
- * summarizer, which collapsed the resource-timing array to `{type:object,keyCount}` stubs (blind-eval
- * B8). This surfaces initiatorType counts + a compact resource/ms sample inline, and a data-rooted
- * artifact hint for the full set.
+ * Distills `browser_hook getPerformanceEntries` into initiatorType counts, compact resource/time
+ * samples, and a data-rooted artifact hint for the full set.
  */
 export function summarizeHookPerformance(data: unknown): Summary {
 	if (!isRecord(data)) return { type: typeof data };
@@ -41,11 +39,8 @@ function eventDetail(event: Record<string, unknown>): unknown {
 }
 
 /**
- * Distiller for `browser_hook collect`. Without it the collect result fell through to the generic
- * summarizer, which collapsed the events array to `{type:object,keyCount}` stubs (unreadable even at
- * detailLevel:full) and emitted no `data.events` artifact hint — so the captured events, the headline
- * result, were absent from the headline (blind-eval H3). This surfaces event-type counts + a compact
- * per-event sample inline, and points the agent at the full events via a data-rooted artifact hint.
+ * Distills `browser_hook collect` into event-type counts, compact event samples, and a data-rooted
+ * artifact hint for the full event list.
  */
 export function summarizeHookCollectData(data: unknown): Summary {
 	if (!isRecord(data)) return { type: typeof data };

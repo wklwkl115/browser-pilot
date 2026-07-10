@@ -302,13 +302,13 @@ function accessForLiveVerb(descriptor: RefDescriptor, target: { browserSessionId
 	return { ok: true };
 }
 
-// ── R3.x P2-C — causal stream plane (cursor-based drain channel) ──────────────────────────────────
-// Activates the previously-stubbed read(plane:"network"|"event") + the stream.ts capture-ref scaffold.
+// Causal stream plane (cursor-based drain channel).
+// Implements read(plane:"network"|"event") with the stream.ts capture-ref scaffold.
 // A long-lived "signal" capture-ref carries the drain cursor (streamState.lastSeq): the model arms once
 // (no ref → cursor pinned at the recorder's current high-water, no history replay), then re-reads with the
 // returned ref to drain only what fired since its cursor — without a full DOM scan. No new public tool, no
 // protocol change: pure internal substrate reached via the ABML runtime. URLs/payloads are
-// redacted by reusing the P0/P2-A buildCausal* selectors (a raw stream-entity url never leaves redaction).
+// redacted by reusing the buildCausal* selectors (a raw stream-entity URL never leaves redaction).
 
 type StreamPlane = "network" | "event";
 const STREAM_CAPTURE_TTL_MS = 60 * 60 * 1000;

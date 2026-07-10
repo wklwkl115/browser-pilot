@@ -589,8 +589,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 	});
 	const focus: Record<string, unknown> = {
 		entityShape: "refs-v1",
-		// Cloned so it is not the same reference as summary.top_layer (shared refs render as "[Circular]"
-		// after redaction — blind-eval F2). null/undefined clone through unchanged.
+		// Clone to avoid shared references rendering as "[Circular]" after redaction.
 		top_layer: structuredClone(item.top_layer),
 		primary_actions: primaryActionsWithEntityRefs,
 		...(actionablesTruncated ? { actionablesTruncation: actionablesTruncationMeta } : {}),
@@ -661,7 +660,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 				{ key: "selector", value: (node: Record<string, unknown>) => node.selector },
 			], limits.mediaRows),
 		} : {}),
-		// D1: DOM-ordered, capped, viewport-visible text/link rows (settles B1 blind-eval finding).
+		// DOM-ordered, capped, viewport-visible text/link rows.
 		// Hard boundary: perception only — text/href/geometry/container hints, no semantic/source inference.
 		...(!omitted.includes("rows") && visibleRows.length > 0 ? {
 			rows: summaryTable(visibleRows.slice(0, 40), [
@@ -680,14 +679,13 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 			{ key: "selector", value: (node) => node.selector },
 			{ key: "point", value: (node) => node.point },
 			{ key: "hitOk", value: (node) => node.hitOk },
-			// B6: link identity so link-inventory tasks don't need custom JS — href is resolved/captured
+			// Link identity so link-inventory tasks do not need custom JS; href is resolved/captured
 			// in the scan (buildScanScript), sameOrigin is a mechanical origin compare vs the page URL.
 			{ key: "href", value: (node) => node.href },
 			{ key: "sameOrigin", value: (node) => linkSameOrigin(node.href, item.url) },
 		], limits.actionRows),
 		interactive: interactive.slice(0, limits.interactive),
-		// Distinct array from focus.headings: a shared reference makes redactSensitiveValue collapse the
-		// second occurrence to "[Circular]" in the model-facing envelope (blind-eval F2).
+		// Keep a distinct array from focus.headings so redaction does not collapse the shared reference.
 		headings: headings.slice(0, limits.headings),
 		textPreview: limits.textPreviewChars > 0 ? textPreview(content, limits.textPreviewChars) : "",
 		...(omitted.length ? { summaryOmitted: omitted } : {}),

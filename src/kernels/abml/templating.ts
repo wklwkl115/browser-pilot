@@ -7,7 +7,7 @@
 //
 // Grouping is ARIA-grounded ONLY (the generality rule — works identically on native HTML / Vue /
 // React / Web Components): members share an AX container (`hints.containerRole` + `containerName`,
-// from the P3-2 AX-membership merge) or a declared `aria-setsize`, plus the same `role` + `kind`.
+// from the AX-membership merge) or a declared `aria-setsize`, plus the same `role` + `kind`.
 // No tag/class/selector-prefix matching (that overfits a framework's DOM). Pure: zero browser/Node deps.
 import type { Entity, EntityKind } from "./entity.js";
 import { isPureTextLeaf, templateGroupDescriptorForEntity } from "./grouping.js";

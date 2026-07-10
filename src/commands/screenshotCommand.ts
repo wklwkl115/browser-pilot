@@ -6,8 +6,8 @@ import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParame
 import type { CommandRegistrarContext } from "./commandShared.js";
 
 // Decode pixel dimensions from a base64 image data URL so the screenshot summary can report
-// width/height — agents otherwise had to read the saved PNG out-of-band to confirm the capture
-// (blind-eval R7 minor). PNG (IHDR) + JPEG (SOF) covered; returns undefined rather than guessing.
+// width/height without reading the saved image. PNG (IHDR) and JPEG (SOF) are covered;
+// unknown formats return undefined rather than guessing.
 export function imageDimensions(dataUrl: string): { width: number; height: number } | undefined {
 	const comma = dataUrl.indexOf(",");
 	if (comma < 0) return undefined;

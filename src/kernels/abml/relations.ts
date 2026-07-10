@@ -1,4 +1,4 @@
-// ABML R1 — relationship graph (pure core). Turns relation *anchors* (typed edges keyed by
+// ABML relationship graph (pure core). Turns relation *anchors* (typed edges keyed by
 // pre-ref backend/AX node ids, extracted from the AX tree by the runtime layer) into typed
 // EntityRelation edges on entities (keyed by materialized bp-ref:// targets), plus a compact,
 // budget-immune relation summary for the envelope top-level.
@@ -276,7 +276,7 @@ export type RelationGraph = {
 	entityRelationTruncated?: Record<string, number>;
 };
 
-// Attach additional relations (e.g. R3.x `triggered` edges, whose targets are network refs rather
+// Attach additional relations (e.g. `triggered` edges, whose targets are network refs rather
 // than entities, so they bypass the anchor→ref materialize pass) to a single entity, reusing the
 // same dedupe + deterministic cap as materializeRelations. Returns a new entity; input untouched.
 export function addEntityRelations(entity: Entity, added: EntityRelation[]): Entity {

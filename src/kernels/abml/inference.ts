@@ -1,5 +1,5 @@
-// ABML R2 — inference layer (pure core). Detects generic ARIA semantic patterns from the
-// merged entity list + R1 relation summary (+ optional R3 temporal diff). No per-site or
+// ABML inference layer (pure core). Detects generic ARIA semantic patterns from the
+// merged entity list, relation summary, and optional temporal diff. No per-site or
 // per-type branches — every detector matches against the universal ARIA structure (roles,
 // landmarks, relation counts). The result rides the envelope top-level alongside
 // gist/outline/relations, budget-immune.
@@ -21,7 +21,7 @@
 //   dialog           — visible dialog or alertdialog entity
 //   tabbed-interface — visible tablist or 2+ visible ungrouped tab entities
 //   alert-region     — alert or status role (live feedback area after actions)
-//   form-dependency  — R3 diff: editable/focused field enabled a previously disabled control
+//   form-dependency  — temporal diff: editable/focused field enabled a disabled control
 import type { Entity, RelationType } from "./entity.js";
 import type { EntityDiff } from "./diff.js";
 import type { RelationSummary } from "./relations.js";
@@ -369,7 +369,7 @@ function detectTabbedInterface(view: InferenceView): DetectedIntent | undefined 
 // alert-region: role="alert" (assertive live region, e.g. validation errors) or role="status"
 // (polite live region, e.g. save confirmations). Tells the agent where to look for feedback
 // after an action — essential for form validation and async operation results.
-// With an R3 diff, a live region that just appeared (dynamically inserted toast/alert) or whose
+// With a temporal diff, a live region that just appeared (dynamically inserted toast/alert) or whose
 // accessible name changed (a persistent container that just received text) is fresh post-action
 // feedback — the strongest signal. It is flagged via an evidence token (appeared|updated) + reason;
 // the region's text is never embedded (generic + privacy-safe, same contract as form-dependency).
@@ -414,7 +414,7 @@ function editableFocusTransition(view: InferenceView, diff: EntityDiff, enabledR
 	return undefined;
 }
 
-// form-dependency: R3 temporal fact. A control that was disabled became enabled, while an
+// form-dependency: a control that was disabled became enabled, while an
 // editable control was the live focus or had a unique focus transition in the same diff. Because
 // editable values are intentionally redacted/suppressed, focus is the privacy-safe proxy for
 // "the field just filled". The transition fallback covers real pages where focus moves before rescan.
@@ -431,8 +431,8 @@ function detectFormDependency(view: InferenceView, diff?: EntityDiff): DetectedI
 
 // ── Public builder ─────────────────────────────────────────────────────────────
 
-// Detect generic ARIA semantic patterns over the merged entity list + R1 relation summary
-// (+ optional R3 diff). Every detector is independent, generic (no per-site/per-type branches),
+// Detect generic ARIA semantic patterns over the merged entity list and relation summary
+// with an optional temporal diff. Every detector is independent, generic (no per-site/per-type branches),
 // returns at most one DetectedIntent, and anchors it to evidence refs + a reason. Dedup rules:
 //   - "filter-panel" supersedes "search" (the former implies the latter).
 // Order is deterministic (definition order below).

@@ -24,9 +24,7 @@ function normalizeEntries(data: Record<string, unknown>): unknown[] {
  */
 function entriesContainerPath(data: Record<string, unknown>): string | undefined {
 	const log = isRecord(data.log) ? data.log : undefined;
-	// These paths are emitted as `read_saved_artifact mode=json jsonPath=…` hints and resolved against the SAVED
-	// ARTIFACT, whose root is the bridge result `{id,tabId,data,…}` — so they must be data-rooted, just
-	// like scan's `data.content`. Without the `data.` prefix the hint resolved to notFound (blind-eval N1).
+	// Hints resolve against the saved bridge result `{id,tabId,data,...}`, so paths are data-rooted.
 	if (asArray(data.items).length) return "data.items";
 	if (asArray(data.entries).length) return "data.entries";
 	if (asArray(data.requests).length) return "data.requests";

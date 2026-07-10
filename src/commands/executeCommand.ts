@@ -278,10 +278,9 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					artifactValue: { ...resultValue, operation },
 					distill: (value) => {
 						const generic = summarizeGenericValue(value);
-						// H1: mark when the script's return value is already fully inline in summary.data so
+						// Mark when the script's return value is fully inline in summary.data so
 						// artifactReadActions can suppress the misleading correlation-ID nextActions hints
-						// (blind-eval H1, n=2). The generic summarizer inlines small values; large ones
-						// collapse to shape placeholders — detect inline by checking data is not a shape.
+						// while large values still collapse to shape placeholders.
 						const data = generic.data;
 						const dataInline = executeSummaryDataInline(data);
 						const hints = dataInline ? undefined : executeArtifactHints(isRecord(value) ? value.data : undefined);

@@ -907,7 +907,7 @@ declare global {
     const miss = requireSession('hook.status', expectedSessionIdFrom(opts), true); if (miss) return miss;
     return { ok: true, data: {
       session_id, state, installed_at, uptime_ms: installed_at ? Date.now() - Date.parse(installed_at) : 0,
-      last_seq: seq, // event seq high-water mark — ABML R3.x P2 baseline anchor (see causal.ts)
+      last_seq: seq, // event seq high-water mark used as the causal baseline anchor
       stats: Object.assign({}, stats, { buffer_count, buffer_size, buffer_usage: buffer_count / buffer_size }, bufferMetrics()),
       buffer_capacity: bufferMetrics().buffer_capacity, buffer_used: bufferMetrics().buffer_used, buffer_utilization: bufferMetrics().buffer_utilization, dropped_events: overflow, perf: perfSnapshot(),
       targets: clone(targets), options: clone(options), browser_pilot_version: VERSION, dispatcher_version: VERSION,

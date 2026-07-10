@@ -47,10 +47,10 @@ export type DistilledEnvelope = {
 	// R2 inference layer (detected ARIA semantic patterns — intents[]: login/search/data-grid/…).
 	// Lifted here so the budget never hides it.
 	inference?: Record<string, unknown>;
-	// R3 temporal entity diff (appeared/disappeared/changed/focusedRef). Present only when
+	// Temporal entity diff (appeared/disappeared/changed/focusedRef). Present only when
 	// the caller supplies a baseline to browser_observe/readStructure.
 	diff?: Record<string, unknown>;
-	// R3.x causal plane — network requests fired since the baseline observation (passive,
+	// Causal plane: network requests fired since the baseline observation (passive,
 	// no control attribution): { sinceSeq, requests[] } or { unavailable }. Present only when
 	// browser_observe is given a baseline. Lifted here so the budget never hides it.
 	causal?: Record<string, unknown>;
@@ -289,7 +289,7 @@ function envelopeDiff(summary: DistilledSummary): Record<string, unknown> | unde
 	return isRecord(focus?.diff) ? structuredClone(focus.diff) as Record<string, unknown> : undefined;
 }
 
-// R3.x causal block lifted from the (uncompressed) summary so the network-delta survives the
+// Causal block lifted from the (uncompressed) summary so the network delta survives the
 // budget squeeze — cloned for the same [Circular]-avoidance reason as gist/diff/relations.
 function envelopeCausal(summary: DistilledSummary): Record<string, unknown> | undefined {
 	return isRecord(summary.causal) ? structuredClone(summary.causal) as Record<string, unknown> : undefined;

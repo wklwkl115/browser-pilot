@@ -13,7 +13,7 @@ export function createBrowserAbmlIntegration(server: Pick<BrowserCommandRuntimeP
 			const nativeDiff: EntityDiff | undefined = buildNativeEntityDiff(input.baseline, result.entities, input.diffOptions);
 			return nativeDiff ? { ...result, diff: nativeDiff } : result;
 		},
-		// R3.x P2-C causal stream plane: arm (no ref) or drain (pass the prior call's captureRef as `ref`) the
+		// Arm (no ref) or drain (pass the prior call's captureRef as `ref`) the
 		// network/event causal channel. Symmetric to readStructure; the tab/session is the runtime's bound options.
 		readStream: async (input: { plane: "network" | "event"; ref?: string; filter?: Record<string, unknown> }) => {
 			return await runtime.read?.({ ref: input.ref, plane: input.plane, filter: input.filter });

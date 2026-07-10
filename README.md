@@ -261,11 +261,6 @@ Use `browser-pilot --help` and `browser-pilot schema <command> --json` for the l
 For contributor workflow, canonical gates, and repo-specific guardrails, start with
 [REPO_GOVERNANCE.md](REPO_GOVERNANCE.md).
 
-## Notes
-
-`.browser-pilot/public-export/` is a local export/archive directory — not a second source tree.
-It is `.gitignore`d and should never be committed.
-
 ## Configuration
 
 | Variable | Default | Description |

@@ -3,6 +3,7 @@
 .browser-pilot/
 .agent-workbench/
 .trae/
+.claude/
 node_modules/
 
 # Local environment and secrets
@@ -26,48 +27,3 @@ target/
 # Local scratch files
 log
 nul
-stored.txt
-subagent-blind-round2/
-
-# nested export repo must never be used as a second source tree
-/.pi/public-export/
-
-# Retired/local development docs (do not reintroduce as canonical docs)
-.plan/
-agent-audits/
-docs/archive/
-skills/browser-pilot-audit-fix/
-skills/browser-pilot-blind-eval/
-skills/pi-kernel-audit/
-.claude/
-CLAUDE.md
-CURRENT.md
-TODO.md
-NEXT_PHASE.md
-ROADMAP.md
-ARCHIVE.md
-WORKSTREAMS_A_E_SUMMARY.md
-docs/abml-identity-lattice-architecture.md
-docs/abml-kernel-manifest.md
-docs/abml-optimization-reference.md
-docs/abml-p1-spec.md
-docs/abml-tool-coverage-map.md
-docs/agent-dev-harness-optimization-plan.md
-docs/agent-development.md
-docs/agent-harness-optimization-plan.md
-docs/agent-native-architecture.md
-docs/agent-native-cli-spec.md
-docs/archive-history-compression-plan.md
-docs/asset-sync.md
-docs/changelog-history.md
-docs/cli-parity-testing.md
-docs/document-structure.md
-docs/driver-architecture.md
-docs/genericagent-browser-parity.md
-docs/jshookmcp-native-absorption.md
-docs/living-tab-session-architecture-plan.md
-docs/maintainer-map.md
-docs/reference/concept-ownership.md
-docs/templates/workstream-plan-template.md
-docs/generated/code-map.generated.md
-evals/

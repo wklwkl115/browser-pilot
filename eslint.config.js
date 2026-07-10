@@ -3,9 +3,8 @@
 //   - src/ + index.ts  → Node.js   (tsconfig.json)
 //   - src/bridge/extension/       → WebWorker (tsconfig.bridge-src.json)
 //
-// Ratcheted posture: the historical warning backlog is burned down, and the
-// enabled debt rules now block regressions. Broader type-checked families and
-// @typescript-eslint/no-explicit-any remain outside this rule set.
+// Enabled correctness rules are blocking. The rule set stays explicit so both
+// TypeScript environments share predictable lint behavior.
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
@@ -74,9 +73,7 @@ export default tseslint.config(
 		files: ["**/*.{js,mjs,cjs}"],
 		languageOptions: { globals: { ...globals.node, ...globals.browser, chrome: "readonly" } },
 	},
-	// ─── Ratcheted debt rules: blocking. ───
-	// These are the historical backlog families that have been cleared and now
-	// run as errors. Broader strict-type rules remain intentionally out of scope.
+	// Blocking correctness rules.
 	//
 	// Core ESLint rules (no type info needed) — apply to all source.
 	{
@@ -109,16 +106,13 @@ export default tseslint.config(
 			// Async-safety class — highest-value, likely real bugs. Type-aware.
 			"@typescript-eslint/no-floating-promises": "error",
 			"@typescript-eslint/no-misused-promises": "error",
-			// Deferred for the first pass (noisy on the unknown-heavy param code).
+			// Boundary-heavy parameter code intentionally accepts explicit unknowns.
 			"@typescript-eslint/no-explicit-any": "off",
 		},
 	},
-	// capture-src/ is page-world string-template source (MAIN-world JS embedded in string
-	// constants, deliberately NOT in the Node type graph — see docs/capture-core-plan.md as-built
-	// note + the "page logic is untyped strings" residual debt). Syntactic rules still apply —
-	// crucially no-useless-escape, which guards the template-literal escape-collapse bug class.
-	// The two type-aware rules cannot run without a project binding; disable them here. When the
-	// esbuild-migration trigger fires, capture-src joins a typed project and these come back.
+	// capture-src/ contains page-world JavaScript embedded in string templates and is not part of
+	// the Node type graph. Syntactic rules still guard template escape correctness; type-aware rules
+	// are disabled for this scope because it has no project binding.
 	{
 		files: ["capture-src/**/*.ts"],
 		rules: {

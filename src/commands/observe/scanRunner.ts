@@ -408,7 +408,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const content = typeof data?.content === "string" ? data.content : JSON.stringify(data ?? observation.result.data, null, 2);
 	const scanMeta = data ? { ...data, content: `[${content.length} chars]` } : undefined;
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
-	// ABML R3.x causal plane: capture this observation's network + hook seq high-water marks (so it can
+	// Capture this observation's network + hook seq high-water marks (so it can
 	// anchor a future baseline) and, when a baseline was supplied, the network-delta + event-delta since it.
 	const recorderStartedAt = Date.now();
 	const [recorderState, hookState] = await Promise.all([
@@ -425,7 +425,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		observeTimings.causalMs = elapsedMs(causalStartedAt);
 		addBridgeRoundTrips(observeTimings, 1);
 	}
-	// P2: attach the hook event-delta to the (requests-variant) causal block when hooks are armed and the
+	// Attach the hook event delta to the requests-based causal block when hooks are armed and the
 	// baseline carries a hook seq. Best-effort — a failed event read never fails the observe.
 	if (causal && "requests" in causal && hasBaseline && hookState.active && baseline?.hookSeq !== undefined) {
 		try {
@@ -508,13 +508,13 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		? buildNativeTreeDiff(baseline.entities, observation.abmlRead.entities ?? [], { partialBaseline: baseline.partialBaseline })
 			?? buildTreeDiff(baseline.entities, observation.abmlRead.entities ?? [], { partialBaseline: baseline.partialBaseline })
 		: undefined;
-	// R3.x causal attribution — attach `triggered` edges BEFORE the relation summary so they surface in
+	// Attach causal `triggered` edges before the relation summary so they surface in
 	// relations.summary + the controls' inline relations. Two sources, both additive (the delta stays
-	// fully inline in envelope.causal regardless — passive P0 behavior preserved):
-	//   P1  — the network-delta → the activated control (explicit `actionRef`, else the focus-normalized
-	//         R3 `diff.focusedRef`; a frame/region focus is rejected). source:"timing", low confidence.
-	//   P2-B — each event that names its own target element (DOM-sink `selector`) → that element.
-	//         source:"event", medium confidence (stronger than timing — the event records its element).
+	// fully inline in envelope.causal regardless):
+	//   - network delta to the activated control (explicit `actionRef`, else the focus-normalized
+	//     `diff.focusedRef`; a frame/region focus is rejected), source:"timing", low confidence;
+	//   - each event that names its own target element (DOM-sink `selector`) to that element,
+	//     source:"event", medium confidence (stronger than timing because the event records its element).
 	const attributedEntities = (() => {
 		if (!abmlEntities || !causal || !("requests" in causal)) return abmlEntities;
 		const actionEntityRef = causal.requests.length ? resolveActionEntityRef(params.actionRef, abmlDiff?.focusedRef, abmlEntities) : undefined;
@@ -594,17 +594,13 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 					gist: buildPageGist(attributedEntities),
 					primary_entities: entityRefs(primaryEntities),
 					outline: buildEntityOutline(attributedEntities),
-					// R1 relationship graph — emitted ONLY when it carries real edges (triggered / table /
-					// controls / labelledBy / ...). The always-present empty summary was unread token cost; the
-					// in-memory relSummary still feeds inference + causal attribution regardless. (envelope.templates
-					// and envelope.inference were removed as agent-facing fields — a real-agent eval showed them
-					// unread; their ENGINES keep running internally: treeDiff/snapshotProjection use templating,
-					// referenced_entities uses inference.)
+					// Emit the relationship graph only when it carries real edges. The in-memory summary still
+					// feeds inference and causal attribution; templating and inference remain internal inputs for
+					// treeDiff/snapshotProjection and referenced_entities.
 					...(Object.keys(relSummary.summary).length || relSummary.highlights.length ? { relations: relSummary } : {}),
 					// diff/treeDiff/snapshotProjection live ONLY at summary top-level (above) and are lifted to
 					// envelope.* by responseEnvelope. Duplicating them here referenced the SAME object, so
-					// redactSensitiveValue collapsed the second occurrence to "[Circular]" and doubled bytes
-					// (blind-eval F2). The envelope lift reads summary top-level first, so focus needs neither.
+					// redactSensitiveValue collapses the second occurrence to "[Circular]" and duplicates bytes.
 					referenced_entities: entityRefs(referencedEntities, 12),
 					list_entities: entityRefs(listEntities),
 					visual_regions: entityRefs(visualRegions),

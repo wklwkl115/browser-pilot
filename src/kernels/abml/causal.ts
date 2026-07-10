@@ -1,8 +1,8 @@
-// ABML R3.x causal plane — P0 (passive network-delta) + P1 (initiator-enhanced attribution).
+// ABML causal plane with passive network deltas and initiator-enhanced attribution.
 //
 // Given the network records captured since a baseline observation, produce a budget-immune
-// "what fired since baseline" summary for the observe envelope. P0 reports requests observed in
-// the window; P1 attributes them to a control when an action context is present. CDP initiator
+// "what fired since baseline" summary for the observe envelope. It reports requests observed in
+// the window and attributes them to a control when an action context is present. CDP initiator
 // metadata (type/url, NOT full call-stack parsing) filters structural noise and elevates
 // confidence when the initiator confirms a script-triggered request. URLs are redacted + truncated;
 // no bodies. Pure core: zero browser/Node deps.
@@ -22,9 +22,9 @@ export type CausalRequest = {
 	passive?: boolean; // true for structural requests (parser/preload) — excluded from triggered attribution
 };
 
-// A non-network causal entry (R3.x P2) — a hook event (console / DOM-sink / storage / error / …)
+// A non-network causal entry: a hook event (console / DOM-sink / storage / error / ...)
 // fired since the baseline. `selector` is present only when the event names its own target element
-// (DOM-sink), which P2 part B uses for element-sourced attribution.
+// (DOM-sink), enabling element-sourced attribution.
 export type CausalEvent = {
 	ref: string; // bp-ref://event/<seq|id>
 	type: string; // console | domSink | storage | error | ...
@@ -34,8 +34,8 @@ export type CausalEvent = {
 };
 
 // Budget-immune envelope block. `unavailable` is emitted when no network recorder is active for
-// the tab (P0 does NOT auto-start it — the agent opts in via `browser_network start`). R3.x P2 adds
-// an optional `events` delta (hook events since baseline) alongside the network `requests`.
+// the tab; the agent opts in via `browser_network start`. The optional `events` field carries
+// hook events since baseline alongside the network `requests`.
 export type CausalSummary =
 	| { sinceSeq: number; requests: CausalRequest[]; requestCount?: number; events?: CausalEvent[]; eventCount?: number }
 	| { unavailable: string };
@@ -46,7 +46,7 @@ export const MAX_CAUSAL_EVENTS = 12;
 // The TRUE number of requests fired since the baseline. `requests` is capped at MAX_CAUSAL_REQUESTS,
 // so `requests.length` UNDERCOUNTS the delta whenever it was truncated — `requestCount` carries the
 // real total in that case. Any "N requests fired" surfacing (e.g. the scan nextActions hint) must use
-// this, not `requests.length`, or it under-reports 30×+ on a real SPA navigation (blind-eval R-G5 F2).
+// this, not `requests.length`, or it under-reports large SPA navigation deltas.
 export function causalRequestsFiredCount(causal: CausalSummary): number {
 	if (!("requests" in causal)) return 0;
 	return typeof causal.requestCount === "number" ? causal.requestCount : causal.requests.length;
@@ -144,7 +144,7 @@ export function buildCausalSummary(records: Array<Record<string, unknown>>, sinc
 	};
 }
 
-// ── R3.x P2 — event (non-network) causal entries ─────────────────────────────────────────────────
+// Event (non-network) causal entries.
 
 // A short, redacted summary for a hook event: prefer a named text field (message/summary/preview/…),
 // never dump the raw payload object. Falls back to undefined so the entry stays compact.
@@ -163,7 +163,7 @@ function eventSummary(data: unknown): string | undefined {
 }
 
 // The event's target element selector, when the hook recorded one (DOM-sink events carry an
-// elementRef `{ nodeName, className, selector }`). Used by P2 part B for element-sourced attribution.
+// elementRef `{ nodeName, className, selector }`). Used for element-sourced attribution.
 function eventSelector(record: Record<string, unknown>): string | undefined {
 	const data = isRecord(record.data) ? record.data : {};
 	const el = isRecord(record.elementRef) ? record.elementRef : isRecord(data.elementRef) ? data.elementRef : isRecord(data.element) ? data.element : undefined;
@@ -203,7 +203,7 @@ export function causalUnavailable(reason: string): CausalSummary {
 	return { unavailable: reason };
 }
 
-// ── R3.x P2-C — seq cursor advance (stream-plane drain) ──────────────────────────────────────────
+// Sequence cursor advance for stream-plane drains.
 
 // The highest `seq` over a delta window — the new cursor after a drain. Pure + self-contained so the
 // stream-plane "advance to the last consumed entry" contract is unit-testable. Returns undefined when
@@ -217,10 +217,10 @@ export function latestSeq(records: Array<Record<string, unknown>>): number | und
 	return max;
 }
 
-// ── R3.x P1 — attribution to a control (timing window only) ──────────────────────────────────────
+// Attribution to a control using the timing window.
 
 // Cap on `triggered` edges attached to one control — keeps a heavy delta from evicting the
-// control's R1 relations under the per-entity cap. The full list always stays in causal.requests.
+// control's relations under the per-entity cap. The full list always stays in causal.requests.
 export const MAX_TRIGGERED_RELATIONS = 8;
 
 // Build `triggered` (control → network request) relations from the causal delta. Passive requests
@@ -250,7 +250,7 @@ export function buildTriggeredRelations(causal: CausalSummary, options?: { hasAc
 }
 
 // Decide which control the causal delta is attributed to. Prefers an explicit `actionRef` (the agent
-// states "I just activated ref R"); else the R3 diff's `focusedRef`. FOCUS ROBUSTNESS: a ref is only
+// states "I just activated ref R"); else the temporal diff's `focusedRef`. A ref is only
 // accepted when it resolves to a focusable control/element entity — a `focusedRef` that lands on a
 // frame/region (observed on live pages) is rejected, so the delta is never mis-attributed. Returns
 // undefined when no trustworthy control is identified (causal stays present, just without `triggered`).
@@ -264,11 +264,11 @@ export function resolveActionEntityRef(actionRef: string | undefined, focusedRef
 	return resolveActionable(actionRef) ?? resolveActionable(focusedRef);
 }
 
-// ── R3.x P2-B — event-sourced attribution (element-named, stronger than timing) ───────────────────
+// Event-sourced attribution when the event names an element.
 
 // When a causal event names its own target element (`selector`, from a DOM-sink event's elementRef)
 // and that selector resolves to a control/element entity, the event hangs a `triggered` edge on that
-// entity → the event ref, source:"event" / confidence:"medium". This is STRONGER than P1's timing
+// entity → the event ref, source:"event" / confidence:"medium". This is stronger than timing
 // attribution: the event records the element it fired on — no timing guess. Returns entityRef →
 // triggered edges; entities without a matching event get none (the event still ships in causal.events).
 export function eventTriggeredByEntity(events: CausalEvent[], entities: Entity[]): Map<string, EntityRelation[]> {

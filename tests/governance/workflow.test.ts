@@ -240,13 +240,13 @@ test("agent-facing artifact examples do not recommend fixed local paths", () => 
 	assert.deepEqual(offenders, []);
 });
 
-test("public docs cover latency telemetry and observe benchmark sample maintenance", () => {
+test("public docs cover latency telemetry and offline observe benchmark constraints", () => {
 	const readme = text(readmePath);
 	const wiki = text(codeWikiPath);
 	assert.match(readme, /diagnostics\.latency[\s\S]{0,180}payloads|latency[\s\S]{0,180}do not include command payloads/i);
 	assert.match(wiki, /diagnostics\.latency[\s\S]{0,240}不包含 command payload|latency[\s\S]{0,240}headers[\s\S]{0,120}URL query/i);
 	assert.match(readme, /observe regression benchmark[\s\S]{0,160}offline fixtures/i);
-	assert.match(wiki, /Observe regression benchmark[\s\S]{0,420}docs\/article-like[\s\S]{0,260}virtualized list/i);
+	assert.match(wiki, /Observe regression benchmark[\s\S]{0,420}离线 fixture[\s\S]{0,260}provider telemetry/i);
 });
 
 test("code wiki documents the session kernel node crypto exception", () => {
@@ -289,7 +289,7 @@ test("kernel source does not import browser or third-party framework runtime pac
 	assert.deepEqual(offenders, []);
 });
 
-test("P6 design reference oracle does not expand command or protocol surfaces", () => {
+test("design reference dependencies do not expand command or protocol surfaces", () => {
 	const catalog = text(commandCatalogPath);
 	const nativeCommandSchema = text(nativeCommandSchemaPath);
 	for (const source of [catalog, nativeCommandSchema]) {

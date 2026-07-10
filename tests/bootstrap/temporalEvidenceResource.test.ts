@@ -14,7 +14,7 @@ import { applyVerificationStrike, memoryStampSetId, transitionStrikeCount, verif
 import { clearResourceStore, listResources, parseBrowserPilotRefUri, parseResourceUri, pruneExpired, registerBrowserResultResource, registerRefDescriptor, resolveRefUriDetailed, resolveResourceUri, resourceRefStore, stats } from "../../src/resources/resourceRefs.ts";
 
 function tempArtifact(name: string, value: unknown): string {
-	const cwd = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-task4-"));
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-resource-test-"));
 	const filePath = path.join(cwd, name);
 	writeFileSync(filePath, JSON.stringify(value), "utf8");
 	return filePath;

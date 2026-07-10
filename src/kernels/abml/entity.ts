@@ -33,7 +33,7 @@ export type EntityStructure = {
 	colIndex?: number; // table/grid cell — 1-based column position (aria-colindex or computed)
 };
 
-// ABML R1 — relationship graph. A typed edge from this entity to another entity (by ref).
+// Relationship graph: typed edges from this entity to other refs.
 // Reuses AX relations/properties (labelledby/describedby/controls/owns), table hierarchy
 // (cell→row→table), and aria-current. `targetRef` is always a materialized bp-ref://; the
 // pre-ref backend/AX node ids used to extract anchors never leak here. Scalar facts
@@ -52,10 +52,10 @@ export type RelationType =
 	| "headerFor"
 	| "occludes"
 	| "coveredBy"
-	// ABML R3.x P1 — control → network request fired in the post-action delta window. Target is a
+	// Control to network request fired in the post-action delta window. Target is a
 	// `bp-ref://network/<id>` or `bp-ref://event/<id>` (resolvable inline in envelope.causal, not an
-	// entity). Causal attribution source: "timing" (P1 — request fired after the activated control,
-	// low confidence, no initiator-stack proof) or "event" (P2-B — a hook event named THIS element as
+	// entity). Causal attribution source: "timing" (request fired after the activated control,
+	// low confidence, no initiator-stack proof) or "event" (a hook event named this element as
 	// its target, medium confidence). See abml-kernel/causal.ts.
 	| "triggered";
 
@@ -203,7 +203,7 @@ function actionEntityState(node: Record<string, unknown>): EntityState {
 	const point = geometryPoint(node.point)?.point;
 	// aria-current (scan-sourced): Chrome's AX tree doesn't expose it, so the DOM scan is the
 	// authoritative source. Normalize the token ("false" → not current, "true" → boolean, else
-	// the token e.g. "page"/"step"). This also backfills the P1 state.current path on real pages.
+	// the token e.g. "page"/"step"). This also backfills state.current on real pages.
 	const currentRaw = typeof node.current === "string" ? node.current.trim() : undefined;
 	const current = currentRaw === undefined || currentRaw === "" ? undefined : currentRaw === "false" ? false : currentRaw === "true" ? true : currentRaw;
 	return {
