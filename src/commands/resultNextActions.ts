@@ -1,5 +1,5 @@
 import { extractRefsFromText } from "../kernels/refs/text.js";
-import type { DistilledSummary } from "./resultMiddleware.js";
+import type { DistilledSummary } from "./resultTypes.js";
 import { asArray, isRecord } from "./summaries/common.js";
 
 type NextActionsOptions = {

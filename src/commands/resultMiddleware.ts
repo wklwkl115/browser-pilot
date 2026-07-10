@@ -10,7 +10,7 @@ import { summarizeHtmlSnapshot } from "./summaries/index.js";
 import { appendMemoryAutoSurface } from "./memory/autoSurface.js";
 import type { CommandMemoryAugmentationPlan } from "./memoryAugmentationTypes.js";
 import { fitCommandSummaryBudget, SUMMARY_MAX_CHARS } from "./resultBudgeting.js";
-import type { CommandDistilledSummary, CommandEvidenceEnvelope, CommandFactGranularity } from "./resultTypes.js";
+import type { CommandFactGranularity, DistilledEnvelope, DistilledSummary } from "./resultTypes.js";
 import { factRenderingDiagnostics, fitResponseEnvelopeWithMemory, renderedOmittedCount, rendererMarker } from "./resultEnvelopeBudget.js";
 import { buildResultEvidence } from "./resultEvidence.js";
 import { normalizedNextActions } from "./resultNextActions.js";
@@ -21,67 +21,6 @@ import { hasJsonPathValue } from "../utils/jsonPath.js";
 
 // Mandatory-read pair with commandRuntime.ts: keep envelope fields, redaction, distillation,
 // artifact fallback, and memory nudge behavior centralized here.
-export type DistilledSummary = CommandDistilledSummary;
-export type DistilledEnvelope = {
-	tool: string;
-	command?: string;
-	browserSessionId?: string;
-	detailLevel: DetailLevel;
-	summary: DistilledSummary;
-	diagnostics?: Record<string, unknown>;
-	target?: Record<string, unknown>;
-	limits?: Record<string, unknown>;
-	privacy?: Record<string, unknown>;
-	entities?: Array<Record<string, unknown>>;
-	// Disclosure layers lifted to envelope top-level so the budget squeeze on `summary`
-	// never hides them (gist = L0 page overview, outline = L1 container fold).
-	abmlIntegrated?: boolean;
-	gist?: Record<string, unknown>;
-	outline?: Array<Record<string, unknown>>;
-	// R1 relationship graph (relations.summary = type→count, always present when abmlIntegrated;
-	// relations.highlights = deterministic capped sample). Lifted here so the budget never hides it.
-	relations?: Record<string, unknown>;
-	// ABML identity-lattice diagnostics: backendNodeId coverage, semantic-anchor count, triggered-edge
-	// count, and source distribution. Full byRef graph stays artifact-only.
-	identity?: Record<string, unknown>;
-	// R2 inference layer (detected ARIA semantic patterns — intents[]: login/search/data-grid/…).
-	// Lifted here so the budget never hides it.
-	inference?: Record<string, unknown>;
-	// Temporal entity diff (appeared/disappeared/changed/focusedRef). Present only when
-	// the caller supplies a baseline to browser_observe/readStructure.
-	diff?: Record<string, unknown>;
-	// Causal plane: network requests fired since the baseline observation (passive,
-	// no control attribution): { sinceSeq, requests[] } or { unavailable }. Present only when
-	// browser_observe is given a baseline. Lifted here so the budget never hides it.
-	causal?: Record<string, unknown>;
-	// ABML mechanism arm M1 — structure templates (repeated list/table/card folded to template +
-	// instances + handles). Lifted here so the budget never hides the large-page compression.
-	templates?: Array<Record<string, unknown>>;
-	// ABML mechanism arm M2a — template-level living diff. Present only when browser_observe gets a
-	// full baseline. Lifted here so re-observe can stay O(change) under tight budgets.
-	treeDiff?: Record<string, unknown>;
-	// ABML mechanism arm M2c — persisted living structure snapshot: current templates plus attached
-	// template deltas where available. Lifted here so saved-artifact follow-up can stay structure-first.
-	snapshotProjection?: Record<string, unknown>;
-	// ABML collection completeness + continuation kernel — first-class collection windows and
-	// read-only continuation evidence. Lifted here so long-list completeness is never hidden by budget.
-	collections?: Array<Record<string, unknown>>;
-	error?: Record<string, unknown>;
-	nextActions?: string[];
-	correlation?: Record<string, unknown>;
-	operation?: Record<string, unknown>;
-	snapshot?: Record<string, unknown>;
-	// Read-only "active context" echo: resolved tab + latest scan snapshot to thread forward.
-	activeContext?: Record<string, unknown>;
-	artifact_hints?: Record<string, unknown>;
-	saved?: Record<string, unknown>;
-	memory?: Record<string, unknown>;
-	evidence?: CommandEvidenceEnvelope;
-	renderer?: "salience-v1";
-	delta?: "session";
-	baselineSnapshotId?: string;
-};
-
 type DistillBaseOptions = {
 	commandName: string;
 	command?: string;

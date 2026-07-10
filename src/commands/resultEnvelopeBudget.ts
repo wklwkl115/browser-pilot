@@ -4,8 +4,7 @@ import { fitSalienceEnvelopeBudget } from "../kernels/evidence/distill/salienceE
 import { stableJson } from "../utils/json.js";
 import { fitCommandEnvelopeBudget } from "./resultBudgeting.js";
 import { getDistillerDefinition } from "./distillerRegistry.js";
-import type { DistilledEnvelope } from "./resultMiddleware.js";
-import type { CommandFactGranularity } from "./resultTypes.js";
+import type { CommandFactGranularity, DistilledEnvelope } from "./resultTypes.js";
 
 export type FactRenderingDiagnostics = {
 	rendered: number;

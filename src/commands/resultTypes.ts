@@ -1,3 +1,5 @@
+import type { DetailLevel } from "../utils/params.js";
+
 export type CommandFactGranularity = "full" | "compact" | "line" | "ref" | "omit";
 
 export type CommandFactPlane = "entity" | "outline" | "relation" | "causal" | "diff" | "treeDiff" | "snapshot" | "identity" | "summary" | "diagnostic";
@@ -23,30 +25,44 @@ export type CommandFact = {
 	renderings: Partial<Record<Exclude<CommandFactGranularity, "omit">, CommandFactRendering>>;
 };
 
-export type CommandDistilledSummary = Record<string, unknown>;
+export type DistilledSummary = Record<string, unknown>;
 
-export type CommandBudgetedEnvelope = {
+export type DistilledEnvelope = {
 	tool: string;
 	command?: string;
 	browserSessionId?: string;
-	detailLevel: unknown;
-	summary: CommandDistilledSummary;
+	detailLevel: DetailLevel;
+	summary: DistilledSummary;
 	diagnostics?: Record<string, unknown>;
+	target?: Record<string, unknown>;
 	limits?: Record<string, unknown>;
 	privacy?: Record<string, unknown>;
 	entities?: Array<Record<string, unknown>>;
+	abmlIntegrated?: boolean;
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
 	relations?: Record<string, unknown>;
 	identity?: Record<string, unknown>;
+	inference?: Record<string, unknown>;
 	diff?: Record<string, unknown>;
 	causal?: Record<string, unknown>;
+	templates?: Array<Record<string, unknown>>;
 	treeDiff?: Record<string, unknown>;
 	snapshotProjection?: Record<string, unknown>;
 	collections?: Array<Record<string, unknown>>;
+	error?: Record<string, unknown>;
 	nextActions?: string[];
+	correlation?: Record<string, unknown>;
+	operation?: Record<string, unknown>;
+	snapshot?: Record<string, unknown>;
+	activeContext?: Record<string, unknown>;
+	artifact_hints?: Record<string, unknown>;
 	saved?: Record<string, unknown>;
-	[key: string]: unknown;
+	memory?: Record<string, unknown>;
+	evidence?: CommandEvidenceEnvelope;
+	renderer?: "salience-v1";
+	delta?: "session";
+	baselineSnapshotId?: string;
 };
 
 export type CommandEvidenceSummaryBlock = {

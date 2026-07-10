@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import type { DistilledEnvelope } from "../resultMiddleware.js";
+import type { DistilledEnvelope } from "../resultTypes.js";
 import type { MemoryIndex } from "../../memory/types.js";
 import { EMPTY_MEMORY_INDEX, readMemoryIndexNoRepair } from "../../memory/indexStore.js";
 import { resolveMemoryPath } from "../../memory/paths.js";
