@@ -20,7 +20,11 @@ type NormalizedFuzzParamsOptions = ReturnType<typeof normalizeReplayOptions> & {
 	delayMs: number;
 };
 
-function clusterMultipartParserResults(results: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+function pushBoundedUnique(values: string[], value: unknown, limit: number): void {
+	if (typeof value === "string" && values.length < limit && !values.includes(value)) values.push(value);
+}
+
+export function clusterMultipartParserResults(results: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
 	const clusters = new Map<string, { key: string; status?: unknown; title?: unknown; bodyBytes?: unknown; bodySha256?: unknown; responseLocation?: unknown; count: number; matchedCount: number; contentTypeVariants: string[]; params: string[]; operations: string[]; multipartShapes: string[]; repeatedNames: string[]; nestedMultipartPartCount: number }>();
 	for (const item of results) {
 		if (item.location !== "multipart") continue;
@@ -32,19 +36,16 @@ function clusterMultipartParserResults(results: Array<Record<string, unknown>>):
 		}
 		cluster.count += 1;
 		if (item.matched === true) cluster.matchedCount += 1;
-		if (typeof item.contentTypeVariant === "string" && cluster.contentTypeVariants.length < 20 && !cluster.contentTypeVariants.includes(item.contentTypeVariant)) cluster.contentTypeVariants.push(item.contentTypeVariant);
-		if (typeof item.paramName === "string" && cluster.params.length < 20 && !cluster.params.includes(item.paramName)) cluster.params.push(item.paramName);
-		if (typeof item.operation === "string" && cluster.operations.length < 10 && !cluster.operations.includes(item.operation)) cluster.operations.push(item.operation);
+		pushBoundedUnique(cluster.contentTypeVariants, item.contentTypeVariant, 20);
+		pushBoundedUnique(cluster.params, item.paramName, 20);
+		pushBoundedUnique(cluster.operations, item.operation, 10);
 		const multipart = isRecord(item.multipart) ? item.multipart : undefined;
 		if (multipart) {
-			const shape = `parts=${Number(multipart.partCount || 0)} files=${Number(multipart.fileCount || 0)} fields=${Number(multipart.fieldCount || 0)} nested=${Number(multipart.nestedMultipartPartCount || 0)}`;
-			if (cluster.multipartShapes.length < 10 && !cluster.multipartShapes.includes(shape)) cluster.multipartShapes.push(shape);
-			cluster.nestedMultipartPartCount = Math.max(cluster.nestedMultipartPartCount, Number(multipart.nestedMultipartPartCount || 0));
+			const shape = `parts=${positiveInt(multipart.partCount, 0)} files=${positiveInt(multipart.fileCount, 0)} fields=${positiveInt(multipart.fieldCount, 0)} nested=${positiveInt(multipart.nestedMultipartPartCount, 0)}`;
+			pushBoundedUnique(cluster.multipartShapes, shape, 10);
+			cluster.nestedMultipartPartCount = Math.max(cluster.nestedMultipartPartCount, positiveInt(multipart.nestedMultipartPartCount, 0));
 			const repeated = Array.isArray(multipart.repeatedNameCounts) ? multipart.repeatedNameCounts : [];
-			for (const entry of repeated) {
-				if (!isRecord(entry) || typeof entry.name !== "string") continue;
-				if (cluster.repeatedNames.length < 20 && !cluster.repeatedNames.includes(entry.name)) cluster.repeatedNames.push(entry.name);
-			}
+			for (const entry of repeated.filter(isRecord)) pushBoundedUnique(cluster.repeatedNames, entry.name, 20);
 		}
 	}
 	return Array.from(clusters.values()).sort((a, b) => b.count - a.count).slice(0, 50);
@@ -66,12 +67,7 @@ async function normalizeFuzzParamsOptions(options: FuzzParamsOptions): Promise<N
 	const values = [...stringValues.map((value) => ({ label: value, value })), ...jsonValues.map((value) => ({ label: typeof value === "string" ? value : JSON.stringify(value), value }))];
 	const operations = stringList(options.operations).flatMap((item) => item.split(/[,\s]+/)).map((item) => item.toLowerCase()).filter((item) => ["set", "add", "delete"].includes(item));
 	const selectedOperations = operations.length ? [...new Set(operations)] : ["set"];
-	const selectedContentTypeVariants = multipartContentTypeVariants(options.contentTypeVariants);
 	if (!values.length && selectedOperations.some((operation) => operation !== "delete")) throw fuzzParamsInputError("browser_fuzz_params requires values, jsonValues, words, wordlist, or wordlistPath for set/add operations", { field: "values|jsonValues|words|wordlist|wordlistPath", operations: selectedOperations });
-	const maxCases = Math.min(5_000, positiveInt(options.maxCases, 500));
-	const matchStatus = numericList(options.matchStatus);
-	const filterStatus = numericList(options.filterStatus);
-	const filterBodyBytes = numericList(options.filterBodyBytes);
 	const rateLimitPerSecond = positiveInt(options.rateLimitPerSecond, 0);
 	return {
 		...normalizeReplayOptions(options),
@@ -79,11 +75,11 @@ async function normalizeFuzzParamsOptions(options: FuzzParamsOptions): Promise<N
 		paramNames,
 		values,
 		operations: selectedOperations,
-		contentTypeVariants: selectedContentTypeVariants,
-		matchStatus,
-		filterStatus,
-		filterBodyBytes,
-		maxCases,
+		contentTypeVariants: multipartContentTypeVariants(options.contentTypeVariants),
+		matchStatus: numericList(options.matchStatus),
+		filterStatus: numericList(options.filterStatus),
+		filterBodyBytes: numericList(options.filterBodyBytes),
+		maxCases: Math.min(5_000, positiveInt(options.maxCases, 500)),
 		rateLimitPerSecond,
 		delayMs: rateLimitPerSecond > 0 ? Math.ceil(1000 / rateLimitPerSecond) : 0,
 	};
