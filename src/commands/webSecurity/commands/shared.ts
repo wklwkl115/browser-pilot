@@ -269,7 +269,7 @@ function createBrowserCookieProvider(ensureStarted: EnsureStarted, params: WebSe
 
 export type WebSecurityToolContext = { cwd?: string };
 
-export async function runWebSecurityCommand<TParams extends WebSecuritySharedToolParams, TRunParams extends TParams, TResult>(ensureStarted: EnsureStarted, params: TParams, ctx: WebSecurityToolContext | undefined, config: WebSecurityShellConfig<TParams, TRunParams, TResult>, onUpdate?: CommandOnUpdate) {
+export async function executeWebSecurityToolShell<TParams extends WebSecuritySharedToolParams, TRunParams extends TParams, TResult>(ensureStarted: EnsureStarted, params: TParams, ctx: WebSecurityToolContext | undefined, config: WebSecurityShellConfig<TParams, TRunParams, TResult>, onUpdate?: CommandOnUpdate) {
 	return await runWebSecurityCommandAdapter<TParams, TRunParams, TResult>({
 		ensureStarted,
 		params,
@@ -290,5 +290,3 @@ export async function runWebSecurityCommand<TParams extends WebSecuritySharedToo
 		error: { map: (error) => webSecurityToolError(error, { commandName: config.commandName, command: config.command }) },
 	});
 }
-
-export const executeWebSecurityToolShell = runWebSecurityCommand;

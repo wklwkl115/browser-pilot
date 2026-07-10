@@ -1,106 +1,21 @@
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
+import type { SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/leaseRegistry.js";
+import type { SessionObservationSnapshotInfo } from "../kernels/session/observationSnapshotRegistry.js";
+import type { SessionActiveOperationInfo } from "../kernels/session/operationRegistry.js";
+import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionObjectiveKey, PerceptionTraceSnapshot, PerceptionTraceTerm } from "../kernels/session/perceptionLedger.js";
+import type { TemporalConfidence, TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../kernels/temporal/types.js";
 
-export type CommandPerceptionLedgerKey = {
-	browserSessionId?: string;
-	tabId?: number;
-	navigationEpoch?: string;
-};
+export type CommandPerceptionLedgerKey = PerceptionLedgerKey;
+export type CommandPerceptionObjectiveKey = PerceptionObjectiveKey;
+export type CommandPerceptionLedgerFactState = PerceptionLedgerFactState;
+export type CommandPerceptionLedgerFrame = PerceptionLedgerFrame;
+export type CommandPerceptionTraceTerm = PerceptionTraceTerm;
+export type CommandPerceptionTraceSnapshot = PerceptionTraceSnapshot;
 
-export type CommandPerceptionObjectiveKey = {
-	tabId?: number;
-	navigationEpoch?: string;
-};
-
-export type CommandPerceptionLedgerFactState = {
-	versionStamp: string;
-	stableStamp?: string;
-	lastShownGranularity: "full" | "compact" | "line" | "ref";
-};
-
-export type CommandPerceptionLedgerFrame = {
-	key: CommandPerceptionLedgerKey;
-	snapshotId: string;
-	capturedAt: number;
-	facts: Record<string, CommandPerceptionLedgerFactState>;
-	pageFingerprint?: {
-		changeSeq: number;
-		url?: string;
-		title?: string;
-		readyState?: string;
-		visibleCount?: number;
-		interactiveCount?: number;
-		capturedAt?: number;
-		dirty?: {
-			roots: string[];
-			overflow: boolean;
-			sinceSeq?: number;
-		};
-	};
-	renderCache?: {
-		mode: string;
-		detailLevel: string;
-		maxChars: number;
-		paramsSignature: string;
-		renderedAt: number;
-	};
-	allocation?: {
-		budgetUsedRatio: number;
-		omittedCount: number;
-	};
-	objective?: {
-		key: CommandPerceptionObjectiveKey;
-		snapshotId: string;
-		shared: boolean;
-	};
-};
-
-export type CommandPerceptionTraceTerm = {
-	term: string;
-	kind: string;
-	weight?: number;
-	at: number;
-	seq: number;
-};
-
-export type CommandPerceptionTraceSnapshot = {
-	terms: CommandPerceptionTraceTerm[];
-	latestSeq: number;
-};
-
-export type CommandTemporalVerdictStatus = "fresh" | "possibly_stale" | "stale" | "unknown";
-export type CommandTemporalConfidence = "mechanical" | "bounded" | "partial" | "lost";
-export type CommandTemporalReason =
-	| "same_target"
-	| "same_page_epoch"
-	| "same_wait_history"
-	| "target_possibly_stale"
-	| "target_stale_before_dispatch"
-	| "target_region_dirty"
-	| "url_changed"
-	| "selection_version_changed"
-	| "tab_replaced"
-	| "tab_disconnected"
-	| "extension_unavailable"
-	| "queue_saturated"
-	| "queue_delay_budget_exceeded"
-	| "no_ack"
-	| "acked_bridge_timeout"
-	| "lease_timeout"
-	| "client_disconnected"
-	| "worker_restarted_history_lost"
-	| "url_mismatch"
-	| "load_state_unreached"
-	| "selector_missing"
-	| "selector_unstable"
-	| "background_throttling_suspected"
-	| "network_active"
-	| "signal_unavailable"
-	| "underconstrained_wait"
-	| "late_success_after_deadline"
-	| "unknown_due_to_history_loss"
-	| "unknown_due_to_clock_domain"
-	| "unknown_due_to_missing_anchor";
-export type CommandTemporalFrontierNext = "reuse_target" | "retry_same_wait" | "reobserve" | "diagnose" | "fail_closed";
+export type CommandTemporalVerdictStatus = TemporalVerdictStatus;
+export type CommandTemporalConfidence = TemporalConfidence;
+export type CommandTemporalReason = TemporalReason;
+export type CommandTemporalFrontierNext = TemporalFrontierNext;
 
 export type CommandTemporalVerdict = {
 	status: CommandTemporalVerdictStatus;
@@ -137,61 +52,10 @@ export type CommandTemporalProfileSample = {
 	recovery?: CommandTemporalFrontierNext;
 };
 
-export type CommandActiveOperationInfo = {
-	operationId: string;
-	commandName: string;
-	command?: string;
-	browserSessionId?: string;
-	tabId?: number;
-	phase: string;
-	progress?: number;
-	queueDepth?: number;
-	leaseOwnerHash?: string;
-	conflictReason?: string;
-	snapshotId?: string;
-	sourceMode?: string;
-	details?: Record<string, unknown>;
-	startedAt: number;
-	updatedAt: number;
-};
-
-export type CommandObservationSnapshotInfo = {
-	snapshotId: string;
-	browserSessionId?: string;
-	tabId?: number;
-	url?: string;
-	frameScope?: string;
-	selectionVersion?: number;
-	sourceMode: string;
-	capturedAt: number;
-	ttlMs: number;
-	networkSeq?: number;
-	hookSeq?: number;
-	invalidatedReason?: string;
-	expired?: boolean;
-	saved?: {
-		path?: string;
-	};
-};
-
-export type CommandTabLeaseInfo = {
-	id: string;
-	browserSessionId: string;
-	tabSessionId: string;
-	browserId: string;
-	tabId: number;
-	explicit: boolean;
-	createdAt: number;
-	lastSeenAt: number;
-};
-
-export type CommandUiLockInfo = {
-	browserSessionId: string;
-	commandName: string;
-	createdAt: number;
-	lastSeenAt: number;
-	count: number;
-};
+export type CommandActiveOperationInfo = SessionActiveOperationInfo;
+export type CommandObservationSnapshotInfo = SessionObservationSnapshotInfo;
+export type CommandTabLeaseInfo = SessionTabLeaseInfo;
+export type CommandUiLockInfo = SessionUiLockInfo;
 
 export type BrowserCommandRuntimeSnapshot = {
 	browserSessionId?: string;

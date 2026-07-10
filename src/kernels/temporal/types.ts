@@ -121,3 +121,25 @@ export type TemporalDecision = {
 	frontier: TemporalFrontier;
 	source: TemporalSource;
 };
+
+export type CompactTemporalDecision = {
+	verdict: {
+		status: TemporalVerdictStatus;
+		confidence: TemporalConfidence;
+		reasons: TemporalReason[];
+	};
+	frontier: {
+		next: TemporalFrontierNext;
+		handle?: string;
+	};
+};
+
+export function compactTemporalDecision(
+	decision: { verdict: CompactTemporalDecision["verdict"]; frontier: Pick<CompactTemporalDecision["frontier"], "next"> },
+	handle?: string,
+): CompactTemporalDecision {
+	return {
+		verdict: { ...decision.verdict, reasons: decision.verdict.reasons.slice(0, TEMPORAL_REASON_MODEL_CAP) },
+		frontier: { next: decision.frontier.next, ...(handle ? { handle } : {}) },
+	};
+}

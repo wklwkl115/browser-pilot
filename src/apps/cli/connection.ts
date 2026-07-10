@@ -182,6 +182,23 @@ function connectFailureEnvelope(message: string, details: Record<string, unknown
 	};
 }
 
+function daemonUnavailableResult(error: unknown, timeoutMs: number): { exitCode: number; envelope: Record<string, unknown> } {
+	return {
+		exitCode: EXIT.unavailable,
+		envelope: {
+			ok: false,
+			exitCode: EXIT.unavailable,
+			code: "CLI_DAEMON_UNAVAILABLE",
+			command: "connect",
+			ready: false,
+			message: error instanceof Error ? error.message : String(error),
+			taxonomy: { domain: "cli", category: "daemon", retryable: true, source: "cli" },
+			diagnostics: {},
+			recovery: { commands: connectionRecoveryCommands(timeoutMs) },
+		},
+	};
+}
+
 export async function connectBrowser(opts: { wait: boolean; timeoutMs: number; cwd?: string; tabs?: boolean }): Promise<{ exitCode: number; envelope: Record<string, unknown> }> {
 	const startedAt = Date.now();
 	const before = await findDaemon();
@@ -189,40 +206,14 @@ export async function connectBrowser(opts: { wait: boolean; timeoutMs: number; c
 	try {
 		info = await ensureDaemon({ startTimeoutMs: Math.min(Math.max(opts.timeoutMs, 1_000), 30_000) });
 	} catch (error) {
-		return {
-			exitCode: EXIT.unavailable,
-			envelope: {
-				ok: false,
-				exitCode: EXIT.unavailable,
-				code: "CLI_DAEMON_UNAVAILABLE",
-				command: "connect",
-				ready: false,
-				message: error instanceof Error ? error.message : String(error),
-				taxonomy: { domain: "cli", category: "daemon", retryable: true, source: "cli" },
-				diagnostics: {},
-				recovery: { commands: connectionRecoveryCommands(opts.timeoutMs) },
-			},
-		};
+		return daemonUnavailableResult(error, opts.timeoutMs);
 	}
 	const startedDaemon = !before || before.info.pid !== info.pid;
 	let response;
 	try {
 		response = await controlRequest(info, "POST", "/connect", { wait: opts.wait, timeoutMs: opts.timeoutMs, tabs: opts.tabs === true }, Math.max(opts.timeoutMs + 2_000, 5_000));
 	} catch (error) {
-		return {
-			exitCode: EXIT.unavailable,
-			envelope: {
-				ok: false,
-				exitCode: EXIT.unavailable,
-				code: "CLI_DAEMON_UNAVAILABLE",
-				command: "connect",
-				ready: false,
-				message: error instanceof Error ? error.message : String(error),
-				taxonomy: { domain: "cli", category: "daemon", retryable: true, source: "cli" },
-				diagnostics: {},
-				recovery: { commands: connectionRecoveryCommands(opts.timeoutMs) },
-			},
-		};
+		return daemonUnavailableResult(error, opts.timeoutMs);
 	}
 	const json = response.json ?? {};
 	const status = json.status as DaemonStatus | undefined;

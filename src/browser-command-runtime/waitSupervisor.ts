@@ -6,7 +6,8 @@ import type { BridgeCommand } from "../types/nativeProtocol.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import { classifyStateLoss, classifyTimeout, diagnoseWaitTimeout } from "../kernels/temporal/classify.js";
 import type { WaitTimeoutDiagnosis, DiagnoseWaitTimeoutInput } from "../kernels/temporal/classify.js";
-import type { BrowserCommandRuntimePort, CommandTemporalDecision, CommandTemporalFrontierNext, CommandTemporalReason, CommandTemporalVerdict } from "../ports/BrowserCommandRuntimePort.js";
+import { compactTemporalDecision } from "../kernels/temporal/types.js";
+import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 
 const WAIT_LEASE_MAX_MS = 25_000;
 const WAIT_LEASE_BRIDGE_GRACE_MS = 3_000;
@@ -53,29 +54,6 @@ type WaitSupervisorState = {
 	navigation?: NavigationPhaseSummary;
 	selectorTimeout?: Record<string, unknown>;
 };
-
-type CompactTemporalDecision = {
-	verdict: {
-		status: CommandTemporalVerdict["status"];
-		confidence: CommandTemporalVerdict["confidence"];
-		reasons: CommandTemporalReason[];
-	};
-	frontier: {
-		next: CommandTemporalFrontierNext;
-		handle?: string;
-	};
-};
-
-function compactTemporalDecision(decision: CommandTemporalDecision, handle?: string): CompactTemporalDecision {
-	return {
-		verdict: {
-			status: decision.verdict.status,
-			confidence: decision.verdict.confidence,
-			reasons: decision.verdict.reasons.slice(0, 3),
-		},
-		frontier: { next: decision.frontier.next, ...(handle ? { handle } : {}) },
-	};
-}
 
 function waitTimeoutMs(value: unknown, fallback: number, allowZero = false): number {
 	const n = Number(value);

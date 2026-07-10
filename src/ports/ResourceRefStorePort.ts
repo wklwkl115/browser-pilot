@@ -1,3 +1,5 @@
+import type { RefDescriptor, RefDocumentEpoch, RefGeometry, RefKind, RefLocator, RefOwner, RefPolicy, RefSemanticState, RefSnapshotBinding } from "../kernels/refs/types.js";
+
 export type ResourceKind =
 	| "raw-result"
 	| "summary-section"
@@ -7,99 +9,15 @@ export type ResourceKind =
 	| "evidence"
 	| "artifact-slice";
 
-export type ResourceRefLocator =
-	| { by: "backendNodeId"; value: number; targetId?: string }
-	| { by: "axNodeId"; value: string }
-	| { by: "attrSignature"; value: Record<string, string> }
-	| { by: "css"; value: string }
-	| { by: "xpath"; value: string }
-	| { by: "textAnchor"; value: string; role?: string; exact?: boolean }
-	| { by: "point"; x: number; y: number };
-
-export type ResourceRefKind =
-	| "element"
-	| "control"
-	| "text"
-	| "media"
-	| "ax"
-	| "region"
-	| "frame"
-	| "network-entry"
-	| "event"
-	| "signal"
-	| "data-slice";
-
-export type ResourceRefOwner = {
-	browserSessionId?: string;
-	tabId?: number;
-	frameRef?: string;
-	targetId?: string;
-	topLevelOrigin?: string;
-};
-
-export type ResourceRefPolicy = {
-	redaction: "default" | "disabled";
-	shareableAcrossSessions: boolean;
-	liveActionsAllowed: boolean;
-};
-
-export type ResourceSnapshotBinding = {
-	observationId: string;
-	resourceUri?: string;
-	jsonPath?: string;
-	etag?: string;
-	immutable: boolean;
-};
-
-export type ResourceDocumentEpoch = {
-	frameId?: string;
-	loaderId?: string;
-	navigationId?: string;
-	url?: string;
-	mutationEpoch?: number;
-	capturedAt: number;
-};
-
-export type ResourceSemanticState = Record<string, boolean>;
-
-export type ResourceRefGeometry = {
-	box?: { x: number; y: number; w: number; h: number };
-	point?: { x: number; y: number };
-};
-
-export type ResourceRefDescriptor = {
-	refId: string;
-	kind: ResourceRefKind;
-	locators: ResourceRefLocator[];
-	owner: ResourceRefOwner;
-	policy: ResourceRefPolicy;
-	snapshot?: ResourceSnapshotBinding;
-	semantic?: {
-		role?: string;
-		name?: string;
-		value?: string;
-		state?: ResourceSemanticState;
-		anchor?: {
-			scope: "abml-template";
-			confidence: "high" | "low";
-			mintingEligible?: boolean;
-			containerRole?: string;
-			containerName?: string;
-			setSize?: number;
-			role?: string;
-			kind?: string;
-			name?: string;
-			normalizedName?: string;
-			posInSet?: number;
-		};
-	};
-	geometry?: ResourceRefGeometry;
-	observationId: string;
-	documentEpoch?: ResourceDocumentEpoch;
-	createdAt: number;
-	ttlMs: number;
-	stabilityScore?: number;
-};
+export type ResourceRefLocator = RefLocator;
+export type ResourceRefKind = RefKind;
+export type ResourceRefOwner = RefOwner;
+export type ResourceRefPolicy = RefPolicy;
+export type ResourceSnapshotBinding = RefSnapshotBinding;
+export type ResourceDocumentEpoch = RefDocumentEpoch;
+export type ResourceSemanticState = RefSemanticState;
+export type ResourceRefGeometry = RefGeometry;
+export type ResourceRefDescriptor = RefDescriptor;
 
 export type BrowserResultResource = {
 	id: string;

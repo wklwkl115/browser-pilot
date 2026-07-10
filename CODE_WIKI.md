@@ -403,7 +403,7 @@ Kernels 是纯逻辑层。这里的代码不做浏览器 I/O、不读写文件�
 | 目录 | 职责 |
 |---|---|
 | [`kernels/abml`](src/kernels/abml) | Agent Browser Markup Language，页面实体、AX/DOM 融合、diff、relations、collections、causal、verbs。 |
-| [`kernels/refs`](src/kernels/refs) | `bp-ref://` ref mint/parse/id/policy/text extraction。 |
+| [`kernels/refs`](src/kernels/refs) | 通用 ref descriptor 类型，以及 `bp-ref://` ref mint/parse/id/policy/text extraction。 |
 | [`kernels/evidence/distill`](src/kernels/evidence/distill) | fact、budget、projection、artifact plan、recovery、salience envelope。 |
 | [`kernels/memory`](src/kernels/memory) | memory profile、terms、recall、routing、salience、staleness。 |
 | [`kernels/session`](src/kernels/session) | session、lease、operation、snapshot、perception ledger、intent refs。 |
@@ -512,6 +512,7 @@ TS adapter 位于 [`src/native/browserPilotNativeKernels.ts`](src/native/browser
 | `diffEntities()` | [`src/kernels/abml/diff.ts`](src/kernels/abml/diff.ts) | entity diff 纯实现。 |
 | `SessionKernel` | [`src/kernels/session/SessionKernel.ts`](src/kernels/session/SessionKernel.ts) | session/lease/operation/snapshot kernel 聚合。 |
 | `mintRef()` / `parseRef()` | [`src/kernels/refs/core.ts`](src/kernels/refs/core.ts) | `bp-ref://` URI 创建与解析。 |
+| `RefDescriptor` | [`src/kernels/refs/types.ts`](src/kernels/refs/types.ts) | ABML 与 resource port 共享的 locator、owner、policy、snapshot、epoch、geometry 类型。 |
 | `createBrowserAbmlRuntime()` | [`src/browser-runtime/abml/runtime.ts`](src/browser-runtime/abml/runtime.ts) | 创建 ABML runtime context。 |
 | `buildScanScript()` | [`src/scan/buildScanScript.ts`](src/scan/buildScanScript.ts) | 渲染 scan 页面脚本，并注入 scan signals、growth probe 与 accessible-name provider。 |
 | `DOM_ACCESSIBILITY_API_BUNDLE` | [`src/scan/domAccessibilityApiBundle.ts`](src/scan/domAccessibilityApiBundle.ts) | `dom-accessibility-api` 的页面世界 bundle，用于 scan 命名链路。 |

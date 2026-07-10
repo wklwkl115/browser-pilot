@@ -73,7 +73,4 @@ export const BROWSER_NOISE_CLASS_PATTERNS = [
 	"mate-translate",
 ] as const;
 
-export const SCAN_IGNORE_IDS = BROWSER_NOISE_IDS;
-export const SCAN_IGNORE_TAGS = BROWSER_NOISE_TAGS;
-export const SCAN_IGNORE_SELECTORS = BROWSER_NOISE_SELECTORS;
 export const SCAN_EXTENSION_URL_PATTERN = "^(chrome|moz|safari)-extension://";

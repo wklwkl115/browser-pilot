@@ -57,7 +57,7 @@ The modules below make up the kernel's public surface — consumers import them 
 | `verbs/router.ts` | Verb input/result/runtime types shared by pure decisions and browser runtime. |
 | `verbs/{read,frame,pierce}.ts` | Per-verb **decision** logic (no browser call). |
 
-Generic ref URI minting, stable ref IDs, and ref-access policy live in
+Generic ref descriptor types, URI minting, stable IDs, and ref-access policy live in
 [`../refs/`](../refs) so resource storage and ABML share one ref owner without
 making resource ports depend on ABML.
 

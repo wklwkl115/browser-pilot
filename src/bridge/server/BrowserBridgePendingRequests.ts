@@ -110,31 +110,27 @@ export class BrowserBridgePendingRequests {
 		}
 	}
 
-	resolve(id: string, result: unknown, newTabs: unknown[], diagnostics?: Record<string, unknown>): void {
-		const pending = this.take(id);
-		if (!pending) return;
-		const now = Date.now();
-		const latency = {
+	private latency(pending: PendingRequest, now = Date.now()) {
+		return {
 			totalMs: Math.max(0, now - pending.createdAt),
 			clientMs: pending.ackAt ? Math.max(0, now - pending.ackAt) : undefined,
 			ackMs: pending.ackAt ? Math.max(0, pending.ackAt - pending.createdAt) : undefined,
 			deadlineMs: pending.timeoutMs,
 			acked: pending.acked,
 		};
+	}
+
+	resolve(id: string, result: unknown, newTabs: unknown[], diagnostics?: Record<string, unknown>): void {
+		const pending = this.take(id);
+		if (!pending) return;
+		const latency = this.latency(pending);
 		pending.resolve({ id, tabId: pending.tabId, acknowledged: pending.acked, data: result, newTabs, target: this.resolvedTarget(pending.target), diagnostics: { ...(diagnostics || {}), latency } });
 	}
 
 	rejectBrowserError(id: string, error: unknown, result: unknown, diagnostics?: Record<string, unknown>): void {
 		const pending = this.take(id);
 		if (!pending) return;
-		const now = Date.now();
-		const latency = {
-			totalMs: Math.max(0, now - pending.createdAt),
-			clientMs: pending.ackAt ? Math.max(0, now - pending.ackAt) : undefined,
-			ackMs: pending.ackAt ? Math.max(0, pending.ackAt - pending.createdAt) : undefined,
-			deadlineMs: pending.timeoutMs,
-			acked: pending.acked,
-		};
+		const latency = this.latency(pending);
 		// Preserve the extension's structured error code (carried on the command result, e.g.
 		// SELECTOR_NOT_FOUND) instead of flattening every bridge error to BROWSER_EXECUTION_ERROR —
 		// keeps recovery hints routable. Falls back to BROWSER_EXECUTION_ERROR when no code is present.

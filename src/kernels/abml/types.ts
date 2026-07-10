@@ -1,96 +1,14 @@
-export type Locator =
-	| { by: "backendNodeId"; value: number; targetId?: string }
-	| { by: "axNodeId"; value: string }
-	| { by: "attrSignature"; value: Record<string, string> }
-	| { by: "css"; value: string }
-	| { by: "xpath"; value: string }
-	| { by: "textAnchor"; value: string; role?: string; exact?: boolean }
-	| { by: "point"; x: number; y: number };
+import type { RefDescriptor as SharedRefDescriptor, RefDocumentEpoch, RefGeometry as SharedRefGeometry, RefKind as SharedRefKind, RefLocator, RefOwner as SharedRefOwner, RefPolicy as SharedRefPolicy, RefSemanticState, RefSnapshotBinding } from "../refs/types.js";
 
-export type RefKind =
-	| "element"
-	| "control"
-	| "text"
-	| "media"
-	| "ax"
-	| "region"
-	| "frame"
-	| "network-entry"
-	| "event"
-	| "signal"
-	| "data-slice";
-
-export type RefOwner = {
-	browserSessionId?: string;
-	tabId?: number;
-	frameRef?: string;
-	targetId?: string;
-	topLevelOrigin?: string;
-};
-
-export type RefPolicy = {
-	redaction: "default" | "disabled";
-	shareableAcrossSessions: boolean;
-	liveActionsAllowed: boolean;
-};
-
-export type SnapshotBinding = {
-	observationId: string;
-	resourceUri?: string;
-	jsonPath?: string;
-	etag?: string;
-	immutable: boolean;
-};
-
-export type DocumentEpoch = {
-	frameId?: string;
-	loaderId?: string;
-	navigationId?: string;
-	url?: string;
-	mutationEpoch?: number;
-	capturedAt: number;
-};
-
-export type SemanticState = Record<string, boolean>;
-
-export type RefGeometry = {
-	box?: { x: number; y: number; w: number; h: number };
-	point?: { x: number; y: number };
-};
-
-export type RefDescriptor = {
-	refId: string;
-	kind: RefKind;
-	locators: Locator[];
-	owner: RefOwner;
-	policy: RefPolicy;
-	snapshot?: SnapshotBinding;
-	semantic?: {
-		role?: string;
-		name?: string;
-		value?: string;
-		state?: SemanticState;
-		anchor?: {
-			scope: "abml-template";
-			confidence: "high" | "low";
-			mintingEligible?: boolean;
-			containerRole?: string;
-			containerName?: string;
-			setSize?: number;
-			role?: string;
-			kind?: string;
-			name?: string;
-			normalizedName?: string;
-			posInSet?: number;
-		};
-	};
-	geometry?: RefGeometry;
-	observationId: string;
-	documentEpoch?: DocumentEpoch;
-	createdAt: number;
-	ttlMs: number;
-	stabilityScore?: number;
-};
+export type Locator = RefLocator;
+export type RefKind = SharedRefKind;
+export type RefOwner = SharedRefOwner;
+export type RefPolicy = SharedRefPolicy;
+export type SnapshotBinding = RefSnapshotBinding;
+export type DocumentEpoch = RefDocumentEpoch;
+export type SemanticState = RefSemanticState;
+export type RefGeometry = SharedRefGeometry;
+export type RefDescriptor = SharedRefDescriptor;
 
 export type CandidateSource = "dom" | "ax" | "vision" | "region" | "network" | "hook" | "evidence";
 

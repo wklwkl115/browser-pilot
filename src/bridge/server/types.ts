@@ -1,4 +1,7 @@
 import type { WebSocket } from "ws";
+import type { SessionReleasedTabLeaseInfo, SessionReleasedUiLockInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../../kernels/session/leaseRegistry.js";
+import type { SessionObservationSnapshotInfo } from "../../kernels/session/observationSnapshotRegistry.js";
+import type { SessionActiveOperationInfo } from "../../kernels/session/operationRegistry.js";
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../../ports/BrowserRuntimeTypes.js";
 
 export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserBridgeTargetSource } from "../../ports/BrowserRuntimeTypes.js";
@@ -77,32 +80,10 @@ export type BrowserAutomationSessionInfo = {
 	selectedBrowser?: BrowserBridgeClientInfo;
 };
 
-export type BrowserTabLeaseInfo = {
-	id: string;
-	browserSessionId: string;
-	tabSessionId: string;
-	browserId: string;
-	tabId: number;
-	explicit: boolean;
-	createdAt: number;
-	lastSeenAt: number;
-};
-
-export type BrowserReleasedTabLeaseInfo = BrowserTabLeaseInfo & {
-	releaseReason: "ttl" | "disconnect";
-};
-
-export type BrowserUiLockInfo = {
-	browserSessionId: string;
-	commandName: string;
-	createdAt: number;
-	lastSeenAt: number;
-	count: number;
-};
-
-export type BrowserReleasedUiLockInfo = BrowserUiLockInfo & {
-	releaseReason: "ttl" | "disconnect";
-};
+export type BrowserTabLeaseInfo = SessionTabLeaseInfo;
+export type BrowserReleasedTabLeaseInfo = SessionReleasedTabLeaseInfo;
+export type BrowserUiLockInfo = SessionUiLockInfo;
+export type BrowserReleasedUiLockInfo = SessionReleasedUiLockInfo;
 
 export type BrowserCommandQueueInfo = {
 	key: string;
@@ -111,42 +92,8 @@ export type BrowserCommandQueueInfo = {
 	depth: number;
 };
 
-export type BrowserActiveOperationInfo = {
-	operationId: string;
-	commandName: string;
-	command?: string;
-	browserSessionId?: string;
-	tabId?: number;
-	phase: string;
-	progress?: number;
-	queueDepth?: number;
-	leaseOwnerHash?: string;
-	conflictReason?: string;
-	snapshotId?: string;
-	sourceMode?: string;
-	details?: Record<string, unknown>;
-	startedAt: number;
-	updatedAt: number;
-};
-
-export type BrowserObservationSnapshotInfo = {
-	snapshotId: string;
-	browserSessionId?: string;
-	tabId?: number;
-	url?: string;
-	frameScope?: string;
-	selectionVersion?: number;
-	sourceMode: string;
-	capturedAt: number;
-	ttlMs: number;
-	networkSeq?: number;
-	hookSeq?: number;
-	invalidatedReason?: string;
-	expired?: boolean;
-	saved?: {
-		path?: string;
-	};
-};
+export type BrowserActiveOperationInfo = SessionActiveOperationInfo;
+export type BrowserObservationSnapshotInfo = SessionObservationSnapshotInfo;
 
 export type BridgeConnectionMetrics = {
 	connects: number;

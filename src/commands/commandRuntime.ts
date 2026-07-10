@@ -53,7 +53,7 @@ type SharedCommandParamOptions = {
 type DistillFn = (value: unknown) => Record<string, unknown>;
 type TextDistillFn = (text: string) => Record<string, unknown>;
 
-type JsonCommandResultOptions = {
+type CommandResultOptions = {
 	commandName: ToolResultBudgetName | string;
 	budgetName?: ToolResultBudgetName;
 	command?: string;
@@ -66,7 +66,6 @@ type JsonCommandResultOptions = {
 	diagnostics?: Record<string, unknown>;
 	artifactValue?: unknown;
 	entities?: Array<Record<string, unknown>>;
-	distill?: DistillFn;
 	artifactThreshold?: number;
 	maxChars?: number;
 	granularityCeiling?: Exclude<CommandFactGranularity, "omit">;
@@ -76,28 +75,13 @@ type JsonCommandResultOptions = {
 	activeContext?: Record<string, unknown>;
 };
 
-type TextCommandResultOptions = {
-	commandName: ToolResultBudgetName | string;
-	budgetName?: ToolResultBudgetName;
-	command?: string;
-	browserSessionId?: string;
-	defaultDetailLevel?: DetailLevel;
-	fallbackName: string;
-	details?: Record<string, unknown>;
-	operation?: Record<string, unknown>;
-	snapshot?: Record<string, unknown>;
-	diagnostics?: Record<string, unknown>;
-	artifactValue?: unknown;
-	entities?: Array<Record<string, unknown>>;
+type JsonCommandResultOptions = CommandResultOptions & {
+	distill?: DistillFn;
+};
+
+type TextCommandResultOptions = CommandResultOptions & {
 	summary?: Record<string, unknown>;
 	distill?: TextDistillFn;
-	artifactThreshold?: number;
-	maxChars?: number;
-	granularityCeiling?: Exclude<CommandFactGranularity, "omit">;
-	stableRefs?: Set<string>;
-	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
-	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
-	activeContext?: Record<string, unknown>;
 };
 
 export type CommandOnUpdate = ((result: BrowserTextCommandResult) => void | Promise<void>) | undefined;

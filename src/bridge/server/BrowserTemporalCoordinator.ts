@@ -1,23 +1,11 @@
 import path from "node:path";
 import { classifyDeadlinePressure } from "../../kernels/temporal/budget.js";
 import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity } from "../../kernels/temporal/estimate.js";
-import type { TemporalAnchor, TemporalDecision, TemporalFrontierNext, TemporalReason, TemporalStamp, TemporalVerdict } from "../../kernels/temporal/types.js";
+import { compactTemporalDecision, type CompactTemporalDecision, type TemporalAnchor, type TemporalReason, type TemporalStamp } from "../../kernels/temporal/types.js";
 import type { BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo } from "./types.js";
 import type { CommandTemporalProfileSample, CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
 import { normalizeTemporalProfileRunId, writeTemporalProfileArtifacts, summarizeTemporalProfileSamples, type TemporalProfileArtifactPaths, type TemporalProfileSummary } from "./temporalProfileArtifacts.js";
 import { isRecord } from "../../utils/records.js";
-
-export type CompactTemporalDecision = {
-	verdict: {
-		status: TemporalVerdict["status"];
-		confidence: TemporalVerdict["confidence"];
-		reasons: TemporalReason[];
-	};
-	frontier: {
-		next: TemporalFrontierNext;
-		handle?: string;
-	};
-};
 
 export type QueueTemporalProfileInput = {
 	queueDepthAtEnqueue?: number;
@@ -41,17 +29,6 @@ const DEFAULT_RUNTIME_TEMPORAL_PROFILE_SAMPLE_CAP = 256;
 
 function reasons(value: unknown): TemporalReason[] | undefined {
 	return Array.isArray(value) ? value.filter((item): item is TemporalReason => typeof item === "string").slice(0, 3) : undefined;
-}
-
-function compact(decision: TemporalDecision, handle?: string): CompactTemporalDecision {
-	return {
-		verdict: {
-			status: decision.verdict.status,
-			confidence: decision.verdict.confidence,
-			reasons: decision.verdict.reasons.slice(0, 3),
-		},
-		frontier: { next: decision.frontier.next, ...(handle ? { handle } : {}) },
-	};
 }
 
 function supervisorFromData(data: unknown): Record<string, unknown> | undefined {
@@ -128,7 +105,7 @@ export function queueTemporalDiagnostics(input: QueueTemporalProfileInput): { te
 		queueDepthAtEnqueue: input.queueDepthAtEnqueue,
 	});
 	return {
-		temporal: pressure.verdict.status === "fresh" ? undefined : compact(pressure),
+		temporal: pressure.verdict.status === "fresh" ? undefined : compactTemporalDecision(pressure),
 		temporalProfile,
 	};
 }
@@ -189,15 +166,15 @@ export class BrowserTemporalCoordinator {
 	}
 
 	estimateTargetContinuity(anchor: TemporalAnchor | undefined, current: TemporalStamp | undefined, input: { targetRegionDirty?: boolean; stableLocator?: boolean; cssOnlyLocator?: boolean } = {}): CompactTemporalDecision {
-		return compact(estimateTargetContinuity({ anchor, current, ...input }));
+		return compactTemporalDecision(estimateTargetContinuity({ anchor, current, ...input }));
 	}
 
 	estimatePageFreshness(anchor: TemporalAnchor | undefined, current: TemporalStamp | undefined, input: { targetRegionDirty?: boolean; stableLocator?: boolean; maxSameDomainAgeMs?: number } = {}): CompactTemporalDecision {
-		return compact(estimatePageFreshness({ anchor, current, ...input }));
+		return compactTemporalDecision(estimatePageFreshness({ anchor, current, ...input }));
 	}
 
 	estimateWaitContinuity(input: { previousWorkerBootId?: string; currentWorkerBootId?: string; historyLost?: boolean; workerRestarts?: number }): CompactTemporalDecision {
-		return compact(estimateWaitContinuity(input));
+		return compactTemporalDecision(estimateWaitContinuity(input));
 	}
 
 	buildProfileSample(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample {

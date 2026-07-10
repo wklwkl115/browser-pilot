@@ -50,13 +50,11 @@ export const HttpRequestSchema = createSchema<ValidatedHttpRequest>(Type.Object(
 	refinements: [{ check: (value) => validUrl(value.url), message: "Invalid URL format" }],
 });
 
-export const MultipartFieldSchema = createSchema(Type.Object({
+const MultipartFieldType = Type.Object({
 	name: Type.String({ minLength: 1 }),
 	value: Type.String(),
 	contentType: Type.Optional(Type.String()),
-}, { additionalProperties: false }));
-
-const MultipartFieldType = MultipartFieldSchema.schema;
+}, { additionalProperties: false });
 const MultipartFileType = Type.Object({
 	name: Type.String({ minLength: 1 }),
 	filename: Type.String({ minLength: 1 }),
@@ -183,7 +181,6 @@ const TemplatesInputType = Type.Union([
 	Type.Object({ templates: Type.Array(TemplateType) }, { additionalProperties: false }),
 ]);
 export const TemplatesInputSchema = createSchema<ValidatedTemplate | ValidatedTemplate[] | { templates: ValidatedTemplate[] }>(TemplatesInputType);
-export const TemplatesSchema = TemplatesInputSchema;
 
 export type ValidatedVariables = Record<string, string | number | boolean | null>;
 export const VariablesSchema = createSchema<ValidatedVariables>(Type.Record(Type.String(), Type.Union([

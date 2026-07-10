@@ -7,7 +7,7 @@ import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
 import type { RawNucleiBridgeOptions, RawTemplateCheckOptions } from "../shared/types.js";
 import { validateOptionalParams } from "../../validationMiddleware.js";
-import { HttpRequestSchema, FuzzMutationsSchema, TemplatesSchema, VariablesSchema, TechHintsSchema } from "../../../validation/schemas.js";
+import { HttpRequestSchema, FuzzMutationsSchema, TemplatesInputSchema, VariablesSchema, TechHintsSchema } from "../../../validation/schemas.js";
 
 type TemplateToolParams = WebSecuritySharedToolParams & RawTemplateCheckOptions & RawNucleiBridgeOptions & { engine?: unknown };
 
@@ -74,7 +74,7 @@ export function defineTemplateCommand({ commands, ensureStarted }: CommandRegist
 				validateOptionalParams(FuzzMutationsSchema, current.mutations);
 			}
 			if (current.templates !== undefined) {
-				validateOptionalParams(TemplatesSchema, current.templates);
+				validateOptionalParams(TemplatesInputSchema, current.templates);
 			}
 			if (current.variables !== undefined) {
 				validateOptionalParams(VariablesSchema, current.variables);

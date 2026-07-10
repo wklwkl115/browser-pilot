@@ -1,6 +1,6 @@
 import { ACTIONABLE_ATTRIBUTE_NAMES, ACTIONABLE_HIGH_INTENT_PATTERN, ACTIONABLE_KEYWORD_PATTERN, ACTIONABLE_PRIMARY_INTENT_PATTERN, FRAMEWORK_ACTION_HANDLER_PATTERN, FRAMEWORK_HANDLER_OWNER_PATTERN } from "./actionableRules.js";
 import { DOM_ACCESSIBILITY_API_BUNDLE } from "./domAccessibilityApiBundle.js";
-import { BROWSER_NOISE_ATTRIBUTE_NAMES, BROWSER_NOISE_ATTRIBUTE_PREFIXES, BROWSER_NOISE_CLASS_PATTERNS, SCAN_EXTENSION_URL_PATTERN, SCAN_IGNORE_IDS, SCAN_IGNORE_SELECTORS, SCAN_IGNORE_TAGS } from "./noiseRules.js";
+import { BROWSER_NOISE_ATTRIBUTE_NAMES, BROWSER_NOISE_ATTRIBUTE_PREFIXES, BROWSER_NOISE_CLASS_PATTERNS, BROWSER_NOISE_IDS, BROWSER_NOISE_SELECTORS, BROWSER_NOISE_TAGS, SCAN_EXTENSION_URL_PATTERN } from "./noiseRules.js";
 import { jsonForInlineScript as captureJsonForInlineScript, renderCaptureTemplate } from "../capture/inject.js";
 import { SCAN_TEMPLATE } from "../../capture-src/entries/scanTemplate.js";
 
@@ -234,9 +234,9 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
 	};
 	const rendered = renderCaptureTemplate(SCAN_TEMPLATE, {
 		optionsJson: jsonForInlineScript(opts),
-		ignoreIdsJson: jsonForInlineScript(SCAN_IGNORE_IDS),
-		ignoreTagsJson: jsonForInlineScript(SCAN_IGNORE_TAGS),
-		ignoreSelectorsJson: jsonForInlineScript(SCAN_IGNORE_SELECTORS),
+		ignoreIdsJson: jsonForInlineScript(BROWSER_NOISE_IDS),
+		ignoreTagsJson: jsonForInlineScript(BROWSER_NOISE_TAGS),
+		ignoreSelectorsJson: jsonForInlineScript(BROWSER_NOISE_SELECTORS),
 		noiseAttrNamesJson: jsonForInlineScript(BROWSER_NOISE_ATTRIBUTE_NAMES),
 		noiseAttrPrefixesJson: jsonForInlineScript(BROWSER_NOISE_ATTRIBUTE_PREFIXES),
 		noiseClassPatternsJson: jsonForInlineScript(BROWSER_NOISE_CLASS_PATTERNS),
