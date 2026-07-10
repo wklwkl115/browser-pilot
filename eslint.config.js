@@ -150,6 +150,7 @@ export default tseslint.config(
 			"src/bridge/extension/service_worker/frame.ts",
 			"src/bridge/extension/service_worker/network.ts",
 			"src/commands/webSecurity/browserNative/sqliProbe.ts",
+			"src/commands/webSecurity/browserNative/crawl.ts",
 			"src/commands/observeCommand.ts",
 			"src/bridge/extension/service_worker/network_events.ts",
 			"src/bridge/extension/service_worker/hook.ts",

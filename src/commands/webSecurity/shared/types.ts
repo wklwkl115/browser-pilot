@@ -74,6 +74,7 @@ export type RawReplayOptions = WebFetchOptions & {
 };
 
 export type RawCrawlOptions = WebFetchOptions & {
+	cwd?: string;
 	url?: unknown;
 	urls?: unknown;
 	paths?: unknown;
