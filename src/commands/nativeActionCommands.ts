@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { executeBrowserWaitWithSupervisor } from "../browser-command-runtime/waitSupervisor.js";
 import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
 import type { DetailLevel } from "../utils/params.js";
+import { isRecord } from "../utils/params.js";
 import type { BridgeCommand } from "../types/nativeProtocol.js";
 import { nativeToolMetadata } from "./nativeActionMetadata.js";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands.js";
@@ -58,6 +59,64 @@ function nativeActionErrorResult(error: unknown) {
 	return bridgeNestedErrorResult(error, { defaultMessage: "browser native action failed" });
 }
 
+function isNetworkCaptureReloadAction(commandName: string, action: unknown): boolean {
+	if (commandName !== "browser_network") return false;
+	const normalized = String(action || "").trim().toLowerCase().replace(/[_.-]/g, "");
+	return normalized === "capturereload" || normalized === "reloadcapture" || normalized === "capture";
+}
+
+function networkCaptureReloadCommands(body: Record<string, unknown>, tabId: unknown, timeoutMs: number): BridgeCommand[] {
+	const sessionId = typeof body.sessionId === "string" ? body.sessionId : typeof body.session_id === "string" ? body.session_id : undefined;
+	const startParams: BridgeCommand = { ...body, ...(sessionId ? { sessionId } : {}), cmd: "network.start" };
+	delete startParams.url;
+	delete startParams.wait;
+	delete startParams.waitCondition;
+	delete startParams.wait_condition;
+	delete startParams.reload;
+	delete startParams.list;
+	const url = typeof body.url === "string" && body.url.trim() ? body.url.trim() : undefined;
+	const wait = isRecord(body.wait) ? body.wait as Record<string, unknown> : {};
+	const condition = String(body.waitCondition ?? body.wait_condition ?? wait.condition ?? "idle");
+	const waitParams: BridgeCommand = {
+		cmd: "network.wait",
+		...(sessionId ? { sessionId } : {}),
+		condition,
+		idleMs: body.idleMs ?? body.idle_ms ?? wait.idleMs ?? wait.idle_ms ?? 800,
+		timeoutMs: body.waitTimeoutMs ?? body.wait_timeout_ms ?? timeoutMs,
+		criteria: isRecord(wait.criteria) ? wait.criteria : isRecord(body.criteria) ? body.criteria : {},
+	};
+	const listParams: BridgeCommand = {
+		cmd: "network.list",
+		...(sessionId ? { sessionId } : {}),
+		limit: body.limit ?? 100,
+		includeDetails: body.includeDetails === true || body.include_details === true,
+	};
+	const navigation: BridgeCommand = url
+		? { cmd: "wait.navigateAndWait", url, timeoutMs }
+		: { cmd: "cdp", method: "Page.reload", params: { ignoreCache: body.ignoreCache === true || body.ignore_cache === true }, timeoutMs };
+	return [startParams, navigation, waitParams, listParams].map((command) => tabId !== undefined ? { ...command, tabId: tabId as string | number } : command);
+}
+
+function networkCaptureReloadSummary(result: BrowserBridgeExecutionResult, commands: BridgeCommand[]): Record<string, unknown> {
+	const data = isRecord(result.data) ? result.data : {};
+	const results = Array.isArray(data.results) ? data.results : Array.isArray((result as unknown as Record<string, unknown>).results) ? (result as unknown as Record<string, unknown>).results as unknown[] : [];
+	const list = results[3];
+	const listData = isRecord(list) && isRecord(list.data) ? list.data : {};
+	return {
+		type: "networkCaptureReload",
+		ok: results.every((entry) => isRecord(entry) ? entry.ok !== false : true),
+		flow: commands.map((command) => command.cmd),
+		startBeforeNavigation: commands[0]?.cmd === "network.start" && (commands[1]?.cmd === "wait.navigateAndWait" || commands[1]?.cmd === "cdp"),
+		total: typeof listData.total === "number" ? listData.total : undefined,
+		items: Array.isArray(listData.items) ? listData.items.slice(0, 20) : undefined,
+		recovery: "To capture early page-load requests, use browser_network action=captureReload (or reloadCapture) so network.start runs before reload/navigation; narrow with wait.criteria and then inspect saved.path with browser_artifact mode=paths.",
+	};
+}
+
+function mergeCommandDiagnostics(result: BrowserBridgeExecutionResult, diagnostics: Record<string, unknown>): Record<string, unknown> {
+	return { ...(result.diagnostics || {}), ...diagnostics };
+}
+
 function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrarContext, config: ActionToolConfig) {
 	const passthroughKeys = actionPassthroughKeys(config.name);
 	const parameterProperties = {
@@ -85,7 +144,8 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 					const top = (params as Record<string, unknown>)[k];
 					if (top !== undefined && body[k] === undefined) body[k] = top;
 				}
-				const commandName = config.commandForAction(params.action);
+				const captureReload = isNetworkCaptureReloadAction(config.name, params.action);
+				const commandName = captureReload ? "network.captureReload" : config.commandForAction(params.action);
 				const tabId = targetTabId(params, body);
 				if (params.sessionId && body.sessionId === undefined && body.session_id === undefined) body.sessionId = params.sessionId;
 				const timeoutMs = actionTimeoutMs(params.timeoutMs, config.timeoutForCommand?.(commandName) ?? DEFAULT_TOOL_TIMEOUT_MS, config.allowZeroTimeout === true);
@@ -106,9 +166,11 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 					leaseOwnerHash: server.leaseOwnerHash(browserSessionId, trackedTabId),
 				}, _onUpdate, async (handle) => {
 					await handle.update({ progress: 45 });
-					const result = config.commandExecutor
-						? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs })
-						: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs });
+					const result = captureReload
+						? await server.sendCommand({ cmd: "batch", commands: networkCaptureReloadCommands(body, resolvedTabId, timeoutMs) }, { browserSessionId, tabId: resolvedTabId, timeoutMs, accessMode: "write" })
+						: config.commandExecutor
+							? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs })
+							: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs });
 					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
 					return result;
 				});
@@ -133,8 +195,9 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 					details: { command: commandName, action: params.action },
 					operation,
 					activeContext: buildActiveContext(server, params),
-					diagnostics: result.diagnostics,
+					diagnostics: mergeCommandDiagnostics(result, captureReload ? { networkCaptureReload: { oneShotBatch: true, startBeforeNavigation: true, guidance: "network.start ran before reload/navigation; inspect saved.path with browser_artifact mode=paths for available request paths." } } : {}),
 					artifactValue: { ...result, operation },
+					...(captureReload ? { distill: (value: unknown) => networkCaptureReloadSummary(value as BrowserBridgeExecutionResult, networkCaptureReloadCommands(body, resolvedTabId, timeoutMs)) } : {}),
 				});
 			}, nativeActionErrorResult);
 		},
@@ -164,9 +227,9 @@ export function defineNetworkCommand(context: CommandRegistrarContext) {
 	defineNativeActionCommand(context, {
 		name: "browser_network",
 		label: "Browser Network",
-		description: "Native Network recorder commands: start, stop, status, clear, list, get, body, exportHar, wait.",
-		promptSnippet: "Control Browser Network recorder and inspect captured requests/bodies/HAR.",
-		promptGuideline: "Use browser_network for request/response observation instead of ad-hoc page fetch monkeypatches.",
+		description: "Native Network recorder commands: start, stop, status, clear, list, get, body, exportHar, wait, plus captureReload one-shot reload capture UX.",
+		promptSnippet: "Control Browser Network recorder and inspect captured requests/bodies/HAR; use action=captureReload to start capture before reload/navigation in one round trip.",
+		promptGuideline: "Use browser_network action=captureReload for page-load traffic so network.start runs before reload/navigation; use low-level start/list/stop for manual recorder control. Prefer this over ad-hoc page fetch monkeypatches.",
 		actionDescription: nativeToolMetadata.nativeActionTools.browser_network.actionDescription,
 		sessionIdDescription: "Recorder session id",
 		commandForAction: networkCommandForAction,

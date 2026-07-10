@@ -5,7 +5,7 @@ export type CliCommandSummary = {
 };
 
 export const COMMAND_SUMMARIES: CliCommandSummary[] = [
-	{ subcommand: "artifact", name: "browser_artifact", description: "Read, sample, search, or pick local artifact files produced by browser tools without loading the whole file, including bounded multi-artifact search." },
+	{ subcommand: "artifact", name: "browser_artifact", description: "Read, inspect, list available JSON paths, sample, search, or pick local artifacts without loading the whole file." },
 	{ subcommand: "callback-oast", name: "browser_callback_oast", description: "Run local HTTP/HTTPS/DNS callback listeners with correlation IDs, trigger helpers, persisted events, and external callback metadata." },
 	{ subcommand: "command", name: "browser_command", description: "Send a native bridge command object through the Browser Pilot bridge with stable validation and result envelopes." },
 	{ subcommand: "cookie-analyze", name: "browser_cookie_analyze", description: "Analyze Cookie, Set-Cookie, JWT, JWE, PASETO, and signed or encrypted session values with decoding, signature/decryption checks, claim mutation generation, claim replay validation, browser-session cookie binding, and Rails AES-GCM/AES-CBC/direct-key evidence." },
@@ -18,7 +18,7 @@ export const COMMAND_SUMMARIES: CliCommandSummary[] = [
 	{ subcommand: "hook", name: "browser_hook", description: "Native browser event hook commands: listTargets, installTargets, install, collect, status, clear, pause, resume, uninstall, evaluate, event listener, performance entries." },
 	{ subcommand: "http-replay", name: "browser_http_replay", description: "Replay raw or structured HTTP requests with method/header/body mutation, HAR dependency graph evidence, artifact output, and optional browser-session cookie injection." },
 	{ subcommand: "memory", name: "browser_memory", description: "Record, recall, read, or validate local browser memory entries with local-only persistence, near-duplicate dedup, optional provenance evidence, and bounded reads." },
-	{ subcommand: "network", name: "browser_network", description: "Native Network recorder commands: start, stop, status, clear, list, get, body, exportHar, wait." },
+	{ subcommand: "network", name: "browser_network", description: "Native Network recorder commands including captureReload, which starts capture before reload/navigation to catch page-load requests." },
 	{ subcommand: "observe", name: "browser_observe", description: "Observe the current page as the canonical ABML page model; omit mode for ordinary use, with explicit modes reserved for legacy/debug projections." },
 	{ subcommand: "screenshot", name: "browser_screenshot", description: "Native screenshot capture. Saves the image to disk by default and returns the file path." },
 	{ subcommand: "sqli", name: "browser_sqli", description: "Probe SQL injection or run bounded sqlmap automation from explicit scoped request templates with boolean/error/time/union evidence, mature-engine findings, and artifacts." },

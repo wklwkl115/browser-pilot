@@ -83,6 +83,24 @@ test("a result arriving during the grace window settles the request normally", a
 	assert.deepEqual(result.data, { ok: true });
 });
 
+test("resolved requests include bounded latency diagnostics without payload preview", async () => {
+	const pr = newPending();
+	const ws = fakeSocket();
+	const promise = pr.send(ws, { cmd: "network.list", url: "https://secret.test/?token=hidden" }, { tabId: 1, timeoutMs: 5_000 });
+	const id = lastId(ws);
+	pr.ack(id);
+	await delay(2);
+	pr.resolve(id, { ok: true }, []);
+	const result = await promise;
+	const latency = result.diagnostics?.latency as Record<string, unknown>;
+	assert.equal(typeof latency.totalMs, "number");
+	assert.equal(typeof latency.clientMs, "number");
+	assert.equal(typeof latency.ackMs, "number");
+	assert.equal(latency.deadlineMs, 5_000);
+	assert.equal(latency.acked, true);
+	assert.equal(JSON.stringify(result.diagnostics).includes("secret.test"), false);
+});
+
 test("non-durable reconnect fails not-acked as not-delivered and acked as inflight-unknown", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();

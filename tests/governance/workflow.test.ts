@@ -9,6 +9,7 @@ const readmePath = path.join(root, "README.md");
 const packagePath = path.join(root, "package.json");
 const abmlReadmePath = path.join(root, "src/kernels/abml/README.md");
 const codeWikiPath = path.join(root, "CODE_WIKI.md");
+const cliHelpPath = path.join(root, "src/apps/cli/help.ts");
 const commandSharedPath = path.join(root, "src/commands/commandShared.ts");
 const commandMetadataPath = path.join(root, "src/apps/cli/commandMetadata.ts");
 const commandRuntimePath = path.join(root, "src/commands/commandRuntime.ts");
@@ -52,6 +53,8 @@ const frameworkRuntimeImport = /from\s+["'](?:playwright|@playwright\/test|@test
 
 const observeModeRecommendationPattern = /(?:browser_observe[^\n]*(?:mode=|mode:|mode\s)|browser-pilot\s+observe\s+--mode\b)/;
 const commandFileReferenceRecommendationPattern = /--command\s+@/;
+const manualNetworkFlowPattern = /network\s+start[\s\S]{0,160}(?:reload|navigate|navigation)|(?:reload|navigate|navigation)[\s\S]{0,160}network\s+list/i;
+const fixedArtifactPathPattern = /(?:browser_artifact|browser-pilot\s+artifact|npx\s+browser-pilot\s+artifact)[^\n]*(?:\.browser-pilot\/artifacts\/[^\s>]+|[A-Za-z]:[\\/][^\s>]+)/i;
 
 function lineAllowsObserveModeRecommendation(line: string): boolean {
 	return /legacy|debug|projection|compatibility|兼容|投影|schema|metadata|displayName|modeExplicit|no-mode|INVALID_RULE|invokeTool|normalization|characterization|doesNotMatch|assert\.|command:\s*"browser_observe"|observeModeRecommendationPattern/i.test(line);
@@ -193,6 +196,59 @@ test("agent-facing guidance does not recommend unsupported command @file input",
 		});
 	}
 	assert.deepEqual(offenders, []);
+});
+
+test("public docs and CLI guide page-load network capture through captureReload", () => {
+	const readme = text(readmePath);
+	const wiki = text(codeWikiPath);
+	const cliHelp = text(cliHelpPath);
+	for (const source of [readme, wiki, cliHelp]) assert.match(source, /captureReload/);
+	assert.match(readme, /captureReload[\s\S]{0,160}starts before reload\/navigation|starts capture before reload\/navigation[\s\S]{0,160}captureReload/i);
+	assert.match(wiki, /captureReload[\s\S]{0,220}network\.start[\s\S]{0,120}reload\/navigation/i);
+	assert.match(cliHelp, /captureReload[\s\S]{0,120}starts capture before reload\/navigation/i);
+});
+
+test("agent-facing guidance does not recommend manual-only page-load network flow", () => {
+	const files = [readmePath, codeWikiPath, cliHelpPath];
+	const offenders: string[] = [];
+	for (const filePath of files) {
+		const relative = path.relative(root, filePath);
+		text(filePath).split(/\r?\n\r?\n/).forEach((block, index) => {
+			if (manualNetworkFlowPattern.test(block) && !/captureReload|low-level|manual recorder control|do not|不要/.test(block)) offenders.push(`${relative}:block ${index + 1}: ${block.replace(/\s+/g, " ").trim()}`);
+		});
+	}
+	assert.deepEqual(offenders, []);
+});
+
+test("artifact path guidance uses inspect or paths before targeted reads", () => {
+	const readme = text(readmePath);
+	const wiki = text(codeWikiPath);
+	const cliHelp = text(cliHelpPath);
+	for (const source of [readme, wiki, cliHelp]) assert.match(source, /inspect|paths/);
+	assert.match(readme, /saved\.path[\s\S]{0,160}mode=inspect|mode=inspect[\s\S]{0,160}saved\.path/i);
+	assert.match(wiki, /mode=inspect[\s\S]{0,120}mode=paths|mode=paths[\s\S]{0,160}实际可用 JSON path/i);
+	assert.match(wiki, /不应推荐猜测的 JSON path|验证路径存在/);
+});
+
+test("agent-facing artifact examples do not recommend fixed local paths", () => {
+	const files = [readmePath, codeWikiPath, cliHelpPath];
+	const offenders: string[] = [];
+	for (const filePath of files) {
+		const relative = path.relative(root, filePath);
+		text(filePath).split(/\r?\n/).forEach((line, index) => {
+			if (fixedArtifactPathPattern.test(line)) offenders.push(`${relative}:${index + 1}: ${line.trim()}`);
+		});
+	}
+	assert.deepEqual(offenders, []);
+});
+
+test("public docs cover latency telemetry and observe benchmark sample maintenance", () => {
+	const readme = text(readmePath);
+	const wiki = text(codeWikiPath);
+	assert.match(readme, /diagnostics\.latency[\s\S]{0,180}payloads|latency[\s\S]{0,180}do not include command payloads/i);
+	assert.match(wiki, /diagnostics\.latency[\s\S]{0,240}不包含 command payload|latency[\s\S]{0,240}headers[\s\S]{0,120}URL query/i);
+	assert.match(readme, /observe regression benchmark[\s\S]{0,160}offline fixtures/i);
+	assert.match(wiki, /Observe regression benchmark[\s\S]{0,420}docs\/article-like[\s\S]{0,260}virtualized list/i);
 });
 
 test("code wiki documents the session kernel node crypto exception", () => {

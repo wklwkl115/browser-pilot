@@ -9,8 +9,8 @@ export function defineArtifactCommand({ commands }: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_artifact",
 		label: "Browser Artifact",
-		description: "Read, sample, search, or pick local artifact files produced by browser tools without loading the whole file, including bounded multi-artifact search.",
-		promptSnippet: "Read/search browser tool artifact files by path, offsets, snippets, JSON paths, or bounded multi-artifact search.",
+		description: "Read, inspect, list paths, sample, search, or pick local artifact files produced by browser tools without loading the whole file, including bounded multi-artifact search.",
+		promptSnippet: "Read/search/inspect browser tool artifact files by path, offsets, snippets, JSON paths, or bounded multi-artifact search.",
 		promptGuidelines: [
 			"Use browser_artifact after browser tools return saved.path; prefer search/json/text offsets over re-running full browser captures.",
 			"Default text/search/sample/whole-json output redacts cookie/token/authorization/body/postData/websocket payload values; explicit jsonPath/pick reads return the named local raw value.",
@@ -26,7 +26,7 @@ export function defineArtifactCommand({ commands }: CommandRegistrarContext) {
 			paths: Type.Optional(Type.Array(Type.String(), { description: "Explicit artifact paths for bounded multi-artifact search mode." })),
 			root: Type.Optional(Type.String({ description: "Optional relative root under .browser-pilot/artifacts for bounded multi-artifact search." })),
 			glob: Type.Optional(Type.String({ description: "Optional bounded glob for multi-artifact search, e.g. **/*.json" })),
-			mode: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("json"), Type.Literal("search"), Type.Literal("sample")], { description: "text | json | search | sample" })),
+			mode: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("json"), Type.Literal("search"), Type.Literal("sample"), Type.Literal("inspect"), Type.Literal("paths")], { description: "text | json | search | sample | inspect | paths" })),
 			offset: Type.Optional(Type.Number({ description: "Line offset for text/search; item offset for json arrays; character offset for json scalar strings" })),
 			limit: Type.Optional(Type.Number({ description: "Line count for text/sample; item/key limit for json arrays/objects; character limit for json scalar strings" })),
 			jsonPath: Type.Optional(Type.String({ description: "Simple dot/bracket path for json mode; when provided without mode, read defaults to json. Missing paths return exists:false/notFound:true. Browser tool artifacts usually keep primary results under data, e.g. data, data.items, data.links." })),

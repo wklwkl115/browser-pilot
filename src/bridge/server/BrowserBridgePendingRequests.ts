@@ -113,18 +113,34 @@ export class BrowserBridgePendingRequests {
 	resolve(id: string, result: unknown, newTabs: unknown[], diagnostics?: Record<string, unknown>): void {
 		const pending = this.take(id);
 		if (!pending) return;
-		pending.resolve({ id, tabId: pending.tabId, acknowledged: pending.acked, data: result, newTabs, target: this.resolvedTarget(pending.target), ...(diagnostics ? { diagnostics } : {}) });
+		const now = Date.now();
+		const latency = {
+			totalMs: Math.max(0, now - pending.createdAt),
+			clientMs: pending.ackAt ? Math.max(0, now - pending.ackAt) : undefined,
+			ackMs: pending.ackAt ? Math.max(0, pending.ackAt - pending.createdAt) : undefined,
+			deadlineMs: pending.timeoutMs,
+			acked: pending.acked,
+		};
+		pending.resolve({ id, tabId: pending.tabId, acknowledged: pending.acked, data: result, newTabs, target: this.resolvedTarget(pending.target), diagnostics: { ...(diagnostics || {}), latency } });
 	}
 
 	rejectBrowserError(id: string, error: unknown, result: unknown, diagnostics?: Record<string, unknown>): void {
 		const pending = this.take(id);
 		if (!pending) return;
+		const now = Date.now();
+		const latency = {
+			totalMs: Math.max(0, now - pending.createdAt),
+			clientMs: pending.ackAt ? Math.max(0, now - pending.ackAt) : undefined,
+			ackMs: pending.ackAt ? Math.max(0, pending.ackAt - pending.createdAt) : undefined,
+			deadlineMs: pending.timeoutMs,
+			acked: pending.acked,
+		};
 		// Preserve the extension's structured error code (carried on the command result, e.g.
 		// SELECTOR_NOT_FOUND) instead of flattening every bridge error to BROWSER_EXECUTION_ERROR —
 		// keeps recovery hints routable. Falls back to BROWSER_EXECUTION_ERROR when no code is present.
 		const codeFrom = (value: unknown): unknown => (value && typeof value === "object" ? (value as { error_code?: unknown; code?: unknown }).error_code ?? (value as { code?: unknown }).code : undefined);
 		const code = normalizeNativeErrorCode(codeFrom(result) ?? codeFrom(error), "BROWSER_EXECUTION_ERROR");
-		pending.reject(new BrowserBridgeError(code, normalizeErrorMessage(error), { id, tabId: pending.tabId, error, result, target: this.resolvedTarget(pending.target), ...(diagnostics ? { diagnostics } : {}) }));
+		pending.reject(new BrowserBridgeError(code, normalizeErrorMessage(error), { id, tabId: pending.tabId, error, result, target: this.resolvedTarget(pending.target), diagnostics: { ...(diagnostics || {}), latency } }));
 	}
 
 	/**

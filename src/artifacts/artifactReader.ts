@@ -15,6 +15,7 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 	const wantsJson = !!(params.jsonPath || (Array.isArray(params.pick) && params.pick.length));
 	const hasQuery = typeof params.query === "string" && params.query.trim() !== "";
 	const mode = normalizeArtifactMode(params.mode ?? (wantsJson ? "json" : hasQuery ? "search" : undefined));
+	if (mode === "inspect" || mode === "paths") return await inspectArtifact(params, ctx, mode);
 	if (hasQuery && mode !== "search") throw queryModeError(mode, params.jsonPath);
 	const maxChars = asPositiveInt(params.maxChars, 8_000);
 	const targetedJsonRaw = mode === "json" && (Boolean(Array.isArray(params.pick) && params.pick.length) || (typeof params.jsonPath === "string" && params.jsonPath.trim() !== "" && params.jsonPath.trim() !== "$"));
@@ -30,6 +31,120 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 
 function queryModeError(mode: string, jsonPath?: string): ArtifactReaderError {
 	return new ArtifactReaderError("ARTIFACT_QUERY_REQUIRES_SEARCH_MODE", "browser_artifact query is only used in mode=search; it is ignored in mode=" + mode, { mode, ...(jsonPath ? { jsonPath } : {}), remediation: "To find text across the artifact run mode=search (a plain, non-regex query windows even a single very long line via contextChars). To window a known value instead, read it with jsonPath + columnOffset/columnLimit." });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function compactDescriptor(value: unknown): Record<string, unknown> | undefined {
+	if (!isRecord(value)) return undefined;
+	const out: Record<string, unknown> = {};
+	for (const key of ["path", "bytes", "chars", "mime"]) if (value[key] !== undefined && value[key] !== null && value[key] !== "") out[key] = value[key];
+	return Object.keys(out).length ? out : undefined;
+}
+
+function pathExists(value: unknown, pathExpression: string): boolean {
+	let current = value;
+	const parts = pathExpression.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
+	for (const part of parts) {
+		if (Array.isArray(current) && /^\d+$/.test(part)) current = current[Number(part)];
+		else if (isRecord(current) && Object.hasOwn(current, part)) current = current[part];
+		else return false;
+		if (current === undefined) return false;
+	}
+	return true;
+}
+
+function valueAtPath(value: unknown, pathExpression: string): unknown {
+	let current = value;
+	const parts = pathExpression.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
+	for (const part of parts) {
+		if (Array.isArray(current) && /^\d+$/.test(part)) current = current[Number(part)];
+		else if (isRecord(current) && Object.hasOwn(current, part)) current = current[part];
+		else return undefined;
+	}
+	return current;
+}
+
+function compactValueShape(value: unknown): Record<string, unknown> {
+	if (Array.isArray(value)) return { type: "array", count: value.length };
+	if (isRecord(value)) return { type: "object", keys: Object.keys(value).slice(0, 20), keyCount: Object.keys(value).length };
+	return { type: value === null ? "null" : typeof value };
+}
+
+function compactSummaryFromArtifact(value: unknown): Record<string, unknown> | undefined {
+	const envelope = isRecord(value) && isRecord(value.envelope) ? value.envelope : undefined;
+	const summary = isRecord(envelope?.summary) ? envelope.summary : isRecord(value) && isRecord(value.summary) ? value.summary : undefined;
+	if (!summary) return undefined;
+	const out: Record<string, unknown> = {};
+	for (const key of ["type", "ok", "mode", "command", "action", "count", "total", "itemCount", "entryCount", "requestCount", "url", "title", "operationId", "sourceMode"]) if (summary[key] !== undefined) out[key] = summary[key];
+	return Object.keys(out).length ? out : compactValueShape(summary);
+}
+
+function defaultArtifactHints(value: unknown): { jsonPaths: Record<string, string>; preferredReads: Array<Record<string, unknown>> } {
+	const jsonPaths: Record<string, string> = {};
+	const preferredReads: Array<Record<string, unknown>> = [];
+	const add = (label: string, jsonPath: string, kind?: string) => {
+		if (!pathExists(value, jsonPath)) return;
+		jsonPaths[label] = jsonPath;
+		preferredReads.push({ label, jsonPath, ...(kind ? { kind } : {}) });
+	};
+	for (const [label, jsonPath, kind] of [
+		["summary", "summary", "summary"],
+		["data", "data", "primary-data"],
+		["items", "items", "primary-items"],
+		["pages", "pages", "primary-items"],
+		["result", "result", "execute-result"],
+		["body", "body", "body"],
+		["envelope summary", "envelope.summary", "summary"],
+		["envelope artifact hints", "envelope.artifact_hints", "artifact-hints"],
+	] as Array<[string, string, string]>) add(label, jsonPath, kind);
+	return { jsonPaths, preferredReads };
+}
+
+function inspectHints(value: unknown, absPath: string): { kind?: string; schemaVersion?: number; saved?: Record<string, unknown>; jsonPaths: Record<string, string>; preferredReads: Array<Record<string, unknown>> } {
+	const envelopeHints = isRecord(value) && isRecord(value.envelope) && isRecord(value.envelope.artifact_hints) ? value.envelope.artifact_hints : undefined;
+	const directHints = isRecord(value) && isRecord(value.artifact_hints) ? value.artifact_hints : undefined;
+	const hints = envelopeHints ?? directHints;
+	const defaults = defaultArtifactHints(value);
+	const jsonPaths = { ...defaults.jsonPaths };
+	const hintedPaths = isRecord(hints?.jsonPaths) ? hints.jsonPaths : {};
+	for (const [label, jsonPath] of Object.entries(hintedPaths)) if (typeof jsonPath === "string" && pathExists(value, jsonPath)) jsonPaths[label] = jsonPath;
+	const preferredReads = [...defaults.preferredReads];
+	for (const read of Array.isArray(hints?.preferredReads) ? hints.preferredReads : []) {
+		if (!isRecord(read) || typeof read.jsonPath !== "string" || !pathExists(value, read.jsonPath) || preferredReads.some((item) => item.jsonPath === read.jsonPath)) continue;
+		preferredReads.push({ ...read });
+	}
+	const saved = compactDescriptor(isRecord(hints?.saved) ? hints.saved : isRecord(value) && isRecord(value.saved) ? value.saved : undefined) ?? { path: absPath };
+	return {
+		kind: typeof hints?.kind === "string" ? hints.kind : undefined,
+		schemaVersion: typeof hints?.schemaVersion === "number" ? hints.schemaVersion : undefined,
+		saved,
+		jsonPaths,
+		preferredReads,
+	};
+}
+
+function describePath(value: unknown, label: string, jsonPath: string): Record<string, unknown> {
+	const target = valueAtPath(value, jsonPath);
+	return { label, jsonPath, exists: target !== undefined, ...compactValueShape(target) };
+}
+
+async function inspectArtifact(params: BrowserArtifactParams, ctx: BrowserArtifactContext, mode: "inspect" | "paths"): Promise<BrowserArtifactReadResult> {
+	const absPath = resolveInputPath(ctx, params.path);
+	const info = await statArtifact(absPath, params.path);
+	if (info.size > MAX_ARTIFACT_READ_BYTES) throw new ArtifactReaderError("ARTIFACT_TOO_LARGE", `Artifact exceeds byte limit (${info.size} bytes, max ${MAX_ARTIFACT_READ_BYTES})`, { path: absPath, bytes: info.size, maxBytes: MAX_ARTIFACT_READ_BYTES });
+	const text = await readFile(absPath, "utf8");
+	let value: unknown;
+	try {
+		value = JSON.parse(text);
+	} catch {
+		return { mode, summary: { path: absPath, bytes: info.size, chars: text.length, json: false }, saved: { path: absPath, bytes: info.size }, jsonPaths: {}, preferredReads: [], pathDescriptions: [], compactSummary: { type: "text", chars: text.length }, malformed: true };
+	}
+	const hints = inspectHints(value, absPath);
+	const pathDescriptions = Object.entries(hints.jsonPaths).map(([label, jsonPath]) => describePath(value, label, jsonPath));
+	return { mode, summary: { path: absPath, bytes: info.size, chars: text.length, json: true, pathCount: pathDescriptions.length }, ...hints, pathDescriptions, compactSummary: compactSummaryFromArtifact(value) ?? compactValueShape(value) };
 }
 
 function multiSearchModeError(mode: string, params: BrowserArtifactParams): ArtifactReaderError {

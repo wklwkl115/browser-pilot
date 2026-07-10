@@ -27,9 +27,8 @@ $ browser-pilot observe --json | jq '.summary.pageObservation.gist'
 $ browser-pilot execute --script "document.querySelector('.topic-list .main-link a').href" --json
 { "data": "https://linux.do/t/welcome/1" }
 
-$ browser-pilot network start --json && browser-pilot execute --script "fetch('/api/status')" --json
-$ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].url'
-"https://linux.do/api/status"
+$ browser-pilot network captureReload --json
+$ browser-pilot artifact --mode paths --path <saved.path-from-network-result> --json
 ```
 
 ## Why Browser Pilot
@@ -144,9 +143,12 @@ npx browser-pilot execute --script-file .\snippet.js --json
 # Wait for a selector
 npx browser-pilot wait selector --selector "#result" --json
 
-# Capture network traffic
-npx browser-pilot network start --json
-npx browser-pilot network list --session-id net-1 --json
+# Capture page-load network traffic; captureReload starts before reload/navigation
+npx browser-pilot network captureReload --session-id net-1 --json
+npx browser-pilot artifact --mode paths --path <saved.path-from-network-result> --json
+
+# Inspect saved artifact metadata and available JSON paths
+npx browser-pilot artifact --mode inspect --path <saved.path-from-previous-tool> --json
 
 # Take a screenshot
 npx browser-pilot screenshot --json
@@ -175,6 +177,8 @@ sqli, template, cookie-analyze, http-replay, and callback-oast. Use
 There are no `click` or `type` commands — page actions go through `browser_execute`
 (JavaScript). For trusted-event-gated controls, use `browser_command` with `input.pointer`
 or `input.keys` (CDP physical input).
+
+For page-load request capture, prefer `browser_network action=captureReload` or the CLI `network captureReload` subcommand over a manual `network start` followed by reload; the one-shot flow starts capture before reload/navigation and returns recovery guidance plus a saved artifact path. Use `browser_artifact mode=inspect` or `mode=paths` on the returned `saved.path` to see available JSON paths before targeted reads, instead of guessing paths that may not exist. Bridge responses may include bounded `diagnostics.latency` / temporal telemetry such as elapsed time, deadline, ack state, and queue/runtime timing; these fields are operational diagnostics and do not include command payloads, headers, bodies, or URL query contents.
 
 ## Key Features
 
@@ -246,6 +250,8 @@ mise run dev          # Local developer gate
 mise run affected     # Changed-file validation
 mise run verify       # Release-readiness gate
 ```
+
+The observe regression benchmark is maintained as offline fixtures in `tests/memory/observeRegressionBenchmark.test.ts`. New exploration-UX samples should stay deterministic and pure-logic, and should cover additional page archetypes without requiring a real browser, extension, network, or external site.
 
 Lower-level npm scripts still exist for focused maintenance tasks, but they are not the completion gate. See [REPO_GOVERNANCE.md](REPO_GOVERNANCE.md) for the canonical workflow and [CODE_WIKI.md](CODE_WIKI.md) for the architecture/development map.
 

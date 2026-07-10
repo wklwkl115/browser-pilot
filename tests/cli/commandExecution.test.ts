@@ -8,6 +8,7 @@ import { CommandManifestIndex, type CommandDefinition } from "../../src/commands
 import { defineExecuteCommand } from "../../src/commands/executeCommand.ts";
 import { defineMemoryCommand } from "../../src/commands/memoryCommand.ts";
 import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
+import { defineNetworkCommand } from "../../src/commands/nativeActionCommands.ts";
 import { defineObserveCommand } from "../../src/commands/observeCommand.ts";
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
@@ -280,6 +281,59 @@ test("commands execution: browser_artifact reads JSON path and returns bounded i
 	assert.deepEqual(body.value, { id: 2 });
 	assert.equal(result.details?.mode, "json");
 	assert.equal(result.details?.path, artifactPath);
+});
+
+test("commands execution: browser_artifact inspect lists existing hinted paths without raw payload", async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-command-artifact-inspect-"));
+	const artifactPath = path.join(dir, "observe.json");
+	await writeFile(artifactPath, JSON.stringify({
+		data: { items: [{ id: 1, secret: "large raw body" }] },
+		envelope: {
+			summary: { type: "bridgeResult", requestCount: 1 },
+			artifact_hints: {
+				kind: "PageObservation",
+				schemaVersion: 1,
+				jsonPaths: { items: "data.items", missing: "data.missing" },
+				preferredReads: [{ label: "items", jsonPath: "data.items", kind: "primary-items" }, { label: "missing", jsonPath: "data.missing" }],
+				saved: { path: artifactPath, bytes: 123 },
+			},
+		},
+	}), "utf8");
+	const command = defineCommand((context) => defineArtifactCommand(context), createRuntime());
+	const result = await command.execute("tool-1", { path: artifactPath, mode: "inspect", maxChars: 20_000 });
+	const body = parseResult(result);
+	assert.equal(body.mode, "inspect");
+	assert.equal(body.kind, "PageObservation");
+	assert.equal((body.jsonPaths as Record<string, unknown>).items, "data.items");
+	assert.equal((body.jsonPaths as Record<string, unknown>).missing, undefined);
+	assert.equal((body.preferredReads as Array<Record<string, unknown>>).some((read) => read.jsonPath === "data.missing"), false);
+	assert.equal(JSON.stringify(body).includes("large raw body"), false);
+});
+
+test("commands execution: browser_network captureReload batches start before reload and summarizes guidance", async () => {
+	let runtime: MockRuntime;
+	runtime = createRuntime({
+		async sendCommand(command, options) {
+			runtime.calls.push({ name: "sendCommand", args: [command, options] });
+			return { id: "batch-1", acknowledged: true, tabId: 7, target: { tabId: 7 }, diagnostics: { latency: { totalMs: 12, acked: true } }, data: { results: [
+				{ ok: true, data: { sessionId: "s1" } },
+				{ ok: true, data: { reloaded: true } },
+				{ ok: true, data: { matched: true } },
+				{ ok: true, data: { total: 1, items: [{ requestId: "r1", url: "https://example.test/app.js" }] } },
+			] } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNetworkCommand(context), runtime);
+	const result = await command.execute("tool-1", { action: "captureReload", targetRef: "tab-7", params: { sessionId: "s1", ignoreCache: true }, maxChars: 20_000 });
+	const envelope = parseResult(result);
+	const send = runtime.calls.find((call) => call.name === "sendCommand");
+	const batch = send?.args[0] as Record<string, unknown>;
+	const commands = batch.commands as Array<Record<string, unknown>>;
+	assert.equal(batch.cmd, "batch");
+	assert.deepEqual(commands.map((entry) => entry.cmd), ["network.start", "cdp", "network.wait", "network.list"]);
+	assert.equal(((commands[1].params as Record<string, unknown>).ignoreCache), true);
+	assert.equal((envelope.summary as Record<string, unknown>).startBeforeNavigation, true);
+	assert.equal(((envelope.diagnostics as Record<string, unknown>).networkCaptureReload as Record<string, unknown>).oneShotBatch, true);
 });
 
 test("commands execution: browser_memory validate returns distilled success envelope without persisting fact", async () => {

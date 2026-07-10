@@ -34,5 +34,6 @@ export function redactArtifactResult<T extends BrowserArtifactReadResult>(result
 	if (result.mode === "text") return { ...result, summary, snippets: result.snippets.map(redactTextSnippet) } as T;
 	if (result.mode === "search") return { ...result, summary, query: redactSearchQuery(result.query), snippets: result.snippets.map(redactTextSnippet) } as T;
 	if (result.mode === "sample") return { ...result, summary, snippets: result.snippets.map(redactTextSnippet) } as T;
-	return { ...result, summary, value: redactSensitiveValue(result.value) } as T;
+	if (result.mode === "json") return { ...result, summary, value: redactSensitiveValue(result.value) } as T;
+	return { ...result, summary } as T;
 }

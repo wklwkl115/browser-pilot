@@ -629,7 +629,7 @@ Envelope 常见字段：
 - `evidence`
 - `artifact_hints`
 
-大结果会保存 artifact，并在输出中给出读取方式。`artifact_hints` 是 compact descriptor：包含 `kind`、`schemaVersion`、可用 `jsonPaths`、`preferredReads` 和可选 `saved` descriptor，只指向实际存在的 summary / primary items / body-text / provider-specific / saved artifact 路径，不复制大型 artifact 内容；既有 `PageObservation.artifact_hints.jsonPaths` 与 `preferredReads` 继续兼容。
+大结果会保存 artifact，并在输出中给出读取方式。`artifact_hints` 是 compact descriptor：包含 `kind`、`schemaVersion`、可用 `jsonPaths`、`preferredReads` 和可选 `saved` descriptor，只指向实际存在的 summary / primary items / body-text / provider-specific / saved artifact 路径，不复制大型 artifact 内容；既有 `PageObservation.artifact_hints.jsonPaths` 与 `preferredReads` 继续兼容。`browser_artifact mode=inspect` 用于读取 artifact metadata、compact summary、preferredReads 和 path descriptions；`mode=paths` 用于先列出实际可用 JSON path，再进行 `mode=json` / `pick` 精读。文档、CLI help 和 recovery guidance 不应推荐猜测的 JSON path 或固定样例 artifact 文件；应引用上一个工具返回的 `saved.path`，并通过 inspect/paths 验证路径存在。
 
 ### 7.5 关键工具说明
 
@@ -671,6 +671,8 @@ Provider budget telemetry summary 是 canonical observe diagnostics 的稳定、
 #### `browser_wait` / `browser_network` / `browser_hook` / `browser_frame`
 
 这几类工具共享 `defineNativeActionCommand()` 注册模式，将高层 `action` 映射到底层 native command。
+
+`browser_network action=captureReload` 是 page-load network flow 的推荐入口：command 层会在同一 batch 中先执行 `network.start`，再 reload/navigation，随后用 bounded wait/list/export 路径返回 summary、recovery guidance 和 `saved.path`。不要把面向 agent 的文档写成只推荐手动 `network start` 后再 reload/list 的流程，因为该流程容易漏掉早期请求；低层 `start/list/stop/wait/exportHar` 仍保留给需要持续 recorder 控制的场景。captureReload 结果和相关 bridge responses 可包含 bounded `diagnostics.latency` / temporal telemetry，字段限于 elapsed/deadline/ack/queue/runtime/serialize 等操作性 timing 与计数，不包含 command payload、headers、body、postData、cookies 或 URL query。读取 capture artifact 时先用 `browser_artifact mode=inspect` / `mode=paths` 检查实际 path，再用存在的 JSON path 读取。
 
 关键文件：[`nativeActionCommands.ts`](src/commands/nativeActionCommands.ts)。
 
@@ -1050,7 +1052,7 @@ mise run coverage
 node scripts/run-coverage.mjs all
 ```
 
-Observe regression benchmark 位于 [`tests/memory/observeRegressionBenchmark.test.ts`](tests/memory/observeRegressionBenchmark.test.ts)，随 `memory`/`all` scope 运行。新增 case 应继续使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖；常用 expectation 覆盖 markup pollution、collection name 长度/唯一性、rejected containerName 片段、evidence/sample 保留和 canonical PageObservation shape。
+Observe regression benchmark 位于 [`tests/memory/observeRegressionBenchmark.test.ts`](tests/memory/observeRegressionBenchmark.test.ts)，随 `memory`/`all` scope 运行。新增 case 应继续使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖；常用 expectation 覆盖 markup pollution、collection name 长度/唯一性、rejected containerName 片段、evidence/sample 保留和 canonical PageObservation shape。扩样维护应优先补足真实探索 UX 中常见页面 archetype，例如 docs/article-like、dashboard/table/form、virtualized list、iframe/shadow DOM、GitHub-like repo/PR，而不是增加 live site 依赖；新增 fixture 需要保护 outline/content hints、actionables/control relations、bounded samples、cross-origin 不越权表达和 provider telemetry 兼容路径。
 
 CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)，核心步骤是：
 
