@@ -1,5 +1,5 @@
 import { stableJson } from "../../../utils/json.js";
-import { isRecord } from "../../../utils/records.js";
+import { isRecord, pickDefined } from "../../../utils/records.js";
 import { compactEntityRenderingValue, compactSummaryValue } from "./granularity.js";
 
 export type DistilledSummary = Record<string, unknown>;
@@ -49,15 +49,6 @@ function pickPresentEnvelopeFields<T extends BudgetedEnvelope>(out: T, keys: rea
 	const picked: Record<string, unknown> = {};
 	for (const key of keys) if (out[key as keyof T] !== undefined) picked[key] = out[key as keyof T];
 	return picked;
-}
-
-function pickDefined(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
-	const out: Record<string, unknown> = {};
-	for (const key of keys) {
-		const value = record[key];
-		if (value !== undefined && value !== null && value !== "") out[key] = value;
-	}
-	return out;
 }
 
 type MeasuredSummary = { summary: DistilledSummary; length: number };

@@ -6,6 +6,8 @@ import { redactArtifactResult } from "./artifactReaderRedaction.js";
 import { readTextRange, sampleText } from "./artifactReaderTextModes.js";
 import { readJson } from "./artifactReaderJson.js";
 import { searchMultipleArtifacts, searchText } from "./artifactReaderSearch.js";
+import { getJsonPath, hasJsonPathValue } from "../utils/jsonPath.js";
+import { isRecord, pickDefined } from "../utils/records.js";
 
 export { MAX_ARTIFACT_READ_BYTES, MAX_ARTIFACT_SEARCH_REGEX_CHARS, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS, MAX_MULTI_ARTIFACT_FILES, MAX_MULTI_ARTIFACT_BYTES, MAX_MULTI_ARTIFACT_MATCHES_PER_FILE, MAX_MULTI_ARTIFACT_TOTAL_MATCHES, ArtifactReaderError };
 export type { BrowserArtifactContext, BrowserArtifactParams, BrowserArtifactReadResult, ArtifactReaderErrorCode };
@@ -33,38 +35,10 @@ function queryModeError(mode: string, jsonPath?: string): ArtifactReaderError {
 	return new ArtifactReaderError("ARTIFACT_QUERY_REQUIRES_SEARCH_MODE", "browser_artifact query is only used in mode=search; it is ignored in mode=" + mode, { mode, ...(jsonPath ? { jsonPath } : {}), remediation: "To find text across the artifact run mode=search (a plain, non-regex query windows even a single very long line via contextChars). To window a known value instead, read it with jsonPath + columnOffset/columnLimit." });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
 function compactDescriptor(value: unknown): Record<string, unknown> | undefined {
 	if (!isRecord(value)) return undefined;
-	const out: Record<string, unknown> = {};
-	for (const key of ["path", "bytes", "chars", "mime"]) if (value[key] !== undefined && value[key] !== null && value[key] !== "") out[key] = value[key];
+	const out = pickDefined(value, ["path", "bytes", "chars", "mime"]);
 	return Object.keys(out).length ? out : undefined;
-}
-
-function pathExists(value: unknown, pathExpression: string): boolean {
-	let current = value;
-	const parts = pathExpression.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
-	for (const part of parts) {
-		if (Array.isArray(current) && /^\d+$/.test(part)) current = current[Number(part)];
-		else if (isRecord(current) && Object.hasOwn(current, part)) current = current[part];
-		else return false;
-		if (current === undefined) return false;
-	}
-	return true;
-}
-
-function valueAtPath(value: unknown, pathExpression: string): unknown {
-	let current = value;
-	const parts = pathExpression.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
-	for (const part of parts) {
-		if (Array.isArray(current) && /^\d+$/.test(part)) current = current[Number(part)];
-		else if (isRecord(current) && Object.hasOwn(current, part)) current = current[part];
-		else return undefined;
-	}
-	return current;
 }
 
 function compactValueShape(value: unknown): Record<string, unknown> {
@@ -86,7 +60,7 @@ function defaultArtifactHints(value: unknown): { jsonPaths: Record<string, strin
 	const jsonPaths: Record<string, string> = {};
 	const preferredReads: Array<Record<string, unknown>> = [];
 	const add = (label: string, jsonPath: string, kind?: string) => {
-		if (!pathExists(value, jsonPath)) return;
+		if (!hasJsonPathValue(value, jsonPath)) return;
 		jsonPaths[label] = jsonPath;
 		preferredReads.push({ label, jsonPath, ...(kind ? { kind } : {}) });
 	};
@@ -110,10 +84,10 @@ function inspectHints(value: unknown, absPath: string): { kind?: string; schemaV
 	const defaults = defaultArtifactHints(value);
 	const jsonPaths = { ...defaults.jsonPaths };
 	const hintedPaths = isRecord(hints?.jsonPaths) ? hints.jsonPaths : {};
-	for (const [label, jsonPath] of Object.entries(hintedPaths)) if (typeof jsonPath === "string" && pathExists(value, jsonPath)) jsonPaths[label] = jsonPath;
+	for (const [label, jsonPath] of Object.entries(hintedPaths)) if (typeof jsonPath === "string" && hasJsonPathValue(value, jsonPath)) jsonPaths[label] = jsonPath;
 	const preferredReads = [...defaults.preferredReads];
 	for (const read of Array.isArray(hints?.preferredReads) ? hints.preferredReads : []) {
-		if (!isRecord(read) || typeof read.jsonPath !== "string" || !pathExists(value, read.jsonPath) || preferredReads.some((item) => item.jsonPath === read.jsonPath)) continue;
+		if (!isRecord(read) || typeof read.jsonPath !== "string" || !hasJsonPathValue(value, read.jsonPath) || preferredReads.some((item) => item.jsonPath === read.jsonPath)) continue;
 		preferredReads.push({ ...read });
 	}
 	const saved = compactDescriptor(isRecord(hints?.saved) ? hints.saved : isRecord(value) && isRecord(value.saved) ? value.saved : undefined) ?? { path: absPath };
@@ -127,7 +101,7 @@ function inspectHints(value: unknown, absPath: string): { kind?: string; schemaV
 }
 
 function describePath(value: unknown, label: string, jsonPath: string): Record<string, unknown> {
-	const target = valueAtPath(value, jsonPath);
+	const target = getJsonPath(value, jsonPath).value;
 	return { label, jsonPath, exists: target !== undefined, ...compactValueShape(target) };
 }
 

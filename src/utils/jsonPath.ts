@@ -52,3 +52,9 @@ export function getJsonPath(value: unknown, jsonPath: string | undefined): { exi
 	}
 	return { exists: true, value: current };
 }
+
+export function hasJsonPathValue(value: unknown, jsonPath: string | undefined): boolean {
+	if (!jsonPath) return false;
+	const selected = getJsonPath(value, jsonPath);
+	return selected.exists && selected.value !== undefined;
+}

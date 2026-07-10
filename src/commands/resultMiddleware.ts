@@ -16,6 +16,8 @@ import { buildResultEvidence } from "./resultEvidence.js";
 import { normalizedNextActions } from "./resultNextActions.js";
 import { normalizedPrivacy, redactForModel } from "./resultRedaction.js";
 import { collectRefs } from "../kernels/refs/text.js";
+import { firstDefined, pickDefined } from "../utils/records.js";
+import { hasJsonPathValue } from "../utils/jsonPath.js";
 
 // Mandatory-read pair with commandRuntime.ts: keep envelope fields, redaction, distillation,
 // artifact fallback, and memory nudge behavior centralized here.
@@ -151,40 +153,13 @@ async function saveFinalEnvelopeArtifact(options: DistillBaseOptions, saved: Rec
 	return await saveTextArtifact(options.ctx, saved.path, options.fallbackName, content);
 }
 
-function firstDefined(record: Record<string, unknown>, keys: string[]): unknown {
-	for (const key of keys) if (record[key] !== undefined && record[key] !== null && record[key] !== "") return record[key];
-	return undefined;
-}
-
-function pickDefined(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
-	const out: Record<string, unknown> = {};
-	for (const key of keys) {
-		const value = record[key];
-		if (value !== undefined && value !== null && value !== "") out[key] = value;
-	}
-	return out;
-}
-
 function compactArtifactDescriptor(saved?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (!saved) return undefined;
 	return pickDefined(saved, ["path", "bytes", "chars", "mime"]);
 }
 
-function pathExists(value: unknown, pathExpression: string): boolean {
-	if (!pathExpression) return false;
-	let current = value;
-	const parts = pathExpression.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
-	for (const part of parts) {
-		if (Array.isArray(current) && /^\d+$/.test(part)) current = current[Number(part)];
-		else if (isRecord(current) && Object.hasOwn(current, part)) current = current[part];
-		else return false;
-		if (current === undefined) return false;
-	}
-	return true;
-}
-
 function collectPathHint(paths: Record<string, string>, reads: Array<Record<string, unknown>>, value: unknown, label: string, jsonPath: string, kind?: string): void {
-	if (!pathExists(value, jsonPath)) return;
+	if (!hasJsonPathValue(value, jsonPath)) return;
 	paths[label] = jsonPath;
 	if (!reads.some((read) => read.jsonPath === jsonPath)) reads.push({ label, jsonPath, ...(kind ? { kind } : {}) });
 }
@@ -192,10 +167,10 @@ function collectPathHint(paths: Record<string, string>, reads: Array<Record<stri
 function mergeSummaryArtifactHints(summary: DistilledSummary, paths: Record<string, string>, reads: Array<Record<string, unknown>>, rawValue: unknown): void {
 	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints : undefined;
 	const jsonPaths = isRecord(hints?.jsonPaths) ? hints.jsonPaths as Record<string, unknown> : {};
-	for (const [label, value] of Object.entries(jsonPaths)) if (typeof value === "string" && value && pathExists(rawValue, value)) paths[label] = value;
+	for (const [label, value] of Object.entries(jsonPaths)) if (typeof value === "string" && value && hasJsonPathValue(rawValue, value)) paths[label] = value;
 	for (const read of asArray(hints?.preferredReads).filter(isRecord)) {
 		const jsonPath = typeof read.jsonPath === "string" ? read.jsonPath : undefined;
-		if (!jsonPath || !pathExists(rawValue, jsonPath) || reads.some((item) => item.jsonPath === jsonPath)) continue;
+		if (!jsonPath || !hasJsonPathValue(rawValue, jsonPath) || reads.some((item) => item.jsonPath === jsonPath)) continue;
 		reads.push(pickDefined(read, ["label", "jsonPath", "kind", "count"]));
 	}
 }

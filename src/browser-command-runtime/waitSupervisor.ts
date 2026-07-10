@@ -293,6 +293,28 @@ type WaitRunClock = {
 	command?: string;
 };
 
+function createWaitSupervisorState(
+	command: BridgeCommand,
+	totalTimeoutMs: number,
+	initialWorkerBootId: string | undefined,
+	workerBootId = initialWorkerBootId,
+	clock: WaitRunClock = {},
+): WaitSupervisorState {
+	const startedAt = clock.startedAt ?? Date.now();
+	return {
+		waitId: String(command.waitId ?? command.wait_id ?? `browser_pilot_wait_${randomUUID()}`),
+		command: clock.command ?? command.cmd,
+		startedAt,
+		deadline: clock.deadline ?? startedAt + totalTimeoutMs,
+		totalTimeoutMs: clock.totalTimeoutMs ?? totalTimeoutMs,
+		initialWorkerBootId,
+		workerBootId,
+		workerRestarts: initialWorkerBootId && workerBootId && initialWorkerBootId !== workerBootId ? 1 : 0,
+		historyLost: false,
+		leases: [],
+	};
+}
+
 type NavigateAndWaitPlan = {
 	urlWaitCommand: BridgeCommand;
 	finalWaitCommand?: BridgeCommand;
@@ -348,20 +370,9 @@ function waitPlanForNavigateAndWait(command: BridgeCommand): NavigateAndWaitPlan
 }
 
 async function runLeasedWait(server: BrowserCommandRuntimePort, command: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number }, totalTimeoutMs: number, clock: WaitRunClock = {}): Promise<BrowserBridgeExecutionResult> {
-	const waitId = String(command.waitId ?? command.wait_id ?? `browser_pilot_wait_${randomUUID()}`);
-	const startedAt = clock.startedAt ?? Date.now();
-	const state: WaitSupervisorState = {
-		waitId,
-		command: clock.command ?? command.cmd,
-		startedAt,
-		deadline: clock.deadline ?? startedAt + totalTimeoutMs,
-		totalTimeoutMs: clock.totalTimeoutMs ?? totalTimeoutMs,
-		initialWorkerBootId: currentWorkerBootId(server),
-		workerBootId: currentWorkerBootId(server),
-		workerRestarts: 0,
-		historyLost: false,
-		leases: [],
-	};
+	const initialWorkerBootId = currentWorkerBootId(server);
+	const state = createWaitSupervisorState(command, totalTimeoutMs, initialWorkerBootId, initialWorkerBootId, clock);
+	const { waitId } = state;
 
 	if (totalTimeoutMs === 0) {
 		const attempt = 1;
@@ -468,49 +479,27 @@ export async function executeBrowserWaitWithSupervisor(server: BrowserCommandRun
 			navigation = await server.sendCommand({ ...command, cmd: "wait.navigate", timeoutMs: navigationTimeoutMs }, { ...options, timeoutMs: navigationTimeoutMs + navigationBridgeGraceMs + WAIT_LEASE_BRIDGE_EPSILON_MS });
 		} catch (error) {
 			const navigationAfterBootId = currentWorkerBootId(server);
-			const state: WaitSupervisorState = {
-				waitId: String(command.waitId ?? command.wait_id ?? `browser_pilot_wait_${randomUUID()}`),
-				command: command.cmd,
-				startedAt,
-				deadline,
-				totalTimeoutMs,
-				initialWorkerBootId: navigationBeforeBootId,
-				workerBootId: navigationAfterBootId ?? navigationBeforeBootId,
-				workerRestarts: navigationBeforeBootId && navigationAfterBootId && navigationBeforeBootId !== navigationAfterBootId ? 1 : 0,
-				historyLost: false,
-				leases: [],
-				navigation: {
-					timeoutMs: navigationTimeoutMs,
-					workerBootId: navigationBeforeBootId,
-					workerBootIdAfter: navigationAfterBootId,
-					status: error instanceof BrowserBridgeError && error.code === "BRIDGE_TIMEOUT" ? "bridge_timeout" : "failed",
-					errorCode: bridgeErrorCode(error),
-					message: bridgeErrorMessage(error),
-					acked: bridgeErrorAcked(error),
-				},
+			const state = createWaitSupervisorState(command, totalTimeoutMs, navigationBeforeBootId, navigationAfterBootId ?? navigationBeforeBootId, { startedAt, deadline });
+			state.navigation = {
+				timeoutMs: navigationTimeoutMs,
+				workerBootId: navigationBeforeBootId,
+				workerBootIdAfter: navigationAfterBootId,
+				status: error instanceof BrowserBridgeError && error.code === "BRIDGE_TIMEOUT" ? "bridge_timeout" : "failed",
+				errorCode: bridgeErrorCode(error),
+				message: bridgeErrorMessage(error),
+				acked: bridgeErrorAcked(error),
 			};
 			throw finalWaitError(state, `wait.navigateAndWait navigation phase failed: ${bridgeErrorMessage(error)}`);
 		}
 		const remainingMs = deadline - Date.now();
 		if (remainingMs <= 0) {
 			const navigationAfterBootId = workerBootIdFromResult(navigation) ?? currentWorkerBootId(server);
-			const state: WaitSupervisorState = {
-				waitId: String(command.waitId ?? command.wait_id ?? `browser_pilot_wait_${randomUUID()}`),
-				command: command.cmd,
-				startedAt,
-				deadline,
-				totalTimeoutMs,
-				initialWorkerBootId: navigationBeforeBootId,
-				workerBootId: navigationAfterBootId ?? navigationBeforeBootId,
-				workerRestarts: navigationBeforeBootId && navigationAfterBootId && navigationBeforeBootId !== navigationAfterBootId ? 1 : 0,
-				historyLost: false,
-				leases: [],
-				navigation: {
-					timeoutMs: navigationTimeoutMs,
-					workerBootId: navigationBeforeBootId,
-					workerBootIdAfter: navigationAfterBootId,
-					status: "success",
-				},
+			const state = createWaitSupervisorState(command, totalTimeoutMs, navigationBeforeBootId, navigationAfterBootId ?? navigationBeforeBootId, { startedAt, deadline });
+			state.navigation = {
+				timeoutMs: navigationTimeoutMs,
+				workerBootId: navigationBeforeBootId,
+				workerBootIdAfter: navigationAfterBootId,
+				status: "success",
 			};
 			throw finalWaitError(state, "wait.navigateAndWait timed out after navigation before wait phase");
 		}

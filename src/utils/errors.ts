@@ -1,7 +1,7 @@
 import { mergeRecoveries, recoveryForNormalized, isAbmlRecoveryCode, isWebSocketRecoveryCode } from "../kernels/evidence/distill/recovery.js";
 import type { ErrorRecovery } from "../kernels/evidence/distill/recovery.js";
 import { nativeErrorCodes, type NativeErrorCode, normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
-import { isRecord } from "./records.js";
+import { firstDefined, isRecord, pickDefined } from "./records.js";
 import { redactSensitiveText, redactSensitiveValue } from "./redaction.js";
 
 export type { ErrorRecovery } from "../kernels/evidence/distill/recovery.js";
@@ -82,20 +82,6 @@ function stripStackFields(value: unknown, seen = new WeakSet<object>()): unknown
 
 function cleanDetails(value: unknown): Record<string, unknown> {
 	return isRecord(value) ? stripStackFields(value) as Record<string, unknown> : {};
-}
-
-function firstDefined(record: Record<string, unknown>, keys: string[]): unknown {
-	for (const key of keys) if (record[key] !== undefined && record[key] !== null && record[key] !== "") return record[key];
-	return undefined;
-}
-
-function pickDefined(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
-	const out: Record<string, unknown> = {};
-	for (const key of keys) {
-		const value = record[key];
-		if (value !== undefined && value !== null && value !== "") out[key] = value;
-	}
-	return out;
 }
 
 function domainFromCategory(category: string, details: Record<string, unknown>): ErrorTaxonomyDomain {

@@ -1,5 +1,5 @@
 import { redactSensitiveValueWithPointers } from "../artifacts/artifactPrivacy.js";
-import { isRecord } from "./summaries/common.js";
+import { isRecord, pickDefined } from "../utils/records.js";
 
 export function redactForModel<T>(value: T, saved?: Record<string, unknown>, rawArtifactValue?: unknown): T {
 	return redactSensitiveValueWithPointers(value, {
@@ -7,15 +7,6 @@ export function redactForModel<T>(value: T, saved?: Record<string, unknown>, raw
 		rawArtifactBytes: typeof saved?.bytes === "number" ? saved.bytes : undefined,
 		artifactValue: rawArtifactValue,
 	}) as T;
-}
-
-function pickDefined(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
-	const out: Record<string, unknown> = {};
-	for (const key of keys) {
-		const value = record[key];
-		if (value !== undefined && value !== null && value !== "") out[key] = value;
-	}
-	return out;
 }
 
 export function normalizedPrivacy(saved?: Record<string, unknown>, sensitiveRaw = false): Record<string, unknown> | undefined {

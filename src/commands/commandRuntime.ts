@@ -84,6 +84,25 @@ type TextCommandResultOptions = CommandResultOptions & {
 	distill?: TextDistillFn;
 };
 
+function normalizeCommandResultOptions<T extends CommandResultOptions>(
+	params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">,
+	ctx: CommandResultContext,
+	options: T,
+) {
+	const { budgetName: configuredBudgetName, defaultDetailLevel, commandName, browserSessionId, maxChars, ...resultOptions } = options;
+	const budgetName = configuredBudgetName ?? (commandName as ToolResultBudgetName);
+	return {
+		...resultOptions,
+		commandName: String(commandName),
+		browserSessionId: browserSessionId ?? params.browserSessionId,
+		detailLevel: params.detailLevel ?? defaultDetailLevel,
+		maxChars: maxChars ?? commandMaxChars(params, budgetName),
+		ctx,
+		outputPath: params.outputPath,
+		redact: params.redact,
+	};
+}
+
 export type CommandOnUpdate = ((result: BrowserTextCommandResult) => void | Promise<void>) | undefined;
 
 export type TrackedOperationHandle = {
@@ -272,60 +291,11 @@ export function inlineJsonCommandResult(value: unknown, details: Record<string, 
 }
 
 export async function jsonCommandResult(value: unknown, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">, ctx: CommandResultContext, options: JsonCommandResultOptions): Promise<BrowserTextCommandResult> {
-	const budgetName = options.budgetName ?? (options.commandName as ToolResultBudgetName);
-	return await distilledJsonResult(value, {
-		commandName: String(options.commandName),
-		command: options.command,
-		browserSessionId: options.browserSessionId ?? params.browserSessionId,
-		detailLevel: params.detailLevel ?? options.defaultDetailLevel,
-		maxChars: options.maxChars ?? commandMaxChars(params, budgetName),
-		ctx,
-		outputPath: params.outputPath,
-		fallbackName: options.fallbackName,
-		details: options.details,
-		operation: options.operation,
-		snapshot: options.snapshot,
-		diagnostics: options.diagnostics,
-		artifactValue: options.artifactValue,
-		entities: options.entities,
-		distill: options.distill,
-		artifactThreshold: options.artifactThreshold,
-		granularityCeiling: options.granularityCeiling,
-		stableRefs: options.stableRefs,
-		onAllocation: options.onAllocation,
-		memoryAugmentationPlan: options.memoryAugmentationPlan,
-		activeContext: options.activeContext,
-		redact: params.redact,
-	});
+	return await distilledJsonResult(value, normalizeCommandResultOptions(params, ctx, options));
 }
 
 export async function textCommandResult(text: string, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">, ctx: CommandResultContext, options: TextCommandResultOptions): Promise<BrowserTextCommandResult> {
-	const budgetName = options.budgetName ?? (options.commandName as ToolResultBudgetName);
-	return await distilledTextResult(text, {
-		commandName: String(options.commandName),
-		command: options.command,
-		browserSessionId: options.browserSessionId ?? params.browserSessionId,
-		detailLevel: params.detailLevel ?? options.defaultDetailLevel,
-		maxChars: options.maxChars ?? commandMaxChars(params, budgetName),
-		ctx,
-		outputPath: params.outputPath,
-		fallbackName: options.fallbackName,
-		details: options.details,
-		operation: options.operation,
-		snapshot: options.snapshot,
-		diagnostics: options.diagnostics,
-		artifactValue: options.artifactValue,
-		entities: options.entities,
-		summary: options.summary,
-		distill: options.distill,
-		artifactThreshold: options.artifactThreshold,
-		granularityCeiling: options.granularityCeiling,
-		stableRefs: options.stableRefs,
-		onAllocation: options.onAllocation,
-		memoryAugmentationPlan: options.memoryAugmentationPlan,
-		activeContext: options.activeContext,
-		redact: params.redact,
-	});
+	return await distilledTextResult(text, normalizeCommandResultOptions(params, ctx, options));
 }
 
 function compactOperationForEnvelope(operation: BrowserActiveOperationInfo): Record<string, unknown> {

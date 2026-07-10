@@ -1,8 +1,4 @@
-import { artifactHints, increment, isRecord, summaryTable, textPreview, topCounts, type Summary } from "../common.js";
-
-function asArray(value: unknown): unknown[] {
-	return Array.isArray(value) ? value : [];
-}
+import { artifactHints, asArray, increment, isRecord, summaryTable, textPreview, topCounts, type Summary } from "../common.js";
 
 function summarizeListenerCollection(data: Record<string, unknown>): Summary {
 	const listeners = asArray(data.listeners);
