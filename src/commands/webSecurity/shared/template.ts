@@ -233,23 +233,26 @@ function regexIssueFields(result: { issue?: Record<string, unknown>; textTruncat
 	return result.textTruncated ? { regexInputTruncated: true, maxTextChars: MAX_TEMPLATE_REGEX_TEXT_CHARS } : {};
 }
 
+function dslMatcherMatched(matcher: TemplateDslMatcher, type: string, final: FetchStep, text: string, regexMatched: boolean): boolean {
+	switch (type) {
+		case "status": return matcher.status?.length ? matcher.status.includes(final.status) : text === matcher.value;
+		case "word": return matcher.words?.length ? matcher.words.every((word) => text.includes(word)) : matcher.value !== undefined && text.includes(matcher.value);
+		case "regex": return regexMatched;
+		case "contains": return matcher.value !== undefined && text.includes(matcher.value);
+		case "equals": return matcher.value !== undefined && text === matcher.value;
+		default: return false;
+	}
+}
+
 function evaluateDslMatcher(matcher: TemplateDslMatcher, final: FetchStep, headersLower: HeaderMap): Record<string, unknown> {
-	let matched = false;
 	const type = matcher.type || "word";
 	const part = matcher.part || (type === "status" ? "status" : "body");
 	const text = templatePartText(part, final, headersLower, matcher.name);
-	if (type === "status") matched = matcher.status?.length ? matcher.status.includes(final.status) : text === matcher.value;
-	else if (type === "word") matched = matcher.words?.length ? matcher.words.every((word) => text.includes(word)) : matcher.value !== undefined ? text.includes(matcher.value) : false;
-	else if (type === "regex") matched = (matcher.regex || []).some((pattern) => testTemplateRegex(pattern, "im", text).matched);
-	else if (type === "contains") matched = matcher.value !== undefined && text.includes(matcher.value);
-	else if (type === "equals") matched = matcher.value !== undefined && text === matcher.value;
-	if (matcher.negative) matched = !matched;
-	const regexDiagnostics = type === "regex"
-		? (matcher.regex || [])
-			.map((pattern) => ({ pattern, ...regexIssueFields(testTemplateRegex(pattern, "im", text)) }))
-			.filter((item) => ("regexIssue" in item) || ("regexInputTruncated" in item))
-		: [];
-	return { kind: `dsl:${type}`, matched, part, name: matcher.name, expected: matcher.status?.length ? matcher.status : matcher.words?.length ? matcher.words : (matcher.regex || []).length ? matcher.regex : matcher.value, negative: matcher.negative === true, ...(regexDiagnostics.length ? { regexDiagnostics } : {}) };
+	const regexResults = type === "regex" ? (matcher.regex || []).map((pattern) => ({ pattern, result: testTemplateRegex(pattern, "im", text) })) : [];
+	const baseMatched = dslMatcherMatched(matcher, type, final, text, regexResults.some(({ result }) => result.matched));
+	const regexDiagnostics = regexResults.map(({ pattern, result }) => ({ pattern, ...regexIssueFields(result) })).filter((item) => ("regexIssue" in item) || ("regexInputTruncated" in item));
+	const expected = matcher.status?.length ? matcher.status : matcher.words?.length ? matcher.words : matcher.regex?.length ? matcher.regex : matcher.value;
+	return { kind: `dsl:${type}`, matched: matcher.negative ? !baseMatched : baseMatched, part, name: matcher.name, expected, negative: matcher.negative === true, ...(regexDiagnostics.length ? { regexDiagnostics } : {}) };
 }
 
 export function jsonPathParts(path: string): Array<string | number> {
@@ -263,53 +266,47 @@ function jsonPathValue(root: unknown, path: string): unknown {
 	return selected.exists ? selected.value : undefined;
 }
 
-export function evaluateDslExtractor(extractor: TemplateDslExtractor, final: FetchStep, headersLower: HeaderMap): Array<Record<string, unknown>> {
+type ExtractorResults = Array<Record<string, unknown>>;
+
+function extractedValue(name: string | undefined, type: string, part: string, value: unknown, details: Record<string, unknown> = {}): ExtractorResults {
+	return value === undefined ? [] : [{ name, type, part, ...details, value, values: Array.isArray(value) ? value : [value] }];
+}
+
+function singleValueDslExtraction(extractor: TemplateDslExtractor, type: string, final: FetchStep, headersLower: HeaderMap): ExtractorResults | undefined {
+	if (["body-sha256", "bodysha256", "sha256"].includes(type)) return extractedValue(extractor.name || "bodySha256", "body-sha256", "body", responseBodyHash(final));
+	switch (type) {
+		case "header":
+			return extractedValue(extractor.name || extractor.header, type, "header", headersLower[(extractor.header || extractor.name || "").trim().toLowerCase()]);
+		case "status":
+			return extractedValue(extractor.name || "status", type, "status", final.status);
+		case "title":
+			return extractedValue(extractor.name || "title", type, "title", extractTitle(final.bodyText));
+		case "location":
+			return extractedValue(extractor.name || "location", type, "header", redirectLocation(final.status, final.headers, final.url));
+		default:
+			return undefined;
+	}
+}
+
+function cookieDslExtractions(extractor: TemplateDslExtractor, final: FetchStep): ExtractorResults {
 	const out: Array<Record<string, unknown>> = [];
-	const type = extractor.type || "regex";
-	const part = extractor.part || (extractor.header ? "header" : "body");
-	const text = templatePartText(part, final, headersLower, extractor.header || extractor.name);
-	if (type === "header") {
-		const value = headersLower[(extractor.header || extractor.name || "").trim().toLowerCase()];
-		if (value !== undefined) out.push({ name: extractor.name || extractor.header, type, part: "header", value, values: [value] });
-		return out;
+	const cookieName = extractor.cookie || extractor.name;
+	for (const line of final.setCookie || []) {
+		const parsed = parseSetCookieLine(line, "set-cookie");
+		if (!parsed || (cookieName && parsed.name !== cookieName)) continue;
+		out.push({ name: extractor.name || parsed.name, type: "cookie", part: "header", cookie: parsed.name, value: parsed.value, values: [parsed.value], attributes: parsed.attributes });
+		if (out.length >= 20) break;
 	}
-	if (type === "cookie") {
-		const cookieName = extractor.cookie || extractor.name;
-		for (const line of final.setCookie || []) {
-			const parsed = parseSetCookieLine(line, "set-cookie");
-			if (!parsed || (cookieName && parsed.name !== cookieName)) continue;
-			out.push({ name: extractor.name || parsed.name, type, part: "header", cookie: parsed.name, value: parsed.value, values: [parsed.value], attributes: parsed.attributes });
-			if (out.length >= 20) break;
-		}
-		return out;
-	}
-	if (type === "status") {
-		out.push({ name: extractor.name || "status", type, part: "status", value: final.status, values: [final.status] });
-		return out;
-	}
-	if (type === "title") {
-		const value = extractTitle(final.bodyText);
-		if (value !== undefined) out.push({ name: extractor.name || "title", type, part: "title", value, values: [value] });
-		return out;
-	}
-	if (type === "location") {
-		const value = redirectLocation(final.status, final.headers, final.url);
-		if (value !== undefined) out.push({ name: extractor.name || "location", type, part: "header", value, values: [value] });
-		return out;
-	}
-	if (type === "body-sha256" || type === "bodysha256" || type === "sha256") {
-		const value = responseBodyHash(final);
-		out.push({ name: extractor.name || "bodySha256", type: "body-sha256", part: "body", value, values: [value] });
-		return out;
-	}
-	if (type === "json") {
-		const parsedBody = tryJson(final.bodyText);
-		if (parsedBody !== undefined) {
-			const value = jsonPathValue(parsedBody, extractor.jsonPath || "$");
-			if (value !== undefined) out.push({ name: extractor.name || extractor.jsonPath, type, part: "body", jsonPath: extractor.jsonPath, value, values: Array.isArray(value) ? value : [value] });
-		}
-		return out;
-	}
+	return out;
+}
+
+function jsonDslExtraction(extractor: TemplateDslExtractor, final: FetchStep): ExtractorResults {
+	const parsedBody = tryJson(final.bodyText);
+	return parsedBody === undefined ? [] : extractedValue(extractor.name || extractor.jsonPath, "json", "body", jsonPathValue(parsedBody, extractor.jsonPath || "$"), { jsonPath: extractor.jsonPath });
+}
+
+function regexDslExtractions(extractor: TemplateDslExtractor, part: string, text: string): ExtractorResults {
+	const out: ExtractorResults = [];
 	for (const pattern of extractor.regex || []) {
 		const result = execTemplateRegex(pattern, "igm", text, 20 - out.length);
 		if (result.issue) {
@@ -327,10 +324,24 @@ export function evaluateDslExtractor(extractor: TemplateDslExtractor, final: Fet
 	return out;
 }
 
+export function evaluateDslExtractor(extractor: TemplateDslExtractor, final: FetchStep, headersLower: HeaderMap): ExtractorResults {
+	const type = extractor.type || "regex";
+	const singleValue = singleValueDslExtraction(extractor, type, final, headersLower);
+	if (singleValue) return singleValue;
+	if (type === "cookie") return cookieDslExtractions(extractor, final);
+	if (type === "json") return jsonDslExtraction(extractor, final);
+	const part = extractor.part || (extractor.header ? "header" : "body");
+	return regexDslExtractions(extractor, part, templatePartText(part, final, headersLower, extractor.header || extractor.name));
+}
+
+function templateChecksMatched(checks: Array<Record<string, unknown>>, mode: "all" | "any", status: number): boolean {
+	if (!checks.length) return status >= 200 && status < 400;
+	return mode === "any" ? checks.some((item) => item.matched === true) : checks.every((item) => item.matched === true);
+}
+
 export function evaluateTemplateMatcher(template: TemplateDefinition, final: FetchStep) {
 	const checks: Array<Record<string, unknown>> = [];
-	const headersLower: HeaderMap = {};
-	for (const [name, value] of Object.entries(final.headers)) headersLower[name.trim().toLowerCase()] = value;
+	const headersLower = Object.fromEntries(Object.entries(final.headers).map(([name, value]) => [name.trim().toLowerCase(), value])) as HeaderMap;
 	if (template.matchStatus?.length) checks.push({ kind: "matchStatus", matched: template.matchStatus.includes(final.status), expected: template.matchStatus, actual: final.status });
 	if (template.filterStatus?.length) checks.push({ kind: "filterStatus", matched: !template.filterStatus.includes(final.status), expected: template.filterStatus, actual: final.status });
 	for (const expected of template.bodyIncludes || []) checks.push({ kind: "bodyIncludes", matched: final.bodyText.includes(expected), expected });
@@ -345,23 +356,9 @@ export function evaluateTemplateMatcher(template: TemplateDefinition, final: Fet
 	}
 	for (const matcher of template.matchers || []) checks.push(evaluateDslMatcher(matcher, final, headersLower));
 	const mode = template.matcherMode || "all";
-	const matched = checks.length ? mode === "any" ? checks.some((item) => item.matched === true) : checks.every((item) => item.matched === true) : final.status >= 200 && final.status < 400;
-	const extracts: Array<Record<string, unknown>> = [];
-	for (const pattern of template.extractRegex || []) {
-		const result = execTemplateRegex(pattern, "igm", final.bodyText, 20 - extracts.length);
-		if (result.issue) {
-			extracts.push({ name: "extractRegex", type: "regex", part: "body", pattern, skipped: true, ...result.issue });
-			continue;
-		}
-		for (const match of result.matches) extracts.push({ name: "extractRegex", type: "regex", part: "body", pattern, match: match[0], groups: match.slice(1, 6), group: 0, value: match[0], values: [match[0]], ...(result.textTruncated ? { regexInputTruncated: true, maxTextChars: MAX_TEMPLATE_REGEX_TEXT_CHARS } : {}) });
-		if (result.textTruncated && !result.matches.length) extracts.push({ name: "extractRegex", type: "regex", part: "body", pattern, skipped: true, regexInputTruncated: true, maxTextChars: MAX_TEMPLATE_REGEX_TEXT_CHARS });
-		if (extracts.length >= 20) break;
-	}
-	for (const extractor of template.extractors || []) {
-		for (const item of evaluateDslExtractor(extractor, final, headersLower)) {
-			if (extracts.length < 20) extracts.push(item);
-		}
-	}
+	const matched = templateChecksMatched(checks, mode, final.status);
+	const extracts = evaluateDslExtractor({ type: "regex", name: "extractRegex", regex: template.extractRegex }, final, headersLower);
+	for (const extractor of template.extractors || []) extracts.push(...evaluateDslExtractor(extractor, final, headersLower).slice(0, Math.max(0, 20 - extracts.length)));
 	return { matched, mode, checks, extracts };
 }
 

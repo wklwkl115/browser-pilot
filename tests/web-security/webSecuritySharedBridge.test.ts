@@ -39,6 +39,13 @@ import {
 	parseRawHttpRequest,
 } from "../../src/commands/webSecurity/shared/requestTemplate.ts";
 import {
+	evaluateDslExtractor,
+	evaluateTemplateMatcher,
+	MAX_TEMPLATE_REGEX_PATTERN_CHARS,
+	MAX_TEMPLATE_REGEX_TEXT_CHARS,
+} from "../../src/commands/webSecurity/shared/template.ts";
+import type { FetchStep } from "../../src/commands/webSecurity/shared/types.ts";
+import {
 	absolutizeMaybe,
 	detectApiSpec,
 	detectGraphqlSchema,
@@ -119,6 +126,23 @@ import { browserArtifactPrivacyMetadata } from "../../src/artifacts/artifactPriv
 function assertSerializedOmits(value: unknown, secrets: string[]) {
 	const serialized = JSON.stringify(value);
 	for (const secret of secrets) assert.equal(serialized.includes(secret), false, secret);
+}
+
+function templateFetchStep(overrides: Partial<FetchStep> = {}): FetchStep {
+	const bodyText = overrides.bodyText ?? "<html><title>Demo page</title><body>token=abc token=def</body></html>";
+	return {
+		url: "https://example.test/start",
+		status: 302,
+		statusText: "Found",
+		ok: false,
+		headers: { Location: "/next", "X-Trace": "trace-1" },
+		setCookie: ["sid=abc; Path=/; HttpOnly", "theme=dark; SameSite=Lax"],
+		elapsedMs: 1,
+		bodyText,
+		bodyBytes: Buffer.byteLength(bodyText),
+		bodyTruncated: false,
+		...overrides,
+	};
 }
 
 function directJwe(payload: Record<string, unknown>, secret: string): string {
@@ -473,6 +497,68 @@ test("crawl extractors enumerate browser-native discovery surfaces offline", asy
 	const swVersion = extractServiceWorkerVersionSummary(swText, baseUrl);
 	assert.equal(swVersion.cacheNameCount, 0);
 	assert.deepEqual(swVersion.importScripts, ["https://app.example.test/sw-lib.9f1e2d3.js"]);
+});
+
+test("template DSL extractors preserve scalar, cookie, and JSON projections", () => {
+	const final = templateFetchStep();
+	const headersLower = { location: "/next", "x-trace": "trace-1" };
+	assert.deepEqual(evaluateDslExtractor({ type: "header", name: "trace", header: "X-Trace" }, final, headersLower), [{ name: "trace", type: "header", part: "header", value: "trace-1", values: ["trace-1"] }]);
+	assert.deepEqual(evaluateDslExtractor({ type: "header", header: "missing" }, final, headersLower), []);
+	assert.deepEqual(evaluateDslExtractor({ type: "status" }, final, headersLower), [{ name: "status", type: "status", part: "status", value: 302, values: [302] }]);
+	assert.equal(evaluateDslExtractor({ type: "title" }, final, headersLower)[0]?.value, "Demo page");
+	assert.equal(evaluateDslExtractor({ type: "location" }, final, headersLower)[0]?.value, "https://example.test/next");
+	assert.equal(evaluateDslExtractor({ type: "sha256" }, final, headersLower)[0]?.value, responseBodyHash(final));
+	const cookies = evaluateDslExtractor({ type: "cookie", name: "session", cookie: "sid" }, final, headersLower);
+	assert.deepEqual(cookies.map(({ name, cookie, value }) => ({ name, cookie, value })), [{ name: "session", cookie: "sid", value: "abc" }]);
+	assert.deepEqual(evaluateDslExtractor({ type: "cookie", cookie: "missing" }, final, headersLower), []);
+
+	const jsonFinal = templateFetchStep({ status: 200, bodyText: JSON.stringify({ csrf: "tok", roles: ["admin", "user"] }) });
+	assert.deepEqual(evaluateDslExtractor({ type: "json", name: "roles", jsonPath: "$.roles" }, jsonFinal, {}), [{ name: "roles", type: "json", part: "body", jsonPath: "$.roles", value: ["admin", "user"], values: ["admin", "user"] }]);
+	assert.deepEqual(evaluateDslExtractor({ type: "json", jsonPath: "$.missing" }, jsonFinal, {}), []);
+	assert.deepEqual(evaluateDslExtractor({ type: "json", jsonPath: "$.csrf" }, templateFetchStep({ bodyText: "not-json" }), {}), []);
+});
+
+test("template DSL regex extraction stays bounded and reports unsafe or truncated inputs", () => {
+	const final = templateFetchStep({ status: 200, bodyText: "token=abc token=def" });
+	const extracted = evaluateDslExtractor({ type: "regex", name: "token", regex: ["token=(\\w+)"], group: 1 }, final, {});
+	assert.deepEqual(extracted.map(({ value, group }) => ({ value, group })), [{ value: "abc", group: 1 }, { value: "def", group: 1 }]);
+	const evaluation = evaluateTemplateMatcher({ id: "tokens", extractRegex: ["token=(\\w+)"], extractors: [{ type: "regex", name: "selected", regex: ["token=(\\w+)"], group: 1 }] }, final);
+	assert.deepEqual(evaluation.extracts.map((item) => item.value), ["token=abc", "token=def", "abc", "def"]);
+
+	const unsafe = evaluateDslExtractor({ type: "regex", regex: ["a".repeat(MAX_TEMPLATE_REGEX_PATTERN_CHARS + 1)] }, final, {});
+	assert.equal(unsafe[0]?.skipped, true);
+	assert.equal(unsafe[0]?.error_code, "TEMPLATE_REGEX_UNSAFE");
+	const truncated = evaluateDslExtractor({ type: "regex", regex: ["never-matches"] }, templateFetchStep({ status: 200, bodyText: "x".repeat(MAX_TEMPLATE_REGEX_TEXT_CHARS + 1) }), {});
+	assert.equal(truncated[0]?.regexInputTruncated, true);
+	assert.equal(truncated[0]?.skipped, true);
+	const many = evaluateDslExtractor({ type: "regex", regex: ["v\\d+"] }, templateFetchStep({ status: 200, bodyText: Array.from({ length: 25 }, (_, index) => `v${index}`).join(" ") }), {});
+	assert.equal(many.length, 20);
+});
+
+test("template DSL matchers preserve modes, negation, and regex diagnostics", () => {
+	const final = templateFetchStep({ status: 200, statusText: "OK", ok: true, bodyText: "hello admin" });
+	const all = evaluateTemplateMatcher({
+		id: "all-matchers",
+		matchers: [
+			{ type: "status", status: [200] },
+			{ type: "word", words: ["hello", "admin"] },
+			{ type: "contains", value: "hello" },
+			{ type: "equals", part: "header", name: "X-Trace", value: "trace-1" },
+			{ type: "regex", regex: ["adm.n"] },
+			{ type: "word", value: "missing", negative: true },
+		],
+	}, final);
+	assert.equal(all.matched, true);
+	assert.equal(all.mode, "all");
+	assert.deepEqual(all.checks.map((check) => check.matched), [true, true, true, true, true, true]);
+
+	const any = evaluateTemplateMatcher({ id: "any-matchers", matcherMode: "any", matchers: [{ type: "equals", value: "missing" }, { type: "regex", regex: ["admin"] }] }, final);
+	assert.equal(any.matched, true);
+	const unsafe = evaluateTemplateMatcher({ id: "unsafe-matcher", matchers: [{ type: "regex", regex: ["a".repeat(MAX_TEMPLATE_REGEX_PATTERN_CHARS + 1)] }] }, final);
+	assert.equal(unsafe.matched, false);
+	assert.equal((((unsafe.checks[0]?.regexDiagnostics as Array<Record<string, unknown>>)?.[0]?.regexIssue as Record<string, unknown>)?.error_code), "TEMPLATE_REGEX_UNSAFE");
+	assert.equal(evaluateTemplateMatcher({ id: "default-success" }, final).matched, true);
+	assert.equal(evaluateTemplateMatcher({ id: "default-failure" }, templateFetchStep({ status: 500 })).matched, false);
 });
 
 test("replay and request-template helpers mutate requests without network I/O", async () => {
