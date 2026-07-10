@@ -19,14 +19,14 @@ declare global {
     network: boolean; dom: boolean; console: boolean; error: boolean; xpath: string[]; cookies: boolean; storage: boolean;
     websocket: boolean; crypto: boolean; dom_sinks: boolean;
   };
-  type HookOptions = HookRecord & { redact_patterns?: unknown[]; batch_post_message?: unknown; max_value_length?: unknown; buffer_size?: unknown; xpath_poll_ms?: unknown };
+  type HookOptions = HookRecord & { redact_patterns?: unknown[]; max_value_length?: unknown; buffer_size?: unknown; xpath_poll_ms?: unknown };
   type HookStats = HookRecord & Record<
     'network_events' | 'dom_events' | 'console_events' | 'error_events' | 'storage_events' | 'websocket_events' | 'crypto_events' | 'cookie_events' | 'sink_events' | 'overflow',
     number
   >;
   type PerfBucket = { count: number; total_ms: number; last_ms: number; max_ms: number; samples: number[]; avg_ms?: number };
   type XhrOriginal = { open: typeof XMLHttpRequest.prototype.open; send: typeof XMLHttpRequest.prototype.send };
-  type StorageOriginal = { setItem: typeof Storage.prototype.setItem; getItem: typeof Storage.prototype.getItem; removeItem: typeof Storage.prototype.removeItem; clear: typeof Storage.prototype.clear; key: typeof Storage.prototype.key };
+  type StorageOriginal = { setItem: typeof Storage.prototype.setItem; getItem: typeof Storage.prototype.getItem; removeItem: typeof Storage.prototype.removeItem; clear: typeof Storage.prototype.clear };
   type CookieDescriptor = { proto: Document; desc: PropertyDescriptor };
   type DomSinkDescriptor = { proto: Element | Document; prop: string; desc: PropertyDescriptor };
   type RedactMatcher = { pattern: string; mode: 'regex' | 'literal'; regex: RegExp };
@@ -86,6 +86,7 @@ declare global {
   const BROWSER_PILOT_HOOK_MAX_REDACT_PATTERNS = 32;
   const BROWSER_PILOT_HOOK_REDACT_MAX_PATTERN_CHARS = 512;
   const BROWSER_PILOT_HOOK_REDACT_MAX_TEXT_CHARS = 65536;
+  const UNHANDLED_CLONE = Symbol('unhandled-clone');
 
   function canonicalCommand(cmd: unknown): string { const key = String(cmd || ''); return COMMAND_CANONICAL[key as keyof typeof COMMAND_CANONICAL] || key; }
   function structuredError(error_code: string, message: unknown, details?: unknown): HookResponse { return { ok: false, error_code, error: message, details: asRecord(details || {}) }; }
@@ -151,7 +152,7 @@ declare global {
     currentHookRedactors().forEach((item: RedactMatcher) => { out = out.replace(item.regex, '[REDACTED]'); });
     return truncated ? out + '…[redaction input truncated]' : out;
   }
-  function redactClone(v: unknown, depth = 0, seen?: WeakSet<object> | null): unknown {
+  function redactScalar(v: unknown): unknown | typeof UNHANDLED_CLONE {
     if (v == null) return v;
     const t = typeof v;
     if (t === 'string') return redactText(v);
@@ -161,18 +162,9 @@ declare global {
       const functionLike = v as { name?: string };
       return '[Function' + (functionLike.name ? ':' + functionLike.name : '') + ']';
     }
-    const maxDepth = numericOption('max_clone_depth', 10, 1, 50);
-    if ((depth || 0) >= maxDepth) return '[MaxDepth]';
-    seen = seen || (typeof WeakSet !== 'undefined' ? new WeakSet() : null);
-    if (typeof v !== 'object' || v === null) return String(v);
-    if (seen) {
-      if (seen.has(v)) return '[Circular]';
-      try {
-        seen.add(v);
-      } catch (_error) {
-        /* best-effort circular tracking */
-      }
-    }
+    return t === 'object' ? UNHANDLED_CLONE : String(v);
+  }
+  function redactSpecialObject(v: object, depth: number, seen: WeakSet<object> | null): unknown | typeof UNHANDLED_CLONE {
     if (typeof ArrayBuffer !== 'undefined' && v instanceof ArrayBuffer) return { kind: 'ArrayBuffer', byteLength: v.byteLength };
     if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(v)) { const view = v as ArrayBufferView & { length?: number }; return { kind: view.constructor && view.constructor.name || 'TypedArray', byteLength: view.byteLength, length: view.length }; }
     if (typeof Blob !== 'undefined' && v instanceof Blob) return { kind: 'Blob', size: v.size, type: v.type };
@@ -185,7 +177,25 @@ declare global {
       }
       return { kind: 'FormData', keys };
     }
-    if (v instanceof Error) return redactClone(serializeError(v), (depth || 0) + 1, seen);
+    return v instanceof Error ? redactClone(serializeError(v), depth + 1, seen) : UNHANDLED_CLONE;
+  }
+  function redactClone(v: unknown, depth = 0, seen?: WeakSet<object> | null): unknown {
+    const scalar = redactScalar(v);
+    if (scalar !== UNHANDLED_CLONE) return scalar;
+    const maxDepth = numericOption('max_clone_depth', 10, 1, 50);
+    if ((depth || 0) >= maxDepth) return '[MaxDepth]';
+    seen = seen || (typeof WeakSet !== 'undefined' ? new WeakSet() : null);
+    const objectValue = v as object;
+    if (seen) {
+      if (seen.has(objectValue)) return '[Circular]';
+      try {
+        seen.add(objectValue);
+      } catch (_error) {
+        /* best-effort circular tracking */
+      }
+    }
+    const special = redactSpecialObject(objectValue, depth, seen);
+    if (special !== UNHANDLED_CLONE) return special;
     const maxItems = numericOption('max_array_items', 100, 1, 10000);
     const maxKeys = numericOption('max_object_keys', 100, 1, 10000);
     if (Array.isArray(v)) {
@@ -302,58 +312,33 @@ declare global {
   let xpathIdleTicks = 0;
   let xpathCache: Record<string, number | string> = {};
   let xpathLargeResultTicks: Record<string, number> = {};
-  let eventNotifyQueue: HookEvent[] = [];
-  let eventNotifyTimer: ReturnType<typeof setTimeout> | null = null;
   let errorHandlers: Array<[keyof WindowEventMap, EventListener]> = [];
-  const hookWrappers: { xhr: HookFunctionRecord; fetch: typeof window.fetch | null; websocket: typeof window.WebSocket | null; console: HookFunctionRecord; storage: HookFunctionRecord; cookie: unknown; crypto: HookFunctionRecord; domSinks: HookRecord } = { xhr: {}, fetch: null, websocket: null, console: {}, storage: {}, cookie: null, crypto: {}, domSinks: {} };
+  const hookWrappers: { xhr: HookFunctionRecord; fetch: typeof window.fetch | null; websocket: typeof window.WebSocket | null; console: HookFunctionRecord; storage: HookFunctionRecord; crypto: HookFunctionRecord } = { xhr: {}, fetch: null, websocket: null, console: {}, storage: {}, crypto: {} };
   let perfStats: Record<string, PerfBucket> = {};
   let redactMatchers: RedactMatcher[] | null = null;
   function resetDiagnostics(): void { cleanup_warnings = []; residue_signatures = []; }
   function addCleanupWarning(msg: unknown): void { if (msg) cleanup_warnings.push(String(msg)); }
   function addResidueSignature(sig: unknown): void { if (!sig) return; const s = String(sig); if (residue_signatures.indexOf(s) < 0) residue_signatures.push(s); }
   function isBrowserPilotWrapperSource(text: unknown): boolean { return /__browser_pilot_hooks|BrowserPilotHookDispatcher|__BROWSER_PILOT_HOOKS__|network\.request|websocket\.open|storage\.set|crypto\.getRandomValues|dom\.sink|cookies\.read|console\./i.test(String(text || '')); }
+  function detectFunctionResidue(signature: string, read: () => unknown, matches = isBrowserPilotWrapperSource): void {
+    try {
+      const value = read();
+      if (typeof value === 'function' && matches(Function.prototype.toString.call(value))) addResidueSignature(signature);
+    } catch (_error) {
+      /* best-effort hook residue detection */
+    }
+  }
   function detectResidue() {
     residue_signatures = [];
-    try {
-      if (typeof window.fetch === 'function' && isBrowserPilotWrapperSource(Function.prototype.toString.call(window.fetch))) addResidueSignature('fetch');
-    } catch (_error) {
-      /* best-effort fetch residue detection */
+    detectFunctionResidue('fetch', () => window.fetch);
+    if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype) {
+      detectFunctionResidue('xhr.open', () => XMLHttpRequest.prototype.open);
+      detectFunctionResidue('xhr.send', () => XMLHttpRequest.prototype.send);
     }
-    try {
-      if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype && typeof XMLHttpRequest.prototype.open === 'function') {
-        const s1 = Function.prototype.toString.call(XMLHttpRequest.prototype.open);
-        const s2 = Function.prototype.toString.call(XMLHttpRequest.prototype.send);
-        if (isBrowserPilotWrapperSource(s1)) addResidueSignature('xhr.open');
-        if (isBrowserPilotWrapperSource(s2)) addResidueSignature('xhr.send');
-      }
-    } catch (_error) {
-      /* best-effort XHR residue detection */
-    }
-    try {
-      if (typeof window.WebSocket === 'function' && /WrappedWebSocket|websocket\.open|__BROWSER_PILOT_HOOKS__/i.test(Function.prototype.toString.call(window.WebSocket))) addResidueSignature('WebSocket');
-    } catch (_error) {
-      /* best-effort websocket residue detection */
-    }
-    try {
-      if (typeof Storage !== 'undefined' && Storage.prototype && typeof Storage.prototype.setItem === 'function') {
-        const s = Function.prototype.toString.call(Storage.prototype.setItem);
-        if (isBrowserPilotWrapperSource(s)) addResidueSignature('storage.setItem');
-      }
-    } catch (_error) {
-      /* best-effort storage residue detection */
-    }
-    try {
-      const consoleRecord = console as unknown as Record<string, unknown>;
-      ['log','warn','error','info','debug'].forEach(level => {
-        try {
-          if (typeof consoleRecord[level] === 'function' && isBrowserPilotWrapperSource(Function.prototype.toString.call(consoleRecord[level]))) addResidueSignature('console.' + level);
-        } catch (_error) {
-          /* best-effort console residue detection */
-        }
-      });
-    } catch (_error) {
-      /* best-effort console residue bootstrap */
-    }
+    detectFunctionResidue('WebSocket', () => window.WebSocket, text => /WrappedWebSocket|websocket\.open|__BROWSER_PILOT_HOOKS__/i.test(String(text)));
+    if (typeof Storage !== 'undefined' && Storage.prototype) detectFunctionResidue('storage.setItem', () => Storage.prototype.setItem);
+    const consoleRecord = console as unknown as Record<string, unknown>;
+    ['log','warn','error','info','debug'].forEach(level => detectFunctionResidue('console.' + level, () => consoleRecord[level]));
   }
 
   function perfBucket(name: string): PerfBucket {
@@ -385,24 +370,6 @@ declare global {
     const capacity = buffer_size || DEFAULT_BUFFER_SIZE;
     return { buffer_capacity: capacity, buffer_used: used, buffer_utilization: capacity ? used / capacity : 0, dropped_events: overflow };
   }
-  function browserPilotMessageTargetOrigin(): string {
-    try {
-      const origin = window.location && window.location.origin;
-      return origin && origin !== 'null' ? origin : '*';
-    } catch (_error) {
-      return '*';
-    }
-  }
-  function postBrowserPilotMessage(message: unknown): void {
-    window.postMessage(message, browserPilotMessageTargetOrigin());
-  }
-  function notifyOverflow(event: HookEvent): void {
-    try {
-      postBrowserPilotMessage({ __browser_pilot_overflow__: true, dropped_events: overflow, buffer_capacity: buffer_size, buffer_used: buffer_count, event_type: event && event.type, seq: event && event.seq });
-    } catch (_error) {
-      /* best-effort overflow notification */
-    }
-  }
   function bufferSnapshot(): HookEvent[] {
     const out: HookEvent[] = [];
     for (let i = 0; i < buffer_count; i += 1) out.push(buffer[(buffer_start + i) % buffer_size]);
@@ -418,44 +385,15 @@ declare global {
     }
     return t;
   }
-  function clearEventNotifyTimer(): void { if (eventNotifyTimer) { clearTimeout(eventNotifyTimer); eventNotifyTimer = null; } }
-  function flushEventNotifications(): void {
-    clearEventNotifyTimer();
-    if (!eventNotifyQueue.length) return;
-    const batch = eventNotifyQueue.splice(0, eventNotifyQueue.length);
-    try {
-      if (options && options.batch_post_message) postBrowserPilotMessage({ __browser_pilot_event__: true, event_batch: batch, count: batch.length });
-      else batch.forEach(event => postBrowserPilotMessage({ __browser_pilot_event__: true, event }));
-    } catch (_error) {
-      /* best-effort batched event notification */
-    }
-  }
-  function notifyEvent(event: HookEvent): void {
-    if (!(options && options.batch_post_message)) {
-      try {
-        postBrowserPilotMessage({ __browser_pilot_event__: true, event });
-      } catch (_error) {
-        /* best-effort single event notification */
-      }
-      return;
-    }
-    eventNotifyQueue.push(event);
-    const maxEvents = numericOption('batch_max_events', 50, 1, 10000);
-    const flushMs = numericOption('batch_flush_ms', 25, 0, 60000);
-    if (eventNotifyQueue.length >= maxEvents || flushMs === 0) flushEventNotifications();
-    else if (!eventNotifyTimer) eventNotifyTimer = scheduleTimer(flushEventNotifications, flushMs);
-  }
-  function storeEvent(event: HookEvent): boolean {
-    if (buffer_count < buffer_size) { buffer[(buffer_start + buffer_count) % buffer_size] = event; buffer_count += 1; return false; }
+  function storeEvent(event: HookEvent): void {
+    if (buffer_count < buffer_size) { buffer[(buffer_start + buffer_count) % buffer_size] = event; buffer_count += 1; return; }
     buffer[buffer_start] = event;
     buffer_start = (buffer_start + 1) % buffer_size;
     overflow += 1; stats.overflow = overflow;
-    notifyOverflow(event);
-    return true;
   }
-  function push(type: string, data: unknown): HookEvent | null {
+  function push(type: string, data: unknown): void {
     const t0 = Date.now();
-    if (paused && type !== 'hook.lifecycle') return null;
+    if (paused && type !== 'hook.lifecycle') return;
     seq += 1;
     const event = { seq, type, timestamp: now(), data: safeString(data) };
     storeEvent(event);
@@ -468,9 +406,7 @@ declare global {
     else if (type.indexOf('websocket.') === 0) stats.websocket_events += 1;
     else if (type.indexOf('crypto.') === 0) stats.crypto_events += 1;
     else if (type.indexOf('cookies.') === 0) stats.cookie_events += 1;
-    notifyEvent(event);
     recordPerf('push', t0);
-    return event;
   }
   function setState(next: string, reason?: unknown): void { const prev = state; state = next; push('hook.lifecycle', { from: prev, to: next, reason: reason || 'command' }); }
   function validateTargets(nextTargets: unknown): string | null {
@@ -692,7 +628,7 @@ declare global {
     if (!targets.storage || origStorage || typeof Storage === 'undefined') return;
     const proto = Storage.prototype;
     origStorage = {
-      setItem: proto.setItem, getItem: proto.getItem, removeItem: proto.removeItem, clear: proto.clear, key: proto.key
+      setItem: proto.setItem, getItem: proto.getItem, removeItem: proto.removeItem, clear: proto.clear
     };
     const originalStorage = origStorage;
     function storageKind(self: unknown): string {
@@ -747,13 +683,16 @@ declare global {
   function hookCrypto(): void {
     if (!targets.crypto || !window.crypto) return;
     if (!origCrypto.getRandomValues && typeof window.crypto.getRandomValues === 'function') {
-      origCrypto.getRandomValues = window.crypto.getRandomValues.bind(window.crypto);
+      const originalGetRandomValues = window.crypto.getRandomValues;
       try {
-        window.crypto.getRandomValues = function<T extends ArrayBufferView | null>(array: T): T {
+        const getRandomValuesWrapper = function<T extends ArrayBufferView | null>(array: T): T {
           push('crypto.getRandomValues', { array: safeString(array), stack: stackForEvent() });
-          if (!origCrypto.getRandomValues || array === null) return array;
-          return origCrypto.getRandomValues(array as ArrayBufferView<ArrayBuffer>) as T;
+          if (array === null) return array;
+          return originalGetRandomValues.call(window.crypto, array as ArrayBufferView<ArrayBuffer>) as T;
         };
+        window.crypto.getRandomValues = getRandomValuesWrapper;
+        origCrypto.getRandomValues = originalGetRandomValues;
+        hookWrappers.crypto.getRandomValues = getRandomValuesWrapper as HookCallable;
       } catch (_error) {
         /* best-effort getRandomValues hook install */
       }
@@ -763,9 +702,9 @@ declare global {
     const subtleRecord = subtle as unknown as HookFunctionRecord;
     ['encrypt','decrypt','digest','sign','verify','deriveBits','deriveKey','importKey','exportKey','wrapKey','unwrapKey','generateKey'].forEach(name => {
       if (origCrypto.subtle[name] || typeof subtleRecord[name] !== 'function') return;
-      origCrypto.subtle[name] = subtleRecord[name].bind(subtle) as HookCallable;
+      const original = subtleRecord[name];
       try {
-        subtleRecord[name] = function(...args: unknown[]) {
+        const wrapper = function(...args: unknown[]) {
           push('crypto.subtle.' + name, {
             algorithm: describeAlgorithm(args[0]),
             key: describeKey(args[1]),
@@ -773,8 +712,11 @@ declare global {
             data: args.length ? safeString(args[args.length - 1]) : null,
             stack: stackForEvent()
           });
-          return origCrypto.subtle[name].apply(subtle, args);
+          return original.apply(subtle, args);
         };
+        subtleRecord[name] = wrapper;
+        origCrypto.subtle[name] = original;
+        hookWrappers.crypto[name] = wrapper;
       } catch (_error) {
         /* best-effort subtle crypto hook install */
       }
@@ -856,7 +798,6 @@ declare global {
     buffer_size = requestedBufferSize;
     buffer = new Array(buffer_size); buffer_start = 0; buffer_count = 0; seq = 0; overflow = 0; stats = Object.assign({}, DEFAULT_STATS);
     mutationQueue = []; if (mutationTimer) { clearTimeout(mutationTimer); mutationTimer = null; }
-    eventNotifyQueue = []; clearEventNotifyTimer();
     xpathPollMs = Number(options.xpath_poll_ms || 5000); xpathIdleTicks = 0; xpathCache = {}; xpathLargeResultTicks = {}; perfStats = {};
     install_epoch = Date.now();
     setState('PREPARED', 'install');
@@ -894,7 +835,6 @@ declare global {
     const since = Number(opts.since_seq || 0);
     const limit = Math.max(0, Number(opts.limit || 100));
     flushMutations();
-    flushEventNotifications();
     let events = bufferSnapshot().filter(e => e && e.seq > since);
     const eventTypes = Array.isArray(opts.event_types) ? opts.event_types.map(String) : [];
     if (eventTypes.length) events = events.filter(e => eventTypes.some((t: string) => e.type.indexOf(t) === 0));
@@ -934,49 +874,43 @@ declare global {
     buffer = new Array(buffer_size); buffer_start = 0; buffer_count = 0; overflow = 0; stats.overflow = 0; perfStats = {};
     return { ok: true, data: { session_id, cleared: true, last_seq: seq } };
   }
-  function uninstall(optsInput?: unknown): HookResponse {
-    const opts = asRecord(optsInput);
-    if (opts.force !== true) { const miss = requireSession('hook.uninstall', expectedSessionIdFrom(opts)); if (miss) return miss; }
-    cleanup_warnings = [];
-    if (origXHR) {
-      if (XMLHttpRequest.prototype.open === hookWrappers.xhr.open) XMLHttpRequest.prototype.open = origXHR.open;
-      else addCleanupWarning('xhr.open wrapper identity changed before uninstall');
-      if (XMLHttpRequest.prototype.send === hookWrappers.xhr.send) XMLHttpRequest.prototype.send = origXHR.send;
-      else addCleanupWarning('xhr.send wrapper identity changed before uninstall');
-      origXHR = null; hookWrappers.xhr = {};
-    }
-    if (origFetch) { if (window.fetch === hookWrappers.fetch) window.fetch = origFetch; else addCleanupWarning('fetch wrapper identity changed before uninstall'); origFetch = null; hookWrappers.fetch = null; }
-    if (origWebSocket) { if (window.WebSocket === hookWrappers.websocket) window.WebSocket = origWebSocket; else addCleanupWarning('WebSocket wrapper identity changed before uninstall'); origWebSocket = null; hookWrappers.websocket = null; }
-    const consoleRecord = console as unknown as Record<string, HookCallable>;
-    Object.keys(origConsole).forEach(k => { if (consoleRecord[k] === hookWrappers.console[k]) consoleRecord[k] = origConsole[k]; else addCleanupWarning('console.' + k + ' wrapper identity changed before uninstall'); }); origConsole = {}; hookWrappers.console = {};
-    if (origStorage && typeof Storage !== 'undefined') {
-      if (Storage.prototype.setItem === hookWrappers.storage.setItem) Storage.prototype.setItem = origStorage.setItem;
-      else addCleanupWarning('storage.setItem wrapper identity changed before uninstall');
-      if (Storage.prototype.getItem === hookWrappers.storage.getItem) Storage.prototype.getItem = origStorage.getItem;
-      else addCleanupWarning('storage.getItem wrapper identity changed before uninstall');
-      if (Storage.prototype.removeItem === hookWrappers.storage.removeItem) Storage.prototype.removeItem = origStorage.removeItem;
-      else addCleanupWarning('storage.removeItem wrapper identity changed before uninstall');
-      if (Storage.prototype.clear === hookWrappers.storage.clear) Storage.prototype.clear = origStorage.clear;
-      else addCleanupWarning('storage.clear wrapper identity changed before uninstall');
-      Storage.prototype.key = origStorage.key; origStorage = null; hookWrappers.storage = {};
-    }
-    if (origCookieDescriptor) { Object.defineProperty(origCookieDescriptor.proto, 'cookie', origCookieDescriptor.desc); origCookieDescriptor = null; }
-    Object.keys(origCrypto.subtle).forEach(k => {
+  function restoreFunctionRecord(current: HookFunctionRecord, originals: HookFunctionRecord, wrappers: HookFunctionRecord, prefix: string): void {
+    Object.keys(originals).forEach(name => {
       try {
-        if (window.crypto && window.crypto.subtle) (window.crypto.subtle as unknown as HookFunctionRecord)[k] = origCrypto.subtle[k];
-      } catch (_error) {
-        /* best-effort subtle crypto restore */
+        if (current[name] === wrappers[name]) current[name] = originals[name];
+        else addCleanupWarning(prefix + name + ' wrapper identity changed before uninstall');
+      } catch (error) {
+        addCleanupWarning(prefix + name + ' restore failed: ' + errorMessage(error));
       }
     });
-    origCrypto.subtle = {};
-    if (origCrypto.getRandomValues) {
-      try {
-        window.crypto.getRandomValues = origCrypto.getRandomValues;
-      } catch (_error) {
-        /* best-effort getRandomValues restore */
-      }
-      origCrypto.getRandomValues = null;
+  }
+  function restoreHookFunctions(): void {
+    if (origXHR) {
+      restoreFunctionRecord(XMLHttpRequest.prototype as unknown as HookFunctionRecord, origXHR as unknown as HookFunctionRecord, hookWrappers.xhr, 'xhr.');
+      origXHR = null; hookWrappers.xhr = {};
     }
+    const windowOriginals: HookFunctionRecord = {};
+    const windowWrappers: HookFunctionRecord = {};
+    if (origFetch) { windowOriginals.fetch = origFetch as HookCallable; windowWrappers.fetch = hookWrappers.fetch as HookCallable; }
+    if (origWebSocket) { windowOriginals.WebSocket = origWebSocket as unknown as HookCallable; windowWrappers.WebSocket = hookWrappers.websocket as unknown as HookCallable; }
+    restoreFunctionRecord(window as unknown as HookFunctionRecord, windowOriginals, windowWrappers, '');
+    origFetch = null; hookWrappers.fetch = null; origWebSocket = null; hookWrappers.websocket = null;
+    restoreFunctionRecord(console as unknown as HookFunctionRecord, origConsole, hookWrappers.console, 'console.');
+    origConsole = {}; hookWrappers.console = {};
+    if (origStorage && typeof Storage !== 'undefined') {
+      restoreFunctionRecord(Storage.prototype as unknown as HookFunctionRecord, origStorage as unknown as HookFunctionRecord, hookWrappers.storage, 'storage.');
+      origStorage = null; hookWrappers.storage = {};
+    }
+    if (origCrypto.getRandomValues && window.crypto) {
+      restoreFunctionRecord(window.crypto as unknown as HookFunctionRecord, { getRandomValues: origCrypto.getRandomValues as HookCallable }, hookWrappers.crypto, 'crypto.');
+    }
+    if (Object.keys(origCrypto.subtle).length && window.crypto?.subtle) {
+      restoreFunctionRecord(window.crypto.subtle as unknown as HookFunctionRecord, origCrypto.subtle, hookWrappers.crypto, 'crypto.subtle.');
+    }
+    origCrypto.getRandomValues = null; origCrypto.subtle = {}; hookWrappers.crypto = {};
+  }
+  function restoreHookDescriptors(): void {
+    if (origCookieDescriptor) { Object.defineProperty(origCookieDescriptor.proto, 'cookie', origCookieDescriptor.desc); origCookieDescriptor = null; }
     Object.keys(origDomSinks).forEach(k => {
       const item = origDomSinks[k] as DomSinkDescriptor | undefined;
       if (item && item.proto && item.prop && item.desc) Object.defineProperty(item.proto, item.prop, item.desc);
@@ -984,13 +918,22 @@ declare global {
     if (origDomSinks.insertAdjacentHTML) Element.prototype.insertAdjacentHTML = origDomSinks.insertAdjacentHTML as typeof Element.prototype.insertAdjacentHTML;
     if (origDomSinks.documentWrite) document.write = origDomSinks.documentWrite as typeof document.write;
     origDomSinks = {};
+  }
+  function stopHookCollectors(): void {
     errorHandlers.forEach(item => window.removeEventListener(item[0], item[1])); errorHandlers = [];
     if (observer) { observer.disconnect(); observer = null; }
     if (mutationTimer) { clearTimeout(mutationTimer); mutationTimer = null; }
     mutationQueue = [];
     if (xpathTimer) { clearTimeout(xpathTimer); xpathTimer = null; }
     xpathCache = {}; xpathLargeResultTicks = {}; xpathIdleTicks = 0;
-    flushEventNotifications(); clearEventNotifyTimer(); eventNotifyQueue = [];
+  }
+  function uninstall(optsInput?: unknown): HookResponse {
+    const opts = asRecord(optsInput);
+    if (opts.force !== true) { const miss = requireSession('hook.uninstall', expectedSessionIdFrom(opts)); if (miss) return miss; }
+    cleanup_warnings = [];
+    restoreHookFunctions();
+    restoreHookDescriptors();
+    stopHookCollectors();
     detectResidue();
     if (residue_signatures.length) addCleanupWarning('Browser Pilot hook residue detected after uninstall: ' + residue_signatures.join(','));
     const old = session_id;
@@ -1020,15 +963,6 @@ declare global {
     }
   }
 
-  window.addEventListener('message', (e: MessageEvent) => {
-    if (e.source !== window) return;
-    if (browserPilotMessageTargetOrigin() !== '*' && e.origin !== browserPilotMessageTargetOrigin()) return;
-    const msg = asRecord(e.data);
-    if (!msg || !msg.__browser_pilot_hook_cmd__) return;
-    const id = msg.id;
-    const resp = dispatch(msg.cmd, msg.args || {});
-    postBrowserPilotMessage({ __browser_pilot_hook_response__: true, id, resp });
-  });
   window.__BROWSER_PILOT_HOOKS__ = {
     version: VERSION, dispatcher_version: VERSION, ERROR_CODES, COMMAND_CANONICAL, install, collect, status, uninstall, clearBuffer, pause, resume, evaluate, dispatch,
     getState: () => state, getSessionId: () => session_id, getBuffer: () => bufferSnapshot(), getStats: () => Object.assign({}, stats),

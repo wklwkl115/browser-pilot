@@ -164,34 +164,52 @@ try {
 	const tabId = Number(tab?.tabId ?? tab?.id);
 	if (!Number.isInteger(tabId) || tabId <= 0) throw new Error(`fixture tab was not routable: ${JSON.stringify(tab)}`);
 
-	const tabs = await invoke(daemon, "browser_tabs", { action: "list", maxChars: 20_000 });
+	const tabs = await invoke(daemon, "browser_tabs", { action: "list" });
 	if (!resultText(tabs).includes("Browser Pilot Smoke")) throw new Error(`browser_tabs did not expose the fixture tab: ${resultText(tabs)}`);
 	const executed = await invoke(daemon, "browser_execute", {
 		tabId,
 		script: "(async()=>{const api=await(await fetch('/api/execute')).json();return{title:document.title,marker:document.querySelector('#smoke-marker')?.textContent,api:api.ok}})()",
-		maxChars: 20_000,
 	});
 	if (!resultText(executed).includes("Browser Pilot Smoke")) throw new Error(`browser_execute did not return fixture evidence: ${resultText(executed)}`);
-	const observed = await invoke(daemon, "browser_observe", { tabId, maxNodes: 200, maxChars: 30_000 });
+	const observed = await invoke(daemon, "browser_observe", { tabId, maxNodes: 200 });
 	if (!resultText(observed).includes("Browser Pilot Smoke")) throw new Error(`browser_observe did not return fixture evidence: ${resultText(observed)}`);
 	const network = await invoke(daemon, "browser_network", {
 		action: "captureReload",
 		tabId,
-		timeoutMs: 15_000,
-		maxChars: 30_000,
 		params: { idleMs: 300, waitTimeoutMs: 10_000, limit: 20 },
 	});
 	if (!/networkCaptureReload|captureReload|api\/boot/.test(resultText(network))) throw new Error(`browser_network did not return capture evidence: ${resultText(network)}`);
+	const hookSessionId = `browser-pilot-smoke-${process.pid}`;
+	await invoke(daemon, "browser_hook", {
+		action: "installTargets",
+		tabId,
+		sessionId: hookSessionId,
+		params: { targets: ["console", "networkApi"], buffer_size: 50 },
+	});
+	await invoke(daemon, "browser_execute", {
+		tabId,
+		script: "(async()=>{console.info('browser-pilot-hook-smoke');await fetch('/api/hook-smoke');return true})()",
+	});
+	const hookEvents = await invoke(daemon, "browser_hook", {
+		action: "collect",
+		tabId,
+		sessionId: hookSessionId,
+		params: { event_types: ["console.", "network."], limit: 20 },
+	});
+	if (!/console\.info/.test(resultText(hookEvents)) || !/network\.(request|response)/.test(resultText(hookEvents))) {
+		throw new Error(`browser_hook did not collect console and network evidence: ${resultText(hookEvents)}`);
+	}
+	await invoke(daemon, "browser_hook", { action: "uninstall", tabId, sessionId: hookSessionId });
 
 	const beforeMetrics = browser.status.health?.connectionMetrics || {};
-	await invoke(daemon, "browser_command", { command: { cmd: "management", method: "reload" }, timeoutMs: 5_000 });
+	await invoke(daemon, "browser_command", { command: { cmd: "management", method: "reload" } });
 	const reconnected = await waitForStatus(daemon, (value) => value.extensionConnected === true && Number(value.health?.connectionMetrics?.connects || 0) > Number(beforeMetrics.connects || 0), "extension reload reconnect");
 	console.log(JSON.stringify({
 		ok: true,
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute", "observe", "network-capture-reload", "extension-reconnect"],
+		checks: ["extension-handshake", "tabs", "execute", "observe", "network-capture-reload", "hook-install-collect-uninstall", "extension-reconnect"],
 		connectionMetrics: reconnected.health?.connectionMetrics,
 	}, null, 2));
 } finally {

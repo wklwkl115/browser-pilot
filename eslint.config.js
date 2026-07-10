@@ -177,6 +177,7 @@ export default tseslint.config(
 			"src/commands/executionJournal.ts",
 			"src/bridge/extension/service_worker/network_events.ts",
 			"src/bridge/extension/service_worker/hook.ts",
+			"src/bridge/extension/page_scripts/hook_dispatcher.ts",
 			"src/commands/observe/scanRunner.ts",
 			"src/commands/observe/scanSession.ts",
 			"src/commands/observe/scanCache.ts",
