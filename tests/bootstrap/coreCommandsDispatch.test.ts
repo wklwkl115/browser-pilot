@@ -6,6 +6,32 @@ import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntim
 
 const sentRuntimeMessages: unknown[] = [];
 const cspRuleUpdates: unknown[] = [];
+type Debuggee = { tabId: number; sessionId?: string };
+type DebuggerCommand = { debuggee: Debuggee; method: string; params?: Record<string, unknown> };
+const debuggerAttachments: number[] = [];
+const debuggerDetaches: number[] = [];
+const debuggerCommands: DebuggerCommand[] = [];
+const debuggerDetachListeners: Array<(source: Debuggee, reason: string) => void> = [];
+const debuggerEventListeners: Array<(source: Debuggee, method: string, params?: Record<string, unknown>) => void> = [];
+let failRunScriptOnce = false;
+let failNotAttachedOnce = false;
+
+async function debuggerCommandResult(_debuggee: Debuggee, method: string): Promise<unknown> {
+	if (method === "Runtime.compileScript") return { scriptId: "compiled-script-1" };
+	if (method === "Runtime.runScript") {
+		if (failRunScriptOnce) {
+			failRunScriptOnce = false;
+			throw new Error("No script with given id");
+		}
+		return { result: { type: "number", value: 42 } };
+	}
+	if (method === "Runtime.evaluate") return { result: { type: "number", value: 42 } };
+	if (method === "Network.enable" && failNotAttachedOnce) {
+		failNotAttachedOnce = false;
+		throw new Error("Debugger is not attached");
+	}
+	return {};
+}
 
 const chromeStub = {
 	runtime: {
@@ -42,12 +68,37 @@ const chromeStub = {
 		},
 	},
 	debugger: {
-		onDetach: { addListener() {} },
-		onEvent: { addListener() {} },
+		async attach(debuggee: Debuggee) {
+			debuggerAttachments.push(debuggee.tabId);
+		},
+		async detach(debuggee: Debuggee) {
+			debuggerDetaches.push(debuggee.tabId);
+		},
+		async sendCommand(debuggee: Debuggee, method: string, params?: Record<string, unknown>) {
+			debuggerCommands.push({ debuggee, method, params });
+			return debuggerCommandResult(debuggee, method);
+		},
+		onDetach: {
+			addListener(listener: (source: Debuggee, reason: string) => void) {
+				debuggerDetachListeners.push(listener);
+			},
+		},
+		onEvent: {
+			addListener(listener: (source: Debuggee, method: string, params?: Record<string, unknown>) => void) {
+				debuggerEventListeners.push(listener);
+			},
+			removeListener(listener: (source: Debuggee, method: string, params?: Record<string, unknown>) => void) {
+				const index = debuggerEventListeners.indexOf(listener);
+				if (index >= 0) debuggerEventListeners.splice(index, 1);
+			},
+		},
 	},
 	tabs: {
 		async query() {
 			return [{ id: 7, url: "https://example.test/", title: "Example", active: true, windowId: 1 }];
+		},
+		async update(tabId: number) {
+			return { id: tabId, active: true, windowId: 1 };
 		},
 	},
 };
@@ -58,6 +109,19 @@ Object.defineProperty(globalThis, "navigator", { value: { userAgent: "browser-pi
 const coreCommands = await import("../../src/bridge/extension/service_worker/core_commands.ts");
 const router = await import("../../src/bridge/extension/service_worker/router.ts");
 const runtime = await import("../../src/bridge/extension/service_worker/runtime.ts");
+const cdpCommands = await import("../../src/bridge/extension/service_worker/cdp.ts");
+const frameCommands = await import("../../src/bridge/extension/service_worker/frame.ts");
+
+function resetCdpFixtures(): void {
+	cdpCommands.browserPilotPersistentCdpBridge.sessions.clear();
+	cdpCommands.browserPilotPersistentCdpBridge.childSessions.clear();
+	cdpCommands.browserPilotPersistentCdpBridge.newDocumentScripts.clear();
+	debuggerAttachments.length = 0;
+	debuggerDetaches.length = 0;
+	debuggerCommands.length = 0;
+	failRunScriptOnce = false;
+	failNotAttachedOnce = false;
+}
 
 function sender(tabId = 7) {
 	return { tab: { id: tabId, url: "https://example.test/" } };
@@ -226,6 +290,105 @@ test("extension runtime helpers redact and normalize malformed error responses",
 		error: "wait expired",
 		details: { timeoutMs: 5 },
 	});
+});
+
+test("persistent CDP send reuses compiled scripts and falls back from stale cache entries", async () => {
+	resetCdpFixtures();
+	const options = { name: "compiled", persistent: true, precompile: true };
+	const first = await cdpCommands.browserPilotPersistentCdpBridge.send(71, "Runtime.evaluate", { expression: "21 * 2", returnByValue: true }, options);
+	const second = await cdpCommands.browserPilotPersistentCdpBridge.send(71, "Runtime.evaluate", { expression: "21 * 2", returnByValue: true }, options);
+
+	assert.equal(first.ok, true);
+	assert.equal(second.ok, true);
+	assert.deepEqual(debuggerAttachments, [71]);
+	assert.deepEqual(debuggerCommands.map((call) => call.method), ["Page.enable", "Runtime.enable", "Runtime.compileScript", "Runtime.runScript", "Runtime.runScript"]);
+	assert.equal(debuggerCommands.filter((call) => call.method === "Runtime.compileScript").length, 1);
+	assert.equal((first.data as Record<string, unknown>).precompiled, true);
+
+	failRunScriptOnce = true;
+	const stale = await cdpCommands.browserPilotPersistentCdpBridge.send(71, "Runtime.evaluate", { expression: "21 * 2", returnByValue: true }, options);
+	assert.equal(stale.ok, true);
+	assert.deepEqual(debuggerCommands.slice(-2).map((call) => call.method), ["Runtime.runScript", "Runtime.evaluate"]);
+	assert.equal((stale.data as Record<string, unknown>).precompiled, undefined);
+});
+
+test("persistent CDP send retries detached sessions and releases temporary attachments", async () => {
+	resetCdpFixtures();
+	failNotAttachedOnce = true;
+	const retried = await cdpCommands.browserPilotPersistentCdpBridge.send(72, "Network.enable", {}, { name: "retry", persistent: true });
+
+	assert.equal(retried.ok, true);
+	assert.deepEqual(debuggerAttachments, [72, 72]);
+	assert.equal(debuggerCommands.filter((call) => call.method === "Network.enable").length, 2);
+	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.sessions.size, 1);
+
+	resetCdpFixtures();
+	const temporary = await cdpCommands.browserPilotPersistentCdpBridge.send(73, "Network.enable", {}, { name: "temporary", persistent: false });
+	assert.equal(temporary.ok, true);
+	assert.deepEqual(debuggerAttachments, [73]);
+	assert.deepEqual(debuggerDetaches, [73]);
+	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.sessions.size, 0);
+});
+
+test("persistent CDP send preserves explicit child-session routing", async () => {
+	resetCdpFixtures();
+	const result = await cdpCommands.browserPilotPersistentCdpBridge.send(74, "Runtime.evaluate", { expression: "42" }, { name: "child", persistent: true, sessionId: "child-session-1" });
+
+	assert.equal(result.ok, true);
+	const evaluate = [...debuggerCommands].reverse().find((call) => call.method === "Runtime.evaluate");
+	assert.deepEqual(evaluate?.debuggee, { tabId: 74, sessionId: "child-session-1" });
+	assert.deepEqual((result.data as { cdpRoute?: unknown }).cdpRoute, {
+		targetScoped: true,
+		attachRouteUsed: false,
+		sessionId: "child-session-1",
+	});
+});
+
+test("frame command dispatch normalizes list, evaluate, and new-document script operations", async () => {
+	const globalCdp = globalThis as typeof globalThis & { BrowserPilotPersistentCdp?: unknown; browserPilotPersistentCdpBridge?: unknown };
+	const previousPrimary = globalCdp.BrowserPilotPersistentCdp;
+	const previousBridge = globalCdp.browserPilotPersistentCdpBridge;
+	const calls: Array<{ operation: string; args: unknown[] }> = [];
+	const bridge = {
+		async frameTree(...args: unknown[]) {
+			calls.push({ operation: "frameTree", args });
+			return { ok: true, data: { frameTree: { frameId: "main" }, frames: [{ frameId: "main" }, { frameId: "child" }] } };
+		},
+		async evaluateInFrame(...args: unknown[]) {
+			calls.push({ operation: "evaluateInFrame", args });
+			return { ok: true, data: { result: 42 } };
+		},
+		async addNewDocumentScript(...args: unknown[]) {
+			calls.push({ operation: "addNewDocumentScript", args });
+			return { ok: true, data: { identifier: "script-1" } };
+		},
+		async removeNewDocumentScript(...args: unknown[]) {
+			calls.push({ operation: "removeNewDocumentScript", args });
+			return { ok: true, data: { removed: true } };
+		},
+	};
+	globalCdp.BrowserPilotPersistentCdp = bridge;
+	globalCdp.browserPilotPersistentCdpBridge = bridge;
+	try {
+		const listed = await frameCommands.handleBrowserPilotFrameCommand("frame.list", 7, { cmd: "frame.list", options: { name: "frames" } });
+		const evaluated = await frameCommands.handleBrowserPilotFrameCommand("frame.evaluate", 7, { cmd: "frame.evaluate", frameId: "child", expression: "21 * 2", awaitPromise: false, returnByValue: false, userGesture: true, worldName: "isolated" });
+		const added = await frameCommands.handleBrowserPilotFrameCommand("frame.addNewDocumentScript", 7, { cmd: "frame.addNewDocumentScript", source: "globalThis.ready = true", runImmediately: true, includeCommandLineAPI: true, timeout_ms: 500 });
+		const removed = await frameCommands.handleBrowserPilotFrameCommand("frame.removeNewDocumentScript", 7, { cmd: "frame.removeNewDocumentScript", identifier: "script-1", timeoutMs: 600 });
+
+		assert.deepEqual(listed, { ok: true, data: { tabId: 7, frameTree: { frameId: "main" }, frames: [{ frameId: "main" }, { frameId: "child" }], count: 2 } });
+		assert.deepEqual(evaluated, { ok: true, data: { tabId: 7, frameId: "child", result: 42 } });
+		assert.deepEqual(added, { ok: true, data: { tabId: 7, identifier: "script-1" } });
+		assert.deepEqual(removed, { ok: true, data: { tabId: 7, removed: true } });
+		assert.deepEqual(calls.map((call) => call.operation), ["frameTree", "evaluateInFrame", "addNewDocumentScript", "removeNewDocumentScript"]);
+		assert.deepEqual(calls[1]?.args[2], { frameId: "child", awaitPromise: false, returnByValue: false, userGesture: true, worldName: "isolated" });
+		assert.deepEqual(calls[2]?.args[2], { persistent: true, name: "new_document", runImmediately: true, includeCommandLineAPI: true, timeoutMs: 500 });
+		assert.deepEqual(calls[3]?.args[2], { persistent: true, name: "new_document", timeoutMs: 600 });
+		assert.equal((await frameCommands.handleBrowserPilotFrameCommand("frame.evaluate", 7, { cmd: "frame.evaluate" })).error_code, "INVALID_RULE");
+		assert.equal((await frameCommands.handleBrowserPilotFrameCommand("frame.unknown", 7, { cmd: "frame.unknown" })).error_code, "INVALID_RULE");
+	} finally {
+		globalCdp.BrowserPilotPersistentCdp = previousPrimary;
+		globalCdp.browserPilotPersistentCdpBridge = previousBridge;
+	}
 });
 
 test("browser command runtime program adapter covers success, failure, timeout, and malformed expand results", async () => {

@@ -8,6 +8,7 @@ Keep changes biased toward deletion, behavior preservation, and one canonical so
 - Use `mise run dev` for the normal local developer gate.
 - Use `mise run affected` when you want changed-file validation with the repo's deterministic fallback.
 - Use `mise run verify` before claiming completion; it is the release-readiness gate and already includes reachability audit, main/test/extension typecheck, required native build/parity, tests, coverage, lint, and build.
+- Use `mise run smoke-browser` after changing bridge/daemon/extension/live-browser behavior. It launches an installed Chrome/Edge/Chromium with the unpacked MV3 extension and verifies handshake, tabs, execute, observe, network capture, and extension reconnect; Windows CI runs the same acceptance gate.
 - Use `mise run dev-governance` when changing governance or workflow artifacts.
 - Do not teach raw package-script gate commands in governance docs; `mise` is the canonical entrypoint.
 

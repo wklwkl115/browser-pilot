@@ -168,6 +168,27 @@ function browserPilotCdpResolveFrame(frames: BrowserPilotCdpFrame[], selector: u
   return null;
 }
 
+async function browserPilotCdpEnsureSessionCapacity(): Promise<BrowserPilotCdpResponse | undefined> {
+  if (browserPilotPersistentCdpSessions.size < BROWSER_PILOT_PERSISTENT_CDP_MAX_SESSIONS) return undefined;
+  try {
+    await browserPilotPersistentCdpReleaseIdle(0);
+  } catch (error) {
+    console.warn('[BROWSER-PILOT-CDP] idle release before attach failed', error);
+  }
+  return browserPilotPersistentCdpSessions.size >= BROWSER_PILOT_PERSISTENT_CDP_MAX_SESSIONS
+    ? browserPilotCdpError('SESSION_LIMIT', 'too many persistent CDP sessions', { max: BROWSER_PILOT_PERSISTENT_CDP_MAX_SESSIONS })
+    : undefined;
+}
+
+function browserPilotCdpReuseAttachedSession(tabId: number, name: string, key: string): BrowserPilotCdpResponse | undefined {
+  const existing = browserPilotPersistentCdpSessions.get(browserPilotCdpSessionKey(tabId, 'default'))
+    ?? Array.from(browserPilotPersistentCdpSessions.values()).find((rec) => rec?.tabId === tabId);
+  if (!existing) return undefined;
+  existing.lastUsed = browserPilotCdpNow();
+  if (name !== 'default') browserPilotPersistentCdpSessions.set(key, existing);
+  return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: existing.attachedAt, alreadyAttached: true });
+}
+
 async function browserPilotPersistentCdpAttach(tabId: number, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {
   if (!tabId) return browserPilotCdpError('NO_TAB_ID', 'tabId is required');
   const name = options?.name || 'default';
@@ -177,15 +198,10 @@ async function browserPilotPersistentCdpAttach(tabId: number, options: BrowserPi
     old.lastUsed = browserPilotCdpNow();
     return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: old.attachedAt });
   }
-  if (browserPilotPersistentCdpSessions.size >= BROWSER_PILOT_PERSISTENT_CDP_MAX_SESSIONS) {
-    // Long-running sessions accumulate persistent CDP attachments faster than
-    // tab-close cleanup releases them. Before hard-failing, opportunistically
-    // evict idle (non-pending, unlocked) sessions and retry the cap check once.
-    try { await browserPilotPersistentCdpReleaseIdle(0); } catch (error) { console.warn('[BROWSER-PILOT-CDP] idle release before attach failed', error); }
-    if (browserPilotPersistentCdpSessions.size >= BROWSER_PILOT_PERSISTENT_CDP_MAX_SESSIONS) {
-      return browserPilotCdpError('SESSION_LIMIT', 'too many persistent CDP sessions', { max: BROWSER_PILOT_PERSISTENT_CDP_MAX_SESSIONS });
-    }
-  }
+  // Long-running sessions accumulate persistent attachments faster than tab-close
+  // cleanup releases them, so evict idle entries before enforcing the hard cap.
+  const capacityError = await browserPilotCdpEnsureSessionCapacity();
+  if (capacityError) return capacityError;
   try {
     if (options?.bringToFront) await chrome.tabs.update(tabId, { active: true });
     await chrome.debugger.attach({ tabId }, options?.protocolVersion || '1.3');
@@ -200,20 +216,8 @@ async function browserPilotPersistentCdpAttach(tabId: number, options: BrowserPi
   } catch (e) {
     const msg = cdpErrorMessage(e);
     if (/Another debugger is already attached|Cannot attach/i.test(String(msg || ''))) {
-      const existingKey = browserPilotCdpSessionKey(tabId, 'default');
-      const existing = browserPilotPersistentCdpSessions.get(existingKey);
-      if (existing) {
-        existing.lastUsed = browserPilotCdpNow();
-        if (name !== 'default') browserPilotPersistentCdpSessions.set(key, existing);
-        return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: existing.attachedAt, alreadyAttached: true });
-      }
-      for (const [, rec] of browserPilotPersistentCdpSessions.entries()) {
-        if (rec && rec.tabId === tabId) {
-          rec.lastUsed = browserPilotCdpNow();
-          browserPilotPersistentCdpSessions.set(key, rec);
-          return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: rec.attachedAt, alreadyAttached: true });
-        }
-      }
+      const reused = browserPilotCdpReuseAttachedSession(tabId, String(name), key);
+      if (reused) return reused;
     }
     return browserPilotCdpError('ATTACH_FAILED', msg, { tabId, name, raw: browserPilotCdpRawError(e) });
   }
@@ -330,105 +334,146 @@ async function browserPilotPersistentCdpCommandTarget(tabId: number, name: strin
   return browserPilotCdpCommandTargetOk({ debuggee: { tabId: rec.tabId, sessionId: childSessionId }, route: { targetScoped: true, attachRouteUsed: true, attachMethod: cdpRecord(attached.data).attachMethod || 'Target.setAutoAttach', targetId, sessionId: childSessionId, childSessionKey: child?.key }, child });
 }
 
-async function browserPilotPersistentCdpSend(tabId: number, method: string, params: JsonRecord = {}, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {
-  if (!method) return browserPilotCdpError('NO_METHOD', 'CDP method is required');
+type BrowserPilotCdpSendSession = { name: string; key: string; rec: BrowserPilotCdpSession; temporary: boolean; retrying: boolean };
+type BrowserPilotCdpSendSessionResult = { ok: true; session: BrowserPilotCdpSendSession } | { ok: false; response: BrowserPilotCdpResponse };
+type BrowserPilotCdpPreparedCommand = { data: unknown; precompiled: boolean };
+
+async function browserPilotCdpAcquireSendSession(tabId: number, options: BrowserPilotCdpOptions): Promise<BrowserPilotCdpSendSessionResult> {
   const name = options?.name || 'default';
   const key = browserPilotCdpSessionKey(tabId, name);
-  const retrying = Boolean(options?.__browserPilotRetryAfterNotAttached);
   let rec = browserPilotPersistentCdpSessions.get(key);
   let temporary = false;
   if (!rec) {
     const attached = await browserPilotPersistentCdpAttach(tabId, { name, protocolVersion: options?.protocolVersion, bringToFront: options?.bringToFront });
-    if (!attached.ok) return attached;
+    if (!attached.ok) return { ok: false, response: attached };
     rec = browserPilotPersistentCdpSessions.get(key);
     temporary = options?.persistent === false;
   }
-  if (!rec) return browserPilotCdpError('ATTACH_FAILED', 'CDP session missing after attach', { tabId, name });
+  if (!rec) return { ok: false, response: browserPilotCdpError('ATTACH_FAILED', 'CDP session missing after attach', { tabId, name }) };
+  return { ok: true, session: { name: String(name), key, rec, temporary, retrying: Boolean(options?.__browserPilotRetryAfterNotAttached) } };
+}
+
+function browserPilotCdpBeginSend(rec: BrowserPilotCdpSession, options: BrowserPilotCdpOptions): void {
   rec.pending = (rec.pending || 0) + 1;
   rec.lockedUntil = Math.max(rec.lockedUntil || 0, browserPilotCdpNow() + Number(options?.timeoutMs || 30000));
+}
+
+function browserPilotCdpCompileParams(expression: string, params: JsonRecord, name: string, cacheKey: string): JsonRecord {
+  const compileParams: JsonRecord = {
+    expression,
+    sourceURL: 'browser-pilot://' + encodeURIComponent(String(name || 'script')) + '/' + cacheKey + '.js',
+    persistScript: true,
+  };
+  if (params.contextId !== undefined) compileParams.executionContextId = params.contextId;
+  return compileParams;
+}
+
+function browserPilotCdpRunParams(scriptId: string, params: JsonRecord): JsonRecord {
+  const runParams: JsonRecord = {
+    scriptId,
+    awaitPromise: params.awaitPromise !== false,
+    returnByValue: params.returnByValue !== false,
+  };
+  for (const field of ['objectGroup', 'silent', 'includeCommandLineAPI', 'userGesture']) {
+    if (params[field] !== undefined) runParams[field] = params[field];
+  }
+  return runParams;
+}
+
+async function browserPilotCdpCompileScript(debuggee: BrowserPilotCdpCommandTarget['debuggee'], expression: string, params: JsonRecord, options: BrowserPilotCdpOptions, name: string, key: string, cacheKey: string): Promise<string | undefined> {
   try {
-    const routeResp = await browserPilotPersistentCdpCommandTarget(tabId, String(name), rec, options);
+    const compiled = cdpRecord(await browserPilotCdpWithTimeout(chrome.debugger.sendCommand(debuggee, 'Runtime.compileScript', browserPilotCdpCompileParams(expression, params, name, cacheKey)), options?.timeoutMs, 'Runtime.compileScript'));
+    return typeof compiled.scriptId === 'string' ? compiled.scriptId : undefined;
+  } catch (compileError) {
+    console.debug('[BROWSER-PILOT-CDP] Runtime.compileScript fallback to evaluate', key, cdpErrorMessage(compileError));
+    return undefined;
+  }
+}
+
+async function browserPilotCdpPrepareCommand(method: string, params: JsonRecord, options: BrowserPilotCdpOptions, session: BrowserPilotCdpSendSession, debuggee: BrowserPilotCdpCommandTarget['debuggee']): Promise<BrowserPilotCdpPreparedCommand> {
+  const expression = typeof params.expression === 'string' ? params.expression : '';
+  if (options?.precompile !== true || method !== 'Runtime.evaluate' || !expression) return { data: undefined, precompiled: false };
+  const cacheKey = browserPilotCdpScriptCacheKey(expression, params, options) + ':' + (debuggee.sessionId || 'root');
+  let scriptId = session.rec.compiledScripts.get(cacheKey);
+  if (!scriptId) {
+    scriptId = await browserPilotCdpCompileScript(debuggee, expression, params, options, session.name, session.key, cacheKey);
+    if (scriptId) session.rec.compiledScripts.set(cacheKey, scriptId);
+  }
+  if (!scriptId) return { data: undefined, precompiled: false };
+  try {
+    const data = await browserPilotCdpWithTimeout(chrome.debugger.sendCommand(debuggee, 'Runtime.runScript', browserPilotCdpRunParams(scriptId, params)), options?.timeoutMs, 'Runtime.runScript');
+    return { data, precompiled: true };
+  } catch (runError) {
+    const message = cdpErrorMessage(runError);
+    if (!/No script with given id/i.test(message)) throw runError;
+    session.rec.compiledScripts.delete(cacheKey);
+    console.debug('[BROWSER-PILOT-CDP] Runtime.runScript script cache stale; fallback to evaluate', session.key, message);
+    return { data: undefined, precompiled: false };
+  }
+}
+
+async function browserPilotCdpExecuteCommand(method: string, params: JsonRecord, options: BrowserPilotCdpOptions, session: BrowserPilotCdpSendSession, debuggee: BrowserPilotCdpCommandTarget['debuggee']): Promise<BrowserPilotCdpPreparedCommand> {
+  const prepared = await browserPilotCdpPrepareCommand(method, params, options, session, debuggee);
+  if (prepared.data !== undefined) return prepared;
+  return {
+    data: await browserPilotCdpWithTimeout(chrome.debugger.sendCommand(debuggee, method, params || {}), options?.timeoutMs, method),
+    precompiled: prepared.precompiled,
+  };
+}
+
+function browserPilotCdpRecordSend(session: BrowserPilotCdpSendSession, child?: BrowserPilotCdpChildSession): void {
+  session.rec.commands += 1;
+  session.rec.lastUsed = browserPilotCdpNow();
+  if (child) {
+    child.commands += 1;
+    child.lastUsed = browserPilotCdpNow();
+  }
+}
+
+function browserPilotCdpPurgeTabSessions(tabId: number): void {
+  for (const [staleKey, staleRec] of Array.from(browserPilotPersistentCdpSessions.entries())) {
+    if (staleRec && Number(staleRec.tabId) === Number(tabId)) browserPilotPersistentCdpSessions.delete(staleKey);
+  }
+}
+
+async function browserPilotCdpHandleSendError(tabId: number, method: string, params: JsonRecord, options: BrowserPilotCdpOptions, session: BrowserPilotCdpSendSession, error: unknown): Promise<BrowserPilotCdpResponse> {
+  const message = cdpErrorMessage(error);
+  if (!session.retrying && /Debugger is not attached|Cannot access a chrome:\/\/ URL|No tab with id/i.test(String(message || ''))) {
+    browserPilotCdpPurgeTabSessions(session.rec.tabId);
+    return browserPilotPersistentCdpSend(tabId, method, params, { ...(options || {}), __browserPilotRetryAfterNotAttached: true });
+  }
+  if (options?.detachOnError) await browserPilotPersistentCdpDetach(tabId, { name: session.name });
+  return browserPilotCdpError('SEND_FAILED', message || String(error), { sessionKey: session.key, method, raw: browserPilotCdpRawError(error) });
+}
+
+async function browserPilotCdpFinishSend(tabId: number, session: BrowserPilotCdpSendSession, child?: BrowserPilotCdpChildSession): Promise<void> {
+  session.rec.pending = Math.max(0, (session.rec.pending || 1) - 1);
+  if (child) child.pending = Math.max(0, (child.pending || 1) - 1);
+  session.rec.lockedUntil = 0;
+  session.rec.lastUsed = browserPilotCdpNow();
+  if (session.temporary) await browserPilotPersistentCdpDetach(tabId, { name: session.name });
+}
+
+async function browserPilotPersistentCdpSend(tabId: number, method: string, params: JsonRecord = {}, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {
+  if (!method) return browserPilotCdpError('NO_METHOD', 'CDP method is required');
+  const acquired = await browserPilotCdpAcquireSendSession(tabId, options);
+  if (!acquired.ok) return acquired.response;
+  const session = acquired.session;
+  let child: BrowserPilotCdpChildSession | undefined;
+  browserPilotCdpBeginSend(session.rec, options);
+  try {
+    const routeResp = await browserPilotPersistentCdpCommandTarget(tabId, session.name, session.rec, options);
     if (!routeResp.ok) return routeResp as BrowserPilotCdpResponse;
     const routeData = routeResp.data!;
-    const debuggee = routeData.debuggee;
-    if (routeData.child) routeData.child.pending = (routeData.child.pending || 0) + 1;
-    const expression = typeof params.expression === 'string' ? params.expression : '';
-    let data: unknown;
-    let precompiled = false;
-    if (options?.precompile === true && method === 'Runtime.evaluate' && expression) {
-      const cacheKey = browserPilotCdpScriptCacheKey(expression, params, options) + ':' + (debuggee.sessionId || 'root');
-      let scriptId = rec.compiledScripts.get(cacheKey);
-      if (!scriptId) {
-        try {
-          const compileParams: JsonRecord = {
-            expression,
-            sourceURL: 'browser-pilot://' + encodeURIComponent(String(name || 'script')) + '/' + cacheKey + '.js',
-            persistScript: true,
-          };
-          if (params.contextId !== undefined) compileParams.executionContextId = params.contextId;
-          const compiled = cdpRecord(await browserPilotCdpWithTimeout(chrome.debugger.sendCommand(debuggee, 'Runtime.compileScript', compileParams), options?.timeoutMs, 'Runtime.compileScript'));
-          if (typeof compiled.scriptId === 'string') {
-            scriptId = compiled.scriptId;
-            rec.compiledScripts.set(cacheKey, scriptId);
-          }
-        } catch (compileError) {
-          console.debug('[BROWSER-PILOT-CDP] Runtime.compileScript fallback to evaluate', key, cdpErrorMessage(compileError));
-        }
-      }
-      if (scriptId) {
-        const runParams: JsonRecord = {
-          scriptId,
-          awaitPromise: params.awaitPromise !== false,
-          returnByValue: params.returnByValue !== false,
-        };
-        if (params.objectGroup !== undefined) runParams.objectGroup = params.objectGroup;
-        if (params.silent !== undefined) runParams.silent = params.silent;
-        if (params.includeCommandLineAPI !== undefined) runParams.includeCommandLineAPI = params.includeCommandLineAPI;
-        if (params.userGesture !== undefined) runParams.userGesture = params.userGesture;
-        try {
-          data = await browserPilotCdpWithTimeout(chrome.debugger.sendCommand(debuggee, 'Runtime.runScript', runParams), options?.timeoutMs, 'Runtime.runScript');
-          precompiled = true;
-        } catch (runError) {
-          const runMessage = cdpErrorMessage(runError);
-          if (/No script with given id/i.test(runMessage)) {
-            rec.compiledScripts.delete(cacheKey);
-            console.debug('[BROWSER-PILOT-CDP] Runtime.runScript script cache stale; fallback to evaluate', key, runMessage);
-          } else {
-            throw runError;
-          }
-        }
-      }
-    }
-    if (data === undefined) {
-      data = await browserPilotCdpWithTimeout(
-        chrome.debugger.sendCommand(debuggee, method, params || {}),
-        options?.timeoutMs,
-        method
-      );
-    }
-    rec.commands += 1; rec.lastUsed = browserPilotCdpNow();
-    if (routeData.child) { routeData.child.commands += 1; routeData.child.lastUsed = browserPilotCdpNow(); }
-    return browserPilotCdpOk(browserPilotCdpAugmentDebuggerEvidence(method, { result: data, sessionKey: key, method, cdpRoute: routeData.route, ...(precompiled ? { precompiled: true } : {}) }));
+    child = routeData.child;
+    if (child) child.pending = (child.pending || 0) + 1;
+    const executed = await browserPilotCdpExecuteCommand(method, params, options, session, routeData.debuggee);
+    browserPilotCdpRecordSend(session, child);
+    return browserPilotCdpOk(browserPilotCdpAugmentDebuggerEvidence(method, { result: executed.data, sessionKey: session.key, method, cdpRoute: routeData.route, ...(executed.precompiled ? { precompiled: true } : {}) }));
   } catch (e) {
-    const msg = cdpErrorMessage(e);
-    if (!retrying && /Debugger is not attached|Cannot access a chrome:\/\/ URL|No tab with id/i.test(String(msg || ''))) {
-      for (const [staleKey, staleRec] of Array.from(browserPilotPersistentCdpSessions.entries())) {
-        if (staleRec && Number(staleRec.tabId) === Number(rec.tabId)) browserPilotPersistentCdpSessions.delete(staleKey);
-      }
-      return await browserPilotPersistentCdpSend(tabId, method, params, { ...(options || {}), __browserPilotRetryAfterNotAttached: true });
-    }
-    if (options?.detachOnError) await browserPilotPersistentCdpDetach(tabId, { name });
-    return browserPilotCdpError('SEND_FAILED', msg || String(e), { sessionKey: key, method, raw: browserPilotCdpRawError(e) });
+    return browserPilotCdpHandleSendError(tabId, method, params, options, session, e);
   } finally {
-    rec.pending = Math.max(0, (rec.pending || 1) - 1);
-    const targetId = browserPilotCdpCleanTargetId(options?.targetId);
-    if (targetId) {
-      const child = browserPilotPersistentCdpChildSessions.get(browserPilotCdpTargetSessionKey(tabId, name, targetId));
-      if (child) child.pending = Math.max(0, (child.pending || 1) - 1);
-    }
-    rec.lockedUntil = 0;
-    rec.lastUsed = browserPilotCdpNow();
-    if (temporary) await browserPilotPersistentCdpDetach(tabId, { name });
+    await browserPilotCdpFinishSend(tabId, session, child);
   }
 }
 
@@ -439,30 +484,47 @@ async function browserPilotPersistentCdpFrameTree(tabId: number, options: Browse
   return browserPilotCdpOk({ frameTree: browserPilotCdpNormalizeFrameTreeNode(rawTree), frames: browserPilotCdpFlattenFrameTree(rawTree, []) });
 }
 
+function browserPilotCdpFrameSelector(options: BrowserPilotCdpOptions): unknown {
+  return options?.frame || options?.frameId || 'main';
+}
+
+function browserPilotCdpIsolatedWorldParams(frame: BrowserPilotCdpFrame, options: BrowserPilotCdpOptions): JsonRecord {
+  return {
+    frameId: frame.frameId,
+    worldName: options?.worldName || ('browser_pilot_' + Math.random().toString(36).slice(2)),
+    grantUniversalAccess: Boolean(options?.grantUniversalAccess),
+  };
+}
+
+function browserPilotCdpFrameEvaluationParams(expression: unknown, executionContextId: unknown, options: BrowserPilotCdpOptions): JsonRecord {
+  return {
+    expression: String(expression || ''),
+    contextId: executionContextId,
+    awaitPromise: options?.awaitPromise !== false,
+    returnByValue: options?.returnByValue !== false,
+    userGesture: Boolean(options?.userGesture),
+  };
+}
+
+function browserPilotCdpExecutionContextId(response: BrowserPilotCdpResponse): unknown {
+  return cdpRecord(cdpRecord(response.data).result).executionContextId;
+}
+
 async function browserPilotPersistentCdpEvaluateInFrame(tabId: number, expression: unknown, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {
   const frameTree = await browserPilotPersistentCdpFrameTree(tabId, options || {});
   if (!frameTree.ok) return frameTree;
   const frameTreeData = cdpRecord(frameTree.data);
   const frames = Array.isArray(frameTreeData.frames) ? frameTreeData.frames as BrowserPilotCdpFrame[] : [];
-  const frame = browserPilotCdpResolveFrame(frames, options?.frame || options?.frameId || 'main');
-  if (!frame) return browserPilotCdpError('FRAME_NOT_FOUND', 'requested frame not found', { frame: options?.frame || options?.frameId, frames });
+  const selector = browserPilotCdpFrameSelector(options);
+  const frame = browserPilotCdpResolveFrame(frames, selector);
+  if (!frame) return browserPilotCdpError('FRAME_NOT_FOUND', 'requested frame not found', { frame: selector, frames });
   try {
-    const worldName = options?.worldName || ('browser_pilot_' + Math.random().toString(36).slice(2));
-    const world = await browserPilotPersistentCdpSend(tabId, 'Page.createIsolatedWorld', {
-      frameId: frame.frameId,
-      worldName,
-      grantUniversalAccess: Boolean(options?.grantUniversalAccess)
-    }, options || {});
+    const world = await browserPilotPersistentCdpSend(tabId, 'Page.createIsolatedWorld', browserPilotCdpIsolatedWorldParams(frame, options), options || {});
     if (!world.ok) return world;
-    const evalResp = await browserPilotPersistentCdpSend(tabId, 'Runtime.evaluate', {
-      expression: String(expression || ''),
-      contextId: cdpRecord(cdpRecord(world.data).result).executionContextId,
-      awaitPromise: options?.awaitPromise !== false,
-      returnByValue: options?.returnByValue !== false,
-      userGesture: Boolean(options?.userGesture)
-    }, options || {});
+    const executionContextId = browserPilotCdpExecutionContextId(world);
+    const evalResp = await browserPilotPersistentCdpSend(tabId, 'Runtime.evaluate', browserPilotCdpFrameEvaluationParams(expression, executionContextId, options), options || {});
     if (!evalResp.ok) return evalResp;
-    return browserPilotCdpOk({ frame, executionContextId: cdpRecord(cdpRecord(world.data).result).executionContextId, result: cdpRecord(evalResp.data).result });
+    return browserPilotCdpOk({ frame, executionContextId, result: cdpRecord(evalResp.data).result });
   } catch (e) {
     return browserPilotCdpError('FRAME_EVAL_FAILED', cdpErrorMessage(e), { frame, raw: browserPilotCdpRawError(e) });
   }
@@ -584,21 +646,28 @@ function cleanupPersistentCdpForTab(tabId: number, _reason?: string): JsonRecord
   return { tabId: target, released: removed.length, sessionKeys: removed };
 }
 
+type BrowserPilotCdpActionHandler = (tabId: number, msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender) => Promise<BrowserPilotCdpResponse>;
+
+const browserPilotCdpActionHandlers: Record<string, BrowserPilotCdpActionHandler> = {
+  attach: (tabId, msg) => browserPilotPersistentCdpAttach(tabId, msg as BrowserPilotCdpOptions),
+  attachTarget: (tabId, msg) => browserPilotPersistentCdpAttachTarget(tabId, msg.targetId, msg as BrowserPilotCdpOptions),
+  send: (tabId, msg) => browserPilotPersistentCdpSend(tabId, String(msg.cdpMethod || ''), cdpRecord(msg.params), msg as BrowserPilotCdpOptions),
+  detachTarget: (tabId, msg) => browserPilotPersistentCdpDetachTarget(tabId, msg.targetId ?? msg.sessionId, msg as BrowserPilotCdpOptions),
+  detach: (tabId, msg) => browserPilotPersistentCdpDetach(tabId, msg as BrowserPilotCdpOptions),
+  targets: (_tabId, msg, sender) => browserPilotPersistentCdpTargets(msg.tabId || sender?.tab?.id),
+  frameTree: (tabId, msg) => browserPilotPersistentCdpFrameTree(tabId, msg as BrowserPilotCdpOptions),
+  evaluateInFrame: (tabId, msg) => browserPilotPersistentCdpEvaluateInFrame(tabId, msg.expression, msg as BrowserPilotCdpOptions),
+  addNewDocumentScript: (tabId, msg) => browserPilotPersistentCdpAddNewDocumentScript(tabId, msg.source, msg as BrowserPilotCdpOptions),
+  removeNewDocumentScript: (tabId, msg) => browserPilotPersistentCdpRemoveNewDocumentScript(tabId, msg.identifier, msg as BrowserPilotCdpOptions),
+  releaseIdle: (_tabId, msg) => browserPilotPersistentCdpReleaseIdle(msg.maxIdleMs),
+};
+
 async function handlePersistentCdpCommand(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender): Promise<BrowserPilotCdpResponse> {
   const tabId = Number(msg.tabId || sender?.tab?.id || 0);
   const action = msg.action || msg.method;
   if (!tabId && action !== 'releaseIdle') return browserPilotCdpError('NO_TAB_ID', 'tabId is required');
-  if (action === 'attach') return await browserPilotPersistentCdpAttach(tabId, msg as BrowserPilotCdpOptions);
-  if (action === 'attachTarget') return await browserPilotPersistentCdpAttachTarget(tabId, msg.targetId, msg as BrowserPilotCdpOptions);
-  if (action === 'send') return await browserPilotPersistentCdpSend(tabId, String(msg.cdpMethod || ''), cdpRecord(msg.params), msg as BrowserPilotCdpOptions);
-  if (action === 'detachTarget') return await browserPilotPersistentCdpDetachTarget(tabId, msg.targetId ?? msg.sessionId, msg as BrowserPilotCdpOptions);
-  if (action === 'detach') return await browserPilotPersistentCdpDetach(tabId, msg as BrowserPilotCdpOptions);
-  if (action === 'targets') return await browserPilotPersistentCdpTargets(msg.tabId || sender?.tab?.id);
-  if (action === 'frameTree') return await browserPilotPersistentCdpFrameTree(tabId, msg as BrowserPilotCdpOptions);
-  if (action === 'evaluateInFrame') return await browserPilotPersistentCdpEvaluateInFrame(tabId, msg.expression, msg as BrowserPilotCdpOptions);
-  if (action === 'addNewDocumentScript') return await browserPilotPersistentCdpAddNewDocumentScript(tabId, msg.source, msg as BrowserPilotCdpOptions);
-  if (action === 'removeNewDocumentScript') return await browserPilotPersistentCdpRemoveNewDocumentScript(tabId, msg.identifier, msg as BrowserPilotCdpOptions);
-  if (action === 'releaseIdle') return await browserPilotPersistentCdpReleaseIdle(msg.maxIdleMs);
+  const handler = typeof action === 'string' ? browserPilotCdpActionHandlers[action] : undefined;
+  if (handler) return handler(tabId, msg, sender);
   return browserPilotCdpError('UNKNOWN_ACTION', 'unknown persistent CDP action: ' + action, { action });
 }
 

@@ -145,7 +145,9 @@ export default tseslint.config(
 		files: [
 			"src/browser-runtime/abml/runtime.ts",
 			"src/bridge/server/BrowserTemporalCoordinator.ts",
+			"src/bridge/extension/service_worker/cdp.ts",
 			"src/bridge/extension/service_worker/exec.ts",
+			"src/bridge/extension/service_worker/frame.ts",
 			"src/bridge/extension/service_worker/network.ts",
 			"src/commands/webSecurity/browserNative/sqliProbe.ts",
 			"src/commands/observeCommand.ts",

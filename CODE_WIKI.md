@@ -905,6 +905,7 @@ kernels ──▶ kernels 内部纯模块
 mise run dev
 mise run affected
 mise run verify
+mise run smoke-browser
 mise run dev-governance
 ```
 
@@ -915,6 +916,7 @@ mise run dev-governance
 | `mise run dev` | 常规本地开发门禁。 |
 | `mise run affected` | 基于 changed files 的影响范围验证。 |
 | `mise run verify` | 发布/完成前完整验证门禁。 |
+| `mise run smoke-browser` | 使用隔离 profile 启动本机 Chrome/Edge/Chromium 与 unpacked MV3 extension，验证真实握手、tabs、execute、canonical observe、network capture 和 extension reload/reconnect。 |
 | `mise run dev-governance` | 修改治理、脚本、workflow、README 等时使用。 |
 
 `mise run verify` 包含：
@@ -929,6 +931,8 @@ mise run dev-governance
 - executed-source coverage gate；
 - full ESLint；
 - build。
+
+`mise run smoke-browser` 是 live-browser acceptance gate，不使用 mock Chrome API。它先通过 [`scripts/build-bridge.mjs`](scripts/build-bridge.mjs) 重建 unpacked extension，再由 [`scripts/run-browser-smoke.mjs`](scripts/run-browser-smoke.mjs) 启动隔离浏览器 profile 和 in-process daemon/bridge。可通过 `BROWSER_PILOT_SMOKE_BROWSER` 指定非标准安装路径；bridge、daemon、extension 或真实浏览器 I/O 行为变化需要同时通过 `mise run verify` 与该 smoke gate。
 
 ### 11.2 低层维护脚本
 
@@ -1070,16 +1074,18 @@ node scripts/run-tests.mjs cli
 node scripts/run-tests.mjs memory
 node --import tsx --test tests/bootstrap/smoke.test.ts
 mise run coverage
+mise run smoke-browser
 node scripts/run-coverage.mjs all
 ```
 
-Observe regression benchmark 位于 [`tests/memory/observeRegressionBenchmark.test.ts`](tests/memory/observeRegressionBenchmark.test.ts)，随 `memory`/`all` scope 运行。新增 case 应使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖，并保护 outline/content hints、actionables/control relations、bounded samples、cross-origin 不越权表达和 provider telemetry 兼容路径。
+Observe regression benchmark 位于 [`tests/memory/observeRegressionBenchmark.test.ts`](tests/memory/observeRegressionBenchmark.test.ts)，随 `memory`/`all` scope 运行。新增 case 应使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖，并保护 outline/content hints、actionables/control relations、bounded samples、cross-origin 不越权表达和 provider telemetry 兼容路径。真实浏览器生命周期由独立 `mise run smoke-browser` acceptance gate 负责，不把 Chrome/Edge 不确定性混入离线回归组。
 
-CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)，在 Ubuntu 与 Windows 上执行相同门禁，核心步骤是：
+CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)：Ubuntu 与 Windows 运行相同 `verify` 门禁，另有 Windows real-browser job 使用系统 Edge/Chrome 执行 MV3 smoke。核心步骤是：
 
 ```bash
 npm ci
 mise run verify
+mise run smoke-browser
 ```
 
 ---

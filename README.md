@@ -249,9 +249,12 @@ Use `mise` for project validation gates:
 mise run dev          # Local developer gate
 mise run affected     # Changed-file validation
 mise run verify       # Release-readiness gate
+mise run smoke-browser # Real Chrome/Edge MV3 acceptance gate
 ```
 
-The observe regression benchmark is maintained as offline fixtures in `tests/memory/observeRegressionBenchmark.test.ts`. New exploration-UX samples should stay deterministic and pure-logic, and should cover additional page archetypes without requiring a real browser, extension, network, or external site.
+`mise run smoke-browser` rebuilds the unpacked extension, launches an installed Chrome/Edge/Chromium in an isolated profile, and verifies the real extension handshake, tab discovery, execute, canonical observe, network capture, and extension reload/reconnect path. Set `BROWSER_PILOT_SMOKE_BROWSER` when the browser is outside the standard install locations.
+
+The observe regression benchmark is maintained as offline fixtures in `tests/memory/observeRegressionBenchmark.test.ts`. New exploration-UX samples should stay deterministic and pure-logic, and should cover additional page archetypes without requiring a real browser, extension, network, or external site; the separate smoke gate owns live-browser lifecycle acceptance.
 
 Lower-level npm scripts still exist for focused maintenance tasks, but they are not the completion gate. See [REPO_GOVERNANCE.md](REPO_GOVERNANCE.md) for the canonical workflow and [CODE_WIKI.md](CODE_WIKI.md) for the architecture/development map.
 

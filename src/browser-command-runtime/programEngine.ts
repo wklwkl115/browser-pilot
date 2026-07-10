@@ -11,7 +11,7 @@
  */
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
-import type { ResourceRefDescriptor as RefDescriptor } from "../ports/ResourceRefStorePort.ts";
+import type { ResourceRefDescriptor as RefDescriptor } from "../ports/ResourceRefStorePort.js";
 import { resolveRefUriDetailed, resolveRefUri } from "../resources/resourceRefs.js";
 import { prepareExecuteStdlib } from "./executeStdlib.js";
 import { dispatchProgramElement } from "./programDispatcher.js";

@@ -31,3 +31,19 @@ jobs:
 
       - name: Run verify
         run: mise run verify
+
+  browser-smoke:
+    name: real browser smoke (windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup mise
+        uses: jdx/mise-action@v2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run real browser smoke
+        run: mise run smoke-browser

@@ -62,13 +62,14 @@ Use `mise`; raw npm scripts are low-level maintenance helpers, not completion ga
 
 - Gate authority: `REPO_GOVERNANCE.md`.
 - Release-readiness: `mise run verify`.
+- Live bridge/daemon/extension behavior: `mise run smoke-browser`.
 - Governance/workflow/doc-rule changes: `mise run dev-governance`.
 - After editing `CODE_WIKI.md`, verify local Markdown links.
 - When retiring stale docs/rules, check lingering references and update `.gitignore` if paths must stay local-only.
 
 ## Non-negotiable rules
 
-- ESM throughout; imports use `.js` extensions even from `.ts` sources.
+- ESM throughout. Node-emitted TypeScript imports use `.js` extensions; bundled `src/bridge/extension/**` imports remain extensionless for the esbuild graph.
 - Node 22+. TypeScript strict.
 - Do not edit generated outputs: `dist/` or `bridge/browser_pilot_bridge/`.
 - `src/kernels/*` are pure logic: no browser, Node, npm runtime, bridge, commands, or browser-runtime deps.

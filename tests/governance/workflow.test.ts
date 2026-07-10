@@ -18,7 +18,10 @@ const packageLockPath = path.join(root, "package-lock.json");
 const commandCatalogPath = path.join(root, "src/commands/commandCatalog.ts");
 const nativeCommandSchemaPath = path.join(root, "src/bridge/protocol/native-command.schema.json");
 const coverageScriptPath = path.join(root, "scripts/run-coverage.mjs");
+const browserSmokeScriptPath = path.join(root, "scripts/run-browser-smoke.mjs");
 const eslintConfigPath = path.join(root, "eslint.config.js");
+const misePath = path.join(root, "mise.toml");
+const verifyWorkflowPath = path.join(root, ".github/workflows/verify.yml");
 const kernelRoot = path.join(root, "src", "kernels");
 const sessionKernelRoot = path.join(kernelRoot, "session");
 
@@ -79,6 +82,22 @@ test("repo governance exposes the canonical local gate sequence", () => {
 	assert.match(governance, /mise run dev/);
 	assert.match(governance, /mise run affected/);
 	assert.match(governance, /mise run verify/);
+	assert.match(governance, /mise run smoke-browser/);
+});
+
+test("real browser smoke gate owns live MV3 acceptance and runs in Windows CI", () => {
+	const mise = text(misePath);
+	const workflow = text(verifyWorkflowPath);
+	const smoke = text(browserSmokeScriptPath);
+	assert.match(mise, /^\[tasks\.smoke-browser\]$/m);
+	assert.match(mise, /scripts\/run-browser-smoke\.mjs/);
+	assert.match(workflow, /mise run smoke-browser/);
+	assert.match(workflow, /runs-on: windows-latest/);
+	assert.match(smoke, /--load-extension=/);
+	assert.match(smoke, /browser_execute/);
+	assert.match(smoke, /browser_observe/);
+	assert.match(smoke, /captureReload/);
+	assert.match(smoke, /extension reload reconnect/);
 });
 
 test("coverage module loading counts only eligible source files", () => {
