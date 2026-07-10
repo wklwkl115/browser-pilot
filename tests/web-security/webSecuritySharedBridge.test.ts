@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createCipheriv, createHash, createHmac } from "node:crypto";
 import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -119,6 +119,31 @@ import { browserArtifactPrivacyMetadata } from "../../src/artifacts/artifactPriv
 function assertSerializedOmits(value: unknown, secrets: string[]) {
 	const serialized = JSON.stringify(value);
 	for (const secret of secrets) assert.equal(serialized.includes(secret), false, secret);
+}
+
+function directJwe(payload: Record<string, unknown>, secret: string): string {
+	const protectedHeader = base64UrlEncode(JSON.stringify({ alg: "dir", enc: "A256GCM", typ: "JWT" }));
+	const iv = Buffer.alloc(12, 7);
+	const cipher = createCipheriv("aes-256-gcm", Buffer.from(secret, "utf8"), iv);
+	cipher.setAAD(Buffer.from(protectedHeader, "utf8"));
+	const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
+	return `${protectedHeader}..${base64UrlEncode(iv)}.${base64UrlEncode(ciphertext)}.${base64UrlEncode(cipher.getAuthTag())}`;
+}
+
+function djangoToken(payload: Record<string, unknown>, secret: string): string {
+	const payloadPart = base64UrlEncode(JSON.stringify(payload));
+	const timestampPart = "1";
+	const signedValue = `${payloadPart}:${timestampPart}`;
+	const key = createHash("sha1").update(`django.core.signingsigner${secret}`, "utf8").digest();
+	return `${signedValue}:${base64UrlEncode(createHmac("sha1", key).update(signedValue, "utf8").digest())}`;
+}
+
+function flaskToken(payload: Record<string, unknown>, secret: string): string {
+	const payloadPart = base64UrlEncode(JSON.stringify(payload));
+	const timestampPart = base64UrlEncode(Buffer.from([1]));
+	const signedValue = `${payloadPart}.${timestampPart}`;
+	const key = createHmac("sha1", secret).update("cookie-session", "utf8").digest();
+	return `${signedValue}.${base64UrlEncode(createHmac("sha1", key).update(signedValue, "utf8").digest())}`;
 }
 
 test("web security redaction boundaries omit secrets from summaries, diagnostics, and metadata", () => {
@@ -303,6 +328,60 @@ test("cookie token helpers decode, verify, and mutate JWT samples offline", asyn
 	assert.match(tokenMutationToken(result) ?? "", /^[^.]+\.[^.]+\.[^.]+$/);
 });
 
+test("cookie token analysis distinguishes unsigned and unverified JWT mutation", async () => {
+	const header = base64UrlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+	const payload = base64UrlEncode(JSON.stringify({ sub: "alice" }));
+	const signature = base64UrlEncode(createHmac("sha256", "secret").update(`${header}.${payload}`).digest());
+	const unverified = await analyzeCookieSample({ source: "header", value: `${header}.${payload}.${signature}` }, ["wrong"], { admin: true });
+	assert.equal(tokenVerifiedOf(unverified), false);
+	assert.equal(tokenMutationToken(unverified), undefined);
+	assert.match(String(((unverified.token as Record<string, unknown>).mutation as Record<string, unknown>).error), /no matching secret/);
+
+	const noneHeader = base64UrlEncode(JSON.stringify({ alg: "none", typ: "JWT" }));
+	const unsigned = await analyzeCookieSample({ source: "header", value: `${noneHeader}.${payload}.` }, [], { admin: true });
+	assert.equal(tokenVerifiedOf(unsigned), true);
+	assert.match(tokenMutationToken(unsigned) ?? "", /\.$/);
+});
+
+test("cookie token analysis decrypts direct JWE and recognizes PASETO offline", async () => {
+	const secret = "0123456789abcdef0123456789abcdef";
+	const jwe = await analyzeCookieSample({ source: "cookie", name: "secure", value: directJwe({ sub: "alice", admin: false }, secret) }, [secret], { admin: true });
+	assert.equal(tokenFormatOf(jwe), "jwe");
+	assert.equal(tokenVerifiedOf(jwe), true);
+	assert.equal(((jwe.token as Record<string, unknown>).payload as Record<string, unknown>).sub, "alice");
+	assert.equal((tokenMutationToken(jwe) ?? "").split(".").length, 5);
+
+	const pasetoValue = `v4.local.${base64UrlEncode(JSON.stringify({ sub: "bob" }))}.${base64UrlEncode(JSON.stringify({ kid: "one" }))}`;
+	const paseto = await analyzeCookieSample({ source: "cookie", value: pasetoValue }, [], { admin: true });
+	assert.equal(tokenFormatOf(paseto), "paseto");
+	assert.deepEqual((paseto.token as Record<string, unknown>).payload, { sub: "bob" });
+	assert.match(String(((paseto.token as Record<string, unknown>).mutation as Record<string, unknown>).error), /not supported/);
+});
+
+test("cookie token analysis verifies Django and Flask sessions without empty-secret mutation fallback", async () => {
+	for (const [format, value] of [["django", djangoToken({ user_id: 7 }, "secret")], ["flask", flaskToken({ user_id: 8 }, "secret")]] as const) {
+		const verified = await analyzeCookieSample({ source: "cookie", name: "session", value }, ["secret"], { admin: true });
+		assert.equal(tokenFormatOf(verified), format);
+		assert.equal(tokenVerifiedOf(verified), true);
+		assert.ok(tokenMutationToken(verified));
+
+		const unverified = await analyzeCookieSample({ source: "cookie", name: "session", value }, ["wrong"], { admin: true });
+		assert.equal(tokenVerifiedOf(unverified), false);
+		assert.equal(tokenMutationToken(unverified), undefined);
+		assert.match(String(((unverified.token as Record<string, unknown>).mutation as Record<string, unknown>).error), /no matching secret/);
+	}
+});
+
+test("cookie token analysis keeps generic decoding bounded and classifies opaque values", async () => {
+	const encoded = await analyzeCookieSample({ source: "header", value: encodeURIComponent(JSON.stringify({ role: "admin" })) }, [], undefined);
+	assert.equal(encoded.kind, "encoded-json");
+	assert.deepEqual((encoded.decodings as Array<Record<string, unknown>>)[0]?.json, { role: "admin" });
+
+	const opaque = await analyzeCookieSample({ source: "header", value: "%not-a-valid-cookie%" }, [], undefined);
+	assert.equal(opaque.kind, "opaque");
+	assert.deepEqual(opaque.decodings, []);
+});
+
 test("sqlmap bridge parser extracts findings and redacts no external scanner execution", () => {
 	const parsed = parseSqlmapOutput(`
 web server operating system: Linux Ubuntu
@@ -461,6 +540,15 @@ test("rails cookie token helpers verify signed tokens and expose binary/encrypte
 	const mutated = await helpers.signRailsSignedToken({ user_id: 8 }, "secret", signed?.matches[0] ?? {}, "base64", false);
 	assert.match(mutated ?? "", /--[a-f0-9]+$/);
 	assert.equal((await helpers.verifyRailsSignedToken(mutated ?? "", ["secret"]))?.matches.length, 1);
+	const analyzed = await analyzeCookieSample({ source: "cookie", name: "session", value: `${payloadPart}--${signature}` }, ["secret"], { user_id: 9 });
+	assert.equal(analyzed.kind, "rails");
+	assert.equal(tokenFormatOf(analyzed), "rails");
+	assert.equal(tokenVerifiedOf(analyzed), true);
+	assert.ok(tokenMutationToken(analyzed));
+	const unverified = await analyzeCookieSample({ source: "cookie", name: "session", value: `${payloadPart}--${signature}` }, ["wrong"], { user_id: 9 });
+	assert.equal(tokenVerifiedOf(unverified), false);
+	assert.equal(tokenMutationToken(unverified), undefined);
+	assert.match(String(((unverified.token as Record<string, unknown>).mutation as Record<string, unknown>).error), /no matching secret/);
 	assert.equal(await helpers.verifyRailsEncryptedToken("not--a--token", ["secret"]), undefined);
 	assert.equal(await helpers.verifyRailsLegacyCbcPayload("not--a", signed?.matches ?? [], 1), undefined);
 });

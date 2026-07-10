@@ -200,8 +200,8 @@ export function createRailsCookieTokenFns(helpers: RailsTokenHelpers) {
 		return undefined;
 	}
 
-	type RailsEncryptedVariant = {
-		cipher: "aes-256-gcm";
+	type RailsEncryptionVariant = {
+		cipher: "aes-256-gcm" | "aes-256-cbc";
 		keySource: string;
 		keyBytes: Buffer;
 		keyLength: number;
@@ -210,24 +210,7 @@ export function createRailsCookieTokenFns(helpers: RailsTokenHelpers) {
 		salt?: string;
 	};
 
-	type RailsLegacyCbcVariant = {
-		cipher: "aes-256-cbc";
-		keySource: string;
-		keyBytes: Buffer;
-		keyLength: number;
-		derivation: "direct" | "pbkdf2";
-		digest?: SignatureVariant["digest"];
-		salt?: string;
-	};
-
-	function uniqueRailsEncryptedVariant(out: RailsEncryptedVariant[], seen: Set<string>, variant: RailsEncryptedVariant) {
-		const key = `${variant.derivation}:${variant.keySource}:${variant.digest || ""}:${variant.salt || ""}:${variant.keyBytes.toString("hex")}`;
-		if (seen.has(key)) return;
-		seen.add(key);
-		out.push(variant);
-	}
-
-	function uniqueRailsLegacyCbcVariant(out: RailsLegacyCbcVariant[], seen: Set<string>, variant: RailsLegacyCbcVariant) {
+	function addRailsEncryptionVariant(out: RailsEncryptionVariant[], seen: Set<string>, variant: RailsEncryptionVariant) {
 		const key = `${variant.derivation}:${variant.keySource}:${variant.digest || ""}:${variant.salt || ""}:${variant.keyBytes.toString("hex")}`;
 		if (seen.has(key)) return;
 		seen.add(key);
@@ -263,29 +246,15 @@ export function createRailsCookieTokenFns(helpers: RailsTokenHelpers) {
 		return variants;
 	}
 
-	async function railsEncryptedVariants(secret: string): Promise<RailsEncryptedVariant[]> {
-		const variants: RailsEncryptedVariant[] = [];
+	async function railsEncryptionVariants(secret: string, cipher: RailsEncryptionVariant["cipher"], salts: readonly string[]): Promise<RailsEncryptionVariant[]> {
+		const variants: RailsEncryptionVariant[] = [];
 		const seen = new Set<string>();
 		for (const candidate of secretByteCandidates(secret)) {
-			if (candidate.bytes.length === 32) uniqueRailsEncryptedVariant(variants, seen, { cipher: "aes-256-gcm", keySource: candidate.source, keyBytes: candidate.bytes, keyLength: candidate.bytes.length, derivation: "direct" });
+			if (candidate.bytes.length === 32) addRailsEncryptionVariant(variants, seen, { cipher, keySource: candidate.source, keyBytes: candidate.bytes, keyLength: candidate.bytes.length, derivation: "direct" });
 		}
 		for (const digest of ["sha1", "sha256"] as const) {
-			for (const salt of ["authenticated encrypted cookie", "action_dispatch.authenticated_encrypted_cookie_salt"]) {
-				uniqueRailsEncryptedVariant(variants, seen, { cipher: "aes-256-gcm", keySource: "utf8", keyBytes: await deriveRailsPbkdf2Key(secret, salt, digest, 32), keyLength: 32, derivation: "pbkdf2", digest, salt });
-			}
-		}
-		return variants;
-	}
-
-	async function railsLegacyCbcVariants(secret: string): Promise<RailsLegacyCbcVariant[]> {
-		const variants: RailsLegacyCbcVariant[] = [];
-		const seen = new Set<string>();
-		for (const candidate of secretByteCandidates(secret)) {
-			if (candidate.bytes.length === 32) uniqueRailsLegacyCbcVariant(variants, seen, { cipher: "aes-256-cbc", keySource: candidate.source, keyBytes: candidate.bytes, keyLength: candidate.bytes.length, derivation: "direct" });
-		}
-		for (const digest of ["sha1", "sha256"] as const) {
-			for (const salt of ["encrypted cookie", "action_dispatch.encrypted_cookie_salt"]) {
-				uniqueRailsLegacyCbcVariant(variants, seen, { cipher: "aes-256-cbc", keySource: "utf8", keyBytes: await deriveRailsPbkdf2Key(secret, salt, digest, 32), keyLength: 32, derivation: "pbkdf2", digest, salt });
+			for (const salt of salts) {
+				addRailsEncryptionVariant(variants, seen, { cipher, keySource: "utf8", keyBytes: await deriveRailsPbkdf2Key(secret, salt, digest, 32), keyLength: 32, derivation: "pbkdf2", digest, salt });
 			}
 		}
 		return variants;
@@ -309,10 +278,10 @@ export function createRailsCookieTokenFns(helpers: RailsTokenHelpers) {
 		let decrypted: ReturnType<typeof unwrapRailsEncryptedPlaintext> | undefined;
 		let testedKeyVariantCount = 0;
 		for (let i = 0; i < secrets.length; i += 1) {
-			for (const variant of await railsEncryptedVariants(secrets[i])) {
+			for (const variant of await railsEncryptionVariants(secrets[i], "aes-256-gcm", ["authenticated encrypted cookie", "action_dispatch.authenticated_encrypted_cookie_salt"])) {
 				testedKeyVariantCount += 1;
 				try {
-					const decipher = createDecipheriv(variant.cipher, variant.keyBytes, parsed.iv.bytes);
+					const decipher = createDecipheriv(variant.cipher, variant.keyBytes, parsed.iv.bytes) as ReturnType<typeof createDecipheriv> & { setAuthTag(tag: Buffer): void };
 					decipher.setAuthTag(parsed.authTag.bytes);
 					const plaintext = Buffer.concat([decipher.update(parsed.ciphertext.bytes), decipher.final()]);
 					decrypted ||= unwrapRailsEncryptedPlaintext(plaintext);
@@ -367,7 +336,7 @@ export function createRailsCookieTokenFns(helpers: RailsTokenHelpers) {
 		for (const signedMatch of signedMatches) {
 			const secret = asString(signedMatch.secret);
 			if (!secret) continue;
-			for (const variant of await railsLegacyCbcVariants(secret)) {
+			for (const variant of await railsEncryptionVariants(secret, "aes-256-cbc", ["encrypted cookie", "action_dispatch.encrypted_cookie_salt"])) {
 				testedKeyVariantCount += 1;
 				try {
 					const decipher = createDecipheriv("aes-256-cbc", variant.keyBytes, parsed.iv.bytes);

@@ -382,8 +382,23 @@ function tokenVerified(token: Record<string, unknown>): boolean {
 	return (isRecord(token.signature) && token.signature.verified === true) || (isRecord(token.decryption) && token.decryption.verified === true);
 }
 
-export async function analyzeCookieSample(sample: CookieSample, secrets: string[], claimMutations: unknown): Promise<Record<string, unknown>> {
-	const result: Record<string, unknown> = {
+type CookieTokenMatch = {
+	kind: string;
+	projection: "jwt" | "jwe" | "paseto" | "sessionToken";
+	token: Record<string, unknown>;
+	canonical?: boolean;
+};
+
+type RailsCryptoVerification = {
+	decrypted?: unknown;
+	matches: SecretMatch[];
+	testedSecretCandidateCount: number;
+	testedKeyVariantCount: number;
+	truncatedKeyVariantCount: number;
+};
+
+function baseCookieResult(sample: CookieSample): Record<string, unknown> {
+	return {
 		source: sample.source,
 		name: sample.name,
 		valueLength: sample.value.length,
@@ -391,197 +406,191 @@ export async function analyzeCookieSample(sample: CookieSample, secrets: string[
 		attributes: sample.attributes,
 		decodings: [],
 	};
+}
 
-	const jwt = parseJwt(sample.value);
-	if (jwt) {
-		const verification = verifyJwtHmac(jwt, secrets);
-		const signature = {
-			present: jwt.parts[2].length > 0,
-			bytes: (base64UrlDecode(jwt.parts[2]) || Buffer.alloc(0)).length,
-			algorithmSupported: verification.supported,
-			testedSecretCandidateCount: verification.testedSecretCandidateCount,
-			verified: verification.matches.length > 0 || jwt.alg.toLowerCase() === "none",
-			matches: verification.matches,
-		};
-		const token: Record<string, unknown> = { format: "jwt", alg: jwt.alg, typ: jwt.typ, kid: jwt.kid, header: jwt.header, payload: jwt.payload, signature };
-		token.mutation = mutationRecord(jwt.payload, claimMutations, (claims) => signJwt(jwt.header, claims, verification.matches.length ? asString(verification.matches[0].secret) : undefined));
-		result.kind = "jwt";
-		result.jwt = token;
-		result.token = token;
-		return result;
+function cookieTokenResult(sample: CookieSample, match: CookieTokenMatch): Record<string, unknown> {
+	return { ...baseCookieResult(sample), kind: match.kind, [match.projection]: match.token, ...(match.canonical === false ? {} : { token: match.token }) };
+}
+
+function signedTokenEvidence(testedSecretCandidateCount: number, matches: SecretMatch[]): Record<string, unknown> {
+	return { present: true, algorithmSupported: true, testedSecretCandidateCount, verified: matches.length > 0, matches };
+}
+
+function analyzeJwtCookie(value: string, secrets: string[], claimMutations: unknown): CookieTokenMatch | undefined {
+	const jwt = parseJwt(value);
+	if (!jwt) return undefined;
+	const verification = verifyJwtHmac(jwt, secrets);
+	const signature = {
+		present: jwt.parts[2].length > 0,
+		bytes: (base64UrlDecode(jwt.parts[2]) || Buffer.alloc(0)).length,
+		algorithmSupported: verification.supported,
+		testedSecretCandidateCount: verification.testedSecretCandidateCount,
+		verified: verification.matches.length > 0 || jwt.alg.toLowerCase() === "none",
+		matches: verification.matches,
+	};
+	const token: Record<string, unknown> = { format: "jwt", alg: jwt.alg, typ: jwt.typ, kid: jwt.kid, header: jwt.header, payload: jwt.payload, signature };
+	token.mutation = mutationRecord(jwt.payload, claimMutations, (claims) => signJwt(jwt.header, claims, asString(verification.matches[0]?.secret)));
+	return { kind: "jwt", projection: "jwt", token };
+}
+
+function analyzeJweCookie(value: string, secrets: string[], claimMutations: unknown): CookieTokenMatch | undefined {
+	const jwe = parseJwe(value);
+	if (!jwe) return undefined;
+	const decryption = decryptDirectJwe(jwe, secrets);
+	const match = decryption.matches[0];
+	const token: Record<string, unknown> = {
+		format: "jwe",
+		alg: jwe.alg,
+		enc: jwe.enc,
+		typ: jwe.typ,
+		kid: jwe.kid,
+		header: jwe.header,
+		decryption: {
+			supported: decryption.supported,
+			testedSecretCandidateCount: decryption.testedSecretCandidateCount,
+			verified: decryption.matches.length > 0,
+			matches: decryption.matches.map((item) => ({ index: item.index, secret: item.secret, secretSha256: item.secretSha256, keySource: item.keySource, plaintextBytes: item.plaintextBytes })),
+		},
+		payload: match?.payload,
+	};
+	token.mutation = mutationRecord(match?.payload, claimMutations, (claims) => encryptDirectJwe(jwe.header, claims, asString(match?.secret) ?? "", asString(match?.keySource) ?? "utf8"));
+	return { kind: "jwe", projection: "jwe", token };
+}
+
+function analyzePasetoCookie(value: string, _secrets: string[], claimMutations: unknown): CookieTokenMatch | undefined {
+	const paseto = parsePaseto(value);
+	if (!paseto) return undefined;
+	const token: Record<string, unknown> = { format: "paseto", version: paseto.version, purpose: paseto.purpose, payloadBytes: paseto.payloadBytes, footerBytes: paseto.footerBytes };
+	if (paseto.payloadJson !== undefined || paseto.payloadText !== undefined) token.payload = paseto.payloadJson ?? paseto.payloadText;
+	if (paseto.footerJson !== undefined || paseto.footerText !== undefined) token.footer = paseto.footerJson ?? paseto.footerText;
+	token.mutation = isRecord(claimMutations) ? { claims: claimMutations, error: "PASETO mutation requires external key material and is not supported by this analyzer" } : undefined;
+	return { kind: "paseto", projection: "paseto", token };
+}
+
+function analyzeDjangoCookie(value: string, secrets: string[], claimMutations: unknown): CookieTokenMatch | undefined {
+	const django = verifyDjangoToken(value, secrets);
+	if (!django) return undefined;
+	const match = django.matches[0];
+	const token: Record<string, unknown> = {
+		format: "django",
+		payload: django.decoded.json ?? django.decoded.text,
+		timestamp: django.timestamp,
+		timestampBase62: django.timestampPart,
+		compressed: django.decoded.compressed,
+		signature: signedTokenEvidence(django.testedSecretCandidateCount, django.matches),
+	};
+	token.mutation = mutationRecord(token.payload, claimMutations, (claims) => match ? signDjangoToken(claims, django.timestampPart || base62Encode(Math.floor(Date.now() / 1000)), asString(match.secret) ?? "", match, django.decoded.compressed) : undefined);
+	return { kind: "django", projection: "sessionToken", token };
+}
+
+function analyzeFlaskCookie(value: string, secrets: string[], claimMutations: unknown): CookieTokenMatch | undefined {
+	const flask = verifyFlaskToken(value, secrets);
+	if (!flask) return undefined;
+	const match = flask.matches[0];
+	const token: Record<string, unknown> = {
+		format: "flask",
+		payload: flask.decoded.json ?? flask.decoded.text,
+		timestamp: flask.timestamp,
+		timestampBase64: flask.timestampPart,
+		compressed: flask.decoded.compressed,
+		signature: signedTokenEvidence(flask.testedSecretCandidateCount, flask.matches),
+	};
+	token.mutation = mutationRecord(token.payload, claimMutations, (claims) => match ? signFlaskToken(claims, flask.timestampPart || base64UrlNoPad(integerToBytes(Math.floor(Date.now() / 1000))), asString(match.secret) ?? "", match, flask.decoded.compressed) : undefined);
+	return { kind: "flask", projection: "sessionToken", token };
+}
+
+function railsDecryptedFields(value: unknown): Record<string, unknown> {
+	const decrypted = isRecord(value) ? value : {};
+	const metadata = isRecord(decrypted.metadata) ? decrypted.metadata : {};
+	return {
+		payload: decrypted.payload,
+		binary: decrypted.binary,
+		serializer: decrypted.serializer,
+		unsupportedSerializer: decrypted.unsupportedSerializer,
+		plaintextBytes: decrypted.plaintextBytes,
+		plaintextSha256: decrypted.plaintextSha256,
+		metadata: decrypted.metadata,
+		purpose: metadata.purpose,
+		expiresAt: metadata.expiresAt,
+		expired: metadata.expired,
+	};
+}
+
+function railsDecryptionMatch(match: SecretMatch, includeSigned: boolean): Record<string, unknown> {
+	const direct = { index: match.index, secret: match.secret, secretSha256: match.secretSha256, keySource: match.keySource, keyLength: match.keyLength, derivation: match.derivation, digest: match.digest, salt: match.salt, cipher: match.cipher, plaintextBytes: match.plaintextBytes };
+	return includeSigned ? { ...direct, signedDigest: match.signedDigest, signedSalt: match.signedSalt, signedDerivation: match.signedDerivation, signedKeySource: match.signedKeySource, signedKeyLength: match.signedKeyLength } : direct;
+}
+
+function railsDecryptionEvidence(verification: RailsCryptoVerification, includeSigned = false): Record<string, unknown> {
+	return {
+		supported: true,
+		testedSecretCandidateCount: verification.testedSecretCandidateCount,
+		testedKeyVariantCount: verification.testedKeyVariantCount,
+		truncatedKeyVariantCount: verification.truncatedKeyVariantCount,
+		verified: verification.matches.length > 0,
+		matches: verification.matches.map((match) => railsDecryptionMatch(match, includeSigned)),
+	};
+}
+
+function railsEncryptedToken(enc: "A256GCM" | "A256CBC", cipher: "aes-256-gcm" | "aes-256-cbc", verification: RailsCryptoVerification, signature?: Record<string, unknown>): Record<string, unknown> {
+	return { format: "rails", mode: "encrypted", enc, cipher, ...railsDecryptedFields(verification.decrypted), ...(signature ? { signature } : {}), decryption: railsDecryptionEvidence(verification, !!signature) };
+}
+
+async function analyzeRailsEncryptedCookie(value: string, secrets: string[], claimMutations: unknown): Promise<CookieTokenMatch | undefined> {
+	const rails = await verifyRailsEncryptedToken(value, secrets);
+	if (!rails) return undefined;
+	const match = rails.matches[0];
+	const token = railsEncryptedToken("A256GCM", "aes-256-gcm", rails);
+	token.mutation = match
+		? await mutationRecordAsync(token.payload, claimMutations, (claims) => encryptRailsToken(claims, asString(match.secret) ?? "", match, rails))
+		: (isRecord(claimMutations) ? { claims: claimMutations, error: "Token format is unsupported or no matching secret was supplied" } : undefined);
+	return { kind: match ? "rails" : "possible-rails-encrypted", projection: "sessionToken", token, canonical: !!match };
+}
+
+async function analyzeRailsSignedCookie(value: string, secrets: string[], claimMutations: unknown): Promise<CookieTokenMatch | undefined> {
+	const rails = await verifyRailsSignedToken(value, secrets);
+	if (!rails) return undefined;
+	const legacy = await verifyRailsLegacyCbcPayload(rails.payloadPart, rails.matches, rails.testedSecretCandidateCount);
+	if (legacy?.matches.length) {
+		const match = legacy.matches[0];
+		const token = railsEncryptedToken("A256CBC", "aes-256-cbc", legacy, signedTokenEvidence(rails.testedSecretCandidateCount, rails.matches));
+		token.mutation = await mutationRecordAsync(token.payload, claimMutations, (claims) => encryptRailsLegacyCbcToken(claims, asString(match.secret) ?? "", match, legacy));
+		return { kind: "rails", projection: "sessionToken", token };
 	}
+	const match = rails.matches[0];
+	const binary = (rails.decoded as { binary?: unknown }).binary;
+	const token: Record<string, unknown> = {
+		format: "rails",
+		mode: "signed",
+		payload: rails.decoded.json ?? rails.decoded.text ?? binary,
+		binary,
+		encoding: rails.decoded.encoding,
+		urlEncoded: rails.decoded.urlEncoded,
+		signature: signedTokenEvidence(rails.testedSecretCandidateCount, rails.matches),
+	};
+	token.mutation = await mutationRecordAsync(token.payload, claimMutations, (claims) => match ? signRailsSignedToken(claims, asString(match.secret) ?? "", match, asString(rails.decoded.encoding) ?? "raw", Boolean(rails.decoded.urlEncoded)) : Promise.resolve(undefined));
+	return { kind: "rails", projection: "sessionToken", token };
+}
 
-	const jwe = parseJwe(sample.value);
-	if (jwe) {
-		const decryption = decryptDirectJwe(jwe, secrets);
-		const matchedPayload = decryption.matches.length ? decryption.matches[0].payload : undefined;
-		const token: Record<string, unknown> = {
-			format: "jwe",
-			alg: jwe.alg,
-			enc: jwe.enc,
-			typ: jwe.typ,
-			kid: jwe.kid,
-			header: jwe.header,
-			decryption: {
-				supported: decryption.supported,
-				testedSecretCandidateCount: decryption.testedSecretCandidateCount,
-				verified: decryption.matches.length > 0,
-				matches: decryption.matches.map((match) => ({ index: match.index, secret: match.secret, secretSha256: match.secretSha256, keySource: match.keySource, plaintextBytes: match.plaintextBytes })),
-			},
-			payload: matchedPayload,
-		};
-		token.mutation = mutationRecord(matchedPayload, claimMutations, (claims) => encryptDirectJwe(jwe.header, claims, asString(decryption.matches[0]?.secret) || "", asString(decryption.matches[0]?.keySource) || "utf8"));
-		result.kind = "jwe";
-		result.jwe = token;
-		result.token = token;
-		return result;
-	}
+async function analyzeRailsCookie(value: string, secrets: string[], claimMutations: unknown): Promise<CookieTokenMatch | undefined> {
+	return await analyzeRailsEncryptedCookie(value, secrets, claimMutations) ?? await analyzeRailsSignedCookie(value, secrets, claimMutations);
+}
 
-	const paseto = parsePaseto(sample.value);
-	if (paseto) {
-		const token: Record<string, unknown> = { format: "paseto", version: paseto.version, purpose: paseto.purpose, payloadBytes: paseto.payloadBytes, footerBytes: paseto.footerBytes };
-		if (paseto.payloadJson !== undefined || paseto.payloadText !== undefined) token.payload = paseto.payloadJson ?? paseto.payloadText;
-		if (paseto.footerJson !== undefined || paseto.footerText !== undefined) token.footer = paseto.footerJson ?? paseto.footerText;
-		token.mutation = isRecord(claimMutations) ? { claims: claimMutations, error: "PASETO mutation requires external key material and is not supported by this analyzer" } : undefined;
-		result.kind = "paseto";
-		result.paseto = token;
-		result.token = token;
-		return result;
-	}
+function addCookieDecoding(decodings: Array<Record<string, unknown>>, seen: Set<string>, encoding: string, text: string): void {
+	const key = `${encoding}:${text}`;
+	if (seen.has(key)) return;
+	seen.add(key);
+	decodings.push({ encoding, text: text.slice(0, 2_000), json: tryJson(text) ?? undefined });
+}
 
-	const django = verifyDjangoToken(sample.value, secrets);
-	if (django) {
-		const token: Record<string, unknown> = {
-			format: "django",
-			payload: django.decoded.json ?? django.decoded.text,
-			timestamp: django.timestamp,
-			timestampBase62: django.timestampPart,
-			compressed: django.decoded.compressed,
-			signature: { present: true, algorithmSupported: true, testedSecretCandidateCount: django.testedSecretCandidateCount, verified: django.matches.length > 0, matches: django.matches },
-		};
-		token.mutation = mutationRecord(token.payload, claimMutations, (claims) => signDjangoToken(claims, django.timestampPart || base62Encode(Math.floor(Date.now() / 1000)), asString(django.matches[0]?.secret) || "", django.matches[0] || {}, django.decoded.compressed));
-		result.kind = "django";
-		result.sessionToken = token;
-		result.token = token;
-		return result;
-	}
-
-	const flask = verifyFlaskToken(sample.value, secrets);
-	if (flask) {
-		const token: Record<string, unknown> = {
-			format: "flask",
-			payload: flask.decoded.json ?? flask.decoded.text,
-			timestamp: flask.timestamp,
-			timestampBase64: flask.timestampPart,
-			compressed: flask.decoded.compressed,
-			signature: { present: true, algorithmSupported: true, testedSecretCandidateCount: flask.testedSecretCandidateCount, verified: flask.matches.length > 0, matches: flask.matches },
-		};
-		token.mutation = mutationRecord(token.payload, claimMutations, (claims) => signFlaskToken(claims, flask.timestampPart || base64UrlNoPad(integerToBytes(Math.floor(Date.now() / 1000))), asString(flask.matches[0]?.secret) || "", flask.matches[0] || {}, flask.decoded.compressed));
-		result.kind = "flask";
-		result.sessionToken = token;
-		result.token = token;
-		return result;
-	}
-
-	const railsEncrypted = await verifyRailsEncryptedToken(sample.value, secrets);
-	if (railsEncrypted) {
-		const token: Record<string, unknown> = {
-			format: "rails",
-			mode: "encrypted",
-			enc: "A256GCM",
-			cipher: "aes-256-gcm",
-			payload: railsEncrypted.decrypted?.payload,
-			binary: railsEncrypted.decrypted?.binary,
-			serializer: railsEncrypted.decrypted?.serializer,
-			unsupportedSerializer: railsEncrypted.decrypted?.unsupportedSerializer,
-			plaintextBytes: railsEncrypted.decrypted?.plaintextBytes,
-			plaintextSha256: railsEncrypted.decrypted?.plaintextSha256,
-			metadata: railsEncrypted.decrypted?.metadata,
-			purpose: railsEncrypted.decrypted?.metadata?.purpose,
-			expiresAt: railsEncrypted.decrypted?.metadata?.expiresAt,
-			expired: railsEncrypted.decrypted?.metadata?.expired,
-			decryption: {
-				supported: true,
-				testedSecretCandidateCount: railsEncrypted.testedSecretCandidateCount,
-				testedKeyVariantCount: railsEncrypted.testedKeyVariantCount,
-				truncatedKeyVariantCount: railsEncrypted.truncatedKeyVariantCount,
-				verified: railsEncrypted.matches.length > 0,
-				matches: railsEncrypted.matches.map((match) => ({ index: match.index, secret: match.secret, secretSha256: match.secretSha256, keySource: match.keySource, keyLength: match.keyLength, derivation: match.derivation, digest: match.digest, salt: match.salt, cipher: match.cipher, plaintextBytes: match.plaintextBytes })),
-			},
-		};
-		token.mutation = railsEncrypted.matches.length === 0
-			? (isRecord(claimMutations) ? { claims: claimMutations, error: "Token format is unsupported or no matching secret was supplied" } : undefined)
-			: await mutationRecordAsync(token.payload, claimMutations, (claims) => encryptRailsToken(claims, asString(railsEncrypted.matches[0]?.secret) || "", railsEncrypted.matches[0] || {}, railsEncrypted));
-		result.kind = railsEncrypted.matches.length > 0 ? "rails" : "possible-rails-encrypted";
-		result.sessionToken = token;
-		if (railsEncrypted.matches.length > 0) result.token = token;
-		return result;
-	}
-
-	const rails = await verifyRailsSignedToken(sample.value, secrets);
-	if (rails) {
-		const legacyCbc = await verifyRailsLegacyCbcPayload(rails.payloadPart, rails.matches, rails.testedSecretCandidateCount);
-		if (legacyCbc?.matches.length) {
-			const token: Record<string, unknown> = {
-				format: "rails",
-				mode: "encrypted",
-				enc: "A256CBC",
-				cipher: "aes-256-cbc",
-				payload: legacyCbc.decrypted?.payload,
-				binary: legacyCbc.decrypted?.binary,
-				serializer: legacyCbc.decrypted?.serializer,
-				unsupportedSerializer: legacyCbc.decrypted?.unsupportedSerializer,
-				plaintextBytes: legacyCbc.decrypted?.plaintextBytes,
-				plaintextSha256: legacyCbc.decrypted?.plaintextSha256,
-				metadata: legacyCbc.decrypted?.metadata,
-				purpose: legacyCbc.decrypted?.metadata?.purpose,
-				expiresAt: legacyCbc.decrypted?.metadata?.expiresAt,
-				expired: legacyCbc.decrypted?.metadata?.expired,
-				signature: { present: true, algorithmSupported: true, testedSecretCandidateCount: rails.testedSecretCandidateCount, verified: rails.matches.length > 0, matches: rails.matches },
-				decryption: {
-					supported: true,
-					testedSecretCandidateCount: legacyCbc.testedSecretCandidateCount,
-					testedKeyVariantCount: legacyCbc.testedKeyVariantCount,
-					truncatedKeyVariantCount: legacyCbc.truncatedKeyVariantCount,
-					verified: true,
-					matches: legacyCbc.matches.map((match) => ({ index: match.index, secret: match.secret, secretSha256: match.secretSha256, keySource: match.keySource, keyLength: match.keyLength, derivation: match.derivation, digest: match.digest, salt: match.salt, cipher: match.cipher, plaintextBytes: match.plaintextBytes, signedDigest: match.signedDigest, signedSalt: match.signedSalt, signedDerivation: match.signedDerivation, signedKeySource: match.signedKeySource, signedKeyLength: match.signedKeyLength })),
-				},
-			};
-			token.mutation = await mutationRecordAsync(token.payload, claimMutations, (claims) => encryptRailsLegacyCbcToken(claims, asString(legacyCbc.matches[0]?.secret) || "", legacyCbc.matches[0] || {}, legacyCbc));
-			result.kind = "rails";
-			result.sessionToken = token;
-			result.token = token;
-			return result;
-		}
-		const token: Record<string, unknown> = {
-			format: "rails",
-			mode: "signed",
-			payload: rails.decoded.json ?? rails.decoded.text ?? ((rails.decoded as { binary?: unknown }).binary),
-			binary: (rails.decoded as { binary?: unknown }).binary,
-			encoding: rails.decoded.encoding,
-			urlEncoded: rails.decoded.urlEncoded,
-			signature: { present: true, algorithmSupported: true, testedSecretCandidateCount: rails.testedSecretCandidateCount, verified: rails.matches.length > 0, matches: rails.matches },
-		};
-		token.mutation = await mutationRecordAsync(token.payload, claimMutations, (claims) => signRailsSignedToken(claims, asString(rails.matches[0]?.secret) || "", rails.matches[0] || {}, asString(rails.decoded.encoding) || "raw", Boolean(rails.decoded.urlEncoded)));
-		result.kind = "rails";
-		result.sessionToken = token;
-		result.token = token;
-		return result;
-	}
-
+function decodedCookieResult(sample: CookieSample): Record<string, unknown> {
 	const decodings: Array<Record<string, unknown>> = [];
 	const seen = new Set<string>();
-	const add = (encoding: string, text: string) => {
-		const key = `${encoding}:${text}`;
-		if (seen.has(key)) return;
-		seen.add(key);
-		decodings.push({ encoding, text: text.slice(0, 2_000), json: tryJson(text) ?? undefined });
-	};
 	const rawJson = tryJson(sample.value);
 	if (rawJson !== undefined) decodings.push({ encoding: "raw", text: sample.value.slice(0, 2_000), json: rawJson });
 	try {
 		const decoded = decodeURIComponent(sample.value);
-		if (decoded !== sample.value) add("url", decoded);
+		if (decoded !== sample.value) addCookieDecoding(decodings, seen, "url", decoded);
 	} catch {
 		/* best-effort URL decoding for opaque cookie sample */
 	}
@@ -589,12 +598,21 @@ export async function analyzeCookieSample(sample: CookieSample, secrets: string[
 		for (const encoding of ["base64url", "base64"] as const) {
 			const buffer = encoding === "base64url" ? base64UrlDecode(sample.value) : Buffer.from(sample.value, "base64");
 			const text = buffer ? printableText(buffer) : undefined;
-			if (text) add(encoding, text);
+			if (text) addCookieDecoding(decodings, seen, encoding, text);
 		}
 	}
-	result.kind = decodings.some((item) => item.json !== undefined) ? "encoded-json" : "opaque";
-	result.decodings = decodings;
-	return result;
+	return { ...baseCookieResult(sample), kind: decodings.some((item) => item.json !== undefined) ? "encoded-json" : "opaque", decodings };
+}
+
+const COOKIE_TOKEN_ANALYZERS = [analyzeJwtCookie, analyzeJweCookie, analyzePasetoCookie, analyzeDjangoCookie, analyzeFlaskCookie] as const;
+
+export async function analyzeCookieSample(sample: CookieSample, secrets: string[], claimMutations: unknown): Promise<Record<string, unknown>> {
+	for (const analyze of COOKIE_TOKEN_ANALYZERS) {
+		const match = analyze(sample.value, secrets, claimMutations);
+		if (match) return cookieTokenResult(sample, match);
+	}
+	const rails = await analyzeRailsCookie(sample.value, secrets, claimMutations);
+	return rails ? cookieTokenResult(sample, rails) : decodedCookieResult(sample);
 }
 
 export function tokenCountOf(result: Record<string, unknown>): number {
