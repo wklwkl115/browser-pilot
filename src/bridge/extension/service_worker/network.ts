@@ -1,8 +1,8 @@
 // network.js - Browser Pilot Network recorder CDP event, lifecycle and command runtime.
 // Loaded after network_model.js by background.js.
 import { chromeApi as chrome } from "./runtimeEnv";
-import { BROWSER_PILOT_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, browserPilotWithTimeout, redactSensitive, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
-import { persist as persistState, forget as forgetState, recover as recoverState, registerRecovery } from "./state_store";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, browserPilotWithTimeout, redactSensitive } from "./runtimeSupport.js";
+import { findLostRuntimeSession, persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, summarizeLostRuntimeSession } from "./state_store.js";
 import { enableBrowserPilotCdpDomains, releaseBrowserPilotCdpDomains, subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import { makeWaitId, normalizeBrowserPilotTimeoutMs } from "./wait_coordinator";
 import { appendBounded, asRecord, errorText, browserPilotNetworkHandleRecorderCdpEvent, browserPilotNetworkMaybeCaptureBody } from "./network_events";
@@ -10,8 +10,6 @@ import { classifyNetworkBodyError, createNetworkRecorder, defaultNetworkSessionI
 import type { JsonRecord, NetworkClearResult, NetworkHarContent, NetworkHarEntry, NetworkRecorderSummary, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 import type { NetworkBodyStoreEntry, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderWait } from "./network_model";
 
-const rememberNetworkRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
-const forgetNetworkRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
 const findLostNetworkRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
 const summarizeLostNetworkRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
 type NetworkCommandResult = Record<string, unknown>;
@@ -78,7 +76,6 @@ async function startNetworkRecorder(tabId: number, msg: BrowserPilotBridgeComman
   try {
     await activateNetworkRecorder(recorder);
     rememberNetworkDiagnostic(recorder, { t:Date.now(), action:'start', events:NETWORK_RECORDER_EVENTS, config:recorderPublicConfig(config) });
-    await rememberNetworkRuntimeSession('network', tabId, config.sessionId, { recorderId: recorder.recorderId, config: recorderPublicConfig(config) });
     await persistNetworkRecorderState(recorder, 'start');
     return { ok:true, data:networkRecorderSummary(recorder) };
   } catch (e) {
@@ -119,7 +116,6 @@ function cleanupNetworkRecorder(recorder: NetworkRecorder | null | undefined, re
   recorder.cdpRecord.cdpAttached = false;
   if (options.keepBuffer === false) clearNetworkRecorderBuffer(recorder);
   rememberNetworkDiagnostic(recorder, { t:Date.now(), action:'stop', reason:reason || 'stopped', keepBuffer:options.keepBuffer !== false });
-  void forgetNetworkRuntimeSession('network', recorder.tabId, recorder.sessionId);
   return { stopped:true, summary:networkRecorderSummary(recorder) };
 }
 async function stopNetworkRecorder(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {

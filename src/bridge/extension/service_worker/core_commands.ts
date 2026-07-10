@@ -2,7 +2,8 @@ import { handlePersistentCdpCommand } from "./cdp";
 import { BrowserPilotNativeProtocol } from "./protocol";
 import { chromeApi as chrome } from "./runtimeEnv";
 import { isScriptable, browserPilotBridgeInfo } from "./bridge_info";
-import { BROWSER_PILOT_ERROR_CODES, bridgeError, handleBrowserPilotNativeCommand, isBrowserPilotNativeCommand, normalizeBridgeResponse, normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtime";
+import { handleBrowserPilotNativeCommand, isBrowserPilotNativeCommand } from "./runtime.js";
+import { BROWSER_PILOT_ERROR_CODES, bridgeError, normalizeBridgeResponse, normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeSender, BrowserPilotChromeCookie, BrowserPilotNativeProtocolRuntime } from "./types";
 
 // core_commands.js - non-native bridge commands: tabs, cookies, management, content settings, batch, CDP.

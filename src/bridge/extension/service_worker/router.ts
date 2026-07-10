@@ -1,5 +1,6 @@
 import { chromeApi as chrome } from "./runtimeEnv";
-import { BROWSER_PILOT_ERROR_CODES, bridgeError, isBrowserPilotNativeCommand } from "./runtime";
+import { isBrowserPilotNativeCommand } from "./runtime.js";
+import { BROWSER_PILOT_ERROR_CODES, bridgeError } from "./runtimeSupport.js";
 import { enableCspBypassForTab } from "./bridge_info";
 import { dispatchBrowserPilotBridgeCommand, validateBrowserPilotBridgeProtocolMessage } from "./core_commands";
 import { handleWsExec } from "./exec";

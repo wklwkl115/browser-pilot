@@ -1,4 +1,4 @@
-import { redactSensitive } from "./runtime";
+import { redactSensitive } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
 export type WsSessionState = "opening" | "open" | "closed" | "error";

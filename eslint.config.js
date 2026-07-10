@@ -144,6 +144,10 @@ export default tseslint.config(
 	{
 		files: [
 			"src/apps/daemon/server.ts",
+			"src/bridge/extension/service_worker/runtime.ts",
+			"src/bridge/extension/service_worker/runtimeSupport.ts",
+			"src/bridge/extension/service_worker/state_store.ts",
+			"src/bridge/extension/service_worker/tab_sync.ts",
 			"src/browser-runtime/abml/axRuntime.ts",
 			"src/browser-runtime/abml/runtime.ts",
 			"src/bridge/server/BrowserTabSessionRouter.ts",

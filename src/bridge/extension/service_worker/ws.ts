@@ -1,10 +1,8 @@
-import { BROWSER_PILOT_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, browserPilotError, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
-import { persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, redactConfig } from "./state_store";
+import { BROWSER_PILOT_ERROR_CODES, browserPilotError } from "./runtimeSupport.js";
+import { findLostRuntimeSession, persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, redactConfig, summarizeLostRuntimeSession } from "./state_store.js";
 import { collectWsSessionTranscript, createWsSession, getWsSession, normalizeWsOpenConfig, browserPilotWsSessions, rememberWsTranscript, wsSessionId, wsSessionSummary, numberInRange, cleanupWsSessionsForTab as cleanupWsSessionsForTabState } from "./ws_model";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 
-const rememberWsRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
-const forgetWsRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
 const findLostWsRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
 const summarizeLostWsRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
 
@@ -133,7 +131,6 @@ async function openWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<Br
 		session.closedAt = Date.now();
 		rememberWsTranscript(session, { event: "close", code: Number(event.code || 0), reason: String(event.reason || ""), wasClean: !!event.wasClean });
 		cleanupWsSocketListeners(session);
-		void forgetWsRuntimeSession("ws", tabId, session.sessionId);
 		void forgetState('ws', `${Number(tabId)}:${session.sessionId}`);
 	};
 	const errorListener = () => {
@@ -141,7 +138,6 @@ async function openWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<Br
 		session.state = "error";
 		rememberWsTranscript(session, { event: "error", error: session.lastError, preview: previewText(session.lastError) });
 		cleanupWsSocketListeners(session);
-		void forgetWsRuntimeSession("ws", tabId, session.sessionId);
 		void forgetState('ws', `${Number(tabId)}:${session.sessionId}`);
 	};
 	ws.addEventListener("message", messageListener);
@@ -160,7 +156,6 @@ async function openWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<Br
 				/* best-effort websocket close after open timeout */
 			}
 			browserPilotWsSessions.delete(String(session.key));
-			void forgetWsRuntimeSession("ws", tabId, config.sessionId);
 			resolve(browserPilotError("WEBSOCKET_OPEN_TIMEOUT", `ws open timed out after ${config.timeoutMs}ms`, { cmd: msg.cmd, tabId, sessionId: config.sessionId, url: config.url, timeoutMs: config.timeoutMs }));
 		}, config.timeoutMs);
 		const cleanup = () => {
@@ -175,7 +170,6 @@ async function openWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<Br
 			session.state = "open";
 			session.openedAt = Date.now();
 			rememberWsTranscript(session, { event: "open" });
-			void rememberWsRuntimeSession("ws", tabId, session.sessionId, { url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript });
 			// Persist WS config for state recovery (no transcript, no auto-reconnect)
 			void persistState('ws', `${Number(tabId)}:${session.sessionId}`, redactConfig({ url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript }), { tabId, sessionId: session.sessionId, recoveryPolicy: 'diagnosticOnly' }).catch((error) => {
 				console.warn('[BROWSER-PILOT-WS] Failed to persist websocket session state', session.sessionId, error);
@@ -188,7 +182,6 @@ async function openWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<Br
 			cleanup();
 			cleanupWsSocketListeners(session);
 			browserPilotWsSessions.delete(String(session.key));
-			void forgetWsRuntimeSession("ws", tabId, config.sessionId);
 			resolve(browserPilotError("WEBSOCKET_OPEN_FAILED", "ws open failed", { cmd: msg.cmd, tabId, sessionId: config.sessionId, url: config.url }));
 		};
 		ws.addEventListener("open", onOpen, { once: true });
@@ -351,7 +344,6 @@ async function closeWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<B
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
-			void forgetWsRuntimeSession("ws", tabId, session.sessionId);
 			resolve({ ok: true, data: { session: wsSessionSummary(session) } });
 		};
 		ws.addEventListener("close", onClose, { once: true });
@@ -360,7 +352,6 @@ async function closeWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<B
 			console.warn('[BROWSER-PILOT-WS] ws.close failed during explicit close', session.sessionId, error);
 			clearTimeout(timer);
 			cleanupWsSocketListeners(session);
-			void forgetWsRuntimeSession("ws", tabId, session.sessionId);
 			resolve({ ok: true, data: { session: wsSessionSummary(session) } });
 		}
 	});
@@ -402,7 +393,6 @@ function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup") {
 			return { tabId: _tabId, removed, reason: cleanupReason, sessionIds };
 		};
 	const result = cleanupState(tabId, reason);
-	for (const sessionId of Array.isArray(result.sessionIds) ? result.sessionIds : []) void forgetWsRuntimeSession("ws", tabId, String(sessionId || "default"));
 	return result;
 }
 

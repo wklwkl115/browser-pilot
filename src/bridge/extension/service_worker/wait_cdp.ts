@@ -1,5 +1,5 @@
 import { chromeApi as chrome } from "./runtimeEnv";
-import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtime";
+import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotCdpDomainRef, BrowserPilotCdpSubscription, BrowserPilotWaitRecord } from "./types";
 
 // wait_cdp.js - Browser Pilot wait CDP domain refcount, subscription and diagnostics helpers.

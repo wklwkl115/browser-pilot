@@ -1,7 +1,9 @@
 // hook.js - Browser Pilot hook/session commands.
 
 import { chromeApi as chrome } from "./runtimeEnv";
-import { BROWSER_PILOT_ERROR_CODES, BROWSER_PILOT_HOOK_DISPATCHER_FILE, callPageBrowserPilot, cleanupBrowserPilotTab, getBrowserPilotQueueStats, browserPilotError, browserPilotEval, browserPilotSessions, browserPilotTabQueues, browserPilotWithTimeout } from "./runtime";
+import { BROWSER_PILOT_ERROR_CODES, BROWSER_PILOT_HOOK_DISPATCHER_FILE, callPageBrowserPilot, browserPilotError, browserPilotEval, browserPilotWithTimeout } from "./runtimeSupport.js";
+import { browserPilotSessions, browserPilotTabQueues, getBrowserPilotQueueStats } from "./state_store.js";
+import { cleanupBrowserPilotTab } from "./tab_sync.js";
 import { persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, redactConfig } from "./state_store";
 import { addEventListener, cleanupBrowserPilotPageListenersForTab, getPerformanceEntries, removeEventListener } from "./wait";
 import { collectNodeListenerChain, collectNodeListeners, collectNodeSinkHints } from "./dom_flow";

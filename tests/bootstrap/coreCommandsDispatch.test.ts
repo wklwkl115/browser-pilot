@@ -13,6 +13,7 @@ const debuggerDetaches: number[] = [];
 const debuggerCommands: DebuggerCommand[] = [];
 const debuggerDetachListeners: Array<(source: Debuggee, reason: string) => void> = [];
 const debuggerEventListeners: Array<(source: Debuggee, method: string, params?: Record<string, unknown>) => void> = [];
+const sessionStorage: Record<string, unknown> = {};
 let failRunScriptOnce = false;
 let failNotAttachedOnce = false;
 
@@ -50,8 +51,11 @@ const chromeStub = {
 			async remove() {},
 		},
 		session: {
-			async get() { return {}; },
-			async set() {},
+			async get(key?: unknown) {
+				if (typeof key === "string") return { [key]: sessionStorage[key] };
+				return { ...sessionStorage };
+			},
+			async set(value: Record<string, unknown>) { Object.assign(sessionStorage, value); },
 		},
 	},
 	alarms: {
@@ -94,6 +98,9 @@ const chromeStub = {
 		},
 	},
 	tabs: {
+		async get(tabId: number) {
+			return { id: tabId, url: "https://example.test/", title: "Example", active: true, windowId: 1 };
+		},
 		async query() {
 			return [{ id: 7, url: "https://example.test/", title: "Example", active: true, windowId: 1 }];
 		},
@@ -108,7 +115,8 @@ Object.defineProperty(globalThis, "navigator", { value: { userAgent: "browser-pi
 
 const coreCommands = await import("../../src/bridge/extension/service_worker/core_commands.ts");
 const router = await import("../../src/bridge/extension/service_worker/router.ts");
-const runtime = await import("../../src/bridge/extension/service_worker/runtime.ts");
+const runtimeSupport = await import("../../src/bridge/extension/service_worker/runtimeSupport.ts");
+const stateStore = await import("../../src/bridge/extension/service_worker/state_store.ts");
 const cdpCommands = await import("../../src/bridge/extension/service_worker/cdp.ts");
 const frameCommands = await import("../../src/bridge/extension/service_worker/frame.ts");
 
@@ -267,7 +275,7 @@ test("extension runtime helpers redact and normalize malformed error responses",
 	const circular: Record<string, unknown> = { token: "fixture-secret" };
 	circular.self = circular;
 
-	assert.deepEqual(runtime.bridgeError(undefined, "fixture-secret", { password: "fixture-password", circular }), {
+	assert.deepEqual(runtimeSupport.bridgeError(undefined, "fixture-secret", { password: "fixture-password", circular }), {
 		ok: false,
 		error_code: "INTERNAL_ERROR",
 		error: "[REDACTED]",
@@ -277,19 +285,61 @@ test("extension runtime helpers redact and normalize malformed error responses",
 		},
 	});
 
-	assert.deepEqual(runtime.normalizeBridgeResponse({ ok: false, error: { code: "NO_SESSION", message: "missing session", details: { tabId: 7 } } }, "hook.read"), {
+	assert.deepEqual(runtimeSupport.normalizeBridgeResponse({ ok: false, error: { code: "NO_SESSION", message: "missing session", details: { tabId: 7 } } }, "hook.read"), {
 		ok: false,
 		error_code: "NO_SESSION",
 		error: "missing session",
 		details: { tabId: 7, cmd: "hook.read" },
 	});
 
-	assert.deepEqual(runtime.normalizePersistentBrowserPilotResponse({ ok: false, error: { code: "CDP_TIMEOUT", message: "wait expired", details: { timeoutMs: 5 } } }), {
+	assert.deepEqual(runtimeSupport.normalizePersistentBrowserPilotResponse({ ok: false, error: { code: "CDP_TIMEOUT", message: "wait expired", details: { timeoutMs: 5 } } }), {
 		ok: false,
 		error_code: "CDP_TIMEOUT",
 		error: "wait expired",
 		details: { timeoutMs: 5 },
 	});
+});
+
+test("extension runtime state owner serializes tab queues and reports previous-boot state", async () => {
+	stateStore.browserPilotTabQueues.clear();
+	let releaseFirst!: () => void;
+	let markStarted!: () => void;
+	const firstStarted = new Promise<void>((resolve) => { markStarted = resolve; });
+	const firstReleased = new Promise<void>((resolve) => { releaseFirst = resolve; });
+	const order: string[] = [];
+	const first = stateStore.enqueueBrowserPilotCommand(7, "first", async () => {
+		order.push("first:start");
+		markStarted();
+		await firstReleased;
+		order.push("first:end");
+		return { ok: true };
+	});
+	const second = stateStore.enqueueBrowserPilotCommand(7, "second", async () => {
+		order.push("second");
+		return { ok: true };
+	});
+	await firstStarted;
+	assert.deepEqual(stateStore.getBrowserPilotQueueStats(7), { pending: true, depth: 2, last_cmd: "second" });
+	releaseFirst();
+	await Promise.all([first, second]);
+	assert.deepEqual(order, ["first:start", "first:end", "second"]);
+	assert.deepEqual(stateStore.getBrowserPilotQueueStats(7), { pending: false, depth: 0, last_cmd: null });
+
+	delete sessionStorage.browserPilotRuntimeStateV2;
+	await stateStore.persist("ws", "7:lost", { url: "wss://example.test/socket" }, { tabId: 7, sessionId: "lost", recoveryPolicy: "diagnosticOnly" });
+	const persisted = sessionStorage.browserPilotRuntimeStateV2 as Record<string, { workerBootId: string }>;
+	persisted["ws:7:lost"]!.workerBootId = "previous-worker";
+	const lost = await stateStore.findLostRuntimeSession("ws", 7, "lost");
+	assert.deepEqual(stateStore.summarizeLostRuntimeSession(lost), {
+		stateLost: true,
+		previousWorkerBootId: "previous-worker",
+		updatedAt: lost?.updatedAt,
+		kind: "ws",
+		tabId: 7,
+		sessionId: "lost",
+		details: { url: "wss://example.test/socket" },
+	});
+	await stateStore.forget("ws", "7:lost");
 });
 
 test("persistent CDP send reuses compiled scripts and falls back from stale cache entries", async () => {

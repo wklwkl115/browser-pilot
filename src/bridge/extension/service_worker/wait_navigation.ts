@@ -1,5 +1,5 @@
 import { chromeApi as chrome } from "./runtimeEnv";
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp } from "./runtime";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp } from "./runtimeSupport.js";
 import { enableBrowserPilotCdpDomains, subscribeBrowserPilotCdp } from "./wait_cdp";
 import { cleanupTabWaits, finishBrowserPilotWait, makeWaitId, normalizeBrowserPilotTimeoutMs, normalizeWaitState, recordWaitEvent, registerWait, waitAbortMessage } from "./wait_coordinator";
 import { waitForNetworkIdle } from "./wait_network_idle";

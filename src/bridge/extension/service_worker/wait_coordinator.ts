@@ -1,4 +1,4 @@
-import { BROWSER_PILOT_ERROR_CODES, browserPilotError } from "./runtime";
+import { BROWSER_PILOT_ERROR_CODES, browserPilotError } from "./runtimeSupport.js";
 import { cleanupBrowserPilotCdpTab, releaseBrowserPilotCdpDomains, rememberBrowserPilotCdpCleanup, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotWaitRecord } from "./types";
 

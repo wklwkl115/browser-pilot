@@ -28,7 +28,7 @@ const cdpBridge = {
 Object.assign(globalThis, { chrome: chromeStub, self: globalThis });
 
 const hook = await import("../../src/bridge/extension/service_worker/hook.ts");
-const runtime = await import("../../src/bridge/extension/service_worker/runtime.ts");
+const stateStore = await import("../../src/bridge/extension/service_worker/state_store.ts");
 Object.assign(globalThis, { browserPilotPersistentCdpBridge: cdpBridge, BrowserPilotPersistentCdp: cdpBridge });
 
 test("hook dispatch exposes static targets and tab-scoped session inventory", async () => {
@@ -39,9 +39,9 @@ test("hook dispatch exposes static targets and tab-scoped session inventory", as
 	assert.equal(targetData.boundary, "static-explicit-targets");
 	assert.deepEqual((targetData.targets as Array<JsonRecord>).map((item) => item.id), ["console", "error", "networkApi", "websocket", "storage", "crypto", "dom", "domSinks", "cookies"]);
 
-	runtime.browserPilotSessions.clear();
-	runtime.browserPilotSessions.set(7, { session_id: "session-7", state: "INSTALLED" });
-	runtime.browserPilotSessions.set(8, { session_id: "session-8", state: "PAUSED" });
+	stateStore.browserPilotSessions.clear();
+	stateStore.browserPilotSessions.set(7, { session_id: "session-7", state: "INSTALLED" });
+	stateStore.browserPilotSessions.set(8, { session_id: "session-8", state: "PAUSED" });
 	const sessions = await hook.handleBrowserPilotHookCommand("hook.list_sessions", 7, { tabId: 7 });
 	const sessionData = sessions.data as JsonRecord;
 	assert.equal(sessionData.tabId, 7);
@@ -61,7 +61,7 @@ test("hook dispatch forwards page commands with canonical session arguments", as
 	assert.deepEqual(dispatches.map((entry) => entry.command), ["hook.status", "hook.collect", "hook.clear_buffer", "hook.pause", "hook.resume"]);
 	assert.deepEqual(dispatches[0]?.args, { session_id: "session-7" });
 	assert.deepEqual(dispatches[1]?.args, { session_id: "session-7", since_seq: 4, limit: 12, event_types: ["console.*"], timeout_ms: 600, min_count: 2 });
-	assert.equal(runtime.browserPilotSessions.get(7)?.state, "PAUSED");
+	assert.equal(stateStore.browserPilotSessions.get(7)?.state, "PAUSED");
 });
 
 test("hook dispatch keeps evaluate and unknown-command boundaries stable", async () => {
@@ -86,7 +86,7 @@ test("hook install_targets expands explicit targets and records reusable session
 	assert.equal(data.target_boundary, "static-explicit-targets");
 	assert.deepEqual((data.expanded_targets as Array<JsonRecord>).map((item) => item.id), ["console", "websocket"]);
 	assert.deepEqual(dispatches.at(-1), { command: "hook.install", args: { session_id: "installed-7", targets: { console: true, websocket: true }, force: false } });
-	assert.equal(runtime.browserPilotSessions.get(7)?.session_id, "installed-7");
+	assert.equal(stateStore.browserPilotSessions.get(7)?.session_id, "installed-7");
 
 	const invalid = await hook.handleBrowserPilotHookCommand("hook.install_targets", 7, { targets: ["all"] });
 	assert.equal(invalid.error_code, "INVALID_RULE");
@@ -94,14 +94,14 @@ test("hook install_targets expands explicit targets and records reusable session
 });
 
 test("hook uninstall rejects mismatched sessions and cleans matching local state", async () => {
-	runtime.browserPilotSessions.set(7, { session_id: "installed-7", state: "INSTALLED" });
+	stateStore.browserPilotSessions.set(7, { session_id: "installed-7", state: "INSTALLED" });
 	const mismatch = await hook.handleBrowserPilotHookCommand("hook.uninstall", 7, { sessionId: "other" });
 	assert.equal(mismatch.error_code, "INVALID_SESSION");
-	assert.equal(runtime.browserPilotSessions.has(7), true);
+	assert.equal(stateStore.browserPilotSessions.has(7), true);
 
 	pageResponses.set("hook.uninstall", { ok: true, data: { state: "UNINSTALLED" } });
 	const removed = await hook.handleBrowserPilotHookCommand("hook.uninstall", 7, { sessionId: "installed-7" });
 	assert.equal(removed.ok, true);
-	assert.equal(runtime.browserPilotSessions.has(7), false);
+	assert.equal(stateStore.browserPilotSessions.has(7), false);
 	assert.equal(typeof (removed.data as JsonRecord).listener_cleanup, "object");
 });

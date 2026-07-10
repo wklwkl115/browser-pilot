@@ -1,6 +1,6 @@
 // frame.js - Browser Pilot frame commands.
 
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp } from "./runtime";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 
 type FrameCdpMethod = "frameTree" | "evaluateInFrame" | "addNewDocumentScript" | "removeNewDocumentScript";

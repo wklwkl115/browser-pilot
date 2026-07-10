@@ -1,7 +1,7 @@
 // network_model.js - Browser Pilot Network recorder state, config, filtering and body storage helpers.
 
 import { matchNetworkPattern } from "./patterns";
-import { redactSensitive } from "./runtime";
+import { redactSensitive } from "./runtimeSupport.js";
 import { diagnoseBrowserPilotCdpDomainRefs } from "./wait_cdp";
 import { makeWaitId } from "./wait_coordinator";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotWaitRecord, NetworkBodyMimeDecision, NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecordSnapshot, NetworkRecordSummary, NetworkRecorder, NetworkRecorderConfig, NetworkRecorderSummary, NetworkStringList, NetworkWaitNotifier } from "./types";

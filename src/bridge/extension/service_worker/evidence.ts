@@ -1,6 +1,6 @@
 // evidence.js - Browser Pilot event/evidence aggregation.
 
-import { BROWSER_PILOT_ERROR_CODES, callPageBrowserPilot, browserPilotError } from "./runtime";
+import { BROWSER_PILOT_ERROR_CODES, callPageBrowserPilot, browserPilotError } from "./runtimeSupport.js";
 import { getPerformanceEntries } from "./wait";
 import { normalizeBrowserPilotTimeoutMs } from "./wait_coordinator";
 import { handleNetworkRecorderCommand } from "./network";

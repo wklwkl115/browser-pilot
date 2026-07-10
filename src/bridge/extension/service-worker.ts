@@ -3,6 +3,7 @@ import { __browserPilotBridgeModule_protocol } from "./service_worker/protocol";
 import { __browserPilotBridgeModule_patterns } from "./service_worker/patterns";
 import { __browserPilotBridgeModule_cdp } from "./service_worker/cdp";
 import { __browserPilotBridgeModule_state_store } from "./service_worker/state_store";
+import { __browserPilotBridgeModule_runtimeSupport } from "./service_worker/runtimeSupport.js";
 import { __browserPilotBridgeModule_runtime } from "./service_worker/runtime";
 import { __browserPilotBridgeModule_wait_cdp } from "./service_worker/wait_cdp";
 import { __browserPilotBridgeModule_wait_coordinator } from "./service_worker/wait_coordinator";
@@ -39,6 +40,7 @@ export const serviceWorkerFoundationModuleGraph = [
 	__browserPilotBridgeModule_patterns,
 	__browserPilotBridgeModule_cdp,
 	__browserPilotBridgeModule_state_store,
+	__browserPilotBridgeModule_runtimeSupport,
 	__browserPilotBridgeModule_runtime,
 	__browserPilotBridgeModule_wait_cdp,
 	__browserPilotBridgeModule_wait_coordinator,

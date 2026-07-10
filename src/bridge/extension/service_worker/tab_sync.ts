@@ -1,7 +1,14 @@
-import { chromeApi as chrome } from "./runtimeEnv";
-import { cleanupBrowserPilotTab } from "./runtime";
-import { isScriptable, browserPilotBridgeInfo } from "./bridge_info";
-import type { BrowserPilotBridgeWebSocketLike, BrowserPilotTabSyncTransport, BrowserPilotChromeTab } from "./types";
+import { isScriptable, browserPilotBridgeInfo } from "./bridge_info.js";
+import { cleanupPersistentCdpForTab } from "./cdp.js";
+import { cleanupInterceptSessionTab } from "./intercept.js";
+import { cleanupNetworkRecorderTab } from "./network.js";
+import { chromeApi as chrome } from "./runtimeEnv.js";
+import { runtimeErrorPreview } from "./runtimeSupport.js";
+import { browserPilotSessions, browserPilotTabQueues } from "./state_store.js";
+import { cleanupBrowserPilotPageListenersForTab } from "./wait.js";
+import { cancelWaitsForTab, cleanupTabWaits } from "./wait_coordinator.js";
+import { cleanupWsSessionsForTab } from "./ws.js";
+import type { BrowserPilotBridgeWebSocketLike, BrowserPilotTabSyncTransport, BrowserPilotChromeTab } from "./types.js";
 
 // tab_sync.js - tab list synchronization and tab lifecycle hooks.
 
@@ -87,6 +94,31 @@ function safeSendTabsUpdate(reason: string) {
   runTabSyncTask(reason, sendTabsUpdate);
 }
 
+function cleanupBrowserPilotTab(tabId: number, reason?: string) {
+  const key = Number(tabId);
+  const cleanupReason = reason || "tab_cleanup";
+  try {
+    const pageCleanup = cleanupBrowserPilotPageListenersForTab(tabId, cleanupReason);
+    if ((pageCleanup as Promise<unknown> | undefined)?.catch) {
+      void (pageCleanup as Promise<unknown>).catch((error: unknown) => console.warn("[BROWSER-PILOT] page listener cleanup failed", key, cleanupReason, runtimeErrorPreview(error)));
+    }
+  } catch (error) {
+    console.warn("[BROWSER-PILOT] page listener cleanup failed", key, cleanupReason, runtimeErrorPreview(error));
+  }
+  browserPilotSessions.delete(key);
+  browserPilotTabQueues.delete(key);
+  try { cleanupNetworkRecorderTab(tabId, cleanupReason); }
+  catch (error) { console.warn("[BROWSER-PILOT-NET] recorder cleanup failed", key, runtimeErrorPreview(error)); }
+  try { cleanupInterceptSessionTab(tabId, cleanupReason); }
+  catch (error) { console.warn("[BROWSER-PILOT-INTERCEPT] session cleanup failed", key, runtimeErrorPreview(error)); }
+  try { cleanupWsSessionsForTab(tabId, cleanupReason); }
+  catch (error) { console.warn("[BROWSER-PILOT-WS] session cleanup failed", key, runtimeErrorPreview(error)); }
+  try { cleanupPersistentCdpForTab(tabId, cleanupReason); }
+  catch (error) { console.warn("[BROWSER-PILOT-CDP] persistent session cleanup failed", key, runtimeErrorPreview(error)); }
+  if (cleanupReason === "tab_cleanup") cancelWaitsForTab(tabId, "tab_cleanup");
+  else cleanupTabWaits(tabId, cleanupReason, { includeCdp: true, action: "tab_cleanup" });
+}
+
 function installBrowserPilotTabSync(deps: BrowserPilotTabSyncTransport | undefined = undefined) {
   if (deps) setBrowserPilotTabSyncTransport(deps);
   requireBrowserPilotTabSyncTransport();
@@ -111,6 +143,6 @@ function installBrowserPilotTabSync(deps: BrowserPilotTabSyncTransport | undefin
   browserPilotTabSyncInstalled = true;
   return true;
 }
-export { setBrowserPilotTabSyncTransport, requireBrowserPilotTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, installBrowserPilotTabSync };
+export { setBrowserPilotTabSyncTransport, requireBrowserPilotTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, cleanupBrowserPilotTab, installBrowserPilotTabSync };
 // ESM module metadata
-export const __browserPilotBridgeModule_tab_sync = { name: "tab_sync", symbols: { setBrowserPilotTabSyncTransport, requireBrowserPilotTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, installBrowserPilotTabSync } };
+export const __browserPilotBridgeModule_tab_sync = { name: "tab_sync", symbols: { setBrowserPilotTabSyncTransport, requireBrowserPilotTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, cleanupBrowserPilotTab, installBrowserPilotTabSync } };

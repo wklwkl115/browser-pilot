@@ -1,5 +1,6 @@
 import { chromeApi as chrome } from "./runtimeEnv";
-import { BROWSER_PILOT_ERROR_CODES, callPageBrowserPilot, getBrowserPilotQueueStats, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, browserPilotSessions } from "./runtime";
+import { BROWSER_PILOT_ERROR_CODES, callPageBrowserPilot, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { browserPilotSessions, getBrowserPilotQueueStats } from "./state_store.js";
 import { diagnoseBrowserPilotCdpCleanupHistory, diagnoseBrowserPilotCdpDomainRefs, diagnoseBrowserPilotCdpSubscriptions } from "./wait_cdp";
 import { cancelWaitsForTab, clearWait, makeWaitId, normalizeBrowserPilotTimeoutMs, browserPilotWaits, waitKey } from "./wait_coordinator";
 import { navigateAndWait, waitForLoadState, waitForNavigation } from "./wait_navigation";

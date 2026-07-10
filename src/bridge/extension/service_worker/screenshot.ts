@@ -1,7 +1,7 @@
 // screenshot.js - Browser Pilot screenshot command.
 
 import { chromeApi as chrome } from "./runtimeEnv";
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, browserPilotSleep, browserPilotWithTimeout } from "./runtime";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, browserPilotSleep, browserPilotWithTimeout } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotChromeTab } from "./types";
 
 function isScreenshotMissingTabError(error: unknown): boolean {

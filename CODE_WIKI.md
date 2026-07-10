@@ -342,6 +342,10 @@ src/bridge/extension/
 | [`service_worker/transport.ts`](src/bridge/extension/service_worker/transport.ts) | offscreen 协调、probe、`ext_ready` 握手。 |
 | [`service_worker/router.ts`](src/bridge/extension/service_worker/router.ts) | WebSocket/internal message 分发。 |
 | [`service_worker/core_commands.ts`](src/bridge/extension/service_worker/core_commands.ts) | native command dispatch。 |
+| [`service_worker/runtimeSupport.ts`](src/bridge/extension/service_worker/runtimeSupport.ts) | Extension 共享错误、response normalization、persistent CDP 访问与页面 evaluate。 |
+| [`service_worker/runtime.ts`](src/bridge/extension/service_worker/runtime.ts) | Browser Pilot command composition 与 handler dispatch。 |
+| [`service_worker/state_store.ts`](src/bridge/extension/service_worker/state_store.ts) | MV3 持久化恢复、hook session 与 per-tab queue 状态。 |
+| [`service_worker/tab_sync.ts`](src/bridge/extension/service_worker/tab_sync.ts) | tab 同步、replacement/activation 与统一 tab cleanup。 |
 | [`service_worker/exec.ts`](src/bridge/extension/service_worker/exec.ts) | JavaScript 执行与 CDP fallback。 |
 | [`service_worker/cdp.ts`](src/bridge/extension/service_worker/cdp.ts) | CDP attach/send/detach/targets/frameTree。 |
 | [`service_worker/input.ts`](src/bridge/extension/service_worker/input.ts) | CDP 输入、pointer/key/touch/ref。 |

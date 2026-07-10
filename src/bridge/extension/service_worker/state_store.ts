@@ -4,8 +4,9 @@
 // so that service-worker restarts can recover configuration-only state while failing
 // closed for volatile runtime data (buffers, transcripts, paused requests).
 
-import { chromeApi as chrome, BROWSER_PILOT_WORKER_BOOT_ID } from "./runtimeEnv";
-import type { JsonRecord } from "./types";
+import { chromeApi as chrome, BROWSER_PILOT_WORKER_BOOT_ID } from "./runtimeEnv.js";
+import { BROWSER_PILOT_ERROR_CODES, browserPilotError, runtimeRecord } from "./runtimeSupport.js";
+import type { BrowserPilotBridgeResponse, JsonRecord } from "./types.js";
 
 // --- Constants ---
 
@@ -13,6 +14,7 @@ const STORAGE_KEY = "browserPilotRuntimeStateV2";
 const SCHEMA_VERSION = "browser-pilot.runtime.state/v1" as const;
 const MAX_KIND_RECORDS = 50;
 const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const BROWSER_PILOT_QUEUE_MAX_DEPTH = 64;
 
 const RECOVERY_CODES = {
   RECOVERED: "RUNTIME_STATE_RECOVERED",
@@ -48,6 +50,27 @@ type RuntimeStateRecord<TConfig = unknown> = {
   config: TConfig;
   diagnostics?: Array<Record<string, unknown>>;
 };
+
+type BrowserPilotSessionRecord = JsonRecord & {
+  session_id?: string;
+  targets?: unknown;
+  options?: unknown;
+  buffer_size?: number;
+  install_fingerprint?: string;
+  install_args?: JsonRecord;
+  state?: string;
+  installed_at?: string;
+};
+
+type BrowserPilotQueueRecord = {
+  tail: Promise<unknown>;
+  depth: number;
+  pending: boolean;
+  last_cmd: string | null;
+};
+
+const browserPilotSessions = new Map<number, BrowserPilotSessionRecord>();
+const browserPilotTabQueues = new Map<number, BrowserPilotQueueRecord>();
 
 type RecoveryResultEntry = {
   key: string;
@@ -164,6 +187,49 @@ function currentBootId(): string {
   return typeof BROWSER_PILOT_WORKER_BOOT_ID === "string" && BROWSER_PILOT_WORKER_BOOT_ID
     ? BROWSER_PILOT_WORKER_BOOT_ID
     : "unknown";
+}
+
+function getBrowserPilotQueueStats(tabId: unknown) {
+  const queue = browserPilotTabQueues.get(Number(tabId));
+  return queue
+    ? { pending: queue.pending, depth: queue.depth, last_cmd: queue.last_cmd || null }
+    : { pending: false, depth: 0, last_cmd: null };
+}
+
+function enqueueBrowserPilotCommand(tabId: unknown, command: string, task: () => Promise<BrowserPilotBridgeResponse> | BrowserPilotBridgeResponse): Promise<BrowserPilotBridgeResponse> {
+  const key = Number(tabId);
+  const queue = browserPilotTabQueues.get(key) || { tail: Promise.resolve(), depth: 0, pending: false, last_cmd: null } satisfies BrowserPilotQueueRecord;
+  if (queue.depth >= BROWSER_PILOT_QUEUE_MAX_DEPTH) {
+    return Promise.resolve(browserPilotError(BROWSER_PILOT_ERROR_CODES.TIMEOUT, "Browser Pilot command queue is full", { tabId: key, cmd: command, depth: queue.depth, max_depth: BROWSER_PILOT_QUEUE_MAX_DEPTH }));
+  }
+  queue.depth += 1;
+  queue.pending = true;
+  queue.last_cmd = command;
+  const run = queue.tail.catch(() => {}).then(async () => {
+    try { return await task(); }
+    finally {
+      const latest = browserPilotTabQueues.get(key);
+      if (latest) {
+        latest.depth = Math.max(0, latest.depth - 1);
+        latest.pending = latest.depth > 0;
+        if (latest.depth === 0) latest.last_cmd = null;
+      }
+    }
+  });
+  queue.tail = run.catch(() => {});
+  browserPilotTabQueues.set(key, queue);
+  return run;
+}
+
+async function findLostRuntimeSession(kind: RuntimeStateKind, tabId: number, sessionId: string): Promise<JsonRecord | undefined> {
+  const record = await get(kind, `${Number(tabId)}:${String(sessionId || "default")}`);
+  if (!record || record.workerBootId === currentBootId()) return undefined;
+  return { kind: record.kind, tabId: record.tabId, sessionId: record.sessionId, workerBootId: record.workerBootId, updatedAt: record.updatedAt, details: runtimeRecord(record.config) };
+}
+
+function summarizeLostRuntimeSession(record: JsonRecord | undefined): JsonRecord | undefined {
+  if (!record) return undefined;
+  return { stateLost: true, previousWorkerBootId: record.workerBootId, updatedAt: record.updatedAt, kind: record.kind, tabId: record.tabId, sessionId: record.sessionId, details: runtimeRecord(record.details) };
 }
 
 function now(): number {
@@ -542,6 +608,13 @@ export {
   getRuntimeRecoverySummary,
   redactConfig,
   currentBootId,
+  browserPilotSessions,
+  browserPilotTabQueues,
+  BROWSER_PILOT_QUEUE_MAX_DEPTH,
+  getBrowserPilotQueueStats,
+  enqueueBrowserPilotCommand,
+  findLostRuntimeSession,
+  summarizeLostRuntimeSession,
   MAX_KIND_RECORDS,
   TTL_MS,
   SCHEMA_VERSION,

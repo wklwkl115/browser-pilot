@@ -1,6 +1,6 @@
 // html.js - Browser Pilot HTML/text snapshot command.
 
-import { BROWSER_PILOT_ERROR_CODES, browserPilotError, browserPilotEval } from "./runtime";
+import { BROWSER_PILOT_ERROR_CODES, browserPilotError, browserPilotEval } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 
 async function handleBrowserPilotHtml(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {

@@ -1,5 +1,5 @@
-import { BROWSER_PILOT_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
-import { persist as persistState, forget as forgetState, recover as recoverState, RECOVERY_CODES, registerRecovery } from "./state_store";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { findLostRuntimeSession, persist as persistState, forget as forgetState, recover as recoverState, RECOVERY_CODES, registerRecovery, summarizeLostRuntimeSession } from "./state_store.js";
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 import {
@@ -20,8 +20,6 @@ import {
 } from "./intercept_model";
 import type { InterceptPhase, InterceptRule, InterceptSession, InterceptTranscriptEntry } from "./intercept_model";
 
-const rememberInterceptRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
-const forgetInterceptRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
 const findLostInterceptRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
 const summarizeLostInterceptRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
 const INTERCEPT_PAUSED_MAX = 500;
@@ -118,7 +116,6 @@ async function enableInterceptSession(tabId: number, msg: BrowserPilotBridgeComm
 		session.historyLost = false;
 		session.pausedLost = false;
 		rememberInterceptDiagnostic(session, { action: "install", maxTranscript: session.maxTranscript, stages: session.stages, subscriptionId });
-		await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
 		try {
 			const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
 			if (persisted.generation !== undefined) session.stateGeneration = Number(persisted.generation);
@@ -142,7 +139,6 @@ async function disableInterceptSession(tabId: number, msg: BrowserPilotBridgeCom
 		session.active = false;
 		session.paused.clear();
 		rememberInterceptDiagnostic(session, { action: "uninstall" });
-		await forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
 		// Forget persisted state on explicit uninstall
 		try { await forgetState('intercept', `${Number(tabId)}:${session.sessionId}`); } catch (error) { console.warn('[BROWSER-PILOT-INTERCEPT] Failed to forget intercept session state', session.sessionId, error); }
 		return { ok: true, data: { ...interceptSessionSummary(session), uninstalled: true } };
@@ -183,7 +179,6 @@ async function handleInterceptAddRule(tabId: number, msg: BrowserPilotBridgeComm
 	const rule = normalizeInterceptRule(msg || {});
 	session.rules.push(rule);
 	rememberInterceptDiagnostic(session, { action: "add_rule", ruleId: rule.ruleId, actionType: rule.action, matcher: rule.matcher });
-	await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
 	try {
 		const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
 		if (persisted.generation !== undefined) session.stateGeneration = Number(persisted.generation);
@@ -203,7 +198,6 @@ async function handleInterceptRemoveRule(tabId: number, msg: BrowserPilotBridgeC
 	const before = session.rules.length;
 	session.rules = session.rules.filter((rule: InterceptRule) => rule.ruleId !== ruleId);
 	rememberInterceptDiagnostic(session, { action: "remove_rule", ruleId, removed: before !== session.rules.length });
-	await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
 	try {
 		const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
 		if (persisted.generation !== undefined) session.stateGeneration = Number(persisted.generation);
@@ -409,7 +403,6 @@ export function cleanupInterceptSessionTab(tabId: number, reason?: string): Json
 		removed += 1;
 		for (const subscriptionId of session.cdpSubscriptions.splice(0)) unsubscribeBrowserPilotCdp(subscriptionId);
 		rememberInterceptDiagnostic(session, { action: "tab_cleanup", reason: reason || "tab_cleanup" });
-		void forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
 		// Forget persisted state on tab cleanup
 		void forgetState('intercept', key).catch((error) => console.warn('[BROWSER-PILOT-INTERCEPT] Failed to forget intercept state during tab cleanup', key, error));
 		browserPilotInterceptSessions.delete(key);

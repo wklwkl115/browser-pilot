@@ -1,7 +1,7 @@
 // exec.js - plain JavaScript execution and CDP fallback for WebSocket requests.
 
 import { chromeApi as chrome } from "./runtimeEnv";
-import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtime";
+import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotChromeTab, BrowserPilotWebSocketLike } from "./types";
 
 const NEW_TAB_OBSERVE_WAIT_MS = 50;

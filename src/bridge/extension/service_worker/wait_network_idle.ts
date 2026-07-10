@@ -1,5 +1,5 @@
 import { matchNetworkPattern } from "./patterns";
-import { BROWSER_PILOT_ERROR_CODES } from "./runtime";
+import { BROWSER_PILOT_ERROR_CODES } from "./runtimeSupport.js";
 import { attachDebuggerForWait, subscribeBrowserPilotCdp } from "./wait_cdp";
 import { finishBrowserPilotWait, makeWaitId, normalizeBrowserPilotTimeoutMs, recordWaitEvent, registerWait, waitAbortMessage } from "./wait_coordinator";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
