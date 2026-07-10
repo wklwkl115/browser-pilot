@@ -154,6 +154,39 @@ function directJwe(payload: Record<string, unknown>, secret: string): string {
 	return `${protectedHeader}..${base64UrlEncode(iv)}.${base64UrlEncode(ciphertext)}.${base64UrlEncode(cipher.getAuthTag())}`;
 }
 
+function railsGcmToken(payload: Record<string, unknown>, secret: string): string {
+	const iv = Buffer.alloc(12, 3);
+	const cipher = createCipheriv("aes-256-gcm", Buffer.from(secret, "utf8"), iv);
+	const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
+	return `${ciphertext.toString("base64")}--${iv.toString("base64")}--${cipher.getAuthTag().toString("base64")}`;
+}
+
+function railsLegacyCbcToken(payload: Record<string, unknown>, secret: string): string {
+	const iv = Buffer.alloc(16, 5);
+	const cipher = createCipheriv("aes-256-cbc", Buffer.from(secret, "utf8"), iv);
+	const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
+	const payloadPart = `${ciphertext.toString("base64")}--${iv.toString("base64")}`;
+	return `${payloadPart}--${createHmac("sha1", secret).update(payloadPart, "utf8").digest("hex")}`;
+}
+
+function railsTokenHelpers() {
+	return createRailsCookieTokenFns({
+		decodePrintableJsonValue(buffer) {
+			const text = buffer.toString("utf8");
+			try {
+				return { text, json: JSON.parse(text) };
+			} catch {
+				const printable = Array.from(text).every((char) => {
+					const code = char.charCodeAt(0);
+					return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126);
+				});
+				return printable ? { text } : {};
+			}
+		},
+		secretByteCandidates: (secret) => [{ source: "utf8", bytes: Buffer.from(secret, "utf8") }],
+	});
+}
+
 function djangoToken(payload: Record<string, unknown>, secret: string): string {
 	const payloadPart = base64UrlEncode(JSON.stringify(payload));
 	const timestampPart = "1";
@@ -601,23 +634,7 @@ test("replay and request-template helpers mutate requests without network I/O", 
 });
 
 test("rails cookie token helpers verify signed tokens and expose binary/encrypted fallback metadata", async () => {
-	const helpers = createRailsCookieTokenFns({
-		decodePrintableJsonValue(buffer) {
-			const text = buffer.toString("utf8");
-			try {
-				return { text, json: JSON.parse(text) };
-			} catch {
-				const printable = Array.from(text).every((char) => {
-					const code = char.charCodeAt(0);
-					return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126);
-				});
-				return printable ? { text } : {};
-			}
-		},
-		secretByteCandidates(secret) {
-			return [{ source: "utf8", bytes: Buffer.from(secret, "utf8") }];
-		},
-	});
+	const helpers = railsTokenHelpers();
 	const payloadPart = Buffer.from(JSON.stringify({ user_id: 7 }), "utf8").toString("base64");
 	const signature = createHmac("sha1", "secret").update(payloadPart, "utf8").digest("hex");
 	const signed = await helpers.verifyRailsSignedToken(`${payloadPart}--${signature}`, ["wrong", "secret"]);
@@ -637,6 +654,26 @@ test("rails cookie token helpers verify signed tokens and expose binary/encrypte
 	assert.match(String(((unverified.token as Record<string, unknown>).mutation as Record<string, unknown>).error), /no matching secret/);
 	assert.equal(await helpers.verifyRailsEncryptedToken("not--a--token", ["secret"]), undefined);
 	assert.equal(await helpers.verifyRailsLegacyCbcPayload("not--a", signed?.matches ?? [], 1), undefined);
+});
+
+test("rails cookie token helpers preserve GCM and legacy CBC round trips", async () => {
+	const helpers = railsTokenHelpers();
+	const secret = "r".repeat(32);
+	assert.equal(Buffer.byteLength(secret), 32);
+
+	const encrypted = await helpers.verifyRailsEncryptedToken(railsGcmToken({ user_id: 7 }, secret), ["wrong", secret]);
+	assert.deepEqual(encrypted?.decrypted?.payload, { user_id: 7 });
+	assert.equal(encrypted?.matches.length, 1);
+	const mutatedGcm = await helpers.encryptRailsToken({ user_id: 8 }, secret, encrypted?.matches[0] ?? {}, encrypted!);
+	assert.deepEqual((await helpers.verifyRailsEncryptedToken(mutatedGcm ?? "", [secret]))?.decrypted?.payload, { user_id: 8 });
+
+	const signed = await helpers.verifyRailsSignedToken(railsLegacyCbcToken({ user_id: 9 }, secret), [secret]);
+	const legacy = await helpers.verifyRailsLegacyCbcPayload(signed?.payloadPart ?? "", signed?.matches ?? [], signed?.testedSecretCandidateCount ?? 0);
+	assert.deepEqual(legacy?.decrypted?.payload, { user_id: 9 });
+	const mutatedCbc = await helpers.encryptRailsLegacyCbcToken({ user_id: 10 }, secret, legacy?.matches[0] ?? {}, legacy!);
+	const mutatedSigned = await helpers.verifyRailsSignedToken(mutatedCbc ?? "", [secret]);
+	const mutatedLegacy = await helpers.verifyRailsLegacyCbcPayload(mutatedSigned?.payloadPart ?? "", mutatedSigned?.matches ?? [], mutatedSigned?.testedSecretCandidateCount ?? 0);
+	assert.deepEqual(mutatedLegacy?.decrypted?.payload, { user_id: 10 });
 });
 
 test("mature bridge and scanner bridges use local stub launchers only", async () => {
