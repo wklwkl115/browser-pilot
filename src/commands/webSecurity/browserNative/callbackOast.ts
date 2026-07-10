@@ -54,9 +54,11 @@ function callbackOastInputError(message: string, details: Record<string, unknown
 	return createCodedError({ name: "CallbackOastInputError", code: "INVALID_RULE", message, details, suppressStack: false });
 }
 
+function trimmedString(value: unknown): string | undefined { return asString(value)?.trim() || undefined; }
+function trimmedStringOr(value: unknown, fallback: string): string { return trimmedString(value) || fallback; }
+
 function normalizeCallbackAction(value: unknown): CallbackAction {
-	const action = String(value || "start").trim().toLowerCase();
-	if (!action || value === undefined || value === null) return "start";
+	const action = String(value || "start").trim().toLowerCase() || "start";
 	if (action === "start" || action === "list" || action === "status" || action === "collect" || action === "clear" || action === "trigger" || action === "stop") return action;
 	throw callbackOastInputError(`Unsupported browser_callback_oast action: ${action}`, { action });
 }
@@ -68,32 +70,31 @@ function callbackPort(value: unknown): number {
 
 function normalizeTriggerMode(value: unknown): "http" | "https" | "dns" {
 	const mode = String(value || "").toLowerCase();
-	if (mode === "https") return "https";
-	if (mode === "dns") return "dns";
-	return "http";
+	return mode === "https" || mode === "dns" ? mode : "http";
 }
 
-function normalizeCallbackOastOptions(options: RawCallbackOastOptions): NormalizedCallbackOastOptions {
+export function normalizeCallbackOastOptions(options: RawCallbackOastOptions): NormalizedCallbackOastOptions {
 	const action = normalizeCallbackAction(options.action);
-	const rawSessionId = asString(options.sessionId)?.trim() || (action === "start" ? `oast-${randomUUID()}` : undefined);
+	const rawSessionId = trimmedString(options.sessionId) || (action === "start" ? `oast-${randomUUID()}` : undefined);
 	const sessionId = rawSessionId ? normalizeCallbackSessionId(rawSessionId) : undefined;
 	const bodyBase64 = asString(options.bodyBase64 ?? options.triggerBodyBase64);
+	const listenHost = trimmedStringOr(options.listenHost, "127.0.0.1");
 	return {
 		action,
 		cwd: requestCwd(options),
 		sessionId,
-		listenHost: asString(options.listenHost)?.trim() || "127.0.0.1",
-		dnsListenHost: asString(options.dnsListenHost)?.trim() || asString(options.listenHost)?.trim() || "127.0.0.1",
+		listenHost,
+		dnsListenHost: trimmedStringOr(options.dnsListenHost, listenHost),
 		port: callbackPort(options.port),
 		httpsPort: callbackPort(options.httpsPort),
 		dnsPort: callbackPort(options.dnsPort),
-		publicBaseUrl: asString(options.publicBaseUrl)?.trim() || undefined,
-		publicHttpsBaseUrl: asString(options.publicHttpsBaseUrl)?.trim() || undefined,
-		publicDnsBaseDomain: asString(options.publicDnsBaseDomain)?.trim() || undefined,
-		dnsBaseDomain: asString(options.dnsBaseDomain)?.trim() || undefined,
-		dnsResponseAddress: asString(options.dnsResponseAddress)?.trim() || "127.0.0.1",
-		basePath: asString(options.basePath)?.trim() || "/__browser_pilot_oast/{{correlationId}}",
-		correlationId: asString(options.correlationId)?.trim() || randomUUID().replace(/-/g, ""),
+		publicBaseUrl: trimmedString(options.publicBaseUrl),
+		publicHttpsBaseUrl: trimmedString(options.publicHttpsBaseUrl),
+		publicDnsBaseDomain: trimmedString(options.publicDnsBaseDomain),
+		dnsBaseDomain: trimmedString(options.dnsBaseDomain),
+		dnsResponseAddress: trimmedStringOr(options.dnsResponseAddress, "127.0.0.1"),
+		basePath: trimmedStringOr(options.basePath, "/__browser_pilot_oast/{{correlationId}}"),
+		correlationId: trimmedString(options.correlationId) || randomUUID().replace(/-/g, ""),
 		responseStatus: Math.min(599, Math.max(100, positiveInt(options.responseStatus, 200))),
 		responseBody: asString(options.responseBody) ?? "ok\n",
 		responseHeaders: { "Content-Type": "text/plain; charset=utf-8", ...normalizeHeaders(options.responseHeaders) },
@@ -101,13 +102,13 @@ function normalizeCallbackOastOptions(options: RawCallbackOastOptions): Normaliz
 		enableDns: options.enableDns === true,
 		externalMetadata: isRecord(options.externalMetadata) ? { ...options.externalMetadata } : undefined,
 		mode: normalizeTriggerMode(options.mode ?? options.triggerMode),
-		target: asString(options.target ?? options.triggerTarget)?.trim() || undefined,
+		target: trimmedString(options.target ?? options.triggerTarget),
 		method: normalizeMethod(options.method ?? options.triggerMethod ?? "POST", "POST"),
 		headers: normalizeHeaders(options.requestHeaders ?? options.headers),
 		body: bodyBase64 !== undefined ? Buffer.from(bodyBase64, "base64") : asString(options.body ?? options.triggerBody) ?? undefined,
-		queryName: asString(options.queryName)?.trim() || undefined,
-		queryType: asString(options.queryType)?.trim() || "A",
-		resolverHost: asString(options.resolverHost)?.trim() || undefined,
+		queryName: trimmedString(options.queryName),
+		queryType: trimmedStringOr(options.queryType, "A"),
+		resolverHost: trimmedString(options.resolverHost),
 		resolverPort: callbackPort(options.resolverPort),
 		rejectUnauthorized: options.rejectUnauthorized === true,
 		maxEvents: Math.min(100_000, positiveInt(options.maxEvents, 1_000)),
