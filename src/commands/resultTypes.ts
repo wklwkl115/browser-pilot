@@ -1,29 +1,11 @@
 import type { DetailLevel } from "../utils/params.js";
+import type { Fact, FactGranularity, FactPlane, FactRendering, FactSalience } from "../kernels/evidence/distill/fact.js";
 
-export type CommandFactGranularity = "full" | "compact" | "line" | "ref" | "omit";
-
-export type CommandFactPlane = "entity" | "outline" | "relation" | "causal" | "diff" | "treeDiff" | "snapshot" | "identity" | "summary" | "diagnostic";
-
-export type CommandFactSalience = {
-	actionability?: number;
-	novelty?: number;
-	consequence?: number;
-	structure?: number;
-	relevance?: number;
-};
-
-export type CommandFactRendering = {
-	value?: unknown;
-	text?: string;
-	cost: number;
-};
-
-export type CommandFact = {
-	ref: string;
-	plane: CommandFactPlane;
-	salience: CommandFactSalience;
-	renderings: Partial<Record<Exclude<CommandFactGranularity, "omit">, CommandFactRendering>>;
-};
+export type CommandFactGranularity = FactGranularity;
+export type CommandFactPlane = FactPlane;
+export type CommandFactSalience = FactSalience;
+export type CommandFactRendering = FactRendering;
+export type CommandFact = Fact;
 
 export type DistilledSummary = Record<string, unknown>;
 

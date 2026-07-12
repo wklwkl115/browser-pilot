@@ -28,6 +28,8 @@ export type CommandOwnedActionMetadata = {
 	schemaRef: string;
 	required?: readonly string[];
 	requiredAny?: readonly (readonly string[])[];
+	/** Closed schema for the action's nested `params` object. */
+	paramsSchema: Record<string, unknown>;
 };
 
 export type BrowserCommandDefinition = {

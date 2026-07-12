@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { buildPageObservation } from "../../src/commands/observe/scanProjection.ts";
@@ -6,11 +8,15 @@ import type { CollectionModel } from "../../src/kernels/abml/collections.ts";
 import { buildCollectionModels } from "../../src/kernels/abml/collections.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
 import { sanitizeSemanticText } from "../../src/kernels/abml/semanticText.ts";
+import { getJsonPath } from "../../src/utils/jsonPath.ts";
+import { isRecord } from "../../src/utils/records.ts";
+import { renderWithExactCost } from "../../src/kernels/evidence/cost.ts";
+import type { PageObservationV3 } from "../../src/kernels/abml/pageObservation.ts";
 
 type ObserveRegressionFixture = {
 	entities?: Entity[];
 	scanEvidence?: Parameters<typeof buildCollectionModels>[0]["scanEvidence"];
-	pageObservation?: {
+	observation?: {
 		entities?: Entity[];
 		collections?: CollectionModel[];
 		content?: string;
@@ -80,7 +86,7 @@ const cases: ObserveRegressionCase[] = [
 	{
 		name: "semantic labels reject SVG/path/HTML-like pollution",
 		fixture: {
-			pageObservation: {
+			observation: {
 				entities: [
 					entity("bp-ref://element/icon", { name: sanitizeSemanticText("<svg><path d=\"M10 10 L20 20\" /></svg>") }),
 					entity("bp-ref://element/path", { name: sanitizeSemanticText("M10 10 L20 20") }),
@@ -141,7 +147,7 @@ const cases: ObserveRegressionCase[] = [
 	{
 		name: "AX fusion diagnostics are represented in canonical PageObservation",
 		fixture: {
-			pageObservation: {
+			observation: {
 				entities: [entity("bp-ref://control/save", { name: "Save", hints: { mergedSources: ["dom", "ax"], selector: "#save" } })],
 				content: "Save",
 				url: "https://example.test/settings",
@@ -157,7 +163,7 @@ const cases: ObserveRegressionCase[] = [
 	{
 		name: "AX fusion degraded diagnostics include skipped ambiguity counts",
 		fixture: {
-			pageObservation: {
+			observation: {
 				entities: [
 					entity("bp-ref://control/filter-a", { name: "Filter", hints: { selector: "#filter-a" } }),
 					entity("bp-ref://control/filter-b", { name: "Filter", hints: { selector: "#filter-b" } }),
@@ -180,7 +186,7 @@ const cases: ObserveRegressionCase[] = [
 				entity("bp-ref://control/search", { role: "searchbox", name: "Search docs", state: { ...baseState, editable: true }, hints: { selector: "#q", jsonPath: "data.actionables[0]", inputKind: "search" } }),
 				entity("bp-ref://control/open-details", { role: "button", name: "More details", hints: { selector: "details > summary", jsonPath: "data.actionables[1]" } }),
 			],
-			pageObservation: {
+			observation: {
 				content: "Search docs More details Navigation Main Region Form Banner Footer",
 				url: "https://example.test/roles",
 			},
@@ -199,7 +205,7 @@ const cases: ObserveRegressionCase[] = [
 	{
 		name: "readability content-plane provider is recorded without entering structural benchmark authority",
 		fixture: {
-			pageObservation: {
+			observation: {
 				entities: [entity("bp-ref://control/pay", { name: "Pay invoice", hints: { selector: "#pay" } })],
 				content: "Subscribe now Navigation Advertisement Cookie banner Related links Footer Article body about river restoration and habitat work",
 				url: "https://example.test/article",
@@ -215,7 +221,7 @@ const cases: ObserveRegressionCase[] = [
 	{
 		name: "provider budget telemetry fixture is compact and independent from live providers",
 		fixture: {
-			pageObservation: {
+			observation: {
 				entities: [entity("bp-ref://control/export", { name: "Export report", hints: { selector: "#export" } })],
 				content: "Export report Article summary remains content-plane only",
 				url: "https://example.test/report",
@@ -237,7 +243,7 @@ const cases: ObserveRegressionCase[] = [
 	{
 		name: "partial AX pierce diagnostics stay scoped and do not enter canonical page-wide structure",
 		fixture: {
-			pageObservation: {
+			observation: {
 				entities: [entity("bp-ref://control/settings", { name: "Open settings", hints: { selector: "#settings", backendNodeId: 42 } })],
 				content: "Open settings Local partial AX candidate Admin-only hidden menu Imported AX-only sibling",
 				url: "https://example.test/settings",
@@ -259,7 +265,7 @@ const cases: ObserveRegressionCase[] = [
 				entity("bp-ref://control/docs-copy", { role: "button", name: "Copy install command", hints: { selector: "button.copy", jsonPath: "data.actionables[0]" } }),
 				entity("bp-ref://control/docs-next", { role: "link", name: "Next: observe pages", hints: { selector: "a.next", jsonPath: "data.actionables[1]" } }),
 			],
-			pageObservation: {
+			observation: {
 				content: "Browser Pilot exploration guide Install the bridge Use browser_observe to collect a semantic page model before acting. Copy install command Next: observe pages",
 				url: "https://example.test/docs/exploration",
 				outline: [
@@ -288,7 +294,7 @@ const cases: ObserveRegressionCase[] = [
 				entity("bp-ref://control/status", { role: "combobox", name: "Status", relations: [{ type: "controls", targetRef: "bp-ref://region/orders-table", source: "ax", confidence: "medium" }], hints: { selector: "#status", jsonPath: "data.actionables[1]" } }),
 				entity("bp-ref://control/apply", { role: "button", name: "Apply filters", relations: [{ type: "controls", targetRef: "bp-ref://region/orders-table", source: "dom", confidence: "high" }], hints: { selector: "#apply", jsonPath: "data.actionables[2]" } }),
 			],
-			pageObservation: {
+			observation: {
 				content: "Revenue dashboard Orders Filter orders Status Apply filters Order 1024 pending Order 1025 shipped Order 1026 failed",
 				url: "https://example.test/dashboard/orders",
 				relations: { controls: [{ from: "bp-ref://control/order-filter", to: "bp-ref://region/orders-table" }, { from: "bp-ref://control/apply", to: "bp-ref://region/orders-table" }] },
@@ -317,7 +323,7 @@ const cases: ObserveRegressionCase[] = [
 			scanEvidence: {
 				growthProbe: { beforeCount: 5, afterCount: 5, beforeScrollHeight: 4000, afterScrollHeight: 4200, beforeFirstText: "Customer 001 Acme renewal", afterFirstText: "Customer 041 Delta renewal", windowShifted: true },
 			},
-			pageObservation: {
+			observation: {
 				content: "Customers Customer 001 Acme renewal Customer 002 Beta expansion Customer 003 Churn risk Customer 004 Onboarding Customer 005 Support escalation",
 				url: "https://example.test/dashboard/customers",
 			},
@@ -338,7 +344,7 @@ const cases: ObserveRegressionCase[] = [
 				entity("bp-ref://control/shadow-search", { role: "searchbox", name: "Search within settings", state: { ...baseState, editable: true }, hints: { selector: "settings-panel >>> input[type=search]", shadowRoot: "open", jsonPath: "data.actionables[0]" } }),
 				entity("bp-ref://control/shadow-save", { role: "button", name: "Save settings", hints: { selector: "settings-panel >>> button.save", shadowRoot: "open", jsonPath: "data.actionables[1]" } }),
 			],
-			pageObservation: {
+			observation: {
 				content: "Account settings Payments iframe unavailable Search within settings Save settings",
 				url: "https://example.test/settings/embed",
 			},
@@ -363,7 +369,7 @@ const cases: ObserveRegressionCase[] = [
 				entity("bp-ref://item-file-3", { kind: "element", role: "listitem", name: "CODE_WIKI.md modified", structure: { setSize: 4, posInSet: 3 }, hints: { containerRole: "list", containerName: "Changed files", selector: ".file-list li:nth-child(3)" } }),
 				entity("bp-ref://item-file-4", { kind: "element", role: "listitem", name: "package.json unchanged", structure: { setSize: 4, posInSet: 4 }, hints: { containerRole: "list", containerName: "Changed files", selector: ".file-list li:nth-child(4)" } }),
 			],
-			pageObservation: {
+			observation: {
 				content: "browser-pilot Pull requests Review changes Changed files src/commands/observe/scanRunner.ts tests/observe/observeRegressionBenchmark.test.ts CODE_WIKI.md",
 				url: "https://example.test/org/browser-pilot/pull/42/files",
 			},
@@ -386,8 +392,8 @@ function buildCollections(caseDef: ObserveRegressionCase): CollectionModel[] {
 	});
 }
 
-function buildObservation(caseDef: ObserveRegressionCase, collections: CollectionModel[]): Record<string, unknown> | undefined {
-	const fixture = caseDef.fixture.pageObservation;
+function buildObservationVariants(caseDef: ObserveRegressionCase, collections: CollectionModel[]) {
+	const fixture = caseDef.fixture.observation;
 	if (!fixture) return undefined;
 	const entities = fixture.entities ?? caseDef.fixture.entities ?? [];
 	const axFusion = caseDef.expect.requireAxFusion;
@@ -409,7 +415,7 @@ function buildObservation(caseDef: ObserveRegressionCase, collections: Collectio
 		url: fixture.url,
 		tabs: [{ id: 1 }],
 		activeTabId: 1,
-		snapshot: { snapshotId: `offline-${caseDef.name.replace(/\W+/g, "-").toLowerCase()}` },
+		snapshot: { snapshotId: `offline-${caseDef.name.replace(/\W+/g, "-").toLowerCase()}`, sourceMode: "scan", capturedAt: 1, ttlMs: 300_000 },
 		artifactPath: "artifacts/offline-observe-regression.json",
 		abmlIntegrated: true,
 		diagnostics: {
@@ -426,6 +432,14 @@ function buildObservation(caseDef: ObserveRegressionCase, collections: Collectio
 				}
 			: {}),
 	});
+}
+
+function buildObservation(caseDef: ObserveRegressionCase, collections: CollectionModel[]): Record<string, unknown> | undefined {
+	return buildObservationVariants(caseDef, collections)?.artifact as unknown as Record<string, unknown> | undefined;
+}
+
+function buildInlineObservation(caseDef: ObserveRegressionCase, collections: CollectionModel[]): Record<string, unknown> | undefined {
+	return buildObservationVariants(caseDef, collections)?.inline as unknown as Record<string, unknown> | undefined;
 }
 
 function collectStrings(value: unknown, out: string[] = []): string[] {
@@ -467,14 +481,13 @@ function assertCollectionMetrics(collections: CollectionModel[], expect: Observe
 
 function assertCanonicalShape(observation: Record<string, unknown> | undefined, expect: ObserveRegressionExpectations = {}): void {
 	assert.ok(observation, "case must build a PageObservation");
+	assert.equal(observation.schema, "browser-page-observation/v3");
+	assert.equal(observation.tool, "browser_observe");
 	assert.equal(observation.model, "PageObservation");
 	assert.equal(observation.canonical, true);
-	assert.equal(observation.mode, "scan");
-	assert.equal(observation.sourceMode, "scan");
-	assert.ok(observation.context && typeof observation.context === "object");
-	assert.ok(Array.isArray(observation.entities));
-	assert.ok(Array.isArray(observation.actionables));
-	assert.ok(Array.isArray(observation.refs));
+	assert.ok(observation.target && typeof observation.target === "object");
+	assert.ok(observation.snapshot && typeof observation.snapshot === "object");
+	for (const forbidden of ["summary", "refs", "content", "text", "evidence", "correlation", "templates", "envelope"]) assert.equal(Object.hasOwn(observation, forbidden), false);
 	assert.ok(observation.diagnostics && typeof observation.diagnostics === "object");
 	const diagnostics = observation.diagnostics as Record<string, unknown>;
 	const providers = diagnostics.providers as Record<string, unknown>;
@@ -503,23 +516,31 @@ function assertCanonicalShape(observation: Record<string, unknown> | undefined, 
 		if (required.counts) assert.deepEqual(item.counts, required.counts);
 	}
 	for (const provider of expect.rejectProviderTelemetry ?? []) assert.equal(providerTelemetry.some((item) => item.provider === provider), false, `unexpected provider telemetry: ${provider}`);
-	const actionables = observation.actionables as Record<string, unknown>[];
-	const actionableRoles = actionables.map((item) => String(item.role || "").toLowerCase()).filter(Boolean);
+	const entities = Array.isArray(observation.entities) ? observation.entities as Record<string, unknown>[] : [];
+	const actionables = Array.isArray(observation.actionables) ? observation.actionables as Record<string, unknown>[] : [];
+	const actionableRefs = new Set(actionables.flatMap((item) => typeof item.ref === "string" ? [item.ref] : []));
+	const actionableEntities = entities.filter((item) => typeof item.ref === "string" && actionableRefs.has(item.ref));
+	const actionableRoles = actionableEntities.map((item) => String(item.role || "").toLowerCase()).filter(Boolean);
 	for (const role of expect.requireActionableRoles ?? []) assert.ok(actionableRoles.includes(role), `missing actionable role: ${role}; got ${actionableRoles.join(", ")}`);
 	for (const role of expect.rejectActionableRoles ?? []) assert.equal(actionableRoles.includes(role), false, `unexpected actionable role: ${role}`);
 	const actionableNames = actionables.map((item) => typeof item.name === "string" ? item.name : "").filter(Boolean);
 	for (const name of expect.requireActionableNames ?? []) assert.ok(actionableNames.includes(name), `missing actionable name: ${name}; got ${actionableNames.join(", ")}`);
 	const outlineText = collectStrings(observation.outline).join("\n");
 	for (const required of expect.requireOutlineText ?? []) assert.ok(outlineText.includes(required), `missing outline text: ${required}`);
-	const contentPreview = collectStrings(observation.content).join("\n");
+	const contentPreview = collectStrings(diagnostics.content).join("\n");
 	for (const required of expect.requireContentPreviewIncludes ?? []) assert.ok(contentPreview.includes(required), `missing content preview text: ${required}`);
 	const relationText = collectStrings(observation.relations).join("\n");
 	for (const required of expect.requireRelations ?? []) assert.ok(relationText.includes(required), `missing relation text: ${required}`);
-	const structuralText = collectStrings({ actionables: observation.actionables, refs: observation.refs, entities: observation.entities, collections: observation.collections }).join("\n");
+	const structuralText = collectStrings({ actionables: observation.actionables, entities: observation.entities, collections: observation.collections }).join("\n");
 	for (const rejected of expect.rejectStructuralReadabilityText ?? []) assert.equal(structuralText.includes(rejected), false, `readability content entered structural model: ${rejected}`);
 	for (const rejected of expect.rejectStructuralPartialAxText ?? []) assert.equal(structuralText.includes(rejected), false, `partial AX local data entered canonical structural model: ${rejected}`);
 	const observationText = collectStrings(observation).join("\n");
 	for (const rejected of expect.rejectObservationText ?? []) assert.equal(observationText.includes(rejected), false, `observation leaked rejected text: ${rejected}`);
+	const frontier = observation.frontier as { items?: Array<{ read?: { jsonPath?: string }; unavailableReason?: string }> };
+	for (const item of frontier.items ?? []) {
+		if (item.read?.jsonPath) assert.equal(getJsonPath(observation, item.read.jsonPath).exists, true, `frontier path ${item.read.jsonPath} must exist`);
+		else assert.equal(typeof item.unavailableReason, "string", "frontier items without reads require unavailableReason");
+	}
 }
 
 function assertRoleBoundary(collections: CollectionModel[], expect: ObserveRegressionExpectations): void {
@@ -540,3 +561,95 @@ test("observe regression benchmark cases are offline and deterministic", () => {
 		if (caseDef.expect.noMarkupPollution) assertNoMarkupPollution({ collections, observation });
 	}
 });
+
+type CostBaselineRow = { chars: number; bytes: number; estimatedTokens: number; qualityAssertions: string[] };
+type CostBaseline = {
+	schema: string;
+	source: { ref: string; commit: string; commandContractVersion: number; observationContract: string };
+	fixtureSetHash: string;
+	fixtures: Record<string, CostBaselineRow>;
+};
+
+function median(values: number[]): number {
+	assert.ok(values.length > 0);
+	const sorted = [...values].sort((left, right) => left - right);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function uniqueStrings(values: unknown[], label: string): Set<string> {
+	const strings = values.filter((value): value is string => typeof value === "string");
+	assert.equal(new Set(strings).size, strings.length, `${label} contains duplicate ownership`);
+	return new Set(strings);
+}
+
+function assertUniqueObservationOwnership(observation: Record<string, unknown>): void {
+	const entities = Array.isArray(observation.entities) ? observation.entities.filter((item): item is Record<string, unknown> => !!item && typeof item === "object") : [];
+	const actionables = Array.isArray(observation.actionables) ? observation.actionables.filter((item): item is Record<string, unknown> => !!item && typeof item === "object") : [];
+	const collections = Array.isArray(observation.collections) ? observation.collections.filter((item): item is Record<string, unknown> => !!item && typeof item === "object") : [];
+	const frontierRoot = isRecord(observation.frontier) ? observation.frontier : undefined;
+	const frontier: Array<Record<string, unknown>> = Array.isArray(frontierRoot?.items) ? frontierRoot.items.filter(isRecord) : [];
+	const entityRefs = uniqueStrings(entities.map((item) => item.ref), "entities");
+	const actionableRefs = uniqueStrings(actionables.map((item) => item.ref), "actionables");
+	uniqueStrings(collections.map((item) => item.ref), "collections");
+	uniqueStrings(frontier.map((item) => item.ref), "frontier");
+	for (const ref of actionableRefs) assert.equal(entityRefs.has(ref), true, `actionable ref ${ref} has no entity owner`);
+	for (const item of frontier) {
+		const read = isRecord(item.read) ? item.read : undefined;
+		if (typeof read?.jsonPath === "string") assert.equal(getJsonPath(observation, read.jsonPath).exists, true, `frontier path ${read.jsonPath} must resolve`);
+		else assert.equal(typeof item.unavailableReason === "string" && item.unavailableReason.length > 0, true, `frontier ${String(item.ref)} truncates silently`);
+	}
+}
+
+function sha256(value: string): string {
+	return createHash("sha256").update(value).digest("hex");
+}
+
+test("observe v3 benchmark enforces immutable 1573380 cost and zero-quality-regression gates", () => {
+	const baseline = JSON.parse(readFileSync(new URL("../fixtures/observe-v2-baseline-1573380.json", import.meta.url), "utf8")) as CostBaseline;
+	assert.equal(baseline.schema, "browser-pilot-observation-benchmark-baseline/v1");
+	assert.equal(baseline.source.ref, "1573380");
+	assert.match(baseline.source.commit, /^1573380[0-9a-f]{33}$/);
+	assert.equal(baseline.source.commandContractVersion, 2);
+	assert.equal(baseline.source.observationContract, "v2");
+	const baselineNames = Object.keys(baseline.fixtures).sort();
+	assert.equal(baseline.fixtureSetHash, sha256(JSON.stringify(baselineNames.map((name) => [name, baseline.fixtures[name].qualityAssertions]))));
+
+	const priorBytes: number[] = [];
+	const priorTokens: number[] = [];
+	const currentBytes: number[] = [];
+	const currentTokens: number[] = [];
+	const byteRatios: number[] = [];
+	const tokenRatios: number[] = [];
+	const measuredNames: string[] = [];
+	for (const caseDef of cases) {
+		const collections = buildCollections(caseDef);
+		const inline = buildInlineObservation(caseDef, collections);
+		if (!inline) continue;
+		const prior = baseline.fixtures[caseDef.name];
+		assert.ok(prior, `missing immutable baseline fixture: ${caseDef.name}`);
+		assert.deepEqual(prior.qualityAssertions, Object.keys(caseDef.expect).sort(), `${caseDef.name}: quality assertion coverage drift`);
+		const exact = renderWithExactCost(inline as unknown as PageObservationV3, (current, cost) => ({ ...current, limits: { ...current.limits, cost } }));
+		assert.deepEqual((exact.value as PageObservationV3).limits.cost, exact.cost, `${caseDef.name}: final limits.cost`);
+		assert.equal(JSON.stringify(JSON.parse(exact.rendered)), exact.rendered, `${caseDef.name}: deterministic compact JSON`);
+		const artifact = buildObservation(caseDef, collections);
+		assert.ok(artifact);
+		assertUniqueObservationOwnership(artifact);
+		measuredNames.push(caseDef.name);
+		priorBytes.push(prior.bytes);
+		priorTokens.push(prior.estimatedTokens);
+		currentBytes.push(exact.cost.bytes);
+		currentTokens.push(exact.cost.estimatedTokens);
+		byteRatios.push(exact.cost.bytes / prior.bytes);
+		tokenRatios.push(exact.cost.estimatedTokens / prior.estimatedTokens);
+		assert.ok(exact.cost.bytes <= prior.bytes * 1.05, `${caseDef.name}: bytes regressed ${exact.cost.bytes}/${prior.bytes}`);
+		assert.ok(exact.cost.estimatedTokens <= prior.estimatedTokens * 1.05, `${caseDef.name}: tokens regressed ${exact.cost.estimatedTokens}/${prior.estimatedTokens}`);
+	}
+	assert.deepEqual(measuredNames.sort(), baselineNames);
+	assert.ok(median(currentBytes) <= median(priorBytes) * 0.75, `median bytes ${median(currentBytes)}/${median(priorBytes)}`);
+	assert.ok(median(currentTokens) <= median(priorTokens) * 0.75, `median tokens ${median(currentTokens)}/${median(priorTokens)}`);
+	assert.ok(median(byteRatios) <= 0.75, `median per-fixture byte ratio ${median(byteRatios)}`);
+	assert.ok(median(tokenRatios) <= 0.75, `median per-fixture token ratio ${median(tokenRatios)}`);
+});
+
+export { cases as observeRegressionCases, buildCollections as buildRegressionCollections, buildObservation as buildRegressionObservation, buildInlineObservation as buildRegressionInlineObservation };

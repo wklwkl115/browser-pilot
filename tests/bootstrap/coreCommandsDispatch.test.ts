@@ -193,8 +193,11 @@ test("core command direct and batch dispatch share supported command handlers", 
 
 test("operation coordinator arms listeners before dispatch and keeps late events passive until cancel", async () => {
 	const socket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
+	const boundSocket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
 	operationTransport.setBrowserPilotOperationEventSocketGetter(() => socket);
+	operationTransport.bindBrowserPilotOperationEventSocket("operation-1", boundSocket);
 	const begin = await coreCommands.dispatchBrowserPilotBridgeCommand({ cmd: "operation.begin", operationId: "operation-1", tabId: 7, generation: 3, targetRef: "tab-7" }, sender());
+	operationTransport.bindBrowserPilotOperationEventSocket("operation-1", boundSocket);
 	assert.equal(begin.ok, true);
 	assert.equal((begin.data as Record<string, unknown>).armed, true);
 	assert.equal((begin.data as Record<string, unknown>).mutationObserverArmed, true);
@@ -202,11 +205,12 @@ test("operation coordinator arms listeners before dispatch and keeps late events
 	assert.equal(downloadCreatedListeners.length > 0, true);
 	assert.equal(debuggerEventListeners.length > 0, true);
 	debuggerEventListeners.at(-1)?.({ tabId: 7 }, "Network.requestWillBeSent", { requestId: "r1", request: { url: "https://example.test/api" } });
-	assert.equal((JSON.parse(socket.sent.at(-1) || "{}") as Record<string, unknown>).type, "operation_event");
+	assert.equal(socket.sent.length, 0);
+	assert.equal((JSON.parse(boundSocket.sent.at(-1) || "{}") as Record<string, unknown>).type, "operation_event");
 	const finish = await coreCommands.dispatchBrowserPilotBridgeCommand({ cmd: "operation.finish", operationId: "operation-1" }, sender());
 	assert.equal(finish.ok, true);
 	tabUpdatedListeners.at(-1)?.(7, { status: "complete" }, { id: 7, url: "https://example.test/done" });
-	assert.equal(socket.sent.some((payload) => payload.includes("navigation")), true);
+	assert.equal(boundSocket.sent.some((payload) => payload.includes("navigation")), true);
 	const cancel = await coreCommands.dispatchBrowserPilotBridgeCommand({ cmd: "operation.cancel", operationId: "operation-1" }, sender());
 	assert.equal(cancel.ok, true);
 	assert.equal(tabUpdatedListeners.length, 0);
@@ -318,6 +322,19 @@ test("extension websocket router acknowledges and shapes native command validati
 	});
 	assert.match(String(messages[1]?.error), /input\.pointer missing required fields/);
 	assert.equal(cspRuleUpdates.length > 0, true);
+});
+
+test("extension websocket router binds operation events to the socket that armed the operation", async () => {
+	const fallback = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
+	const commandSocket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
+	operationTransport.setBrowserPilotOperationEventSocketGetter(() => fallback);
+
+	await router.handleBrowserPilotBridgeWsMessage({ id: "operation-begin", tabId: 7, code: { cmd: "operation.begin", operationId: "operation-bound", tabId: 7, generation: 1 } }, commandSocket);
+	debuggerEventListeners.at(-1)?.({ tabId: 7 }, "Page.lifecycleEvent", { name: "load", url: "https://example.test/after" });
+	assert.equal(fallback.sent.length, 0);
+	assert.equal(parseSocketMessages(commandSocket).some((message) => message.type === "operation_event" && (message.event as Record<string, unknown> | undefined)?.type === "navigation"), true);
+
+	await router.handleBrowserPilotBridgeWsMessage({ id: "operation-cancel", code: { cmd: "operation.cancel", operationId: "operation-bound" } }, commandSocket);
 });
 
 test("extension runtime helpers redact and normalize malformed error responses", () => {

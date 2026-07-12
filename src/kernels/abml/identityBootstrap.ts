@@ -1,4 +1,5 @@
 import { isRecord } from "../../utils/records.js";
+import type { PageWorldScanBundleV1, ScanActionable } from "./pageWorldScan.js";
 
 type Rect = { x: number; y: number; w: number; h: number };
 type IndexedEntry = SnapshotGeometryEntry & { scaledBounds: Rect };
@@ -43,7 +44,7 @@ export type BackendNodeIdBootstrapStats = {
 };
 
 export type BackendNodeIdBootstrapResult = {
-	data: Record<string, unknown>;
+	data: PageWorldScanBundleV1;
 	stats: BackendNodeIdBootstrapStats;
 };
 
@@ -107,13 +108,13 @@ function entriesById(entries: IndexedEntry[]): Map<string, IndexedEntry> {
 	return byId;
 }
 
-function actionableIndex(item: Record<string, unknown>, index: number): number {
+function actionableIndex(item: ScanActionable, index: number): number {
 	const explicit = num(item.index);
 	return explicit !== undefined && explicit >= 0 ? Math.floor(explicit) : index;
 }
 
-function actionableJsonPath(item: Record<string, unknown>, index: number): string {
-	return `data.actionables[${actionableIndex(item, index)}]`;
+function actionableJsonPath(item: ScanActionable, index: number): string {
+	return `data.structure.actionables[${actionableIndex(item, index)}]`;
 }
 
 function highIouSummary(scanRect: Rect, entries: IndexedEntry[]): { count: number; best?: IndexedEntry; bestIou: number } {
@@ -157,10 +158,10 @@ function buildStats(records: BackendNodeIdBootstrapRecord[], scale: number, view
 	};
 }
 
-function bootstrapActionable(item: Record<string, unknown>, index: number, entries: IndexedEntry[], byId: Map<string, IndexedEntry>, scrollX: number, scrollY: number) {
+function bootstrapActionable(item: ScanActionable, index: number, entries: IndexedEntry[], byId: Map<string, IndexedEntry>, scrollX: number, scrollY: number) {
 	const jsonPath = actionableJsonPath(item, index);
 	const selector = typeof item.selector === "string" ? item.selector : undefined;
-	const scanRect = rectFromScan(item.rect, scrollX, scrollY);
+	const scanRect = rectFromScan(item.documentRect ?? item.rect, scrollX, scrollY);
 	if (!scanRect || !entries.length) return { item, record: { jsonPath, selector, status: "unsupported" as const, reason: !scanRect ? "scan-rect-unavailable" : "snapshot-geometry-unavailable" } };
 	const summary = highIouSummary(scanRect, entries);
 	if (summary.count > 1) return { item: { ...item, backendNodeIdBootstrap: { status: "ambiguous", reason: "multiple-high-iou-candidates", candidateCount: summary.count } }, record: { jsonPath, selector, status: "ambiguous" as const, reason: "multiple-high-iou-candidates", candidateCount: summary.count, scanRect, iou: Number(summary.bestIou.toFixed(3)) } };
@@ -174,22 +175,20 @@ function bootstrapActionable(item: Record<string, unknown>, index: number, entri
 	return { item: { ...item, backendNodeIdBootstrap: { status: "stale", reason: "selector-node-geometry-drift", iou } }, record: { jsonPath, selector, status: "stale" as const, reason: "selector-node-geometry-drift", backendNodeId: selectorEntry.backendNodeId, iou, candidateCount: 0, scanRect, snapshotBounds: selectorEntry.scaledBounds } };
 }
 
-export function bootstrapScanBackendNodeIds(data: Record<string, unknown>, entries: SnapshotGeometryEntry[], options: BootstrapOptions = {}): BackendNodeIdBootstrapResult {
-	const viewport = isRecord(data.viewport) ? data.viewport : {};
-	const scrollX = num(viewport.scrollX) ?? 0;
-	const scrollY = num(viewport.scrollY) ?? 0;
-	const scale = Math.max(1, num(viewport.devicePixelRatio) ?? 1);
-	const viewportKnown = num(viewport.scrollX) !== undefined && num(viewport.scrollY) !== undefined;
+export function bootstrapScanBackendNodeIds(data: PageWorldScanBundleV1, entries: SnapshotGeometryEntry[], options: BootstrapOptions = {}): BackendNodeIdBootstrapResult {
+	const scrollX = 0;
+	const scrollY = 0;
+	const scale = 1;
+	const viewportKnown = data.structure.actionables.some((item) => item.documentRect !== undefined);
 	const indexedEntries = indexEntries(entries, scale);
 	const byId = entriesById(indexedEntries);
-	const actionables = Array.isArray(data.actionables) ? data.actionables : [];
+	const actionables = data.structure.actionables;
 	const records: BackendNodeIdBootstrapRecord[] = [];
 	const nextActionables = actionables.map((item, index) => {
-		if (!isRecord(item)) return item;
 		const resolved = bootstrapActionable(item, index, indexedEntries, byId, scrollX, scrollY);
 		records.push(resolved.record);
-		return resolved.item;
+		return resolved.item as ScanActionable;
 	});
 	const stats = buildStats(records, scale, viewportKnown, options);
-	return { data: { ...data, actionables: nextActionables, backendNodeIdBootstrap: stats }, stats };
+	return { data: { ...data, structure: { ...data.structure, actionables: nextActionables } }, stats };
 }

@@ -62,6 +62,10 @@ const frameEntity: Entity = {
 	source: "dom",
 };
 
+function observationSnapshot(snapshotId: string, extra: Record<string, unknown> = {}) {
+	return { snapshotId, sourceMode: "scan", capturedAt: 1, ttlMs: 300_000, ...extra };
+}
+
 function changedTreeDiff(): TreeDiff {
 	return {
 		summary: {
@@ -182,60 +186,50 @@ test("observe scan characterization: canonical PageObservation keeps stable fuse
 				primary_entities: [buttonEntity],
 				relations: { summary: { controls: 1 } },
 			},
-			collections: [{ ref: listEntity.ref, complete: true }],
 		},
 		entities: [buttonEntity, listEntity, visualEntity, frameEntity],
 		content: `${"Readable checkout content ".repeat(80)}`,
 		url: "https://example.test/checkout",
 		tabs: [{ id: 7 }, { id: 8 }],
 		activeTabId: 7,
-		snapshot: { snapshotId: "snap-1", saved: { path: "artifacts/observe-snap-1.json" } },
+		snapshot: observationSnapshot("snap-1", { browserSessionId: "session-1", tabId: 7, targetGeneration: 3, pageEpoch: "page-1" }),
 		diff,
 		treeDiff: changedTreeDiff(),
 		causal: { sinceSeq: 1, requestCount: 1, requests: [{ ref: "bp-ref://network-entry/2", url: "https://example.test/api", method: "POST" }] },
 		artifactPath: "artifacts/observe-snap-1.json",
 		abmlIntegrated: true,
 		diagnostics: { bridgeRoundTrips: 2 },
-	});
+	}).inline;
 
+	assert.equal(observation.schema, "browser-page-observation/v3");
+	assert.equal(observation.tool, "browser_observe");
 	assert.equal(observation.model, "PageObservation");
 	assert.equal(observation.canonical, true);
-	assert.equal(observation.mode, "scan");
-	assert.equal(observation.sourceMode, "scan");
-	assert.deepEqual(observation.context, { url: "https://example.test/checkout", activeTabId: 7, tabCount: 2 });
-	assert.deepEqual(observation.actionables, [buttonEntity]);
-	assert.deepEqual(observation.refs, [buttonEntity.ref, listEntity.ref, visualEntity.ref, frameEntity.ref]);
-	assert.equal((observation.content as { chars: number }).chars, "Readable checkout content ".repeat(80).length);
-	assert.equal((observation.content as { artifact?: { jsonPath?: string } }).artifact?.jsonPath, "pageObservation.content");
-	assert.equal((observation.text as { artifact?: { jsonPath?: string } }).artifact?.jsonPath, "pageObservation.text");
-	assert.equal((observation.evidence as { artifact?: { jsonPath?: string } }).artifact?.jsonPath, "envelope");
+	assert.deepEqual(observation.target, {
+		browserSessionId: "session-1",
+		tabId: 7,
+		targetGeneration: 3,
+		pageEpoch: "page-1",
+		url: "https://example.test/checkout",
+	});
+	assert.deepEqual(observation.actionables, [{ ref: buttonEntity.ref, kind: "control", name: "Submit", state: defaultState }]);
+	assert.deepEqual(observation.entities, [buttonEntity, listEntity, visualEntity, frameEntity]);
 	assert.equal(observation.diff, diff, "diff is preserved by reference");
 	assert.equal((observation.treeDiff as TreeDiff).summary.changedTemplateCount, 4);
-	assert.deepEqual((observation.diagnostics as { providers: Record<string, string> }).providers, {
-		structure: "executed",
-		content: "scan-backed",
-		text: "scan-backed",
-		html: "scan-backed",
-		evidence: "scan-backed",
-		tabs: "executed",
-	});
-	const artifactHints = observation.artifact_hints as { jsonPaths: Record<string, string>; preferredReads: Array<{ label: string; jsonPath: string }> };
-	assert.equal(artifactHints.jsonPaths["response envelope"], "envelope");
-	assert.equal(artifactHints.jsonPaths["saved observation artifact"], "pageObservation");
-	assert.equal(artifactHints.jsonPaths["raw scan evidence"], "data");
-	assert.equal(artifactHints.jsonPaths["saved observation content"], "pageObservation.content");
-	assert.equal(artifactHints.jsonPaths["saved observation text"], "pageObservation.text");
-	assert.deepEqual(artifactHints.preferredReads.map((read) => read.jsonPath), [
-		"envelope",
-		"pageObservation",
-		"data",
-		"pageObservation.content",
-		"pageObservation.text",
+	assert.equal(observation.providers.structure?.status, "executed");
+	assert.equal(observation.providers.content?.status, "scan-backed");
+	assert.equal(observation.providers.causal?.status, "executed");
+	assert.deepEqual(observation.frontier.items.map((item) => [item.kind, item.read?.jsonPath]), [
+		["content", "diagnostics.content"],
+		["diagnostics", "diagnostics"],
 	]);
+	for (const forbidden of ["summary", "evidence", "correlation", "templates", "text", "refs", "content"]) {
+		assert.equal(Object.hasOwn(observation, forbidden), false, `${forbidden} must not be mirrored on PageObservation v3`);
+	}
 });
 
 test("observe scan characterization: canonical artifact jsonPaths are readable against saved artifact root", () => {
-	const observation = buildPageObservation({
+	const built = buildPageObservation({
 		mode: "scan",
 		canonical: true,
 		summary: { focus: { primary_entities: [buttonEntity] } },
@@ -244,110 +238,48 @@ test("observe scan characterization: canonical artifact jsonPaths are readable a
 		url: "https://example.test/checkout",
 		tabs: [{ id: 7 }],
 		activeTabId: 7,
-		snapshot: { snapshotId: "snap-1" },
+		snapshot: observationSnapshot("snap-1"),
 		artifactPath: "artifacts/observe-snap-1.json",
 		abmlIntegrated: true,
 		diagnostics: {},
 	});
-	const savedArtifactRoot = {
-		data: { content: "Readable checkout content", actionables: [buttonEntity] },
-		pageObservation: observation,
-		envelope: { summary: { pageObservation: observation } },
-	};
-	const artifactHints = observation.artifact_hints as { jsonPaths: Record<string, string>; preferredReads: Array<{ label: string; jsonPath: string }> };
-	const savedRootPaths = [
-		(observation.content as { artifact?: { jsonPath?: string } }).artifact?.jsonPath,
-		(observation.text as { artifact?: { jsonPath?: string } }).artifact?.jsonPath,
-		...artifactHints.preferredReads.map((read) => read.jsonPath),
-	].filter((path): path is string => typeof path === "string");
-	assert.equal(savedRootPaths.some((jsonPath) => jsonPath.startsWith("result.data.")), false);
-	for (const jsonPath of savedRootPaths) {
-		assert.equal(getJsonPath(savedArtifactRoot, jsonPath).exists, true, `${jsonPath} should resolve against saved artifact root`);
-	}
-	assert.equal(getJsonPath(savedArtifactRoot, "pageObservation.content").exists, true);
-	assert.equal(getJsonPath(savedArtifactRoot.envelope, "summary.pageObservation.content").exists, true);
-	assert.equal(getJsonPath(savedArtifactRoot.envelope, "pageObservation.content").exists, false);
+	const savedArtifactRoot = built.artifact;
+	const savedRootPaths = built.inline.frontier.items.flatMap((item) => item.read ? [item.read.jsonPath] : []);
+	assert.equal(savedRootPaths.length > 0, true);
+	for (const jsonPath of savedRootPaths) assert.equal(getJsonPath(savedArtifactRoot, jsonPath).exists, true, `${jsonPath} should resolve against saved artifact root`);
+	assert.equal(Object.hasOwn(savedArtifactRoot, "pageObservation"), false);
+	assert.equal(Object.hasOwn(savedArtifactRoot, "envelope"), false);
 });
 
-test("observe scan characterization: render cache restores only the final envelope artifact path", () => {
-	const finalEnvelope = {
-		tool: "browser_observe",
-		command: "scan",
-		summary: { pageObservation: { model: "PageObservation", canonical: true } },
-		operation: { operationId: "op-final" },
-		snapshot: { snapshotId: "snap-final" },
-		saved: { path: "artifact.json" },
-		fromCache: true,
-		cache: { reason: "prior" },
-	};
-	const restored = cachedEnvelopeFromArtifact({ data: { content: "cached" }, envelope: finalEnvelope });
-	assert.deepEqual(restored, {
-		tool: "browser_observe",
-		command: "scan",
-		summary: { pageObservation: { model: "PageObservation", canonical: true } },
-	});
+test("observe scan characterization: render cache accepts only the final PageObservation v3 root", () => {
+	const root = buildPageObservation({
+		mode: "scan", canonical: true, summary: {}, entities: [], content: "cached", tabs: [], snapshot: observationSnapshot("snap-final"), abmlIntegrated: true, diagnostics: {},
+	}).artifact;
+	const restored = cachedEnvelopeFromArtifact(root);
+	assert.equal(restored?.schema, "browser-page-observation/v3");
+	assert.equal(restored?.tool, "browser_observe");
+	assert.equal(restored?.canonical, true);
+	assert.equal(cachedEnvelopeFromArtifact({ envelope: root }), undefined);
 	assert.equal(cachedEnvelopeFromArtifact({ tool: "browser_observe", command: "scan", summary: {} }), undefined);
 });
 
-test("observe scan characterization: render cache hit returns final PageObservation envelope without re-distillation", () => {
+test("observe scan characterization: render cache hit renders a single PageObservation v3 root with exact cost", () => {
 	const cacheMeta = { reason: "content-fingerprint-unchanged", changeSeq: 7, priorSnapshotId: "snap-prior" };
-	const freshEnvelope = {
-		tool: "browser_observe",
-		command: "scan",
-		detailLevel: "summary",
-		summary: {
-			model: "PageObservation",
-			canonical: true,
-			pageObservation: {
-				model: "PageObservation",
-				canonical: true,
-				context: { url: "https://example.test", activeTabId: 1, tabCount: 1 },
-			},
-		},
-		entities: [{ ref: "bp-ref://element/button/pay", kind: "control" }],
-		operation: { operationId: "op-fresh", snapshotId: "snap-fresh" },
-		snapshot: { snapshotId: "snap-fresh", sourceMode: "scan" },
-	};
-	const restored = cachedEnvelopeFromArtifact({ envelope: freshEnvelope });
-	assert.ok(restored);
-	const cachedSummary = restored.summary as Record<string, unknown>;
-	const cachedPageObservation = { ...(cachedSummary.pageObservation as Record<string, unknown>) };
-	cachedPageObservation.snapshot = { snapshotId: "snap-cache", sourceMode: "scan" };
-	cachedPageObservation.diagnostics = { fromCache: true, cache: cacheMeta };
-	const cachedEnvelope = {
-		...restored,
-		fromCache: true,
-		cache: cacheMeta,
-		delta: "session",
-		baselineSnapshotId: "snap-prior",
-		operation: { operationId: "op-cache", snapshotId: "snap-cache" },
-		snapshot: { snapshotId: "snap-cache", sourceMode: "scan" },
-		summary: {
-			...cachedSummary,
-			pageObservation: cachedPageObservation,
-			fromCache: true,
-			cache: cacheMeta,
-			priorSnapshotId: "snap-prior",
-		},
-	};
-	const result = cachedObserveResultFromEnvelope(cachedEnvelope, { fromCache: true, renderCache: { hit: true, ...cacheMeta } }, 20_000);
+	const cachedRoot = buildPageObservation({
+		mode: "scan", canonical: true, summary: { delta: "session", baselineSnapshotId: "snap-prior" }, entities: [buttonEntity], content: "cached", url: "https://example.test", tabs: [{ id: 1 }], activeTabId: 1, snapshot: observationSnapshot("snap-cache"), abmlIntegrated: true, diagnostics: { fromCache: true, cache: cacheMeta },
+	}).inline;
+	const result = cachedObserveResultFromEnvelope(cachedRoot as unknown as Record<string, unknown>, { fromCache: true, renderCache: { hit: true, ...cacheMeta } }, 20_000);
 	const output = JSON.parse(result.content[0]?.text || "{}") as Record<string, unknown>;
-	const summary = output.summary as Record<string, unknown>;
-	const pageObservation = summary.pageObservation as Record<string, unknown>;
-	assert.equal(output.tool, freshEnvelope.tool);
-	assert.equal(output.command, freshEnvelope.command);
-	assert.deepEqual(output.entities, freshEnvelope.entities);
-	assert.equal(summary.model, "PageObservation");
-	assert.equal(summary.canonical, true);
-	assert.equal(pageObservation.model, "PageObservation");
-	assert.equal(pageObservation.canonical, true);
-	assert.equal(output.fromCache, true);
-	assert.deepEqual(output.cache, cacheMeta);
-	assert.equal(summary.fromCache, true);
-	assert.deepEqual(summary.cache, cacheMeta);
-	assert.deepEqual((pageObservation.diagnostics as Record<string, unknown>).cache, cacheMeta);
-	assert.equal(summary.envelope, undefined);
-	assert.equal(output.envelope, undefined);
+	assert.equal(output.schema, "browser-page-observation/v3");
+	assert.equal(output.tool, "browser_observe");
+	assert.equal(output.model, "PageObservation");
+	assert.equal(output.delta, "session");
+	assert.equal(output.baselineSnapshotId, "snap-prior");
+	assert.deepEqual((output.diagnostics as Record<string, unknown>).cache, cacheMeta);
+	assert.equal(Object.hasOwn(output, "summary"), false);
+	const limits = output.limits as { cost: { chars: number; bytes: number; estimatedTokens: number } };
+	assert.equal(limits.cost.chars, result.content[0]?.text.length);
+	assert.equal(limits.cost.bytes, Buffer.byteLength(result.content[0]?.text || "", "utf8"));
 });
 
 test("observe scan characterization: canonical PageObservation remains stable when optional providers degrade", () => {
@@ -358,25 +290,22 @@ test("observe scan characterization: canonical PageObservation remains stable wh
 		entities: [],
 		content: "",
 		tabs: [],
-		snapshot: { snapshotId: "snap-degraded" },
+		snapshot: observationSnapshot("snap-degraded"),
 		abmlIntegrated: false,
 		diagnostics: { providerFailures: [{ provider: "abml-read", code: "BACKEND_UNAVAILABLE" }] },
-	});
+	}).inline;
 
 	assert.equal(observation.model, "PageObservation");
 	assert.equal(observation.canonical, true);
-	assert.deepEqual(observation.entities, []);
-	assert.deepEqual(observation.actionables, []);
-	assert.deepEqual(observation.refs, []);
-	assert.deepEqual(observation.context, { url: undefined, activeTabId: undefined, tabCount: 0 });
-	assert.deepEqual((observation.diagnostics as { providers: Record<string, string> }).providers, {
-		structure: "degraded",
-		content: "skipped",
-		text: "skipped",
-		html: "skipped",
-		evidence: "skipped",
-		tabs: "degraded",
-	});
+	assert.equal(observation.entities, undefined);
+	assert.equal(observation.actionables, undefined);
+	assert.equal(Object.hasOwn(observation, "refs"), false);
+	assert.equal(observation.providers.structure?.status, "degraded");
+	assert.equal(observation.providers.content?.status, "skipped");
+	assert.equal(observation.providers.text?.status, "skipped");
+	assert.equal(observation.providers.html?.status, "skipped");
+	assert.equal(observation.providers.evidence?.status, "skipped");
+	assert.equal(observation.providers.tabs?.status, "degraded");
 	assert.deepEqual((observation.diagnostics as { providerFailures: unknown[] }).providerFailures, [{ provider: "abml-read", code: "BACKEND_UNAVAILABLE" }]);
 });
 
@@ -485,16 +414,16 @@ test("observe scan characterization: provider budget telemetry normalizes status
 
 test("observe scan characterization: provider budget telemetry stays diagnostics-only and bounded", () => {
 	const secretArticle = `${"Article body ".repeat(40)}token=secret`;
-	const observation = buildPageObservation({
+	const built = buildPageObservation({
 		mode: "scan",
 		canonical: true,
-		summary: { focus: { primary_entities: [buttonEntity] }, collections: [{ ref: listEntity.ref, complete: true }] },
+		summary: { focus: { primary_entities: [buttonEntity] } },
 		entities: [buttonEntity, listEntity],
 		content: "Checkout content",
 		url: "https://example.test/checkout",
 		tabs: [{ id: 1 }],
 		activeTabId: 1,
-		snapshot: { snapshotId: "snap-telemetry" },
+		snapshot: observationSnapshot("snap-telemetry"),
 		artifactPath: "artifacts/observe-snap-telemetry.json",
 		abmlIntegrated: true,
 		diagnostics: {
@@ -518,7 +447,8 @@ test("observe scan characterization: provider budget telemetry stays diagnostics
 		},
 		providerStatuses: { readability: "degraded", axe: "executed" },
 	});
-	const diagnostics = observation.diagnostics as Record<string, unknown>;
+	const observation = built.inline;
+	const diagnostics = built.artifact.diagnostics as Record<string, unknown>;
 	const telemetry = diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>;
 	const readability = telemetry.find((item) => item.provider === "readability") as Record<string, unknown>;
 	const axe = telemetry.find((item) => item.provider === "axe") as Record<string, unknown>;
@@ -551,10 +481,10 @@ test("observe scan characterization: provider budget telemetry stays diagnostics
 	assert.equal(JSON.stringify(telemetry).includes("token=secret"), false);
 	assert.equal(JSON.stringify(telemetry).includes("samples"), false);
 	assert.equal(JSON.stringify(telemetry).includes("article"), false);
-	assert.deepEqual(observation.actionables, [buttonEntity]);
-	assert.deepEqual(observation.refs, [buttonEntity.ref, listEntity.ref]);
+	assert.equal(JSON.stringify(observation).includes("token=secret"), false);
+	assert.deepEqual(observation.actionables, [{ ref: buttonEntity.ref, kind: "control", name: "Submit", state: defaultState }]);
 	assert.deepEqual(observation.entities, [buttonEntity, listEntity]);
-	assert.deepEqual(observation.collections, [{ ref: listEntity.ref, complete: true }]);
+	assert.equal(observation.collections, undefined);
 });
 
 test("observe scan characterization: provider budget telemetry omits live-only providers unless requested", () => {
@@ -565,15 +495,13 @@ test("observe scan characterization: provider budget telemetry omits live-only p
 		entities: [buttonEntity],
 		content: "Checkout content",
 		tabs: [{ id: 1 }],
-		snapshot: { snapshotId: "snap-default-telemetry" },
+		snapshot: observationSnapshot("snap-default-telemetry"),
 		abmlIntegrated: true,
 		diagnostics: {},
-	});
-	const diagnostics = observation.diagnostics as Record<string, unknown>;
-	const telemetry = diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>;
-	assert.equal(telemetry.some((item) => item.provider === "axe"), false);
-	assert.equal(telemetry.some((item) => item.provider === "readability"), false);
-	assert.deepEqual(telemetry.map((item) => item.provider), ["structure", "content", "text", "html", "evidence", "tabs"]);
+	}).inline;
+	assert.equal(Object.hasOwn(observation.providers, "axe"), false);
+	assert.equal(Object.hasOwn(observation.providers, "readability"), false);
+	assert.deepEqual(Object.keys(observation.providers), ["structure", "content", "text", "html", "evidence", "tabs", "causal"]);
 });
 
 test("observe scan characterization: ledger facts preserve stable refs across relation-only enrichment", () => {

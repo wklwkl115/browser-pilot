@@ -1,4 +1,5 @@
 import { stableJson } from "../utils/json.js";
+import { readFile } from "node:fs/promises";
 import { buildSaveTextArtifactPlan, artifactPlanReasons, type ArtifactPlan, type ArtifactPlanReason } from "../kernels/evidence/distill/artifactPlan.js";
 import { normalizeDetailLevel, type DetailLevel } from "../utils/params.js";
 import { jsonResult, textResult, type BrowserTextCommandResult } from "../utils/toolResult.js";
@@ -16,6 +17,8 @@ import { normalizedPrivacy, redactForModel } from "./resultRedaction.js";
 import { collectRefs } from "../kernels/refs/text.js";
 import { firstDefined, pickDefined } from "../utils/records.js";
 import { hasJsonPathValue } from "../utils/jsonPath.js";
+import { isPageObservationV3, type ObservationFrontierItem, type PageObservationV3, type SavedObservationArtifact } from "../kernels/abml/pageObservation.js";
+import { renderWithExactCost } from "../kernels/evidence/cost.js";
 
 // Mandatory-read pair with commandRuntime.ts: keep envelope fields, redaction, distillation,
 // artifact fallback, and evidence behavior centralized here.
@@ -174,11 +177,11 @@ function compactArtifactHints(options: DistillBaseOptions, summary: DistilledSum
 	collectPathHint(paths, preferredReads, rawValue, "result", "result", "execute-result");
 	collectPathHint(paths, preferredReads, rawValue, "body", "body", "body");
 	collectPathHint(paths, preferredReads, rawValue, "text", "text", "text");
-	collectPathHint(paths, preferredReads, rawValue, "content text", "data.content", "text");
-	collectPathHint(paths, preferredReads, rawValue, "actionables", "data.actionables", "primary-items");
-	collectPathHint(paths, preferredReads, rawValue, "list hints", "data.list_hints", "primary-items");
-	collectPathHint(paths, preferredReads, rawValue, "rows", "data.rows", "primary-items");
-	collectPathHint(paths, preferredReads, rawValue, "media candidates", "data.media_candidates", "primary-items");
+	collectPathHint(paths, preferredReads, rawValue, "content text", "data.content.text", "text");
+	collectPathHint(paths, preferredReads, rawValue, "actionables", "data.structure.actionables", "primary-items");
+	collectPathHint(paths, preferredReads, rawValue, "list hints", "data.structure.listHints", "primary-items");
+	collectPathHint(paths, preferredReads, rawValue, "rows", "data.structure.rows", "primary-items");
+	collectPathHint(paths, preferredReads, rawValue, "media candidates", "data.structure.mediaCandidates", "primary-items");
 	mergeSummaryArtifactHints(summary, paths, preferredReads, rawValue);
 	const savedDescriptor = compactArtifactDescriptor(saved);
 	if (!Object.keys(paths).length && !savedDescriptor) return undefined;
@@ -448,6 +451,175 @@ function renderEnvelopeWithSerializeTiming(envelope: DistilledEnvelope, options:
 
 function textResultSummary(text: string, options: DistilledTextOptions): Record<string, unknown> {
 	return options.summary || options.distill?.(text) || summarizeHtmlSnapshot(text);
+}
+
+export type PageObservationResultOptions = {
+	inline: PageObservationV3;
+	artifact: PageObservationV3;
+	maxChars: number;
+	outputPath?: string;
+	fallbackName: string;
+	ctx?: { cwd?: string };
+	details?: Record<string, unknown>;
+	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
+};
+
+function observationWithExactCost(observation: PageObservationV3): { value: PageObservationV3; rendered: string } {
+	return renderWithExactCost(observation, (current, cost) => ({
+		...current,
+		limits: { ...current.limits, cost },
+	}));
+}
+
+function observationArtifactHints(observation: PageObservationV3): Record<string, unknown> | undefined {
+	const reads = observation.frontier.items.flatMap((item) => item.read ? [{ label: item.ref, jsonPath: item.read.jsonPath, kind: item.kind }] : []);
+	if (!reads.length) return undefined;
+	return { jsonPaths: Object.fromEntries(reads.map((read) => [read.label, read.jsonPath])), preferredReads: reads };
+}
+
+function verifyObservationFrontier(observation: PageObservationV3, persisted: unknown): { observation: PageObservationV3; changed: boolean } {
+	let changed = false;
+	const items = observation.frontier.items.map((item): ObservationFrontierItem => {
+		if (!item.read || hasJsonPathValue(persisted, item.read.jsonPath)) return item;
+		changed = true;
+		const { read: _read, ...rest } = item;
+		return { ...rest, state: "unavailable", unavailableReason: `artifact path ${item.read.jsonPath} is unavailable` };
+	});
+	return { observation: { ...observation, frontier: { items } }, changed };
+}
+
+function savedObservationDescriptor(saved: Awaited<ReturnType<typeof saveTextArtifact>>): SavedObservationArtifact {
+	return { path: saved.path, chars: saved.chars, bytes: saved.bytes, ...(saved.privacy ? { privacy: saved.privacy } : {}) };
+}
+
+function sameSavedObservation(left: SavedObservationArtifact, right: SavedObservationArtifact): boolean {
+	return left.path === right.path
+		&& left.chars === right.chars
+		&& left.bytes === right.bytes
+		&& JSON.stringify(left.privacy ?? null) === JSON.stringify(right.privacy ?? null);
+}
+
+function observationWithSavedDescriptor(observation: PageObservationV3, saved: SavedObservationArtifact): { observation: PageObservationV3; rendered: string; saved: SavedObservationArtifact } {
+	const { saved: _saved, artifact_hints: _artifactHints, ...root } = observation;
+	let descriptor = saved;
+	for (let iteration = 0; iteration < 32; iteration += 1) {
+		const hints = observationArtifactHints(root as PageObservationV3);
+		const exact = observationWithExactCost({
+			...root,
+			saved: descriptor,
+			...(hints ? { artifact_hints: hints } : {}),
+		} as PageObservationV3);
+		const nextDescriptor: SavedObservationArtifact = { ...descriptor, chars: exact.rendered.length, bytes: Buffer.byteLength(exact.rendered, "utf8") };
+		if (sameSavedObservation(descriptor, nextDescriptor)) return { observation: exact.value, rendered: exact.rendered, saved: nextDescriptor };
+		descriptor = nextDescriptor;
+	}
+	throw new Error("PageObservation artifact descriptor did not converge");
+}
+
+async function writePageObservationArtifact(options: PageObservationResultOptions, observation: PageObservationV3, requestedPath: string | undefined): Promise<{ observation: PageObservationV3; saved: SavedObservationArtifact }> {
+	const seed = observationWithExactCost(observation);
+	let persisted = await saveTextArtifact(options.ctx, requestedPath, options.fallbackName, seed.rendered);
+	for (let iteration = 0; iteration < 4; iteration += 1) {
+		const finalized = observationWithSavedDescriptor(observation, savedObservationDescriptor(persisted));
+		const written = await saveTextArtifact(options.ctx, persisted.path, options.fallbackName, finalized.rendered);
+		const actual = savedObservationDescriptor(written);
+		if (sameSavedObservation(finalized.saved, actual)) return { observation: finalized.observation, saved: actual };
+		persisted = written;
+	}
+	throw new Error("PageObservation persisted descriptor did not converge");
+}
+
+async function readPersistedObservation(path: string): Promise<PageObservationV3> {
+	const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+	if (!isPageObservationV3(parsed)) throw new Error("Persisted PageObservation failed v3 runtime validation");
+	return parsed;
+}
+
+async function persistPageObservationArtifact(options: PageObservationResultOptions): Promise<{ observation: PageObservationV3; saved: SavedObservationArtifact }> {
+	let persisted = await writePageObservationArtifact(options, options.artifact, options.outputPath);
+	let disk = await readPersistedObservation(persisted.saved.path);
+	const verified = verifyObservationFrontier(persisted.observation, disk);
+	if (verified.changed) {
+		persisted = await writePageObservationArtifact(options, verified.observation, persisted.saved.path);
+		disk = await readPersistedObservation(persisted.saved.path);
+	}
+	const finalVerification = verifyObservationFrontier(persisted.observation, disk);
+	if (finalVerification.changed) throw new Error("Persisted PageObservation contains an unverified frontier read");
+	const actualText = await readFile(persisted.saved.path, "utf8");
+	const actualSaved = { ...persisted.saved, chars: actualText.length, bytes: Buffer.byteLength(actualText, "utf8") };
+	if (!sameSavedObservation(persisted.saved, actualSaved)) throw new Error("Persisted PageObservation descriptor does not match file bytes");
+	return persisted;
+}
+
+function overflowFrontierItem(field: string): ObservationFrontierItem {
+	const kind: ObservationFrontierItem["kind"] = field === "snapshotProjection"
+		? "template-instances"
+		: field === "collections"
+			? "collection-window"
+			: "diagnostics";
+	return {
+		ref: `frontier:inline:${field}`,
+		kind,
+		state: "truncated",
+		read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: field },
+	};
+}
+
+function fitPageObservationInline(observation: PageObservationV3, maxChars: number): { observation: PageObservationV3; rendered: string; omittedCount: number } {
+	let current = { ...observation, limits: { ...observation.limits, budgetChars: maxChars } };
+	let omittedCount = 0;
+	const fit = () => observationWithExactCost(current);
+	let exact = fit();
+	const drop = (field: keyof PageObservationV3, frontier = true) => {
+		if (current[field] === undefined) return;
+		const { [field]: _omitted, ...rest } = current;
+		const item = overflowFrontierItem(String(field));
+		const items = frontier && !current.frontier.items.some((existing) => existing.read?.jsonPath === String(field))
+			? [...current.frontier.items.filter((existing) => existing.ref !== item.ref), item]
+			: current.frontier.items;
+		current = { ...rest, frontier: { items }, limits: { ...current.limits, truncated: true } } as PageObservationV3;
+		omittedCount += 1;
+		exact = fit();
+	};
+	for (const field of ["artifact_hints", "diagnostics", "treeDiff", "causal", "diff", "inference", "identity", "relations", "snapshotProjection", "collections", "entities", "outline", "nextActions"] as const) {
+		if (exact.rendered.length <= maxChars) break;
+		drop(field, field !== "artifact_hints");
+	}
+	if (exact.rendered.length > maxChars && current.gist) drop("gist");
+	if (exact.rendered.length > maxChars && current.saved?.privacy) {
+		current = { ...current, saved: { path: current.saved.path, chars: current.saved.chars, bytes: current.saved.bytes }, limits: { ...current.limits, truncated: true } };
+		omittedCount += 1;
+		exact = fit();
+	}
+	if (exact.rendered.length > maxChars) {
+		const compactProviders = Object.fromEntries(Object.entries(current.providers).map(([provider, value]) => [provider, { planned: value.planned, status: value.status, ...(value.reason ? { reason: value.reason } : {}) }]));
+		if (JSON.stringify(compactProviders) !== JSON.stringify(current.providers)) {
+			const item = overflowFrontierItem("providers");
+			current = { ...current, providers: compactProviders, frontier: { items: [...current.frontier.items.filter((existing) => existing.ref !== item.ref), item] }, limits: { ...current.limits, truncated: true } };
+			omittedCount += 1;
+			exact = fit();
+		}
+	}
+	if (exact.rendered.length > maxChars) throw new Error(`PageObservation v3 cannot fit maxChars=${maxChars}; minimum rendered size is ${exact.rendered.length}`);
+	return { observation: exact.value, rendered: exact.rendered, omittedCount };
+}
+
+/** Canonical observe renderer. It never creates a generic summary/evidence mirror. */
+export async function pageObservationResult(options: PageObservationResultOptions): Promise<BrowserTextCommandResult> {
+	const persisted = await persistPageObservationArtifact(options);
+	const verifiedInline: PageObservationV3 = {
+		...options.inline,
+		frontier: persisted.observation.frontier,
+		saved: persisted.saved,
+		...(observationArtifactHints(persisted.observation) ? { artifact_hints: observationArtifactHints(persisted.observation) } : {}),
+	};
+	const modelSafe = redactForModel(verifiedInline, persisted.saved as unknown as Record<string, unknown>, persisted.observation);
+	const fitted = fitPageObservationInline(modelSafe, Math.max(1, Math.floor(options.maxChars)));
+	options.onAllocation?.({ budgetUsedRatio: Math.min(1, fitted.rendered.length / Math.max(1, options.maxChars)), omittedCount: fitted.omittedCount });
+	return {
+		content: [{ type: "text", text: fitted.rendered }],
+		details: { ...(options.details ?? {}), saved: persisted.saved },
+	};
 }
 
 export async function distilledJsonResult(value: unknown, options: DistilledJsonOptions): Promise<BrowserTextCommandResult> {

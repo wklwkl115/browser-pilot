@@ -1,5 +1,5 @@
 import { chromeApi as chrome } from "./runtimeEnv";
-import { emitBrowserPilotOperationEvent } from "./operation_event_transport";
+import { emitBrowserPilotOperationEvent, releaseBrowserPilotOperationEventSocket } from "./operation_event_transport";
 import type { BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotChromeDownloadItem, BrowserPilotChromeTab, BrowserPilotWaitRecord, JsonRecord } from "./types";
 import { enableBrowserPilotCdpDomains, releaseBrowserPilotCdpDomains } from "./wait_cdp";
 
@@ -162,9 +162,13 @@ async function removeMutationObserver(operation: OperationState): Promise<void> 
 
 async function deleteOperation(operationId: string): Promise<void> {
 	const operation = operations.get(operationId);
-	if (!operation) return;
+	if (!operation) {
+		releaseBrowserPilotOperationEventSocket(operationId);
+		return;
+	}
 	if (operation.cleanupTimer) clearTimeout(operation.cleanupTimer);
 	operations.delete(operationId);
+	releaseBrowserPilotOperationEventSocket(operationId);
 	if (operation.cdpRecord) releaseBrowserPilotCdpDomains(operation.cdpRecord, operation.cdpRecord.cdpDomains, "operation_cleanup");
 	await removeMutationObserver(operation);
 	uninstallListenersIfIdle();

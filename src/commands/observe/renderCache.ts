@@ -2,6 +2,7 @@ import type { CommandPerceptionLedgerFrame } from "../../ports/BrowserCommandRun
 import { isRecord } from "../../utils/records.js";
 import type { PageFingerprint } from "../pageSignals.js";
 import type { ObserveMode, ObserveToolParams } from "./common.js";
+import { isPageObservationV3, type PageObservationV3 } from "../../kernels/abml/pageObservation.js";
 
 type RenderCache = NonNullable<CommandPerceptionLedgerFrame["renderCache"]>;
 
@@ -50,7 +51,7 @@ function observeRendererCacheMarker(): string {
 }
 
 function observeCostModelCacheMarker(): string {
-	return process.env.BROWSER_PILOT_TOKEN_COST === "1" ? "token" : "byte";
+	return "estimated-tokens-v1";
 }
 
 function observeSessionDeltaCacheMarker(params: ObserveToolParams): string {
@@ -139,19 +140,6 @@ export function renderCacheMatches(frame: CommandPerceptionLedgerFrame | undefin
 		&& frame.renderCache.paramsSignature === paramsSignature;
 }
 
-export function stripCachedObserveMeta(record: Record<string, unknown>): Record<string, unknown> {
-	const { operation: _operation, snapshot: _snapshot, cache: _cache, fromCache: _fromCache, saved: _saved, ...rest } = record;
-	return rest;
-}
-
-function canonicalCachedEnvelope(record: Record<string, unknown>): Record<string, unknown> | undefined {
-	const envelope = isRecord(record.envelope) ? record.envelope as Record<string, unknown> : undefined;
-	if (!envelope) return undefined;
-	return stripCachedObserveMeta(envelope);
-}
-
-export function cachedEnvelopeFromArtifact(value: unknown): Record<string, unknown> | undefined {
-	const record = isRecord(value) ? value : undefined;
-	if (!record) return undefined;
-	return canonicalCachedEnvelope(record);
+export function cachedEnvelopeFromArtifact(value: unknown): PageObservationV3 | undefined {
+	return isPageObservationV3(value) ? value : undefined;
 }

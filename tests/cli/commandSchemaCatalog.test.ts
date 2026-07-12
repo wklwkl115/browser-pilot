@@ -86,15 +86,17 @@ test("public action catalog has one owner per raw/CLI action and canonical kebab
 		assert.ok(action.schemaRef.length > 0);
 	}
 	const captureReload = actions.find((action) => action.commandName === "browser_network" && action.action === "captureReload");
-	assert.deepEqual(captureReload, {
-		commandName: "browser_network",
-		action: "captureReload",
-		cliAction: "capture-reload",
-		owner: "command",
-		schemaRef: "command:browser_network#captureReload",
-		required: [],
-		requiredAny: [],
-	});
+	assert.ok(captureReload);
+	assert.equal(captureReload.commandName, "browser_network");
+	assert.equal(captureReload.action, "captureReload");
+	assert.equal(captureReload.cliAction, "capture-reload");
+	assert.equal(captureReload.owner, "command");
+	assert.equal(captureReload.schemaRef, "command:browser_network#captureReload");
+	assert.deepEqual(captureReload.required, []);
+	assert.deepEqual(captureReload.requiredAny, []);
+	assert.equal(captureReload.paramsSchema.type, "object");
+	assert.equal(captureReload.paramsSchema.additionalProperties, false);
+	assert.equal(typeof (captureReload.paramsSchema.properties as Record<string, unknown>).url, "object");
 	const network = buildCliCommands().find((command) => command.name === "browser_network");
 	assert.ok(network);
 	assert.equal(naturalActionForToken(network, "capture-reload"), "captureReload");
@@ -124,9 +126,9 @@ test("command catalog governance: every public native write command has an opera
 
 test("command schema characterization: every public command has strict object parameters and executable metadata", () => {
 	const retiredOrInternal = new Set([
-		"browserSessionId", "detailLevel", "maxChars", "timeoutMs", "outputPath", "maxBodyBytes", "maxDepth", "maxPages",
+		"maxBodyBytes", "maxDepth", "maxPages",
 		"maxCases", "maxCandidates", "maxTemplates", "rateLimitPerSecond", "timeoutSeconds", "harMaxEntries", "followRedirects",
-		"maxRedirects", "defaultScheme", "cookieMode", "redact", "monitor", "modeExplicit", "operationId", "toolCallId",
+		"maxRedirects", "defaultScheme", "cookieMode", "monitor", "modeExplicit", "operationId", "toolCallId",
 	]);
 	for (const def of collectCommandDefs()) {
 		assert.equal(typeof def.execute, "function", `${def.name} execute`);

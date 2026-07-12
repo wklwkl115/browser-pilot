@@ -1,6 +1,7 @@
 import { validateCommandArgs } from "../validation/commandArgs.js";
 import { isRecord } from "../utils/records.js";
 import type { BrowserCommandDefinition, ValidationIssue } from "./commandDefinition.js";
+import { actionSchemaForDefinition } from "./actionSchemas.js";
 
 export type BrowserCommandValidationResult =
 	| { ok: true; args: Record<string, unknown> }
@@ -87,6 +88,13 @@ export function validateBrowserCommandArguments(definition: BrowserCommandDefini
 
 	const schema = validateCommandArgs(definition.parameters, normalized);
 	if (!schema.ok) return { ok: false, error: schema.error, issues: schema.issues };
+	if (typeof schema.args.action === "string") {
+		const actionSchema = actionSchemaForDefinition(definition, schema.args.action);
+		if (actionSchema) {
+			const actionValidation = validateCommandArgs(actionSchema, schema.args);
+			if (!actionValidation.ok) return { ok: false, error: actionValidation.error, issues: actionValidation.issues };
+		}
+	}
 	const semanticIssues = definition.validateArguments?.(schema.args) ?? [];
 	return semanticIssues.length ? failure(semanticIssues) : { ok: true, args: schema.args };
 }

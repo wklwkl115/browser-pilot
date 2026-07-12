@@ -80,6 +80,28 @@ test("tab replacement preserves stable handles, advances target generation, and 
 	assert.equal(router.resolveTargetRef({ createdTarget: { targetRef: handle } })?.tabId, 9);
 });
 
+test("Prerender2 same-tab activation advances target generation exactly once", () => {
+	const { clients, browserSessions, router } = setup();
+	const ws = connect(clients);
+	browserSessions.selectClient(browserSessions.defaultSession(), ws);
+	router.updateTabs([{ id: 11, url: "https://prerender.test/host", title: "Host", active: true, pageEpoch: "page-host", documentId: "doc-host" }], ws);
+	const before = router.getTabs()[0];
+	assert.ok(before);
+
+	assert.equal(router.applyTabReplacements([{ from: 11, to: 11 }], ws, 100).length, 0);
+	assert.equal(router.applyTabReplacements([{ from: 11, to: 11, at: 101, kind: "prerender-activation" }], ws, 101).length, 1);
+	assert.equal(router.applyTabReplacements([{ from: 11, to: 11, at: 101, kind: "prerender-activation" }], ws, 102).length, 0);
+	router.updateTabs([{ id: 11, url: "https://prerender.test/target", title: "Target", active: true, pageEpoch: "page-target", documentId: "doc-target" }], ws);
+
+	const after = router.getTabs()[0];
+	assert.equal(after?.tabId, 11);
+	assert.equal(after?.tabHandle, before.tabHandle);
+	assert.equal(after?.generation, before.generation + 1);
+	assert.equal(after?.pageEpoch, "page-target");
+	assert.equal(after?.documentId, "doc-target");
+	assert.equal(after?.replacedFromTabId, 11);
+});
+
 test("same-extension reconnect adopts identity and migrates secondary session selection", () => {
 	const { clients, browserSessions, router } = setup();
 	const previous = connect(clients);

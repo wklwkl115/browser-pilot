@@ -23,6 +23,8 @@ export type RecorderSeq = {
 	lastSeq?: number;
 };
 
+export type RecorderDelta = RecorderSeq & { items: Array<Record<string, unknown>> };
+
 export type PageSignalOptions = {
 	browserSessionId?: string;
 	tabId?: number;
@@ -90,11 +92,15 @@ export async function readNetworkRecorderSeq(server: BrowserCommandRuntimePort, 
 	}
 }
 
-export async function queryNetworkDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<Array<Record<string, unknown>>> {
-	if (!options.tabId) return [];
+export async function queryNetworkDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<RecorderDelta> {
+	if (!options.tabId) return { active: false, items: [] };
 	const res = await server.sendCommand({ cmd: "network.list", sinceSeq: options.sinceSeq, limit: 500 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
 	const data = isRecord(res.data) ? res.data : {};
-	return Array.isArray(data.items) ? data.items.filter(isRecord) : [];
+	return {
+		active: data.active !== false,
+		...(typeof data.lastSeq === "number" ? { lastSeq: data.lastSeq } : {}),
+		items: Array.isArray(data.items) ? data.items.filter(isRecord) : [],
+	};
 }
 
 export async function readHookRecorderSeq(server: BrowserCommandRuntimePort, options: PageSignalOptions): Promise<RecorderSeq> {
@@ -109,9 +115,14 @@ export async function readHookRecorderSeq(server: BrowserCommandRuntimePort, opt
 	}
 }
 
-export async function queryHookDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<Array<Record<string, unknown>>> {
-	if (!options.tabId) return [];
+export async function queryHookDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<RecorderDelta> {
+	if (!options.tabId) return { active: false, items: [] };
 	const res = await server.sendCommand({ cmd: "hook.collect", since_seq: options.sinceSeq, limit: 200 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
 	const data = isRecord(res.data) ? res.data : {};
-	return Array.isArray(data.events) ? data.events.filter(isRecord) : [];
+	const lastSeq = typeof data.lastSeq === "number" ? data.lastSeq : typeof data.last_seq === "number" ? data.last_seq : undefined;
+	return {
+		active: data.active !== false,
+		...(lastSeq !== undefined ? { lastSeq } : {}),
+		items: Array.isArray(data.events) ? data.events.filter(isRecord) : [],
+	};
 }

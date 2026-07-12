@@ -98,6 +98,11 @@ async function runBuild() {
 	console.log("ok: build");
 }
 
+async function runPackageSmoke() {
+	await run("node", ["scripts/package-smoke.mjs"], "package-smoke");
+	console.log("ok: package-smoke");
+}
+
 async function runNativeBuild() {
 	await run("node", ["scripts/build-native.mjs", "--required"], "build:native");
 	console.log("ok: build:native");
@@ -145,6 +150,7 @@ if (mode === "verify") {
 	await runComplexityAudit();
 	await runFullLint();
 	await runBuild();
+	await runPackageSmoke();
 	process.exit(0);
 }
 

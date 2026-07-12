@@ -172,6 +172,7 @@ type CommandSpec = {
 	methodRequired?: boolean;
 	required?: string[];
 	requiredAny?: string[][];
+	paramsSchema?: Record<string, unknown>;
 	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "requiredAny" | "accessMode">>;
 	canonical?: string;
 	notes?: string;
@@ -282,6 +283,7 @@ function generatedNativeActionMetadata() {
 			const enriched = { ...action };
 			if (Array.isArray(spec.required) && spec.required.length) enriched.required = spec.required;
 			if (Array.isArray(spec.requiredAny) && spec.requiredAny.length) enriched.requiredAny = spec.requiredAny;
+			if (spec.paramsSchema && typeof spec.paramsSchema === "object") enriched.paramsSchema = spec.paramsSchema;
 			if (typeof spec.notes === "string" && spec.notes) enriched.notes = spec.notes;
 			return enriched;
 		});

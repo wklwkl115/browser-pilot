@@ -31,7 +31,7 @@ export const SUMMARY_MAX_CHARS = 12_000;
 
 const PREVIEW_FALLBACK_CHARS = 800;
 const OVERFLOW_GUARD_LIMITS = { stringChars: 800, arrayItems: 20, tableRows: 20 } as const;
-const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
+const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "frameNotes"]);
 const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "collections", "identity", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
 // Envelope field survival under budget pressure, expressed as explicit value tiers so survival is by
 // declared rank in ONE place — never scattered by-name patches across the fit phases. Reprioritizing
@@ -95,28 +95,9 @@ function scalarIdentityFields(summary: DistilledSummary): DistilledSummary {
 	return out;
 }
 
-function canonicalPageObservationMarker(summary: DistilledSummary): DistilledSummary | undefined {
-	const pageObservation = summary.pageObservation;
-	if (isRecord(pageObservation) && pageObservation.model === "PageObservation" && pageObservation.canonical === true) return { model: "PageObservation", canonical: true };
-	return undefined;
-}
-
-function withCanonicalPageObservationMarker(candidate: DistilledSummary, source: DistilledSummary, budget: number): DistilledSummary {
-	const marker = canonicalPageObservationMarker(source);
-	if (!marker) return candidate;
-	if (isRecord(candidate.pageObservation) && candidate.pageObservation.model === "PageObservation" && candidate.pageObservation.canonical === true) return candidate;
-	const withMarker = { ...candidate, pageObservation: marker };
-	if (stableJsonLength(withMarker) <= budget) return withMarker;
-	const withoutPreview = { ...candidate };
-	delete withoutPreview.preview;
-	const compact = { ...withoutPreview, pageObservation: marker };
-	return stableJsonLength(compact) <= budget ? compact : candidate;
-}
-
 export function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledSummary {
 	const original = measureSummary(summary);
 	const workingSummary = original.summary;
-	const finalize = (candidate: DistilledSummary): DistilledSummary => withCanonicalPageObservationMarker(candidate, workingSummary, budget);
 	if (original.length <= budget) return workingSummary;
 	for (const limits of [
 		{ stringChars: 800, arrayItems: 20, tableRows: 20 },
@@ -125,11 +106,11 @@ export function fitSummaryBudget(summary: DistilledSummary, budget: number): Dis
 		{ stringChars: 120, arrayItems: 5, tableRows: 5 },
 	]) {
 		const compacted = measureSummary(compactSummaryValue(workingSummary, limits) as DistilledSummary);
-		if (compacted.length <= budget) return finalize(compacted.summary);
+		if (compacted.length <= budget) return compacted.summary;
 	}
 	const compact120 = compactSummaryValue(workingSummary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary;
 	const dropped = dropLowPrioritySummaryFields(compact120, budget);
-	if (dropped.length <= budget) return finalize(dropped.summary);
+	if (dropped.length <= budget) return dropped.summary;
 	const keptScalars = scalarIdentityFields(workingSummary);
 	const droppedKeys = Object.keys(workingSummary).filter((key) => !(key in keptScalars));
 	const scalarBase: DistilledSummary = { ...keptScalars, summaryTruncatedToBudget: true, ...(droppedKeys.length ? { summaryOmitted: droppedKeys } : {}) };
@@ -145,10 +126,10 @@ export function fitSummaryBudget(summary: DistilledSummary, budget: number): Dis
 	let previewChars = Math.max(0, Math.min(previewSource.length, budget, PREVIEW_FALLBACK_CHARS));
 	while (previewChars >= 0) {
 		const candidate = previewChars > 0 ? { ...minimalBase, preview: previewSource.slice(0, previewChars) } : minimalBase;
-		if (stableJson(candidate).length <= budget) return finalize(candidate);
+		if (stableJson(candidate).length <= budget) return candidate;
 		previewChars = previewChars <= 32 ? -1 : Math.floor(previewChars * 0.75);
 	}
-	return finalize({ summaryTruncatedToBudget: true });
+	return { summaryTruncatedToBudget: true };
 }
 
 function compactEntityForEnvelope(entity: Record<string, unknown>): Record<string, unknown> {

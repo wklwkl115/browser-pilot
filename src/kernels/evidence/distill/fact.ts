@@ -15,7 +15,7 @@ export const FACT_GRANULARITY_ORDER: Array<Exclude<FactGranularity, "omit">> = [
 export type FactRendering = {
 	value?: unknown;
 	text?: string;
-	cost: number;
+	cost: CostVector;
 };
 
 export type Fact = {
@@ -36,7 +36,6 @@ export type PlaneFloor = {
 
 export type AllocationOptions = {
 	minDensity?: number;
-	costModel?: "byte" | "token";
 	granularityCeiling?: Exclude<FactGranularity, "omit">;
 	stableRefs?: Set<string>;
 };
@@ -44,3 +43,4 @@ export type AllocationOptions = {
 export function salienceValue(salience: FactSalience): number {
 	return (salience.actionability || 0) + (salience.novelty || 0) + (salience.consequence || 0) + (salience.structure || 0) + (salience.relevance || 0);
 }
+import type { CostVector } from "../cost.js";

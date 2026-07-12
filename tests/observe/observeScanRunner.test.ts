@@ -7,6 +7,8 @@ import type { BrowserCommandRuntimePort, BrowserTabLike, CommandActiveOperationI
 import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
 import { runScanObservation } from "../../src/commands/observe/scanRunner.ts";
 import type { ObserveToolParams } from "../../src/commands/observe/common.ts";
+import { pageWorldScanBundle } from "../helpers/pageWorldScan.ts";
+import { getJsonPath } from "../../src/utils/jsonPath.ts";
 
 type MockOptions = {
 	cwd?: string;
@@ -24,9 +26,17 @@ type MockOptions = {
 	axeThrows?: boolean;
 	readabilityPayload?: unknown;
 	readabilityThrows?: boolean;
+	scanPayload?: unknown;
+	captureContractVersion?: number;
 	pageEpoch?: string;
 	targetGeneration?: number;
 	captureTargetPageEpoch?: string;
+	knownNetwork?: { active: boolean; lastSeq?: number };
+	knownHook?: { active: boolean; lastSeq?: number };
+	statusNetwork?: { active: boolean; lastSeq?: number };
+	statusHook?: { active: boolean; lastSeq?: number };
+	networkDeltaLastSeq?: number;
+	hookDeltaLastSeq?: number;
 };
 
 const articleFixture = {
@@ -58,30 +68,53 @@ function assertNotIncludes(value: unknown, needle: string): void {
 }
 
 function assertProviderFailure(diagnostics: Record<string, unknown>, provider: string, code: string): void {
-	const failures = diagnostics.providerFailures as Array<Record<string, unknown>>;
+	const failures = Array.isArray(diagnostics.providerFailures) ? diagnostics.providerFailures as Array<Record<string, unknown>> : [];
 	assert.equal(failures.some((failure) => failure.provider === provider && failure.code === code), true);
 }
 
+function artifactDiagnostics(artifact: Record<string, unknown>): Record<string, unknown> {
+	return artifact.diagnostics as Record<string, unknown>;
+}
+
+function providerArtifact(artifact: Record<string, unknown>, provider: "axe" | "readability"): Record<string, unknown> {
+	const diagnostics = artifactDiagnostics(artifact);
+	const providers = diagnostics.providerArtifacts as Record<string, unknown>;
+	return providers[provider] as Record<string, unknown>;
+}
+
 function readabilityArtifact(artifact: Record<string, unknown>): Record<string, unknown> {
-	return artifact.readability as Record<string, unknown>;
+	return providerArtifact(artifact, "readability");
 }
 
 function readabilityArticle(artifact: Record<string, unknown>): Record<string, unknown> {
 	return readabilityArtifact(artifact).article as Record<string, unknown>;
 }
 
-function scanData(options: MockOptions): Record<string, unknown> {
-	const tabId = options.tabId ?? 7;
-	return {
-		url: options.tabUrl ?? "https://example.test/checkout",
-		title: options.tabTitle ?? "Checkout",
-		content: options.content ?? "Checkout content",
-		actionables: [
-			{ kind: "button", label: "Pay now", text: "Pay now", selector: "#pay", rect: { x: 1, y: 2, width: 90, height: 30 } },
-		],
+function providerReport(observation: Record<string, unknown>, provider: string): Record<string, unknown> {
+	return (observation.providers as Record<string, Record<string, unknown>>)[provider] ?? {};
+}
+
+async function readObservationArtifact(saved: Record<string, unknown> | undefined): Promise<Record<string, unknown>> {
+	assert.equal(typeof saved?.path, "string");
+	return JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
+}
+
+function scanData(options: MockOptions): ReturnType<typeof pageWorldScanBundle> {
+	const content = options.content ?? "Checkout content";
+	return pageWorldScanBundle({
+		page: {
+			url: options.tabUrl ?? "https://example.test/checkout",
+			title: options.tabTitle ?? "Checkout",
+		},
+		content: { text: content, tree: content },
+		structure: {
+			actionables: [
+				{ kind: "button", label: "Pay now", text: "Pay now", selector: "#pay", rect: { x: 1, y: 2, width: 90, height: 30 } },
+			],
+		},
 		signals: { fingerprint: { changeSeq: 1, url: options.tabUrl ?? "https://example.test/checkout" } },
-		tabId,
-	};
+		stats: { outputChars: content.length },
+	});
 }
 
 function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort & { calls: { refreshTabs: number; getTabs: number; sendCommand: BrowserRuntimeCommand[]; axe: number; readability: number } } {
@@ -99,6 +132,9 @@ function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort 
 	let snapshotSeq = 0;
 	const operations = new Map<string, CommandActiveOperationInfo>();
 	const snapshots = new Map<string, CommandObservationSnapshotInfo>();
+	const recorderStates = new Map<string, { active: boolean; lastSeq?: number }>();
+	if (options.knownNetwork) recorderStates.set("network", { ...options.knownNetwork });
+	if (options.knownHook) recorderStates.set("hook", { ...options.knownHook });
 	const calls = { refreshTabs: 0, getTabs: 0, sendCommand: [] as BrowserRuntimeCommand[], axe: 0, readability: 0 };
 	const server = {
 		calls,
@@ -111,6 +147,7 @@ function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort 
 				connectedClients: 1,
 				extensionConnected: true,
 				clients: [],
+				...(options.captureContractVersion === undefined ? {} : { extension: { id: "extension-1", captureContractVersion: options.captureContractVersion } }),
 				...(options.noDefaultTab ? {} : { defaultTabId: options.tabDefault ?? tabId }),
 				selectionVersion: 1,
 				tabs,
@@ -134,6 +171,17 @@ function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort 
 		},
 		async sendCommand(command: BrowserRuntimeCommand) {
 			calls.sendCommand.push(command);
+			if (command.cmd === "batch") {
+				const commands = Array.isArray(command.commands) ? command.commands as Array<Record<string, unknown>> : [];
+				return {
+					id: "status-probe",
+					acknowledged: true,
+					tabId,
+					results: commands.map((item) => item.cmd === "network.status"
+						? { ok: true, data: options.statusNetwork ?? { active: false } }
+						: item.cmd === "hook.status" ? { ok: true, data: options.statusHook ?? { active: false } } : { ok: false }),
+				} as BrowserBridgeExecutionResult;
+			}
 			if (command.cmd === "content.fingerprint") return { id: "fingerprint", acknowledged: true, tabId, data: { changeSeq: 1, url: options.tabUrl ?? "https://example.test/checkout", ...(options.pageEpoch ? { pageEpoch: options.pageEpoch, documentId: `document-${options.pageEpoch}` } : {}) } } as BrowserBridgeExecutionResult;
 			if (command.cmd === "persistent_cdp" && command.action === "send" && command.cdpMethod === "Runtime.evaluate") {
 				const expression = typeof command.params === "object" && command.params !== null && "expression" in command.params ? String((command.params as { expression?: unknown }).expression) : "";
@@ -151,7 +199,7 @@ function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort 
 					id: "eval",
 					acknowledged: true,
 					tabId,
-					data: { result: { result: { value: scanData(options) } } },
+					data: { result: { result: { value: options.scanPayload ?? scanData(options) } } },
 					...(options.captureTargetPageEpoch ? {
 						target: {
 							browserSessionId: "session-1",
@@ -166,8 +214,8 @@ function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort 
 					} : {}),
 				} as BrowserBridgeExecutionResult;
 			}
-			if (command.cmd === "network.list") return { id: "network", acknowledged: true, tabId, data: { items: [], active: false, lastSeq: 0 } } as BrowserBridgeExecutionResult;
-			if (command.cmd === "hook.collect") return { id: "hook", acknowledged: true, tabId, data: { events: [], active: false, lastSeq: 0 } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "network.list") return { id: "network", acknowledged: true, tabId, data: { items: [], active: true, lastSeq: options.networkDeltaLastSeq ?? 0 } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "hook.collect") return { id: "hook", acknowledged: true, tabId, data: { events: [], active: true, lastSeq: options.hookDeltaLastSeq ?? 0 } } as BrowserBridgeExecutionResult;
 			return { id: "command", acknowledged: true, tabId, data: {} } as BrowserBridgeExecutionResult;
 		},
 		async executeJavaScript() {
@@ -195,6 +243,13 @@ function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort 
 		releaseUiLock() { return undefined; },
 		queueDepth() { return 0; },
 		leaseOwnerHash() { return undefined; },
+		getKnownRecorderState(kind: "network" | "hook") {
+			const value = recorderStates.get(kind);
+			return value ? { ...value } : undefined;
+		},
+		recordKnownRecorderState(kind: "network" | "hook", _browserSessionId: string | undefined, _tabId: number | undefined, value: { active: boolean; lastSeq?: number }) {
+			recorderStates.set(kind, { ...value });
+		},
 		createObservationSnapshot(snapshot: Omit<CommandObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }) {
 			const created: CommandObservationSnapshotInfo = { snapshotId: snapshot.snapshotId ?? `snap-${++snapshotSeq}`, ttlMs: snapshot.ttlMs ?? 60_000, expired: false, ...snapshot };
 			snapshots.set(created.snapshotId, created);
@@ -229,54 +284,122 @@ async function runObserve(options: MockOptions = {}, params: Partial<ObserveTool
 	const server = createMockServer(options);
 	const result = await runScanObservation(server, { maxChars: 80_000, fresh: true, ...params }, { cwd }, "scan");
 	const envelope = JSON.parse(result.content[0]?.text || "{}") as Record<string, unknown>;
-	const summary = envelope.summary as Record<string, unknown>;
-	const saved = result.details?.saved as Record<string, unknown> | undefined;
-	return { server, envelope, summary, pageObservation: summary.pageObservation as Record<string, unknown>, cwd, saved };
+	const saved = (envelope.saved ?? result.details?.saved) as Record<string, unknown> | undefined;
+	return { server, envelope, summary: envelope, pageObservation: envelope, cwd, saved };
 }
+
+test("observe rejects an incompatible extension capture contract before page I/O", async () => {
+	const server = createMockServer({ captureContractVersion: 0 });
+	await assert.rejects(
+		runScanObservation(server, { maxChars: 20_000, fresh: true }, { cwd: await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-contract-")) }, "scan"),
+		(error: unknown) => {
+			const value = error as { code?: unknown; details?: Record<string, unknown> };
+			assert.equal(value.code, "EXTENSION_CONTRACT_MISMATCH");
+			assert.deepEqual(value.details?.recovery, { action: "reload_extension", message: "Rebuild/reload the Browser Pilot extension, then reconnect before observing." });
+			return true;
+		},
+	);
+	assert.equal(server.calls.sendCommand.length, 0);
+});
+
+test("observe rejects a malformed page-world scan bundle before summarization", async () => {
+	const server = createMockServer({ scanPayload: { schema: "browser-page-scan/v1", page: {} } });
+	await assert.rejects(
+		runScanObservation(server, { maxChars: 20_000, fresh: true }, { cwd: await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-invalid-scan-")) }, "scan"),
+		(error: unknown) => {
+			const value = error as { code?: unknown; details?: Record<string, unknown> };
+			assert.equal(value.code, "SCAN_BUNDLE_INVALID");
+			assert.equal(Array.isArray(value.details?.issues), true);
+			return true;
+		},
+	);
+});
+
+function recorderCommands(server: ReturnType<typeof createMockServer>): BrowserRuntimeCommand[] {
+	return server.calls.sendCommand.filter((command) => command.cmd === "batch" || command.cmd === "network.status" || command.cmd === "hook.status" || command.cmd === "network.list" || command.cmd === "hook.collect");
+}
+
+test("canonical full observe without a baseline or addon performs no recorder or hook I/O", async () => {
+	const { server, pageObservation } = await runObserve();
+	assert.deepEqual(recorderCommands(server), []);
+	assert.equal(providerReport(pageObservation, "causal").planned, false);
+	assert.equal(providerReport(pageObservation, "causal").reason, "not-required");
+});
+
+test("causal observe performs one bounded batch status probe when recorder state is unknown", async () => {
+	const prior = await runObserve({ pageEpoch: "page-1" });
+	const baseline = structuredClone(prior.pageObservation);
+	baseline.snapshot = { ...(baseline.snapshot as Record<string, unknown>), networkSeq: 3, hookSeq: 4 };
+	const { server, pageObservation } = await runObserve({
+		pageEpoch: "page-1",
+		statusNetwork: { active: true, lastSeq: 8 },
+		statusHook: { active: false, lastSeq: 4 },
+		networkDeltaLastSeq: 9,
+	}, { baseline });
+	const recorder = recorderCommands(server);
+	const probes = recorder.filter((command) => command.cmd === "batch");
+	assert.equal(probes.length, 1);
+	assert.deepEqual((probes[0] as Record<string, unknown>).commands, [{ cmd: "network.status" }, { cmd: "hook.status" }]);
+	assert.equal(recorder.filter((command) => command.cmd === "network.list").length, 1);
+	assert.equal(recorder.filter((command) => command.cmd === "hook.collect").length, 0);
+	assert.equal(providerReport(pageObservation, "causal").status, "executed");
+	assert.equal(providerReport(pageObservation, "causal").bridgeRoundTrips, 2);
+	assert.equal((pageObservation.snapshot as Record<string, unknown>).networkSeq, 9);
+});
+
+test("known recorder state bypasses status probing and provider preflight skips addons below 500ms", async () => {
+	const prior = await runObserve({ pageEpoch: "page-1" });
+	const baseline = structuredClone(prior.pageObservation);
+	baseline.snapshot = { ...(baseline.snapshot as Record<string, unknown>), networkSeq: 2 };
+	const known = await runObserve({ pageEpoch: "page-1", knownNetwork: { active: true, lastSeq: 2 }, networkDeltaLastSeq: 5 }, { baseline });
+	assert.equal(recorderCommands(known.server).filter((command) => command.cmd === "batch").length, 0);
+	assert.equal(recorderCommands(known.server).filter((command) => command.cmd === "network.list").length, 1);
+
+	const constrained = await runObserve({}, { timeoutMs: 400, axe: true, readability: true });
+	assert.equal(constrained.server.calls.axe, 0);
+	assert.equal(constrained.server.calls.readability, 0);
+	assert.equal(providerReport(constrained.pageObservation, "axe").reason, "budget-preflight");
+	assert.equal(providerReport(constrained.pageObservation, "readability").reason, "budget-preflight");
+});
 
 test("observe/action/extract boundary oracle keeps observe as structural entry-point map", async () => {
 	const businessValue = "invoice INV-2026-0001 total $9,876.54 token=secret";
 	const { pageObservation, saved } = await runObserve({ content: businessValue, tabTitle: "Invoices" });
-	const providers = (pageObservation.diagnostics as Record<string, unknown>).providers as Record<string, unknown>;
 	const artifactHints = pageObservation.artifact_hints as Record<string, unknown>;
 	const preferredReads = artifactHints.preferredReads as Array<Record<string, unknown>>;
+	assert.equal(pageObservation.schema, "browser-page-observation/v3");
+	assert.equal(pageObservation.tool, "browser_observe");
 	assert.equal(pageObservation.model, "PageObservation");
-	assert.equal(Array.isArray(pageObservation.refs), true);
-	assert.equal((pageObservation.refs as unknown[]).length > 0, true);
-	assert.equal((pageObservation.refs as string[]).every((ref) => ref.startsWith("bp-ref://")), true);
+	assert.equal(pageObservation.canonical, true);
 	assert.equal(JSON.stringify(pageObservation.entities).includes("Pay now"), true);
-	assert.equal("content" in pageObservation, true);
-	assert.equal("evidence" in pageObservation, true);
-	assert.equal("diagnostics" in pageObservation, true);
-	assert.equal(providers.structure, "executed");
-	assert.equal(providers.evidence, "scan-backed");
+	for (const forbidden of ["summary", "refs", "content", "text", "evidence", "correlation", "templates", "envelope"]) assert.equal(Object.hasOwn(pageObservation, forbidden), false);
+	assert.equal(providerReport(pageObservation, "structure").status, "executed");
+	assert.equal(providerReport(pageObservation, "evidence").status, "scan-backed");
 	assert.equal(saved?.path && typeof saved.path === "string", true);
-	assert.equal(preferredReads.some((read) => read.label === "saved observation artifact" && read.jsonPath === "pageObservation" && read.kind === "abml-page-observation"), true);
-	assert.equal(preferredReads.some((read) => read.label === "raw scan evidence" && read.jsonPath === "data" && read.kind === "scan-evidence"), true);
 	assert.equal(JSON.stringify(pageObservation.actionables).includes("INV-2026-0001"), false);
-	assert.equal(JSON.stringify(pageObservation.refs).includes("9876"), false);
 	assert.equal(JSON.stringify(pageObservation.entities).includes("token=secret"), false);
-	assert.equal(String((pageObservation.content as Record<string, unknown>).preview).includes("INV-2026-0001"), true);
-	const artifact = JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
+	const artifact = await readObservationArtifact(saved);
+	assert.equal(artifact.schema, "browser-page-observation/v3");
+	assert.equal(Object.hasOwn(artifact, "pageObservation"), false);
+	assert.equal(Object.hasOwn(artifact, "envelope"), false);
 	assert.equal(JSON.stringify(artifact).includes("INV-2026-0001"), true);
-	assert.equal(preferredReads.some((read) => read.jsonPath === "pageObservation.content" && read.kind === "content-digest"), true);
-	assert.equal(preferredReads.some((read) => read.jsonPath === "pageObservation.text" && read.kind === "text-index"), true);
+	assert.equal(preferredReads.some((read) => read.jsonPath === "diagnostics.content" && read.kind === "content"), true);
+	for (const read of preferredReads) assert.equal(getJsonPath(artifact, String(read.jsonPath)).exists, true, `${String(read.jsonPath)} must resolve in the saved v3 root`);
 });
 
 test("observe scan runner diagnostics: ABML read failure binds structure failure while scan-backed providers remain truthful", async () => {
-	const { pageObservation } = await runObserve({ noDefaultTab: true });
+	const { pageObservation, saved } = await runObserve({ noDefaultTab: true });
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
-	assert.deepEqual(diagnostics.providers, {
-		structure: "failed",
-		content: "scan-backed",
-		text: "scan-backed",
-		html: "scan-backed",
-		evidence: "scan-backed",
-		tabs: "executed",
-	});
+	assert.equal(providerReport(pageObservation, "structure").status, "failed");
+	assert.equal(providerReport(pageObservation, "content").status, "scan-backed");
+	assert.equal(providerReport(pageObservation, "text").status, "scan-backed");
+	assert.equal(providerReport(pageObservation, "html").status, "scan-backed");
+	assert.equal(providerReport(pageObservation, "evidence").status, "scan-backed");
+	assert.equal(providerReport(pageObservation, "tabs").status, "executed");
 	const failures = diagnostics.providerFailures as Array<Record<string, unknown>>;
 	assert.equal(failures.some((failure) => failure.provider === "abml-read"), true);
-	assert.equal(diagnostics.abmlIntegrated, false);
+	const artifact = await readObservationArtifact(saved);
+	assert.equal(artifactDiagnostics(artifact).abmlIntegrated, false);
 });
 
 test("observe scan runner diagnostics: tabs refresh fallback is degraded with structured reason", async () => {
@@ -284,7 +407,7 @@ test("observe scan runner diagnostics: tabs refresh fallback is degraded with st
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
 	assert.equal(server.calls.refreshTabs, 1);
 	assert.equal(server.calls.getTabs, 1);
-	assert.equal((diagnostics.providers as Record<string, unknown>).tabs, "degraded");
+	assert.equal(providerReport(pageObservation, "tabs").status, "degraded");
 	const failures = diagnostics.providerFailures as Array<Record<string, unknown>>;
 	assert.equal(failures.some((failure) => failure.provider === "tabs-refresh" && failure.code === "TABS_TIMEOUT"), true);
 });
@@ -292,9 +415,9 @@ test("observe scan runner diagnostics: tabs refresh fallback is degraded with st
 test("observe scan runner diagnostics: unavailable artifact marks html and evidence providers failed", async () => {
 	const { pageObservation } = await runObserve({ cwd: undefined }, { outputPath: "" });
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
-	assert.equal((diagnostics.providers as Record<string, unknown>).html, "failed");
-	assert.equal((diagnostics.providers as Record<string, unknown>).evidence, "failed");
-	assert.equal(((pageObservation.content as Record<string, unknown>).artifact), undefined);
+	assert.equal(providerReport(pageObservation, "html").status, "failed");
+	assert.equal(providerReport(pageObservation, "evidence").status, "failed");
+	assert.equal(Object.hasOwn(pageObservation, "content"), false);
 	const failures = diagnostics.providerFailures as Array<Record<string, unknown>>;
 	assert.equal(failures.some((failure) => failure.provider === "artifact" && failure.code === "ARTIFACT_UNAVAILABLE"), true);
 });
@@ -304,7 +427,7 @@ test("observe page identity mismatch discards the baseline and returns a full re
 	const { envelope, pageObservation } = await runObserve({ pageEpoch: "page-new" }, { baseline: prior.pageObservation });
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
 	const baselineDiagnostics = diagnostics.baseline as Record<string, unknown>;
-	assert.equal(envelope.reanchorReason ?? (envelope.summary as Record<string, unknown>).reanchorReason, "document_changed");
+	assert.equal(envelope.reanchorReason, "document_changed");
 	assert.equal(pageObservation.reanchorReason, "document_changed");
 	assert.equal(baselineDiagnostics.baselineApplied, false);
 	assert.equal(baselineDiagnostics.reanchorReason, "document_changed");
@@ -324,21 +447,28 @@ test("observe snapshots anchor to the captured target when reconnect races stale
 
 test("observe readability content provider: default canonical observe does not run or imply readability", async () => {
 	const { server, pageObservation } = await runObserve();
-	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
 	assert.equal(server.calls.readability, 0);
-	assert.equal(diagnostics.readability, undefined);
-	assert.equal((diagnostics.providers as Record<string, unknown>).readability, undefined);
-	assert.equal((diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>).some((item) => item.provider === "readability"), false);
+	assert.deepEqual(providerReport(pageObservation, "readability"), {
+		planned: false,
+		status: "skipped",
+		reason: "not-required",
+		reservedMs: providerReport(pageObservation, "readability").reservedMs,
+		actualMs: 0,
+		bridgeRoundTrips: 0,
+		cost: providerReport(pageObservation, "readability").cost,
+	});
+	assert.equal(Object.hasOwn((pageObservation.diagnostics as Record<string, unknown> | undefined) ?? {}, "readability"), false);
 });
 
 test("observe readability content provider: explicit request adds bounded content artifact without changing structural model", async () => {
 	const baseline = await runObserve({ content: boilerplateHeavyFallback });
 	const { server, envelope, pageObservation, saved } = await runObserve({ content: boilerplateHeavyFallback }, { content: "readability", params: { readabilityMaxInlineChars: 40 } });
-	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
-	const providers = diagnostics.providers as Record<string, unknown>;
-	const readability = diagnostics.readability as Record<string, unknown>;
 	assert.equal(server.calls.readability, 1);
-	assert.equal(providers.readability, "executed");
+	assert.equal(providerReport(pageObservation, "readability").planned, true);
+	assert.equal(providerReport(pageObservation, "readability").status, "executed");
+	const artifact = await readObservationArtifact(saved);
+	const diagnostics = artifactDiagnostics(artifact);
+	const readability = diagnostics.readability as Record<string, unknown>;
 	assert.equal(readability.status, "executed");
 	const readabilityTelemetry = (diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>).find((item) => item.provider === "readability") as Record<string, unknown>;
 	assert.deepEqual(readabilityTelemetry, {
@@ -362,10 +492,8 @@ test("observe readability content provider: explicit request adds bounded conten
 	assertNotIncludes(readability, "token=secret");
 	assertNotIncludes(readability, "Bearer abc123");
 	assert.deepEqual(JSON.parse(JSON.stringify(pageObservation.actionables)), JSON.parse(JSON.stringify(baseline.pageObservation.actionables)));
-	assert.deepEqual(JSON.parse(JSON.stringify(pageObservation.refs)), JSON.parse(JSON.stringify(baseline.pageObservation.refs)));
 	assert.deepEqual((pageObservation.entities as Array<Record<string, unknown>>).map((entity) => ({ ref: entity.ref, name: entity.name, role: entity.role, source: entity.source })), (baseline.pageObservation.entities as Array<Record<string, unknown>>).map((entity) => ({ ref: entity.ref, name: entity.name, role: entity.role, source: entity.source })), "readability must not alter structural entity identity");
 	assert.equal(saved?.path && typeof saved.path === "string", true);
-	const artifact = JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
 	const readabilityArtifactValue = readabilityArtifact(artifact);
 	const article = readabilityArticle(artifact);
 	assert.equal((readabilityArtifactValue.summary as Record<string, unknown>).status, "executed");
@@ -378,71 +506,75 @@ test("observe readability content provider: explicit request adds bounded conten
 	assertNotIncludes(envelope, "token=secret");
 	assertNotIncludes(envelope, "Bearer abc123");
 	assertNotIncludes(pageObservation.actionables ?? [], "City council approved");
-	assertNotIncludes(pageObservation.refs ?? [], "City council approved");
 	assertNotIncludes(pageObservation.entities ?? [], "City council approved");
 });
 
 test("observe readability content provider: null result degrades provider and keeps scan-backed content fallback", async () => {
-	const { server, pageObservation } = await runObserve({ readabilityPayload: readabilityPayload(null) }, { readability: true });
+	const { server, pageObservation, saved } = await runObserve({ readabilityPayload: readabilityPayload(null) }, { readability: true });
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
 	assert.equal(server.calls.readability, 1);
-	assert.equal((diagnostics.providers as Record<string, unknown>).readability, "degraded");
-	assert.equal((diagnostics.providers as Record<string, unknown>).content, "scan-backed");
-	assert.equal((diagnostics.readability as Record<string, unknown>).status, "degraded");
-	const readabilityTelemetry = (diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>).find((item) => item.provider === "readability") as Record<string, unknown>;
+	assert.equal(providerReport(pageObservation, "readability").status, "degraded");
+	assert.equal(providerReport(pageObservation, "content").status, "scan-backed");
+	const artifact = await readObservationArtifact(saved);
+	const artifactDiagnosticsRecord = artifactDiagnostics(artifact);
+	assert.equal((artifactDiagnosticsRecord.readability as Record<string, unknown>).status, "degraded");
+	const readabilityTelemetry = (artifactDiagnosticsRecord.providerBudgetTelemetry as Array<Record<string, unknown>>).find((item) => item.provider === "readability") as Record<string, unknown>;
 	assert.equal(readabilityTelemetry.status, "degraded");
 	assert.equal(readabilityTelemetry.reason, "READABILITY_NULL");
 	assert.equal(readabilityTelemetry.errorCode, "READABILITY_NULL");
 	assert.equal(readabilityTelemetry.degraded, true);
 	assertProviderFailure(diagnostics, "readability", "READABILITY_NULL");
-	assert.equal(String((pageObservation.content as Record<string, unknown>).preview).includes("Checkout content"), true);
+	assert.equal(String(((artifactDiagnosticsRecord.content as Record<string, unknown>).text)).includes("Checkout content"), true);
 });
 
 test("observe readability content provider: failure is content-plane-only and preserves canonical structure", async () => {
-	const { server, pageObservation } = await runObserve({ readabilityThrows: true }, { params: { readability: true } });
+	const { server, pageObservation, saved } = await runObserve({ readabilityThrows: true }, { params: { readability: true } });
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
 	assert.equal(server.calls.readability, 1);
-	assert.equal((diagnostics.providers as Record<string, unknown>).readability, "failed");
-	assert.equal((diagnostics.readability as Record<string, unknown>).status, "failed");
+	assert.equal(providerReport(pageObservation, "readability").status, "failed");
+	const artifact = await readObservationArtifact(saved);
+	assert.equal((artifactDiagnostics(artifact).readability as Record<string, unknown>).status, "failed");
 	assertProviderFailure(diagnostics, "readability", "READABILITY_PROVIDER_UNAVAILABLE");
-	assert.equal((diagnostics.providers as Record<string, unknown>).content, "scan-backed");
-	assert.equal((diagnostics.providers as Record<string, unknown>).text, "scan-backed");
-	assert.equal(Array.isArray(pageObservation.refs), true);
+	assert.equal(providerReport(pageObservation, "content").status, "scan-backed");
+	assert.equal(providerReport(pageObservation, "text").status, "scan-backed");
+	assert.equal(Object.hasOwn(pageObservation, "refs"), false);
 	assert.equal(Array.isArray(pageObservation.entities), true);
 });
 
 test("observe readability content provider: timeout degrades honestly without failing observe", async () => {
 	const { server, pageObservation, saved } = await runObserve({ readabilityPayload: { ok: false, timedOut: true, elapsedMs: 250, error: { code: "READABILITY_TIMEOUT", message: "slow article parse" } } }, { readability: true });
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
-	const readability = diagnostics.readability as Record<string, unknown>;
 	assert.equal(server.calls.readability, 1);
-	assert.equal((diagnostics.providers as Record<string, unknown>).readability, "degraded");
+	assert.equal(providerReport(pageObservation, "readability").status, "degraded");
+	const artifact = await readObservationArtifact(saved);
+	const artifactDiagnosticsRecord = artifactDiagnostics(artifact);
+	const readability = artifactDiagnosticsRecord.readability as Record<string, unknown>;
 	assert.equal(readability.status, "degraded");
 	assert.equal(readability.timedOut, true);
 	assert.equal(readability.degraded, true);
 	assert.equal(saved?.path && typeof saved.path === "string", true);
-	const artifact = JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
-	assert.equal("readability" in artifact, false);
+	assert.equal((artifactDiagnosticsRecord.providerArtifacts as Record<string, unknown> | undefined)?.readability, undefined);
 	assertProviderFailure(diagnostics, "readability", "READABILITY_TIMEOUT");
-	assert.equal((diagnostics.providers as Record<string, unknown>).content, "scan-backed");
+	assert.equal(providerReport(pageObservation, "content").status, "scan-backed");
 });
 
 test("observe readability content provider: malformed success payloads fail closed", async () => {
 	for (const readabilityPayload of [{ ok: true }, { ok: true, article: "not-an-article" }, "not-a-payload"]) {
 		const { pageObservation, saved } = await runObserve({ readabilityPayload }, { readability: true });
 		const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
-		assert.equal((diagnostics.providers as Record<string, unknown>).readability, "failed");
+		assert.equal(providerReport(pageObservation, "readability").status, "failed");
 		assertProviderFailure(diagnostics, "readability", "READABILITY_FAILED");
-		const artifact = JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
-		assert.equal("readability" in artifact, false);
+		const artifact = await readObservationArtifact(saved);
+		assert.equal((artifactDiagnostics(artifact).providerArtifacts as Record<string, unknown> | undefined)?.readability, undefined);
 	}
 });
 
 test("observe readability content provider: explicit payload failures preserve provider diagnostics", async () => {
-	const { pageObservation } = await runObserve({ readabilityPayload: { ok: false, error: { code: "READABILITY_BLOCKED", message: "page blocked extraction" } } }, { readability: true });
+	const { pageObservation, saved } = await runObserve({ readabilityPayload: { ok: false, error: { code: "READABILITY_BLOCKED", message: "page blocked extraction" } } }, { readability: true });
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
-	const readability = diagnostics.readability as Record<string, unknown>;
-	assert.equal((diagnostics.providers as Record<string, unknown>).readability, "failed");
+	const artifact = await readObservationArtifact(saved);
+	const readability = artifactDiagnostics(artifact).readability as Record<string, unknown>;
+	assert.equal(providerReport(pageObservation, "readability").status, "failed");
 	assert.deepEqual(readability.error, { code: "READABILITY_BLOCKED", message: "page blocked extraction" });
 	assertProviderFailure(diagnostics, "readability", "READABILITY_BLOCKED");
 });
@@ -460,16 +592,16 @@ test("observe readability content provider: sparse truncated articles derive len
 		truncated: true,
 	};
 	const { pageObservation, saved } = await runObserve({ readabilityPayload: readabilityPayload(article) }, { readability: true });
-	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
+	const artifact = await readObservationArtifact(saved);
+	const diagnostics = artifactDiagnostics(artifact);
 	const readability = diagnostics.readability as Record<string, unknown>;
-	assert.equal((diagnostics.providers as Record<string, unknown>).readability, "degraded");
+	assert.equal(providerReport(pageObservation, "readability").status, "degraded");
 	assert.equal(readability.truncated, true);
 	assert.equal(readability.title, "Sparse article");
 	assert.equal(readability.excerpt, "Short excerpt");
 	assert.equal(readability.byline, undefined);
 	assert.equal(readability.textLength, article.textContent.length);
 	assert.equal(readability.contentLength, article.content.length);
-	const artifact = JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
 	const storedArticle = readabilityArticle(artifact);
 	assert.equal(storedArticle.byline, "");
 	assert.equal(storedArticle.siteName, "");
@@ -480,14 +612,14 @@ test("observe readability content provider: sparse truncated articles derive len
 test("observe readability content provider: summary bounding strips unsafe artifact html and redacts sensitive values", async () => {
 	const longText = `${"Article sentence ".repeat(80)}token=secret Authorization: Bearer abc123`;
 	const { envelope, pageObservation, saved } = await runObserve({ readabilityPayload: readabilityPayload({ ...articleFixture, excerpt: longText, textContent: longText, content: `<article><script>token=secret</script><style>.secret{color:red}</style><p>${longText}</p></article>`, textLength: longText.length, contentLength: longText.length + 92 }) }, { content: "readability", params: { readabilityMaxInlineChars: 140 } });
-	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
+	const artifact = await readObservationArtifact(saved);
+	const diagnostics = artifactDiagnostics(artifact);
 	const readability = diagnostics.readability as Record<string, unknown>;
-	assert.equal((diagnostics.providers as Record<string, unknown>).readability, "executed");
+	assert.equal(providerReport(pageObservation, "readability").status, "executed");
 	assert.ok(String(readability.excerpt).length < longText.length);
 	assert.ok(String(readability.textPreview).length < longText.length);
 	assertNotIncludes(readability, "token=secret");
 	assertNotIncludes(readability, "Bearer abc123");
-	const artifact = JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
 	const article = readabilityArticle(artifact);
 	assertNotIncludes(article, "<script");
 	assertNotIncludes(article, "<style");
@@ -499,11 +631,10 @@ test("observe readability content provider: summary bounding strips unsafe artif
 
 test("observe axe diagnostics: default canonical observe does not run or imply axe", async () => {
 	const { server, pageObservation } = await runObserve();
-	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
 	assert.equal(server.calls.axe, 0);
-	assert.equal(diagnostics.axe, undefined);
-	assert.equal((diagnostics.providers as Record<string, unknown>).axe, undefined);
-	assert.equal((diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>).some((item) => item.provider === "axe"), false);
+	assert.equal(providerReport(pageObservation, "axe").planned, false);
+	assert.equal(providerReport(pageObservation, "axe").status, "skipped");
+	assert.equal(providerReport(pageObservation, "axe").reason, "not-required");
 });
 
 test("observe axe diagnostics: explicit request adds bounded summary and artifact without changing structural model", async () => {
@@ -524,12 +655,13 @@ test("observe axe diagnostics: explicit request adds bounded summary and artifac
 	};
 	const baseline = await runObserve();
 	const { server, envelope, pageObservation, saved } = await runObserve({ axePayload }, { axeDiagnostics: true, params: { axeMaxResults: 2 } });
-	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
-	const providers = diagnostics.providers as Record<string, unknown>;
+	const artifact = await readObservationArtifact(saved);
+	const diagnostics = artifactDiagnostics(artifact);
 	const axe = diagnostics.axe as Record<string, unknown>;
 	const samples = axe.samples as Array<Record<string, unknown>>;
 	assert.equal(server.calls.axe, 1);
-	assert.equal(providers.axe, "executed");
+	assert.equal(providerReport(pageObservation, "axe").planned, true);
+	assert.equal(providerReport(pageObservation, "axe").status, "executed");
 	assert.equal(axe.status, "executed");
 	assert.deepEqual(axe.counts, { violations: 3, incomplete: 0, passes: 1, inapplicable: 2 });
 	const telemetry = diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>;
@@ -553,22 +685,23 @@ test("observe axe diagnostics: explicit request adds bounded summary and artifac
 	assert.equal("html" in samples[0], false);
 	assert.equal(JSON.stringify(samples).includes("secret"), false);
 	assert.deepEqual(JSON.parse(JSON.stringify(pageObservation.actionables)), JSON.parse(JSON.stringify(baseline.pageObservation.actionables)));
-	assert.deepEqual(JSON.parse(JSON.stringify(pageObservation.refs)), JSON.parse(JSON.stringify(baseline.pageObservation.refs)));
 	assert.deepEqual((pageObservation.entities as Array<Record<string, unknown>>).map((entity) => ({ ref: entity.ref, name: entity.name, role: entity.role, source: entity.source })), (baseline.pageObservation.entities as Array<Record<string, unknown>>).map((entity) => ({ ref: entity.ref, name: entity.name, role: entity.role, source: entity.source })), "axe must not alter structural entity identity");
 	assert.equal(saved?.path && typeof saved.path === "string", true);
-	const artifact = JSON.parse(await readFile(saved!.path as string, "utf8")) as Record<string, unknown>;
-	assert.equal(((artifact.axe as Record<string, unknown>).summary as Record<string, unknown>).status, "executed");
-	assert.equal(Array.isArray(((artifact.axe as Record<string, unknown>).result as Record<string, unknown>).violations), true);
-	assert.deepEqual((artifact.axe as Record<string, unknown>).bounded, { maxInlineResults: 2 });
+	const axeArtifact = providerArtifact(artifact, "axe");
+	assert.equal((axeArtifact.summary as Record<string, unknown>).status, "executed");
+	assert.equal(Array.isArray((axeArtifact.result as Record<string, unknown>).violations), true);
+	assert.deepEqual(axeArtifact.bounded, { maxInlineResults: 2 });
 	assert.equal(JSON.stringify(envelope).includes("<input value=secret>"), false);
 });
 
 test("observe axe diagnostics: timeout degrades provider without failing observe", async () => {
-	const { pageObservation } = await runObserve({ axePayload: { ok: false, timedOut: true, error: { code: "AXE_TIMEOUT", message: "slow axe" } } }, { diagnostics: "axe" });
+	const { pageObservation, saved } = await runObserve({ axePayload: { ok: false, timedOut: true, error: { code: "AXE_TIMEOUT", message: "slow axe" } } }, { diagnostics: "axe" });
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
-	assert.equal((diagnostics.providers as Record<string, unknown>).axe, "degraded");
-	assert.equal((diagnostics.axe as Record<string, unknown>).timedOut, true);
-	const axeTelemetry = (diagnostics.providerBudgetTelemetry as Array<Record<string, unknown>>).find((item) => item.provider === "axe") as Record<string, unknown>;
+	assert.equal(providerReport(pageObservation, "axe").status, "degraded");
+	const artifact = await readObservationArtifact(saved);
+	const artifactDiagnosticsRecord = artifactDiagnostics(artifact);
+	assert.equal((artifactDiagnosticsRecord.axe as Record<string, unknown>).timedOut, true);
+	const axeTelemetry = (artifactDiagnosticsRecord.providerBudgetTelemetry as Array<Record<string, unknown>>).find((item) => item.provider === "axe") as Record<string, unknown>;
 	assert.equal(axeTelemetry.status, "degraded");
 	assert.equal(axeTelemetry.requested, true);
 	assert.equal(axeTelemetry.reason, "AXE_TIMEOUT");
@@ -576,21 +709,24 @@ test("observe axe diagnostics: timeout degrades provider without failing observe
 	assert.equal(axeTelemetry.degraded, true);
 	const failures = diagnostics.providerFailures as Array<Record<string, unknown>>;
 	assert.equal(failures.some((failure) => failure.provider === "axe" && failure.code === "AXE_TIMEOUT"), true);
-	assert.equal(Array.isArray(pageObservation.refs), true);
+	assert.equal(Object.hasOwn(pageObservation, "refs"), false);
+	assert.equal(Array.isArray(pageObservation.entities), true);
 });
 
 test("observe axe diagnostics: failed provider stays honest and preserves core observe", async () => {
-	const { server, pageObservation } = await runObserve({ axeThrows: true }, { debug: "axe" });
+	const { server, pageObservation, saved } = await runObserve({ axeThrows: true }, { debug: "axe" });
 	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
-	const axe = diagnostics.axe as Record<string, unknown>;
+	const artifact = await readObservationArtifact(saved);
+	const axe = artifactDiagnostics(artifact).axe as Record<string, unknown>;
 	const failures = diagnostics.providerFailures as Array<Record<string, unknown>>;
 	assert.equal(server.calls.axe, 1);
-	assert.equal((diagnostics.providers as Record<string, unknown>).axe, "failed");
+	assert.equal(providerReport(pageObservation, "axe").status, "failed");
 	assert.equal(axe.status, "failed");
 	assert.equal((axe.error as Record<string, unknown>).code, "AXE_PROVIDER_UNAVAILABLE");
 	assert.equal((axe.error as Record<string, unknown>).message, "axe provider unavailable");
 	assert.equal(failures.some((failure) => failure.provider === "axe" && failure.code === "AXE_PROVIDER_UNAVAILABLE"), true);
-	assert.equal(Array.isArray(pageObservation.refs), true);
+	assert.equal(Object.hasOwn(pageObservation, "refs"), false);
+	assert.equal(Array.isArray(pageObservation.entities), true);
 });
 
 test("observe axe diagnostics: incomplete axe results degrade provider honestly", async () => {
@@ -605,10 +741,11 @@ test("observe axe diagnostics: incomplete axe results degrade provider honestly"
 			inapplicable: [],
 		},
 	};
-	const { pageObservation } = await runObserve({ axePayload }, { diagnostics: "accessibility" });
-	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
+	const { pageObservation, saved } = await runObserve({ axePayload }, { diagnostics: "accessibility" });
+	const artifact = await readObservationArtifact(saved);
+	const diagnostics = artifactDiagnostics(artifact);
 	const axe = diagnostics.axe as Record<string, unknown>;
-	assert.equal((diagnostics.providers as Record<string, unknown>).axe, "degraded");
+	assert.equal(providerReport(pageObservation, "axe").status, "degraded");
 	assert.equal(axe.status, "degraded");
 	assert.equal(axe.degraded, true);
 	assert.deepEqual(axe.counts, { violations: 0, incomplete: 1, passes: 0, inapplicable: 0 });

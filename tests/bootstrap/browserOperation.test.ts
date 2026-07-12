@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SessionOperationRegistry } from "../../src/kernels/session/operationRegistry.ts";
 import { resolveBrowserOperationCompletion } from "../../src/commands/operationResolvers.ts";
-import { classifyBrowserOperationLiveness } from "../../src/kernels/session/browserOperationState.ts";
+import { classifyBrowserOperationLiveness, nextBrowserOperationLivenessBoundary } from "../../src/kernels/session/browserOperationState.ts";
+import { BrowserBridgeServer } from "../../src/bridge/server/BrowserBridgeServer.ts";
+import { readFile } from "node:fs/promises";
 import {
 	BROWSER_OPERATION_SCHEMA,
 	classifyBrowserOperationStatus,
@@ -31,6 +33,14 @@ test("operation liveness thresholds classify no-effect, stalled, download stalle
 	assert.equal(classifyBrowserOperationLiveness({ ...base, now: 10_999, hasActivity: true, pending: true, downloadPending: true }), undefined);
 	assert.equal(classifyBrowserOperationLiveness({ ...base, now: 11_000, hasActivity: true, pending: true, downloadPending: true }), "stalled");
 	assert.equal(classifyBrowserOperationLiveness({ ...base, now: 20_000, hasActivity: true }), "deadline");
+});
+
+test("operation liveness exposes the exact next event-free classification boundary", () => {
+	const base = { now: 1_100, deadlineAt: 20_000, dispatchFinishedAt: 1_000, lastProgressAt: 1_000, hasActivity: false, pending: false, downloadPending: false };
+	assert.equal(nextBrowserOperationLivenessBoundary(base), 2_000);
+	assert.equal(nextBrowserOperationLivenessBoundary({ ...base, hasActivity: true, pending: true }), 6_000);
+	assert.equal(nextBrowserOperationLivenessBoundary({ ...base, hasActivity: true, pending: true, downloadPending: true }), 11_000);
+	assert.equal(nextBrowserOperationLivenessBoundary({ ...base, now: 20_000 }), 20_000);
 });
 
 test("operation registry keeps terminal records, caps sequenced events, and never rewrites terminal status for late effects", () => {
@@ -82,6 +92,51 @@ test("events outside the passive window are not attributed to a terminal operati
 	now += 30_001;
 	registry.recordEvent(operation.operationId, { type: "mutation" });
 	assert.equal(registry.get(operation.operationId)?.lateEffects.length, 0);
+});
+
+test("operation revisions advance monotonically for every settlement-visible mutation", () => {
+	const registry = new SessionOperationRegistry();
+	const started = registry.begin({ commandName: "browser_execute", phase: "arming" });
+	const updated = registry.update(started.operationId, { phase: "dispatching" })!;
+	const event = registry.recordEvent(started.operationId, { type: "mutation" })!;
+	const finished = registry.finish(started.operationId, outcome(started.operationId))!;
+	assert.deepEqual([started.revision, updated.revision, event.revision, finished.revision], [1, 2, 3, 4]);
+});
+
+test("operation waiters cannot miss changes before or after registration and release at scale", async () => {
+	const server = new BrowserBridgeServer();
+	const started = server.beginOperation({ commandName: "browser_execute", phase: "arming" });
+	server.updateOperation(started.operationId, { phase: "dispatching" });
+	const beforeRegistration = await server.waitForOperationChange(started.operationId, started.revision, 1_000);
+	assert.equal(beforeRegistration?.revision, 2);
+
+	const current = server.getOperation(started.operationId)!;
+	const waiters = Array.from({ length: 1_000 }, () => server.waitForOperationChange(started.operationId, current.revision, 5_000));
+	server.recordOperationEvent(started.operationId, { type: "mutation" });
+	const released = await Promise.all(waiters);
+	assert.equal(released.every((item) => item?.revision === current.revision + 1), true);
+
+	const afterEvent = server.getOperation(started.operationId)!;
+	const finishedWait = server.waitForOperationChange(started.operationId, afterEvent.revision, 5_000);
+	server.finishOperation(started.operationId, outcome(started.operationId));
+	assert.equal((await finishedWait)?.state, "terminal");
+	await server.stop();
+});
+
+test("operation waiter abort removes its timer and listener", async () => {
+	const server = new BrowserBridgeServer();
+	const started = server.beginOperation({ commandName: "browser_execute", phase: "arming" });
+	const controller = new AbortController();
+	const waiting = server.waitForOperationChange(started.operationId, started.revision, 5_000, controller.signal);
+	controller.abort();
+	await assert.rejects(waiting, { name: "AbortError" });
+	await server.stop();
+});
+
+test("operation settlement source contains no fixed-interval registry polling", async () => {
+	const source = await readFile(new URL("../../src/commands/browserOperation.ts", import.meta.url), "utf8");
+	assert.equal(source.includes("setInterval"), false);
+	assert.equal(/delay\(Math\.min\(25|setTimeout\([^)]*,\s*25\b/.test(source), false);
 });
 
 test("operation completion resolvers require tab and upload result markers beyond acknowledgement", () => {

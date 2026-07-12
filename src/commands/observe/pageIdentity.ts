@@ -78,7 +78,7 @@ export function pageIdentityFromUnknown(value: unknown): PageIdentity | undefine
 			url: nonEmptyString(direct.url) ?? "",
 		};
 	}
-	for (const key of ["snapshot", "pageObservation", "summary", "envelope", "data"] as const) {
+	for (const key of ["target", "snapshot"] as const) {
 		const nested = pageIdentityFromUnknown(value[key]);
 		if (nested) return nested;
 	}

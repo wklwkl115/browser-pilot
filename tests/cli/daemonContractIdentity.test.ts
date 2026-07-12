@@ -269,7 +269,7 @@ test("status and doctor query normally but --check exits 1 on a missing daemon i
 		assert.equal(checked.status, 1, `${command}: ${checked.stderr}`);
 		assert.equal(checkedBody.ok, false);
 		assert.equal(checkedBody.code, "DAEMON_CONTRACT_MISMATCH");
-		assert.equal((checkedBody.contract as { local: { commandContractVersion: number } }).local.commandContractVersion, 2);
+		assert.equal((checkedBody.contract as { local: { commandContractVersion: number } }).local.commandContractVersion, 3);
 		assert.equal((checkedBody.contract as { daemon: unknown }).daemon, null);
 	}
 });

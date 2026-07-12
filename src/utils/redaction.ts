@@ -162,7 +162,11 @@ export function redactSensitiveValue(value: unknown, seen = new WeakSet<object>(
 	if (value === null || value === undefined || typeof value !== "object") return value;
 	if (seen.has(value)) return "[Circular]";
 	seen.add(value);
-	if (Array.isArray(value)) return value.map((item) => redactSensitiveValue(item, seen, parentPayload));
+	if (Array.isArray(value)) {
+		const output = value.map((item) => redactSensitiveValue(item, seen, parentPayload));
+		seen.delete(value);
+		return output;
+	}
 	const out: Record<string, unknown> = {};
 	for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
 		const placeholder = sensitiveFieldPlaceholder(key);
@@ -178,6 +182,7 @@ export function redactSensitiveValue(value: unknown, seen = new WeakSet<object>(
 		}
 		out[key] = redactSensitiveValue(item, seen, payloadField);
 	}
+	seen.delete(value);
 	return out;
 }
 
@@ -220,24 +225,17 @@ function rawJsonPathForValue(root: unknown, target: unknown, kind: RedactionPoin
 	return undefined;
 }
 
-export function redactSensitiveValueWithPointers(
-	value: unknown,
-	options: { rawArtifactPath?: string; rawArtifactBytes?: number; artifactValue?: unknown } = {},
-	seen = new WeakSet<object>(),
-	parentPayload = false,
-): unknown {
-	const pointer = (kind: RedactionPointerKind, target: unknown): RedactionPointer | string => {
-		if (!options.rawArtifactPath) return placeholderForKind(kind);
-		const jsonPath = rawJsonPathForValue(options.artifactValue, target, kind) || "$";
-		return pointerFor(kind, { raw: options.rawArtifactPath, jsonPath, bytes: options.rawArtifactBytes });
-	};
-	if (typeof value === "string") return parentPayload ? pointer("body", value) : redactSensitiveText(value);
-	if (value === null || value === undefined || typeof value !== "object") return value;
-	if (seen.has(value)) return "[Circular]";
-	seen.add(value);
-	if (Array.isArray(value)) return value.map((item) => redactSensitiveValueWithPointers(item, options, seen, parentPayload));
+type RedactionPointerResolver = (kind: RedactionPointerKind, target: unknown) => RedactionPointer | string;
+
+function redactSensitiveRecord(
+	value: Record<string, unknown>,
+	options: { rawArtifactPath?: string; rawArtifactBytes?: number; artifactValue?: unknown },
+	seen: WeakSet<object>,
+	parentPayload: boolean,
+	pointer: RedactionPointerResolver,
+): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
-	for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+	for (const [key, item] of Object.entries(value)) {
 		const placeholder = sensitiveFieldPlaceholder(key);
 		const kind = sensitiveFieldKind(key);
 		const normalized = normalizeFieldName(key);
@@ -255,6 +253,31 @@ export function redactSensitiveValueWithPointers(
 	return out;
 }
 
+export function redactSensitiveValueWithPointers(
+	value: unknown,
+	options: { rawArtifactPath?: string; rawArtifactBytes?: number; artifactValue?: unknown } = {},
+	seen = new WeakSet<object>(),
+	parentPayload = false,
+): unknown {
+	const pointer = (kind: RedactionPointerKind, target: unknown): RedactionPointer | string => {
+		if (!options.rawArtifactPath) return placeholderForKind(kind);
+		const jsonPath = rawJsonPathForValue(options.artifactValue, target, kind) || "$";
+		return pointerFor(kind, { raw: options.rawArtifactPath, jsonPath, bytes: options.rawArtifactBytes });
+	};
+	if (typeof value === "string") return parentPayload ? pointer("body", value) : redactSensitiveText(value);
+	if (value === null || value === undefined || typeof value !== "object") return value;
+	if (seen.has(value)) return "[Circular]";
+	seen.add(value);
+	if (Array.isArray(value)) {
+		const output = value.map((item) => redactSensitiveValueWithPointers(item, options, seen, parentPayload));
+		seen.delete(value);
+		return output;
+	}
+	const out = redactSensitiveRecord(value as Record<string, unknown>, options, seen, parentPayload, pointer);
+	seen.delete(value);
+	return out;
+}
+
 export function containsSensitiveEvidence(value: unknown): boolean {
 	return hasSensitiveEvidence(value);
 }
@@ -264,16 +287,26 @@ function hasSensitiveEvidence(value: unknown, seen = new WeakSet<object>(), pare
 	if (value === null || value === undefined || typeof value !== "object") return false;
 	if (seen.has(value)) return false;
 	seen.add(value);
-	if (Array.isArray(value)) return value.some((item) => hasSensitiveEvidence(item, seen, parentPayload));
+	if (Array.isArray(value)) {
+		const found = value.some((item) => hasSensitiveEvidence(item, seen, parentPayload));
+		seen.delete(value);
+		return found;
+	}
 	for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
 		const normalized = normalizeFieldName(key);
 		const payloadField = BODY_FIELD_NAMES.has(normalized) || POST_DATA_FIELD_NAMES.has(normalized);
 		if (
 			isSensitiveFieldKey(key)
 			&& (item === null || item === undefined || typeof item !== "object" || SENSITIVE_FIELD_NAMES.has(normalized) || POST_DATA_FIELD_NAMES.has(normalized))
-		) return true;
-		if (shouldRedactPayloadText(key, parentPayload)) return true;
-		if (hasSensitiveEvidence(item, seen, payloadField)) return true;
+		) {
+			seen.delete(value);
+			return true;
+		}
+		if (shouldRedactPayloadText(key, parentPayload) || hasSensitiveEvidence(item, seen, payloadField)) {
+			seen.delete(value);
+			return true;
+		}
 	}
+	seen.delete(value);
 	return false;
 }

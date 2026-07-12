@@ -19,6 +19,7 @@ export type BrowserBridgeClientInfo = {
 	userAgent?: string;
 	workerBootId?: string;
 	workerStartedAt?: number;
+	captureContractVersion?: number;
 	/** Stable per-installation id (survives SW restarts); used to dedupe sockets and reconcile reconnects. */
 	extensionInstanceId?: string;
 	/** How the most recent ext_ready was classified: cold | reconnect | sw-restart | duplicate. */

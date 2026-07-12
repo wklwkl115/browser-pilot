@@ -1,4 +1,5 @@
 import { isRecord } from "../../utils/records.js";
+import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
 
 export type ObserveTimingMetrics = Record<string, number | boolean | undefined>;
 
@@ -15,13 +16,12 @@ function numericMetric(value: unknown): number | undefined {
 	return Number.isFinite(n) ? n : undefined;
 }
 
-export function finalizedObserveTimings(metrics: ObserveTimingMetrics, data: unknown, abmlRead: unknown): Record<string, unknown> {
+export function finalizedObserveTimings(metrics: ObserveTimingMetrics, data: PageWorldScanBundleV1, abmlRead: unknown): Record<string, unknown> {
 	const out: Record<string, unknown> = { ...metrics };
-	const dataRecord = isRecord(data) ? data : undefined;
 	const abmlData = isRecord(abmlRead) && abmlRead.ok === true && isRecord(abmlRead.data) ? abmlRead.data : undefined;
 	const axDiagnostics = isRecord(abmlData?.axDiagnostics) ? abmlData.axDiagnostics : undefined;
 	const axFusion = isRecord(abmlData?.axFusion) ? abmlData.axFusion : undefined;
-	const nodeCount = numericMetric(dataRecord?.node_count ?? dataRecord?.nodeCount);
+	const nodeCount = numericMetric(data.stats.nodeCount);
 	const axNodeCount = numericMetric(axDiagnostics?.nodeCount);
 	const axMs = numericMetric(axDiagnostics?.axMs);
 	const axCdpCalls = numericMetric(axDiagnostics?.cdpCalls);

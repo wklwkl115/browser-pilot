@@ -3,6 +3,7 @@ import { isRecord } from "../utils/records.js";
 import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../kernels/abml/entity.js";
 import { sanitizeSemanticText } from "../kernels/abml/semanticText.js";
 import { summaryRefIdForDescriptor } from "../kernels/refs/refId.js";
+import type { PageWorldScanBundleV1, ScanActionable, ScanCanvasRegion, ScanListHint, ScanMediaCandidate, ScanRow } from "../kernels/abml/pageWorldScan.js";
 
 export type Summary = Record<string, unknown>;
 type SummaryColumn<T> = { key: string; value: (item: T) => unknown };
@@ -48,7 +49,7 @@ type Limits = {
 };
 
 type RankedAction = {
-	node: Record<string, unknown>;
+	node: ScanActionable;
 	position: number;
 	score: number;
 	key: string;
@@ -68,17 +69,18 @@ type PreparedForm = {
 };
 
 type ScanSummaryPrepared = {
-	item: Record<string, unknown>;
+	item: PageWorldScanBundleV1;
+	relevance?: ScanSummaryOptions["relevance"];
 	tabs: unknown[];
 	content: string;
 	lines: string[];
 	headings: string[];
 	interactive: string[];
-	actionables: Record<string, unknown>[];
-	listHints: Record<string, unknown>[];
+	actionables: ScanActionable[];
+	listHints: ScanListHint[];
 	listSummaries: Record<string, unknown>[];
-	mediaCandidates: Record<string, unknown>[];
-	visibleRows: Record<string, unknown>[];
+	mediaCandidates: ScanMediaCandidate[];
+	visibleRows: ScanRow[];
 	rankedActions: RankedAction[];
 	sortedRankedActions: RankedAction[];
 	actionCounts: Map<string, number>;
@@ -141,7 +143,7 @@ function pointTuple(value: unknown): [number, number] | undefined {
 	return x === undefined || y === undefined ? undefined : [Math.round(x), Math.round(y)];
 }
 
-function actionKind(node: Record<string, unknown>): string {
+function actionKind(node: ScanActionable): string {
 	const tag = asText(node.tag).toLowerCase();
 	const role = asText(node.role).toLowerCase();
 	if (node.editable === true) {
@@ -158,13 +160,13 @@ function actionKind(node: Record<string, unknown>): string {
 	return tag || role || "other";
 }
 
-function actionIntent(node: Record<string, unknown>): string | undefined {
+function actionIntent(node: ScanActionable): string | undefined {
 	const text = `${asText(node.action)} ${asText(node.label)} ${asText(node.text)}`;
 	const match = text.match(ACTION_INTENT_RE);
 	return match ? match[1].replace(/\s+/g, " ").toLowerCase() : undefined;
 }
 
-function actionDisplayName(node: Record<string, unknown>): string {
+function actionDisplayName(node: ScanActionable): string {
 	const editable = node.editable === true;
 	const candidates = editable ? [node.displayLabel, node.action, node.role, node.tag] : [node.displayLabel, node.action, node.label, node.text, node.role, node.tag];
 	for (const candidate of candidates) {
@@ -175,7 +177,7 @@ function actionDisplayName(node: Record<string, unknown>): string {
 	return editable ? "editable field" : "action";
 }
 
-function actionFlags(node: Record<string, unknown>, repeatedCount: number, why?: string): string[] | undefined {
+function actionFlags(node: ScanActionable, repeatedCount: number, why?: string): string[] | undefined {
 	const flags: string[] = [];
 	if (node.editable === true) flags.push("edit");
 	if (node.clickable === true && node.editable !== true) flags.push("click");
@@ -198,7 +200,7 @@ function compactHitTarget(value: unknown): Record<string, unknown> | undefined {
 
 const GRAPHIC_TAGS = new Set(["path", "g", "svg", "use", "polygon", "circle", "rect", "ellipse", "line"]);
 
-function scoreAction(node: Record<string, unknown>): number {
+function scoreAction(node: ScanActionable): number {
 	let score = Number(node.priority || 0) * 0.4;
 	const text = `${asText(node.action)} ${asText(node.label)} ${asText(node.text)}`;
 	if (node.hitOk === true) score += 120;
@@ -215,11 +217,11 @@ function scoreAction(node: Record<string, unknown>): number {
 	const selector = asText(node.selector);
 	if (/^#[A-Za-z0-9_-]+$/.test(selector)) score += 80;
 	if (selector.length > 120) score -= 80;
-	const rect = isRecord(node.rect) ? node.rect : {};
-	const rectWidth = asFiniteNumber(rect.width);
-	const rectHeight = asFiniteNumber(rect.height);
-	const rectX = asFiniteNumber(rect.x);
-	const rectY = asFiniteNumber(rect.y);
+	const rect = node.rect;
+	const rectWidth = asFiniteNumber(rect?.width);
+	const rectHeight = asFiniteNumber(rect?.height);
+	const rectX = asFiniteNumber(rect?.x);
+	const rectY = asFiniteNumber(rect?.y);
 	const isFixedOrSticky = ["fixed", "sticky"].includes(asText(node.position).toLowerCase());
 	const fixedSmallEdge = isFixedOrSticky
 		&& rectWidth !== undefined && rectHeight !== undefined && rectWidth <= 180 && rectHeight <= 180
@@ -229,7 +231,7 @@ function scoreAction(node: Record<string, unknown>): number {
 		const isNavLandmark = role === "navigation" || tag === "nav";
 		score -= isNavLandmark ? 40 : 80;
 	}
-	const y = asFiniteNumber(rect.y);
+	const y = asFiniteNumber(rect?.y);
 	if (y !== undefined && y >= 0 && y < 900) score += 80;
 	if (y !== undefined && y > 1800) score -= 120;
 	score -= Math.min(100, cleanInlineText(node.label || node.text, 200).length / 4);
@@ -237,17 +239,17 @@ function scoreAction(node: Record<string, unknown>): number {
 	return score;
 }
 
-function actionKey(node: Record<string, unknown>): string {
+function actionKey(node: ScanActionable): string {
 	return [actionKind(node), normalizeText(node.action || node.label || node.text), selectorTail(node.selector)].filter(Boolean).join("|");
 }
 
-function compactAction(node: Record<string, unknown>, position: number, repeatedCount: number): Record<string, unknown> {
+function compactAction(node: ScanActionable, position: number, repeatedCount: number): Record<string, unknown> {
 	const why = actionIntent(node);
 	const out: Record<string, unknown> = {
 		i: Number(node.index ?? position),
 		k: actionKind(node),
 		name: actionDisplayName(node),
-		jsonPath: `data.actionables[${position}]`,
+		jsonPath: `data.structure.actionables[${position}]`,
 	};
 	const selector = selectorTail(node.selector);
 	const point = pointTuple(node.point);
@@ -265,7 +267,7 @@ function compactAction(node: Record<string, unknown>, position: number, repeated
 	return out;
 }
 
-function relevanceActionScore(node: Record<string, unknown>, options: ScanSummaryOptions): number {
+function relevanceActionScore(node: ScanActionable, options: ScanSummaryOptions): number {
 	return options.relevance?.scoreFields({
 		name: `${asText(node.action)} ${asText(node.label)} ${asText(node.text)}`,
 		role: asText(node.role),
@@ -275,8 +277,8 @@ function relevanceActionScore(node: Record<string, unknown>, options: ScanSummar
 	}) ?? 0;
 }
 
-function rankedActions(actionables: unknown[], options: ScanSummaryOptions): RankedAction[] {
-	return actionables.filter(isRecord).map((node, position) => {
+function rankedActions(actionables: ScanActionable[], options: ScanSummaryOptions): RankedAction[] {
+	return actionables.map((node, position) => {
 		const key = actionKey(node) || `action:${position}`;
 		return { node, position, score: scoreAction(node) + relevanceActionScore(node, options), key };
 	});
@@ -326,7 +328,7 @@ function summarizeForms(prepared: PreparedForm | undefined, limit: number): Reco
 	return prepared && limit > 0 ? [prepared].slice(0, limit) : [];
 }
 
-function prepareListSummaries(listHints: Record<string, unknown>[]): Record<string, unknown>[] {
+function prepareListSummaries(listHints: ScanListHint[]): Record<string, unknown>[] {
 	return listHints.map((item, index) => {
 		const hidden = Number(item.hiddenCount || 0);
 		const sampleHidden = asArray(item.sampleHidden).map((entry) => cleanSemanticText(entry, 90)).filter(Boolean).slice(0, 2);
@@ -336,7 +338,7 @@ function prepareListSummaries(listHints: Record<string, unknown>[]): Record<stri
 			i: index,
 			sel: selectorTail(item.selector) || "",
 			n: Number(item.itemCount || 0),
-			jsonPath: `data.list_hints[${index}]`,
+			jsonPath: `data.structure.listHints[${index}]`,
 		};
 		if (containerLabel) out.name = containerLabel;
 		if (sample) out.sample = sample;
@@ -415,15 +417,15 @@ function limitSets(options: ScanSummaryOptions): Limits[] {
 	];
 }
 
-function scanEntityContext(item: Record<string, unknown>, options: ScanSummaryOptions): ScanEntityContext {
+function scanEntityContext(item: PageWorldScanBundleV1, options: ScanSummaryOptions): ScanEntityContext {
 	const context = options.entityContext || {};
-	const url = context.url ?? stringField(item.url);
+	const url = context.url ?? item.page.url;
 	return {
-		browserSessionId: context.browserSessionId ?? stringField(item.browserSessionId),
-		tabId: context.tabId ?? numberField(item.tabId),
+		browserSessionId: context.browserSessionId,
+		tabId: context.tabId,
 		url,
-		observationId: context.observationId ?? stringField(item.observationId) ?? `scan:${url || "unknown"}`,
-		capturedAt: context.capturedAt ?? numberField(item.capturedAt) ?? Date.now(),
+		observationId: context.observationId ?? `scan:${url || "unknown"}`,
+		capturedAt: context.capturedAt ?? item.signals.fingerprint.capturedAt ?? Date.now(),
 	};
 }
 
@@ -431,14 +433,8 @@ function stringField(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-function numberField(value: unknown): number | undefined {
-	const n = Number(value);
-	return Number.isFinite(n) ? n : undefined;
-}
-
-function nodeRefId(node: Record<string, unknown>, built: { descriptor: Parameters<typeof summaryRefIdForDescriptor>[0] }, slot: string): string {
-	const refs = isRecord(node.__browserPilotEntityRefs) ? node.__browserPilotEntityRefs : undefined;
-	return stringField(refs?.[slot]) ?? stringField(node.__browserPilotEntityRef) ?? stringField(node.entityRef) ?? summaryRefIdForDescriptor(built.descriptor);
+function nodeRefId(node: ScanActionable | ScanListHint | ScanCanvasRegion, built: { descriptor: Parameters<typeof summaryRefIdForDescriptor>[0] }, slot: string): string {
+	return stringField(node.entityRefs?.[slot]) ?? summaryRefIdForDescriptor(built.descriptor);
 }
 
 function entityRefs(entities: Entity[], limit = Number.MAX_SAFE_INTEGER): string[] {
@@ -456,7 +452,7 @@ function dedupeEntitiesByRef(entities: Entity[]): Entity[] {
 	return out;
 }
 
-function listHintDuplicateNames(listHints: Record<string, unknown>[]): Set<string> {
+function listHintDuplicateNames(listHints: ScanListHint[]): Set<string> {
 	const counts = new Map<string, number>();
 	for (const [index, item] of listHints.entries()) {
 		const built = buildRegionEntityFromListHint(item, { observationId: "scan:list-hint-name", capturedAt: 0 }, index);
@@ -467,18 +463,18 @@ function listHintDuplicateNames(listHints: Record<string, unknown>[]): Set<strin
 	return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
 }
 
-function buildListRegionEntity(node: Record<string, unknown>, context: ScanEntityContext, index: number, duplicateNames: ReadonlySet<string>): Entity {
+function buildListRegionEntity(node: ScanListHint, context: ScanEntityContext, index: number, duplicateNames: ReadonlySet<string>): Entity {
 	const built = buildRegionEntityFromListHint(node, context, index, duplicateNames);
 	return withRegisteredRef(built.entity, nodeRefId(node, built, "listRegion"));
 }
 
-export function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[]; referencedEntities: Entity[]; controlsSources: Entity[] } {
+export function buildScanEntities(item: PageWorldScanBundleV1, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[]; referencedEntities: Entity[]; controlsSources: Entity[] } {
 	const context = scanEntityContext(item, options);
-	const actionables = asArray(item.actionables).filter(isRecord);
-	const references = asArray(item.references).filter(isRecord);
-	const controlsPairs = asArray(item.controls_pairs).filter(isRecord);
-	const listHints = asArray(item.list_hints).filter(isRecord);
-	const canvasRegions = asArray(item.canvas_regions).filter(isRecord);
+	const actionables = item.structure.actionables.filter((node) => node.referenceOnly !== true && node.relationOnly !== true);
+	const references = item.structure.actionables.filter((node) => node.referenceOnly === true);
+	const controlsPairs = item.structure.actionables.filter((node) => node.relationOnly === true);
+	const listHints = item.structure.listHints;
+	const canvasRegions = item.structure.canvasRegions;
 	const actionEntities = dedupeEntities(actionables.map((node) => {
 		const built = buildDomEntityFromScanActionable(node, context);
 		return withRegisteredRef(built.entity, nodeRefId(node, built, "domAction"));
@@ -512,7 +508,7 @@ export function buildScanEntities(item: Record<string, unknown>, options: ScanSu
 	const controlsSourceOnly = controlsSourceEntities.filter((e) => typeof e.hints?.selector !== "string" || !actionableSelectors.has(e.hints.selector as string));
 	const entities = dedupeEntities([...actionEntities, ...referencedOnly, ...controlsSourceOnly, ...listEntities, ...visualRegions]);
 	const referencedSurvivors = [...referencedOnly, ...controlsSourceOnly].filter((ref) => entities.includes(ref));
-	const actionableCandidates = actionEntities.filter((entity) => entity.hints?.jsonPath && String(entity.hints.jsonPath).startsWith("data.actionables["));
+	const actionableCandidates = actionEntities.filter((entity) => entity.hints?.jsonPath && String(entity.hints.jsonPath).startsWith("data.structure.actionables["));
 	// primary_entities is the ONLY DOM set that reaches the AX merge (runtime.ts), so an entity
 	// dropped here loses its chance to fuse with its AX twin. High-signal state — aria-current
 	// (currentIn) and active checked/selected/pressed — is exactly what the AX/relation layer needs,
@@ -531,25 +527,26 @@ function linkSameOrigin(href: unknown, pageUrl: unknown): boolean | undefined {
 	try { return new URL(href).origin === new URL(pageUrl).origin; } catch { return undefined; }
 }
 
-function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], options: ScanSummaryOptions): ScanSummaryPrepared {
-	const content = typeof item.content === "string" ? item.content : "";
-	const actionables = asArray(item.actionables).filter(isRecord);
+function prepareScanSummary(item: PageWorldScanBundleV1, tabs: unknown[], options: ScanSummaryOptions): ScanSummaryPrepared {
+	const content = item.content.tree ?? item.content.text;
+	const actionables = item.structure.actionables.filter((node) => node.referenceOnly !== true && node.relationOnly !== true);
 	const ranked = rankedActions(actionables, options);
 	const sortedRanked = [...ranked].sort((a, b) => b.score - a.score || a.position - b.position);
 	const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 	const scanEntities = options.scanEntities ?? buildScanEntities(item, options);
 	return {
 		item,
+		relevance: options.relevance,
 		tabs,
 		content,
 		lines,
-		headings: headingSignals(lines, Number.MAX_SAFE_INTEGER),
-		interactive: lines.filter((line) => /^<(a|button|input|textarea|select|option)\b/i.test(line)),
+		headings: item.content.headings.length ? item.content.headings : headingSignals(lines, Number.MAX_SAFE_INTEGER),
+		interactive: item.content.interactive,
 		actionables,
-		listHints: asArray(item.list_hints).filter(isRecord),
-		listSummaries: prepareListSummaries(asArray(item.list_hints).filter(isRecord)),
-		mediaCandidates: asArray(item.media_candidates).filter(isRecord),
-		visibleRows: asArray(item.rows).filter(isRecord),
+		listHints: item.structure.listHints,
+		listSummaries: prepareListSummaries(item.structure.listHints),
+		mediaCandidates: item.structure.mediaCandidates,
+		visibleRows: item.structure.rows,
 		rankedActions: ranked,
 		sortedRankedActions: sortedRanked,
 		actionCounts: actionCounts(ranked),
@@ -580,7 +577,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 	// reading controlCount:0 as "empty page" and wasting probes. Conservative: a single actionable or
 	// any real text suppresses it, so minimal-but-valid pages are not flagged.
 	if (actionablesScanned === 0 && content.length < 40) {
-		warnings.push(`low-substance page: ${Number(item.node_count) || 0} nodes, ${content.length} text chars, 0 actionable controls (title="${String(item.title || "").slice(0, 50)}") — likely an anti-bot/consent/login wall or genuinely empty; verify the title/URL and the preceding browser-operation/v2 terminal evidence before trusting this scan`);
+		warnings.push(`low-substance page: ${item.stats.nodeCount} nodes, ${content.length} text chars, 0 actionable controls (title="${item.page.title.slice(0, 50)}") — likely an anti-bot/consent/login wall or genuinely empty; verify the title/URL and the preceding browser-operation/v2 terminal evidence before trusting this scan`);
 	}
 	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
 	const primaryActionsWithEntityRefs = primaryActions.map((action) => {
@@ -590,7 +587,6 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 	const focus: Record<string, unknown> = {
 		entityShape: "refs-v1",
 		// Clone to avoid shared references rendering as "[Circular]" after redaction.
-		top_layer: structuredClone(item.top_layer),
 		primary_actions: primaryActionsWithEntityRefs,
 		...(actionablesTruncated ? { actionablesTruncation: actionablesTruncationMeta } : {}),
 		forms: summarizeForms(preparedForm, 2),
@@ -602,26 +598,24 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 		visual_regions: entityRefs(scanEntities.visualRegions, 4),
 		referenced_entities: entityRefs(referencedEntities, FOCUS_REFERENCED_ENTITY_REF_LIMIT),
 	};
-	const relevance = prepared.item && prepared.item.__browserPilotRelevance && isRecord(prepared.item.__browserPilotRelevance) ? prepared.item.__browserPilotRelevance : undefined;
+	const relevance = prepared.relevance;
 	return {
-		summaryVersion: 2,
-		url: item.url,
-		title: item.title,
-		readyState: item.readyState,
-		text_only: item.text_only,
+		summaryVersion: 3,
+		url: item.page.url,
+		title: item.page.title,
+		readyState: item.page.readyState,
 		contentChars: content.length,
 		lineCount: lines.length,
-		truncated: item.truncated,
-		node_count: item.node_count,
-		iframe_notes: item.iframe_notes,
-		top_layer: item.top_layer,
+		truncated: item.stats.truncated,
+		nodeCount: item.stats.nodeCount,
+		frameNotes: item.frames.notes,
 		tabs_count: tabs.length,
 		...(relevance && Number(relevance.boosted || 0) > 0 ? { relevance: { boosted: relevance.boosted, signals: Array.isArray(relevance.signals) ? relevance.signals : [] } } : {}),
 		page: {
 			contentChars: content.length,
 			lineCount: lines.length,
-			node_count: item.node_count,
-			truncated: item.truncated,
+			nodeCount: item.stats.nodeCount,
+			truncated: item.stats.truncated,
 			tabs_count: tabs.length,
 		},
 		focus,
@@ -629,45 +623,45 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 		artifact_hints: {
 			jsonPaths: {
 				content: "data.content",
-				actionables: "data.actionables",
-				list_hints: "data.list_hints",
-				media_candidates: "data.media_candidates",
-				rows: "data.rows",
+				actionables: "data.structure.actionables",
+				listHints: "data.structure.listHints",
+				mediaCandidates: "data.structure.mediaCandidates",
+				rows: "data.structure.rows",
 			},
 			preferredReads: [
-				{ label: "DOM-ordered visible rows (text+href)", jsonPath: "data.rows" },
-				{ label: "all actionables with full selectors", jsonPath: "data.actionables" },
+				{ label: "DOM-ordered visible rows (text+href)", jsonPath: "data.structure.rows" },
+				{ label: "all actionables with full selectors", jsonPath: "data.structure.actionables" },
 				{ label: "full simplified DOM/text", jsonPath: "data.content" },
-				{ label: "visible media candidates (src+geometry)", jsonPath: "data.media_candidates" },
-				{ label: "repeated list hints", jsonPath: "data.list_hints" },
+				{ label: "visible media candidates (src+geometry)", jsonPath: "data.structure.mediaCandidates" },
+				{ label: "repeated list hints", jsonPath: "data.structure.listHints" },
 			],
 		},
-		list_hints: summaryTable(listHints, [
+		listHints: summaryTable(listHints, [
 			{ key: "selector", value: (node) => node.selector },
 			{ key: "itemCount", value: (node) => node.itemCount },
 			{ key: "hiddenCount", value: (node) => node.hiddenCount },
 			{ key: "firstItemPreview", value: (node) => node.firstItemPreview },
 		], limits.listRows),
-		...(!omitted.includes("media_candidates") && mediaCandidates.length > 0 ? {
-			media_candidates: summaryTable(mediaCandidates.slice(0, 40), [
-				{ key: "tag", value: (node: Record<string, unknown>) => node.tag },
-				{ key: "src", value: (node: Record<string, unknown>) => node.src },
-				{ key: "poster", value: (node: Record<string, unknown>) => node.poster },
-				{ key: "alt", value: (node: Record<string, unknown>) => node.alt || node.title },
-				{ key: "sameOrigin", value: (node: Record<string, unknown>) => node.sameOrigin },
-				{ key: "naturalWidth", value: (node: Record<string, unknown>) => node.naturalWidth ?? node.videoWidth },
-				{ key: "naturalHeight", value: (node: Record<string, unknown>) => node.naturalHeight ?? node.videoHeight },
-				{ key: "selector", value: (node: Record<string, unknown>) => node.selector },
+		...(!omitted.includes("mediaCandidates") && mediaCandidates.length > 0 ? {
+			mediaCandidates: summaryTable(mediaCandidates.slice(0, 40), [
+				{ key: "tag", value: (node: ScanMediaCandidate) => node.tag },
+				{ key: "src", value: (node: ScanMediaCandidate) => node.src },
+				{ key: "poster", value: (node: ScanMediaCandidate) => node.poster },
+				{ key: "alt", value: (node: ScanMediaCandidate) => node.alt || node.title },
+				{ key: "sameOrigin", value: (node: ScanMediaCandidate) => node.sameOrigin },
+				{ key: "naturalWidth", value: (node: ScanMediaCandidate) => node.naturalWidth ?? node.videoWidth },
+				{ key: "naturalHeight", value: (node: ScanMediaCandidate) => node.naturalHeight ?? node.videoHeight },
+				{ key: "selector", value: (node: ScanMediaCandidate) => node.selector },
 			], limits.mediaRows),
 		} : {}),
 		// DOM-ordered, capped, viewport-visible text/link rows.
 		// Hard boundary: perception only — text/href/geometry/container hints, no semantic/source inference.
 		...(!omitted.includes("rows") && visibleRows.length > 0 ? {
 			rows: summaryTable(visibleRows.slice(0, 40), [
-				{ key: "text", value: (node: Record<string, unknown>) => node.text },
-				{ key: "href", value: (node: Record<string, unknown>) => node.href },
-				{ key: "sameOrigin", value: (node: Record<string, unknown>) => node.sameOrigin },
-				{ key: "selector", value: (node: Record<string, unknown>) => node.selector },
+				{ key: "text", value: (node: ScanRow) => node.text },
+				{ key: "href", value: (node: ScanRow) => node.href },
+				{ key: "sameOrigin", value: (node: ScanRow) => node.sameOrigin },
+				{ key: "selector", value: (node: ScanRow) => node.selector },
 			], 40),
 		} : {}),
 		actionables: summaryTable(actionables, [
@@ -682,7 +676,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 			// Link identity so link-inventory tasks do not need custom JS; href is resolved/captured
 			// in the scan (buildScanScript), sameOrigin is a mechanical origin compare vs the page URL.
 			{ key: "href", value: (node) => node.href },
-			{ key: "sameOrigin", value: (node) => linkSameOrigin(node.href, item.url) },
+			{ key: "sameOrigin", value: (node) => linkSameOrigin(node.href, item.page.url) },
 		], limits.actionRows),
 		interactive: interactive.slice(0, limits.interactive),
 		// Keep a distinct array from focus.headings so redaction does not collapse the shared reference.
@@ -692,25 +686,20 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 	};
 }
 
-export function summarizeScanData(data: unknown, tabs: unknown[] = [], options: ScanSummaryOptions = {}): Summary {
-	const relevance = options.relevance && Number(options.relevance.boosted || 0) > 0
-		? { boosted: options.relevance.boosted, signals: options.relevance.signals ?? [] }
-		: undefined;
-	const item = isRecord(data) ? relevance ? { ...data, __browserPilotRelevance: relevance } : data : {};
+export function summarizeScanData(data: PageWorldScanBundleV1, tabs: unknown[] = [], options: ScanSummaryOptions = {}): Summary {
 	const budget = scanBudget(options);
 	const sets = limitSets(options);
-	const prepared = prepareScanSummary(item, tabs, options);
+	const prepared = prepareScanSummary(data, tabs, options);
 	for (const [index, limits] of sets.entries()) {
-		const omitted = index === 0 ? [] : ["interactive", "textPreview", "media_candidates", "rows"];
+		const omitted = index === 0 ? [] : ["interactive", "textPreview", "mediaCandidates", "rows"];
 		const summary = buildSummary(prepared, limits, omitted);
 		if (stableLength(summary) <= budget || index === sets.length - 1) return summary;
 	}
-	return buildSummary(prepared, sets[sets.length - 1], ["interactive", "textPreview", "media_candidates", "rows"]);
+	return buildSummary(prepared, sets[sets.length - 1], ["interactive", "textPreview", "mediaCandidates", "rows"]);
 }
 
-export function scanEntitiesForEnvelope(data: unknown, options: ScanSummaryOptions = {}): Entity[] {
-	const item = isRecord(data) ? data : {};
-	const built = options.scanEntities ?? buildScanEntities(item, options);
+export function scanEntitiesForEnvelope(data: PageWorldScanBundleV1, options: ScanSummaryOptions = {}): Entity[] {
+	const built = options.scanEntities ?? buildScanEntities(data, options);
 	return scanEntitiesFromGroups(built);
 }
 

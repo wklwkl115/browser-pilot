@@ -127,6 +127,7 @@ export class BrowserBridgeClientRegistry {
 		if (typeof raw.userAgent === "string") current.userAgent = raw.userAgent;
 		if (typeof raw.workerBootId === "string") current.workerBootId = raw.workerBootId;
 		if (typeof raw.workerStartedAt === "number" && Number.isFinite(raw.workerStartedAt)) current.workerStartedAt = raw.workerStartedAt;
+		if (typeof raw.captureContractVersion === "number" && Number.isInteger(raw.captureContractVersion)) current.captureContractVersion = raw.captureContractVersion;
 		if (typeof raw.extensionInstanceId === "string") current.extensionInstanceId = raw.extensionInstanceId;
 	}
 

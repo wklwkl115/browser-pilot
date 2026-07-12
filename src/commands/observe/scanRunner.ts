@@ -1,5 +1,5 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { compactError } from "../../utils/errors.js";
+import { BrowserBridgeError, compactError } from "../../utils/errors.js";
 import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
 import { artifactFallbackName, bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, commandMaxChars, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
@@ -94,6 +94,17 @@ async function prepareObservationRequest(
 }
 
 export async function runScanObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, mode: Extract<ObserveMode, "scan" | "text" | "tabs">, onUpdate?: CommandOnUpdate) {
+	const startedAt = Date.now();
+	if (mode !== "tabs") {
+		const extension = server.snapshot({ browserSessionId: params.browserSessionId }).extension;
+		if (extension && extension.captureContractVersion !== 1) {
+			throw new BrowserBridgeError("EXTENSION_CONTRACT_MISMATCH", "The connected browser extension does not support capture contract v1", {
+				expectedCaptureContractVersion: 1,
+				actualCaptureContractVersion: extension.captureContractVersion ?? null,
+				recovery: { action: "reload_extension", message: "Rebuild/reload the Browser Pilot extension, then reconnect before observing." },
+			});
+		}
+	}
 	const observeTimings: ObserveTimingMetrics = {};
 	const request = await prepareObservationRequest(server, params, ctx, mode, observeTimings);
 	const { tabs, tabsRefreshDegraded, providerFailures, maxChars, browserSessionId, rawTargetRef, tabId, fallbackName, outputPath, artifactAvailable, resultParams, axeDiagnosticsRequested, readabilityRequested } = request;
@@ -148,11 +159,11 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const { observation, fusedPageFingerprint } = capture;
 	const baseline = capture.baseline;
 	const ledgerFrame = capture.reanchorReason ? undefined : sessionLedgerFrame;
-	const data = observation.result.data as Record<string, unknown> | undefined;
+	const data = observation.result.data;
 	const scanPageFingerprint = publicPageFingerprint(fusedPageFingerprint);
 	const effectivePageFingerprint = fusedPageFingerprint ?? pageFingerprint;
-	const content = typeof data?.content === "string" ? data.content : JSON.stringify(data ?? observation.result.data, null, 2);
-	const scanMeta = data ? { ...data, content: `[${content.length} chars]` } : undefined;
+	const content = data.content.tree ?? data.content.text;
+	const scanMeta = { schema: data.schema, page: data.page, stats: data.stats };
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const providers = await runObserveProviders({
 		server,
@@ -160,16 +171,19 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		tabId: effectiveTabId,
 		rawTargetRef,
 		timeoutMs,
+		startedAt,
+		deadlineAt: startedAt + timeoutMs,
 		baseline,
 		axeRequested: axeDiagnosticsRequested,
 		readabilityRequested,
+		outputBudgetChars: maxChars,
 		artifactPath: artifactAvailable ? outputPath : undefined,
 		timings: observeTimings,
 	});
 	const { causal, axeDiagnostics, readability, recorderState, hookState } = providers;
 	if (axeDiagnostics.failure) providerFailures.push(axeDiagnostics.failure);
 	if (readability.failure) providerFailures.push(readability.failure);
-	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined, recorderState.lastSeq, hookState.lastSeq, capture.pageIdentity);
+	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, data.page.url, recorderState.lastSeq, hookState.lastSeq, capture.pageIdentity);
 	const renderStartedAt = Date.now();
 	const abmlProviderFailure = providerFailureFromAbmlRead(observation.abmlRead);
 	if (abmlProviderFailure) providerFailures.push(abmlProviderFailure);

@@ -24,6 +24,7 @@ import type { ResourceRefDescriptor } from "../../src/ports/ResourceRefStorePort
 import { readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
 import { pierceRefEntities } from "../../src/browser-runtime/abml/pierceRuntime.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
+import { pageWorldScanBundle } from "../helpers/pageWorldScan.ts";
 
 function entity(ref: string, overrides: Partial<Entity> = {}): Entity {
 	return {
@@ -526,10 +527,10 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	});
 	assert.deepEqual(duplicateCollections.map((collection) => collection.containerName), ["Cards (archived cards)", "Cards (featured cards)"]);
 	assert.deepEqual(duplicateCollections.map((collection) => collection.containerNameSource), ["disambiguated", "disambiguated"]);
-	const duplicateListRegions = buildScanEntities({ list_hints: [
-		{ itemCount: 2, containerLabel: "Cards", selector: "#featured-cards > li", firstItemPreview: "Alpha" },
-		{ itemCount: 2, containerLabel: "Cards", selector: "#archived-cards > li", firstItemPreview: "Beta" },
-	] }, { entityContext: { observationId: "obs-dup", capturedAt: 10 } }).listEntities;
+	const duplicateListRegions = buildScanEntities(pageWorldScanBundle({ structure: { listHints: [
+		{ itemCount: 2, hiddenCount: 0, containerLabel: "Cards", selector: "#featured-cards > li", firstItemPreview: "Alpha", sampleHidden: [] },
+		{ itemCount: 2, hiddenCount: 0, containerLabel: "Cards", selector: "#archived-cards > li", firstItemPreview: "Beta", sampleHidden: [] },
+	] } }), { entityContext: { observationId: "obs-dup", capturedAt: 10 } }).listEntities;
 	assert.deepEqual(duplicateListRegions.map((region) => region.name), ["Cards (featured cards)", "Cards (archived cards)"]);
 	const unsafeDuplicate = buildCollectionModels({
 		entities: [],
@@ -956,8 +957,11 @@ test("scan script builder clamps options and injects scan helper blocks determin
 		const script = buildScanScript({ textOnly: true, maxChars: 1, maxNodes: Number.POSITIVE_INFINITY, includeIframes: false, probeWaitMs: 0 });
 		assert.match(script, /const options = \{"textOnly":true,"maxChars":1000,"maxNodes":4000,"includeIframes":false\};/);
 		assert.match(script, /const waitMs = 80;/);
-		assert.match(script, /signals: \{ fingerprint: piScanFingerprint \}/);
-		assert.match(script, /growthProbe,/);
+		assert.match(script, /schema: "browser-page-scan\/v1"/);
+		assert.match(script, /fingerprint: scanFingerprint/);
+		assert.match(script, /growthProbe/);
+		assert.match(script, /documentRect: visible\.documentRect/);
+		assert.doesNotMatch(script, /list_hints|canvas_regions|media_candidates|node_count|iframe_notes|controls_pairs|text_only/);
 		assert.match(script, /function safePreviewOf\(el\) \{/);
 		assert.match(script, /function conciseContainerLabel\(text\) \{/);
 		assert.match(script, /function headingLabelNear\(el\) \{/);

@@ -6,11 +6,14 @@ import { BROWSER_OPERATION_OUTCOME_CONTRACT, BROWSER_OPERATION_SCHEMA } from "..
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { getNativeCommandProtocolSchema } from "../../types/nativeProtocol.js";
 import { COMMAND_CONTRACT_VERSION, DAEMON_PROTOCOL_VERSION, packageVersion } from "./packageInfo.js";
+import { PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA, PAGE_WORLD_SCAN_SCHEMA } from "../../kernels/abml/pageWorldScan.js";
+import { COMMAND_CATALOG_V3_JSON_SCHEMA, COMMAND_SCHEMA_V3_JSON_SCHEMA } from "../../commands/publicContractSchemas.js";
+import { PAGE_OBSERVATION_SCHEMA_V3, PAGE_OBSERVATION_V3_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
 
 export interface DaemonContractIdentity {
 	packageVersion: string;
 	daemonProtocolVersion: number;
-	commandContractVersion: 2;
+	commandContractVersion: 3;
 	commandContractHash: string;
 	toolCount: number;
 }
@@ -144,6 +147,12 @@ export type CommandContractPayload = {
 	};
 	daemonProtocolVersion: number;
 	nativeProtocolHash: string;
+	publicSchemaHashes: {
+		catalogV3: string;
+		commandSchemaV3: string;
+		pageScanV1: string;
+		pageObservationV3: string;
+	};
 };
 
 export function commandContractPayload(definitions: readonly CommandDefinition[]): CommandContractPayload {
@@ -157,6 +166,12 @@ export function commandContractPayload(definitions: readonly CommandDefinition[]
 		operationResult: { schema: BROWSER_OPERATION_SCHEMA, outcomes: BROWSER_OPERATION_OUTCOME_CONTRACT },
 		daemonProtocolVersion: DAEMON_PROTOCOL_VERSION,
 		nativeProtocolHash,
+		publicSchemaHashes: {
+			catalogV3: sha256(canonicalContractJson(contractSchema(COMMAND_CATALOG_V3_JSON_SCHEMA))),
+			commandSchemaV3: sha256(canonicalContractJson(contractSchema(COMMAND_SCHEMA_V3_JSON_SCHEMA))),
+			pageScanV1: sha256(canonicalContractJson({ schema: PAGE_WORLD_SCAN_SCHEMA, definition: contractSchema(PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA) })),
+			pageObservationV3: sha256(canonicalContractJson({ schema: PAGE_OBSERVATION_SCHEMA_V3, definition: contractSchema(PAGE_OBSERVATION_V3_JSON_SCHEMA) })),
+		},
 	};
 }
 

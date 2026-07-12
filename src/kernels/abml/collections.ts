@@ -9,6 +9,11 @@ import type { StructureTemplate } from "./templating.js";
 import type { TreeDiff } from "./treeDiff.js";
 import { mintRef } from "../refs/core.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
+import type { ScanActionable, ScanGrowthProbe, ScanListHint, ScanRow } from "./pageWorldScan.js";
+
+type ListHintInput = ScanListHint | Record<string, unknown>;
+type ActionableInput = ScanActionable | Record<string, unknown>;
+type GrowthProbeInput = ScanGrowthProbe | Record<string, unknown>;
 
 export type CollectionCompleteness =
 	| "complete"
@@ -31,7 +36,7 @@ export type CollectionContinuationKind =
 export type CollectionKind = "list" | "table" | "grid" | "feed" | "menu" | "tree" | "region";
 export type CollectionConfidence = "high" | "medium" | "low";
 export type CollectionDataSource = "aria" | "dom" | "network" | "artifact" | "runtime-probe";
-export type CollectionEvidenceSource = "templates" | "itemEntities" | "list_hints" | "rows" | "relations" | "causal" | "growthProbe";
+export type CollectionEvidenceSource = "templates" | "itemEntities" | "listHints" | "rows" | "relations" | "causal" | "growthProbe";
 
 export type CollectionContinuation = {
 	kind: CollectionContinuationKind;
@@ -92,10 +97,10 @@ export type CollectionModel = {
 };
 
 export type CollectionScanEvidence = {
-	listHints?: Array<Record<string, unknown>>;
-	rows?: Array<Record<string, unknown>>;
-	actionables?: Array<Record<string, unknown>>;
-	growthProbe?: Record<string, unknown>;
+	listHints?: ListHintInput[];
+	rows?: Array<ScanRow | Record<string, unknown>>;
+	actionables?: ActionableInput[];
+	growthProbe?: GrowthProbeInput;
 };
 
 export type BuildCollectionModelsInput = {
@@ -419,7 +424,7 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 		}];
 		if (skeletonCount > 0) {
 			evidence.push({
-				source: "list_hints",
+				source: "listHints",
 				summary: `${skeletonCount} rendered loading placeholders indicate lazy hydration`,
 				ref: first.ref,
 			});
@@ -445,7 +450,7 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 	return drafts;
 }
 
-function listHintNameParts(hint: Record<string, unknown>, index: number): ListHintNameParts {
+function listHintNameParts(hint: ListHintInput, index: number): ListHintNameParts {
 	const label = firstSafeSemanticText([hint.containerLabel, hint.containerName, hint.label], 80);
 	const preview = safeContainerLabelText(hint.firstItemPreview, 80);
 	const fallback = `list-${index}`;
@@ -461,19 +466,19 @@ function listHintNameParts(hint: Record<string, unknown>, index: number): ListHi
 	return { name: fallback, ...(context ? { context } : {}), source: "fallback" };
 }
 
-function listHintName(hint: Record<string, unknown>, index: number): string {
+function listHintName(hint: ListHintInput, index: number): string {
 	return listHintNameParts(hint, index).name;
 }
 
-function listHintKey(hint: Record<string, unknown>, index: number): string {
+function listHintKey(hint: ListHintInput, index: number): string {
 	return collectionKey({
 		containerRole: "list",
 		containerName: listHintName(hint, index),
-		jsonPath: `data.list_hints[${index}]`,
+		jsonPath: `data.structure.listHints[${index}]`,
 	});
 }
 
-function listHintDraft(hint: Record<string, unknown>, index: number): DraftCollection {
+function listHintDraft(hint: ListHintInput, index: number): DraftCollection {
 	const observedCount = numberValue(hint.itemCount) ?? 0;
 	const hiddenCount = numberValue(hint.hiddenCount) ?? 0;
 	const firstItem = sanitizeSemanticText(hint.firstItemPreview, 160);
@@ -499,14 +504,14 @@ function listHintDraft(hint: Record<string, unknown>, index: number): DraftColle
 			confidence: hiddenCount > 0 ? "medium" : "low",
 		}],
 		evidence: [{
-			source: "list_hints",
+			source: "listHints",
 			summary: firstItem ? `list hint sample: ${firstItem}` : "scan list hint",
-			jsonPath: `data.list_hints[${index}]`,
+			jsonPath: `data.structure.listHints[${index}]`,
 		}],
 	};
 }
 
-function actionableText(actionable: Record<string, unknown>): string {
+function actionableText(actionable: ActionableInput): string {
 	return [actionable.action, actionable.label, actionable.text, actionable.name, actionable.ariaLabel]
 		.map((item) => stringValue(item))
 		.filter((item): item is string => !!item)
@@ -522,20 +527,20 @@ function classifyPaginationControlKind(text: string): PaginationControlKind {
 	return "other";
 }
 
-function paginationEdge(actionables: Array<Record<string, unknown>> | undefined): { kind: CollectionContinuationKind; confidence: CollectionConfidence; summary: string; jsonPath?: string; control: PaginationControl } | undefined {
+function paginationEdge(actionables: ActionableInput[] | undefined): { kind: CollectionContinuationKind; confidence: CollectionConfidence; summary: string; jsonPath?: string; control: PaginationControl } | undefined {
 	for (const [index, actionable] of (actionables ?? []).entries()) {
 		if (actionable.disabled === true || actionable.hidden === true) continue;
 		const text = actionableText(actionable);
 		if (/\b(next|more|load\s*more|show\s*more|older|newer)\b/.test(text)) {
 			const isPagination = /\b(next|older|newer|page)\b/.test(text);
 			const controlKind = classifyPaginationControlKind(text);
-			const ref = stringValue(actionable.ref) ?? stringValue(actionable["bp-ref"]) ?? stringValue(actionable.bpRef);
+			const ref = stringValue(actionable.ref);
 			const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
 			return {
 				kind: isPagination ? "pagination-edge" : "expandable-edge",
 				confidence: "medium",
 				summary: isPagination ? "visible next/page control" : "visible load/show more control",
-				jsonPath: `data.actionables[${index}]`,
+				jsonPath: `data.structure.actionables[${index}]`,
 				control: {
 					...(ref ? { ref } : {}),
 					...(label ? { label } : {}),
@@ -547,12 +552,12 @@ function paginationEdge(actionables: Array<Record<string, unknown>> | undefined)
 	return undefined;
 }
 
-function growthProbeEvidence(probe: Record<string, unknown> | undefined): { confidence: CollectionConfidence; summary: string } | undefined {
+function growthProbeEvidence(probe: GrowthProbeInput | undefined): { confidence: CollectionConfidence; summary: string } | undefined {
 	if (!probe) return undefined;
-	const beforeCount = numberValue(probe.beforeCount ?? probe.oldCount);
-	const afterCount = numberValue(probe.afterCount ?? probe.newCount);
-	const beforeHeight = numberValue(probe.beforeScrollHeight ?? probe.oldScrollHeight);
-	const afterHeight = numberValue(probe.afterScrollHeight ?? probe.newScrollHeight);
+	const beforeCount = numberValue(probe.beforeCount);
+	const afterCount = numberValue(probe.afterCount);
+	const beforeHeight = numberValue(probe.beforeScrollHeight);
+	const afterHeight = numberValue(probe.afterScrollHeight);
 	const beforeFirstText = stringValue(probe.beforeFirstText);
 	const afterFirstText = stringValue(probe.afterFirstText);
 	const countGrew = beforeCount !== undefined && afterCount !== undefined && afterCount > beforeCount;
@@ -652,10 +657,10 @@ function continuationFor(collectionId: string, kind: CollectionContinuationKind 
 	};
 }
 
-function inferPageSize(draft: DraftCollection, probe: Record<string, unknown> | undefined): number | undefined {
+function inferPageSize(draft: DraftCollection, probe: GrowthProbeInput | undefined): number | undefined {
 	if (probe) {
-		const beforeCount = numberValue(probe.beforeCount ?? probe.oldCount);
-		const afterCount = numberValue(probe.afterCount ?? probe.newCount);
+		const beforeCount = numberValue(probe.beforeCount);
+		const afterCount = numberValue(probe.afterCount);
 		if (beforeCount !== undefined && afterCount !== undefined && afterCount > beforeCount) {
 			const size = afterCount - beforeCount;
 			if (size > 0 && (draft.declaredTotal === undefined || size < draft.declaredTotal)) {
@@ -666,17 +671,17 @@ function inferPageSize(draft: DraftCollection, probe: Record<string, unknown> | 
 	return undefined;
 }
 
-function inferScrollDirection(probe: Record<string, unknown> | undefined): ScrollDirection | undefined {
+function inferScrollDirection(probe: GrowthProbeInput | undefined): ScrollDirection | undefined {
 	if (!probe) return undefined;
-	const beforeHeight = numberValue(probe.beforeScrollHeight ?? probe.oldScrollHeight);
-	const afterHeight = numberValue(probe.afterScrollHeight ?? probe.newScrollHeight);
+	const beforeHeight = numberValue(probe.beforeScrollHeight);
+	const afterHeight = numberValue(probe.afterScrollHeight);
 	if (beforeHeight !== undefined && afterHeight !== undefined && beforeHeight !== afterHeight) {
 		return "vertical";
 	}
 	return undefined;
 }
 
-function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>, rawGrowthProbe?: Record<string, unknown>, ambiguousNames?: Set<string>): CollectionModel {
+function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>, rawGrowthProbe?: GrowthProbeInput, ambiguousNames?: Set<string>): CollectionModel {
 	const collectionId = `c${index + 1}`;
 	const classified = completenessForDraft(draft, edge, growth);
 	const evidence = [...draft.evidence];

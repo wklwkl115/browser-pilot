@@ -19,6 +19,7 @@ import { buildObserveRelevance, type ObserveRelevance } from "./relevanceFusion.
 import { legacyProjectionSummary, modeInferredSummary } from "./renderCache.js";
 import { withObservationMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
 import type { executeScanCapture } from "./scanCapture.js";
+import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
 
 type BuiltScanEntities = NonNullable<ScanSummaryOptions["scanEntities"]>;
 type CaptureObservation = Awaited<ReturnType<typeof executeScanCapture>>["observation"];
@@ -72,7 +73,7 @@ type ScanAssemblyOptions = {
 	mode: Extract<ObserveMode, "scan" | "text">;
 	tabs: unknown[];
 	maxChars: number;
-	summaryData: unknown;
+	summaryData: PageWorldScanBundleV1;
 	scanEntityContext: ScanEntityContext;
 	summaryScanEntities: BuiltScanEntities | undefined;
 	browserSessionId: string | undefined;
@@ -139,6 +140,7 @@ function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[]
 			...(collections.length ? { collections } : {}),
 			...causalBlock,
 			...(identity.backendNodeIdCount || identity.anchorCount || identity.triggeredCount ? { identity } : {}),
+			...(inference.intents.length ? { inference } : {}),
 			...(identityGraph.intentRefs?.length ? { intentRefs: identityGraph.intentRefs } : {}),
 			_identityGraph: identityGraph,
 			...(isRecord(relationGraph) && Number(relationGraph.edgeCount || 0) > 0 ? { _relationGraph: relationGraph } : {}),
@@ -189,7 +191,7 @@ export function prepareScanAssembly(options: {
 	tabs: unknown[];
 	maxChars: number;
 	tabId: number | undefined;
-	data: Record<string, unknown> | undefined;
+	data: PageWorldScanBundleV1;
 	bridge: ReturnType<BrowserCommandRuntimePort["snapshot"]>;
 	snapshotMeta: ReturnType<typeof import("./common.js").currentObserveSnapshotMeta>;
 	observation: CaptureObservation;
@@ -198,7 +200,7 @@ export function prepareScanAssembly(options: {
 	ledgerFrame: CommandPerceptionLedgerFrame | undefined;
 }) {
 	const { server, params, mode, tabs, maxChars, tabId, data, bridge, snapshotMeta, observation, baseline, causal, ledgerFrame } = options;
-	const pageUrl = typeof data?.url === "string" ? data.url : undefined;
+	const pageUrl = data.page.url;
 	const scanEntityContext = {
 		browserSessionId: bridge.browserSessionId,
 		tabId,
@@ -206,8 +208,8 @@ export function prepareScanAssembly(options: {
 		observationId: snapshotMeta.snapshotId,
 		capturedAt: snapshotMeta.capturedAt,
 	};
-	const summaryData = data ? registerScanEntityRefs(data, scanEntityContext) : data;
-	const summaryScanEntities = summaryData && isRecord(summaryData) ? buildScanEntities(summaryData, { entityContext: scanEntityContext }) : undefined;
+	const summaryData = registerScanEntityRefs(data, scanEntityContext);
+	const summaryScanEntities = buildScanEntities(summaryData, { entityContext: scanEntityContext });
 	const { abmlEntities, abmlDiff, ledgerDeltaFields, runtimeRelationGraph } = abmlAssemblyInputs(observation, ledgerFrame, baseline);
 	return {
 		assembly: assembleScanSummary({
@@ -234,18 +236,11 @@ export function prepareScanAssembly(options: {
 	};
 }
 
-function recordArray(value: unknown): Array<Record<string, unknown>> | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const records = value.filter(isRecord) as Array<Record<string, unknown>>;
-	return records.length ? records : undefined;
-}
-
-function scanCollectionEvidence(data: unknown) {
-	const record = isRecord(data) ? data : {};
+function scanCollectionEvidence(data: PageWorldScanBundleV1) {
 	return {
-		listHints: recordArray(record.list_hints),
-		rows: recordArray(record.rows),
-		actionables: recordArray(record.actionables),
-		...(isRecord(record.growthProbe) ? { growthProbe: record.growthProbe } : {}),
+		listHints: data.structure.listHints,
+		rows: data.structure.rows,
+		actionables: data.structure.actionables,
+		...(data.signals.growthProbe ? { growthProbe: data.signals.growthProbe } : {}),
 	};
 }

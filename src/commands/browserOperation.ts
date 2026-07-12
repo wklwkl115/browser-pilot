@@ -13,7 +13,7 @@ import { errorToPlain } from "../utils/errors.js";
 import { isRecord } from "../utils/records.js";
 import type { CommandOnUpdate, CommandResultContext } from "./commandRuntime.js";
 import { resolveBrowserOperationCompletion, type BrowserOperationResolverInput } from "./operationResolvers.js";
-import { classifyBrowserOperationLiveness } from "../kernels/session/browserOperationState.js";
+import { classifyBrowserOperationLiveness, nextBrowserOperationLivenessBoundary } from "../kernels/session/browserOperationState.js";
 import { redactSensitiveValue } from "../utils/redaction.js";
 
 type BrowserOperationOptions = Omit<BrowserOperationResolverInput, "result" | "events"> & {
@@ -25,10 +25,6 @@ type BrowserOperationOptions = Omit<BrowserOperationResolverInput, "result" | "e
 	ctx?: CommandResultContext;
 	onUpdate?: CommandOnUpdate;
 };
-
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function resolveTarget(options: BrowserOperationOptions): BrowserOperationTarget {
 	const snapshot = options.server.snapshot({ browserSessionId: options.browserSessionId });
@@ -140,21 +136,49 @@ function livenessStatus(events: BrowserOperationEvent[], operation: CommandActiv
 	});
 }
 
+function livenessBoundary(events: BrowserOperationEvent[], operation: CommandActiveOperationInfo | undefined, dispatchFinishedAt: number, deadlineAt: number, now = Date.now()): number {
+	const signals = summarizeSignals(events);
+	const hasActivity = events.some((event) => event.progress !== false);
+	const downloadPending = Number(signals.downloadsStarted || 0) > Number(signals.downloadsCompleted || 0);
+	const pending = Number(signals.networkPending || 0) > 0 || downloadPending;
+	return nextBrowserOperationLivenessBoundary({
+		now,
+		deadlineAt,
+		dispatchFinishedAt,
+		lastProgressAt: operation?.lastProgressAt ?? dispatchFinishedAt,
+		hasActivity,
+		pending,
+		downloadPending,
+	});
+}
+
+function waitForBoundary(timeoutMs: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, Math.max(0, timeoutMs)));
+}
+
 async function settleStatus(options: BrowserOperationOptions, operationId: string, result: unknown, dispatchFinishedAt: number, deadlineAt: number): Promise<OperationSettlement> {
-	let events = options.server.getOperation?.(operationId)?.events ?? [];
-	const immediate = terminalEvidence(options, result, events);
-	if (immediate) return immediate;
-	while (Date.now() < deadlineAt) {
-		const operation = options.server.getOperation?.(operationId);
+	let operation = options.server.getOperation?.(operationId);
+	let events = operation?.events ?? [];
+	while (true) {
+		operation = options.server.getOperation?.(operationId) ?? operation;
 		events = operation?.events ?? events;
 		const terminal = terminalEvidence(options, result, events);
 		if (terminal) return terminal;
 		if (operationTargetLost(events, operation)) return { status: "target_lost", events };
 		const liveness = livenessStatus(events, operation, dispatchFinishedAt, deadlineAt);
 		if (liveness) return { status: liveness, events };
-		await delay(Math.min(25, Math.max(1, deadlineAt - Date.now())));
+		const now = Date.now();
+		const boundary = livenessBoundary(events, operation, dispatchFinishedAt, deadlineAt, now);
+		const timeoutMs = Math.max(0, boundary - now);
+		if (options.server.waitForOperationChange && operation) {
+			await options.server.waitForOperationChange(operationId, operation.revision, timeoutMs);
+		} else {
+			// Non-production test ports may omit the waiter. Waiting once for the
+			// exact pure boundary preserves event-driven production semantics and
+			// never polls the registry.
+			await waitForBoundary(timeoutMs);
+		}
 	}
-	return { status: "deadline", events };
 }
 
 export async function withBrowserOperation<T>(options: BrowserOperationOptions, dispatch: () => Promise<T>): Promise<BrowserOperationOutcome> {

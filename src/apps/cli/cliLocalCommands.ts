@@ -1,7 +1,7 @@
 import path from "node:path";
 import { parseArgs, resolveParamValueReferences, type FlagSpec } from "./flags.js";
 import { renderUsageError, writeJsonEnvelope, EXIT } from "./render.js";
-import { artifactBehaviorMetadata, actionSpecificFlagSpecs, buildCommandFlagSpecs, commandGroup, commandGroupCounts, commandRouting, flagMetadata, kebabAction, naturalRouting, naturalSubcommandMetadata, schemaForFlagSpecs } from "./commandMetadata.js";
+import { buildCommandFlagSpecs, commandGroupCounts, kebabAction } from "./commandMetadata.js";
 import { naturalActionForToken } from "./naturalRouting.js";
 import { daemonContractReport, findDaemon, isDaemonReadyForReuse, lockfilePath } from "../daemon/daemonControl.js";
 import { daemonVersion, packageVersion } from "../daemon/packageInfo.js";
@@ -11,21 +11,16 @@ import { applyCliOnlyParams } from "./cliFileParams.js";
 import { firstPositional, jsonMode, loadCliCommands, renderLocalJson, renderMode } from "./cliBasics.js";
 import { splitLeadingGlobalFlags } from "./cliBasics.js";
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
+import { buildCommandCatalogV3, buildCommandSchemaV3 } from "./publicContract.js";
 
 export async function runCommandsCommand(argv: string[]): Promise<number> {
 	const mode = jsonMode(argv);
-	const commands = (await loadCliCommands()).map((cmd) => ({
-		name: cmd.subcommand,
-		commandName: cmd.name,
-		group: commandGroup(cmd),
-		description: cmd.description,
-		agentCli: commandRouting(cmd),
-		artifactBehavior: artifactBehaviorMetadata(),
-		flags: flagMetadata(cmd),
-		...(naturalSubcommandMetadata(cmd) ? { subcommands: naturalSubcommandMetadata(cmd) } : {}),
-	}));
-	if (mode === "json") return renderLocalJson({ command: "commands", commands });
-	for (const cmd of commands) process.stdout.write(`${pad(String(cmd.name), 22)}${cmd.description ?? ""}\n`);
+	const catalog = buildCommandCatalogV3(await loadCliCommands());
+	if (mode === "json") {
+		process.stdout.write(`${JSON.stringify(catalog)}\n`);
+		return EXIT.ok;
+	}
+	for (const cmd of catalog.commands) process.stdout.write(`${pad(cmd.cli, 22)}${cmd.summary}\n`);
 	return EXIT.ok;
 }
 
@@ -39,23 +34,13 @@ export async function runSchemaCommand(argv: string[]): Promise<number> {
 	const second = firstPositional(first.rest);
 	const naturalAction = second.value ? naturalActionForToken(cmd, second.value) : undefined;
 	if (second.value && !naturalAction) return renderUsageError(`unknown ${cmd.subcommand} subcommand "${second.value}"`, mode);
-	if (mode === "json") return renderLocalJson(schemaJson(cmd, naturalAction));
-	process.stdout.write(JSON.stringify(cmd.parameters ?? {}, null, 2) + "\n");
+	const schema = buildCommandSchemaV3(cmd, naturalAction);
+	if (mode === "json") {
+		process.stdout.write(`${JSON.stringify(schema)}\n`);
+		return EXIT.ok;
+	}
+	process.stdout.write(JSON.stringify(schema.parameters ?? {}, null, 2) + "\n");
 	return EXIT.ok;
-}
-
-function schemaJson(cmd: Awaited<ReturnType<typeof loadCliCommands>>[number], naturalAction?: string): Record<string, unknown> {
-	return {
-		command: "schema",
-		name: cmd.subcommand,
-		commandName: cmd.name,
-		...(naturalAction ? { naturalSubcommand: kebabAction(naturalAction), action: naturalAction } : {}),
-		agentCli: naturalAction ? naturalRouting(naturalAction) : commandRouting(cmd),
-		artifactBehavior: artifactBehaviorMetadata(),
-		schema: naturalAction ? schemaForFlagSpecs(cmd, actionSpecificFlagSpecs(cmd, naturalAction)) : cmd.parameters ?? {},
-		flags: flagMetadata(cmd, naturalAction),
-		...(!naturalAction && naturalSubcommandMetadata(cmd) ? { subcommands: naturalSubcommandMetadata(cmd) } : {}),
-	};
 }
 
 function extractParamsArg(argv: string[], mode: ReturnType<typeof jsonMode>) {
@@ -67,7 +52,7 @@ function extractParamsArg(argv: string[], mode: ReturnType<typeof jsonMode>) {
 	return { ok: true as const, params: params as Record<string, unknown> };
 }
 
-export async function runValidateCommand(argv: string[]): Promise<number> {
+export async function runValidateCommand(argv: string[], writeJson: typeof writeJsonEnvelope = writeJsonEnvelope): Promise<number> {
 	const mode = jsonMode(argv);
 	const positional = firstPositional(argv);
 	const cmdName = positional.value;
@@ -87,11 +72,14 @@ export async function runValidateCommand(argv: string[]): Promise<number> {
 	if (!cliParams.ok) return renderUsageError(cliParams.error, mode, EXIT.input);
 	const validated = validateBrowserCommandArguments(cmd.def, cliParams.params);
 	if (!validated.ok) {
-		if (mode === "json") writeJsonEnvelope({ ok: false, exitCode: EXIT.usage, code: "CLI_VALIDATION_ERROR", command: "validate", name: cmd.subcommand, commandName: cmd.name, valid: false, issues: validated.issues, message: validated.error });
+		if (mode === "json") writeJson({ ok: false, exitCode: EXIT.usage, code: "CLI_VALIDATION_ERROR", command: "validate", name: cmd.subcommand, commandName: cmd.name, valid: false, issues: validated.issues, message: validated.error });
 		else process.stderr.write(`invalid: ${cmd.subcommand} — ${validated.error}\n`);
 		return EXIT.usage;
 	}
-	if (mode === "json") return renderLocalJson({ command: "validate", name: cmd.subcommand, commandName: cmd.name, ...(naturalAction ? { naturalSubcommand: kebabAction(naturalAction), action: naturalAction } : {}), valid: true, args: validated.args });
+	if (mode === "json") {
+		writeJson({ ok: true, exitCode: EXIT.ok, command: "validate", name: cmd.subcommand, commandName: cmd.name, ...(naturalAction ? { naturalSubcommand: kebabAction(naturalAction), action: naturalAction } : {}), valid: true, args: validated.args });
+		return EXIT.ok;
+	}
 	process.stdout.write(`valid: ${cmd.subcommand}\n`);
 	return EXIT.ok;
 }

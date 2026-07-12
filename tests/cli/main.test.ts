@@ -51,11 +51,14 @@ test("schema execute emits local JSON metadata", () => {
 	const body = JSON.parse(result.stdout);
 	assert.equal(result.status, 0);
 	assert.equal(result.stderr, "");
-	assert.equal(body.command, "schema");
-	assert.equal(body.name, "execute");
-	assert.equal(body.commandName, "browser_execute");
-	assert.equal(body.agentCli.mode, "standard");
-	assert.ok(body.flags.some((flag: { name: string }) => flag.name === "scriptFile"));
+	assert.equal(body.schema, "browser-pilot-command-schema/v3");
+	assert.equal(body.contract.version, 3);
+	assert.deepEqual(body.command, { cli: "execute", tool: "browser_execute" });
+	assert.equal(body.parameters.type, "object");
+	assert.equal(body.parameters.additionalProperties, false);
+	assert.equal(typeof body.parameters.properties.script, "object");
+	assert.equal(typeof body.parameters.properties.program, "object");
+	assert.equal(body.flags, undefined);
 });
 
 test("CLI artifact read commands use safe placeholders and bounded returned hints", () => {
@@ -214,8 +217,12 @@ test("commands emits registered subcommands in json mode", () => {
 	const result = runCli(["commands", "--json"]);
 	const body = JSON.parse(result.stdout);
 	assert.equal(result.status, 0);
-	assert.equal(body.command, "commands");
-	assert.ok(body.commands.some((command: { name: string }) => command.name === "execute"));
+	assert.equal(body.schema, "browser-pilot-command-catalog/v3");
+	assert.equal(body.contract.version, 3);
+	assert.equal(body.contract.toolCount, 19);
+	assert.ok(body.commands.some((command: { cli: string; tool: string }) => command.cli === "execute" && command.tool === "browser_execute"));
+	assert.equal(Buffer.byteLength(result.stdout, "utf8") <= 25 * 1024, true);
+	assert.equal(body.commands.some((command: Record<string, unknown>) => "flags" in command || "artifactBehavior" in command), false);
 });
 
 test("doctor emits a local recovery report in json mode", () => {
@@ -293,10 +300,11 @@ test("pairings and execute keep their local help surfaces", () => {
 test("schema command marks --command as inline-only", () => {
 	const result = runCli(["schema", "command", "--json"]);
 	const body = JSON.parse(result.stdout);
-	const commandFlag = body.flags.find((flag: { name: string }) => flag.name === "command");
 	assert.equal(result.status, 0);
-	assert.deepEqual(commandFlag.inputs, ["inline"]);
-	assert.match(commandFlag.description, /inline JSON only/);
+	assert.equal(body.schema, "browser-pilot-command-schema/v3");
+	assert.deepEqual(body.command, { cli: "command", tool: "browser_command" });
+	assert.match(body.parameters.properties.command.description, /Validated native bridge command object/);
+	assert.equal(body.flags, undefined);
 });
 
 test("command help rejects --command @file guidance and execute help recommends real file inputs", () => {

@@ -37,6 +37,8 @@ export class BrowserBridgeServer implements ConsentPort {
 	private readonly commandService: BrowserBridgeCommandService;
 	private readonly clientMessageService: BrowserBridgeClientMessageService;
 	private readonly extensionReadyWaiters = new Set<() => void>();
+	private readonly operationWaiters = new Map<string, Set<() => void>>();
+	private readonly knownRecorderStates = new Map<string, { active: boolean; lastSeq?: number }>();
 	private readonly consentCoordinator: BrowserBridgeConsentCoordinator;
 
 	constructor(options: { host?: string; port?: number; portRangeEnd?: number; maxPayloadBytes?: number } = {}) {
@@ -83,12 +85,22 @@ export class BrowserBridgeServer implements ConsentPort {
 			leases: this.state.leases,
 			queues: this.queues,
 			consent: this.consentCoordinator,
-			operations: this.state.operations,
+			recordOperationEvent: (operationId, event) => this.recordOperationEvent(operationId, event),
 			migratePerceptionLedger: (fromTabId, toTabId, browserSessionIds) => {
 				this.state.perceptionLedger.migrateTabId(fromTabId, toTabId, { browserSessionIds });
 			},
+			clearRecorderStateForReplacement: (fromTabId, toTabId, browserSessionIds) => {
+				this.clearKnownRecorderStatesForReplacement(fromTabId, toTabId, browserSessionIds);
+			},
 			logLeaseCleanup: (details) => this.logLeaseCleanup(details),
 			notifyExtensionReady: () => this.notifyExtensionReady(),
+			notifyOperationTopologyChange: () => this.releaseAllOperationWaiters(),
+			recordTargetReplacement: (fromTabId, toTabId) => {
+				for (const operation of this.state.operations.snapshot({ includeTerminal: false })) {
+					if (operation.tabId !== fromTabId) continue;
+					this.recordOperationEvent(operation.operationId, { type: "target_lost", tabId: fromTabId, generation: operation.generation, data: { reason: "target_replaced", replacementTabId: toTabId } });
+				}
+			},
 		});
 		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws, reason) => this.unregisterClient(ws, reason), { onTick: (now) => this.sweepLeases(now) });
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd, maxPayloadBytes: options.maxPayloadBytes });
@@ -115,6 +127,8 @@ export class BrowserBridgeServer implements ConsentPort {
 		this.queues.clear();
 		this.state.leases.clear();
 		this.tabs.clear();
+		this.releaseAllOperationWaiters();
+		this.knownRecorderStates.clear();
 		this.state.operations.clear();
 		this.state.observationSnapshots.clear();
 		this.state.perceptionLedger.clear();
@@ -305,15 +319,21 @@ export class BrowserBridgeServer implements ConsentPort {
 	}
 
 	beginOperation(operation: SessionOperationBeginInput): BrowserActiveOperationInfo {
-		return this.state.operations.begin(operation);
+		const next = this.state.operations.begin(operation);
+		this.releaseOperationWaiters(next.operationId);
+		return next;
 	}
 
 	updateOperation(operationId: string, patch: Partial<Omit<BrowserActiveOperationInfo, "operationId" | "startedAt">>): BrowserActiveOperationInfo | undefined {
-		return this.state.operations.update(operationId, patch);
+		const next = this.state.operations.update(operationId, patch);
+		if (next) this.releaseOperationWaiters(operationId);
+		return next;
 	}
 
 	finishOperation(operationId: string, outcome?: BrowserOperationOutcome): BrowserActiveOperationInfo | undefined {
-		return this.state.operations.finish(operationId, outcome);
+		const next = this.state.operations.finish(operationId, outcome);
+		if (next) this.releaseOperationWaiters(operationId);
+		return next;
 	}
 
 	getOperation(operationId: string): BrowserActiveOperationInfo | undefined {
@@ -321,11 +341,86 @@ export class BrowserBridgeServer implements ConsentPort {
 	}
 
 	recordOperationEvent(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "timestamp"> & { sequence?: number; timestamp?: number }): BrowserActiveOperationInfo | undefined {
-		return this.state.operations.recordEvent(operationId, event);
+		const next = this.state.operations.recordEvent(operationId, event);
+		if (next) this.releaseOperationWaiters(operationId);
+		return next;
+	}
+
+	waitForOperationChange(operationId: string, afterRevision: number, timeoutMs: number, signal?: AbortSignal): Promise<BrowserActiveOperationInfo | undefined> {
+		const current = this.state.operations.get(operationId);
+		if (!current || current.revision > afterRevision || timeoutMs <= 0) return Promise.resolve(current);
+		return new Promise((resolve, reject) => {
+			let settled = false;
+			const waiters = this.operationWaiters.get(operationId) ?? new Set<() => void>();
+			const cleanup = () => {
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", onAbort);
+				waiters.delete(wake);
+				if (!waiters.size) this.operationWaiters.delete(operationId);
+			};
+			const finish = () => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				resolve(this.state.operations.get(operationId));
+			};
+			const wake = () => finish();
+			const onAbort = () => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				const error = new Error("operation wait aborted");
+				error.name = "AbortError";
+				reject(error);
+			};
+			const timer = setTimeout(finish, Math.max(0, Math.floor(timeoutMs)));
+			waiters.add(wake);
+			this.operationWaiters.set(operationId, waiters);
+			if (signal?.aborted) return onAbort();
+			signal?.addEventListener("abort", onAbort, { once: true });
+			// Close the read-before-subscribe race: a mutation between the first
+			// revision read and waiter registration resolves immediately.
+			const registered = this.state.operations.get(operationId);
+			if (!registered || registered.revision > afterRevision) finish();
+		});
+	}
+
+	private releaseOperationWaiters(operationId: string): void {
+		const waiters = this.operationWaiters.get(operationId);
+		if (!waiters) return;
+		this.operationWaiters.delete(operationId);
+		for (const wake of [...waiters]) wake();
+	}
+
+	private releaseAllOperationWaiters(): void {
+		for (const operationId of [...this.operationWaiters.keys()]) this.releaseOperationWaiters(operationId);
 	}
 
 	surfaceLateEffects(input: { ownerId?: string; browserSessionId?: string; excludeOperationId?: string }) {
 		return this.state.operations.surfaceLateEffects(input);
+	}
+
+	private recorderStateKey(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined): string {
+		return `${kind}:${browserSessionId ?? "default"}:${tabId ?? "selected"}`;
+	}
+
+	getKnownRecorderState(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined): { active: boolean; lastSeq?: number } | undefined {
+		const state = this.knownRecorderStates.get(this.recorderStateKey(kind, browserSessionId, tabId));
+		return state ? { ...state } : undefined;
+	}
+
+	recordKnownRecorderState(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined, state: { active: boolean; lastSeq?: number }): void {
+		this.knownRecorderStates.set(this.recorderStateKey(kind, browserSessionId, tabId), { ...state });
+	}
+
+	clearKnownRecorderStatesForReplacement(fromTabId: number, toTabId: number, browserSessionIds: string[] = []): void {
+		const sessions = browserSessionIds.length ? browserSessionIds : [undefined];
+		for (const kind of ["network", "hook"] as const) {
+			for (const browserSessionId of sessions) {
+				this.knownRecorderStates.delete(this.recorderStateKey(kind, browserSessionId, fromTabId));
+				this.knownRecorderStates.delete(this.recorderStateKey(kind, browserSessionId, toTabId));
+			}
+		}
 	}
 
 	queueDepth(browserSessionId: string | undefined, tabId: number | undefined): number | undefined {

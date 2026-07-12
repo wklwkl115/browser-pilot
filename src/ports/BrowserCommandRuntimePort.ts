@@ -151,8 +151,14 @@ export interface BrowserCommandOperationPort {
 	updateOperation(operationId: string, patch: Partial<Omit<CommandActiveOperationInfo, "operationId" | "startedAt">>): CommandActiveOperationInfo | undefined;
 	finishOperation(operationId: string, outcome?: BrowserOperationOutcome): CommandActiveOperationInfo | undefined;
 	getOperation?(operationId: string): CommandActiveOperationInfo | undefined;
+	waitForOperationChange?(operationId: string, afterRevision: number, timeoutMs: number, signal?: AbortSignal): Promise<CommandActiveOperationInfo | undefined>;
 	recordOperationEvent?(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "timestamp"> & { sequence?: number; timestamp?: number }): CommandActiveOperationInfo | undefined;
 	surfaceLateEffects?(input: { ownerId?: string; browserSessionId?: string; excludeOperationId?: string }): BrowserOperationLateEffect[];
+}
+
+export interface BrowserCommandRecorderStatePort {
+	getKnownRecorderState?(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined): { active: boolean; lastSeq?: number } | undefined;
+	recordKnownRecorderState?(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined, state: { active: boolean; lastSeq?: number }): void;
 }
 
 export interface BrowserCommandPerceptionPort {
@@ -180,6 +186,7 @@ export interface BrowserCommandRuntimePort extends
 	BrowserCommandLeasePort,
 	BrowserCommandObservationPort,
 	BrowserCommandOperationPort,
+	BrowserCommandRecorderStatePort,
 	BrowserCommandPerceptionPort,
 	BrowserCommandTemporalPort,
 	BrowserCommandIntentRefPort {

@@ -43,26 +43,6 @@ function actionTimeoutMs(value: unknown, fallback: number, allowZero: boolean): 
 	return commandTimeoutMs(value, fallback, { allowZero });
 }
 
-// Reserved top-level keys an action tool already owns — never treated as a per-action passthrough.
-const ACTION_RESERVED_KEYS = new Set(["action", "params", "browserSessionId", "tabId", "targetRef", "detailLevel", "outputPath", "timeoutMs", "maxChars", "redact", "sessionId"]);
-
-// The per-action REQUIRED keys for a tool, derived from the generated native metadata (the same
-// source-of-truth F4 surfaces in --help). Agents primed by other tools routinely place these at the
-// TOP LEVEL instead of nesting them under `params`,
-// and hit a hard `root: must not have additional properties` (real CTF session 2026-06-07, H2). We
-// accept them as optional top-level aliases and fold them into `params` (below), keeping the schema
-// strict — only these known keys are added, unknown typos are still rejected.
-function actionPassthroughKeys(commandName: string): string[] {
-	const tools = nativeToolMetadata.nativeActionTools as unknown as Record<string, { actions?: Array<{ required?: readonly string[]; requiredAny?: readonly (readonly string[])[] }> }>;
-	const keys = new Set<string>();
-	for (const a of tools[commandName]?.actions ?? []) {
-		for (const k of a.required ?? []) keys.add(k);
-		for (const g of a.requiredAny ?? []) for (const k of g) keys.add(k);
-	}
-	for (const r of ACTION_RESERVED_KEYS) keys.delete(r);
-	return [...keys];
-}
-
 function nativeActionErrorResult(error: unknown) {
 	return bridgeNestedErrorResult(error, { defaultMessage: "browser native action failed" });
 }
@@ -119,38 +99,77 @@ function networkCaptureReloadSummary(result: BrowserBridgeExecutionResult, comma
 	};
 }
 
-function nativeActionValidation(config: ActionToolConfig, passthroughKeys: readonly string[], args: Record<string, unknown>): ValidationIssue[] {
+function nativeActionValidation(config: ActionToolConfig, args: Record<string, unknown>): ValidationIssue[] {
 	const actions = publicActionsForDefinition({ name: config.name, actionMetadata: config.actionMetadata });
 	const action = actions.find((candidate) => candidate.action === args.action);
 	if (!action) return [{ code: "ACTION_UNKNOWN", path: "/action", message: `Unsupported ${config.name} action "${String(args.action)}"; expected one of ${actions.map((candidate) => candidate.action).join(", ")}` }];
-	const body = isRecord(args.params) ? args.params as Record<string, unknown> : {};
-	const issues: ValidationIssue[] = [];
-	const allowedTopLevel = new Set([...action.required, ...action.requiredAny.flatMap((group) => [...group])]);
-	for (const key of passthroughKeys) {
-		const topProvided = args[key] !== undefined;
-		if (topProvided && body[key] !== undefined) issues.push({ code: "ACTION_ARGUMENT_DUPLICATE", path: `/${key}`, message: `Action argument "${key}" must be supplied either at the top level or in params, not both` });
-		if (topProvided && !allowedTopLevel.has(key)) issues.push({ code: "ACTION_ARGUMENT_NOT_ALLOWED", path: `/${key}`, message: `Argument "${key}" is not valid for action ${action.action}` });
-	}
-	const present = (key: string) => args[key] !== undefined || body[key] !== undefined;
-	for (const key of action.required) if (!present(key)) issues.push({ code: "ACTION_ARGUMENT_REQUIRED", path: `/${key}`, message: `Action ${action.action} requires argument "${key}"` });
-	for (const group of action.requiredAny) if (!group.some(present)) issues.push({ code: "ACTION_ARGUMENT_REQUIRED_ANY", path: "/", message: `Action ${action.action} requires one of ${group.join(", ")}` });
-	return issues;
+	return [];
 }
 
 function mergeCommandDiagnostics(result: BrowserBridgeExecutionResult, diagnostics: Record<string, unknown>): Record<string, unknown> {
 	return { ...(result.diagnostics || {}), ...diagnostics };
 }
 
+function recorderHighWater(value: unknown, depth = 0, seen = new WeakSet<object>()): number | undefined {
+	if (depth > 6 || !value || typeof value !== "object" || seen.has(value)) return undefined;
+	seen.add(value);
+	const candidates: number[] = [];
+	if (isRecord(value)) {
+		for (const key of ["lastSeq", "last_seq", "seq", "eventSeq", "event_seq"]) {
+			const candidate = Number(value[key]);
+			if (Number.isFinite(candidate) && candidate >= 0) candidates.push(Math.floor(candidate));
+		}
+		for (const key of ["data", "result", "results", "items", "events"]) {
+			const nested = recorderHighWater(value[key], depth + 1, seen);
+			if (nested !== undefined) candidates.push(nested);
+		}
+	} else if (Array.isArray(value)) {
+		for (const item of value.slice(0, 1_000)) {
+			const nested = recorderHighWater(item, depth + 1, seen);
+			if (nested !== undefined) candidates.push(nested);
+		}
+	}
+	seen.delete(value);
+	return candidates.length ? Math.max(...candidates) : undefined;
+}
+
+function recorderKind(config: ActionToolConfig): "network" | "hook" | undefined {
+	if (config.name === "browser_network") return "network";
+	if (config.name === "browser_hook") return "hook";
+	return undefined;
+}
+
+function recorderActiveState(action: unknown, data: Record<string, unknown>, fallback: boolean): boolean {
+	const actionName = String(action ?? "");
+	if (actionName === "stop" || actionName === "uninstall") return false;
+	if (actionName === "start" || actionName === "captureReload" || actionName === "install" || actionName === "installTargets") return true;
+	if (typeof data.active === "boolean") return data.active;
+	if (typeof data.state === "string") return !/uninstalled|stopped|inactive/i.test(data.state);
+	return fallback;
+}
+
+function recordKnownRecorderState(server: Awaited<ReturnType<CommandRegistrarContext["ensureStarted"]>>, config: ActionToolConfig, action: unknown, result: BrowserBridgeExecutionResult, browserSessionId: string | undefined, tabId: number | undefined): void {
+	const kind = recorderKind(config);
+	if (!kind || !server.recordKnownRecorderState) return;
+	const data = isRecord(result.data) ? result.data : {};
+	const known = server.getKnownRecorderState?.(kind, browserSessionId, tabId);
+	const active = recorderActiveState(action, data, known?.active ?? false);
+	const lastSeq = recorderHighWater(data) ?? known?.lastSeq;
+	server.recordKnownRecorderState(kind, browserSessionId, tabId, { active, ...(lastSeq !== undefined ? { lastSeq } : {}) });
+}
+
 function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrarContext, config: ActionToolConfig) {
-	const passthroughKeys = actionPassthroughKeys(config.name);
 	const parameterProperties = {
 		action: Type.String({ description: config.actionDescription }),
 		params: Type.Optional(NativeCommandParamsSchema),
 		...sharedTabScopedToolParams(),
+		browserSessionId: Type.Optional(Type.String({ description: "Browser automation session id" })),
 		...(config.sessionIdDescription ? { sessionId: Type.Optional(Type.String({ description: config.sessionIdDescription })) } : {}),
-		// H2: accept each per-action required key at the top level too (folded into params at execute) so
-		// the natural `{action, <key>}` call works instead of hard-rejecting; primary path stays `params`.
-		...Object.fromEntries(passthroughKeys.map((k) => [k, Type.Optional(Type.Unknown({ description: `Per-action '${k}' — pass here or inside params; folded into params.` }))])),
+		timeoutMs: Type.Optional(Type.Number({ description: "Hard action deadline in milliseconds" })),
+		maxChars: Type.Optional(Type.Number({ description: "Maximum inline JSON characters" })),
+		outputPath: Type.Optional(Type.String({ description: "Optional artifact output path" })),
+		detailLevel: Type.Optional(Type.Union([Type.Literal("summary"), Type.Literal("preview"), Type.Literal("full")])),
+		redact: Type.Optional(Type.Boolean({ description: "Redact sensitive values in persisted and inline output" })),
 	};
 	defineBrowserCommand(commands, {
 		name: config.name,
@@ -160,18 +179,13 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, config.promptGuideline],
 		actionMetadata: config.actionMetadata,
 		parameters: strictCommandParameters(parameterProperties),
-		validateArguments: (args) => nativeActionValidation(config, passthroughKeys, args),
+		validateArguments: (args) => nativeActionValidation(config, args),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runCommandHandler(async () => {
-				const actionIssues = nativeActionValidation(config, passthroughKeys, params as Record<string, unknown>);
+				const actionIssues = nativeActionValidation(config, params as Record<string, unknown>);
 				if (actionIssues.length) throw new Error(actionIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; "));
 				const server = await ensureStarted();
 				const body = objectParam(params.params);
-				// H2: fold any per-action key passed at the top level into params (params still wins if both set).
-				for (const k of passthroughKeys) {
-					const top = (params as Record<string, unknown>)[k];
-					if (top !== undefined && body[k] === undefined) body[k] = top;
-				}
 				const captureReload = isNetworkCaptureReloadAction(config.name, params.action);
 				const commandName = captureReload ? "network.captureReload" : config.commandForAction(params.action);
 				const tabId = targetTabId(params, body);
@@ -184,14 +198,17 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 				const trackedTabId = resolveLocalTargetTabId(server, tabId, browserSessionId);
 				const resolvedTabId = tabId as string | number | undefined;
 				const dispatch = async () => {
+					let dispatched: BrowserBridgeExecutionResult;
 					if (captureReload) {
-						const result = await server.sendCommand({ cmd: "batch", commands: networkCaptureReloadCommands(body, resolvedTabId, timeoutMs) }, { browserSessionId, tabId: resolvedTabId, timeoutMs, accessMode: "write" });
-						assertBridgeBatchSucceeded(result, "network.captureReload");
-						return result;
+						dispatched = await server.sendCommand({ cmd: "batch", commands: networkCaptureReloadCommands(body, resolvedTabId, timeoutMs) }, { browserSessionId, tabId: resolvedTabId, timeoutMs, accessMode: "write" });
+						assertBridgeBatchSucceeded(dispatched, "network.captureReload");
+					} else {
+						dispatched = config.commandExecutor
+							? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs })
+							: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs });
 					}
-					return config.commandExecutor
-						? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs })
-						: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs });
+					recordKnownRecorderState(server, config, params.action, dispatched, browserSessionId, trackedTabId);
+					return dispatched;
 				};
 				const writeCommand = captureReload || isNativeWriteCommand(command);
 				if (writeCommand) {
@@ -230,7 +247,25 @@ export function defineNetworkCommand(context: CommandRegistrarContext) {
 		promptSnippet: "Control Browser Network recorder and inspect captured requests/bodies/HAR; use action=captureReload to start capture before reload/navigation in one round trip.",
 		promptGuideline: "Use browser_network action=captureReload for page-load traffic so network.start runs before reload/navigation; use low-level start/list/stop for manual recorder control. Prefer this over ad-hoc page fetch monkeypatches.",
 		actionDescription: "start | stop | status | clear | list | get | body | exportHar | captureReload",
-		actionMetadata: [{ action: "captureReload", cliAction: "capture-reload", schemaRef: "command:browser_network#captureReload" }],
+		actionMetadata: [{
+			action: "captureReload",
+			cliAction: "capture-reload",
+			schemaRef: "command:browser_network#captureReload",
+			paramsSchema: {
+				type: "object",
+				properties: {
+					url: { type: "string" }, waitCondition: { type: "string" }, idleMs: { type: "number" }, waitTimeoutMs: { type: "number" },
+					criteria: { type: "object" }, limit: { type: "number" }, includeDetails: { type: "boolean" }, ignoreCache: { type: "boolean" },
+					captureBodies: { type: "boolean" }, captureRequestPostData: { type: "boolean" }, includeWebSocketFrames: { type: "boolean" }, includeSse: { type: "boolean" },
+					maxEntries: { type: "number" }, maxAgeMs: { type: "number" }, maxBodyBytes: { type: "number" }, maxPostDataBytes: { type: "number" },
+					maxFrames: { type: "number" }, maxFrameBytes: { type: "number" }, maxSseEvents: { type: "number" }, bodyTimeoutMs: { type: "number" },
+					bodyMimeAllow: { type: "array", items: { type: "string" } }, includeUrls: { type: "array", items: { type: "string" } },
+					excludeUrls: { type: "array", items: { type: "string" } }, resourceTypes: { type: "array", items: { type: "string" } },
+					methods: { type: "array", items: { type: "string" } }, statuses: { type: "array", items: { type: "number" } }, storeHeaders: { type: "boolean" }, clear: { type: "boolean" }, reconfigure: { type: "boolean" },
+				},
+				additionalProperties: false,
+			},
+		}],
 		sessionIdDescription: "Recorder session id",
 		commandForAction: networkCommandForAction,
 		budgetName: "browser_network",

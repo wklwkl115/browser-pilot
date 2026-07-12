@@ -8,7 +8,7 @@ import { renderResult, renderUsageError, renderUnavailableError, writeJsonEnvelo
 import { invokeTool, DaemonUnavailableError } from "./client.js";
 import { printHelp } from "./help.js";
 import { translateNaturalActionArgv, legacyActionUsed } from "./naturalRouting.js";
-import { invocationFlagSpecs, kebabAction, printCommandHelp } from "./commandMetadata.js";
+import { invocationFlagSpecs, kebabAction, nestNaturalActionParams, printCommandHelp } from "./commandMetadata.js";
 import { applyCliOnlyParams } from "./cliFileParams.js";
 import { loadCliCommands, renderMode, splitLeadingGlobalFlags } from "./cliBasics.js";
 import { runCommandsCommand, runDoctorCommand, runSchemaCommand, runValidateCommand } from "./cliLocalCommands.js";
@@ -33,7 +33,7 @@ export async function validateToolInvocationOffline(sub: string, commandArgv: st
 	if (!translated.ok) return { ok: false, error: translated.error };
 	const parsed = parseArgs(invocationFlagSpecs(cmd, translated.natural?.action), translated.argv);
 	if (!parsed.ok) return { ok: false, error: parsed.error };
-	const cliParams = applyCliOnlyParams(cmd, parsed.value.params);
+	const cliParams = applyCliOnlyParams(cmd, nestNaturalActionParams(cmd, translated.natural?.action, parsed.value.params));
 	if (!cliParams.ok) return { ok: false, error: cliParams.error };
 	const validated = validateBrowserCommandArguments(cmd.def, cliParams.params);
 	if (!validated.ok) return { ok: false, error: validated.error, issues: validated.issues };
@@ -93,7 +93,7 @@ async function invokeParsedCommand(
 	translated: { ok: true; argv: string[]; natural?: { action: string } },
 	parsed: ReturnType<typeof parseArgs> & { ok: true },
 ): Promise<number> {
-	const cliParams = applyCliOnlyParams(cmd, parsed.value.params);
+	const cliParams = applyCliOnlyParams(cmd, nestNaturalActionParams(cmd, translated.natural?.action, parsed.value.params));
 	if (!cliParams.ok) return renderUsageError(cliParams.error, renderMode(parsed.value.globals), EXIT.input);
 	const validated = validateBrowserCommandArguments(cmd.def, cliParams.params);
 	if (!validated.ok) return renderCommandValidationFailure(validated, renderMode(parsed.value.globals));

@@ -7,6 +7,7 @@ type GeneratedActionMetadata = {
 	required?: readonly string[];
 	requiredAny?: readonly (readonly string[])[];
 	notes?: string;
+	paramsSchema?: Record<string, unknown>;
 };
 
 const INTERNAL_NATIVE_ACTIONS = new Set(["browser_network:wait"]);
@@ -19,6 +20,7 @@ export type PublicCommandActionMetadata = {
 	schemaRef: string;
 	required: readonly string[];
 	requiredAny: readonly (readonly string[])[];
+	paramsSchema: Record<string, unknown>;
 	/** Informational only; deliberately excluded by contract serialization. */
 	notes?: string;
 };
@@ -41,6 +43,7 @@ function commandOwnedAction(commandName: string, metadata: CommandOwnedActionMet
 		schemaRef: metadata.schemaRef,
 		required: [...(metadata.required ?? [])],
 		requiredAny: (metadata.requiredAny ?? []).map((group) => [...group]),
+		paramsSchema: structuredClone(metadata.paramsSchema),
 	};
 }
 
@@ -53,6 +56,7 @@ export function publicActionsForDefinition(definition: Pick<BrowserCommandDefini
 		schemaRef: metadata.command,
 		required: [...(metadata.required ?? [])],
 		requiredAny: (metadata.requiredAny ?? []).map((group) => [...group]),
+		paramsSchema: structuredClone(metadata.paramsSchema ?? { type: "object", properties: {}, additionalProperties: false }),
 		...(metadata.notes ? { notes: metadata.notes } : {}),
 	}));
 	const commandOwned = (definition.actionMetadata ?? []).map((metadata) => commandOwnedAction(definition.name, metadata));
@@ -85,5 +89,6 @@ export function contractActionMetadata(definitions: readonly Pick<BrowserCommand
 		schemaRef: action.schemaRef,
 		required: [...action.required],
 		requiredAny: action.requiredAny.map((group) => [...group]),
+		paramsSchema: structuredClone(action.paramsSchema),
 	}));
 }

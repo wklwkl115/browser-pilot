@@ -169,6 +169,13 @@ test("BrowserBridgeServer command runtime port exposes snapshot, tabs, sessions,
 		port.recordPerceptionTraceTerms?.(browserSession.id, [{ term: "checkout", kind: "intent", weight: 1 }]);
 		assert.equal(port.perceptionTraceSnapshot?.(browserSession.id).terms[0].term, "checkout");
 
+		port.recordKnownRecorderState?.("network", browserSession.id, 7, { active: true, lastSeq: 9 });
+		port.recordKnownRecorderState?.("hook", browserSession.id, 8, { active: true, lastSeq: 4 });
+		ws.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 8, url: "https://example.test/replaced", active: true }], replaced: [{ from: 7, to: 8 }] }));
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(port.getKnownRecorderState?.("network", browserSession.id, 7), undefined);
+		assert.equal(port.getKnownRecorderState?.("hook", browserSession.id, 8), undefined);
+
 		ws.close();
 	});
 });

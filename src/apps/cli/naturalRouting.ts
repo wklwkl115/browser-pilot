@@ -3,7 +3,7 @@ import type { GlobalFlags } from "./flags.js";
 import { nativeToolMetadata } from "../../commands/nativeActionMetadata.js";
 import { kebabCaseAction, publicActionsForDefinition } from "../../commands/publicActionCatalog.js";
 
-export type ActionParamMeta = { action: string; aliases?: readonly string[]; required?: readonly string[]; requiredAny?: readonly (readonly string[])[]; notes?: string };
+export type ActionParamMeta = { action: string; aliases?: readonly string[]; required?: readonly string[]; requiredAny?: readonly (readonly string[])[]; paramsSchema?: Record<string, unknown>; notes?: string };
 export type NativeActionToolMeta = { actionDescription?: string; actions?: readonly ActionParamMeta[] };
 export type NaturalActionInvocation = { action: string; token: string };
 export type AgentCliRouting =
@@ -34,6 +34,7 @@ export function naturalActionMetas(cmd: CliCommand): readonly ActionParamMeta[] 
 		action: action.action,
 		required: action.required,
 		requiredAny: action.requiredAny,
+		paramsSchema: action.paramsSchema,
 		...(action.notes ? { notes: action.notes } : {}),
 	}));
 }

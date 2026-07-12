@@ -6,6 +6,8 @@ import { dispatchBrowserPilotBridgeCommand, validateBrowserPilotBridgeProtocolMe
 import { handleWsExec } from "./exec";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeMessageSender } from "./types";
 import { handleBrowserPilotOperationDomEvent } from "./operation_coordinator";
+import { bindBrowserPilotOperationEventSocket, releaseBrowserPilotOperationEventSocket } from "./operation_event_transport";
+import { recordBrowserPilotPrerenderActivation } from "./tab_sync";
 
 // router.js - protocol validation and command dispatch for Browser Pilot Bridge messages.
 
@@ -26,6 +28,19 @@ let cachedPairedAgents: JsonRecord[] = [];
 
 let browserPilotBridgeRouterInstalled = false;
 
+function handleBrowserPilotRuntimeEventMessage(msgType: string, msg: JsonRecord, sender: BrowserPilotChromeMessageSender, sendResponse: (response: unknown) => void): boolean {
+	if (msgType === "browser-pilot-operation-dom-event") {
+		sendResponse({ ok: handleBrowserPilotOperationDomEvent(msg) });
+		return true;
+	}
+	if (msgType === "browser-pilot-prerender-activated") {
+		const tabId = Number(sender.tab?.id ?? 0);
+		sendResponse({ ok: recordBrowserPilotPrerenderActivation(tabId), tabId });
+		return true;
+	}
+	return false;
+}
+
 /** @param {BrowserPilotBridgeCommand} msg @param {BrowserPilotChromeMessageSender} sender */
 async function handleBrowserPilotBridgeMessage(msg: BrowserPilotBridgeCommand, sender: BrowserPilotChromeMessageSender) {
   const validation = validateBrowserPilotBridgeProtocolMessage(msg);
@@ -37,12 +52,9 @@ function installBrowserPilotBridgeRouter() {
   if (browserPilotBridgeRouterInstalled) return false;
   chrome.runtime.onMessage.addListener((msg: unknown, sender: BrowserPilotChromeMessageSender, sendResponse: (response: unknown) => void) => {
     // Pass-through guard: let transport.ts handle offscreen-prefixed messages.
-    if (msg && typeof msg === 'object' && typeof (msg as JsonRecord).type === 'string' && String((msg as JsonRecord).type).startsWith('browser-pilot-offscreen-')) return false;
-    const msgType = msg && typeof msg === 'object' ? String((msg as JsonRecord).type ?? '') : '';
-    if (msgType === 'browser-pilot-operation-dom-event') {
-      sendResponse({ ok: handleBrowserPilotOperationDomEvent(msg as JsonRecord) });
-      return false;
-    }
+		if (msg && typeof msg === 'object' && typeof (msg as JsonRecord).type === 'string' && String((msg as JsonRecord).type).startsWith('browser-pilot-offscreen-')) return false;
+		const msgType = msg && typeof msg === 'object' ? String((msg as JsonRecord).type ?? '') : '';
+		if (handleBrowserPilotRuntimeEventMessage(msgType, msg as JsonRecord, sender, sendResponse)) return false;
     // Popup→SW consent messages
     if (msgType === 'browser-pilot-consent-poll') {
       const storage = getStorageLocal();
@@ -126,15 +138,20 @@ async function handleBrowserPilotBridgeWsMessage(data: BrowserPilotBridgeWsEnvel
       sendBrowserPilotBridgeWsInputError(socket, data.id, 'Message object must contain a non-empty "cmd" field', { codeType: 'object' });
       return;
     }
-    const msg = (codeObj.tabId === undefined && data.tabId !== undefined ? { ...codeObj, tabId: data.tabId } : codeObj) as BrowserPilotBridgeCommand;
+		const msg = (codeObj.tabId === undefined && data.tabId !== undefined ? { ...codeObj, tabId: data.tabId } : codeObj) as BrowserPilotBridgeCommand;
     enableCspBypassForTab(msg.tabId);
     // Acknowledge receipt before running the (possibly slow) native command handler, mirroring
     // the exec path's early ack. Without this, a slow native command (e.g. screenshot grinding
     // through debugger attempts) times out as "no ACK, message may not have been delivered" —
     // a misleading diagnostic, since the message WAS delivered; the handler is just slow.
-    socket.send(JSON.stringify({ type: 'ack', id: data.id }));
-    const res = await handleBrowserPilotBridgeMessage(msg, {});
-    sendBrowserPilotBridgeWsCommandResult(socket, data.id, msg, res);
+		socket.send(JSON.stringify({ type: 'ack', id: data.id }));
+		const res = await handleBrowserPilotBridgeMessage(msg, {});
+		const operationId = typeof msg.operationId === "string" ? msg.operationId : "";
+		if (msg.cmd === "operation.begin" && operationId) {
+			if (res.ok) bindBrowserPilotOperationEventSocket(operationId, socket);
+			else releaseBrowserPilotOperationEventSocket(operationId);
+		}
+		sendBrowserPilotBridgeWsCommandResult(socket, data.id, msg, res);
   } else if (typeof code === 'string') {
     enableCspBypassForTab(data.tabId);
     await handleWsExec(data as BrowserPilotBridgeWsEnvelope & { id: string | number; code: string }, socket);

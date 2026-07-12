@@ -2,23 +2,23 @@ import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 import { bootstrapScanBackendNodeIds } from "../../src/kernels/abml/identityBootstrap.ts";
+import { pageWorldScanBundle } from "../helpers/pageWorldScan.ts";
 
 test("bootstrapScanBackendNodeIds omits sampleWindowMs when snapshotEndedAt is invalid", () => {
-	const result = bootstrapScanBackendNodeIds({ viewport: {}, actionables: [] }, [], {
+	const result = bootstrapScanBackendNodeIds(pageWorldScanBundle(), [], {
 		scanCapturedAt: 10,
 		scanCapturedAtIso: new Date(10).toISOString(),
 		snapshotEndedAt: "not-a-date",
 	});
 	assert.equal(result.stats.sampleWindowMs, undefined);
-	assert.equal("sampleWindowMs" in (result.data.backendNodeIdBootstrap as Record<string, unknown>), false);
+	assert.equal("backendNodeIdBootstrap" in result.data, false);
 });
 
-test("bootstrapScanBackendNodeIds keeps diagnostic jsonPath stable when actionable index is invalid", () => {
-	const result = bootstrapScanBackendNodeIds({
-		viewport: { scrollX: 0, scrollY: 0, devicePixelRatio: 1 },
-		actionables: [{ index: "foo", selector: "#demo", rect: { x: 1, y: 2, width: 3, height: 4 } }],
-	}, []);
-	assert.equal(result.stats.records[0]?.jsonPath, "data.actionables[0]");
+test("bootstrapScanBackendNodeIds keeps diagnostic jsonPath stable when actionable index is absent", () => {
+	const result = bootstrapScanBackendNodeIds(pageWorldScanBundle({
+		structure: { actionables: [{ selector: "#demo", rect: { x: 1, y: 2, width: 3, height: 4 } }] },
+	}), []);
+	assert.equal(result.stats.records[0]?.jsonPath, "data.structure.actionables[0]");
 });
 
 test("bootstrapScanBackendNodeIds stays bounded on large exact-match datasets", () => {
@@ -32,7 +32,7 @@ test("bootstrapScanBackendNodeIds stays bounded on large exact-match datasets", 
 		selector: `#id-${index}`,
 		rect: { x: index % 500, y: Math.floor(index / 500), width: 10, height: 10 },
 	}));
-	const data = { viewport: { scrollX: 0, scrollY: 0, devicePixelRatio: 1 }, actionables };
+	const data = pageWorldScanBundle({ structure: { actionables } });
 	const maxElapsedMs = process.env.BROWSER_PILOT_COVERAGE === "1" ? 2_000 : process.env.CI ? 1_200 : 260;
 	for (let warmup = 0; warmup < 2; warmup += 1) bootstrapScanBackendNodeIds(data, entries);
 	const startedAt = performance.now();

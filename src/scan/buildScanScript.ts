@@ -3,6 +3,7 @@ import { DOM_ACCESSIBILITY_API_BUNDLE } from "./domAccessibilityApiBundle.js";
 import { BROWSER_NOISE_ATTRIBUTE_NAMES, BROWSER_NOISE_ATTRIBUTE_PREFIXES, BROWSER_NOISE_CLASS_PATTERNS, BROWSER_NOISE_IDS, BROWSER_NOISE_SELECTORS, BROWSER_NOISE_TAGS, SCAN_EXTENSION_URL_PATTERN } from "./noiseRules.js";
 import { jsonForInlineScript as captureJsonForInlineScript, renderCaptureTemplate } from "../capture/inject.js";
 import { SCAN_TEMPLATE } from "../../capture-src/entries/scanTemplate.js";
+import { PAGE_WORLD_SCAN_SCHEMA } from "../kernels/abml/pageWorldScan.js";
 
 export type BrowserScanOptions = {
 	textOnly?: boolean;
@@ -35,24 +36,6 @@ function injectAccessibleNameProvider(script: string): string {
   })();
 `;
 	return script.slice(0, insertionIndex) + injected + script.slice(insertionIndex);
-}
-
-function injectScanSignals(script: string): string {
-	const marker = "  return {\n    url: location.href,";
-	const injected = `  const piScanFingerprint = {
-    changeSeq: Number((globalThis.__browserPilotScanFingerprintSeq = (Number(globalThis.__browserPilotScanFingerprintSeq || 0) + 1))),
-    url: location.href,
-    title: document.title,
-    readyState: document.readyState,
-    visibleCount: actionables.length,
-    interactiveCount: document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length,
-    capturedAt: Date.now()
-  };
-  return {
-    signals: { fingerprint: piScanFingerprint },
-    url: location.href,`;
-	if (!script.includes(marker)) throw new Error("scan template return marker missing; update scan signal injection");
-	return script.replace(marker, injected);
 }
 
 function injectGrowthProbe(script: string, probeWaitMs: number): string {
@@ -196,11 +179,10 @@ function injectGrowthProbe(script: string, probeWaitMs: number): string {
       elapsedMs: Date.now() - startedAt
     };
   }
-  const growthProbe = await collectGrowthProbe(scanRoot, list_hints);
+  const growthProbe = await collectGrowthProbe(scanRoot, listHints);
 `;
-	const returnMarker = "    list_hints,\n    canvas_regions,";
-	if (!script.includes(marker) || !script.includes(returnMarker)) throw new Error("scan template growth probe markers missing; update scan growth injection");
-	return script.replace(marker, injected).replace(returnMarker, "    list_hints,\n    growthProbe,\n    canvas_regions,");
+	if (!script.includes(marker)) throw new Error("scan template growth probe marker missing; update scan growth injection");
+	return script.replace(marker, injected);
 }
 
 function boundedInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -242,11 +224,12 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
 		noiseClassPatternsJson: jsonForInlineScript(BROWSER_NOISE_CLASS_PATTERNS),
 		extensionUrlPatternJson: jsonForInlineScript(SCAN_EXTENSION_URL_PATTERN),
 		actionAttrsJson: jsonForInlineScript(ACTIONABLE_ATTRIBUTE_NAMES),
+		pageWorldScanSchemaJson: jsonForInlineScript(PAGE_WORLD_SCAN_SCHEMA),
 		actionablePatternJson: jsonForInlineScript(ACTIONABLE_KEYWORD_PATTERN),
 		highIntentPatternJson: jsonForInlineScript(ACTIONABLE_HIGH_INTENT_PATTERN),
 		primaryIntentPatternJson: jsonForInlineScript(ACTIONABLE_PRIMARY_INTENT_PATTERN),
 		frameworkOwnerPatternJson: jsonForInlineScript(FRAMEWORK_HANDLER_OWNER_PATTERN),
 		frameworkActionPatternJson: jsonForInlineScript(FRAMEWORK_ACTION_HANDLER_PATTERN),
 	});
-	return injectScanSignals(injectGrowthProbe(injectAccessibleNameProvider(rendered), probeWaitMs));
+	return injectGrowthProbe(injectAccessibleNameProvider(rendered), probeWaitMs);
 }

@@ -127,6 +127,22 @@ function installBrowserPilotFingerprintResponder(): void {
   });
 }
 
+function reportBrowserPilotPrerenderActivation(): void {
+	if ((globalThis as unknown as { top?: unknown }).top !== (globalThis as unknown)) return;
+	const report = (activationStart?: number) => {
+		void chrome.runtime.sendMessage({ type: "browser-pilot-prerender-activated", ...(activationStart && activationStart > 0 ? { activationStart } : {}), url: location.href }).catch(() => {});
+	};
+	const prerenderDocument = document as Document & { prerendering?: boolean };
+	if (prerenderDocument.prerendering === true) {
+		document.addEventListener("prerenderingchange", () => report(), { once: true });
+		return;
+	}
+	const navigation = performance.getEntriesByType("navigation")[0] as (PerformanceEntry & { activationStart?: number }) | undefined;
+	const activationStart = Number(navigation?.activationStart ?? 0);
+	if (!(activationStart > 0)) return;
+	report(activationStart);
+}
+
 function scrubLegacyBridgeNode(root: ParentNode): void {
   const selectors = [`#${TID}`];
   for (const selector of selectors) {
@@ -144,7 +160,8 @@ function scrubLegacyBridgeNode(root: ParentNode): void {
 ;(function BrowserPilotContentWake() {
   if (/streamlit/i.test(document.title)) return;
 
-  void chrome.runtime.sendMessage({ cmd: "bridge_wake", url: location.href, title: document.title }).catch(() => {});
+	void chrome.runtime.sendMessage({ cmd: "bridge_wake", url: location.href, title: document.title }).catch(() => {});
+	reportBrowserPilotPrerenderActivation();
 
   if (document.documentElement) scrubLegacyBridgeNode(document.documentElement);
 

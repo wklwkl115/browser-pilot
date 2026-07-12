@@ -1,6 +1,6 @@
 {
   "name": "browser-pilot",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "Apache-2.0",
   "description": "Agent-driven browser automation: a Chrome extension + Node bridge exposing composable browser_* tools for scanning, execution, evidence capture, and web-security testing.",
   "keywords": [
@@ -54,6 +54,8 @@
     "typecheck:tests": "tsc -p tsconfig.tests.json",
     "audit:reachability": "node scripts/audit-reachability.mjs",
     "audit:complexity": "node scripts/audit-complexity.mjs",
+    "package-smoke": "node scripts/package-smoke.mjs",
+    "benchmark:update-observe": "node scripts/update-observe-benchmark-baseline.mjs --ref 1573380 --write",
     "lint": "npm run audit:reachability && npm run audit:complexity && eslint .",
     "lint:fix": "eslint . --fix",
     "prepack": "npm run build && node scripts/build-native.mjs --quiet && node scripts/build-bridge.mjs --quiet"
@@ -106,7 +108,6 @@
     "tsconfig.json",
     "tsconfig.base.json",
     "tsconfig.build.json",
-    "tsconfig.bridge-src.json",
-    "tsconfig.tests.json"
+    "tsconfig.bridge-src.json"
   ]
 }

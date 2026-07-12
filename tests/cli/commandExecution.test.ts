@@ -126,17 +126,17 @@ function createRuntime(overrides: Partial<BrowserCommandRuntimePort> = {}): Mock
 		listObservationSnapshots() { return []; },
 		beginOperation(operation) {
 			operationSeq += 1;
-			const active = { operationId: `op-${operationSeq}`, startedAt: 10, updatedAt: 10, state: "active" as const, sequence: 0, lastProgressAt: 10, events: [], lateEffects: [], ...operation };
+			const active = { operationId: `op-${operationSeq}`, startedAt: 10, updatedAt: 10, state: "active" as const, sequence: 0, revision: 1, lastProgressAt: 10, events: [], lateEffects: [], ...operation };
 			calls.push({ name: "beginOperation", args: [active] });
 			return active;
 		},
 		updateOperation(operationId, patch) {
-			const updated = { operationId, commandName: "browser_command", phase: "running", startedAt: 10, updatedAt: 20, state: "active" as const, sequence: 0, lastProgressAt: 10, events: [], lateEffects: [], ...patch };
+			const updated = { operationId, commandName: "browser_command", phase: "running", startedAt: 10, updatedAt: 20, state: "active" as const, sequence: 0, lastProgressAt: 10, events: [], lateEffects: [], ...patch, revision: patch.revision ?? 2 };
 			calls.push({ name: "updateOperation", args: [operationId, patch] });
 			return updated;
 		},
 		finishOperation(operationId) {
-			const finished = { operationId, commandName: "browser_command", phase: "completed", progress: 100, startedAt: 10, updatedAt: 20, state: "terminal" as const, sequence: 0, lastProgressAt: 10, events: [], lateEffects: [] };
+			const finished = { operationId, commandName: "browser_command", phase: "completed", progress: 100, startedAt: 10, updatedAt: 20, state: "terminal" as const, sequence: 0, revision: 2, lastProgressAt: 10, events: [], lateEffects: [] };
 			calls.push({ name: "finishOperation", args: [operationId] });
 			return finished;
 		},
@@ -358,6 +358,7 @@ test("commands execution: a mutation event without command-specific completion e
 				phase: "resolving",
 				state: "active",
 				sequence: 1,
+				revision: 2,
 				lastProgressAt: Date.now(),
 				events: [{ operationId, sequence: 1, type: "mutation", timestamp: Date.now(), progress: true, data: { mutationCount: 2 } }],
 				lateEffects: [],
@@ -688,7 +689,11 @@ test("commands execution: browser_artifact inspect lists existing hinted paths w
 });
 
 test("commands execution: browser_network captureReload batches start before reload and summarizes guidance", async () => {
+	let recorderState: { active: boolean; lastSeq?: number } | undefined;
 	const runtime = createRuntime({
+		recordKnownRecorderState(_kind, _browserSessionId, _tabId, state) {
+			recorderState = state;
+		},
 		async sendCommand(command, options) {
 			runtime.calls.push({ name: "sendCommand", args: [command, options] });
 			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
@@ -697,7 +702,7 @@ test("commands execution: browser_network captureReload batches start before rel
 				{ ok: true, data: { sessionId: "s1" } },
 				{ ok: true, data: { reloaded: true } },
 				{ ok: true, data: { matched: true } },
-				{ ok: true, data: { total: 1, items: [{ requestId: "r1", url: "https://example.test/app.js" }] } },
+				{ ok: true, data: { total: 1, lastSeq: 17, items: [{ requestId: "r1", seq: 17, url: "https://example.test/app.js" }] } },
 			] } } as BrowserBridgeExecutionResult;
 		},
 	});
@@ -713,6 +718,7 @@ test("commands execution: browser_network captureReload batches start before rel
 	assert.equal(envelope.schema, "browser-operation/v2");
 	assert.equal(envelope.status, "completed");
 	assert.equal((envelope.completion as Record<string, unknown>).source, "network-capture-completed");
+	assert.deepEqual(recorderState, { active: true, lastSeq: 17 });
 });
 
 test("commands execution: browser_network captureReload cannot report completed when reload fails inside the batch", async () => {

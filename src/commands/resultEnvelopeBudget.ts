@@ -23,18 +23,14 @@ export function rendererMarker(): DistilledEnvelope["renderer"] | undefined {
 	return process.env.BROWSER_PILOT_RENDERER === "ladder" ? undefined : "salience-v1";
 }
 
-function allocationCostModel(): "byte" | "token" {
-	return process.env.BROWSER_PILOT_TOKEN_COST === "1" ? "token" : "byte";
-}
-
 export function factRenderingDiagnostics(options: BudgetOptions, value: unknown, maxChars: number): FactRenderingDiagnostics | undefined {
 	if (!rendererMarker()) return undefined;
 	const factify = getDistillerDefinition(options.commandName)?.factify;
 	if (!factify) return undefined;
 	const facts = factify(value, options.command);
 	if (!facts.length) return undefined;
-	const budget = Math.max(256, Math.floor(maxChars * 0.25));
-	const plan = allocateFacts(facts, budget, [{ plane: "summary", minFacts: 1, minGranularity: "compact" }], { minDensity: 0.01, costModel: allocationCostModel(), stableRefs: options.stableRefs });
+	const budget = Math.max(64, Math.ceil(Math.max(256, Math.floor(maxChars * 0.25)) / 4));
+	const plan = allocateFacts(facts, budget, [{ plane: "summary", minFacts: 1, minGranularity: "compact" }], { minDensity: 0.01, stableRefs: options.stableRefs });
 	const rendered: RenderedFacts = renderFacts(facts, plan);
 	const planes = Object.keys(rendered).filter((key) => key !== "omitted" && key !== "stats").sort();
 	return {

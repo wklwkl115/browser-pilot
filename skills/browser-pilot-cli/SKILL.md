@@ -26,6 +26,8 @@ browser-pilot validate <command> --params @params.json --json
 
 Treat live help and schema output as authoritative. Command definitions reject unknown parameters. Do not treat the examples in this skill as an exhaustive command catalog.
 
+Machine discovery is contract v3 only: `commands --json` returns the compact `browser-pilot-command-catalog/v3` root, while `schema <command> <kebab-action> --json` returns the closed `browser-pilot-command-schema/v3` action schema. The catalog carries schema argv references instead of repeating flags or full schemas. CLI action tokens are canonical kebab-case; the action schema exposes the corresponding raw action `const` and the only permitted nested `params` keys.
+
 ## Follow the Operating Loop
 
 1. Establish readiness.
@@ -52,7 +54,9 @@ Treat live help and schema output as authoritative. Command definitions reject u
    browser-pilot observe --target-ref <targetRef> --json
    ```
 
-   Omit `--mode` for the canonical ABML `PageObservation`. Any explicit mode, including `scan`, is a legacy/debug/projection override. Read `gist`, `outline`, entities, refs, relations, collections, diagnostics, `saved`, and `nextActions` instead of assuming DOM state.
+   Omit `--mode` for the canonical `browser-page-observation/v3` ABML `PageObservation`. The observation is the JSON root, with no nested observation wrapper. Any explicit mode, including `scan`, is a legacy/debug/projection override. Read `gist`, `outline`, `entities`, the compact ref-based `actionables`, relations, collections, provider reports, `frontier`, `saved`, `artifact_hints`, and `nextActions` instead of assuming DOM state.
+
+   Provider entries report whether causal/axe/Readability work was planned, executed, skipped, failed, or degraded, along with the reason, reserved/actual milliseconds, bridge round trips, and `{chars,bytes,estimatedTokens}` cost. Optional provider failure is fail-open; it does not invalidate canonical structure. `limits.cost` describes the exact final rendered JSON.
 
 4. Act through `execute`.
 
@@ -104,6 +108,8 @@ browser-pilot artifact --mode json --path <saved.path> --json-path <verified-pat
 ```
 
 Inspect metadata or list available JSON paths before targeted reads. Do not guess JSON paths, invent fixed artifact filenames, or load a large artifact wholesale when `pick`, `search`, `sample`, offsets, or limits can answer the question.
+
+When an observation folds template instances, collection windows, content, or diagnostics, follow the matching `frontier.items[].read` descriptor exactly: substitute the returned `saved.path` for `pathRef:"saved.path"`, retain the verified `jsonPath` and optional offset/limit, and call `browser_artifact mode=json`. A frontier item without a read must state `unavailableReason`; do not invent a path or an automatic click/scroll continuation.
 
 For a compacted operation outcome, prefer the exact path named by `artifact_hints.jsonPaths` over generic artifact defaults. The saved operation artifact embeds the same hints, so `artifact --mode inspect` can validate paths before the targeted read.
 

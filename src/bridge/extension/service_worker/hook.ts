@@ -90,7 +90,7 @@ function hookInstallArgsFromMessage(msg: BrowserPilotBridgeCommand, targetOverri
     session_id: msg.session_id || msg.sessionId,
     targets: targetOverride || msg.targets,
     options: msg.options,
-    buffer_size: msg.buffer_size === undefined ? undefined : Number(msg.buffer_size),
+    buffer_size: msg.bufferSize === undefined && msg.buffer_size === undefined ? undefined : Number(msg.bufferSize ?? msg.buffer_size),
     force: msg.force === true,
     expected_version: msg.expected_version || msg.expectedVersion,
     install_fingerprint: msg.install_fingerprint || msg.installFingerprint
@@ -158,7 +158,7 @@ function resolveHookInstallTargets(cmd: string, msg: BrowserPilotBridgeCommand):
 function installedHookSession(data: JsonRecord, args: JsonRecord, msg: BrowserPilotBridgeCommand, expandedTargets?: Array<JsonRecord>) {
   return {
     session_id:String(data.session_id || args.session_id || ''), state:String(data.state || 'INSTALLED'), installed_at:String(data.installed_at || new Date().toISOString()),
-    targets:args.targets, options:msg.options, buffer_size:msg.buffer_size === undefined ? undefined : Number(msg.buffer_size), dispatcher_version:data.dispatcher_version || data.browser_pilot_version,
+    targets:args.targets, options:msg.options, buffer_size:msg.bufferSize === undefined && msg.buffer_size === undefined ? undefined : Number(msg.bufferSize ?? msg.buffer_size), dispatcher_version:data.dispatcher_version || data.browser_pilot_version,
     install_epoch:data.install_epoch, owner_session_id:data.owner_session_id, install_fingerprint:data.install_fingerprint !== undefined ? String(data.install_fingerprint) : (args.install_fingerprint ? String(args.install_fingerprint) : undefined),
     install_args:args, expanded_targets:expandedTargets,
   };
@@ -177,7 +177,7 @@ async function recordSuccessfulHookInstall(cmd: string, tabId: number, msg: Brow
   }
   browserPilotSessions.set(tabId, installedHookSession(data, args, msg, targets.expandedTargets));
   const sessionId = String(data.session_id || args.session_id || 'default');
-  try { await persistState('hook', `${Number(tabId)}:${sessionId}`, redactConfig({ sessionId, targets:args.targets, options:msg.options, buffer_size:msg.buffer_size }), { tabId, sessionId, recoveryPolicy:'manual' }); }
+  try { await persistState('hook', `${Number(tabId)}:${sessionId}`, redactConfig({ sessionId, targets:args.targets, options:msg.options, buffer_size:msg.bufferSize ?? msg.buffer_size }), { tabId, sessionId, recoveryPolicy:'manual' }); }
   catch (error) { console.warn('[BROWSER-PILOT-HOOK] Failed to persist hook session state', sessionId, error); }
 }
 
@@ -204,7 +204,7 @@ async function hookStatus(_cmd: string, tabId: number, msg: BrowserPilotBridgeCo
 }
 
 async function collectHookEvents(_cmd: string, tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
-  return await callPageBrowserPilot(tabId, 'hook.collect', { ...browserPilotHookSessionArgs(msg), since_seq:msg.since_seq, limit:msg.limit, event_types:msg.event_types, timeout_ms:msg.timeout_ms, min_count:msg.min_count }, { timeoutMs:msg.timeoutMs ?? msg.timeout_ms });
+  return await callPageBrowserPilot(tabId, 'hook.collect', { ...browserPilotHookSessionArgs(msg), since_seq:msg.sinceSeq ?? msg.since_seq, limit:msg.limit, event_types:msg.eventTypes ?? msg.event_types, timeout_ms:msg.timeoutMs ?? msg.timeout_ms, min_count:msg.minCount ?? msg.min_count }, { timeoutMs:msg.timeoutMs ?? msg.timeout_ms });
 }
 
 async function runHookSessionCommand(cmd: string, tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {

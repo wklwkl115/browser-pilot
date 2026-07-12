@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.4.0] - 2026-07-12
 
 ### Breaking
 
@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
 - Removed silent deprecated-parameter stripping and default legacy action aliases. Unknown, internal, removed, and illegal cross-field/action combinations now fail immediately with a complete structured issue list and CLI exit 2.
 - Removed `browser_execute.monitor` and the former snapshot-plus-150ms `effect/settled` result model. JavaScript with a non-`undefined` resolved value returns `completed/script-resolved`; physical programs without an observed effect return `no_effect`.
 - CLI JSON artifact `readCommands` are now bounded structured placeholder templates with `pathRef` / `jsonPathRef`, rather than shell command strings containing actual paths. The actual saved path appears once in its artifact descriptor.
+- Replaced command discovery with contract v3 only. `commands --json` now emits one compact `browser-pilot-command-catalog/v3` root and `schema <command> <action> --json` emits the closed `browser-pilot-command-schema/v3`; v2 catalog/schema output, repeated per-command flags/artifact prose, legacy action aliases, and verbose compatibility output are not emitted.
+- Replaced canonical observe output with the single-root `browser-page-observation/v3` contract for inline, artifact, cache, full, delta, and re-anchor results. Removed the former nested observation wrapper, duplicated correlation/content/template/actionable planes, and the artifact observation mirror.
+- Page-world scan output is now the strictly validated camelCase `browser-page-scan/v1` bundle. Legacy snake_case scan objects are rejected with `SCAN_BUNDLE_INVALID`, and an extension without `captureContractVersion:1` is rejected before observe with `EXTENSION_CONTRACT_MISMATCH` plus reload recovery.
 
 ### Added
 
@@ -25,6 +28,14 @@ All notable changes to this project will be documented in this file.
 - Added a canonical public action catalog that combines generated native action metadata with command-owned synthetic metadata. The one-shot raw action `captureReload` is now routed as canonical CLI `network capture-reload`; camelCase is not a CLI alias.
 - Added exact daemon contract identity (`packageVersion`, daemon protocol, command-contract version/hash, and tool count) to live status and lock metadata. Managed reuse requires every field to match, and stale replacement fails explicitly with `DAEMON_REPLACEMENT_FAILED` when graceful drain cannot be proven.
 - Added real page epochs propagated from the extension through bridge target state and content fingerprints. Observation baselines, session deltas, perception-ledger frames, and render cache now use `browserSessionId + tabId + targetGeneration + pageEpoch` identity and fail open to a full observation with `reanchorReason` when continuity is not proven.
+- Added closed nested parameter schemas for every public network/hook/frame action and the command-owned `network capture-reload` action. Help, action schema, real CLI parsing, offline validation, daemon HTTP validation, normalized arguments, execution routing, and the contract hash now share the same action owner.
+- Added a unified observation frontier for folded template instances, collection windows, content, and diagnostics. Reads are verified against the persisted artifact after writing; an unavailable block carries an explicit reason, and silent truncation is forbidden.
+- Added the pure `ObserveProviderPlan`: core scan/structure and render/persist reserves precede optional I/O, causal/axe/Readability receive a deterministic 2:1:1 split, eligible providers run concurrently with independent deadlines, and bounded telemetry records plan/status/reason/reserved/actual time, bridge round trips, and cost.
+- Added the shared pure `CostVector` owner (`chars`, UTF-8 `bytes`, `estimatedTokens`) for fact allocation, frontier fitting, provider telemetry, final rendering, and benchmarks. Final observation cost is an exact serialization fixed point.
+- Added an immutable observation benchmark baseline extracted directly from Git object `1573380`. The release gate requires at least 25% median byte/token reduction, no per-fixture regression above 5%, exact costs, full required-fact recall, zero duplicate ownership/leakage, and verified frontier coverage.
+- Added `mise run package-smoke`: it packs one tarball, enforces the file allowlist and hard size ceilings, installs the `.tgz` into an isolated project, and verifies ESM/declarations, CLI contract/schema/validation/status, extension assets, native source, and the JavaScript fallback.
+- Added a tag-only release workflow. Ubuntu and Windows verify and install-smoke the package, Windows runs the complete real-browser gate, Ubuntu retains one SHA-256-verified tarball, and npm 11 publishes that exact download through OIDC trusted publishing with provenance and no long-lived token.
+- Expanded the real Edge/Chrome smoke to require provider budget telemetry, completion-event waiter latency, BFCache back/forward identity, targeted frontier reads, real Prerender2 activation/replacement generation, and target close/new-target recovery without skips.
 
 ### Changed
 
@@ -33,6 +44,9 @@ All notable changes to this project will be documented in this file.
 - Distilled envelope extreme fallback now honors the final character budget, retaining canonical observation markers, actionable errors, compact saved evidence, and required continuation while dropping duplicate artifact metadata and low-density planes.
 - CLI artifact guidance now emits safe inspect → paths → targeted-read templates with strict count/character budgets, and human rendering exposes direct `browser-operation/v2` classification, status, completion verification, continuation, and artifact information instead of printing an empty line.
 - CLI offline validation and daemon pre-execution validation now share the same reference-resolution, strict-key, schema, normalization, and pure semantic pipeline; successful validation returns the final normalized arguments.
+- Daemon protocol is now 5 and command contract version is 3. The identity hash covers catalog/schema v3, every action-specific schema, PageObservation v3, page-scan v1, operation v2, and native protocol metadata.
+- Operation settlement no longer polls at 25ms. Monotonic revisions and one-shot waiters wake on operation events or the next pure liveness boundary, and all finish/abort/reconnect/replacement paths release listeners and timers.
+- Extension operation events are bound to the exact WebSocket that armed each operation, preventing completion evidence from being sent to a stale offscreen socket after reconnect. Prerender2 browsers that retain the numeric tab id now report a real activation as a same-tab target-generation replacement; browsers that emit `tabs.onReplaced` continue through the native replacement path.
 
 ## [0.3.0] - 2026-06-14
 

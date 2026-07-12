@@ -17,7 +17,7 @@ let browserPilotTabSyncInstalled = false;
 let browserPilotTabSyncTransport: BrowserPilotTabSyncTransport | null = null;
 const MAX_REPLACEMENT_RECORDS = 20;
 const REPLACEMENT_TTL_MS = 5 * 60_000;
-const replacementRing: Array<{ from: number; to: number; at: number }> = [];
+const replacementRing: Array<{ from: number; to: number; at: number; kind?: "prerender-activation" }> = [];
 let lastActivation: { tabId: number; windowId?: number; at: number } | undefined;
 
 function setBrowserPilotTabSyncTransport(deps: BrowserPilotTabSyncTransport) {
@@ -35,10 +35,19 @@ function pruneReplacementRing(now = Date.now()) {
   while (replacementRing.length > MAX_REPLACEMENT_RECORDS) replacementRing.shift();
 }
 
-function recordReplacement(from: number, to: number, at = Date.now()) {
-  if (!Number.isInteger(from) || from <= 0 || !Number.isInteger(to) || to <= 0 || from === to) return;
-  replacementRing.push({ from, to, at });
-  pruneReplacementRing(at);
+function recordReplacement(from: number, to: number, at = Date.now(), kind?: "prerender-activation") {
+	if (!Number.isInteger(from) || from <= 0 || !Number.isInteger(to) || to <= 0 || (from === to && kind !== "prerender-activation")) return;
+	replacementRing.push({ from, to, at, ...(kind ? { kind } : {}) });
+	pruneReplacementRing(at);
+}
+
+function recordBrowserPilotPrerenderActivation(tabId: number, at = Date.now()) {
+	if (!Number.isInteger(tabId) || tabId <= 0) return false;
+	pruneReplacementRing(at);
+	if (replacementRing.some((replacement) => replacement.to === tabId && at - replacement.at < 5_000)) return false;
+	recordReplacement(tabId, tabId, at, "prerender-activation");
+	safeSendTabsUpdate("prerender-activation");
+	return true;
 }
 
 function recordActivation(tabId: number, windowId?: number, at = Date.now()) {
@@ -157,6 +166,6 @@ function installBrowserPilotTabSync(deps: BrowserPilotTabSyncTransport | undefin
   browserPilotTabSyncInstalled = true;
   return true;
 }
-export { setBrowserPilotTabSyncTransport, requireBrowserPilotTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, cleanupBrowserPilotTab, installBrowserPilotTabSync };
+export { setBrowserPilotTabSyncTransport, requireBrowserPilotTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, cleanupBrowserPilotTab, installBrowserPilotTabSync, recordBrowserPilotPrerenderActivation };
 // ESM module metadata
 export const __browserPilotBridgeModule_tab_sync = { name: "tab_sync", symbols: { setBrowserPilotTabSyncTransport, requireBrowserPilotTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, cleanupBrowserPilotTab, installBrowserPilotTabSync } };

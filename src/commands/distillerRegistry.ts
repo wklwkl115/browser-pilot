@@ -1,4 +1,4 @@
-import { jsonCost } from "../kernels/evidence/distill/cost.js";
+import { jsonCost } from "../kernels/evidence/cost.js";
 import { compactEntityRenderingValue, lineEncodeEntity } from "../kernels/evidence/distill/granularity.js";
 import { mintRef } from "../kernels/refs/core.js";
 import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHookCollectData, summarizeHookPerformance, summarizeNetworkData, summarizeWsSessionData } from "./summaries/index.js";
@@ -56,8 +56,8 @@ function summaryFact(ref: string, plane: CommandFact["plane"], value: Record<str
 		renderings: {
 			full: { value, cost: jsonCost(value) },
 			compact: { value: compact, cost: jsonCost(compact) },
-			line: { text: line, cost: line.length },
-			ref: { text: ref, cost: ref.length },
+			line: { text: line, cost: jsonCost(line) },
+			ref: { text: ref, cost: jsonCost(ref) },
 		},
 	};
 }

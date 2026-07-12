@@ -21,6 +21,7 @@ type ReplacementRecord = {
 	fromSessionId: string;
 	toSessionId: string;
 	tabHandle?: string;
+	sameTab?: boolean;
 };
 
 type ReplacementResolution = {
@@ -47,13 +48,14 @@ type SyncedTab = { id: string; active: boolean; reconnect?: ReconnectIdentity };
 type TargetInfoExtras = Partial<Pick<BrowserBridgeTargetInfo, "tabHandle" | "targetRef" | "requestedTabId" | "replacedFrom" | "replacedByTabId" | "replacementHops" | "replacementHopsRemaining" | "replacementChainAge" | "browserId" | "openerTabId" | "generation" | "pageEpoch" | "documentId">>;
 const NESTED_TARGET_KEYS = ["createdTarget", "createdTab", "target", "tab", "data"] as const;
 
-function normalizedReplacement(raw: unknown, now: number): { from: number; to: number; at: number } | undefined {
+function normalizedReplacement(raw: unknown, now: number): { from: number; to: number; at: number; sameTab: boolean } | undefined {
 	const record = recordValue(raw);
 	if (!record) return undefined;
 	const from = toTabId(record.from ?? record.removedTabId ?? record.oldTabId);
 	const to = toTabId(record.to ?? record.addedTabId ?? record.newTabId);
-	if (!from || !to || from === to) return undefined;
-	return { from, to, at: typeof record.at === "number" && Number.isFinite(record.at) ? record.at : now };
+	const sameTab = from !== undefined && from === to;
+	if (!from || !to || (sameTab && record.kind !== "prerender-activation")) return undefined;
+	return { from, to, at: typeof record.at === "number" && Number.isFinite(record.at) ? record.at : now, sameTab };
 }
 
 function replacementSessionFields(replacement: ReplacementIdentity | undefined, existing: BrowserTabSession | undefined): Partial<Pick<BrowserTabSession, "replacedFromTabId" | "replacedAt">> {
@@ -84,6 +86,7 @@ export class BrowserTabSessionRouter {
 	private readonly browserSessions: SessionRegistry<WebSocket>;
 	private lastTabSyncAtValue?: number;
 	private readonly replacements = new Map<string, ReplacementRecord>();
+	private readonly sameTabReplacementAt = new Map<string, number>();
 	private readonly pendingReplacementIdentities = new Map<string, ReplacementIdentity>();
 
 	constructor(clients: BrowserBridgeClientRegistry, browserSessions: SessionRegistry<WebSocket>) {
@@ -102,6 +105,7 @@ export class BrowserTabSessionRouter {
 	clear(): void {
 		this.sessions.clear();
 		this.replacements.clear();
+		this.sameTabReplacementAt.clear();
 		this.pendingReplacementIdentities.clear();
 		this.lastTabSyncAtValue = undefined;
 		const session = this.browserSession();
@@ -180,11 +184,19 @@ export class BrowserTabSessionRouter {
 		for (const raw of rawReplacements) {
 			const replacementInput = normalizedReplacement(raw, now);
 			if (!replacementInput) continue;
-			const { from, to, at } = replacementInput;
+			const { from, to, at, sameTab } = replacementInput;
 			const fromSessionId = this.sessionIdForTab(ws, from);
 			const toSessionId = this.sessionIdForTab(ws, to);
 			const oldSession = this.sessions.get(fromSessionId);
 			const existingNewSession = this.sessions.get(toSessionId);
+			if (sameTab) {
+				if (!oldSession) continue;
+				if ((this.sameTabReplacementAt.get(fromSessionId) ?? -1) >= at) continue;
+				this.sameTabReplacementAt.set(fromSessionId, at);
+				this.sessions.set(fromSessionId, { ...oldSession, generation: oldSession.generation + 1, replacedFromTabId: from, replacedAt: at });
+				applied.push({ browserId, from, to, at, fromSessionId, toSessionId, tabHandle: oldSession.tabHandle, sameTab: true });
+				continue;
+			}
 			const identity = oldSession ? {
 				logicalTabId: oldSession.logicalTabId,
 				tabHandle: oldSession.tabHandle,

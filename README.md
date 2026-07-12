@@ -21,7 +21,7 @@ Everything a human can do in DevTools, your agent can do through composable
 
 ```
 # browser-pilot-executable
-$ browser-pilot observe --json | jq '.summary.pageObservation.gist'
+$ browser-pilot observe --json | jq '.gist'
 "Forum topic list with 14 visible rows, navigation sidebar, user menu.
  3 forms (search, login, compose), 47 actionable elements."
 
@@ -171,6 +171,8 @@ evidence, frame, artifact, download, and upload. Security tools include crawl, f
 sqli, template, cookie-analyze, http-replay, and callback-oast. Use
 `browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface. For native bridge escape-hatch calls, `browser-pilot command --command` accepts inline JSON only; do not use `--command @file`. For large Windows-friendly inputs, use `browser-pilot execute --program @file` or `browser-pilot execute --script-file <path>`.
 
+Machine discovery uses the compact command contract v3. `browser-pilot commands --json` returns one root artifact rule plus 19 canonical command entries and action schema references; it does not repeat flags, schemas, routing prose, or legacy aliases per command. `browser-pilot schema <command> <kebab-action> --json` expands the closed action-specific schema, including the raw action `const`, shared target/session/output fields, and the only allowed nested `params`. Help, offline validation, daemon validation, and execution routing all derive from that same owner.
+
 ## Typical Workflow
 
 ```
@@ -192,14 +194,16 @@ For page-load request capture, prefer raw `browser_network action=captureReload`
 
 ### Structured DOM Perception
 
-`browser_observe` returns the canonical ABML page model — not raw HTML, not a screenshot, and not a caller-selected extraction strategy.
-It fuses accessibility/DOM structure with actionables, refs, relations, collections, scan-backed content/text digests, tab context, evidence artifacts, and diagnostics in one stable observation envelope. Omit `mode` for canonical semantics; any explicit `mode` value is marked as legacy/debug/projection, with `mode=content/html/text/tabs` kept only for compatibility projections. Provider diagnostics report truthful execution states such as `executed`, `scan-backed`, `skipped`, `failed`, or `degraded` rather than implying a provider ran successfully when it was only derived from scan evidence or skipped.
+`browser_observe` returns the canonical ABML page model, identified by `browser-page-observation/v3` — not raw HTML, not a screenshot, and not a caller-selected extraction strategy. The observation itself is the JSON root; there is no nested observation mirror or second artifact envelope copy.
+It fuses accessibility/DOM structure with compact ref-based actionables, relations, identity, collections, snapshot/diff planes, provider execution reports, a verified expansion frontier, and artifact hints. Omit `mode` for canonical semantics; any explicit `mode` value is a legacy/debug/projection override. The existing `mode=content/html/text/tabs` values remain isolated compatibility projections and never replace the canonical v3 root. Core scan/structure work is reserved before optional I/O; causal, axe, and Readability use a deterministic 2:1:1 optional deadline split, run concurrently when eligible, and fail open. Each provider reports planned/executed/skipped status, reason, reserved/actual milliseconds, bridge round trips, and a shared `{chars,bytes,estimatedTokens}` cost vector.
 
 ### Session Delta
 
 Repeated `browser_observe` on the same tab produces compact delta frames
 (`delta:"session"`) containing only what changed. Multi-step workflows stay
 token-efficient without sacrificing completeness. Default `nextActions` represent an actual recovery or continuation frontier; they do not guess an action from the first entity or duplicate optional artifact reads already described by `artifact_hints`.
+
+Folded template instances, collection windows, large content, and truncated diagnostics are represented once in `frontier.items`. Every item either contains a persisted, post-write-verified `browser_artifact` JSON read through `saved.path`, or an explicit `unavailableReason`; Browser Pilot never silently truncates a block or guesses a collection JSON path. Inline and saved observations use the same v3 schema, and `limits.cost` is the exact cost of the final rendered JSON.
 
 Delta and render-cache reuse require the same `browserSessionId + tabId + targetGeneration + pageEpoch`. A top-level document commit or target replacement changes that identity; SPA history updates within the same document do not. If Browser Pilot cannot prove continuity—such as after an extension restart—it discards the old baseline, performs a full observation, and returns a short `reanchorReason` instead of an incorrect delta. URL is reported as a fact but is never used as document identity.
 
@@ -252,12 +256,18 @@ Use `mise` for project validation gates:
 mise run dev          # Local developer gate
 mise run affected     # Changed-file validation
 mise run verify       # Release-readiness gate
+mise run package-smoke # Pack/install the exact npm tarball in an isolated project
 mise run smoke-browser # Real Chrome/Edge MV3 acceptance gate
+mise run dev-governance # Governance/workflow/documentation changes
 ```
 
-`mise run smoke-browser` rebuilds the unpacked extension, launches an installed Chrome/Edge/Chromium in an isolated profile, and verifies the real extension handshake, tab discovery, execute, canonical observe, network capture, and extension reload/reconnect path. Set `BROWSER_PILOT_SMOKE_BROWSER` when the browser is outside the standard install locations.
+`mise run package-smoke` runs `npm pack --json`, enforces the package allowlist and hard size/file ceilings, installs the generated `.tgz` into a clean temporary project, and tests the root ESM export, CLI/help, compact catalog, action schema, offline validation, no-daemon status behavior, extension assets, and JavaScript native-kernel fallback. `mise run verify` runs this smoke after the build.
 
-The observe regression benchmark is maintained as offline fixtures in `tests/observe/observeRegressionBenchmark.test.ts`. New exploration-UX samples should stay deterministic and pure-logic, and should cover additional page archetypes without requiring a real browser, extension, network, or external site; the separate smoke gate owns live-browser lifecycle acceptance.
+`mise run smoke-browser` rebuilds the unpacked extension, launches an installed Chrome/Edge/Chromium in an isolated profile, and verifies the real extension handshake, operation completion-event wakeup, full/delta/re-anchor observations, provider budgets, network/hook behavior, BFCache back/forward lineage, frontier artifact reads, Prerender2 target replacement, target close/new-target recovery, and extension reload/reconnect. Set `BROWSER_PILOT_SMOKE_BROWSER` when the browser is outside the standard install locations.
+
+The observe regression benchmark is maintained as offline fixtures in `tests/observe/observeRegressionBenchmark.test.ts`, with an immutable v2 baseline extracted directly from Git object `1573380`. The gate requires at least 25% median byte and estimated-token reduction, no fixture above 105% of its baseline, exact final costs, complete required facts/refs/relations/collection properties, and verified frontier ownership. Only the explicit `mise run update-observe-benchmark` maintenance command rewrites the baseline; ordinary builds and tests never do.
+
+Version tags are the only npm publishing entrypoint. `.github/workflows/release.yml` first requires the tag to equal `v${package.json.version}`, runs `verify` and tarball smoke on Ubuntu and Windows plus the full Windows browser smoke, retains one SHA-256-verified tarball, and publishes that exact download with npm 11 trusted publishing and provenance. The publish job does not repack and uses OIDC rather than a long-lived npm token.
 
 Lower-level npm scripts still exist for focused maintenance tasks, but they are not the completion gate. See [REPO_GOVERNANCE.md](REPO_GOVERNANCE.md) for the canonical workflow and [CODE_WIKI.md](CODE_WIKI.md) for the architecture/development map.
 

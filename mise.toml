@@ -35,6 +35,14 @@ run = "node scripts/run-coverage.mjs all"
 description = "Launch a real Chrome/Edge instance and verify handshake, tools, network, hooks, and reconnect"
 run = "node --import tsx scripts/run-browser-smoke.mjs --quiet"
 
+[tasks.package-smoke]
+description = "Pack, install, and verify the exact npm tarball in an isolated project"
+run = "node scripts/package-smoke.mjs"
+
+[tasks.update-observe-benchmark]
+description = "Explicitly regenerate the immutable v2 observe cost baseline from git object 1573380"
+run = "node scripts/update-observe-benchmark-baseline.mjs --ref 1573380 --write"
+
 [tasks.dev]
 description = "Fast developer validation for the current refactor scope"
 run = "node scripts/run-validation.mjs dev all"

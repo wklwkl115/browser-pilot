@@ -16,6 +16,7 @@ type CommandSpec = {
 	methodRequired?: boolean;
 	required?: string[];
 	requiredAny?: string[][];
+	paramsSchema?: Record<string, unknown>;
 	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "requiredAny" | "accessMode">>;
 	canonical?: string;
 	notes?: string;
@@ -428,42 +429,326 @@ const schema = {
     "network.start": {
       "domain": "network",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "maxEntries": {
+            "type": "number"
+          },
+          "maxAgeMs": {
+            "type": "number"
+          },
+          "maxBodyBytes": {
+            "type": "number"
+          },
+          "maxPostDataBytes": {
+            "type": "number"
+          },
+          "maxFrames": {
+            "type": "number"
+          },
+          "maxFrameBytes": {
+            "type": "number"
+          },
+          "maxSseEvents": {
+            "type": "number"
+          },
+          "captureBodies": {
+            "type": "boolean"
+          },
+          "captureRequestPostData": {
+            "type": "boolean"
+          },
+          "includeWebSocketFrames": {
+            "type": "boolean"
+          },
+          "includeSse": {
+            "type": "boolean"
+          },
+          "bodyTimeoutMs": {
+            "type": "number"
+          },
+          "bodyMimeAllow": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includeUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludeUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resourceTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "clear": {
+            "type": "boolean"
+          },
+          "storeHeaders": {
+            "type": "boolean"
+          },
+          "reconfigure": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "network.stop": {
       "domain": "network",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "keepBuffer": {
+            "type": "boolean"
+          },
+          "clear": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "remove": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "network.status": {
       "domain": "network",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     "network.clear": {
       "domain": "network",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     "network.list": {
       "domain": "network",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "sinceSeq": {
+            "type": "number"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "urlContains": {
+            "type": "string"
+          },
+          "urlPattern": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "includeUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludeUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includeDetails": {
+            "type": "boolean"
+          },
+          "includeBody": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "network.get": {
       "domain": "network",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "required": [
+        "requestId"
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "includeBody": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requestId"
+        ],
+        "additionalProperties": false
+      }
     },
     "network.body": {
       "domain": "network",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "requiredAny": [
+        [
+          "bodyRef"
+        ],
+        [
+          "requestId"
+        ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "bodyRef": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "maxBytes": {
+            "type": "number"
+          }
+        },
+        "requiredAny": [
+          [
+            "bodyRef"
+          ],
+          [
+            "requestId"
+          ]
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "bodyRef"
+            ]
+          },
+          {
+            "required": [
+              "requestId"
+            ]
+          }
+        ],
+        "additionalProperties": false
+      }
     },
     "network.exportHar": {
       "domain": "network",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "enum": [
+              "har",
+              "json"
+            ]
+          },
+          "includeBody": {
+            "type": "boolean"
+          },
+          "sinceSeq": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "urlContains": {
+            "type": "string"
+          },
+          "urlPattern": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "includeUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludeUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "network.wait": {
       "domain": "network",
@@ -548,22 +833,87 @@ const schema = {
     "hook.list_sessions": {
       "domain": "hook",
       "tabScoped": false,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     "hook.install": {
       "domain": "hook",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "targets": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "object"
+              }
+            ]
+          },
+          "options": {
+            "type": "object"
+          },
+          "bufferSize": {
+            "type": "number"
+          },
+          "force": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": "string"
+          },
+          "installFingerprint": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "hook.status": {
       "domain": "hook",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     "hook.collect": {
       "domain": "hook",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "sinceSeq": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "eventTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "minCount": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "hook.clear": {
       "domain": "hook",
@@ -574,22 +924,42 @@ const schema = {
     "hook.clear_buffer": {
       "domain": "hook",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     "hook.pause": {
       "domain": "hook",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     "hook.resume": {
       "domain": "hook",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     "hook.uninstall": {
       "domain": "hook",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     "hook.evaluate": {
       "domain": "hook",
@@ -597,7 +967,22 @@ const schema = {
       "accessMode": "read",
       "required": [
         "expression"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "expression": {
+            "type": "string"
+          },
+          "awaitPromise": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expression"
+        ],
+        "additionalProperties": false
+      }
     },
     "hook.addEventListener": {
       "domain": "hook",
@@ -605,7 +990,28 @@ const schema = {
       "accessMode": "write",
       "required": [
         "eventType"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "eventType": {
+            "type": "string"
+          },
+          "listenerId": {
+            "type": "string"
+          },
+          "selector": {
+            "type": "string"
+          },
+          "diagnostics": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "eventType"
+        ],
+        "additionalProperties": false
+      }
     },
     "hook.removeEventListener": {
       "domain": "hook",
@@ -613,12 +1019,36 @@ const schema = {
       "accessMode": "write",
       "required": [
         "listenerId"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "listenerId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "listenerId"
+        ],
+        "additionalProperties": false
+      }
     },
     "hook.getPerformanceEntries": {
       "domain": "hook",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "entryType": {
+            "type": "string"
+          },
+          "nameContains": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "hook.getNodeListeners": {
       "domain": "hook",
@@ -626,7 +1056,22 @@ const schema = {
       "accessMode": "read",
       "required": [
         "selector"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string"
+          },
+          "maxListeners": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "selector"
+        ],
+        "additionalProperties": false
+      }
     },
     "hook.getListenerChain": {
       "domain": "hook",
@@ -634,7 +1079,22 @@ const schema = {
       "accessMode": "read",
       "required": [
         "selector"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string"
+          },
+          "maxListeners": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "selector"
+        ],
+        "additionalProperties": false
+      }
     },
     "hook.getSinkHints": {
       "domain": "hook",
@@ -642,12 +1102,33 @@ const schema = {
       "accessMode": "read",
       "required": [
         "selector"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "selector"
+        ],
+        "additionalProperties": false
+      }
     },
     "frame.list": {
       "domain": "frame",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "options": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "frame.evaluate": {
       "domain": "frame",
@@ -656,7 +1137,41 @@ const schema = {
       "required": [
         "frameId",
         "expression"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "frameId": {
+            "type": "string"
+          },
+          "expression": {
+            "type": "string"
+          },
+          "awaitPromise": {
+            "type": "boolean"
+          },
+          "grantUniversalAccess": {
+            "type": "boolean"
+          },
+          "returnByValue": {
+            "type": "boolean"
+          },
+          "userGesture": {
+            "type": "boolean"
+          },
+          "worldName": {
+            "type": "string"
+          },
+          "options": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "frameId",
+          "expression"
+        ],
+        "additionalProperties": false
+      }
     },
     "frame.addNewDocumentScript": {
       "domain": "frame",
@@ -664,7 +1179,31 @@ const schema = {
       "accessMode": "write",
       "required": [
         "source"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "runImmediately": {
+            "type": "boolean"
+          },
+          "worldName": {
+            "type": "string"
+          },
+          "includeCommandLineAPI": {
+            "type": "boolean"
+          },
+          "options": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
+      }
     },
     "frame.removeNewDocumentScript": {
       "domain": "frame",
@@ -672,7 +1211,22 @@ const schema = {
       "accessMode": "write",
       "required": [
         "identifier"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "identifier": {
+            "type": "string"
+          },
+          "options": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "identifier"
+        ],
+        "additionalProperties": false
+      }
     },
     "layer.probe": {
       "domain": "layer",
@@ -770,7 +1324,12 @@ const schema = {
     "hook.list_targets": {
       "domain": "hook",
       "tabScoped": false,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     "hook.install_targets": {
       "domain": "hook",
@@ -778,7 +1337,38 @@ const schema = {
       "accessMode": "write",
       "required": [
         "targets"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "options": {
+            "type": "object"
+          },
+          "bufferSize": {
+            "type": "number"
+          },
+          "force": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": "string"
+          },
+          "installFingerprint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "errorCodes": {
@@ -1356,6 +1946,16 @@ const schema = {
       "category": "abml.ref",
       "retryable": false,
       "summary": "Failed to read the referenced browser-result resource."
+    },
+    "SCAN_BUNDLE_INVALID": {
+      "category": "abml.input",
+      "retryable": false,
+      "summary": "Page-world scan returned a malformed or unknown capture bundle."
+    },
+    "EXTENSION_CONTRACT_MISMATCH": {
+      "category": "driver.lifecycle",
+      "retryable": true,
+      "summary": "The connected extension capture contract is incompatible with this daemon."
     }
   },
   "toolMetadata": {
@@ -1498,13 +2098,6 @@ const schema = {
             "command": "hook.collect",
             "aliases": [
               "collect"
-            ]
-          },
-          {
-            "action": "clear",
-            "command": "hook.clear",
-            "aliases": [
-              "clear"
             ]
           },
           {

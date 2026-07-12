@@ -598,6 +598,8 @@ CLI 子命令由工具名映射而来：去掉 `browser_` 前缀，并把 `_` �
 
 带 action 的公开命令额外使用 [`publicActionCatalog.ts`](src/commands/publicActionCatalog.ts) 作为 routing/help/schema/validate 的共同来源。Catalog 合并 native schema 生成 metadata 与 command definition 上的 `actionMetadata`；CLI token 固定 kebab-case，raw JSON `action` 保持 schema spelling。例如 raw `captureReload` 的唯一 canonical CLI route 是 `network capture-reload`，`network captureReload` 不是 alias。
 
+公共 discovery 直接使用 contract v3，不双写旧形态。`commands --json` 由 command registry 派生 `browser-pilot-command-catalog/v3`：root 只出现一次 contract identity 与 artifact read 规则，每个 command 只保留 `cli/tool/group/summary/schemaArgv` 和 canonical kebab-case action references；19-tool catalog 的 UTF-8 硬上限为 25 KiB。`schema <command> --json` 返回公共参数与 action references，`schema <command> <action> --json` 才展开 `browser-pilot-command-schema/v3` 的 closed action schema。Action schema 固定包含 raw action `const`、公共 target/session/output 字段、该 action 唯一允许的 nested `params`、required/required-any 和 `additionalProperties:false`。Native network/hook/frame metadata 由 protocol schema 生成，`captureReload` 等 synthetic action 由 command definition 自己持有；help、schema、offline validate、daemon validate、execution routing 与 contract hash 读取同一 owner。
+
 ### 7.2 命令定义模型
 
 每个工具都是一个 `BrowserCommandDefinition`，包含：
@@ -676,7 +678,11 @@ Envelope 常见字段：
 - `evidence`
 - `artifact_hints`
 
+该列表描述 generic result envelope；canonical `browser_observe` 是明确例外。Observe 的公共结果、cache value 与 saved artifact 都直接是 `browser-page-observation/v3` root，不再由 generic middleware 重建 nested observation、generic summary/evidence、第二份 artifact mirror 或重复 correlation/content/templates/actionable records。Inline 预算压缩只折叠同一 v3 schema 中的可选 plane，并通过 `frontier` 指向完整 saved root，不产生另一种 compact observation schema。
+
 大结果会保存 artifact，并在输出中给出读取方式。`artifact_hints` 是 compact descriptor：包含 `kind`、`schemaVersion`、可用 `jsonPaths`、`preferredReads` 和可选 `saved` descriptor，只指向实际存在的 summary / primary items / body-text / provider-specific / saved artifact 路径，不复制大型 artifact 内容；既有 `PageObservation.artifact_hints.jsonPaths` 与 `preferredReads` 继续兼容。`resultMiddleware.ts` 只允许最终 persisted layout 中经验证的 preferred read 进入 `nextActions`，不会再从 operation/snapshot/request/wait/listener correlation ID 合成猜测路径；最终 envelope 覆写 artifact 后会重新收敛 descriptor，使响应、内嵌 envelope 与磁盘真实 UTF-16 chars / UTF-8 bytes 一致。`browser_artifact mode=inspect` 用于读取 artifact metadata、compact summary、preferredReads 和 path descriptions；`mode=paths` 用于先列出实际可用 JSON path，再进行 `mode=json` / `pick` 精读。文档、CLI help 和 recovery guidance 不应推荐猜测的 JSON path 或固定样例 artifact 文件；应引用上一个工具返回的 `saved.path`，并通过 inspect/paths 验证路径存在。
+
+Observation/distillation cost 的唯一纯 owner 是 [`src/kernels/evidence/cost.ts`](src/kernels/evidence/cost.ts)，shape 固定为 `{chars,bytes,estimatedTokens}`。Stable JSON chars、UTF-8 bytes 与 estimated tokens 由同一函数计算；fact allocation 以 tokens 为主、bytes 为 tie-break，公开 `maxChars` 仍是硬上限。PageObservation renderer 与 artifact descriptor 使用固定点拟合，最终 `limits.cost` 必须逐项等于实际 serialized root，不能留下写入前的 estimate。
 
 CLI JSON enrichment 把实际 artifact path 仅保存在 `artifacts[].path`；`readCommands` 是 bounded placeholder template descriptor，固定给出 inspect、paths 和至多一个 verified targeted-read 模板，并用 `pathRef` / `jsonPathRef` 解析结构化字段。可读 `command` / `argvTemplate` 不插入实际 path、JSON path 或 snapshot ID，避免 shell 展开与重复长路径造成的 token 膨胀。TTY 对直接 `browser-operation/v2` 至少显示 command/status、classification、completion verification、operation ID、dispatch ACK、completion source、continuation 与 saved path。
 
@@ -688,15 +694,17 @@ Envelope budget 的最后一级仍是严格预算，不是“尽量压缩”：[
 
 #### `browser_observe`
 
-用于读取当前浏览器状态的 canonical ABML `PageObservation` 页面模型。正常 agent 工作流应省略 `mode`，只传目标和增量边界（如 `tabId`、`targetRef`、`url`、`fresh`、`diff`、`baseline*`、`actionRef`）或显式可选 add-on（如 `content:"readability"` / `readability:true`）。已移除的 `timeoutMs`、`maxChars`、`detailLevel` 等 mechanical 参数不会作为 observe 输入被接受。返回模型以 ABML/scan 为结构权威来源，并把 target/context、gist、outline、entities、actionables/refs、relations、collections、snapshot、diff/treeDiff、causal、scan-backed content/text digest、evidence/artifact 引用和 diagnostics 组织为一个稳定 envelope。`diff:true` 的自动 baseline 只会从相同 `browserSessionId`、effective tab、target generation 与 page epoch 的最近 scan snapshot 中选择，避免跨页面身份复用 snapshot。Browser Pilot 不持久化或自动注入跨调用知识；需要复用的任务上下文由调用方显式携带。
+用于读取当前浏览器状态的 canonical ABML `browser-page-observation/v3` 页面模型。正常 agent 工作流应省略 `mode`，只传目标、deadline/output budget、增量边界（如 `tabId`、`targetRef`、`url`、`fresh`、`diff`、`baseline*`、`actionRef`）或显式可选 add-on（如 `content:"readability"` / `readability:true` / `axe:true`）。返回值本身就是唯一 v3 root：`target`、`snapshot`、gist/outline、entities、compact ref-based `actionables`、relations/identity/inference、diff/causal/treeDiff、snapshotProjection、compact collections、`providers`、`frontier`、diagnostics、exact `limits.cost`、saved/artifact hints 与 next actions；不再嵌套或镜像 generic summary/evidence。`diff:true` 的自动 baseline 只会从相同 `browserSessionId`、effective tab、target generation 与 page epoch 的最近 scan snapshot 中选择，避免跨页面身份复用 snapshot。Browser Pilot 不持久化或自动注入跨调用知识；需要复用的任务上下文由调用方显式携带。
 
-Provider budget telemetry summary 是 canonical observe diagnostics 的稳定、bounded 摘要，JSON path 为 `pageObservation.diagnostics.providerBudgetTelemetry`，CLI/result summary 中对应 `summary.pageObservation.diagnostics.providerBudgetTelemetry`，saved observe artifact 中对应同一 `pageObservation.diagnostics.providerBudgetTelemetry`。每个 item 由 [`observe/scanProjection.ts`](src/commands/observe/scanProjection.ts) 从已有 provider diagnostics 派生，包含 `provider`、归一化 `status`（`executed` / `scan-backed` / `skipped` / `failed` / `degraded`），以及可选 `requested`、`durationMs`、compact `counts`、compact `budget`、`truncated`、`degraded`、`reason`、`errorCode` 和 artifact 引用。它只表达来源真实性、耗时、计数、预算、截断/降级和 fallback reason，不复制 axe/readability/full AX 大型原始结果，也不改变 `diagnostics.providers`、provider-specific diagnostics 或公共 tool surface。telemetry 中的 artifact 引用复用 saved observe artifact 路径：HTML provider 指向 `data.html`，evidence 指向 `envelope`，axe/readability 指向各自 runner 写入的 artifact/jsonPath/kind；需要详细内容应通过 `browser_artifact` 按这些稳定 JSON path 定向读取。该 summary 属于 diagnostics-only boundary：任何 `skipped`、`failed`、`degraded` 或预算信息都不得创建、删除、重排或重命名 actionables、refs、entities、relations、collections，也不得改变 content plane、scan/ABML 结构权威、AX/DOM fusion actionability 或 artifact redaction 关系。
+Provider scheduling 的纯 owner 是 [`observeProviderPlan.ts`](src/kernels/abml/observeProviderPlan.ts)。Plan 在 optional I/O 前按 mode、baseline/cache、requested add-ons、deadline、output budget 与已知 recorder state 决定执行面：core scan/structure 不可被 optional provider 耗尽；render/persist 保留总 deadline 的 10% 且至少 500ms；剩余预算固定按 causal:axe:readability = 2:1:1；单项不足 500ms 时确定性 `skipped/budget-preflight`。普通无 baseline/add-on 的 full observe 不探测 network/hook；只有 causal baseline 需要且 high-water 未知时允许一次 bounded batch status probe。依赖满足后 optional providers 并行、各自 deadline、fail-open。公共 root 的 `providers` item 固定记录 `planned`、`status`、可选 `reason`、`reservedMs`、`actualMs`、`bridgeRoundTrips` 与 `CostVector`；大型 provider diagnostics 只进入 saved observation 的 diagnostics frontier，不复制进 inline telemetry，也不得改变 actionables/entities/relations/collections。
+
+`frontier.items` 是 template/collection/content/diagnostics 的唯一渐进展开面。Template instance refs 超过 inline sample、collection evidence/item window 被折叠、content 或 diagnostics 未内联时，builder 创建 stable frontier ref；result middleware 只有在 artifact 最终写入后验证 JSON path 存在才保留 `read:{tool:"browser_artifact",mode:"json",pathRef:"saved.path",jsonPath,...}`。验证失败会把 item 改为 `state:"unavailable"` 并写明 `unavailableReason`，不得猜测 index/collection id，也不得为 pagination/virtualized control 自动生成点击、滚动或 replay 建议。
 
 任何显式 `mode` 都是 legacy/debug/projection 兼容入口，并在 summary/details/diagnostics 可见面中标记为非 canonical；这包括显式 `mode=scan`。显式 `mode=content/html/text/tabs` 只能作为正文、可见文本、精确 DOM/HTML evidence 或 tab context/diagnostics 投影来源，不能替代省略 `mode` 的 canonical 页面模型。
 
-可选 accessibility diagnostics 通过 `diagnostics:"axe"`、`diagnostics:"accessibility"`、`debug:"axe"`、`axe:true` 或 `axeDiagnostics:true` 在省略 `mode` 的 canonical observe 路径显式触发。实现位于 [`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)，按需从 `axe-core` 读取浏览器脚本并通过现有 page runtime 注入当前页面，使用独立小超时、最大 inline sample 数与 fail-closed fallback。axe 结果只进入 `PageObservation.diagnostics.axe`、`PageObservation.diagnostics.providers.axe` 和 saved observe artifact 的 `axe` 节点；默认未请求时不运行也不暗示已执行。axe node/html/snippet 不进入 inline summary，完整原始结果只随 observe artifact 保存并经过现有 artifact/redaction envelope；axe issue 不创建、删除或重排 actionables、refs、entities、relations、collections，Browser Pilot 的 scan/ABML actionability、hit-test、editable、visibility 与 AX/DOM fusion 仍是结构和执行权威。
+可选 accessibility diagnostics 通过 `diagnostics:"axe"`、`diagnostics:"accessibility"`、`debug:"axe"`、`axe:true` 或 `axeDiagnostics:true` 在省略 `mode` 的 canonical observe 路径显式触发。实现位于 [`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)，按需从 `axe-core` 读取浏览器脚本并通过现有 page runtime 注入当前页面，使用自己的 bounded deadline 与最大 sample 数。Inline 只保留 provider execution report 和必要 failure summary；完整 issue/node/html 只随 saved v3 observation 的 diagnostics frontier 保存并经过 redaction。axe issue 不创建、删除或重排 actionables、entities、relations、collections，Browser Pilot 的 scan/ABML actionability、hit-test、editable、visibility 与 AX/DOM fusion 仍是结构和执行权威。
 
-可选 Readability content-plane provider 通过 `content:"readability"` 或 `readability:true` 在省略 `mode` 的 canonical observe 路径显式触发。实现位于 [`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts)，按需从 `@mozilla/readability` 读取浏览器脚本并通过现有 page runtime 在 DOM clone 上运行，使用独立小超时、`maxElemsToParse`、最大 inline/content 字符数与 fail-closed fallback。Readability 结果只进入 `PageObservation.diagnostics.readability`、`PageObservation.diagnostics.providers.readability`、saved observe artifact 的 `readability` 节点，以及 artifact hints/preferred reads 的 `Readability article`；默认未请求时不运行也不暗示已执行。Readability HTML 会移除 script/style/noscript/template 等不安全片段并经过现有 redaction；它不创建、删除或重排 actionables、refs、entities、relations、collections，scan/ABML、AX/DOM fusion、hit-test、editable 与 visibility 仍是结构和执行权威。强 CSP 页面要求 runner 避免页面内字符串 eval，Readability CJS 源码以同一 CDP evaluation 表达式直接执行。
+可选 Readability content-plane provider 通过 `content:"readability"` 或 `readability:true` 在省略 `mode` 的 canonical observe 路径显式触发。实现位于 [`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts)，按需从 `@mozilla/readability` 读取浏览器脚本并通过现有 page runtime 在 DOM clone 上运行，使用自己的 bounded deadline、`maxElemsToParse` 与 content 字符上限。Inline 只保留 provider report 和必要 digest/failure；完整 article/content 属于 saved v3 diagnostics/content frontier。Readability HTML 会移除 script/style/noscript/template 等不安全片段并经过 redaction；它不创建、删除或重排 actionables、entities、relations、collections，scan/ABML、AX/DOM fusion、hit-test、editable 与 visibility 仍是结构和执行权威。
 
 关键入口：[`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts)；scan/text/tabs 内部阶段的所有者见 [5.5 Commands 模块表](#55-srccommands)。可选 provider 的独立 runner 位于 [`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts) 与 [`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)。
 
@@ -763,7 +771,7 @@ CLI 调用通常是短生命周期的。Daemon 长驻并持有 browser session�
 
 Daemon 的 `SessionOperationRegistry` 是持久 operation ledger：最多 256 项，每项最多 200 条 compact/redacted sequenced events，active/terminal TTL 均为 5 分钟。`finish()` 把 active 标记为 terminal 而不删除；terminal 后 30 秒内的事件追加为 `late_effect`，不覆盖原终态，surfaced 后不重复消费。
 
-Daemon reuse 不是 display version 比较。[`contractIdentity.ts`](src/apps/daemon/contractIdentity.ts) 对 public command names/schemas、canonical action metadata、`browser-operation/v2` outcome mapping、daemon protocol 与 native protocol hash 做稳定 key-sorted canonical JSON + SHA-256，形成 `{packageVersion,daemonProtocolVersion,commandContractVersion:2,commandContractHash,toolCount}`。Lock metadata 与 live `/status` 都携带完整 identity；两者和 local identity 全字段一致才可复用。Mismatch 的 managed daemon 进入 drain/graceful shutdown 后才启动 replacement；grace 内无法证明替换成功时返回 `DAEMON_REPLACEMENT_FAILED`，旧 daemon 不接收 invoke。`status` / `doctor` 同时投影 local/daemon/lock identity 与 structured check；普通查询 exit 0，`--check` mismatch exit 1。
+Daemon reuse 不是 display version 比较。0.4.0 使用 daemon protocol 5 与 command contract 3。[`contractIdentity.ts`](src/apps/daemon/contractIdentity.ts) 对 compact catalog/schema v3、全部 action-specific schemas、`browser-page-observation/v3`、`browser-page-scan/v1`、`browser-operation/v2` outcome mapping 与 native protocol 做 stable key-sorted canonical JSON + SHA-256，形成 `{packageVersion,daemonProtocolVersion,commandContractVersion:3,commandContractHash,toolCount}`。Lock metadata 与 live `/status` 都携带完整 identity；两者和 local identity 全字段一致才可复用。Mismatch 的 managed daemon 进入 drain/graceful shutdown 后才启动 replacement；grace 内无法证明替换成功时返回 `DAEMON_REPLACEMENT_FAILED`，旧 daemon 不接收 invoke。`status` / `doctor` 同时投影 local/daemon/lock identity 与 structured check；普通查询 exit 0，`--check` mismatch exit 1。
 
 ### 8.2 Bridge Server 组合关系
 
@@ -787,6 +795,7 @@ Extension offscreen transport 会扫描本地端口范围 `18765-18784`。连接
 
 - bridge info；
 - extension instance id；
+- `captureContractVersion:1`；
 - consent capability；
 - 当前 scriptable tabs。
 
@@ -796,7 +805,9 @@ Extension 同时维护 real page epoch。Top-level `webNavigation.onCommitted` m
 
 Observation snapshot、auto/explicit baseline、session delta、perception ledger 和 render cache 全部按 `browserSessionId + tabId + targetGeneration + pageEpoch` 隔离。Identity mismatch 不返回错误 delta，而是丢弃 baseline、运行 full observation，并用 `document_changed`、`target_replaced`、`session_changed`、`identity_unproven` 或 `baseline_missing` 之一作为简短 `reanchorReason`。
 
-OperationCoordinator 通过 offscreen transport 发送独立 `operation_event` message；`BrowserBridgeClientMessageService` 不把它当 pending request result，而是按稳定 `operationId` 追加到账本。事件携带 sequence、timestamp、tab/target/generation 和 compact data。tab removal/replacement、CDP detach 或已 ACK 请求在非 durable reconnect 中丢失结果时必须诚实终止为 `target_lost`/`failed`，不得静默重放 mutating action。
+OperationCoordinator 通过 offscreen transport 发送独立 `operation_event` message；每个 operation 在 `operation.begin` 成功后绑定到实际接收 begin 的 WebSocket，避免重连期间多个 offscreen socket 把 completion evidence 发给 stale daemon。`BrowserBridgeClientMessageService` 不把事件当 pending request result，而是按稳定 `operationId` 追加到账本。Registry 的 begin/update/event/finish/abort/clear 都推进单调 revision 并释放 one-shot waiters；settlement 只等待 revision change 或纯 liveness kernel 给出的下一 no-effect/stalled/deadline 边界，不允许 interval、固定 25ms timeout 或 registry polling fallback。Prerender2 若保留 numeric tab id，content script 在真实 `prerenderingchange`/`activationStart` 后上报 same-tab replacement，router 只递增一次 target generation；仍会发原生 `tabs.onReplaced` 的浏览器继续走 numeric replacement chain。tab removal/replacement、CDP detach 或已 ACK 请求在非 durable reconnect 中丢失结果时必须诚实终止为 `target_lost`/`failed`，不得静默重放 mutating action。
+
+Observe 在任何 page I/O 前检查 extension capture contract；版本不匹配返回 `EXTENSION_CONTRACT_MISMATCH` 与 reload recovery。页面 capture 只能返回 [`PageWorldScanBundleV1`](src/kernels/abml/pageWorldScan.ts) 的 `browser-page-scan/v1` camelCase wire shape（`page/content/structure/frames/signals/stats`）。Bridge boundary 对 schema、exact keys、nested scalar/array/object types 做严格 runtime validation，malformed/unknown/legacy bundle 返回 `SCAN_BUNDLE_INVALID`，不能通过 untyped record cast 继续执行。
 
 ### 8.4 Native protocol
 
@@ -837,7 +848,7 @@ browser-runtime ──imports──▶ kernels
 
 ### 9.2 ABML
 
-ABML 是 Browser Pilot 的 agent-native 页面统一建模层，把面向人类的浏览器页面编译为可行动、可引用、可增量比较的结构化页面事实。`browser_observe` 是公开读取入口；省略 `mode` 时返回 canonical ABML `PageObservation`，由 ABML/scan 负责结构、actionables、refs 和 actionability 权威，content/text/html/tabs 只作为 digest、evidence 或 context provider 融合进同一模型。PageObservation 是 task entry point map：默认输出结构入口、refs、relations、content/artifact hints、diagnostics 和 evidence，精确业务值或大段内容应通过 `browser_execute` 或 `browser_artifact` 定向读取，不应被默认抽取进 actionables/refs/entities。ABML 的 design reference oracle 以 Playwright、Testing Library、browser-use 与 Stagehand 的可借鉴点作为 repository-local guardrails，而不是 runtime dependency 或替代 API：query priority 以面向用户的 role/name/label/textAnchor 为稳定语义锚，过滤 selector-like、framework/generated class、long preview、SVG/path、HTML-like 噪声；locator/ref stability oracle 要保护 concise user-facing semantics，避免运行时 CSS、backendNodeId 或点位变化污染可复用 ref；Playwright auto-wait 只作为 action target 应接近执行时解析并防 stale ref 的设计参考，不给 `browser_observe` 增加隐式等待；Stagehand 风格 observe/action/extract 分层只强化边界，即 observe 负责 sensing 与 task entry points，动作仍走 `browser_execute`/`browser_command`，精确抽取走 `browser_execute` 或 artifact reads。PageObservation 的 provider diagnostics 使用 `executed`、`scan-backed`、`skipped`、`failed`、`degraded` 等执行状态表达来源真实性，而不是把 scan 派生或跳过的 provider 标成已成功执行。Provider budget telemetry summary 固定在 `pageObservation.diagnostics.providerBudgetTelemetry`，只作为 diagnostics-only、bounded、artifact-aware 的 provider 摘要记录 status、duration、counts、budget、truncation/degradation、reason/errorCode 和 artifact read pointer，不进入 kernel，也不改变结构模型、content plane、refs/actionability 或 artifact redaction。Readability 是显式 content-plane provider，只能补充 readable article artifact/digest 和 provider diagnostics，不能进入 structural authority。AX fusion 的正确性边界是 bounded enrichment：保留 DOM scan 的执行 ref 与 actionability，full AX 负责 canonical no-mode observe 的页面级语义、状态、层级和 AX-only 结构补强；partial AX 只在已有 backendNodeId 的局部 read/pierce 或 action-adjacent refinement 中尝试，失败时回落 full AX 或 scan-only，不改变 page-wide structure，不扩大 scope 外实体。无法安全匹配或清洗的 AX 信息必须降级并进入 diagnostics。
+ABML 是 Browser Pilot 的 agent-native 页面统一建模层，把面向人类的浏览器页面编译为可行动、可引用、可增量比较的结构化事实。`browser_observe` 省略 `mode` 时返回唯一的 `browser-page-observation/v3` root；ABML/scan 负责 entities、compact actionable refs、relations、collections 与 actionability 权威，content/diagnostics 通过同一 root 的 verified frontier 渐进展开。精确业务值或大段内容应通过 `browser_execute` 或 returned `saved.path` 上的 `browser_artifact` 定向读取。Provider truth 位于 root `providers`，统一表达 planned/executed/skipped/failed/degraded、reason、deadline reserve、actual time、bridge round trips 与 cost；它不复制大型 diagnostics，也不改变 structural authority。ABML 的 design reference oracle 以 Playwright、Testing Library、browser-use 与 Stagehand 的可借鉴点作为 repository-local guardrails，而不是 runtime dependency 或替代 API：query priority 以面向用户的 role/name/label/textAnchor 为稳定语义锚，过滤 selector-like、framework/generated class、long preview、SVG/path、HTML-like 噪声；locator/ref stability 保护 concise user-facing semantics，避免运行时 CSS、backendNodeId 或点位变化污染可复用 ref；auto-wait 只作为 action target 应接近执行时解析并防 stale ref 的设计参考，不给 observe 增加隐式等待；observe/action/extract 分层只强化边界，动作仍走 `browser_execute`/`browser_command`。AX fusion 保留 DOM scan 的执行 ref 与 actionability，full AX 做页面级语义/状态/层级和 AX-only 结构补强，partial AX 只在已有可靠 backendNodeId 的局部 refinement 中尝试；无法安全匹配或清洗的信息必须降级并进入 diagnostics。
 
 ABML 负责：
 
@@ -860,6 +871,10 @@ ABML 负责：
 - [`src/kernels/abml/relations.ts`](src/kernels/abml/relations.ts)
 - [`src/kernels/abml/collections.ts`](src/kernels/abml/collections.ts)
 - [`src/kernels/abml/causal.ts`](src/kernels/abml/causal.ts)
+- [`src/kernels/abml/pageObservation.ts`](src/kernels/abml/pageObservation.ts)
+- [`src/kernels/abml/pageWorldScan.ts`](src/kernels/abml/pageWorldScan.ts)
+- [`src/kernels/abml/observeProviderPlan.ts`](src/kernels/abml/observeProviderPlan.ts)
+- [`src/kernels/evidence/cost.ts`](src/kernels/evidence/cost.ts)
 - [`src/kernels/abml/verbs/router.ts`](src/kernels/abml/verbs/router.ts)
 
 ### 9.3 Runtime
@@ -883,7 +898,9 @@ Runtime 层可以做浏览器 I/O，并将采集结果输入 kernel。典型职�
 
 模板不是 kernel，也不是 bridge。它只负责页面上下文中的数据采集。
 
-Scan 命名与 role mapping 链路由 `src/scan/buildScanScript.ts` 负责组装：构建阶段把 `dom-accessibility-api` 打包产物注入页面世界，`capture-src/entries/scanTemplate.ts` 中的 `computedAccessibleName()` 优先调用 `computeAccessibleName()`，再回退到 `aria-label`/`title`/`alt`/`placeholder`、HTML label、可见文本、pseudo text 和 hit-target 借名等本地启发式。`roleOf(el)` 的顺序是 safe explicit `role`、provider implicit role、Browser Pilot legacy fallback；首个 provider 复用已注入的 `BrowserPilotDomAccessibilityApi.getRole(el)`，并过滤 `generic`、`presentation`、`none` 等低价值结果。role 只补强 `actionables`、reference targets、`controls_pairs` 与 scan summary 的语义，不自动扩大 clickable/editable/actionability；是否可执行仍由 Browser Pilot 的 visibility、hit-test、handler、tag 与 control 逻辑决定。命名与 role 结果随后由 ABML entity/relations/collections 纯逻辑消费；kernel 层不得直接依赖 `dom-accessibility-api`、`aria-query` 或页面 DOM。
+Scan template 的 wire owner 是 [`pageWorldScan.ts`](src/kernels/abml/pageWorldScan.ts)。Template 直接产出 `browser-page-scan/v1`：page metadata、content text/tree/headings/interactive、structure actionables/rows/listHints/canvasRegions/mediaCandidates、frame notes、fingerprint/growth probe 与 stats 全部使用 typed camelCase fields。Capture summarizer、ABML prefetched scan、artifact projection 与 fingerprint owner 直接消费该类型，不维护旧 key 映射。
+
+Scan 命名与 role mapping 链路由 `src/scan/buildScanScript.ts` 负责组装：构建阶段把 `dom-accessibility-api` 打包产物注入页面世界，`capture-src/entries/scanTemplate.ts` 中的 `computedAccessibleName()` 优先调用 `computeAccessibleName()`，再回退到 `aria-label`/`title`/`alt`/`placeholder`、HTML label、可见文本、pseudo text 和 hit-target 借名等本地启发式。`roleOf(el)` 的顺序是 safe explicit `role`、provider implicit role、Browser Pilot fallback；首个 provider 复用已注入的 `BrowserPilotDomAccessibilityApi.getRole(el)`，并过滤 `generic`、`presentation`、`none` 等低价值结果。role 只补强 `actionables`、reference targets、control relations 与 scan summary 的语义，不自动扩大 clickable/editable/actionability；是否可执行仍由 Browser Pilot 的 visibility、hit-test、handler、tag 与 control 逻辑决定。命名与 role 结果随后由 ABML entity/relations/collections 纯逻辑消费；kernel 层不得直接依赖 `dom-accessibility-api`、`aria-query` 或页面 DOM。
 
 ### 9.5 Native kernels
 
@@ -966,6 +983,7 @@ kernels ──▶ kernels 内部纯模块
 mise run dev
 mise run affected
 mise run verify
+mise run package-smoke
 mise run smoke-browser
 mise run dev-governance
 ```
@@ -977,7 +995,8 @@ mise run dev-governance
 | `mise run dev` | 常规本地开发门禁。 |
 | `mise run affected` | 基于 changed files 的影响范围验证。 |
 | `mise run verify` | 发布/完成前完整验证门禁。 |
-| `mise run smoke-browser` | 使用隔离 profile 启动本机 Chrome/Edge/Chromium 与 unpacked MV3 extension，验证真实握手、tabs、execute、canonical observe、network capture、hook install/collect/uninstall 和 extension reload/reconnect。 |
+| `mise run package-smoke` | 生成唯一 npm tarball，在隔离项目从 `.tgz` 安装并验证 package allowlist/ceilings、ESM/declarations、CLI contract/schema/validate/status、extension/native assets 与 JS fallback。 |
+| `mise run smoke-browser` | 使用隔离 profile 启动本机 Chrome/Edge/Chromium 与 unpacked MV3 extension，验证真实握手、operation event settlement、observe/provider/frontier、network/hook、BFCache、Prerender2 replacement、target close/new target 和 reconnect。 |
 | `mise run dev-governance` | 修改治理、脚本、workflow、README 等时使用。 |
 
 `mise run verify` 包含：
@@ -992,9 +1011,13 @@ mise run dev-governance
 - executed-source coverage gate；
 - exact complexity ratchet（复杂度 >20 的函数只能递减，>150 行函数保持为 0）；
 - full ESLint；
-- build。
+- build；
+- deterministic catalog/observation benchmark；
+- `package-smoke` tarball install gate。
 
-`mise run smoke-browser` 是 live-browser acceptance gate，不使用 mock Chrome API。它先通过 [`scripts/build-bridge.mjs`](scripts/build-bridge.mjs) 重建 unpacked extension，再由 [`scripts/run-browser-smoke.mjs`](scripts/run-browser-smoke.mjs) 启动隔离浏览器 profile 和 in-process daemon/bridge。可通过 `BROWSER_PILOT_SMOKE_BROWSER` 指定非标准安装路径；bridge、daemon、extension 或真实浏览器 I/O 行为变化需要同时通过 `mise run verify` 与该 smoke gate。
+`mise run smoke-browser` 是 live-browser acceptance gate，不使用 mock Chrome API，也不允许 skip 生命周期断言。它先通过 [`scripts/build-bridge.mjs`](scripts/build-bridge.mjs) 重建 unpacked extension，再由 [`scripts/run-browser-smoke.mjs`](scripts/run-browser-smoke.mjs) 启动隔离浏览器 profile 和 in-process daemon/bridge。Fixture 以 event-driven HTTP gates 真实触发 completion event、BFCache back/forward 与 prerender activation；frontier read 必须通过 public `browser_artifact` 定点读取。可通过 `BROWSER_PILOT_SMOKE_BROWSER` 指定非标准安装路径；bridge、daemon、extension 或真实浏览器 I/O 行为变化需要同时通过 `mise run verify` 与该 smoke gate。
+
+[`scripts/package-smoke.mjs`](scripts/package-smoke.mjs) 的 hard ceilings 是 compressed 2,250,000 bytes、unpacked 10,500,000 bytes、1,600 files。它拒绝 tests/coverage/local state/env/credentials/absolute path leakage 和 allowlist 外文件；需要保留发布 artifact 时使用内部 `--artifact-dir` 参数，普通 `mise run package-smoke` 始终清理 temp/tarball/daemon/browser state。
 
 ### 11.2 低层维护脚本
 
@@ -1140,19 +1163,21 @@ mise run smoke-browser
 node scripts/run-coverage.mjs all
 ```
 
-Observe regression benchmark 位于 [`tests/observe/observeRegressionBenchmark.test.ts`](tests/observe/observeRegressionBenchmark.test.ts)，随 `observe`/`all` scope 运行。新增 case 应使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖，并保护 outline/content hints、actionables/control relations、bounded samples、cross-origin 不越权表达和 provider telemetry 兼容路径。真实浏览器生命周期由独立 `mise run smoke-browser` acceptance gate 负责，不把 Chrome/Edge 不确定性混入离线回归组。
+Observe regression benchmark 位于 [`tests/observe/observeRegressionBenchmark.test.ts`](tests/observe/observeRegressionBenchmark.test.ts)，随 `observe`/`all` scope 运行。Immutable baseline [`observe-v2-baseline-1573380.json`](tests/fixtures/observe-v2-baseline-1573380.json) 由 [`update-observe-benchmark-baseline.mjs`](scripts/update-observe-benchmark-baseline.mjs) 从 Git object `1573380` 的 archive 中执行旧 owner 得到，只有显式 `mise run update-observe-benchmark` 才能改写。Gate 同时要求 catalog ≤25 KiB；observation bytes 与 estimated tokens 的中位数各下降至少 25%；任一 fixture ≤旧值 105%；final cost 与 serialization 完全一致；required facts/actionable refs/relations/collection properties recall 100%；forbidden pollution/sensitive leakage/duplicate ownership/silent truncation 为 0；所有 folded/truncated block 有 verified read 或 unavailable reason。新增 case 继续使用离线 fixture 与纯逻辑路径；真实浏览器生命周期由独立 smoke gate 负责。
 
 Operation progressive-disclosure regression 位于 [`tests/cli/commandExecution.test.ts`](tests/cli/commandExecution.test.ts)：它保护小结果不多绕 artifact、大结果在严格字符预算内仍保留根终态和 completion source、完整 result 可由 returned path/jsonPath 读取、artifact 写失败不覆盖已完成终态，以及 `no_effect` / `effect_observed` 不建议盲重放。Governance test 还枚举 `src/commands` 的 `withBrowserOperation()` 调用点，要求全部使用统一 `browserOperationCommandResult()` owner。
 
 可信契约回归另外由以下 suites 持有：[`tests/cli/operationResultV2.test.ts`](tests/cli/operationResultV2.test.ts) 覆盖 8 个 terminal status 的 JSON/TTY/classification/code/exit/continuation matrix 以及 unknown/malformed schema；[`tests/cli/validationParity.test.ts`](tests/cli/validationParity.test.ts) 使用不少于 50 个 valid/invalid corpus 保护 shared normalized args 与 issue shape；daemon lifecycle/identity tests 保护 canonical hash determinism、全字段 mismatch 与 replacement failure；[`tests/bootstrap/pageIdentity.test.ts`](tests/bootstrap/pageIdentity.test.ts) 及 observe/router tests 保护 document commit、SPA、BFCache、replacement、reconnect 和错误 baseline 零复用。
 
-CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)：Ubuntu 与 Windows 运行相同 `verify` 门禁，另有 Windows real-browser job 使用系统 Edge/Chrome 执行 MV3 smoke。核心步骤是：
+常规 CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)：Ubuntu 与 Windows 运行相同 `verify` 门禁，另有 Windows real-browser job 使用系统 Edge/Chrome 执行 MV3 smoke。核心步骤是：
 
 ```bash
 npm ci
 mise run verify
 mise run smoke-browser
 ```
+
+Tag release 位于 [`.github/workflows/release.yml`](.github/workflows/release.yml)，只响应 `v*`。`tag-check` 首先要求 ref 精确等于 `v${package.json.version}`；Ubuntu/Windows 都执行 verify 与 tarball smoke，Windows 额外执行完整 browser smoke。Ubuntu package job 只通过 package smoke 保留一个 `.tgz` 与 SHA-256 JSON；publish job 下载并用 [`verify-release-artifact.mjs`](scripts/verify-release-artifact.mjs) 复核 tag/version/filename/singleton/hash/size，然后用 pinned npm 11 执行 `npm publish <verified.tgz> --access public --provenance`。Publish 不 checkout-import tarball、不重新 pack，只授予 `contents:read` 与 `id-token:write`，不配置长期 npm token。
 
 ---
 

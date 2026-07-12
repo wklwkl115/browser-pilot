@@ -574,6 +574,16 @@ export const nativeErrorCodes = {
     "category": "abml.ref",
     "retryable": false,
     "summary": "Failed to read the referenced browser-result resource."
+  },
+  "SCAN_BUNDLE_INVALID": {
+    "category": "abml.input",
+    "retryable": false,
+    "summary": "Page-world scan returned a malformed or unknown capture bundle."
+  },
+  "EXTENSION_CONTRACT_MISMATCH": {
+    "category": "driver.lifecycle",
+    "retryable": true,
+    "summary": "The connected extension capture contract is incompatible with this daemon."
   }
 } as const;
 

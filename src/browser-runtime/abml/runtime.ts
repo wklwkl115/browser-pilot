@@ -14,6 +14,7 @@ import { buildCausalRequest, buildCausalEvent, buildCausalSummary, buildCausalEv
 import { mergeAxIntoDomEntities, readAxEntities, readPartialAxTree, type AxReadResult, type PartialAxDiagnostics } from "./axRuntime.js";
 import { bootstrapScanBackendNodeIds } from "../../kernels/abml/identityBootstrap.js";
 import { materializeRelationGraph, derivePaintOrderRelationAnchors, deriveStateRelationAnchors } from "../../kernels/abml/relations.js";
+import type { AxFusionDiagnostics } from "../../kernels/abml/ax.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
 import { decideRefAccess, defaultRefPolicyForKind } from "../../kernels/refs/refPolicy.js";
 import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
@@ -25,6 +26,7 @@ import { runAbmlFrame } from "../../kernels/abml/verbs/frame.js";
 import { inspectVisionRegion } from "./visionRuntime.js";
 import { readFrameEntities, frameIdFromRef, probeFrameReachability } from "./frameRuntime.js";
 import { pierceRefEntities } from "./pierceRuntime.js";
+import { validatePageWorldScanBundle } from "../../kernels/abml/pageWorldScan.js";
 
 // Live ABML execution engine reached through integration.ts. Pure verb decisions stay in
 // the pure kernel; browser I/O, refs, scans, and verification happen here.
@@ -492,6 +494,17 @@ function materializeStructureRelations(entities: Entity[], axRead: AxReadResult,
 	return { entities: filteredEntities, relationCount, relationGraph: materialized?.graph, paintOrderEvidence };
 }
 
+function structureAxFusionDiagnostics(fusion: { diagnostics: AxFusionDiagnostics } | undefined, scanBacked: number, axEntityCount: number): AxFusionDiagnostics {
+	if (fusion) return fusion.diagnostics;
+	return {
+		scanBacked,
+		axEnriched: 0,
+		axOnly: 0,
+		degraded: axEntityCount > 0,
+		skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, unsafeSemantic: 0 },
+	};
+}
+
 async function resolveBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions) {
 		if (input.plane === "network" || input.plane === "event") return await readStreamPlane(server, input, options, input.plane);
 		if (input.plane && input.plane !== "structure") throw { code: "BACKEND_UNAVAILABLE", message: `ABML read plane is not implemented yet: ${input.plane}`, details: { plane: input.plane } };
@@ -507,13 +520,16 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
 		const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
 		const descriptorUrl = descriptor?.documentEpoch?.url;
-		const data = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
+		const rawData = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			timeoutMs,
 			name: "abml_read_scan",
-		})).data as Record<string, unknown>;
-		const url = typeof data.url === "string" ? data.url : descriptorUrl;
+		})).data;
+		const bundle = validatePageWorldScanBundle(rawData);
+		if (!bundle.ok) throw new BrowserBridgeError("SCAN_BUNDLE_INVALID", "ABML structure read received an invalid browser-page-scan/v1 bundle", { issues: bundle.issues.slice(0, 20) });
+		const data = bundle.value;
+		const url = data.page.url || descriptorUrl;
 		const bridge = server.snapshot({ browserSessionId: target.browserSessionId });
 		const snapshot = server.createObservationSnapshot({
 			browserSessionId: bridge.browserSessionId,
@@ -581,7 +597,7 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 				snapshotId: snapshot.snapshotId,
 				observationId: snapshot.snapshotId,
 				tabId: target.tabId,
-				url: data.url,
+				url: data.page.url,
 				axEntityCount: axRead.entities.length,
 				mergedEntityCount: mergedEntities.length,
 				relationCount: relations.relationCount,
@@ -590,7 +606,7 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 				listenerOracle: listenerProbe.stats,
 				axDiagnostics: axRead.diagnostics,
 				...(partialAxDiagnostics ? { partialAx: partialAxDiagnostics } : {}),
-				axFusion: fusion?.diagnostics ?? { scanBacked: entities.length, axEnriched: 0, axOnly: 0, degraded: axRead.entities.length > 0, skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, unsafeSemantic: 0 } },
+				axFusion: structureAxFusionDiagnostics(fusion, entities.length, axRead.entities.length),
 				...(relations.paintOrderEvidence ? { paintOrderEvidence: relations.paintOrderEvidence } : {}),
 			},
 		};

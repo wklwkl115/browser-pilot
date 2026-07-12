@@ -40,6 +40,7 @@ function browserPilotBridgeInfo() {
     userAgent: navigator.userAgent,
     workerBootId: BROWSER_PILOT_WORKER_BOOT_ID,
     workerStartedAt: BROWSER_PILOT_WORKER_STARTED_AT,
+    captureContractVersion: 1,
     runtimeRecovery: recovery ? {
       ranAt: recovery.ranAt,
       recovered: recovery.totals?.recovered || 0,

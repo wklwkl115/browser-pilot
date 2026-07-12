@@ -16,6 +16,8 @@ export type SessionActiveOperationInfo = {
 	sourceMode?: string;
 	details?: Record<string, unknown>;
 	state: "active" | "terminal";
+	/** Monotonic change counter used by event-driven operation settlement. */
+	revision: number;
 	ownerHash?: string;
 	sequence: number;
 	lastProgressAt: number;
@@ -33,7 +35,7 @@ export type SessionActiveOperationInfo = {
 };
 
 export type SessionOperationBeginInput = Omit<SessionActiveOperationInfo,
-	"operationId" | "startedAt" | "updatedAt" | "state" | "sequence" | "lastProgressAt" | "events" | "lateEffects" | "ownerHash"
+	"operationId" | "startedAt" | "updatedAt" | "state" | "revision" | "sequence" | "lastProgressAt" | "events" | "lateEffects" | "ownerHash"
 > & { operationId?: string; ownerId?: string };
 
 const DEFAULT_OPERATION_TTL_MS = 5 * 60_000;
@@ -81,6 +83,7 @@ export class SessionOperationRegistry {
 			sourceMode: operation.sourceMode,
 			details: operation.details,
 			state: "active",
+			revision: 1,
 			sequence: 0,
 			lastProgressAt: now,
 			generation: operation.generation,
@@ -104,6 +107,7 @@ export class SessionOperationRegistry {
 		const next: SessionActiveOperationInfo = {
 			...current,
 			...patch,
+			revision: current.revision + 1,
 			leaseOwnerHash: nextLeaseOwnerHash,
 			ownerHash: current.ownerHash,
 			events: current.events,
@@ -128,6 +132,7 @@ export class SessionOperationRegistry {
 		const now = this.now();
 		const next: SessionActiveOperationInfo = {
 			...current,
+			revision: current.revision + 1,
 			state: "terminal",
 			phase: outcome?.status ?? current.phase,
 			progress: 100,
@@ -166,6 +171,7 @@ export class SessionOperationRegistry {
 			: current.lateEffects;
 		const next = {
 			...current,
+			revision: current.revision + 1,
 			sequence,
 			events,
 			lateEffects,

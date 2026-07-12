@@ -1,28 +1,25 @@
 import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, type ScanEntityContext } from "../kernels/abml/entity.js";
 import { registerRefDescriptor } from "../resources/resourceRefs.js";
 import { isRecord } from "../utils/records.js";
+import type { PageWorldScanBundleV1, ScanListHint } from "../kernels/abml/pageWorldScan.js";
 
 type Built = ReturnType<typeof buildDomEntityFromScanActionable>;
-type BuildFn = (node: Record<string, unknown>, index: number) => Built;
-
-function asRecordArray(value: unknown): Record<string, unknown>[] {
-	return Array.isArray(value) ? value.filter(isRecord) : [];
-}
 
 function refFor(built: Built): string {
 	return registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
 }
 
-function annotateNode(node: Record<string, unknown>, slot: string, refId: string): Record<string, unknown> {
-	const refs = isRecord(node.__browserPilotEntityRefs) ? node.__browserPilotEntityRefs : {};
-	return { ...node, __browserPilotEntityRefs: { ...refs, [slot]: refId } };
+function annotateNode<T extends object>(node: T, slot: string, refId: string) {
+	const current = Reflect.get(node, "entityRefs");
+	const refs = isRecord(current) ? current : {};
+	return { ...node, entityRefs: { ...refs, [slot]: refId } };
 }
 
 function normalizeNameKey(value: string | undefined): string {
 	return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function listHintDuplicateNames(listHints: Record<string, unknown>[], context: ScanEntityContext): Set<string> {
+function listHintDuplicateNames(listHints: ScanListHint[], context: ScanEntityContext): Set<string> {
 	const counts = new Map<string, number>();
 	for (const [index, item] of listHints.entries()) {
 		const name = buildRegionEntityFromListHint(item, context, index).entity.name;
@@ -33,31 +30,28 @@ function listHintDuplicateNames(listHints: Record<string, unknown>[], context: S
 	return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
 }
 
-function annotateArray(value: unknown, slot: string, build: BuildFn): unknown {
-	if (!Array.isArray(value)) return value;
-	return value.map((item, index) => {
-		if (!isRecord(item)) return item;
-		return annotateNode(item, slot, refFor(build(item, index)));
+export function registerScanEntityRefs(data: PageWorldScanBundleV1, context: ScanEntityContext): PageWorldScanBundleV1 {
+	const actionables = data.structure.actionables.map((item) => {
+		const node = item;
+		if (node.referenceOnly === true) return annotateNode(node, "referencedTarget", refFor(buildReferencedTargetEntity(node, context)));
+		if (node.relationOnly === true) return annotateNode(node, "controlsSource", refFor(buildControlsSourceEntity(node, context)));
+		return annotateNode(node, "domAction", refFor(buildDomEntityFromScanActionable(node, context)));
 	});
-}
+	const duplicateListNames = listHintDuplicateNames(data.structure.listHints, context);
+	const nextListHints = data.structure.listHints.map((node, index) => annotateNode(node, "listRegion", refFor(buildRegionEntityFromListHint(node, context, index, duplicateListNames))));
 
-export function registerScanEntityRefs(data: Record<string, unknown>, context: ScanEntityContext): Record<string, unknown> {
-	const next: Record<string, unknown> = { ...data };
-	next.actionables = annotateArray(data.actionables, "domAction", (node) => buildDomEntityFromScanActionable(node, context));
-	next.references = annotateArray(data.references, "referencedTarget", (node) => buildReferencedTargetEntity(node, context));
-	next.controls_pairs = annotateArray(data.controls_pairs, "controlsSource", (node) => buildControlsSourceEntity(node, context));
-	const listHints = asRecordArray(data.list_hints);
-	const duplicateListNames = listHintDuplicateNames(listHints, context);
-	next.list_hints = annotateArray(data.list_hints, "listRegion", (node, index) => buildRegionEntityFromListHint(node, context, index, duplicateListNames));
-
-	const canvasRegions = asRecordArray(data.canvas_regions);
-	if (canvasRegions.length) {
-		next.canvas_regions = annotateArray(data.canvas_regions, "visionRegion", (node) => buildVisionRegionFromCanvasActionable(node, context));
-	} else if (Array.isArray(next.actionables)) {
-		next.actionables = next.actionables.map((item) => {
-			if (!isRecord(item) || String(item.tag || "").toLowerCase() !== "canvas") return item;
+	let nextActionables = actionables;
+	let nextCanvasRegions = data.structure.canvasRegions;
+	if (data.structure.canvasRegions.length) {
+		nextCanvasRegions = data.structure.canvasRegions.map((node) => annotateNode(node, "visionRegion", refFor(buildVisionRegionFromCanvasActionable(node, context))));
+	} else {
+		nextActionables = actionables.map((item) => {
+			if (String(item.tag || "").toLowerCase() !== "canvas") return item;
 			return annotateNode(item, "visionRegion", refFor(buildVisionRegionFromCanvasActionable(item, context)));
 		});
 	}
-	return next;
+	return {
+		...data,
+		structure: { ...data.structure, actionables: nextActionables, listHints: nextListHints, canvasRegions: nextCanvasRegions },
+	};
 }

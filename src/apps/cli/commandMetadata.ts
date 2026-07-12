@@ -99,27 +99,33 @@ function actionParamNames(action: ActionParamMeta): Set<string> {
 }
 
 export function actionSpecificFlagSpecs(cmd: CliCommand, actionName: string): FlagSpec[] {
-	const specs = buildCommandFlagSpecs(cmd);
 	const action = naturalActionMetas(cmd).find((item) => item.action === actionName);
-	if (!action) return specs;
-	const actionParams = actionParamNames(action);
-	const common = new Set(["tabId", "targetRef", "sessionId"]);
-	return specs
-		.filter((spec) => spec.name !== "action")
-		.filter((spec) => common.has(spec.name) || actionParams.has(spec.name))
-		.map((spec) => {
-			const required = (action.required ?? []).includes(spec.name);
-			if (cmd.name === "browser_hook" && actionName === "installTargets" && spec.name === "targets") {
-				return {
-					...spec,
-					kind: "array" as const,
-					required,
-					split: "comma" as const,
-					description: `${spec.description ?? "Hook target ids."} CLI natural route accepts comma-separated values or repeated --targets.`,
-				};
-			}
-			return required ? { ...spec, required } : spec;
-		});
+	if (!action) return buildCommandFlagSpecs(cmd).filter((spec) => spec.name !== "action");
+	const commonNames = new Set(["browserSessionId", "tabId", "targetRef", "sessionId", "timeoutMs", "maxChars", "outputPath", "detailLevel", "redact"]);
+	const common = buildCommandFlagSpecs(cmd).filter((spec) => commonNames.has(spec.name));
+	const paramsSchema = isRecord(action.paramsSchema) ? action.paramsSchema : {};
+	const paramSpecs = buildFlagSpecs(paramsSchema).map(withCommaSplit).map((spec) => {
+		if (cmd.name === "browser_hook" && actionName === "installTargets" && spec.name === "targets") {
+			return { ...spec, split: "comma" as const, description: `${spec.description ?? "Hook target ids."} Accepts comma-separated values or a repeated flag.` };
+		}
+		return spec;
+	});
+	return [...common, ...paramSpecs];
+}
+
+export function nestNaturalActionParams(cmd: CliCommand, actionName: string | undefined, params: Record<string, unknown>): Record<string, unknown> {
+	if (!actionName) return params;
+	const action = naturalActionMetas(cmd).find((item) => item.action === actionName);
+	const properties = isRecord(action?.paramsSchema) && isRecord(action.paramsSchema.properties) ? action.paramsSchema.properties : {};
+	const nested = isRecord(params.params) ? { ...params.params } : {};
+	const output = { ...params };
+	for (const key of Object.keys(properties)) {
+		if (output[key] === undefined) continue;
+		nested[key] = output[key];
+		delete output[key];
+	}
+	if (Object.keys(nested).length) output.params = nested;
+	return output;
 }
 
 /**

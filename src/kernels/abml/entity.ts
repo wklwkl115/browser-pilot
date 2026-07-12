@@ -2,6 +2,11 @@ import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import type { Locator, RefDescriptor, RefKind } from "./types.js";
 import { isRecord } from "../../utils/records.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
+import type { ScanActionable, ScanCanvasRegion, ScanListHint } from "./pageWorldScan.js";
+
+type ScanActionableInput = ScanActionable | Record<string, unknown>;
+type ScanListHintInput = ScanListHint | Record<string, unknown>;
+type ScanVisionInput = ScanActionable | ScanCanvasRegion | Record<string, unknown>;
 
 export type EntityKind = Extract<RefKind, "element" | "control" | "text" | "region" | "media" | "frame" | "network-entry" | "event" | "signal">;
 export type EntitySource = "dom" | "ax" | "vision" | "network" | "hook" | "evidence";
@@ -189,7 +194,7 @@ function geometryCenter(geometry: { box?: { x: number; y: number; w: number; h: 
 	};
 }
 
-function actionEntityKind(node: Record<string, unknown>): EntityKind {
+function actionEntityKind(node: ScanActionableInput): EntityKind {
 	const tag = stringValue(node.tag)?.toLowerCase();
 	const role = stringValue(node.role)?.toLowerCase();
 	if (node.editable === true) return "control";
@@ -198,7 +203,7 @@ function actionEntityKind(node: Record<string, unknown>): EntityKind {
 	return "element";
 }
 
-function actionEntityState(node: Record<string, unknown>): EntityState {
+function actionEntityState(node: ScanActionableInput): EntityState {
 	const rect = geometryFromRect(node.rect)?.box;
 	const point = geometryPoint(node.point)?.point;
 	// aria-current (scan-sourced): Chrome's AX tree doesn't expose it, so the DOM scan is the
@@ -219,7 +224,7 @@ function actionEntityState(node: Record<string, unknown>): EntityState {
 	};
 }
 
-export function buildActionableLocators(node: Record<string, unknown>): Locator[] {
+export function buildActionableLocators(node: ScanActionableInput): Locator[] {
 	const locators: Locator[] = [];
 	const backendNodeId = numberValue(node.backendNodeId);
 	const targetId = stringValue(node.targetId ?? node.cdpTargetId);
@@ -234,7 +239,7 @@ export function buildActionableLocators(node: Record<string, unknown>): Locator[
 	return dedupeLocators(locators);
 }
 
-export function buildListHintLocators(node: Record<string, unknown>): Locator[] {
+export function buildListHintLocators(node: ScanListHintInput): Locator[] {
 	const locators: Locator[] = [];
 	const selector = stringValue(node.selector);
 	const sample = sanitizeSemanticText(node.firstItemPreview, 160);
@@ -243,7 +248,7 @@ export function buildListHintLocators(node: Record<string, unknown>): Locator[] 
 	return dedupeLocators(locators);
 }
 
-export function buildDomEntityFromScanActionable(node: Record<string, unknown>, context: ScanEntityContext): BuiltEntity {
+export function buildDomEntityFromScanActionable(node: ScanActionableInput, context: ScanEntityContext): BuiltEntity {
 	const kind = actionEntityKind(node);
 	const role = stringValue(node.role) || roleForTag(stringValue(node.tag));
 	const locators = buildActionableLocators(node);
@@ -269,7 +274,7 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 		locators,
 		...(Object.keys(geometry).length ? { geometry } : {}),
 		hints: {
-			jsonPath: `data.actionables[${Number(node.index ?? 0)}]`,
+			jsonPath: `data.structure.actionables[${Number(node.index ?? 0)}]`,
 			selector: stringValue(node.selector),
 			...(backendNodeId !== undefined && backendNodeId > 0 ? { backendNodeId } : {}),
 			...(targetId ? { targetId } : {}),
@@ -319,7 +324,7 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 	};
 }
 
-function listHintNameParts(node: Record<string, unknown>, index: number): { name: string; context?: string; source: "safe-label" | "safe-preview" | "fallback" } {
+function listHintNameParts(node: ScanListHintInput, index: number): { name: string; context?: string; source: "safe-label" | "safe-preview" | "fallback" } {
 	const name = firstSafeSemanticText([node.containerLabel, node.containerName, node.label], 80);
 	const preview = safeContainerLabelText(node.firstItemPreview, 80);
 	const context = safeContainerLabelText(selectorContext(node.selector), 40) ?? firstSafeSemanticText([node.heading, node.nearestHeading, node.landmarkName, node.parentLabel], 40);
@@ -344,7 +349,7 @@ function disambiguatedName(name: string, context: string | undefined): string {
 	return `${name} (${context})`;
 }
 
-export function buildRegionEntityFromListHint(node: Record<string, unknown>, context: ScanEntityContext, index: number, duplicateNames?: ReadonlySet<string>): BuiltEntity {
+export function buildRegionEntityFromListHint(node: ScanListHintInput, context: ScanEntityContext, index: number, duplicateNames?: ReadonlySet<string>): BuiltEntity {
 	const locators = buildListHintLocators(node);
 	const nameParts = listHintNameParts(node, index);
 	const name = duplicateNames?.has(normalizeNameKey(nameParts.name)) ? disambiguatedName(nameParts.name, nameParts.context) : nameParts.name;
@@ -366,7 +371,7 @@ export function buildRegionEntityFromListHint(node: Record<string, unknown>, con
 		hints: {
 			listContainer: true,
 			...(hiddenCount !== undefined ? { hiddenCount } : {}),
-			jsonPath: `data.list_hints[${index}]`,
+			jsonPath: `data.structure.listHints[${index}]`,
 			selector: stringValue(node.selector),
 			...(nameParts.context && name === nameParts.name ? { containerNameContext: nameParts.context } : {}),
 			containerNameSource: name !== nameParts.name ? "disambiguated" : nameParts.source,
@@ -407,9 +412,9 @@ function referencedTargetKind(role: string): EntityKind {
 }
 
 // A minimal entity for an element that declares aria-controls/aria-owns (the relation source) but
-// is not in the actionable list (e.g. scrolled off-screen). Built from the controls_pairs scan
+// is not in the actionable list (e.g. scrolled off-screen). Built from the scan control-pair
 // data; selector-keyed so it dedupes against an existing actionable if one is present.
-export function buildControlsSourceEntity(node: Record<string, unknown>, context: ScanEntityContext): BuiltEntity {
+export function buildControlsSourceEntity(node: ScanActionableInput, context: ScanEntityContext): BuiltEntity {
 	const selector = stringValue(node.sourceSelector);
 	const role = stringValue(node.sourceRole) || "generic";
 	const name = stringValue(node.sourceName);
@@ -460,7 +465,7 @@ export function buildControlsSourceEntity(node: Record<string, unknown>, context
 // is emitted even when hidden/collapsed — that is exactly the case the AX tree drops — so the
 // controls/owns/expandedTarget relation can resolve to a ref. Deduped by selector against scanned
 // actionables, so a visible target that is also scanned collapses to one entity.
-export function buildReferencedTargetEntity(node: Record<string, unknown>, context: ScanEntityContext): BuiltEntity {
+export function buildReferencedTargetEntity(node: ScanActionableInput, context: ScanEntityContext): BuiltEntity {
 	const selector = stringValue(node.selector);
 	const role = stringValue(node.role) || "generic";
 	const name = stringValue(node.name);
@@ -499,7 +504,7 @@ export function buildReferencedTargetEntity(node: Record<string, unknown>, conte
 	};
 }
 
-export function buildVisionRegionFromCanvasActionable(node: Record<string, unknown>, context: ScanEntityContext): BuiltEntity {
+export function buildVisionRegionFromCanvasActionable(node: ScanVisionInput, context: ScanEntityContext): BuiltEntity {
 	const geometry = {
 		...(geometryFromRect(node.rect) || {}),
 		...(geometryPoint(node.point) || {}),
@@ -525,7 +530,7 @@ export function buildVisionRegionFromCanvasActionable(node: Record<string, unkno
 		hints: {
 			visualFloor: true,
 			canvasRegion: true,
-			jsonPath: `data.actionables[${Number(node.index ?? 0)}]`,
+			jsonPath: `data.structure.actionables[${Number(node.index ?? 0)}]`,
 			selector: stringValue(node.selector),
 		},
 	};

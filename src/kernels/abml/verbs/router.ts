@@ -2,6 +2,7 @@ import type { Entity } from "../entity.js";
 import type { EntityDiff, EntityDiffOptions } from "../diff.js";
 import type { ActionabilityReport, RefDescriptor, VerificationResult } from "../types.js";
 import { normalizeAbmlError } from "../errors.js";
+import type { PageWorldScanBundleV1 } from "../pageWorldScan.js";
 
 export type AbmlRuntimeContext = {
 	now?: () => number;
@@ -17,7 +18,7 @@ export type AbmlReadInput = {
 	filter?: Record<string, unknown>;
 	baseline?: Entity[];
 	diffOptions?: EntityDiffOptions;
-	prefetchedScan?: Record<string, unknown>;
+	prefetchedScan?: PageWorldScanBundleV1;
 	axCacheKey?: string;
 };
 

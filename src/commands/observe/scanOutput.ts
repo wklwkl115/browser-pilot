@@ -14,6 +14,9 @@ import type { assembleScanSummary } from "./scanAssembly.js";
 import type { runObserveProviders } from "./scanProviders.js";
 import type { PageReanchorReason } from "../../kernels/session/pageIdentity.js";
 import { pageIdentityFromUnknown, perceptionLedgerKey } from "./pageIdentity.js";
+import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
+import { pageObservationResult } from "../resultMiddleware.js";
+import type { PageObservationBuild } from "./scanProjection.js";
 
 export type ObservationProviderFailure = {
 	provider: string;
@@ -26,7 +29,7 @@ type CaptureResult = Awaited<ReturnType<typeof executeScanCapture>>;
 type AssemblyResult = ReturnType<typeof assembleScanSummary>;
 type ProviderResult = Awaited<ReturnType<typeof runObserveProviders>>;
 type ArtifactProjection = ReturnType<typeof buildObserveArtifactProjection>;
-type PageObservation = ReturnType<typeof buildPageObservation>;
+type PageObservation = PageObservationBuild;
 
 function axProviderStatus(abmlRead: CaptureResult["observation"]["abmlRead"]): PageObservationProviderInput["axStatus"] {
 	if (abmlRead?.ok !== true) return undefined;
@@ -65,7 +68,7 @@ type FinalizeScanObservationOptions = {
 	artifactAvailable: boolean;
 	hasNavigation: boolean;
 	tabsRefreshDegraded: boolean;
-	data: Record<string, unknown> | undefined;
+	data: PageWorldScanBundleV1;
 	content: string;
 	scanMeta: Record<string, unknown> | undefined;
 	bridge: ReturnType<BrowserCommandRuntimePort["snapshot"]>;
@@ -99,6 +102,10 @@ function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summar
 	const truncation = isRecord(summaryFocus?.actionablesTruncation) ? summaryFocus.actionablesTruncation : undefined;
 	const summaryWarnings = Array.isArray(summary.warnings) ? summary.warnings.filter((warning): warning is string => typeof warning === "string") : [];
 	const warnings = [...baseline.warnings, ...summaryWarnings];
+	const providerArtifacts = {
+		...(axeDiagnostics.artifact ? { axe: axeDiagnostics.artifact } : {}),
+		...(readability.artifact ? { readability: readability.artifact } : {}),
+	};
 	return {
 		observeTimings: finalizedObserveTimings(timings, data, observation.abmlRead),
 		...(axeRequested ? { axe: axeDiagnostics.summary } : {}),
@@ -107,6 +114,7 @@ function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summar
 		...(baseline.diagnostics ? { baseline: baseline.diagnostics } : {}),
 		...(truncation?.actionablesTruncated === true ? { actionablesTruncated: true, actionablesScanned: truncation.actionablesScanned, actionablesReturned: truncation.actionablesReturned } : {}),
 		...(providerFailures.length ? { providerFailures } : {}),
+		...(Object.keys(providerArtifacts).length ? { providerArtifacts } : {}),
 		...(warnings.length ? { warnings } : {}),
 	};
 }
@@ -128,7 +136,7 @@ function buildCanonicalPageObservation(
 		summary,
 		entities: envelopeEntities,
 		content,
-		url: typeof data?.url === "string" ? data.url : undefined,
+		url: data.page.url,
 		tabs,
 		activeTabId: bridge.defaultTabId,
 		snapshot: snapshotMeta,
@@ -151,6 +159,8 @@ function buildCanonicalPageObservation(
 		},
 		providerFailures,
 		diagnostics,
+		budgetChars: options.maxChars,
+		providerExecution: options.providers.report,
 	});
 }
 
@@ -179,7 +189,7 @@ function buildResultDetails(
 	};
 }
 
-function buildArtifactValue(options: FinalizeScanObservationOptions, pageObservation: PageObservation | undefined, artifact: ArtifactProjection) {
+function buildArtifactValue(options: FinalizeScanObservationOptions, artifact: ArtifactProjection) {
 	const { hasNavigation, tabs, bridge, snapshotMeta } = options;
 	const { observation, operation } = options.capture;
 	const { envelopeDiff, treeDiff, artifactRelevance, causalBlock } = options.assembly;
@@ -187,7 +197,6 @@ function buildArtifactValue(options: FinalizeScanObservationOptions, pageObserva
 	return {
 		...observation.result,
 		...(hasNavigation ? { navigation: observation.navigationData } : {}),
-		...(pageObservation ? { pageObservation } : {}),
 		tabs_count: tabs.length,
 		tabs,
 		active_tab: bridge.defaultTabId,
@@ -233,7 +242,7 @@ function recordLedgerProjection(options: FinalizeScanObservationOptions, frame: 
 }
 
 export async function finalizeScanObservation(options: FinalizeScanObservationOptions) {
-	const { resultParams, mode, ctx, content, maxChars, fallbackName, hasNavigation, snapshotMeta, granularityCeiling } = options;
+	const { resultParams, mode, ctx, content, maxChars, fallbackName, outputPath, hasNavigation, snapshotMeta, granularityCeiling } = options;
 	const { operation } = options.capture;
 	const { summary, envelopeEntities, envelopeDiff, treeDiff, artifactRelevance, causalBlock } = options.assembly;
 	const { causal } = options.providers;
@@ -242,16 +251,32 @@ export async function finalizeScanObservation(options: FinalizeScanObservationOp
 	if (options.reanchorReason) summary.reanchorReason = options.reanchorReason;
 	const hints = buildScanNextActionHints({ hasBaseline: options.baseline !== undefined, snapshotId: snapshotMeta.snapshotId, recorderActive: options.recorderActive, causal, treeDiff });
 	if (hints.length) summary.nextActions = hints;
-	const artifact = buildObserveArtifactProjection({ summaryRecord: summary, summary, envelopeEntities, envelopeDiff, abmlTreeDiff: treeDiff, artifactRelevance, causalBlock, mode, hasNavigation });
 	const ledger = buildLedgerProjection(options);
 	options.timings.renderMs = elapsedMs(options.renderStartedAt);
 	const diagnostics = buildObserveDiagnostics(options, summary);
 	const pageObservation = buildCanonicalPageObservation(options, summary, diagnostics);
-	if (pageObservation && options.reanchorReason) Object.assign(pageObservation, { reanchorReason: options.reanchorReason });
-	if (pageObservation) summary.pageObservation = pageObservation;
 	const details = buildResultDetails(options, diagnostics);
-	const artifactValue = buildArtifactValue(options, pageObservation, artifact);
 	let allocation: CommandPerceptionLedgerFrame["allocation"] | undefined;
+	if (pageObservation) {
+		if (options.reanchorReason) {
+			pageObservation.inline.reanchorReason = options.reanchorReason;
+			pageObservation.artifact.reanchorReason = options.reanchorReason;
+		}
+		const result = await pageObservationResult({
+			inline: pageObservation.inline,
+			artifact: pageObservation.artifact,
+			maxChars,
+			outputPath,
+			fallbackName,
+			ctx,
+			details,
+			onAllocation: (value) => { allocation = value; },
+		});
+		recordLedgerProjection(options, ledger.frame, allocation);
+		return result;
+	}
+	const artifact = buildObserveArtifactProjection({ summaryRecord: summary, summary, envelopeEntities, envelopeDiff, abmlTreeDiff: treeDiff, artifactRelevance, causalBlock, mode, hasNavigation });
+	const artifactValue = buildArtifactValue(options, artifact);
 	const result = await textCommandResult(content, resultParams, ctx, {
 		commandName: "browser_observe",
 		command: scanCommandName(mode, hasNavigation),

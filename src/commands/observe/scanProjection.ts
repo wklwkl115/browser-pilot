@@ -1,4 +1,3 @@
-import { artifactHints } from "../summaries/common.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import type { EntityDiff } from "../../kernels/abml/diff.js";
 import type { TreeDiff } from "../../kernels/abml/treeDiff.js";
@@ -7,6 +6,10 @@ import { causalFiredHint } from "../../kernels/abml/causal.js";
 import { isRecord } from "../../utils/params.js";
 import type { ObserveMode } from "./common.js";
 import { scanCommandName } from "./renderCache.js";
+import { PAGE_OBSERVATION_SCHEMA_V3, type CollectionSummary, type CompactActionable, type CompactCollection, type ObservationFrontier, type ObservationFrontierItem, type ObservationSnapshot, type PageObservationV3, type PageTarget, type ProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
+import { jsonCost } from "../../kernels/evidence/cost.js";
+import type { CollectionModel } from "../../kernels/abml/collections.js";
+import type { SnapshotProjection, SnapshotProjectionTemplate } from "../../kernels/abml/snapshotProjection.js";
 
 export type ObserveCausalBlock = { causal?: CausalSummary };
 
@@ -30,7 +33,11 @@ type PageObservationInput = {
 	providerStatuses?: Partial<ProviderDiagnostics>;
 	providerFailures?: ProviderFailureReason[];
 	diagnostics: Record<string, unknown>;
+	budgetChars?: number;
+	providerExecution?: ProviderExecutionReport;
 };
+
+export type PageObservationBuild = { inline: PageObservationV3; artifact: PageObservationV3 };
 
 type ArtifactHintRead = { label: string; jsonPath: string; kind?: string };
 
@@ -244,24 +251,176 @@ function addArtifactHint(summary: Record<string, unknown>, key: string, read: Ar
 	hints.preferredReads = preferredReads;
 }
 
-export function buildPageObservation(input: PageObservationInput): Record<string, unknown> {
+function compactActionables(entities: Entity[], focus: Record<string, unknown>): CompactActionable[] {
+	const primaryRefs = Array.isArray(focus.primary_entities)
+		? focus.primary_entities.flatMap((item) => typeof item === "string" ? [item] : isRecord(item) && typeof item.ref === "string" ? [item.ref] : [])
+		: [];
+	const byRef = new Map(entities.map((entity) => [entity.ref, entity]));
+	return primaryRefs.flatMap((ref) => {
+		const entity = byRef.get(ref);
+		if (!entity) return [];
+		return [{ ref, kind: entity.kind, ...(entity.name ? { name: entity.name } : {}), ...(entity.state && Object.keys(entity.state).length ? { state: entity.state } : {}) }];
+	});
+}
+
+function compactTemplate(template: SnapshotProjectionTemplate): SnapshotProjectionTemplate {
+	return { ...template, instanceRefs: template.instanceRefs.slice(0, 3), sample: template.sample ? { ...template.sample } : undefined };
+}
+
+function templateFrontier(projection: SnapshotProjection | undefined): { projection?: SnapshotProjection; items: ObservationFrontierItem[] } {
+	if (!projection) return { items: [] };
+	const items: ObservationFrontierItem[] = [];
+	const templates = projection.templates.map((template, index) => {
+		const compact = compactTemplate(template);
+		if (template.instanceRefCount > compact.instanceRefs.length) {
+			items.push({
+				ref: `frontier:template:${template.templateKey}`,
+				kind: "template-instances",
+				state: "folded",
+				observed: compact.instanceRefs.length,
+				total: template.instanceRefCount,
+				read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: `snapshotProjection.templates[${index}].instanceRefs` },
+			});
+		}
+		return compact;
+	});
+	return { projection: { summary: projection.summary, templates }, items };
+}
+
+function collectionState(value: string): ObservationFrontierItem["state"] {
+	if (value === "virtualized" || value === "paginated" || value === "lazy" || value === "viewport-window" || value === "folded") return value;
+	return "folded";
+}
+
+function collectionProjection(collections: CollectionModel[]): { inline: CompactCollection[]; artifact: CollectionSummary[]; items: ObservationFrontierItem[] } {
+	const items: ObservationFrontierItem[] = [];
+	const projected = collections.map((collection, index): { inline: CompactCollection; artifact: CollectionSummary } => {
+		const frontierNeeded = collection.completeness !== "complete" || collection.itemRefs.length > 3 || collection.evidence.length > 0 || Boolean(collection.dataSources?.length);
+		const frontierRef = frontierNeeded ? `frontier:collection:${collection.collectionId}` : undefined;
+		if (frontierRef) {
+			items.push({
+				ref: frontierRef,
+				kind: "collection-window",
+				state: collectionState(collection.completeness),
+				observed: collection.observedCount,
+				total: collection.declaredTotal ?? collection.estimatedTotal,
+				...(collection.paginationControl?.ref ? { controlRef: collection.paginationControl.ref } : {}),
+				read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: `collections[${index}]` },
+			});
+		}
+		const base = {
+			ref: collection.containerRef ?? `collection:${collection.collectionId}`,
+			kind: collection.kind,
+			...(collection.containerName ? { name: collection.containerName } : {}),
+			observed: collection.observedCount,
+			...(typeof collection.declaredTotal === "number" || typeof collection.estimatedTotal === "number" ? { total: collection.declaredTotal ?? collection.estimatedTotal } : {}),
+			completeness: collection.completeness,
+			confidence: collection.confidence,
+			...(frontierRef ? { frontierRef } : {}),
+		};
+		return {
+			inline: { ...base, itemRefs: collection.itemRefs.slice(0, 3) },
+			artifact: {
+				...base,
+				itemRefs: [...collection.itemRefs],
+				collectionId: collection.collectionId,
+				itemRefCount: collection.itemRefCount,
+				...(typeof collection.hiddenCount === "number" ? { hiddenCount: collection.hiddenCount } : {}),
+				...(collection.containerRole ? { containerRole: collection.containerRole } : {}),
+				...(collection.containerNameContext ? { containerNameContext: collection.containerNameContext } : {}),
+				...(collection.containerNameSource ? { containerNameSource: collection.containerNameSource } : {}),
+				...(collection.itemRole ? { itemRole: collection.itemRole } : {}),
+				...(collection.continuation ? { continuation: collection.continuation } : {}),
+				...(typeof collection.pageSize === "number" ? { pageSize: collection.pageSize } : {}),
+				...(collection.paginationControl ? { paginationControl: collection.paginationControl } : {}),
+				...(collection.scrollDirection ? { scrollDirection: collection.scrollDirection } : {}),
+				...(collection.dataSources?.length ? { dataSources: collection.dataSources } : {}),
+				...(collection.evidence.length ? { evidence: collection.evidence } : {}),
+			},
+		};
+	});
+	return { inline: projected.map((item) => item.inline), artifact: projected.map((item) => item.artifact), items };
+}
+
+function optionalString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function optionalInteger(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+}
+
+function observationSnapshot(value: Record<string, unknown>): ObservationSnapshot {
+	const snapshotId = optionalString(value.snapshotId);
+	const sourceMode = optionalString(value.sourceMode);
+	const capturedAt = typeof value.capturedAt === "number" && Number.isFinite(value.capturedAt) ? value.capturedAt : undefined;
+	const ttlMs = typeof value.ttlMs === "number" && Number.isFinite(value.ttlMs) ? value.ttlMs : undefined;
+	if (!snapshotId || !sourceMode || capturedAt === undefined || ttlMs === undefined) throw new Error("PAGE_OBSERVATION_SNAPSHOT_INVALID");
+	return {
+		snapshotId,
+		sourceMode,
+		capturedAt,
+		ttlMs,
+		...(optionalString(value.browserSessionId) ? { browserSessionId: optionalString(value.browserSessionId) } : {}),
+		...(optionalInteger(value.tabId) !== undefined ? { tabId: optionalInteger(value.tabId) } : {}),
+		...(optionalString(value.url) ? { url: optionalString(value.url) } : {}),
+		...(optionalInteger(value.targetGeneration) !== undefined ? { targetGeneration: optionalInteger(value.targetGeneration) } : {}),
+		...(optionalString(value.pageEpoch) ? { pageEpoch: optionalString(value.pageEpoch) } : {}),
+		...(optionalString(value.documentId) ? { documentId: optionalString(value.documentId) } : {}),
+		...(optionalString(value.frameScope) ? { frameScope: optionalString(value.frameScope) } : {}),
+		...(optionalInteger(value.selectionVersion) !== undefined ? { selectionVersion: optionalInteger(value.selectionVersion) } : {}),
+		...(optionalInteger(value.networkSeq) !== undefined ? { networkSeq: optionalInteger(value.networkSeq) } : {}),
+		...(optionalInteger(value.hookSeq) !== undefined ? { hookSeq: optionalInteger(value.hookSeq) } : {}),
+		...(optionalString(value.invalidatedReason) ? { invalidatedReason: optionalString(value.invalidatedReason) } : {}),
+		...(typeof value.expired === "boolean" ? { expired: value.expired } : {}),
+	};
+}
+
+function pageTarget(snapshot: ObservationSnapshot, url: string | undefined, activeTabId: unknown): PageTarget {
+	const tabId = snapshot.tabId ?? optionalInteger(activeTabId);
+	return {
+		...(snapshot.browserSessionId ? { browserSessionId: snapshot.browserSessionId } : {}),
+		...(tabId !== undefined ? { tabId } : {}),
+		...(snapshot.targetGeneration !== undefined ? { targetGeneration: snapshot.targetGeneration } : {}),
+		...(snapshot.pageEpoch ? { pageEpoch: snapshot.pageEpoch } : {}),
+		...(url ? { url } : {}),
+	};
+}
+
+function reanchorReason(value: unknown): PageObservationV3["reanchorReason"] {
+	return typeof value === "string" && ["document_changed", "target_replaced", "session_changed", "identity_unproven", "baseline_missing"].includes(value)
+		? value as PageObservationV3["reanchorReason"]
+		: undefined;
+}
+
+function providerExecutionReport(providers: ProviderDiagnostics, telemetry: ProviderBudgetTelemetryItem[], causal: CausalSummary | undefined): ProviderExecutionReport {
+	const report: ProviderExecutionReport = {};
+	for (const [provider, status] of Object.entries(providers)) {
+		if (!status) continue;
+		const metric = telemetry.find((item) => item.provider === provider);
+		report[provider] = {
+			planned: status !== "skipped",
+			status: normalizeTelemetryStatus(status),
+			...(metric?.reason ? { reason: metric.reason } : {}),
+			...(typeof metric?.durationMs === "number" ? { actualMs: metric.durationMs } : {}),
+			cost: jsonCost(metric ?? { provider, status }),
+		};
+	}
+	if (causal) report.causal = { planned: true, status: "executed", cost: jsonCost(causal) };
+	else report.causal = { planned: false, status: "skipped", reason: "not-required", cost: jsonCost({}) };
+	return report;
+}
+
+function compactDiagnostics(diagnostics: Record<string, unknown>): Record<string, unknown> | undefined {
+	const output: Record<string, unknown> = {};
+	for (const key of ["baseline", "providerFailures", "warnings", "fromCache", "cache"] as const) if (diagnostics[key] !== undefined) output[key] = diagnostics[key];
+	return Object.keys(output).length ? output : undefined;
+}
+
+export function buildPageObservation(input: PageObservationInput): PageObservationBuild {
 	const focus = isRecord(input.summary.focus) ? input.summary.focus as Record<string, unknown> : {};
 	const gist = isRecord(focus.gist) ? focus.gist : undefined;
 	const outline = Array.isArray(focus.outline) ? focus.outline : undefined;
-	const contentPreview = input.content.replace(/\s+/g, " ").trim().slice(0, 1_000);
-	const context = {
-		url: input.url,
-		activeTabId: input.activeTabId,
-		tabCount: input.tabs.length,
-	};
-	const evidenceReads = [
-		{ label: "response envelope", jsonPath: "envelope", kind: "browser-observe-envelope" },
-		{ label: "saved observation artifact", jsonPath: "pageObservation", kind: "abml-page-observation" },
-		{ label: "raw scan evidence", jsonPath: "data", kind: "scan-evidence" },
-		{ label: "saved observation content", jsonPath: "pageObservation.content", kind: "content-digest" },
-		{ label: "saved observation text", jsonPath: "pageObservation.text", kind: "text-index" },
-		...(input.providerStatuses?.readability ? [{ label: "Readability article", jsonPath: "readability", kind: "readability-content" }] : []),
-	];
 	const providers = buildPageObservationProviders({
 		abmlIntegrated: input.abmlIntegrated,
 		contentLength: input.content.length,
@@ -286,45 +445,77 @@ export function buildPageObservation(input: PageObservationInput): Record<string
 		tabCount: input.tabs.length,
 		artifactPath: input.artifactPath,
 	});
-	return {
+	const providerReport = { ...providerExecutionReport(providers, providerBudgetTelemetry, input.causal), ...(input.providerExecution ?? {}) };
+	const fullSnapshotProjection = isRecord(input.summary.snapshotProjection) ? input.summary.snapshotProjection as unknown as SnapshotProjection : undefined;
+	const fullCollections = Array.isArray(input.summary.collections) ? input.summary.collections as CollectionModel[] : [];
+	const templates = templateFrontier(fullSnapshotProjection);
+	const collections = collectionProjection(fullCollections);
+	const contentFrontier: ObservationFrontierItem = {
+		ref: "frontier:content",
+		kind: "content",
+		state: "folded",
+		observed: 0,
+		total: input.content.length,
+		read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: "diagnostics.content" },
+	};
+	const diagnosticsFrontier: ObservationFrontierItem = {
+		ref: "frontier:diagnostics",
+		kind: "diagnostics",
+		state: "folded",
+		read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: "diagnostics" },
+	};
+	const frontier: ObservationFrontier = { items: [...templates.items, ...collections.items, contentFrontier, diagnosticsFrontier] };
+	const snapshot = observationSnapshot(input.snapshot);
+	const target = pageTarget(snapshot, input.url, input.activeTabId);
+	const common: Omit<PageObservationV3, "snapshotProjection" | "collections" | "diagnostics" | "limits"> = {
+		schema: PAGE_OBSERVATION_SCHEMA_V3,
+		tool: "browser_observe",
 		model: "PageObservation",
-		canonical: input.canonical,
-		mode: input.mode,
-		sourceMode: "scan",
-		context,
+		canonical: true,
+		target,
+		snapshot,
+		...(reanchorReason(input.summary.reanchorReason) ? { reanchorReason: reanchorReason(input.summary.reanchorReason) } : {}),
+		...(input.summary.delta === "session" ? { delta: "session" as const } : {}),
+		...(typeof input.summary.baselineSnapshotId === "string" ? { baselineSnapshotId: input.summary.baselineSnapshotId } : {}),
 		...(gist ? { gist } : {}),
-		...(outline ? { outline } : {}),
-		entities: input.entities.slice(0, 12),
-		actionables: Array.isArray(focus.primary_entities) ? focus.primary_entities : [],
-		refs: input.entities.map((entity) => entity.ref).filter((ref): ref is string => typeof ref === "string").slice(0, 50),
-		...(isRecord(focus.relations) ? { relations: focus.relations } : {}),
-		...(Array.isArray(input.summary.collections) ? { collections: input.summary.collections } : {}),
-		content: {
-			chars: input.content.length,
-			preview: contentPreview,
-			artifact: input.artifactPath ? { path: input.artifactPath, jsonPath: "pageObservation.content" } : undefined,
-		},
-		text: {
-			chars: input.content.length,
-			preview: contentPreview,
-			artifact: input.artifactPath ? { path: input.artifactPath, jsonPath: "pageObservation.text" } : undefined,
-		},
-		evidence: {
-			artifact: input.artifactPath ? { path: input.artifactPath, jsonPath: "envelope" } : undefined,
-		},
-		snapshot: input.snapshot,
+		...(outline ? { outline: outline.filter(isRecord) as Array<Record<string, unknown>> } : {}),
+		...(input.entities.length ? { entities: input.entities } : {}),
+		...(compactActionables(input.entities, focus).length ? { actionables: compactActionables(input.entities, focus) } : {}),
+		...(isRecord(focus.relations) ? { relations: focus.relations as PageObservationV3["relations"] } : {}),
+		...(isRecord(input.summary.identity) ? { identity: input.summary.identity } : {}),
+		...(isRecord(input.summary.inference) ? { inference: input.summary.inference as PageObservationV3["inference"] } : {}),
 		...(input.diff ? { diff: input.diff } : {}),
 		...(input.treeDiff ? { treeDiff: input.treeDiff } : {}),
 		...(input.causal ? { causal: input.causal } : {}),
-		diagnostics: {
-			...input.diagnostics,
-			abmlIntegrated: input.abmlIntegrated,
-			providers,
-			providerBudgetTelemetry,
-			...(input.providerFailures?.length ? { providerFailures: input.providerFailures } : {}),
-		},
-		...artifactHints(evidenceReads),
+		providers: providerReport,
+		frontier,
+		...(Array.isArray(input.summary.nextActions) ? { nextActions: input.summary.nextActions.filter((item): item is string => typeof item === "string") } : {}),
 	};
+	const fullDiagnostics = {
+		...input.diagnostics,
+		content: { text: input.content },
+		abmlIntegrated: input.abmlIntegrated,
+		providers,
+		providerBudgetTelemetry,
+		...(input.providerFailures?.length ? { providerFailures: input.providerFailures } : {}),
+	};
+	const budgetChars = Math.max(1, Math.floor(input.budgetChars ?? 20_000));
+	const zeroCost = { chars: 0, bytes: 0, estimatedTokens: 0 };
+	const artifact: PageObservationV3 = {
+		...common,
+		...(fullSnapshotProjection ? { snapshotProjection: fullSnapshotProjection } : {}),
+		...(collections.artifact.length ? { collections: collections.artifact } : {}),
+		diagnostics: fullDiagnostics,
+		limits: { budgetChars, cost: zeroCost },
+	};
+	const inline: PageObservationV3 = {
+		...common,
+		...(templates.projection ? { snapshotProjection: templates.projection } : {}),
+		...(collections.inline.length ? { collections: collections.inline } : {}),
+		...(compactDiagnostics(fullDiagnostics) ? { diagnostics: compactDiagnostics(fullDiagnostics) } : {}),
+		limits: { budgetChars, cost: zeroCost },
+	};
+	return { inline, artifact };
 }
 
 export function attachAbmlArtifactHints(summary: Record<string, unknown>): void {

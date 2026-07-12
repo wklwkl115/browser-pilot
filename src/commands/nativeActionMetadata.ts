@@ -20,49 +20,282 @@ export const nativeToolMetadata = {
           "command": "network.start",
           "aliases": [
             "start"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "maxEntries": {
+                "type": "number"
+              },
+              "maxAgeMs": {
+                "type": "number"
+              },
+              "maxBodyBytes": {
+                "type": "number"
+              },
+              "maxPostDataBytes": {
+                "type": "number"
+              },
+              "maxFrames": {
+                "type": "number"
+              },
+              "maxFrameBytes": {
+                "type": "number"
+              },
+              "maxSseEvents": {
+                "type": "number"
+              },
+              "captureBodies": {
+                "type": "boolean"
+              },
+              "captureRequestPostData": {
+                "type": "boolean"
+              },
+              "includeWebSocketFrames": {
+                "type": "boolean"
+              },
+              "includeSse": {
+                "type": "boolean"
+              },
+              "bodyTimeoutMs": {
+                "type": "number"
+              },
+              "bodyMimeAllow": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "includeUrls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "excludeUrls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "resourceTypes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "methods": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "statuses": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              },
+              "clear": {
+                "type": "boolean"
+              },
+              "storeHeaders": {
+                "type": "boolean"
+              },
+              "reconfigure": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
         },
         {
           "action": "stop",
           "command": "network.stop",
           "aliases": [
             "stop"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "keepBuffer": {
+                "type": "boolean"
+              },
+              "clear": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "remove": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
         },
         {
           "action": "status",
           "command": "network.status",
           "aliases": [
             "status"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
         },
         {
           "action": "clear",
           "command": "network.clear",
           "aliases": [
             "clear"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
         },
         {
           "action": "list",
           "command": "network.list",
           "aliases": [
             "list"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "number"
+              },
+              "offset": {
+                "type": "number"
+              },
+              "sinceSeq": {
+                "type": "number"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "urlContains": {
+                "type": "string"
+              },
+              "urlPattern": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "status": {
+                "type": "number"
+              },
+              "includeUrls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "excludeUrls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "includeDetails": {
+                "type": "boolean"
+              },
+              "includeBody": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
         },
         {
           "action": "get",
           "command": "network.get",
           "aliases": [
             "get"
-          ]
+          ],
+          "required": [
+            "requestId"
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "requestId": {
+                "type": "string"
+              },
+              "includeBody": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "requestId"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "body",
           "command": "network.body",
           "aliases": [
             "body"
-          ]
+          ],
+          "requiredAny": [
+            [
+              "bodyRef"
+            ],
+            [
+              "requestId"
+            ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "bodyRef": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "maxBytes": {
+                "type": "number"
+              }
+            },
+            "requiredAny": [
+              [
+                "bodyRef"
+              ],
+              [
+                "requestId"
+              ]
+            ],
+            "anyOf": [
+              {
+                "required": [
+                  "bodyRef"
+                ]
+              },
+              {
+                "required": [
+                  "requestId"
+                ]
+              }
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "exportHar",
@@ -70,7 +303,58 @@ export const nativeToolMetadata = {
           "aliases": [
             "exportHar",
             "export"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "format": {
+                "enum": [
+                  "har",
+                  "json"
+                ]
+              },
+              "includeBody": {
+                "type": "boolean"
+              },
+              "sinceSeq": {
+                "type": "number"
+              },
+              "url": {
+                "type": "string"
+              },
+              "urlContains": {
+                "type": "string"
+              },
+              "urlPattern": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "status": {
+                "type": "number"
+              },
+              "includeUrls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "excludeUrls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
         },
         {
           "action": "wait",
@@ -114,7 +398,12 @@ export const nativeToolMetadata = {
             "listTargets",
             "targets",
             "targetList"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
         },
         {
           "action": "installTargets",
@@ -125,7 +414,38 @@ export const nativeToolMetadata = {
           ],
           "required": [
             "targets"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "targets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "options": {
+                "type": "object"
+              },
+              "bufferSize": {
+                "type": "number"
+              },
+              "force": {
+                "type": "boolean"
+              },
+              "expectedVersion": {
+                "type": "string"
+              },
+              "installFingerprint": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "targets"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "listSessions",
@@ -133,63 +453,141 @@ export const nativeToolMetadata = {
           "aliases": [
             "listSessions",
             "sessions"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
         },
         {
           "action": "install",
           "command": "hook.install",
           "aliases": [
             "install"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "targets": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "object"
+                  }
+                ]
+              },
+              "options": {
+                "type": "object"
+              },
+              "bufferSize": {
+                "type": "number"
+              },
+              "force": {
+                "type": "boolean"
+              },
+              "expectedVersion": {
+                "type": "string"
+              },
+              "installFingerprint": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
         },
         {
           "action": "status",
           "command": "hook.status",
           "aliases": [
             "status"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
         },
         {
           "action": "collect",
           "command": "hook.collect",
           "aliases": [
             "collect"
-          ]
-        },
-        {
-          "action": "clear",
-          "command": "hook.clear",
-          "aliases": [
-            "clear"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "sinceSeq": {
+                "type": "number"
+              },
+              "limit": {
+                "type": "number"
+              },
+              "eventTypes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "minCount": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false
+          }
         },
         {
           "action": "clearBuffer",
           "command": "hook.clear_buffer",
           "aliases": [
             "clearBuffer"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
         },
         {
           "action": "pause",
           "command": "hook.pause",
           "aliases": [
             "pause"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
         },
         {
           "action": "resume",
           "command": "hook.resume",
           "aliases": [
             "resume"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
         },
         {
           "action": "uninstall",
           "command": "hook.uninstall",
           "aliases": [
             "uninstall"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
         },
         {
           "action": "evaluate",
@@ -199,7 +597,22 @@ export const nativeToolMetadata = {
           ],
           "required": [
             "expression"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "expression": {
+                "type": "string"
+              },
+              "awaitPromise": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "expression"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "addEventListener",
@@ -209,7 +622,28 @@ export const nativeToolMetadata = {
           ],
           "required": [
             "eventType"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "eventType": {
+                "type": "string"
+              },
+              "listenerId": {
+                "type": "string"
+              },
+              "selector": {
+                "type": "string"
+              },
+              "diagnostics": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "eventType"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "removeEventListener",
@@ -219,7 +653,19 @@ export const nativeToolMetadata = {
           ],
           "required": [
             "listenerId"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "listenerId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "listenerId"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "performance",
@@ -227,7 +673,19 @@ export const nativeToolMetadata = {
           "aliases": [
             "performance",
             "getPerformanceEntries"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "entryType": {
+                "type": "string"
+              },
+              "nameContains": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
         },
         {
           "action": "getNodeListeners",
@@ -238,7 +696,22 @@ export const nativeToolMetadata = {
           ],
           "required": [
             "selector"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "selector": {
+                "type": "string"
+              },
+              "maxListeners": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "selector"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "getListenerChain",
@@ -249,7 +722,22 @@ export const nativeToolMetadata = {
           ],
           "required": [
             "selector"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "selector": {
+                "type": "string"
+              },
+              "maxListeners": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "selector"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "getSinkHints",
@@ -260,7 +748,19 @@ export const nativeToolMetadata = {
           ],
           "required": [
             "selector"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "selector": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "selector"
+            ],
+            "additionalProperties": false
+          }
         }
       ],
       "actionAliases": {
@@ -274,7 +774,6 @@ export const nativeToolMetadata = {
         "install": "hook.install",
         "status": "hook.status",
         "collect": "hook.collect",
-        "clear": "hook.clear",
         "clearbuffer": "hook.clear_buffer",
         "pause": "hook.pause",
         "resume": "hook.resume",
@@ -311,7 +810,16 @@ export const nativeToolMetadata = {
           "aliases": [
             "list",
             "frames"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "options": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
         },
         {
           "action": "evaluate",
@@ -322,7 +830,41 @@ export const nativeToolMetadata = {
           "required": [
             "frameId",
             "expression"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "frameId": {
+                "type": "string"
+              },
+              "expression": {
+                "type": "string"
+              },
+              "awaitPromise": {
+                "type": "boolean"
+              },
+              "grantUniversalAccess": {
+                "type": "boolean"
+              },
+              "returnByValue": {
+                "type": "boolean"
+              },
+              "userGesture": {
+                "type": "boolean"
+              },
+              "worldName": {
+                "type": "string"
+              },
+              "options": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "frameId",
+              "expression"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "addNewDocumentScript",
@@ -333,7 +875,31 @@ export const nativeToolMetadata = {
           ],
           "required": [
             "source"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "runImmediately": {
+                "type": "boolean"
+              },
+              "worldName": {
+                "type": "string"
+              },
+              "includeCommandLineAPI": {
+                "type": "boolean"
+              },
+              "options": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "source"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "action": "removeNewDocumentScript",
@@ -344,7 +910,22 @@ export const nativeToolMetadata = {
           ],
           "required": [
             "identifier"
-          ]
+          ],
+          "paramsSchema": {
+            "type": "object",
+            "properties": {
+              "identifier": {
+                "type": "string"
+              },
+              "options": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "identifier"
+            ],
+            "additionalProperties": false
+          }
         }
       ],
       "actionAliases": {

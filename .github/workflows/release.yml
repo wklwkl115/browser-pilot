@@ -1,0 +1,115 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  tag-check:
+    name: exact tag/version check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Require exact package tag
+        run: node scripts/verify-release-artifact.mjs
+
+  verify:
+    name: release verify (${{ matrix.os }})
+    needs: tag-check
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup mise
+        uses: jdx/mise-action@v2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run release-readiness gate
+        run: mise run verify
+
+      - name: Run isolated tarball install smoke
+        run: mise run package-smoke
+
+      - name: Run full real-browser smoke on Windows
+        if: matrix.os == 'windows-latest'
+        run: mise run smoke-browser
+
+  package:
+    name: produce verified npm tarball
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup mise
+        uses: jdx/mise-action@v2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pack and smoke the retained tarball
+        run: node scripts/package-smoke.mjs --artifact-dir release-artifact
+
+      - name: Recheck retained tarball identity and SHA-256
+        run: node scripts/verify-release-artifact.mjs --artifact-dir release-artifact
+
+      - name: Upload the only publishable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-npm-package
+          path: release-artifact/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: npm trusted publish
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Use trusted-publishing npm CLI
+        run: npm install --global npm@11.6.2
+
+      - name: Download the verified tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: verified-npm-package
+          path: release-artifact
+
+      - name: Verify tag, version, and downloaded SHA-256
+        id: artifact
+        run: node scripts/verify-release-artifact.mjs --artifact-dir release-artifact --github-output "$GITHUB_OUTPUT"
+
+      - name: Publish the exact verified tarball
+        run: npm publish "${{ steps.artifact.outputs.tarball }}" --access public --provenance

@@ -65,6 +65,8 @@ export interface StartDaemonOptions {
 	startBridgeEagerly?: boolean;
 	/** Called after /shutdown has closed the server (foreground daemon exits the process here). */
 	onShutdown?: () => void;
+	/** Hermetic test injection: replace the command registry without adding a public validation route. */
+	commandDefinitions?: readonly CommandDefinition[];
 }
 
 type CliInvokeMetadata = {
@@ -457,9 +459,14 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		return bridgeServer;
 	};
 
-	const adapter = new CommandManifestIndex();
-	defineBrowserCommands(adapter, bridgeServer, ensureStarted);
-	const commandDefinitions = adapter.getCommands();
+	let commandDefinitions: CommandDefinition[];
+	if (options.commandDefinitions) {
+		commandDefinitions = [...options.commandDefinitions];
+	} else {
+		const adapter = new CommandManifestIndex();
+		defineBrowserCommands(adapter, bridgeServer, ensureStarted);
+		commandDefinitions = adapter.getCommands();
+	}
 	const toolByName = new Map<string, CommandDefinition>(commandDefinitions.map((def) => [def.name, def]));
 	const toolCount = toolByName.size;
 	const contractIdentity = createDaemonContractIdentity(commandDefinitions);

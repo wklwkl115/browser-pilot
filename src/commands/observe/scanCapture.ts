@@ -9,15 +9,20 @@ import { withTrackedOperation, type CommandOnUpdate, type TrackedOperationHandle
 import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import type { BaselineResolution } from "./baseline.js";
 import type { ObserveMode, ObserveToolParams } from "./common.js";
-import { isRecord } from "../../utils/params.js";
 import type { PageIdentity, PageReanchorReason } from "../../kernels/session/pageIdentity.js";
 import { pageReanchorReason, samePageIdentity } from "../../kernels/session/pageIdentity.js";
 import { currentPageIdentity, pageIdentityFromUnknown } from "./pageIdentity.js";
+import { validatePageWorldScanBundle, type PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
+import { BrowserBridgeError } from "../../utils/errors.js";
 
-function scanResultFingerprint(value: unknown): PageFingerprint | undefined {
-	const record = isRecord(value) ? value : {};
-	const signals = isRecord(record.signals) ? record.signals : {};
-	return normalizePageFingerprint(signals.fingerprint);
+function scanResultFingerprint(value: PageWorldScanBundleV1): PageFingerprint | undefined {
+	return normalizePageFingerprint(value.signals.fingerprint);
+}
+
+function validatedScanBundle(value: unknown): PageWorldScanBundleV1 {
+	const validation = validatePageWorldScanBundle(value);
+	if (validation.ok) return validation.value;
+	throw new BrowserBridgeError("SCAN_BUNDLE_INVALID", "Page-world scan returned an invalid browser-page-scan/v1 bundle", { issues: validation.issues.slice(0, 20) });
 }
 
 type ScanCaptureOptions = {
@@ -74,7 +79,7 @@ async function readCapturedPageIdentity(options: ScanCaptureOptions, fingerprint
 }
 
 type ScanAbmlIntegration = ReturnType<typeof createBrowserAbmlIntegration>;
-type ScanEvaluationResult = Awaited<ReturnType<typeof evaluatePageScriptDirect>>;
+type ScanEvaluationResult = Omit<Awaited<ReturnType<typeof evaluatePageScriptDirect>>, "data"> & { data: PageWorldScanBundleV1 };
 
 async function readScanAbml(
 	options: ScanCaptureOptions,
@@ -84,7 +89,7 @@ async function readScanAbml(
 	fusedPageFingerprint: PageFingerprint | undefined,
 ) {
 	const { browserSessionId, tabId, timeoutMs, captureMaxChars, mode, params, pageFingerprint, timings } = options;
-	const canReuseScanForAbml = mode !== "text" && params.includeIframes !== false && params.maxNodes === undefined && isRecord(result.data);
+	const canReuseScanForAbml = mode !== "text" && params.includeIframes !== false && params.maxNodes === undefined;
 	timings.abmlPrefetchedScan = canReuseScanForAbml;
 	const cacheFingerprint = pageFingerprint ?? fusedPageFingerprint;
 	const abmlStartedAt = Date.now();
@@ -95,7 +100,7 @@ async function readScanAbml(
 		maxChars: captureMaxChars,
 		baseline: effectiveBaseline?.entities,
 		diffOptions: effectiveBaseline?.partialBaseline ? { partialBaseline: true } : undefined,
-		prefetchedScan: canReuseScanForAbml ? result.data as Record<string, unknown> : undefined,
+		prefetchedScan: canReuseScanForAbml ? result.data : undefined,
 		axCacheKey: cacheFingerprint ? `content:${cacheFingerprint.changeSeq}:${cacheFingerprint.url || ""}` : undefined,
 	});
 	timings.abmlMs = elapsedMs(abmlStartedAt);
@@ -124,7 +129,8 @@ export async function executeScanCapture(options: ScanCaptureOptions) {
 		const navigationData = await navigateForScan(options, handle);
 		await handle.update({ progress: hasNavigation ? 50 : 40 });
 		const pageScriptStartedAt = Date.now();
-		const result = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract" });
+		const evaluated = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract" });
+		const result = { ...evaluated, data: validatedScanBundle(evaluated.data) };
 		timings.pageScriptMs = elapsedMs(pageScriptStartedAt);
 		addBridgeRoundTrips(timings, 1);
 		fusedPageFingerprint = scanResultFingerprint(result.data);

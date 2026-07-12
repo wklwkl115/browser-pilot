@@ -36,16 +36,12 @@ async function renderTextEnvelope(value: string, options: Partial<Parameters<typ
 	return JSON.parse(result.content[0]?.text || "{}") as Envelope;
 }
 
-function largeCanonicalObservationSummary(): Record<string, unknown> {
+function largeObserveProjectionSummary(): Record<string, unknown> {
 	return {
 		ok: true,
-		model: "PageObservation",
-		canonical: true,
-		pageObservation: {
-			model: "PageObservation",
-			canonical: true,
+		data: {
 			entities: Array.from({ length: 120 }, (_, index) => ({ ref: `bp-ref://element/${index}`, name: "Checkout field ".repeat(20), role: "textbox" })),
-			content: { text: "visible page copy ".repeat(500) },
+			content: "visible page copy ".repeat(500),
 		},
 		focus: {
 			gist: { title: "Checkout", description: "checkout page ".repeat(200) },
@@ -68,37 +64,36 @@ function assertPathHint(hints: ReturnType<typeof artifactHintFields>, label: str
 	assert.ok(hints.reads.some((read) => read.label === label && read.jsonPath === jsonPath && read.kind === kind));
 }
 
-test("result middleware characterization: default observe budget preserves final no-mode canonical marker", async () => {
+test("generic observe projection middleware never creates a PageObservation mirror", async () => {
 	const envelope = await renderEnvelope({ ok: true }, {
 		commandName: "browser_observe",
-		command: "scan",
+		command: "html",
 		maxChars: 35_000,
-		distill: largeCanonicalObservationSummary,
+		distill: largeObserveProjectionSummary,
 	});
 	const summary = envelope.summary as Record<string, unknown>;
-	const pageObservation = summary.pageObservation as Record<string, unknown>;
-	assert.equal(summary.model, "PageObservation");
-	assert.equal(summary.canonical, true);
-	assert.equal(pageObservation.model, "PageObservation");
-	assert.equal(pageObservation.canonical, true);
+	assert.equal(envelope.schema, undefined);
+	assert.equal(envelope.model, undefined);
+	assert.equal(Object.hasOwn(summary, "pageObservation"), false);
 });
 
-test("result middleware characterization: low observe budget preserves final no-mode canonical marker", async () => {
+test("generic observe projection middleware fits low budgets without creating a second observation shape", async () => {
 	const outputPath = await testArtifactPath("low-budget-observe.json");
 	const result = await distilledJsonResult({ ok: true }, {
 		commandName: "browser_observe",
-		command: "scan",
+		command: "html",
 		detailLevel: "summary",
 		maxChars: 1_000,
 		fallbackName: "result.json",
 		outputPath,
-		distill: largeCanonicalObservationSummary,
+		distill: largeObserveProjectionSummary,
 	});
 	const rendered = result.content[0]?.text || "";
 	assert.equal(rendered.length <= 1_000, true);
 	const envelope = JSON.parse(rendered) as Envelope;
 	const summary = envelope.summary as Record<string, unknown>;
-	assert.deepEqual(summary.pageObservation, { model: "PageObservation", canonical: true });
+	assert.equal(Object.hasOwn(summary, "pageObservation"), false);
+	assert.equal(envelope.tool, "browser_observe");
 });
 
 test("result middleware characterization: text summary precedence stays explicit, custom, then HTML fallback", async () => {
@@ -209,13 +204,13 @@ test("result middleware characterization: redaction keeps model-facing pointers 
 
 test("result middleware characterization: saved artifacts include the final rendered envelope", async () => {
 	const outputPath = await testArtifactPath("observe-result.json");
-	const rawValue = { data: { content: "你好，Browser Pilot 🌏" }, pageObservation: { model: "PageObservation", canonical: true } };
+	const rawValue = { data: { content: "你好，Browser Pilot 🌏" } };
 	const envelope = await renderEnvelope(rawValue, {
 		commandName: "browser_observe",
 		command: "scan",
 		outputPath,
 		artifactThreshold: 1,
-		distill: () => ({ ok: true, pageObservation: rawValue.pageObservation }),
+		distill: () => ({ ok: true, dataKind: "observe-projection" }),
 	});
 	const artifactText = await readFile(outputPath, "utf8");
 	const artifact = JSON.parse(artifactText) as Record<string, unknown>;
@@ -225,7 +220,7 @@ test("result middleware characterization: saved artifacts include the final rend
 	assert.deepEqual(artifact.data, rawValue.data);
 	assert.deepEqual(artifact.envelope, envelope);
 	assert.equal((artifact.envelope as Record<string, unknown>).tool, "browser_observe");
-	assert.deepEqual(((artifact.envelope as Record<string, unknown>).summary as Record<string, unknown>).pageObservation, rawValue.pageObservation);
+	assert.equal(((artifact.envelope as Record<string, unknown>).summary as Record<string, unknown>).dataKind, "observe-projection");
 	assert.equal(saved.path, path.resolve(outputPath));
 	assert.equal(saved.chars, artifactText.length);
 	assert.equal(saved.bytes, Buffer.byteLength(artifactText, "utf8"));
@@ -291,31 +286,37 @@ test("result middleware characterization: saved artifacts drive nextActions and 
 
 test("result middleware emits compact artifact schema and path hints without nonexistent paths", async () => {
 	const outputPath = await testArtifactPath("hinted-result.json");
-	const rawValue = { data: { content: "hello", actionables: [{ ref: "bp-ref://element/1" }] }, items: [{ id: 1 }] };
+	const rawValue = { data: { content: { text: "hello" }, structure: { actionables: [{ ref: "bp-ref://element/1" }] } }, items: [{ id: 1 }] };
 	const envelope = await renderEnvelope(rawValue, {
 		outputPath,
 		artifactThreshold: 1,
-		distill: () => ({ ok: true, artifact_hints: { jsonPaths: { content: "data.content", missing: "data.nope" }, preferredReads: [{ label: "content", jsonPath: "data.content", kind: "text" }, { label: "missing", jsonPath: "data.nope", kind: "missing" }] } }),
+		distill: () => ({ ok: true, artifact_hints: { jsonPaths: { content: "data.content.text", missing: "data.nope" }, preferredReads: [{ label: "content", jsonPath: "data.content.text", kind: "text" }, { label: "missing", jsonPath: "data.nope", kind: "missing" }] } }),
 	});
 	const hints = artifactHintFields(envelope);
 	assert.equal(hints.hints.kind, "BrowserCommandResult");
 	assert.equal(hints.hints.schemaVersion, 1);
 	assertPathHint(hints, "data", "data", "primary-data");
 	assertPathHint(hints, "items", "items", "primary-items");
-	assertPathHint(hints, "content text", "data.content", "text");
-	assert.equal(hints.paths.content, "data.content");
+	assertPathHint(hints, "content text", "data.content.text", "text");
+	assert.equal(hints.paths.content, "data.content.text");
 	assert.equal(hints.paths.missing, undefined);
 	assert.equal(hints.reads.some((read) => read.jsonPath === "data.nope"), false);
 	assert.equal((hints.hints.saved as Record<string, unknown>).path, path.resolve(outputPath));
 	assert.equal(JSON.stringify(hints.hints).includes("hello"), false);
 });
 
-test("result middleware emits observe artifact hints while preserving existing jsonPath compatibility", async () => {
+test("result middleware emits typed scan-bundle artifact hints without compatibility paths", async () => {
 	const outputPath = await testArtifactPath("observe-hints.json");
 	const rawValue = {
-		data: { content: "visible text", actionables: [{ ref: "bp-ref://element/submit" }], list_hints: [{ ref: "bp-ref://list/cart" }], rows: [{ id: "row-1" }], media_candidates: [{ src: "hero.png" }] },
-		pageObservation: { content: { artifact: { path: outputPath, jsonPath: "pageObservation.content" } } },
-		envelope: { summary: { pageObservation: { content: { artifact: { path: outputPath, jsonPath: "summary.pageObservation.content" } } } } },
+		data: {
+			content: { text: "visible text" },
+			structure: {
+				actionables: [{ ref: "bp-ref://element/submit" }],
+				listHints: [{ ref: "bp-ref://list/cart" }],
+				rows: [{ id: "row-1" }],
+				mediaCandidates: [{ src: "hero.png" }],
+			},
+		},
 	};
 	const envelope = await renderEnvelope(rawValue, {
 		commandName: "browser_observe",
@@ -323,20 +324,19 @@ test("result middleware emits observe artifact hints while preserving existing j
 		maxChars: 12_000,
 		outputPath,
 		artifactThreshold: 1,
-		distill: () => ({ ok: true, artifact_hints: { jsonPaths: { legacyContent: "pageObservation.content", missingLegacy: "pageObservation.missing" }, preferredReads: [{ label: "legacy content", jsonPath: "pageObservation.content", kind: "compat-jsonPath" }, { label: "missing", jsonPath: "pageObservation.missing", kind: "missing" }] } }),
+		distill: () => ({ ok: true, artifact_hints: { jsonPaths: { content: "data.content.text", missing: "data.missing" }, preferredReads: [{ label: "content", jsonPath: "data.content.text", kind: "text" }, { label: "missing", jsonPath: "data.missing", kind: "missing" }] } }),
 	});
 	const hints = artifactHintFields(envelope);
 	assert.equal(hints.hints.kind, "PageObservation");
 	assertPathHint(hints, "data", "data", "primary-data");
-	assertPathHint(hints, "content text", "data.content", "text");
-	assertPathHint(hints, "actionables", "data.actionables", "primary-items");
-	assertPathHint(hints, "list hints", "data.list_hints", "primary-items");
-	assertPathHint(hints, "rows", "data.rows", "primary-items");
-	assertPathHint(hints, "media candidates", "data.media_candidates", "primary-items");
-	assert.equal(hints.paths.legacyContent, "pageObservation.content");
-	assert.ok(hints.reads.some((read) => read.jsonPath === "pageObservation.content"));
-	assert.equal(hints.paths.missingLegacy, undefined);
-	assert.equal(hints.reads.some((read) => read.jsonPath === "pageObservation.missing"), false);
+	assertPathHint(hints, "content text", "data.content.text", "text");
+	assertPathHint(hints, "actionables", "data.structure.actionables", "primary-items");
+	assertPathHint(hints, "list hints", "data.structure.listHints", "primary-items");
+	assertPathHint(hints, "rows", "data.structure.rows", "primary-items");
+	assertPathHint(hints, "media candidates", "data.structure.mediaCandidates", "primary-items");
+	assert.equal(hints.paths.content, "data.content.text");
+	assert.equal(hints.paths.missing, undefined);
+	assert.equal(hints.reads.some((read) => read.jsonPath === "data.missing"), false);
 	assert.equal(JSON.stringify(hints.hints).includes("visible text"), false);
 });
 

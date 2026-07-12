@@ -1,20 +1,23 @@
 import { readFile } from "node:fs/promises";
 import type { BrowserCommandRuntimePort, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey } from "../../ports/BrowserCommandRuntimePort.js";
 import type { BrowserTextCommandResult } from "../../utils/toolResult.js";
-import { parseJsonOrThrow, stableJson, truncateText } from "../../utils/json.js";
+import { parseJsonOrThrow } from "../../utils/json.js";
 import { isRecord } from "../../utils/params.js";
-import { readHookRecorderSeq, readNetworkRecorderSeq, type PageFingerprint } from "../pageSignals.js";
+import type { PageFingerprint } from "../pageSignals.js";
 import { withTrackedOperation, type CommandOnUpdate } from "../commandRuntime.js";
-import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
+import type { ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
-import { cachedEnvelopeFromArtifact, legacyProjectionDetails, legacyProjectionSummary, modeInferredDetails, observeCacheTtlMs, renderCacheMatches } from "./renderCache.js";
+import { cachedEnvelopeFromArtifact, modeInferredDetails, observeCacheTtlMs, renderCacheMatches } from "./renderCache.js";
+import { PAGE_OBSERVATION_SCHEMA_V3, type PageObservationV3 } from "../../kernels/abml/pageObservation.js";
+import { renderWithExactCost } from "../../kernels/evidence/cost.js";
+import { pageObservationResult } from "../resultMiddleware.js";
 
 export function cachedObserveResultFromEnvelope(envelope: Record<string, unknown>, details: Record<string, unknown>, maxChars: number): BrowserTextCommandResult {
-	const rendered = stableJson(envelope);
-	const preview = truncateText(rendered, maxChars);
+	const observation = envelope as unknown as PageObservationV3;
+	const exact = renderWithExactCost(observation, (current, cost) => ({ ...current, limits: { ...current.limits, cost } }));
 	return {
-		content: [{ type: "text", text: preview.text }],
-		details: { ...details, truncated: preview.truncated, originalLength: preview.originalLength },
+		content: [{ type: "text", text: exact.rendered }],
+		details: { ...details, truncated: exact.rendered.length > maxChars, originalLength: exact.rendered.length },
 	};
 }
 
@@ -36,7 +39,8 @@ export async function tryRenderCacheHit(options: {
 	onUpdate?: CommandOnUpdate;
 	observeTimings: ObserveTimingMetrics;
 }): Promise<BrowserTextCommandResult | undefined> {
-	const { server, params, mode, detailLevel, maxChars, paramsSignature, pageFingerprint, ledgerFrame, plannedLedgerKey, effectiveTabId, timeoutMs, resultParams, outputPath, browserSessionId, onUpdate, observeTimings } = options;
+	const { server, params, mode, detailLevel, maxChars, paramsSignature, pageFingerprint, ledgerFrame, plannedLedgerKey, effectiveTabId, resultParams, outputPath, browserSessionId, onUpdate } = options;
+	if (mode !== "scan" || params.modeExplicit) return undefined;
 	if (!ledgerFrame || !pageFingerprint || !renderCacheMatches(ledgerFrame, mode, detailLevel, maxChars, paramsSignature, pageFingerprint) || typeof server.getObservationSnapshot !== "function") return undefined;
 
 	const priorPath = server.getObservationSnapshot(ledgerFrame.snapshotId)?.saved?.path;
@@ -46,17 +50,12 @@ export async function tryRenderCacheHit(options: {
 		const cachedEnvelope = cachedEnvelopeFromArtifact(cachedArtifact);
 		if (!cachedEnvelope) return undefined;
 
-		const recorderStartedAt = Date.now();
-		const [networkState, hookState] = await Promise.all([
-			readNetworkRecorderSeq(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId, timeoutMs }),
-			readHookRecorderSeq(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId, timeoutMs }),
-		]);
-		observeTimings.recorderMs = elapsedMs(recorderStartedAt);
-		addBridgeRoundTrips(observeTimings, 2);
+		const networkState = server.getKnownRecorderState?.("network", params.browserSessionId, effectiveTabId) ?? { active: false };
+		const hookState = server.getKnownRecorderState?.("hook", params.browserSessionId, effectiveTabId) ?? { active: false };
 		const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, pageFingerprint.url, networkState.lastSeq, hookState.lastSeq);
 		const { result } = await withTrackedOperation(server, {
 			commandName: "browser_observe",
-			command: mode === "text" ? "scan.text" : "scan",
+			command: "scan",
 			browserSessionId,
 			tabId: effectiveTabId,
 			phase: "running",
@@ -67,43 +66,32 @@ export async function tryRenderCacheHit(options: {
 			sourceMode: "scan",
 		}, onUpdate, async (handle): Promise<BrowserTextCommandResult> => {
 			await handle.update({ progress: 100, details: { fromCache: true, changeSeq: pageFingerprint.changeSeq } });
-			const isCanonical = mode === "scan" && !params.modeExplicit;
 			const cacheMeta = { reason: "content-fingerprint-unchanged" as const, changeSeq: pageFingerprint.changeSeq, priorSnapshotId: ledgerFrame.snapshotId };
-			const cachedSummary = isRecord(cachedEnvelope.summary) ? { ...cachedEnvelope.summary } as Record<string, unknown> : {};
-			const cachedPageObservation = isRecord(cachedSummary.pageObservation) ? { ...cachedSummary.pageObservation } as Record<string, unknown> : undefined;
-			if (cachedPageObservation) {
-				const diagnostics = isRecord(cachedPageObservation.diagnostics) ? cachedPageObservation.diagnostics as Record<string, unknown> : {};
-				cachedPageObservation.snapshot = snapshotMeta;
-				cachedPageObservation.diagnostics = { ...diagnostics, cache: cacheMeta, fromCache: true };
-			}
-			const summary = {
-				...cachedSummary,
-				...(cachedPageObservation ? { pageObservation: cachedPageObservation } : {}),
-				fromCache: true,
-				cache: cacheMeta,
-				priorSnapshotId: ledgerFrame.snapshotId,
-				...(isCanonical ? {} : legacyProjectionSummary(params, mode)),
-			};
-			const value = {
-				...cachedEnvelope,
-				fromCache: true,
-				cache: cacheMeta,
-				delta: "session" as const,
-				baselineSnapshotId: ledgerFrame.snapshotId,
-				operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId },
+			const prior = cachedEnvelope as unknown as PageObservationV3;
+			if (prior.schema !== PAGE_OBSERVATION_SCHEMA_V3) throw new Error("cached observation contract mismatch");
+			const diagnostics = isRecord(prior.diagnostics) ? prior.diagnostics : {};
+			const { saved: _saved, artifact_hints: _hints, ...rest } = prior;
+			const value: PageObservationV3 = {
+				...rest,
+				target: { ...prior.target, browserSessionId: snapshotMeta.browserSessionId, tabId: snapshotMeta.tabId, targetGeneration: snapshotMeta.targetGeneration, pageEpoch: snapshotMeta.pageEpoch, url: pageFingerprint.url },
 				snapshot: snapshotMeta,
-				summary,
+				delta: "session",
+				baselineSnapshotId: ledgerFrame.snapshotId,
+				providers: { ...prior.providers, cache: { planned: true, status: "executed", reason: cacheMeta.reason } },
+				diagnostics: { ...diagnostics, cache: cacheMeta, fromCache: true },
+				limits: { ...prior.limits, budgetChars: maxChars, cost: { chars: 0, bytes: 0, estimatedTokens: 0 } },
 			};
-			return cachedObserveResultFromEnvelope(value, {
+			return await pageObservationResult({ inline: value, artifact: value, maxChars, outputPath, fallbackName: `observe-cache-${snapshotMeta.snapshotId}.json`, details: {
 				mode,
 				modeInferred: modeInferredDetails(params),
-				...(isCanonical ? { model: "PageObservation", canonical: true } : legacyProjectionDetails(params, mode)),
+				model: "PageObservation",
+				canonical: true,
 				sourceMode: "scan",
 				sourceCommand: "content.fingerprint",
 				fromCache: true,
 				priorSnapshotId: ledgerFrame.snapshotId,
 				renderCache: { hit: true, ttlMs: observeCacheTtlMs(), ...cacheMeta },
-			}, maxChars);
+			} });
 		});
 
 		if (plannedLedgerKey && typeof server.recordPerceptionLedgerFrame === "function") {

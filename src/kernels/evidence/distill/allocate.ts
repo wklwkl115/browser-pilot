@@ -1,7 +1,5 @@
 import type { AllocationOptions, Fact, FactGranularity, PlaneFloor, RenderPlan } from "./fact.js";
 import { FACT_GRANULARITY_ORDER, salienceValue } from "./fact.js";
-import { tokenEstimate } from "./cost.js";
-import { stableJson } from "../../../utils/json.js";
 import { isRecord } from "../../../utils/records.js";
 
 function allowedByCeiling(granularity: Exclude<FactGranularity, "omit">, ceiling?: Exclude<FactGranularity, "omit">): boolean {
@@ -18,21 +16,17 @@ function bestAvailableWithin(fact: Fact, remaining: number, ceiling?: Exclude<Fa
 	for (const granularity of FACT_GRANULARITY_ORDER) {
 		if (!allowedByCeiling(granularity, ceiling)) continue;
 		const rendering = fact.renderings[granularity];
-		if (rendering && rendering.cost <= remaining) return granularity;
+		if (rendering && rendering.cost.estimatedTokens <= remaining) return granularity;
 	}
 	return undefined;
 }
 
 function renderingCost(fact: Fact, granularity: Exclude<FactGranularity, "omit">): number {
-	return fact.renderings[granularity]?.cost ?? Number.POSITIVE_INFINITY;
+	return fact.renderings[granularity]?.cost.estimatedTokens ?? Number.POSITIVE_INFINITY;
 }
 
-function renderingDensityCost(fact: Fact, granularity: Exclude<FactGranularity, "omit">, options: AllocationOptions): number {
-	const rendering = fact.renderings[granularity];
-	if (!rendering) return Number.POSITIVE_INFINITY;
-	if (options.costModel !== "token") return rendering.cost;
-	const text = rendering.text ?? (rendering.value !== undefined ? stableJson(rendering.value) : "");
-	return Math.max(1, tokenEstimate(text));
+function renderingBytes(fact: Fact, granularity: Exclude<FactGranularity, "omit">): number {
+	return fact.renderings[granularity]?.cost.bytes ?? Number.POSITIVE_INFINITY;
 }
 
 function renderingRecord(fact: Fact): Record<string, unknown> | undefined {
@@ -104,12 +98,13 @@ export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[
 	const ranked = facts
 		.map((fact) => {
 			const best = bestAvailableWithin(fact, Math.max(0, budget - spent), options.granularityCeiling);
-			const cost = best ? renderingDensityCost(fact, best, options) : Number.POSITIVE_INFINITY;
+			const cost = best ? renderingCost(fact, best) : Number.POSITIVE_INFINITY;
+			const bytes = best ? renderingBytes(fact, best) : Number.POSITIVE_INFINITY;
 			const continuity = options.stableRefs?.has(fact.ref) ? 1.2 : 1;
 			const salience = salienceValue(fact.salience) * (redundancyByRef.get(fact.ref) ?? 1) * continuity;
-			return { fact, best, salience, density: cost > 0 && Number.isFinite(cost) ? salience / cost : 0 };
+			return { fact, best, salience, bytes, density: cost > 0 && Number.isFinite(cost) ? salience / cost : 0 };
 		})
-		.sort((a, b) => b.density - a.density || b.salience - a.salience || compareCodepoint(a.fact.ref, b.fact.ref));
+		.sort((a, b) => b.density - a.density || b.salience - a.salience || a.bytes - b.bytes || compareCodepoint(a.fact.ref, b.fact.ref));
 
 	for (const item of ranked) {
 		if (plan.get(item.fact.ref) !== "omit") continue;

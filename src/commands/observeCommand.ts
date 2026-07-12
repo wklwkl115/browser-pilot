@@ -110,9 +110,14 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 		promptSnippet: "Observe the current page as the canonical ABML page model with structure, actionables, refs, context, evidence, deltas, and diagnostics.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
-			"Call browser_observe without choosing a mode for normal page understanding. Use canonical-only target/delta boundaries such as tabId, targetRef, url, fresh, diff, baseline, baselineSnapshotId, baselinePath, actionRef, or explicit optional add-ons such as readability:true/content=readability only on the omitted-mode path. Removed mechanical inputs such as timeoutMs, maxChars, detailLevel, and outputPath are rejected. Any explicit mode value, including mode=scan, is marked legacy/debug/projection and rejects canonical-only diff/baseline/actionRef parameters; explicit content/html/text/tabs remain only for compatibility projections.",
+			"Call browser_observe without choosing a mode for normal page understanding. Use canonical-only target/delta boundaries such as tabId, targetRef, url, fresh, diff, baseline, baselineSnapshotId, baselinePath, actionRef, or explicit optional add-ons such as readability:true/content=readability only on the omitted-mode path. timeoutMs is a hard deadline, maxChars is the inline hard ceiling, and outputPath controls the canonical saved artifact. Any explicit mode value, including mode=scan, is marked legacy/debug/projection and rejects canonical-only diff/baseline/actionRef parameters; explicit content/html/text/tabs remain only for compatibility projections.",
 		],
 		parameters: strictCommandParameters({
+			browserSessionId: Type.Optional(Type.String({ description: "Browser automation session id" })),
+			timeoutMs: Type.Optional(Type.Number({ description: "Hard observe deadline in milliseconds; render/persist reserve is protected before optional providers run." })),
+			maxChars: Type.Optional(Type.Number({ description: "Hard upper bound for the rendered inline PageObservation v3 JSON." })),
+			outputPath: Type.Optional(Type.String({ description: "Optional path for the saved PageObservation v3 artifact." })),
+			detailLevel: Type.Optional(Type.Union([Type.Literal("summary"), Type.Literal("preview"), Type.Literal("full")])),
 			mode: Type.Optional(Type.Union([Type.Literal("scan"), Type.Literal("content"), Type.Literal("html"), Type.Literal("text"), Type.Literal("tabs")], { description: "Legacy/debug/projection override. Omit for the canonical ABML PageObservation; any explicit mode value, including scan, is marked as non-canonical compatibility/debug semantics and cannot use canonical-only diff/baseline/actionRef parameters." })),
 			selector: Type.Optional(Type.String({ description: "Legacy content/html projection only: CSS selector for a target readable root or exact HTML/text slice; not accepted on the canonical no-mode path" })),
 			content: Type.Optional(Type.Literal("readability", { description: "Canonical no-mode content-plane add-on: run bounded Mozilla Readability and attach provider diagnostics/artifact without changing the structural model." })),

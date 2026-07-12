@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { Type } from "typebox";
 import { collectCommandDefs } from "../../src/apps/cli/registry.ts";
-import { validateDaemonCommandArguments } from "../../src/apps/daemon/server.ts";
+import { runValidateCommand } from "../../src/apps/cli/cliLocalCommands.ts";
+import { controlRequest } from "../../src/apps/daemon/daemonControl.ts";
+import { startDaemon, validateDaemonCommandArguments } from "../../src/apps/daemon/server.ts";
 import { validateBrowserCommandArguments } from "../../src/commands/commandValidation.ts";
 import type { BrowserCommandDefinition } from "../../src/commands/commandDefinition.ts";
+import { publicActionsForDefinition } from "../../src/commands/publicActionCatalog.ts";
 
 type CorpusCase = {
 	name: string;
@@ -51,7 +58,7 @@ const corpus: CorpusCase[] = [
 	{ name: "observe diagnostics aliases", command: "browser_observe", args: { diagnostics: "axe", axe: true }, valid: false, code: "OBSERVE_ADDON_CONFLICT" },
 	{ name: "observe unknown", command: "browser_observe", args: { typo: true }, valid: false, code: "UNKNOWN_ARGUMENT" },
 	{ name: "observe internal", command: "browser_observe", args: { modeExplicit: true }, valid: false, code: "INTERNAL_ARGUMENT" },
-	{ name: "observe removed", command: "browser_observe", args: { maxChars: 1000 }, valid: false, code: "REMOVED_ARGUMENT" },
+	{ name: "observe removed", command: "browser_observe", args: { monitor: true }, valid: false, code: "REMOVED_ARGUMENT" },
 
 	{ name: "artifact text", command: "browser_artifact", args: { path: "artifact.json" }, valid: true },
 	{ name: "artifact json path", command: "browser_artifact", args: { path: "artifact.json", jsonPath: "data.items" }, valid: true },
@@ -75,13 +82,13 @@ const corpus: CorpusCase[] = [
 	{ name: "network export har", command: "browser_network", args: { action: "exportHar" }, valid: true },
 	{ name: "network export alias", command: "browser_network", args: { action: "export" }, valid: false, code: "ACTION_UNKNOWN" },
 	{ name: "network capture alias", command: "browser_network", args: { action: "capture" }, valid: false, code: "ACTION_UNKNOWN" },
-	{ name: "hook install targets", command: "browser_hook", args: { action: "installTargets", targets: ["fetch"] }, valid: true },
-	{ name: "hook install targets missing", command: "browser_hook", args: { action: "installTargets" }, valid: false, code: "ACTION_ARGUMENT_REQUIRED" },
-	{ name: "hook evaluate", command: "browser_hook", args: { action: "evaluate", expression: "1" }, valid: true },
-	{ name: "hook evaluate missing", command: "browser_hook", args: { action: "evaluate" }, valid: false, code: "ACTION_ARGUMENT_REQUIRED" },
-	{ name: "hook unrelated top argument", command: "browser_hook", args: { action: "listTargets", expression: "1" }, valid: false, code: "ACTION_ARGUMENT_NOT_ALLOWED" },
-	{ name: "frame evaluate", command: "browser_frame", args: { action: "evaluate", frameId: "f", expression: "1" }, valid: true },
-	{ name: "frame evaluate missing", command: "browser_frame", args: { action: "evaluate", frameId: "f" }, valid: false, code: "ACTION_ARGUMENT_REQUIRED" },
+	{ name: "hook install targets", command: "browser_hook", args: { action: "installTargets", params: { targets: ["fetch"] } }, valid: true },
+	{ name: "hook install targets missing", command: "browser_hook", args: { action: "installTargets" }, valid: false, code: "SCHEMA_REQUIRED" },
+	{ name: "hook evaluate", command: "browser_hook", args: { action: "evaluate", params: { expression: "1" } }, valid: true },
+	{ name: "hook evaluate missing", command: "browser_hook", args: { action: "evaluate" }, valid: false, code: "SCHEMA_REQUIRED" },
+	{ name: "hook unrelated nested argument", command: "browser_hook", args: { action: "listTargets", params: { expression: "1" } }, valid: false, code: "SCHEMA_VALIDATION_FAILED" },
+	{ name: "frame evaluate", command: "browser_frame", args: { action: "evaluate", params: { frameId: "f", expression: "1" } }, valid: true },
+	{ name: "frame evaluate missing", command: "browser_frame", args: { action: "evaluate", params: { frameId: "f" } }, valid: false, code: "SCHEMA_REQUIRED" },
 
 	{ name: "tabs list", command: "browser_tabs", args: { action: "list" }, valid: true },
 	{ name: "tabs create", command: "browser_tabs", args: { action: "create", url: "about:blank" }, valid: true },
@@ -105,23 +112,107 @@ const corpus: CorpusCase[] = [
 	{ name: "upload relative path", command: "browser_upload", args: { selector: "input", files: ["relative.txt"], confirm: true }, valid: false, code: "UPLOAD_PATH_NOT_ABSOLUTE" },
 ];
 
-test("shared validation corpus has at least fifty side-effect-free cases with stable issues", () => {
+type CliValidation = { exitCode: number; body: Record<string, unknown> };
+
+async function validateThroughRealCliParser(item: CorpusCase, definition: BrowserCommandDefinition): Promise<CliValidation> {
+	const subcommand = item.command.replace(/^browser_/, "").replace(/_/g, "-");
+	const params = structuredClone(item.args);
+	const rawAction = typeof params.action === "string" ? params.action : undefined;
+	const naturalAction = rawAction
+		? publicActionsForDefinition(definition).find((action) => action.action === rawAction)
+		: undefined;
+	if (naturalAction) delete params.action;
+	const argv = [
+		subcommand,
+		...(naturalAction ? [naturalAction.cliAction] : []),
+		"--params",
+		JSON.stringify(params),
+		"--json",
+	];
+	let body: Record<string, unknown> | undefined;
+	const exitCode = await runValidateCommand(argv, (envelope) => { body = envelope; });
+	assert.ok(body, `${item.name}: validate command must emit JSON`);
+	return { exitCode, body };
+}
+
+test("every validation corpus case crosses the real CLI parser and real daemon /invoke transport", async () => {
 	assert.ok(corpus.length >= 50, `expected >= 50 validation cases, got ${corpus.length}`);
-	const definitions = new Map(collectCommandDefs().map((definition) => [definition.name, definition]));
-	for (const item of corpus) {
-		const definition = definitions.get(item.command);
-		assert.ok(definition, item.command);
-		const cliResult = validateBrowserCommandArguments(definition, item.args);
-		const daemonResult = validateDaemonCommandArguments(definition, item.args);
-		assert.deepEqual(daemonResult, cliResult, `${item.name}: CLI/daemon validation parity`);
-		assert.equal(cliResult.ok, item.valid, item.name);
-		if (!cliResult.ok) {
-			assert.ok(cliResult.issues.length > 0, item.name);
-			assert.ok(cliResult.issues.every((issue) => issue.code && issue.path && issue.message), item.name);
-			if (item.code) assert.ok(cliResult.issues.some((issue) => issue.code === item.code), `${item.name}: ${JSON.stringify(cliResult.issues)}`);
-		} else {
-			assert.deepEqual(cliResult.args, item.args, `${item.name} normalized args`);
+	const commandDefinitions = collectCommandDefs();
+	const definitions = new Map(commandDefinitions.map((definition) => [definition.name, definition]));
+	const executions: Array<{ command: string; args: Record<string, unknown> }> = [];
+	const injectedDefinitions = commandDefinitions.map((definition): BrowserCommandDefinition => ({
+		...definition,
+		async execute(_toolCallId, params) {
+			executions.push({ command: definition.name, args: structuredClone(params as Record<string, unknown>) });
+			return { content: [{ type: "text", text: "validation fixture executed" }] };
+		},
+	}));
+	const handle = await startDaemon({ writeLock: false, startBridgeEagerly: false, commandDefinitions: injectedDefinitions });
+	try {
+		for (const item of corpus) {
+			const definition = definitions.get(item.command);
+			assert.ok(definition, item.command);
+			const pureResult = validateBrowserCommandArguments(definition, item.args);
+			assert.deepEqual(validateDaemonCommandArguments(definition, item.args), pureResult, `${item.name}: shared validator parity`);
+
+			const cli = await validateThroughRealCliParser(item, definition);
+			assert.equal(cli.exitCode === 0, item.valid, `${item.name}: CLI exit`);
+			assert.equal(cli.body.valid, item.valid, `${item.name}: CLI valid field`);
+			assert.equal(pureResult.ok, item.valid, `${item.name}: pure validity`);
+
+			const executionCount = executions.length;
+			const daemon = await controlRequest(handle, "POST", "/invoke", {
+				tool: item.command,
+				params: item.args,
+				cwd: process.cwd(),
+			}, 3_000);
+			if (!pureResult.ok) {
+				assert.ok(pureResult.issues.length > 0, item.name);
+				assert.ok(pureResult.issues.every((issue) => issue.code && issue.path && issue.message), item.name);
+				if (item.code) assert.ok(pureResult.issues.some((issue) => issue.code === item.code), `${item.name}: ${JSON.stringify(pureResult.issues)}`);
+				assert.deepEqual(cli.body.issues, pureResult.issues, `${item.name}: CLI issues`);
+				assert.equal(daemon.status, 400, `${item.name}: daemon HTTP status`);
+				assert.deepEqual(daemon.json?.issues, pureResult.issues, `${item.name}: daemon issues`);
+				assert.equal(executions.length, executionCount, `${item.name}: invalid invocation executed`);
+				continue;
+			}
+
+			assert.deepEqual(cli.body.args, pureResult.args, `${item.name}: CLI normalized args`);
+			assert.equal(daemon.status, 200, `${item.name}: daemon HTTP status`);
+			assert.equal(executions.length, executionCount + 1, `${item.name}: valid invocation execution count`);
+			assert.deepEqual(executions.at(-1), { command: item.command, args: pureResult.args }, `${item.name}: daemon normalized args`);
 		}
+	} finally {
+		await handle.close();
+	}
+});
+
+function runValidateProcess(args: string[], input?: string) {
+	return spawnSync(process.execPath, ["--import", "tsx", path.resolve("src/apps/cli/bin.ts"), "validate", ...args], {
+		cwd: process.cwd(),
+		encoding: "utf8",
+		...(input === undefined ? {} : { input }),
+	});
+}
+
+test("validate parser resolves params files, value files, script-file, and stdin without bypassing validation", () => {
+	const directory = mkdtempSync(path.join(tmpdir(), "browser-pilot-validation-parity-"));
+	const paramsPath = path.join(directory, "params.json");
+	const scriptPath = path.join(directory, "script.js");
+	writeFileSync(paramsPath, JSON.stringify({ script: "document.title" }), "utf8");
+	writeFileSync(scriptPath, "document.body.dataset.validation", "utf8");
+
+	const cases = [
+		{ name: "params @file", result: runValidateProcess(["execute", "--params", `@${paramsPath}`, "--json"]), script: "document.title" },
+		{ name: "nested value @file", result: runValidateProcess(["execute", "--params", JSON.stringify({ script: `@${scriptPath}` }), "--json"]), script: "document.body.dataset.validation" },
+		{ name: "script-file", result: runValidateProcess(["execute", "--params", JSON.stringify({ scriptFile: scriptPath }), "--json"]), script: "document.body.dataset.validation" },
+		{ name: "params stdin", result: runValidateProcess(["execute", "--params", "-", "--json"], JSON.stringify({ script: "location.href" })), script: "location.href" },
+	];
+	for (const item of cases) {
+		assert.equal(item.result.status, 0, `${item.name}: ${item.result.stderr}`);
+		const body = JSON.parse(item.result.stdout) as Record<string, unknown>;
+		assert.equal(body.valid, true, item.name);
+		assert.deepEqual(body.args, { script: item.script }, item.name);
 	}
 });
 

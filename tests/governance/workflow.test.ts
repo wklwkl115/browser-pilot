@@ -26,6 +26,8 @@ const browserSmokeScriptPath = path.join(root, "scripts/run-browser-smoke.mjs");
 const eslintConfigPath = path.join(root, "eslint.config.js");
 const misePath = path.join(root, "mise.toml");
 const verifyWorkflowPath = path.join(root, ".github/workflows/verify.yml");
+const releaseWorkflowPath = path.join(root, ".github/workflows/release.yml");
+const releaseArtifactScriptPath = path.join(root, "scripts/verify-release-artifact.mjs");
 const kernelRoot = path.join(root, "src", "kernels");
 const sessionKernelRoot = path.join(kernelRoot, "session");
 const commandsRoot = path.join(root, "src", "commands");
@@ -124,6 +126,36 @@ test("real browser smoke gate owns live MV3 acceptance and runs in Windows CI", 
 	assert.match(smoke, /pageEpoch/);
 	assert.match(smoke, /reanchorReason/);
 	assert.match(smoke, /extension reload reconnect/);
+	assert.match(smoke, /provider-budget-telemetry/);
+	assert.match(smoke, /operation-completion-event-wakeup/);
+	assert.match(smoke, /pageshow\.persisted/);
+	assert.match(smoke, /bfcache-back-forward-lineage/);
+	assert.match(smoke, /frontier-artifact-targeted-read/);
+	assert.match(smoke, /prerender-tabs-onReplaced/);
+	assert.match(smoke, /target-close-new-target/);
+	assert.doesNotMatch(smoke, /\.skip\(|test\.skip|acceptance.*skip/i);
+});
+
+test("tag releases publish only the retained cross-platform-verified tarball through npm OIDC", () => {
+	const workflow = text(releaseWorkflowPath);
+	const verifier = text(releaseArtifactScriptPath);
+	assert.match(workflow, /tags:\s*\n\s*- ["']v\*["']/);
+	assert.match(workflow, /node scripts\/verify-release-artifact\.mjs/);
+	assert.match(workflow, /ubuntu-latest/);
+	assert.match(workflow, /windows-latest/);
+	assert.match(workflow, /mise run verify/);
+	assert.match(workflow, /mise run package-smoke/);
+	assert.match(workflow, /mise run smoke-browser/);
+	assert.match(workflow, /node scripts\/package-smoke\.mjs --artifact-dir release-artifact/);
+	assert.match(workflow, /actions\/upload-artifact@v4/);
+	assert.match(workflow, /actions\/download-artifact@v4/);
+	assert.match(workflow, /npm install --global npm@11\.6\.2/);
+	assert.match(workflow, /id-token: write/);
+	assert.match(workflow, /npm publish [^\n]+ --access public --provenance/);
+	assert.doesNotMatch(workflow, /NPM_TOKEN|NODE_AUTH_TOKEN|npm pack/);
+	assert.match(verifier, /release tag mismatch/);
+	assert.match(verifier, /release SHA-256 mismatch/);
+	assert.match(verifier, /exactly one tarball/);
 });
 
 test("coverage module loading counts only eligible source files", () => {
@@ -137,7 +169,7 @@ test("verify owns an exact complexity ratchet", () => {
 	const complexity = text(complexityScriptPath);
 	const validation = text(validationScriptPath);
 	const pkg = JSON.parse(text(packagePath)) as { scripts?: Record<string, string> };
-	assert.match(complexity, /expectedComplexFunctions\s*=\s*81/);
+	assert.match(complexity, /expectedComplexFunctions\s*=\s*80/);
 	assert.match(complexity, /expectedLongFunctions\s*=\s*0/);
 	assert.match(complexity, /assertExactBudget/);
 	assert.match(validation, /scripts\/audit-complexity\.mjs/);
@@ -236,7 +268,7 @@ test("public docs describe browser_observe as canonical ABML observation with le
 	assert.match(readme, /browser_observe[`\s\S]{0,120}canonical ABML page model/i);
 	assert.match(readme, /Omit `mode`[\s\S]{0,120}any explicit `mode` value[\s\S]{0,120}legacy\/debug\/projection/i);
 	assert.match(readme, /mode=content\/html\/text\/tabs`[\s\S]{0,120}compatibility projections/i);
-	assert.match(wiki, /browser_observe[`\s\S]{0,120}canonical ABML `PageObservation`/i);
+	assert.match(wiki, /browser_observe[`\s\S]{0,180}browser-page-observation\/v3/i);
 	assert.match(wiki, /正常 agent 工作流应省略 `mode`/);
 	assert.match(wiki, /任何显式 `mode` 都是 legacy\/debug\/projection/);
 	assert.match(wiki, /显式 `mode=scan`/);
@@ -355,7 +387,8 @@ test("public docs cover latency telemetry and offline observe benchmark constrai
 	assert.match(readme, /diagnostics\.latency[\s\S]{0,180}payloads|latency[\s\S]{0,180}do not include command payloads/i);
 	assert.match(wiki, /diagnostics\.latency[\s\S]{0,240}不包含 command payload|latency[\s\S]{0,240}headers[\s\S]{0,120}URL query/i);
 	assert.match(readme, /observe regression benchmark[\s\S]{0,160}offline fixtures/i);
-	assert.match(wiki, /Observe regression benchmark[\s\S]{0,420}离线 fixture[\s\S]{0,260}provider telemetry/i);
+	assert.match(wiki, /Observe regression benchmark[\s\S]{0,320}1573380[\s\S]{0,320}25%/i);
+	assert.match(wiki, /required facts[\s\S]{0,220}verified read|verified read[\s\S]{0,220}unavailable reason/i);
 });
 
 test("code wiki documents the session kernel node crypto exception", () => {
