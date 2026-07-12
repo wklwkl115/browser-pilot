@@ -10,7 +10,6 @@ import type { TemporalAnchor, TemporalStamp } from "../../src/kernels/temporal/t
 import { fitInlineJsonToBudgetMeasured } from "../../src/kernels/evidence/distill/fit.ts";
 import { fitSalienceEnvelopeBudget } from "../../src/kernels/evidence/distill/salienceEnvelope.ts";
 import type { BudgetedEnvelope } from "../../src/kernels/evidence/distill/ladder.ts";
-import { applyVerificationStrike, memoryStampSetId, transitionStrikeCount, verifyMemoryAnchors } from "../../src/kernels/memory/staleness.ts";
 import { clearResourceStore, listResources, parseBrowserPilotRefUri, parseResourceUri, pruneExpired, registerBrowserResultResource, registerRefDescriptor, resolveRefUriDetailed, resolveResourceUri, resourceRefStore, stats } from "../../src/resources/resourceRefs.ts";
 
 function tempArtifact(name: string, value: unknown): string {
@@ -155,20 +154,6 @@ test("evidence fit trims array/object payloads and salience envelope prefers str
 
 	const ladderFallback = fitSalienceEnvelopeBudget({ ...envelope, summary: { textPreview: "x".repeat(10_000) } }, 50);
 	assert.equal((ladderFallback.summary as Record<string, unknown>).summaryTruncatedToBudget === true || JSON.stringify(ladderFallback).length <= 1_000, true);
-});
-
-test("memory staleness kernel verifies anchors, stamp sets, and strike transitions", () => {
-	assert.deepEqual(verifyMemoryAnchors(undefined, { canonicalUrl: "https://example.test/app" }), { status: "unverified", reasons: ["no-anchors"] });
-	assert.deepEqual(verifyMemoryAnchors({ canonicalUrl: "https://example.test/app", stampSetId: "a", fingerprintSummary: { b: 2, a: [1] } }, { canonicalUrl: "https://example.test/app", stampSetId: "a", fingerprintSummary: { a: [1], b: 2 } }), { status: "fresh", reasons: ["anchors-match"] });
-	assert.deepEqual(verifyMemoryAnchors({ canonicalUrl: "https://example.test/app", stampSetId: "a", fingerprintSummary: { count: 1 } }, { canonicalUrl: "https://example.test/other", stampSetId: "b", fingerprintSummary: { count: 2 } }).reasons, ["canonicalUrl", "stampSetId", "fingerprintSummary"]);
-	assert.equal(memoryStampSetId({ b: "2", a: "1", empty: "" }), "a:1|b:2");
-	assert.equal(memoryStampSetId({ empty: "" }), undefined);
-	assert.equal(transitionStrikeCount(3, "fresh"), undefined);
-	assert.equal(transitionStrikeCount(undefined, "stale"), 1);
-	assert.equal(transitionStrikeCount(2, "unverified"), 2);
-	const profile = { schemaVersion: 1 as const, origin: "https://example.test", sessions: [], termStats: {}, urls: [], strikes: { stale: 2, fresh: 1 } };
-	assert.deepEqual(applyVerificationStrike(profile, "fresh", "fresh").strikes, { stale: 2 });
-	assert.deepEqual(applyVerificationStrike(profile, "other", "stale").strikes, { stale: 2, fresh: 1, other: 1 });
 });
 
 test("resource store rejects traversal and malformed refs without leaking path payloads", () => {

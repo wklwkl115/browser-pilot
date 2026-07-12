@@ -183,7 +183,6 @@ test("observe scan characterization: canonical PageObservation keeps stable fuse
 				relations: { summary: { controls: 1 } },
 			},
 			collections: [{ ref: listEntity.ref, complete: true }],
-			memory: { facts: [{ id: "fact-1" }] },
 		},
 		entities: [buttonEntity, listEntity, visualEntity, frameEntity],
 		content: `${"Readable checkout content ".repeat(80)}`,

@@ -7,11 +7,9 @@ import { saveTextArtifact } from "../artifacts/artifactFiles.js";
 import { distillValue } from "./distillerRegistry.js";
 import { asArray, isRecord } from "./summaries/common.js";
 import { summarizeHtmlSnapshot } from "./summaries/index.js";
-import { appendMemoryAutoSurface } from "./memory/autoSurface.js";
-import type { CommandMemoryAugmentationPlan } from "./memoryAugmentationTypes.js";
 import { fitCommandSummaryBudget, SUMMARY_MAX_CHARS } from "./resultBudgeting.js";
 import type { CommandFactGranularity, DistilledEnvelope, DistilledSummary } from "./resultTypes.js";
-import { factRenderingDiagnostics, fitResponseEnvelopeWithMemory, renderedOmittedCount, rendererMarker } from "./resultEnvelopeBudget.js";
+import { factRenderingDiagnostics, fitResponseEnvelope, renderedOmittedCount, rendererMarker } from "./resultEnvelopeBudget.js";
 import { buildResultEvidence } from "./resultEvidence.js";
 import { normalizedNextActions } from "./resultNextActions.js";
 import { normalizedPrivacy, redactForModel } from "./resultRedaction.js";
@@ -20,7 +18,7 @@ import { firstDefined, pickDefined } from "../utils/records.js";
 import { hasJsonPathValue } from "../utils/jsonPath.js";
 
 // Mandatory-read pair with commandRuntime.ts: keep envelope fields, redaction, distillation,
-// artifact fallback, and memory nudge behavior centralized here.
+// artifact fallback, and evidence behavior centralized here.
 type DistillBaseOptions = {
 	commandName: string;
 	command?: string;
@@ -46,7 +44,6 @@ type DistillBaseOptions = {
 	rawArtifactValue?: unknown;
 	granularityCeiling?: Exclude<CommandFactGranularity, "omit">;
 	stableRefs?: Set<string>;
-	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 };
 
@@ -398,14 +395,13 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		operation: redactedOperation,
 		snapshot: redactedSnapshot,
 		artifact: saved,
-		memorySource: isRecord(redactedSummary.memory) ? redactedSummary.memory as Record<string, unknown> : undefined,
 		redactionApplied: sensitiveRaw || Boolean(privacy),
 	});
 	const envelopeMetadata = pickDefined({ renderer: rendererMarker(), delta, baselineSnapshotId }, ["renderer", "delta", "baselineSnapshotId"]);
 	const envelopeArtifact = pickDefined({ artifact_hints }, ["artifact_hints"]);
 	const envelopePlanes = pickDefined({ entities, abmlIntegrated, gist, outline, relations, identity, diff, causal, treeDiff, snapshotProjection, collections, error }, ["entities", "abmlIntegrated", "gist", "outline", "relations", "identity", "diff", "causal", "treeDiff", "snapshotProjection", "collections", "error"]);
 	const envelopeTail = pickDefined({ activeContext: redactedActiveContext, correlation: Object.keys(correlation).length ? correlation : undefined }, ["activeContext", "correlation"]);
-	return fitResponseEnvelopeWithMemory({
+	return fitResponseEnvelope({
 		tool: options.commandName,
 		command: options.command,
 		browserSessionId: options.browserSessionId,
@@ -467,10 +463,10 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 	options.rawArtifactValue = rawValue;
 	saved = await executeArtifactPlan(options, rawArtifactPlan(options, raw, sensitiveRaw, threshold, level));
 	if (level === "summary" || level === "preview") {
-		let envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
+		let envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
 		if (!saved && stableJson(envelope).length > maxChars) {
 			saved = await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "fallback-over-budget"));
-			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
+			envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
 		}
 		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
 		envelope = renderedEnvelope.envelope;
@@ -508,10 +504,10 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 	options.rawArtifactValue = rawValue;
 	saved = await executeArtifactPlan(options, rawArtifactPlan(options, raw, sensitiveRaw, threshold, level));
 	if (level === "summary" || level === "preview") {
-		let envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
+		let envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
 		if (!saved && stableJson(envelope).length > maxChars) {
 			saved = await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "fallback-over-budget"));
-			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
+			envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
 		}
 		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
 		envelope = renderedEnvelope.envelope;

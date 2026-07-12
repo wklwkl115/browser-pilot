@@ -323,7 +323,7 @@ export function writeJsonEnvelope(envelope: CliJsonEnvelope): void {
 
 /**
  * A command call failed if it hard-terminated OR the envelope itself signals an error.
- * Some tool errors (e.g. NO_TAB, browser_memory read-miss) return a normal-shaped
+ * Some tool errors return a normal-shaped
  * envelope with an error code / ok:false WITHOUT terminate:true — those must still
  * map to a non-zero exit code so scripts/agents can branch on `$?`.
  */

@@ -16,7 +16,6 @@ export type BrowserPilotRefKind =
 	| "summary"
 	| "resource"
 	| "target"
-	| "memory"
 	| "collection";
 
 export type BrowserPilotRef = {

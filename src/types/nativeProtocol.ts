@@ -1342,61 +1342,6 @@ const schema = {
       "retryable": false,
       "summary": "Callback HTTPS certificate generation failed or explicit certificate inputs were invalid."
     },
-    "MEMORY_ACTION_UNSUPPORTED": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser_memory action is unsupported."
-    },
-    "UNSUPPORTED_SCOPE_KIND": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser_memory scopeKind is unsupported."
-    },
-    "MEMORY_SCOPE_REQUIRED": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser_memory requires scopeKey or url for the selected scope."
-    },
-    "MEMORY_EVIDENCE_REQUIRED": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser_memory requires at least one durable readable evidence reference."
-    },
-    "MEMORY_EVIDENCE_UNREADABLE": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser_memory evidence could not be read."
-    },
-    "MEMORY_EVIDENCE_STALE": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser_memory evidence is stale."
-    },
-    "MEMORY_EVIDENCE_UNRESOLVABLE": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser_memory evidence handle could not be resolved."
-    },
-    "MEMORY_SECRET_DETECTED": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser_memory payload contains blocked or sensitive content."
-    },
-    "MEMORY_SCHEMA_INVALID": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser_memory payload or persisted entry schema is invalid."
-    },
-    "MEMORY_ENTRY_NOT_FOUND": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "Requested browser_memory entry was not found."
-    },
-    "MEMORY_RESOURCE_STALE": {
-      "category": "tool.memory",
-      "retryable": false,
-      "summary": "browser-memory resource is stale."
-    },
     "RESOURCE_NOT_FOUND": {
       "category": "abml.ref",
       "retryable": false,

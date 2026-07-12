@@ -17,6 +17,7 @@ const changelogPath = path.join(root, "CHANGELOG.md");
 const packageLockPath = path.join(root, "package-lock.json");
 const commandCatalogPath = path.join(root, "src/commands/commandCatalog.ts");
 const nativeCommandSchemaPath = path.join(root, "src/bridge/protocol/native-command.schema.json");
+const testScriptPath = path.join(root, "scripts/run-tests.mjs");
 const coverageScriptPath = path.join(root, "scripts/run-coverage.mjs");
 const complexityScriptPath = path.join(root, "scripts/audit-complexity.mjs");
 const validationScriptPath = path.join(root, "scripts/run-validation.mjs");
@@ -27,6 +28,7 @@ const verifyWorkflowPath = path.join(root, ".github/workflows/verify.yml");
 const kernelRoot = path.join(root, "src", "kernels");
 const sessionKernelRoot = path.join(kernelRoot, "session");
 const commandsRoot = path.join(root, "src", "commands");
+const testsRoot = path.join(root, "tests");
 
 function text(filePath: string) {
 	return readFileSync(filePath, "utf8");
@@ -129,7 +131,7 @@ test("verify owns an exact complexity ratchet", () => {
 	const complexity = text(complexityScriptPath);
 	const validation = text(validationScriptPath);
 	const pkg = JSON.parse(text(packagePath)) as { scripts?: Record<string, string> };
-	assert.match(complexity, /expectedComplexFunctions\s*=\s*84/);
+	assert.match(complexity, /expectedComplexFunctions\s*=\s*81/);
 	assert.match(complexity, /expectedLongFunctions\s*=\s*0/);
 	assert.match(complexity, /assertExactBudget/);
 	assert.match(validation, /scripts\/audit-complexity\.mjs/);
@@ -205,18 +207,21 @@ test("package metadata keeps the Windows shim bin target inside packaged dist", 
 	assert.equal(binTarget?.startsWith("./src/"), false);
 });
 
-test("public docs describe memory as fact-only and observe as fact surfacing", () => {
+test("public contract has no built-in browser memory surface", () => {
 	const readme = text(readmePath);
-	assert.match(readme, /facts? only/i);
-	assert.match(readme, /SOPs?, workflows?, playbooks?, checklists?[\s\S]{0,80}agent instructions/i);
-	assert.match(readme, /browser_observe[\s\S]{0,120}surfaces?[\s\S]{0,120}facts?/i);
-});
-
-test("code wiki documents memory fact-only behavior and observe fact exposure", () => {
 	const wiki = text(codeWikiPath);
-	assert.match(wiki, /kind=fact/);
-	assert.match(wiki, /SOP、workflow、playbook、checklist/);
-	assert.match(wiki, /browser_observe[\s\S]{0,160}fact memory/i);
+	const catalog = text(commandCatalogPath);
+	const nativeSchema = text(nativeCommandSchemaPath);
+	for (const content of [readme, wiki, catalog, nativeSchema]) {
+		assert.doesNotMatch(content, /browser_memory|browser-memory|\.browser-pilot\/memory|browser memory|session memory|BROWSER_PILOT_MEMORY|MEMORY_[A-Z_]+/i);
+	}
+	for (const sourceRoot of [path.join(root, "src"), kernelRoot, commandsRoot]) {
+		assert.equal(readdirSync(sourceRoot).some((entry) => entry.toLowerCase().startsWith("memory")), false);
+	}
+	assert.equal(readdirSync(testsRoot).some((entry) => entry.toLowerCase() === "memory"), false);
+	for (const workflowPath of [misePath, testScriptPath, coverageScriptPath, validationScriptPath]) {
+		assert.doesNotMatch(text(workflowPath), /test-memory|tests[\\/]memory|run-(?:tests|coverage)\.mjs\s+memory|["']memory["']\s*:/i);
+	}
 });
 
 test("public docs describe browser_observe as canonical ABML observation with legacy projections isolated", () => {

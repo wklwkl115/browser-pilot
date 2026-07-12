@@ -6,11 +6,11 @@ const scope = process.argv[2] || "all";
 const root = process.cwd();
 const testsDir = path.join(root, "tests");
 const scopeDirs = {
-	all: ["bootstrap", "cli", "artifacts", "web-security", "memory", "governance"],
+	all: ["bootstrap", "cli", "artifacts", "web-security", "observe", "governance"],
 	cli: ["bootstrap", "cli"],
 	artifacts: ["bootstrap", "artifacts"],
 	"web-security": ["bootstrap", "web-security"],
-	memory: ["bootstrap", "memory"],
+	observe: ["bootstrap", "observe"],
 	governance: ["bootstrap", "governance"],
 };
 

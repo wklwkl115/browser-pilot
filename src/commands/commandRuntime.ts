@@ -11,7 +11,6 @@ import { fitInlineJsonToBudgetMeasured } from "../kernels/evidence/distill/fit.j
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
 import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, MECHANICAL_PARAM, optionalTargetRef, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./commandShared.js";
-import type { CommandMemoryAugmentationPlan } from "./memoryAugmentationTypes.js";
 import type { BrowserCommandDefinition, BrowserCommandSink } from "./commandDefinition.js";
 import type { CommandFactGranularity } from "./resultTypes.js";
 import type { SessionOperationBeginInput } from "../kernels/session/operationRegistry.js";
@@ -72,7 +71,6 @@ type CommandResultOptions = {
 	granularityCeiling?: Exclude<CommandFactGranularity, "omit">;
 	stableRefs?: Set<string>;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
-	memoryAugmentationPlan?: CommandMemoryAugmentationPlan;
 	activeContext?: Record<string, unknown>;
 };
 

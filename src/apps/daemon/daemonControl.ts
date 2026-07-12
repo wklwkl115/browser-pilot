@@ -3,9 +3,9 @@
  *
  * The daemon is a **user-local singleton** (one per user/profile), NOT per caller
  * cwd. Its lockfile lives in a user-local state root — never under the caller
- * project `.browser-pilot/`, which is reserved for artifacts/memory/evidence. Multiple
+ * project `.browser-pilot/`, which is reserved for artifacts and evidence. Multiple
  * projects invoke the same daemon; each `/invoke` carries the caller `cwd` so
- * artifact/memory roots stay request-scoped.
+ * artifact roots stay request-scoped.
  *
  * This module is pure control plane (loopback HTTP + lockfile); it does not start
  * a BrowserBridgeServer. Auto-start spawns the resolved local daemon entry via

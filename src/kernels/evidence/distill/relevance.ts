@@ -1,7 +1,7 @@
 import { RELEVANCE_TUNING } from "./relevanceTuning.js";
 import type { RelevanceTapTerm } from "./relevanceTaps.js";
 
-export type RelevanceSourceTag = "A" | "B" | "C" | "D" | "E" | "F";
+export type RelevanceSourceTag = "A" | "B" | "C" | "D" | "E";
 
 export type RelevanceTerm = RelevanceTapTerm & {
 	source: RelevanceSourceTag;
@@ -65,7 +65,6 @@ function sourceBase(term: RelevanceTerm): number {
 	if (term.source === "C") return RELEVANCE_TUNING.intentMatch;
 	if (term.source === "D") return RELEVANCE_TUNING.urlMatch;
 	if (term.source === "E") return RELEVANCE_TUNING.intentMatch;
-	if (term.source === "F") return RELEVANCE_TUNING.memoryMatch;
 	if (term.kind === "selectorLiteral") return RELEVANCE_TUNING.selectorMatch;
 	return term.kind === "literal" && /[#.[]/.test(term.term) ? RELEVANCE_TUNING.selectorMatch : RELEVANCE_TUNING.directMatch;
 }
@@ -103,7 +102,7 @@ function fieldScore(value: unknown, term: PreparedTerm, fieldWeight: number): nu
 	if (haystack.includes(term.needle) || term.needle.includes(haystack) && haystack.length >= 3) matched = true;
 	else if (term.grams.length) matched = term.grams.some((gram) => haystack.includes(gram));
 	if (!matched) return 0;
-	const base = term.source !== "F" && (term.kind === "urlPathToken" || term.kind === "urlQueryToken") ? RELEVANCE_TUNING.urlMatch : sourceBase({ term: term.needle, kind: term.kind, source: term.source, weight: term.weight });
+	const base = term.kind === "urlPathToken" || term.kind === "urlQueryToken" ? RELEVANCE_TUNING.urlMatch : sourceBase({ term: term.needle, kind: term.kind, source: term.source, weight: term.weight });
 	return base * term.weight * fieldWeight;
 }
 

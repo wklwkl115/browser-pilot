@@ -7,7 +7,7 @@
  *   GET  /status                        → {ok, bridgePort, running, extensionConnected, tabs, tools}
  *   POST /shutdown                       → stop the bridge + control server
  *
- * `cwd` arrives per-invoke and is passed to execute as ctx.cwd, so artifact/memory
+ * `cwd` arrives per-invoke and is passed to execute as ctx.cwd, so artifact/evidence
  * roots stay scoped to the *caller*, not the daemon. The daemon is a user-local
  * singleton (see daemonControl.ts); its lockfile lives in a user-local state root.
  *
@@ -21,8 +21,6 @@ import type { BrowserBridgeSnapshot, BrowserTabInfo } from "../../bridge/server/
 import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
-import { resolveBrowserResultEvidence } from "../../resources/browserResultEvidence.js";
-import { drainMemoryProfileFlushes } from "../../memory/profileService.js";
 import { validateCommandArgs } from "../../validation/commandArgs.js";
 import { registerHook, emitLog, timingLogHook, type MiddlewareContext } from "../../commands/middleware.js";
 import { resolveUsageLogOptions, createUsageLogHook } from "../../commands/usageLog.js";
@@ -456,9 +454,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	};
 
 	const adapter = new CommandManifestIndex();
-	defineBrowserCommands(adapter, bridgeServer, ensureStarted, {
-		memoryEvidenceResolver: resolveBrowserResultEvidence,
-	});
+	defineBrowserCommands(adapter, bridgeServer, ensureStarted);
 	const toolByName = new Map<string, CommandDefinition>(adapter.getCommands().map((def) => [def.name, def]));
 	const toolCount = toolByName.size;
 
@@ -472,9 +468,6 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		tenantLease.stop();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 		await bridgeServer.stop().catch(() => {
-			/* best-effort */
-		});
-		await drainMemoryProfileFlushes().catch(() => {
 			/* best-effort */
 		});
 		if (writeLock) removeLockfile();

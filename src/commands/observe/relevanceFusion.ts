@@ -71,7 +71,7 @@ export type ObserveRelevance = {
 	artifact: Record<string, unknown>;
 };
 
-export function buildObserveRelevance(server: BrowserCommandRuntimePort, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>, memoryTerms: ObserveRelevanceTerm[] = []): ObserveRelevance | undefined {
+export function buildObserveRelevance(server: BrowserCommandRuntimePort, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>): ObserveRelevance | undefined {
 	if (!relevanceEnabled(params)) return undefined;
 	const trace = typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(browserSessionId) : undefined;
 	const terms = [
@@ -79,7 +79,6 @@ export function buildObserveRelevance(server: BrowserCommandRuntimePort, params:
 		...urlTerms(url),
 		...archetypeTerms(inference),
 		...intentTerms(observeIntent(params)),
-		...memoryTerms,
 	];
 	if (!terms.length) return undefined;
 	const result = computeObserveRelevanceMap(entityRelevanceInputs(entities), terms);

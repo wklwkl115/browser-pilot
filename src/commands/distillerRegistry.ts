@@ -1,9 +1,9 @@
 import { jsonCost } from "../kernels/evidence/distill/cost.js";
 import { compactEntityRenderingValue, lineEncodeEntity } from "../kernels/evidence/distill/granularity.js";
 import { mintRef } from "../kernels/refs/core.js";
-import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHookCollectData, summarizeHookPerformance, summarizeMemoryResult, summarizeNetworkData, summarizeWsSessionData } from "./summaries/index.js";
+import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHookCollectData, summarizeHookPerformance, summarizeNetworkData, summarizeWsSessionData } from "./summaries/index.js";
 import { isRecord } from "./summaries/common.js";
-import { EvidenceSummarySchema, HookDomFlowSummarySchema, MemorySummarySchema, NetworkSummarySchema } from "./summaries/outputSchemas.js";
+import { EvidenceSummarySchema, HookDomFlowSummarySchema, NetworkSummarySchema } from "./summaries/outputSchemas.js";
 import type { TSchema } from "typebox";
 import type { CommandFact } from "./resultTypes.js";
 
@@ -45,7 +45,6 @@ function hookToolDistiller(value: unknown, command?: string): Record<string, unk
 const evidenceDistiller: Distiller = (value) => summarizeEvidenceData(unwrapDistillData(value));
 const networkDistiller: Distiller = (value) => summarizeNetworkData(unwrapDistillData(value));
 const wsDistiller: Distiller = (value, command) => summarizeWsSessionData(String(command || "ws"), unwrapDistillData(value));
-const memoryDistiller: Distiller = (value) => summarizeMemoryResult(unwrapDistillData(value));
 
 function summaryFact(ref: string, plane: CommandFact["plane"], value: Record<string, unknown>, salience: CommandFact["salience"]): CommandFact {
 	const compact = plane === "entity" ? compactEntityRenderingValue(value) : { ...value };
@@ -119,12 +118,6 @@ export function ensureBuiltinDistillersReady(): void {
 			summarySchema: HookDomFlowSummarySchema,
 			distill: hookToolDistiller,
 			factify: (value, command) => factifySummary("browser_hook", value, command, hookToolDistiller, { consequence: 160, actionability: 40 }),
-		});
-		registerDistillerDefinition({
-			commandName: "browser_memory",
-			summarySchema: MemorySummarySchema,
-			distill: memoryDistiller,
-			factify: (value, command) => factifySummary("browser_memory", unwrapDistillData(value), command, memoryDistiller, { structure: 160 }),
 		});
 		registerCommandDistiller("evidence.collect", (command) => command === "evidence.collect", evidenceDistiller);
 		registerCommandDistiller("network.*", (command) => command.startsWith("network."), networkDistiller);

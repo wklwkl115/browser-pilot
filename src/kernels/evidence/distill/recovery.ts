@@ -119,24 +119,6 @@ function websocketRecoveryActions(code: string): string[] {
 	]);
 }
 
-function memoryRecoveryActions(code: string, details: Record<string, unknown>): string[] {
-	const id = typeof details.id === "string" ? redactSensitiveText(details.id) : undefined;
-	const uri = typeof details.uri === "string" ? redactSensitiveText(details.uri) : undefined;
-	const scopeKind = typeof details.scopeKind === "string" ? redactSensitiveText(details.scopeKind) : undefined;
-	const scopeHint = scopeKind ? ` for scopeKind=${scopeKind}` : "";
-	return uniqueRecoveryActions([
-		code === "MEMORY_ACTION_UNSUPPORTED" ? "use browser_memory action=record|recall|read|validate" : undefined,
-		["MEMORY_SCOPE_REQUIRED", "UNSUPPORTED_SCOPE_KIND"].includes(code) ? `browser_memory action=record|recall with url or explicit scopeKind/scopeKey${scopeHint}` : undefined,
-		code === "MEMORY_EVIDENCE_REQUIRED" ? "record memory facts with durable evidenceRefs such as saved.path, browser-result://, or a non-stale snapshot reference" : undefined,
-		["MEMORY_EVIDENCE_UNREADABLE", "MEMORY_EVIDENCE_UNRESOLVABLE", "MEMORY_EVIDENCE_STALE", "MEMORY_RESOURCE_STALE"].includes(code) ? "re-capture evidence with browser_observe or the original capture tool, then retry browser_memory" : undefined,
-		code === "MEMORY_SECRET_DETECTED" ? "remove secrets, tokens, credentials, captcha-evasion, or stealth instructions before recording memory" : undefined,
-		code === "MEMORY_SCHEMA_INVALID" ? "record only durable memory facts with title, non-empty triggers, bounded body, kind=fact, and supported scope fields; do not store SOP/workflow/instruction content" : undefined,
-		code === "MEMORY_ENTRY_NOT_FOUND" ? "browser_memory action=recall or read by a fresh browser-memory:// URI/id" : undefined,
-		id && ["MEMORY_ENTRY_NOT_FOUND", "MEMORY_RESOURCE_STALE"].includes(code) ? `browser_memory action=read id=${id}` : undefined,
-		uri && ["MEMORY_EVIDENCE_UNRESOLVABLE", "MEMORY_RESOURCE_STALE", "MEMORY_ENTRY_NOT_FOUND"].includes(code) ? `retry with a fresh resource URI instead of ${uri}` : undefined,
-	]);
-}
-
 export function mergeRecoveries(primary: ErrorRecovery | undefined, secondary: ErrorRecovery | undefined): ErrorRecovery | undefined {
 	if (!primary) return secondary;
 	if (!secondary) return primary;
@@ -155,7 +137,6 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 	const actions = uniqueRecoveryActions([
 		...abmlRecoveryActions(code, details),
 		...websocketRecoveryActions(code),
-		...memoryRecoveryActions(code, details),
 		["NO_TAB", "TAB_NOT_FOUND", "INVALID_TAB_ID", "TAB_ID_REQUIRED", "BROWSER_NOT_FOUND"].includes(code) ? "browser_tabs action=list" : undefined,
 		code === "AMBIGUOUS_TAB_ID" ? "browser_tabs action=selectBrowser then retry with explicit targetRef/tabHandle" : undefined,
 		["SELECTOR_NOT_FOUND", "INVALID_SELECTOR", "ELEMENT_NOT_FOUND"].includes(code) ? "browser_observe to refresh the page model; explicit legacy/debug projection browser_observe mode=html can inspect exact DOM evidence" : undefined,

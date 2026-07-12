@@ -17,7 +17,7 @@ traffic, local files selected for upload, and local-only artifacts.
 
 ## Handling Rules
 
-- Do not upload `.browser-pilot/artifacts/`, `.browser-pilot/memory/`, cookies,
+- Do not upload `.browser-pilot/artifacts/`, cookies,
   authorization headers, access tokens, private keys, or site-specific
   credential material.
 - Prefer local fixtures or redacted artifacts when reporting behavior.

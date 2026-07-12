@@ -29,7 +29,7 @@ Browser Pilot 是一个面向 AI Agent 的真实浏览器控制系统。它通�
 - tab、frame、session、lease 管理；
 - network/hook/evidence/screenshot/artifact 采集；
 - HTTP replay、crawl、fuzz、SQLi、template、cookie 分析等 Web Security 工作流；
-- 本地 memory 与 evidence envelope 管理。
+- 本地 artifact 与 evidence envelope 管理。
 
 项目包信息位于 [`package.json`](package.json)：
 
@@ -66,7 +66,6 @@ browser-pilot/
 │  ├─ browser-command-runtime/      command runtime 辅助
 │  ├─ browser-page-runtime/         页面脚本评估辅助
 │  ├─ artifacts/                    artifact 读写与检索
-│  ├─ memory/                       memory 文件、profile、recall 存储层
 │  ├─ resources/                    browser-result resource/ref 存储
 │  ├─ scan/                         scan script 构建与页面摘要
 │  ├─ content/                      content extraction script 构建
@@ -368,14 +367,14 @@ MV3 service worker 不能稳定持有长期 WebSocket，因此项目使用 offsc
 
 ### 5.5 `src/commands`
 
-Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向下调用 bridge server、browser runtime、kernel 与 artifacts/memory/resource 层。
+Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向下调用 bridge server、browser runtime、kernel 与 artifacts/resource 层。
 
 职责：
 
 - 定义公开工具名称、描述、prompt、TypeBox 参数 schema；
 - 注册所有工具；
 - 统一 timeout、maxChars、targetRef/tabId、operation tracking；
-- 统一结果 envelope、summary、artifact fallback、redaction、memory auto-surface、evidence；
+- 统一结果 envelope、summary、artifact fallback、redaction、evidence；
 - 实现 core browser tools 与 Web Security tools。
 
 核心文件：
@@ -390,7 +389,7 @@ Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向�
 | [`browserOperation.ts`](src/commands/browserOperation.ts) | `withBrowserOperation()` 事务编排、liveness 终态与统一 outcome。 |
 | [`browserOperationResult.ts`](src/commands/browserOperationResult.ts) | 所有 write outcome 的唯一公开结果出口：终态续行决策、预算压缩、完整 evidence artifact 与渐进读取 hints。 |
 | [`operationResolvers.ts`](src/commands/operationResolvers.ts) | write command completion resolver registry 与治理检查。 |
-| [`resultMiddleware.ts`](src/commands/resultMiddleware.ts) | distilled envelope、artifact、summary、memory。 |
+| [`resultMiddleware.ts`](src/commands/resultMiddleware.ts) | distilled envelope、artifact、summary、evidence。 |
 | [`validationMiddleware.ts`](src/commands/validationMiddleware.ts) | schema validation helper。 |
 | [`distillerRegistry.ts`](src/commands/distillerRegistry.ts) | summary distiller registry。 |
 
@@ -405,7 +404,6 @@ Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向�
 | `browser_network`、`browser_hook`、`browser_frame` | [`nativeActionCommands.ts`](src/commands/nativeActionCommands.ts) |
 | `browser_evidence` | [`evidenceCommand.ts`](src/commands/evidenceCommand.ts) |
 | `browser_artifact` | [`artifactCommand.ts`](src/commands/artifactCommand.ts) |
-| `browser_memory` | [`memoryCommand.ts`](src/commands/memoryCommand.ts) |
 | `browser_download`、`browser_upload` | [`transferCommands.ts`](src/commands/transferCommands.ts) |
 | `browser_screenshot` | [`screenshotCommand.ts`](src/commands/screenshotCommand.ts) |
 
@@ -433,7 +431,6 @@ Kernels 是纯逻辑层。这里的代码不做浏览器 I/O、不读写文件�
 | [`kernels/abml`](src/kernels/abml) | Agent Browser Markup Language，页面实体、AX/DOM 融合、diff、relations、collections、causal、verbs。 |
 | [`kernels/refs`](src/kernels/refs) | 通用 ref descriptor 类型，以及 `bp-ref://` ref mint/parse/id/policy/text extraction。 |
 | [`kernels/evidence/distill`](src/kernels/evidence/distill) | fact、budget、projection、artifact plan、recovery、salience envelope。 |
-| [`kernels/memory`](src/kernels/memory) | memory profile、terms、recall、routing、salience、staleness。 |
 | [`kernels/session`](src/kernels/session) | session、lease、operation、snapshot、perception ledger、intent refs。 |
 | [`kernels/security`](src/kernels/security) | SQLi oracle、replay diff 等安全工具纯逻辑。 |
 | [`kernels/temporal`](src/kernels/temporal) | timeout、state loss、staleness、deadline pressure 判断。 |
@@ -533,7 +530,7 @@ TS adapter 位于 [`src/native/browserPilotNativeKernels.ts`](src/native/browser
 | `browserOperationCommandResult()` | [`src/commands/browserOperationResult.ts`](src/commands/browserOperationResult.ts) | 保留根终态契约；按预算保存/压缩 operation evidence，并输出安全 `continuation` 与 artifact JSON path。 |
 | `resolveBrowserOperationCompletion()` | [`src/commands/operationResolvers.ts`](src/commands/operationResolvers.ts) | command-specific mechanical completion evidence。 |
 | `jsonCommandResult()` | [`src/commands/commandRuntime.ts`](src/commands/commandRuntime.ts) | JSON 结果 envelope 入口。 |
-| `distilledJsonResult()` | [`src/commands/resultMiddleware.ts`](src/commands/resultMiddleware.ts) | 摘要、artifact、redaction、memory、evidence envelope。 |
+| `distilledJsonResult()` | [`src/commands/resultMiddleware.ts`](src/commands/resultMiddleware.ts) | 摘要、artifact、redaction、evidence envelope。 |
 | `validateCommandArgs()` | [`src/validation/commandArgs.ts`](src/validation/commandArgs.ts) | TypeBox 参数转换与校验。 |
 
 ### 6.5 Kernels / Runtime / Native
@@ -575,7 +572,6 @@ Core tools：
 - `browser_frame`
 - `browser_screenshot`
 - `browser_artifact`
-- `browser_memory`
 
 Web Security tools：
 
@@ -662,7 +658,6 @@ Envelope 常见字段：
 - `snapshot`
 - `activeContext`
 - `saved`
-- `memory`
 - `evidence`
 - `artifact_hints`
 
@@ -678,19 +673,17 @@ Envelope budget 的最后一级仍是严格预算，不是“尽量压缩”：[
 
 #### `browser_observe`
 
-用于读取当前浏览器状态的 canonical ABML `PageObservation` 页面模型。正常 agent 工作流应省略 `mode`，只传目标、时间、预算和增量边界（如 `tabId`、`targetRef`、`url`、`fresh`、`diff`、`baseline*`、`timeoutMs`、`maxChars`、`detailLevel`）或显式可选 add-on（如 `content:"readability"` / `readability:true`）。返回模型以 ABML/scan 为结构权威来源，并把 target/context、gist、outline、entities、actionables/refs、relations、collections、snapshot、diff/treeDiff、causal、memory、scan-backed content/text digest、evidence/artifact 引用和 diagnostics 组织为一个稳定 envelope。`diff:true` 的自动 baseline 只会从相同 `browserSessionId` 与 effective tab 的最近 scan snapshot 中选择，避免跨 session 复用同 tabId snapshot。
+用于读取当前浏览器状态的 canonical ABML `PageObservation` 页面模型。正常 agent 工作流应省略 `mode`，只传目标、时间、预算和增量边界（如 `tabId`、`targetRef`、`url`、`fresh`、`diff`、`baseline*`、`timeoutMs`、`maxChars`、`detailLevel`）或显式可选 add-on（如 `content:"readability"` / `readability:true`）。返回模型以 ABML/scan 为结构权威来源，并把 target/context、gist、outline、entities、actionables/refs、relations、collections、snapshot、diff/treeDiff、causal、scan-backed content/text digest、evidence/artifact 引用和 diagnostics 组织为一个稳定 envelope。`diff:true` 的自动 baseline 只会从相同 `browserSessionId` 与 effective tab 的最近 scan snapshot 中选择，避免跨 session 复用同 tabId snapshot。Browser Pilot 不持久化或自动注入跨调用知识；需要复用的任务上下文由调用方显式携带。
 
 Provider budget telemetry summary 是 canonical observe diagnostics 的稳定、bounded 摘要，JSON path 为 `pageObservation.diagnostics.providerBudgetTelemetry`，CLI/result summary 中对应 `summary.pageObservation.diagnostics.providerBudgetTelemetry`，saved observe artifact 中对应同一 `pageObservation.diagnostics.providerBudgetTelemetry`。每个 item 由 [`observe/scanProjection.ts`](src/commands/observe/scanProjection.ts) 从已有 provider diagnostics 派生，包含 `provider`、归一化 `status`（`executed` / `scan-backed` / `skipped` / `failed` / `degraded`），以及可选 `requested`、`durationMs`、compact `counts`、compact `budget`、`truncated`、`degraded`、`reason`、`errorCode` 和 artifact 引用。它只表达来源真实性、耗时、计数、预算、截断/降级和 fallback reason，不复制 axe/readability/full AX 大型原始结果，也不改变 `diagnostics.providers`、provider-specific diagnostics 或公共 tool surface。telemetry 中的 artifact 引用复用 saved observe artifact 路径：HTML provider 指向 `data.html`，evidence 指向 `envelope`，axe/readability 指向各自 runner 写入的 artifact/jsonPath/kind；需要详细内容应通过 `browser_artifact` 按这些稳定 JSON path 定向读取。该 summary 属于 diagnostics-only boundary：任何 `skipped`、`failed`、`degraded` 或预算信息都不得创建、删除、重排或重命名 actionables、refs、entities、relations、collections，也不得改变 content plane、scan/ABML 结构权威、AX/DOM fusion actionability 或 artifact redaction 关系。
 
 任何显式 `mode` 都是 legacy/debug/projection 兼容入口，并在 summary/details/diagnostics 可见面中标记为非 canonical；这包括显式 `mode=scan`。显式 `mode=content/html/text/tabs` 只能作为正文、可见文本、精确 DOM/HTML evidence 或 tab context/diagnostics 投影来源，不能替代省略 `mode` 的 canonical 页面模型。
 
-`scan` / `text` 会通过 observe memory augmentation 自动在结果 envelope 的 `memory` 字段暴露匹配的本地 fact memory。该自动暴露面只面向 `kind=fact` 的事实卡片：首次匹配可内联 bounded body，后续/折叠视图只给 handle 与元数据；SOP、workflow、playbook、checklist、步骤或 agent 指令不应被记录，也不会作为 observe 行为指南暴露。
-
 可选 accessibility diagnostics 通过 `diagnostics:"axe"`、`diagnostics:"accessibility"`、`debug:"axe"`、`axe:true` 或 `axeDiagnostics:true` 在省略 `mode` 的 canonical observe 路径显式触发。实现位于 [`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)，按需从 `axe-core` 读取浏览器脚本并通过现有 page runtime 注入当前页面，使用独立小超时、最大 inline sample 数与 fail-closed fallback。axe 结果只进入 `PageObservation.diagnostics.axe`、`PageObservation.diagnostics.providers.axe` 和 saved observe artifact 的 `axe` 节点；默认未请求时不运行也不暗示已执行。axe node/html/snippet 不进入 inline summary，完整原始结果只随 observe artifact 保存并经过现有 artifact/redaction envelope；axe issue 不创建、删除或重排 actionables、refs、entities、relations、collections，Browser Pilot 的 scan/ABML actionability、hit-test、editable、visibility 与 AX/DOM fusion 仍是结构和执行权威。
 
 可选 Readability content-plane provider 通过 `content:"readability"` 或 `readability:true` 在省略 `mode` 的 canonical observe 路径显式触发。实现位于 [`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts)，按需从 `@mozilla/readability` 读取浏览器脚本并通过现有 page runtime 在 DOM clone 上运行，使用独立小超时、`maxElemsToParse`、最大 inline/content 字符数与 fail-closed fallback。Readability 结果只进入 `PageObservation.diagnostics.readability`、`PageObservation.diagnostics.providers.readability`、saved observe artifact 的 `readability` 节点，以及 artifact hints/preferred reads 的 `Readability article`；默认未请求时不运行也不暗示已执行。Readability HTML 会移除 script/style/noscript/template 等不安全片段并经过现有 redaction；它不创建、删除或重排 actionables、refs、entities、relations、collections，scan/ABML、AX/DOM fusion、hit-test、editable 与 visibility 仍是结构和执行权威。强 CSP 页面要求 runner 避免页面内字符串 eval，Readability CJS 源码以同一 CDP evaluation 表达式直接执行。
 
-关键入口：[`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts)；scan/text/tabs 内部阶段的所有者见 [5.5 Commands 模块表](#55-srccommands)。可选 provider 的独立 runner 位于 [`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts) 与 [`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)，memory 边界位于 [`observe/memoryAugmentation.ts`](src/commands/observe/memoryAugmentation.ts)。
+关键入口：[`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts)；scan/text/tabs 内部阶段的所有者见 [5.5 Commands 模块表](#55-srccommands)。可选 provider 的独立 runner 位于 [`observe/readabilityRunner.ts`](src/commands/observe/readabilityRunner.ts) 与 [`observe/axeDiagnosticsRunner.ts`](src/commands/observe/axeDiagnosticsRunner.ts)。
 
 #### `browser_execute`
 
@@ -744,7 +737,7 @@ CLI 调用通常是短生命周期的。Daemon 长驻并持有 browser session�
 - CLI 退出不会断开浏览器连接；
 - extension 连接状态可复用；
 - 多项目共享用户本地 daemon；
-- 每次 `/invoke` 携带 `cwd`，用于 artifacts/memory/evidence 的请求级作用域。
+- 每次 `/invoke` 携带 `cwd`，用于 artifacts/evidence 的请求级作用域。
 - pairing `pairingId` 作为 operation owner 传播；没有 pairing 的本地 CLI 使用稳定 `local-cli` owner，late effects 只能被相同 owner + browser session 的下一次相关 operation 消费。
 - `/invoke` 对 write command 保持到 terminal outcome，不在 transport ACK 后提前返回。
 
@@ -895,7 +888,7 @@ native/browser-pilot-kernels binary
 ```text
 apps/cli ──▶ apps/daemon control client
 apps/daemon ──▶ bridge/server + commands
-commands ──▶ bridge runtime port + browser-runtime + kernels + artifacts/resources/memory
+commands ──▶ bridge runtime port + browser-runtime + kernels + artifacts/resources
 browser-runtime ──▶ kernels + ports/resources/scan/content/capture
 bridge/server ──▶ kernels/session + extension protocol types
 bridge/extension ──▶ Chrome APIs + generated protocol
@@ -908,7 +901,6 @@ kernels ──▶ kernels 内部纯模块
 - `dom-accessibility-api` 是 scan/capture 命名与 role provider 链路的运行时依赖，只能通过 `src/scan/domAccessibilityApiBundle.ts` 注入页面世界供 scan template 使用；不要把它引入 ABML kernels 或 extension/bridge 公共协议。
 - `axe-core` 是 `browser_observe` accessibility diagnostics 的运行时依赖，只能作为显式 diagnostics-only add-on 经 `src/commands/observe/axeDiagnosticsRunner.ts` 按需读取并注入页面运行；不要把它引入 ABML kernels、extension service worker 常驻 bundle、command catalog 或 bridge/native 公共协议。默认 no-mode observe 不运行 axe，axe 输出只进入 provider diagnostics 与 artifact，不改变结构模型或 actionability。
 - `@mozilla/readability` 是 `browser_observe` content plane 的运行时依赖，只能作为显式 Readability add-on 经 `src/commands/observe/readabilityRunner.ts` 按需读取并注入页面运行；不要把它引入 ABML kernels、extension service worker 常驻 bundle、command catalog 或 bridge/native 公共协议。默认 no-mode observe 不运行 Readability，Readability 输出只进入 provider diagnostics、content artifact hints 与 saved artifact 的 `readability` 节点，不改变结构模型或 actionability。
-- `src/commands/memory/*` 只能记录与召回 `kind=fact` 的本地事实记忆；不得把 SOP、workflow、playbook、checklist、步骤或 agent 指令语义写入 memory。record/validate 会拒绝非 fact kind 与 SOP-like 内容；`browser_observe` 只自动暴露匹配到的 fact memory，不把 memory 当作流程指南。需要 daemon/bridge 信息时优先依赖窄接口，例如 snapshot evidence 只依赖 `getObservationSnapshot()`。
 - `bridge/browser_pilot_bridge/` 和 `dist/` 是生成产物，不手改。
 - `src/bridge/protocol/native-command.schema.json` 是 native protocol 源头。
 - `commandCatalog.ts` 是 public tool surface 源头。
@@ -1074,18 +1066,14 @@ BROWSER_PILOT_DAEMON_STATE_DIR
 
 状态目录中存放 daemon lockfile、token、pairing/lease 相关状态。
 
-### 12.3 Artifact 与 Memory
+### 12.3 Artifact 与 Resource
 
-Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级作用域。相关模块：
+Artifact 与 resource 以每次 `/invoke` 携带的 `cwd` 作为请求级作用域。相关模块：
 
 - [`src/artifacts`](src/artifacts)
 - [`src/resources`](src/resources)
-- [`src/memory`](src/memory)
-- [`src/commands/memory`](src/commands/memory)
 
 单 artifact 结构化读取上限由 [`artifactReaderShared.ts`](src/artifacts/artifactReaderShared.ts) 的 `MAX_ARTIFACT_READ_BYTES` 统一为 `41943040` bytes（40 MiB），高于默认 32 MiB WebSocket frame，为 operation envelope 留出余量。`browserOperationResult.ts` 在落盘前按最终 UTF-8 bytes 使用同一 ceiling 预检；超限走 fail-open，不写入或发布一个 `browser_artifact` 无法 inspect/paths/json 的假 continuation。
-
-`src/commands/memory/store.ts` 保持 record/validate/recall 的入口职责；payload fact-only validation 与 evidence/profile enrichment 位于 `validation.ts`/`evidence.ts`，磁盘写入、tombstone、bounded body read 位于 `repository.ts`，recall ranking 与 dedup/similar scoring 位于 `ranking.ts`。这些拆分不改变 `.browser-pilot/memory` 下的 frontmatter、index、URI 或 tombstone 兼容格式。
 
 ### 12.4 TypeScript 配置边界
 
@@ -1107,11 +1095,11 @@ Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级
 
 | Scope | 目录 |
 |---|---|
-| `all` | `bootstrap`、`cli`、`artifacts`、`web-security`、`memory`、`governance` |
+| `all` | `bootstrap`、`cli`、`artifacts`、`web-security`、`observe`、`governance` |
 | `cli` | `bootstrap`、`cli` |
 | `artifacts` | `bootstrap`、`artifacts` |
 | `web-security` | `bootstrap`、`web-security` |
-| `memory` | `bootstrap`、`memory` |
+| `observe` | `bootstrap`、`observe` |
 | `governance` | `bootstrap`、`governance` |
 
 运行示例：
@@ -1119,14 +1107,14 @@ Artifact、resource、memory 以每次 `/invoke` 携带的 `cwd` 作为请求级
 ```bash
 node scripts/run-tests.mjs all
 node scripts/run-tests.mjs cli
-node scripts/run-tests.mjs memory
+node scripts/run-tests.mjs observe
 node --import tsx --test tests/bootstrap/smoke.test.ts
 mise run coverage
 mise run smoke-browser
 node scripts/run-coverage.mjs all
 ```
 
-Observe regression benchmark 位于 [`tests/memory/observeRegressionBenchmark.test.ts`](tests/memory/observeRegressionBenchmark.test.ts)，随 `memory`/`all` scope 运行。新增 case 应使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖，并保护 outline/content hints、actionables/control relations、bounded samples、cross-origin 不越权表达和 provider telemetry 兼容路径。真实浏览器生命周期由独立 `mise run smoke-browser` acceptance gate 负责，不把 Chrome/Edge 不确定性混入离线回归组。
+Observe regression benchmark 位于 [`tests/observe/observeRegressionBenchmark.test.ts`](tests/observe/observeRegressionBenchmark.test.ts)，随 `observe`/`all` scope 运行。新增 case 应使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖，并保护 outline/content hints、actionables/control relations、bounded samples、cross-origin 不越权表达和 provider telemetry 兼容路径。真实浏览器生命周期由独立 `mise run smoke-browser` acceptance gate 负责，不把 Chrome/Edge 不确定性混入离线回归组。
 
 Operation progressive-disclosure regression 位于 [`tests/cli/commandExecution.test.ts`](tests/cli/commandExecution.test.ts)：它保护小结果不多绕 artifact、大结果在严格字符预算内仍保留根终态和 completion source、完整 result 可由 returned path/jsonPath 读取、artifact 写失败不覆盖已完成终态，以及 `no_effect` / `effect_observed` 不建议盲重放。Governance test 还枚举 `src/commands` 的 `withBrowserOperation()` 调用点，要求全部使用统一 `browserOperationCommandResult()` owner。
 
@@ -1221,7 +1209,6 @@ mise run dev-governance
 | 修改 tab/session 路由 | `src/bridge/server/BrowserTabSessionRouter.ts`、`src/kernels/session/*`。 |
 | 修改 result envelope | `src/commands/resultMiddleware.ts`、`src/kernels/evidence/distill/*`。 |
 | 修改 artifact 读取 | `src/artifacts/*`、`src/commands/artifactCommand.ts`。 |
-| 修改 memory recall/record | `src/commands/memory/*`、`src/memory/*`、`src/kernels/memory/*`。 |
 | 修改 scan 页面脚本 | `capture-src/entries/scanTemplate.ts`、`src/scan/buildScanScript.ts`。 |
 | 修改 content 提取 | `capture-src/entries/contentTemplate.ts`、`src/content/buildContentScript.ts`。 |
 | 修改 Rust 加速 | `native/browser-pilot-kernels/src/main.rs`、`src/native/browserPilotNativeKernels.ts`。 |

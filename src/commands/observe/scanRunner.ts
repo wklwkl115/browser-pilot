@@ -116,7 +116,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		resultParams,
 		outputPath,
 		browserSessionId,
-		ctx,
 		onUpdate,
 		timings: observeTimings,
 	});
@@ -164,7 +163,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const renderStartedAt = Date.now();
 	const abmlProviderFailure = providerFailureFromAbmlRead(observation.abmlRead);
 	if (abmlProviderFailure) providerFailures.push(abmlProviderFailure);
-	const { assembly, memoryAugmentationPlan } = await prepareScanAssembly({
+	const { assembly } = prepareScanAssembly({
 		server,
 		params,
 		mode,
@@ -174,7 +173,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		data,
 		bridge,
 		snapshotMeta,
-		ctx,
 		observation,
 		baseline,
 		causal,
@@ -211,7 +209,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		capture,
 		assembly,
 		granularityCeiling,
-		memoryAugmentationPlan,
 		scanPageFingerprint,
 		effectivePageFingerprint,
 		detailLevel,

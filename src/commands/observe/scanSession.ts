@@ -3,7 +3,7 @@ import { buildScanScript } from "../../scan/buildScanScript.js";
 import { isRecord } from "../../utils/params.js";
 import { readPageFingerprint, type PageFingerprint } from "../pageSignals.js";
 import { DEFAULT_TOOL_TIMEOUT_MS } from "../commandShared.js";
-import { commandTimeoutMs, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
+import { commandTimeoutMs, type CommandOnUpdate } from "../commandRuntime.js";
 import type { CommandFactGranularity } from "../resultTypes.js";
 import { resolveBaselineEntities } from "./baseline.js";
 import type { ObserveMode, ObserveToolParams } from "./common.js";
@@ -69,11 +69,10 @@ export async function prepareScanSession(options: {
 	resultParams: ObserveToolParams;
 	outputPath: string | undefined;
 	browserSessionId: string | undefined;
-	ctx: CommandResultContext;
 	onUpdate?: CommandOnUpdate;
 	timings: ObserveTimingMetrics;
 }) {
-	const { server, params, mode, tabs, tabId, maxChars, resultParams, outputPath, browserSessionId, ctx, onUpdate, timings } = options;
+	const { server, params, mode, tabs, tabId, maxChars, resultParams, outputPath, browserSessionId, onUpdate, timings } = options;
 	const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 	const hasNavigation = typeof params.url === "string" && params.url.trim().length > 0;
 	const captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 100_000);
@@ -102,7 +101,6 @@ export async function prepareScanSession(options: {
 		resultParams,
 		outputPath,
 		browserSessionId,
-		ctx,
 		onUpdate,
 		observeTimings: timings,
 	});

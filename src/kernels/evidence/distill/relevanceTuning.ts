@@ -5,8 +5,6 @@ export const RELEVANCE_TUNING = {
 	selectorMatch: 190,
 	urlMatch: 120,
 	intentMatch: 180,
-	memoryMatch: 70,
-	maxMemoryTerms: 8,
 	traceHalfLifeCalls: 6,
 	containerPropagation: 0.5,
 	relationPropagation: 0.25,

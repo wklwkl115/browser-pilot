@@ -62,7 +62,6 @@ Browser Pilot gives agents what they actually need:
 | Full network record/replay/mutate | **Yes** | HAR only | No | Proxy needed |
 | Built-in web security tools | **Yes** | No | No | No |
 | Token-efficient output (salience + delta) | **Yes** | N/A | No | N/A |
-| Session memory (per-site fact recall) | **Yes** | No | No | No |
 | Survives MV3 SW restart / tab replace | **Yes** | N/A | No | Partial |
 | Designed for AI agents | **First** | Adapted | Yes | Adapted |
 
@@ -81,7 +80,7 @@ Browser Pilot gives agents what they actually need:
 ┌────────────────────────▼──────────────────────────────────────────┐
 │  Tool Layer (browser_* tools)                                     │
 │  Core: tabs, observe, execute, command, screenshot,              │
-│        network, hook, evidence, frame, artifact, memory,          │
+│        network, hook, evidence, frame, artifact,                  │
 │        download, upload                                           │
 │  Security: crawl, fuzz, sqli, template, cookie-analyze,           │
 │            http-replay, callback-oast                             │
@@ -159,7 +158,7 @@ npx browser-pilot schema observe --json
 ```
 
 Core tools include tabs, observe, execute, command, screenshot, network, hook,
-evidence, frame, artifact, memory, download, and upload. Security tools include crawl, fuzz,
+evidence, frame, artifact, download, and upload. Security tools include crawl, fuzz,
 sqli, template, cookie-analyze, http-replay, and callback-oast. Use
 `browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface. For native bridge escape-hatch calls, `browser-pilot command --command` accepts inline JSON only; do not use `--command @file`. For large Windows-friendly inputs, use `browser-pilot execute --program @file` or `browser-pilot execute --script-file <path>`.
 
@@ -193,14 +192,6 @@ Repeated `browser_observe` on the same tab produces compact delta frames
 (`delta:"session"`) containing only what changed. Multi-step workflows stay
 token-efficient without sacrificing completeness. Default `nextActions` represent an actual recovery or continuation frontier; they do not guess an action from the first entity or duplicate optional artifact reads already described by `artifact_hints`.
 
-### Browser Memory
-
-A local store (`.browser-pilot/memory/`) lets agents record and recall per-site facts.
-Memory records are facts only: `kind=fact` entries may capture durable observations, but
-SOPs, workflows, playbooks, checklists, procedural steps, and agent instructions are rejected.
-Once recorded, `browser_observe` automatically surfaces relevant fact memory for the current
-URL — so the agent doesn't re-derive stable context twice.
-
 ### Living Tab Sessions
 
 Stable `tabHandle`/`targetRef` identifiers survive tab replacements, MV3 service worker
@@ -208,7 +199,7 @@ restarts, and extension reconnects. Your agent doesn't lose track of tabs.
 
 ### Main Pure-Logic Perception Stages
 
-The core perception pipeline is organized around four pure-logic stages with zero
+The core perception pipeline is organized around three pure-logic stages with zero
 browser/Node dependencies:
 
 | Kernel | Purpose |
@@ -216,7 +207,6 @@ browser/Node dependencies:
 | **Capture** (sense) | Page-world JS templates injected into the browser |
 | **ABML** (perceive) | Entity extraction, diffing, templating, relations, causal |
 | **Distill** (express) | Token economy, salience renderer, fact allocator |
-| **Memory** (retain) | Profile distillation, recall scoring, staleness verification |
 
 The repository also contains additional pure kernels for refs, session, security, and temporal logic; see [CODE_WIKI.md](CODE_WIKI.md) for the code-level map.
 
@@ -254,7 +244,7 @@ mise run smoke-browser # Real Chrome/Edge MV3 acceptance gate
 
 `mise run smoke-browser` rebuilds the unpacked extension, launches an installed Chrome/Edge/Chromium in an isolated profile, and verifies the real extension handshake, tab discovery, execute, canonical observe, network capture, and extension reload/reconnect path. Set `BROWSER_PILOT_SMOKE_BROWSER` when the browser is outside the standard install locations.
 
-The observe regression benchmark is maintained as offline fixtures in `tests/memory/observeRegressionBenchmark.test.ts`. New exploration-UX samples should stay deterministic and pure-logic, and should cover additional page archetypes without requiring a real browser, extension, network, or external site; the separate smoke gate owns live-browser lifecycle acceptance.
+The observe regression benchmark is maintained as offline fixtures in `tests/observe/observeRegressionBenchmark.test.ts`. New exploration-UX samples should stay deterministic and pure-logic, and should cover additional page archetypes without requiring a real browser, extension, network, or external site; the separate smoke gate owns live-browser lifecycle acceptance.
 
 Lower-level npm scripts still exist for focused maintenance tasks, but they are not the completion gate. See [REPO_GOVERNANCE.md](REPO_GOVERNANCE.md) for the canonical workflow and [CODE_WIKI.md](CODE_WIKI.md) for the architecture/development map.
 
@@ -274,7 +264,6 @@ For contributor workflow, canonical gates, and repo-specific guardrails, start w
 | `BROWSER_PILOT_RENDERER` | `salience` | Observation renderer (`salience` or `ladder`) |
 | `BROWSER_PILOT_SESSION_DELTA` | `1` | Session-delta for repeated scans (`0` to disable) |
 | `BROWSER_PILOT_RELEVANCE` | `1` | Task-conditioned relevance (`0` to disable) |
-| `BROWSER_PILOT_MEMORY` | `1` | Auto-recall browser memory (`0` to disable) |
 
 ## Star History
 

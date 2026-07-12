@@ -19,9 +19,9 @@ run = "node scripts/run-tests.mjs artifacts"
 description = "Run bootstrap + Web Security characterization tests"
 run = "node scripts/run-tests.mjs web-security"
 
-[tasks.test-memory]
-description = "Run bootstrap + memory characterization tests"
-run = "node scripts/run-tests.mjs memory"
+[tasks.test-observe]
+description = "Run bootstrap + observe and result-envelope characterization tests"
+run = "node scripts/run-tests.mjs observe"
 
 [tasks.test-governance]
 description = "Run bootstrap + governance/workflow validation tests"

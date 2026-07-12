@@ -1,4 +1,4 @@
-export type ObserveRelevanceSourceTag = "A" | "B" | "C" | "D" | "E" | "F";
+export type ObserveRelevanceSourceTag = "A" | "B" | "C" | "D" | "E";
 
 export type ObserveRelevanceTapKind = "literal" | "selectorLiteral" | "jsonPath" | "query" | "urlPathToken" | "urlQueryToken" | "ref" | "intent";
 

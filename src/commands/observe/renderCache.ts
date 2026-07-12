@@ -75,14 +75,6 @@ function observeRelevanceDebugCacheMarker(): string {
 	return process.env.BROWSER_PILOT_RELEVANCE_DEBUG === "1" ? "on" : "off";
 }
 
-function observeMemoryCacheMarker(): string {
-	return process.env.BROWSER_PILOT_MEMORY === "0" ? "off" : "on";
-}
-
-function observeMemoryAutoSurfaceCacheMarker(): string {
-	return process.env["BROWSER_PILOT_MEMORY_AUTOSURFACE"] === "0" ? "off" : "on";
-}
-
 export function observeRenderParamsSignature(params: ObserveToolParams, mode: ObserveMode, detailLevel: string, maxChars: number, captureMaxChars: number): string {
 	const maxNodes = Number(params.maxNodes);
 	return JSON.stringify({
@@ -96,8 +88,6 @@ export function observeRenderParamsSignature(params: ObserveToolParams, mode: Ob
 		standingPerception: observeStandingPerceptionCacheMarker(),
 		relevance: observeRelevanceCacheMarker(params),
 		relevanceDebug: observeRelevanceDebugCacheMarker(),
-		memory: observeMemoryCacheMarker(),
-		memoryAutoSurface: observeMemoryAutoSurfaceCacheMarker(),
 		includeIframes: params.includeIframes !== false,
 		...(Number.isFinite(maxNodes) ? { maxNodes } : {}),
 		...(observeIntent(params) ? { intent: observeIntent(params) } : {}),

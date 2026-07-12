@@ -4,8 +4,7 @@ import type { BrowserTextCommandResult } from "../../utils/toolResult.js";
 import { parseJsonOrThrow, stableJson, truncateText } from "../../utils/json.js";
 import { isRecord } from "../../utils/params.js";
 import { readHookRecorderSeq, readNetworkRecorderSeq, type PageFingerprint } from "../pageSignals.js";
-import { withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
-import { consumeMemoryProfileDiagnostics } from "./memoryAugmentation.js";
+import { withTrackedOperation, type CommandOnUpdate } from "../commandRuntime.js";
 import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
 import { cachedEnvelopeFromArtifact, legacyProjectionDetails, legacyProjectionSummary, modeInferredDetails, observeCacheTtlMs, renderCacheMatches } from "./renderCache.js";
@@ -34,11 +33,10 @@ export async function tryRenderCacheHit(options: {
 	resultParams: ObserveToolParams;
 	outputPath: string | undefined;
 	browserSessionId: string | undefined;
-	ctx: CommandResultContext;
 	onUpdate?: CommandOnUpdate;
 	observeTimings: ObserveTimingMetrics;
 }): Promise<BrowserTextCommandResult | undefined> {
-	const { server, params, mode, detailLevel, maxChars, paramsSignature, pageFingerprint, ledgerFrame, plannedLedgerKey, effectiveTabId, timeoutMs, resultParams, outputPath, browserSessionId, ctx, onUpdate, observeTimings } = options;
+	const { server, params, mode, detailLevel, maxChars, paramsSignature, pageFingerprint, ledgerFrame, plannedLedgerKey, effectiveTabId, timeoutMs, resultParams, outputPath, browserSessionId, onUpdate, observeTimings } = options;
 	if (!ledgerFrame || !pageFingerprint || !renderCacheMatches(ledgerFrame, mode, detailLevel, maxChars, paramsSignature, pageFingerprint) || typeof server.getObservationSnapshot !== "function") return undefined;
 
 	const priorPath = server.getObservationSnapshot(ledgerFrame.snapshotId)?.saved?.path;
@@ -71,7 +69,6 @@ export async function tryRenderCacheHit(options: {
 			await handle.update({ progress: 100, details: { fromCache: true, changeSeq: pageFingerprint.changeSeq } });
 			const isCanonical = mode === "scan" && !params.modeExplicit;
 			const cacheMeta = { reason: "content-fingerprint-unchanged" as const, changeSeq: pageFingerprint.changeSeq, priorSnapshotId: ledgerFrame.snapshotId };
-			const memoryProfileWarnings = consumeMemoryProfileDiagnostics(ctx?.cwd);
 			const cachedSummary = isRecord(cachedEnvelope.summary) ? { ...cachedEnvelope.summary } as Record<string, unknown> : {};
 			const cachedPageObservation = isRecord(cachedSummary.pageObservation) ? { ...cachedSummary.pageObservation } as Record<string, unknown> : undefined;
 			if (cachedPageObservation) {
@@ -106,7 +103,6 @@ export async function tryRenderCacheHit(options: {
 				fromCache: true,
 				priorSnapshotId: ledgerFrame.snapshotId,
 				renderCache: { hit: true, ttlMs: observeCacheTtlMs(), ...cacheMeta },
-				...(memoryProfileWarnings.length ? { memory: { warnings: memoryProfileWarnings } } : {}),
 			}, maxChars);
 		});
 

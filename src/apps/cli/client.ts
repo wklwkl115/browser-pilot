@@ -4,7 +4,7 @@
  *
  * Only execution is delegated; parsing/help/registry stay local (no browser
  * startup). The caller `cwd` (process.cwd()) is sent on every /invoke so the
- * daemon scopes artifacts/memory to the caller, not to itself.
+ * daemon scopes artifacts and evidence to the caller, not to itself.
  */
 import { ensureDaemon, controlRequest } from "../daemon/daemonControl.js";
 import { resolvePairingToken } from "./pairing.js";

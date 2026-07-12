@@ -17,7 +17,6 @@ export const COMMAND_SUMMARIES: CliCommandSummary[] = [
 	{ subcommand: "fuzz", name: "browser_fuzz", description: "Run bounded path, vhost, or parameter fuzzing against explicit scoped HTTP targets with baseline filtering, clustering, response deltas, and evidence artifacts." },
 	{ subcommand: "hook", name: "browser_hook", description: "Native browser event hook commands: listTargets, installTargets, install, collect, status, clear, pause, resume, uninstall, evaluate, event listener, performance entries." },
 	{ subcommand: "http-replay", name: "browser_http_replay", description: "Replay raw or structured HTTP requests with method/header/body mutation, HAR dependency graph evidence, artifact output, and optional browser-session cookie injection." },
-	{ subcommand: "memory", name: "browser_memory", description: "Record, recall, read, or validate local browser memory entries with local-only persistence, near-duplicate dedup, optional provenance evidence, and bounded reads." },
 	{ subcommand: "network", name: "browser_network", description: "Native Network recorder commands including captureReload, which starts capture before reload/navigation to catch page-load requests." },
 	{ subcommand: "observe", name: "browser_observe", description: "Observe the current page as the canonical ABML page model; omit mode for ordinary use, with explicit modes reserved for legacy/debug projections." },
 	{ subcommand: "screenshot", name: "browser_screenshot", description: "Native screenshot capture. Saves the image to disk by default and returns the file path." },

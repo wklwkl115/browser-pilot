@@ -1,7 +1,6 @@
 import { allocateFacts } from "../kernels/evidence/distill/allocate.js";
 import { renderFacts, type RenderedFacts } from "../kernels/evidence/distill/render.js";
 import { fitSalienceEnvelopeBudget } from "../kernels/evidence/distill/salienceEnvelope.js";
-import { stableJson } from "../utils/json.js";
 import { fitCommandEnvelopeBudget } from "./resultBudgeting.js";
 import { getDistillerDefinition } from "./distillerRegistry.js";
 import type { CommandFactGranularity, DistilledEnvelope } from "./resultTypes.js";
@@ -18,10 +17,6 @@ type BudgetOptions = {
 	command?: string;
 	granularityCeiling?: Exclude<CommandFactGranularity, "omit">;
 	stableRefs?: Set<string>;
-	memoryAugmentationPlan?: {
-		inline?: Record<string, unknown>;
-		handleOnly?: Record<string, unknown>;
-	};
 };
 
 export function rendererMarker(): DistilledEnvelope["renderer"] | undefined {
@@ -50,40 +45,8 @@ export function factRenderingDiagnostics(options: BudgetOptions, value: unknown,
 	};
 }
 
-function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number, options: BudgetOptions): DistilledEnvelope {
+export function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number, options: BudgetOptions): DistilledEnvelope {
 	return rendererMarker() ? fitSalienceEnvelopeBudget(envelope, maxChars, { granularityCeiling: options.granularityCeiling }) : fitCommandEnvelopeBudget(envelope, maxChars);
-}
-
-export function livePlaneSignature(envelope: DistilledEnvelope): string {
-	return stableJson({
-		entities: envelope.entities,
-		gist: envelope.gist,
-		outline: envelope.outline,
-		relations: envelope.relations,
-		identity: envelope.identity,
-		diff: envelope.diff,
-		causal: envelope.causal,
-		treeDiff: envelope.treeDiff,
-		snapshotProjection: envelope.snapshotProjection,
-		collections: envelope.collections,
-		rendererOmitted: envelope.summary.rendererOmitted,
-		envelopeOmitted: envelope.summary.envelopeOmitted,
-		warnings: Array.isArray(envelope.diagnostics?.warnings) ? envelope.diagnostics.warnings : undefined,
-	});
-}
-
-export function fitResponseEnvelopeWithMemory(base: DistilledEnvelope, maxChars: number, options: BudgetOptions): DistilledEnvelope {
-	const fittedBase = fitResponseEnvelope(base, maxChars, options);
-	const plan = options.memoryAugmentationPlan;
-	const memoryAllowed = options.commandName === "browser_observe" && (!options.command || ["scan", "scan.text", "navigate+scan", "navigate+text"].includes(options.command));
-	if (!memoryAllowed || (!plan?.inline && !plan?.handleOnly)) return fittedBase;
-	const baseSignature = livePlaneSignature(fittedBase);
-	for (const variant of [plan.inline, plan.handleOnly]) {
-		if (!variant) continue;
-		const candidate = fitResponseEnvelope({ ...base, memory: variant }, maxChars, options);
-		if (candidate.memory && livePlaneSignature(candidate) === baseSignature) return candidate;
-	}
-	return fittedBase;
 }
 
 export function renderedOmittedCount(envelope: DistilledEnvelope): number {

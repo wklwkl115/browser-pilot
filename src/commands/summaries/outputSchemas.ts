@@ -97,22 +97,3 @@ export const HookDomFlowSummarySchema = Type.Object({
 	total: Type.Optional(UnknownValue),
 	truncated: Type.Optional(UnknownValue),
 }, { additionalProperties: true });
-
-export const MemorySummarySchema = Type.Object({
-	action: Type.String(),
-	ok: Type.Optional(Type.Boolean()),
-	scopeKind: Type.Optional(Type.String()),
-	scopeKey: Type.Optional(Type.String()),
-	query: Type.Optional(Type.String()),
-	id: Type.Optional(Type.String()),
-	uri: Type.Optional(Type.String()),
-	mode: Type.Optional(Type.String()),
-	count: Type.Optional(Type.Number()),
-	superseded: Type.Optional(Type.Number()),
-	supersedeCandidates: Type.Optional(Type.Number()),
-	entryCount: Type.Optional(Type.Number()),
-	error_code: Type.Optional(Type.String()),
-	message: Type.Optional(Type.String()),
-	error: Type.Optional(Type.String()),
-	recovery: Type.Optional(LooseObject),
-}, { additionalProperties: true });

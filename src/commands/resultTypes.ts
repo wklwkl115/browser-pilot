@@ -58,7 +58,6 @@ export type DistilledEnvelope = {
 	activeContext?: Record<string, unknown>;
 	artifact_hints?: Record<string, unknown>;
 	saved?: Record<string, unknown>;
-	memory?: Record<string, unknown>;
 	evidence?: CommandEvidenceEnvelope;
 	renderer?: "salience-v1";
 	delta?: "session";
@@ -100,7 +99,6 @@ export type CommandEvidenceEnvelope = {
 	artifacts: CommandEvidenceArtifactHint[];
 	resources: CommandEvidenceResourceHint[];
 	recovery: CommandEvidenceRecoveryHint[];
-	memory: CommandEvidenceResourceHint[];
 	redaction?: {
 		applied: boolean;
 		fields?: string[];
@@ -113,7 +111,6 @@ export type CommandEvidenceEnvelopeInput = {
 	artifact?: Record<string, unknown>;
 	resources?: CommandEvidenceResourceHint[];
 	recoveryActions?: string[];
-	memory?: Record<string, unknown>;
 	redactionApplied?: boolean;
 	redactionFields?: string[];
 };
@@ -125,7 +122,6 @@ export function emptyCommandEvidenceEnvelope(): CommandEvidenceEnvelope {
 		artifacts: [],
 		resources: [],
 		recovery: [],
-		memory: [],
 	};
 }
 
@@ -149,10 +145,6 @@ export function buildCommandEvidenceEnvelope(input: CommandEvidenceEnvelopeInput
 	envelope.resources.push(...(input.resources ?? []));
 	for (const action of input.recoveryActions ?? []) {
 		envelope.recovery.push({ message: action });
-	}
-	if (input.memory && Object.keys(input.memory).length) {
-		const uri = typeof input.memory.uri === "string" ? input.memory.uri : "browser-memory://index";
-		envelope.memory.push({ uri, kind: "memory" });
 	}
 	if (input.redactionApplied || input.redactionFields?.length) {
 		envelope.redaction = {

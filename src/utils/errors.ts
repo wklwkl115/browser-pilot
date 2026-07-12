@@ -157,7 +157,6 @@ export function errorDiagnosticsFromDetails(details: Record<string, unknown>, co
 	if (String(details.domain || "").toLowerCase() === "websecurity") scopes.push("security");
 	if (code && isAbmlRecoveryCode(code)) scopes.push("abml");
 	if (code && isWebSocketRecoveryCode(code)) scopes.push("websocket");
-	if (code?.startsWith("MEMORY_") || code === "UNSUPPORTED_SCOPE_KIND") scopes.push("memory");
 	const supervisor = isRecord(details.supervisor) ? details.supervisor : undefined;
 	const waitDiagnosis = extractWaitDiagnosis(supervisor);
 	if (waitDiagnosis) scopes.push("waitDiagnosis");

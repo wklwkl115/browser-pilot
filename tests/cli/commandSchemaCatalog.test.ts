@@ -34,7 +34,7 @@ function assertValidationError(schema: unknown, args: Record<string, unknown>, p
 test("command catalog characterization: public browser tool names are stable, unique, and CLI-safe", () => {
 	const defs = collectCommandDefs();
 	const names = defs.map((def) => def.name);
-	assert.equal(names.length, 20);
+	assert.equal(names.length, 19);
 	assert.deepEqual(names, [
 		"browser_tabs",
 		"browser_command",
@@ -48,7 +48,6 @@ test("command catalog characterization: public browser tool names are stable, un
 		"browser_frame",
 		"browser_screenshot",
 		"browser_artifact",
-		"browser_memory",
 		"browser_crawl",
 		"browser_fuzz",
 		"browser_sqli",
@@ -57,6 +56,7 @@ test("command catalog characterization: public browser tool names are stable, un
 		"browser_cookie_analyze",
 		"browser_http_replay",
 	]);
+	assert.equal(names.includes("browser_memory"), false);
 	assert.equal(new Set(names).size, names.length);
 	for (const name of names) assert.match(name, /^browser_[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*$/);
 });
@@ -73,9 +73,11 @@ test("command catalog characterization: CLI subcommands are derived one-to-one f
 	}
 });
 
-test("CLI public help and registry do not expose the removed wait command", () => {
+test("CLI public help and registry do not expose removed wait or memory commands", () => {
 	assert.equal(buildCliCommands().some((command) => command.subcommand === "wait" || command.name === "browser_wait"), false);
+	assert.equal(buildCliCommands().some((command) => command.subcommand === "memory" || command.name === "browser_memory"), false);
 	assert.doesNotMatch(helpText(), /^\s*wait\s/m);
+	assert.doesNotMatch(helpText(), /^\s*memory\s/m);
 });
 
 test("command catalog governance: every public native write command has an operation completion resolver", () => {
@@ -102,6 +104,7 @@ test("command schema characterization: every public command has strict object pa
 		assert.notEqual(def.parameters, null, `${def.name} parameters`);
 		assert.equal((def.parameters as { type?: unknown }).type, "object", `${def.name} parameter type`);
 		assert.equal((def.parameters as { additionalProperties?: unknown }).additionalProperties, false, `${def.name} strict parameters`);
+		assert.equal(Object.keys(schemaProperties(def.parameters)).some((name) => name.toLowerCase().includes("memory")), false, `${def.name} memory parameter`);
 	}
 });
 
@@ -124,6 +127,9 @@ test("command schema characterization: required fields and unknown parameters fa
 	const executeResult = validateCommandArgs(execute.parameters, { script: "return 1", monitor: "true" });
 	assert.equal(executeResult.ok, false);
 	if (!executeResult.ok) assert.match(executeResult.error, /unknown parameter "monitor"/);
+
+	assertValidationError(command("browser_observe").parameters, { memory: true }, /unknown parameter "memory"/);
+	assertValidationError(execute.parameters, { script: "return 1", memory: true }, /unknown parameter "memory"/);
 });
 
 test("command schema characterization: key commands expose expected top-level parameter surfaces", () => {
@@ -142,7 +148,6 @@ test("command schema characterization: key commands expose expected top-level pa
 		"url",
 	].sort());
 	assert.deepEqual(Object.keys(schemaProperties(command("browser_execute").parameters)).sort(), ["program", "script", "tabId", "targetRef"].sort());
-	assert.deepEqual(Object.keys(schemaProperties(command("browser_memory").parameters)).sort(), ["action", "body", "evidenceRefs", "freshOnly", "id", "jsonPath", "kind", "limit", "mode", "offset", "query", "scopeKey", "scopeKind", "title", "triggers", "uri", "url"].sort());
 });
 
 test("command schema characterization: browser_observe metadata presents canonical no-mode ABML observation", () => {

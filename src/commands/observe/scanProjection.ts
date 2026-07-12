@@ -316,7 +316,6 @@ export function buildPageObservation(input: PageObservationInput): Record<string
 		...(input.diff ? { diff: input.diff } : {}),
 		...(input.treeDiff ? { treeDiff: input.treeDiff } : {}),
 		...(input.causal ? { causal: input.causal } : {}),
-		...(isRecord(input.summary.memory) ? { memory: input.summary.memory } : {}),
 		diagnostics: {
 			...input.diagnostics,
 			abmlIntegrated: input.abmlIntegrated,

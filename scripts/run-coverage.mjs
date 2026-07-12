@@ -20,11 +20,11 @@ const generatedCoverageExclusions = [
 	"/src/bridge/extension/service_worker/protocol.ts",
 ];
 const scopeDirs = {
-	all: ["bootstrap", "cli", "artifacts", "web-security", "memory", "governance"],
+	all: ["bootstrap", "cli", "artifacts", "web-security", "observe", "governance"],
 	cli: ["bootstrap", "cli"],
 	artifacts: ["bootstrap", "artifacts"],
 	"web-security": ["bootstrap", "web-security"],
-	memory: ["bootstrap", "memory"],
+	observe: ["bootstrap", "observe"],
 	governance: ["bootstrap", "governance"],
 };
 

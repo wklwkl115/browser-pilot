@@ -393,25 +393,3 @@ test("result middleware emits execute artifact hints for program frames and reso
 	assert.equal(hints.reads.some((read) => read.jsonPath === "result.missing"), false);
 	assert.equal(JSON.stringify(hints.hints).includes("execute payload"), false);
 });
-
-test("result middleware characterization: memory fitting preserves live planes when memory fits", async () => {
-	const envelope = await renderEnvelope({ ok: true }, {
-		commandName: "browser_observe",
-		command: "scan",
-		maxChars: 4_000,
-		memoryAugmentationPlan: {
-			inline: { facts: [{ id: "fact-1", text: "Remembered checkout affordance" }] },
-			handleOnly: { handle: "browser-memory://session/facts" },
-		},
-		distill: () => ({
-			ok: true,
-			focus: {
-				gist: { title: "Checkout" },
-				primary_entities: [{ ref: "bp-ref://element/button/pay", kind: "control" }],
-			},
-		}),
-	});
-	assert.deepEqual(envelope.memory, { facts: [{ id: "fact-1", text: "Remembered checkout affordance" }] });
-	assert.deepEqual(envelope.gist, { title: "Checkout" });
-	assert.deepEqual(envelope.entities, [{ ref: "bp-ref://element/button/pay", kind: "control" }]);
-});

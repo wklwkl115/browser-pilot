@@ -1,11 +1,9 @@
 import type { BrowserCommandRuntimePort, CommandPerceptionLedgerFrame } from "../../ports/BrowserCommandRuntimePort.js";
 import type { PageFingerprint } from "../pageSignals.js";
 import type { CommandFactGranularity } from "../resultTypes.js";
-import type { CommandMemoryAugmentationPlan } from "../memoryAugmentationTypes.js";
 import { textCommandResult, type CommandResultContext } from "../commandRuntime.js";
 import { isRecord } from "../../utils/params.js";
 import { factsFromObservedEntities, stableRefsFromCommandFrames } from "./perceptionLedgerProjection.js";
-import { consumeMemoryProfileDiagnostics, recordMemoryProfileFrame } from "./memoryAugmentation.js";
 import { elapsedMs, finalizedObserveTimings, type ObserveTimingMetrics } from "./timings.js";
 import { legacyProjectionDetails, modeInferredDetails, scanCommandName } from "./renderCache.js";
 import { buildObserveAbmlDetails, buildObserveArtifactProjection, buildPageObservation, buildScanNextActionHints, attachAbmlArtifactHints, type PageObservationProviderInput } from "./scanProjection.js";
@@ -82,7 +80,6 @@ type FinalizeScanObservationOptions = {
 	capture: CaptureResult;
 	assembly: AssemblyResult;
 	granularityCeiling: Exclude<CommandFactGranularity, "omit"> | undefined;
-	memoryAugmentationPlan: CommandMemoryAugmentationPlan | undefined;
 	scanPageFingerprint: PageFingerprint | undefined;
 	effectivePageFingerprint: PageFingerprint | undefined;
 	detailLevel: string;
@@ -157,7 +154,6 @@ function buildCanonicalPageObservation(
 function buildResultDetails(
 	options: FinalizeScanObservationOptions,
 	diagnostics: ReturnType<typeof buildObserveDiagnostics>,
-	memoryProfileWarnings: string[],
 ) {
 	const { mode, params, hasNavigation, tabs, bridge, scanMeta, scanPageFingerprint } = options;
 	const { observation } = options.capture;
@@ -176,7 +172,6 @@ function buildResultDetails(
 		abml: buildObserveAbmlDetails({ abmlRead: observation.abmlRead, diagnostics: diagnostics.observeTimings }),
 		...(scanPageFingerprint ? { signals: { fingerprint: scanPageFingerprint } } : {}),
 		diagnostics,
-		...(memoryProfileWarnings.length ? { memory: { warnings: memoryProfileWarnings } } : {}),
 	};
 }
 
@@ -224,19 +219,18 @@ function buildLedgerProjection(options: FinalizeScanObservationOptions) {
 }
 
 function recordLedgerProjection(options: FinalizeScanObservationOptions, frame: CommandPerceptionLedgerFrame | undefined, allocation: CommandPerceptionLedgerFrame["allocation"] | undefined) {
-	const { server, effectivePageFingerprint, mode, detailLevel, maxChars, paramsSignature, snapshotMeta, ctx, bridge } = options;
+	const { server, effectivePageFingerprint, mode, detailLevel, maxChars, paramsSignature, snapshotMeta } = options;
 	if (!frame || typeof server.recordPerceptionLedgerFrame !== "function") return;
-	const recordedFrame = server.recordPerceptionLedgerFrame({
+	server.recordPerceptionLedgerFrame({
 		...frame,
 		...(effectivePageFingerprint ? { pageFingerprint: effectivePageFingerprint } : {}),
 		renderCache: { mode, detailLevel, maxChars, paramsSignature, renderedAt: snapshotMeta.capturedAt },
 		...(allocation ? { allocation } : {}),
 	});
-	void recordMemoryProfileFrame({ cwd: ctx?.cwd, browserSessionId: bridge.browserSessionId, frame: recordedFrame, trace: typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(bridge.browserSessionId) : undefined });
 }
 
 export async function finalizeScanObservation(options: FinalizeScanObservationOptions) {
-	const { resultParams, mode, ctx, content, maxChars, fallbackName, hasNavigation, snapshotMeta, granularityCeiling, memoryAugmentationPlan } = options;
+	const { resultParams, mode, ctx, content, maxChars, fallbackName, hasNavigation, snapshotMeta, granularityCeiling } = options;
 	const { operation } = options.capture;
 	const { summary, envelopeEntities, envelopeDiff, treeDiff, artifactRelevance, causalBlock } = options.assembly;
 	const { causal } = options.providers;
@@ -246,12 +240,11 @@ export async function finalizeScanObservation(options: FinalizeScanObservationOp
 	if (hints.length) summary.nextActions = hints;
 	const artifact = buildObserveArtifactProjection({ summaryRecord: summary, summary, envelopeEntities, envelopeDiff, abmlTreeDiff: treeDiff, artifactRelevance, causalBlock, mode, hasNavigation });
 	const ledger = buildLedgerProjection(options);
-	const memoryProfileWarnings = consumeMemoryProfileDiagnostics(ctx?.cwd);
 	options.timings.renderMs = elapsedMs(options.renderStartedAt);
 	const diagnostics = buildObserveDiagnostics(options, summary);
 	const pageObservation = buildCanonicalPageObservation(options, summary, diagnostics);
 	if (pageObservation) summary.pageObservation = pageObservation;
-	const details = buildResultDetails(options, diagnostics, memoryProfileWarnings);
+	const details = buildResultDetails(options, diagnostics);
 	const artifactValue = buildArtifactValue(options, pageObservation, artifact);
 	let allocation: CommandPerceptionLedgerFrame["allocation"] | undefined;
 	const result = await textCommandResult(content, resultParams, ctx, {
@@ -265,7 +258,6 @@ export async function finalizeScanObservation(options: FinalizeScanObservationOp
 		snapshot: snapshotMeta,
 		granularityCeiling,
 		stableRefs: ledger.stableRefs,
-		memoryAugmentationPlan,
 		onAllocation: (value) => { allocation = value; },
 		entities: envelopeEntities,
 		artifactValue,

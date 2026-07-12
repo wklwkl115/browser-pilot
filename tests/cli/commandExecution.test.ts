@@ -8,7 +8,6 @@ import { DEFAULT_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES } from "../../src/bridge/serve
 import { defineArtifactCommand } from "../../src/commands/artifactCommand.ts";
 import { CommandManifestIndex, type CommandDefinition } from "../../src/commands/commandManifestIndex.ts";
 import { defineExecuteCommand } from "../../src/commands/executeCommand.ts";
-import { defineMemoryCommand } from "../../src/commands/memoryCommand.ts";
 import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
 import { defineNetworkCommand } from "../../src/commands/nativeActionCommands.ts";
 import { defineObserveCommand } from "../../src/commands/observeCommand.ts";
@@ -714,37 +713,4 @@ test("commands execution: browser_network captureReload batches start before rel
 	assert.equal(envelope.version, "browser-operation/v1");
 	assert.equal(envelope.status, "completed");
 	assert.equal((envelope.completion as Record<string, unknown>).source, "network-capture-completed");
-});
-
-test("commands execution: browser_memory validate returns distilled success envelope without persisting fact", async () => {
-	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-command-memory-"));
-	const command = defineCommand((context) => defineMemoryCommand(context), createRuntime());
-	const result = await command.execute("tool-1", {
-		action: "validate",
-		scopeKind: "origin",
-		url: "https://example.test/path",
-		title: "Checkout affordance",
-		triggers: ["checkout button"],
-		body: "Example.test checkout has a Pay button.",
-		maxChars: 20_000,
-	}, undefined, undefined, { cwd });
-	const envelope = parseResult(result);
-	const summary = envelope.summary as Record<string, unknown>;
-	assert.equal(summary.action, "validate");
-	assert.equal(summary.ok, true);
-	assert.equal(summary.scopeKind, "origin");
-	assert.equal(summary.scopeKey, "example.test");
-	assert.equal(envelope.tool, "browser_memory");
-});
-
-test("commands execution: browser_memory validation failures use error envelope and recovery-capable diagnostics", async () => {
-	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-command-memory-error-"));
-	const command = defineCommand((context) => defineMemoryCommand(context), createRuntime());
-	const result = await command.execute("tool-1", { action: "validate", scopeKind: "task", title: "Workflow", triggers: ["workflow"], body: "Step 1: click login\nStep 2: submit form" }, undefined, undefined, { cwd });
-	const envelope = parseResult(result);
-	const summary = envelope.summary as Record<string, unknown>;
-	assert.equal(summary.action, "error");
-	assert.equal(summary.ok, false);
-	assert.match(String(summary.error_code), /MEMORY_/);
-	assert.ok(Array.isArray(((summary.diagnostics as Record<string, unknown>)?.scopes as unknown[]) || []));
 });

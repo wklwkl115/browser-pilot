@@ -4,6 +4,5 @@ export { summarizeGenericValue } from "./generic.js";
 export { summarizeHookCollectData, summarizeHookPerformance } from "./hook.js";
 export { summarizeHtmlSnapshot } from "./html.js";
 export { summarizeNetworkData } from "./network.js";
-export { summarizeMemoryResult } from "./memory.js";
 export { summarizeTransferData } from "./transfer.js";
 export { summarizeBrowserCrawlData, summarizeCallbackOastData, summarizeCookieAnalyzeData, summarizeDomFlowData, summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData, summarizeHttpReplayData, summarizeNucleiBridgeData, summarizeSqlmapBridgeData, summarizeSqliProbeData, summarizeTemplateCheckData, summarizeWebReconProbeData, summarizeWsSessionData } from "./webSecurity/index.js";

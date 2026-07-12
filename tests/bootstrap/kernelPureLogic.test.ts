@@ -5,8 +5,6 @@ import { projectJsonValue } from "../../src/kernels/evidence/distill/projection.
 import { computeRelevanceMap } from "../../src/kernels/evidence/distill/relevance.ts";
 import { fitSalienceEnvelopeBudget } from "../../src/kernels/evidence/distill/salienceEnvelope.ts";
 import type { BudgetedEnvelope } from "../../src/kernels/evidence/distill/ladder.ts";
-import { toPersistableMemoryTerm } from "../../src/kernels/memory/terms.ts";
-import { buildMemoryRoutingIndex, memoryRoutingTokens, routeByTokens, situationTokens } from "../../src/kernels/memory/routing.ts";
 import { detectSqlDbms, firstBooleanOracle, hasSqlError, nearestBooleanTruth, sqliUnionMeta } from "../../src/kernels/security/sqliOracle.ts";
 import type { ResponseFingerprint } from "../../src/kernels/security/replayDiff.ts";
 import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseReplayDelta, sameBaselineCluster } from "../../src/kernels/security/replayDiff.ts";
@@ -58,7 +56,6 @@ test("evidence relevance scores low, high, propagated, aged, and CJK signal edge
 	], [
 		{ term: "pay", kind: "literal", source: "C", weight: 2 },
 		{ term: "#pay-now", kind: "selectorLiteral", source: "A", weight: 1 },
-		{ term: "invoice", kind: "literal", source: "F", weight: 4, age: 99 },
 		{ term: "个人中心", kind: "literal", source: "E", weight: 1 },
 		{ term: "x", kind: "literal", source: "B", weight: 10 },
 	]);
@@ -74,7 +71,7 @@ test("evidence relevance scores low, high, propagated, aged, and CJK signal edge
 	assert.ok(cancel.score > 0);
 	assert.ok(label.score < pay.score);
 	assert.deepEqual(profile.sources, ["E"]);
-	assert.deepEqual(relevance.signals, ["A", "C", "E", "F"]);
+	assert.deepEqual(relevance.signals, ["A", "C", "E"]);
 	assert.equal(relevance.scoreFields({ name: "totally unrelated" }), 0);
 });
 
@@ -100,30 +97,6 @@ test("evidence salience envelope fits summary budgets and falls back on sparse o
 	const sparse = fitSalienceEnvelopeBudget({ ...envelope, summary: { textPreview: "x".repeat(5_000) }, snapshotProjection: undefined, collections: undefined, diff: { summary: { changed: 1 } }, treeDiff: { summary: { changed: 1 } } }, 1);
 	assert.ok(JSON.stringify(sparse).length <= 1_000);
 	assert.ok(sparse.diff !== undefined || sparse.treeDiff !== undefined || (sparse.summary as Record<string, unknown>).summaryTruncatedToBudget === true);
-});
-
-test("memory kernel normalizes persistable terms and routes tokens deterministically", () => {
-	assert.deepEqual(toPersistableMemoryTerm({ term: "  Submit\nOrder  ", kind: "selectorLiteral", weight: 2.5 }), {
-		term: "Submit Order",
-		kind: "selectorLiteral",
-		weight: 2.5,
-	});
-	assert.equal(toPersistableMemoryTerm({ term: "x", kind: "ref" }), undefined);
-	assert.equal(toPersistableMemoryTerm({ term: "x".repeat(129), kind: "urlPathToken" }), undefined);
-	assert.equal(toPersistableMemoryTerm({ term: "/login", kind: "unknown" }), undefined);
-	assert.deepEqual(memoryRoutingTokens({ title: "Login Login", triggers: ["Reset password", "2FA login"] }), ["login", "reset", "password", "2fa"]);
-	assert.deepEqual(situationTokens("Login login, reset-password!"), ["login", "reset", "password"]);
-	const routing = buildMemoryRoutingIndex([
-		{ id: "a", status: "active", title: "Login reset", triggers: ["password recovery"] },
-		{ id: "b", status: "archived", title: "Login", triggers: ["ignored"] },
-		{ id: "c", status: "active", title: "Checkout", triggers: ["order submit password"] },
-	]);
-	assert.deepEqual(routing.login, ["a"]);
-	assert.equal(routing.ignored, undefined);
-	const routed = routeByTokens(routing, ["password", "login", "missing"]);
-	assert.equal(routed.has("b"), false);
-	assert.ok((routed.get("a") ?? 0) > (routed.get("c") ?? 0));
-	assert.deepEqual([...routeByTokens(undefined, ["login"]).entries()], []);
 });
 
 test("security replay and SQLi kernels classify normal, malformed, and boundary fingerprints", () => {

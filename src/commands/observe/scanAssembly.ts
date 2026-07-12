@@ -13,25 +13,15 @@ import { buildNativeTreeDiff } from "../../native/browserPilotNativeKernels.js";
 import { buildScanEntities, scanEntitiesFromGroups, summarizeScanData, type ScanSummaryOptions } from "../../scan/summary.js";
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";
 import { isRecord } from "../../utils/params.js";
-import type { CommandResultContext } from "../commandRuntime.js";
 import { buildEntityOutline, buildPageGist, sortEntitiesBySalience } from "./entityViews.js";
 import { entityRefs, mergeEntitiesByRef, type BaselineResolution } from "./baseline.js";
-import { buildObserveRelevance, observeIntent, relevanceEnabled, type ObserveRelevance } from "./relevanceFusion.js";
-import type { ObserveRelevanceTerm } from "./relevanceTypes.js";
-import { buildMemoryAugmentationPlan, memoryWarmStartTerms } from "./memoryAugmentation.js";
+import { buildObserveRelevance, type ObserveRelevance } from "./relevanceFusion.js";
 import { legacyProjectionSummary, modeInferredSummary } from "./renderCache.js";
 import { withObservationMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
 import type { executeScanCapture } from "./scanCapture.js";
 
 type BuiltScanEntities = NonNullable<ScanSummaryOptions["scanEntities"]>;
 type CaptureObservation = Awaited<ReturnType<typeof executeScanCapture>>["observation"];
-
-async function prepareScanMemory(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, browserSessionId: string | undefined, pageUrl: string | undefined) {
-	const trace = typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(browserSessionId) : undefined;
-	const memoryTerms = relevanceEnabled(params) ? await memoryWarmStartTerms(ctx?.cwd, pageUrl, trace) : [];
-	const memoryAugmentationPlan = String(params.detailLevel || "summary") === "full" ? undefined : await buildMemoryAugmentationPlan(ctx?.cwd, pageUrl, observeIntent(params));
-	return { memoryTerms, memoryAugmentationPlan };
-}
 
 function abmlAssemblyInputs(observation: CaptureObservation, ledgerFrame: CommandPerceptionLedgerFrame | undefined, baseline: BaselineResolution | undefined) {
 	return {
@@ -89,7 +79,6 @@ type ScanAssemblyOptions = {
 	tabId: number | undefined;
 	selectionVersion: number;
 	pageUrl: string | undefined;
-	memoryTerms: ObserveRelevanceTerm[];
 	abmlEntities: Entity[] | null;
 	abmlDiff: EntityDiff | undefined;
 	baseline: BaselineResolution | undefined;
@@ -122,10 +111,10 @@ function buildBaseSummary(options: ScanAssemblyOptions, relevance: ObserveReleva
 }
 
 function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[], envelopeDiff: EnvelopeDiff | undefined, treeDiff: TreeDiff | undefined, causalBlock: CausalBlock): { summary: Record<string, unknown>; artifactRelevance: Record<string, unknown> | undefined } {
-	const { server, params, browserSessionId, pageUrl, memoryTerms, abmlDiff, summaryData, causal, runtimeRelationGraph, snapshotCapturedAt, ledgerDeltaFields } = options;
+	const { server, params, browserSessionId, pageUrl, abmlDiff, summaryData, causal, runtimeRelationGraph, snapshotCapturedAt, ledgerDeltaFields } = options;
 	const relations = buildRelationSummary(entities);
 	const inference = buildInferenceSummary(entities, relations, abmlDiff);
-	const relevance = buildObserveRelevance(server, params, browserSessionId, pageUrl, entities, inference, memoryTerms);
+	const relevance = buildObserveRelevance(server, params, browserSessionId, pageUrl, entities, inference);
 	const baseSummary = buildBaseSummary(options, relevance);
 	const snapshotProjection = buildSnapshotProjection(entities, { treeDiff });
 	const collections = buildCollectionModels({ entities, treeDiff, snapshotProjection, scanEvidence: scanCollectionEvidence(summaryData) });
@@ -169,8 +158,8 @@ function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[]
 }
 
 function buildFallbackSummary(options: ScanAssemblyOptions, entities: Entity[], causalBlock: CausalBlock): { summary: Record<string, unknown>; artifactRelevance: Record<string, unknown> | undefined } {
-	const { server, params, browserSessionId, pageUrl, memoryTerms, ledgerDeltaFields } = options;
-	const relevance = buildObserveRelevance(server, params, browserSessionId, pageUrl, entities, undefined, memoryTerms);
+	const { server, params, browserSessionId, pageUrl, ledgerDeltaFields } = options;
+	const relevance = buildObserveRelevance(server, params, browserSessionId, pageUrl, entities);
 	return { artifactRelevance: relevance?.artifact, summary: { ...buildBaseSummary(options, relevance), ...ledgerDeltaFields, abmlIntegrated: false, ...causalBlock } };
 }
 
@@ -193,7 +182,7 @@ export function assembleScanSummary(options: ScanAssemblyOptions) {
 	return { summary, envelopeEntities: attributedEntities ?? scanEnvelopeEntities, attributedEntities, envelopeDiff, treeDiff, artifactRelevance, causalBlock };
 }
 
-export async function prepareScanAssembly(options: {
+export function prepareScanAssembly(options: {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
 	mode: Extract<ObserveMode, "scan" | "text">;
@@ -203,13 +192,12 @@ export async function prepareScanAssembly(options: {
 	data: Record<string, unknown> | undefined;
 	bridge: ReturnType<BrowserCommandRuntimePort["snapshot"]>;
 	snapshotMeta: ReturnType<typeof import("./common.js").currentObserveSnapshotMeta>;
-	ctx: CommandResultContext;
 	observation: CaptureObservation;
 	baseline: BaselineResolution | undefined;
 	causal: CausalSummary | undefined;
 	ledgerFrame: CommandPerceptionLedgerFrame | undefined;
 }) {
-	const { server, params, mode, tabs, maxChars, tabId, data, bridge, snapshotMeta, ctx, observation, baseline, causal, ledgerFrame } = options;
+	const { server, params, mode, tabs, maxChars, tabId, data, bridge, snapshotMeta, observation, baseline, causal, ledgerFrame } = options;
 	const pageUrl = typeof data?.url === "string" ? data.url : undefined;
 	const scanEntityContext = {
 		browserSessionId: bridge.browserSessionId,
@@ -220,7 +208,6 @@ export async function prepareScanAssembly(options: {
 	};
 	const summaryData = data ? registerScanEntityRefs(data, scanEntityContext) : data;
 	const summaryScanEntities = summaryData && isRecord(summaryData) ? buildScanEntities(summaryData, { entityContext: scanEntityContext }) : undefined;
-	const { memoryTerms, memoryAugmentationPlan } = await prepareScanMemory(server, params, ctx, bridge.browserSessionId, pageUrl);
 	const { abmlEntities, abmlDiff, ledgerDeltaFields, runtimeRelationGraph } = abmlAssemblyInputs(observation, ledgerFrame, baseline);
 	return {
 		assembly: assembleScanSummary({
@@ -236,7 +223,6 @@ export async function prepareScanAssembly(options: {
 			tabId,
 			selectionVersion: bridge.selectionVersion,
 			pageUrl,
-			memoryTerms,
 			abmlEntities,
 			abmlDiff,
 			baseline,
@@ -245,7 +231,6 @@ export async function prepareScanAssembly(options: {
 			runtimeRelationGraph,
 			snapshotCapturedAt: snapshotMeta.capturedAt,
 		}),
-		memoryAugmentationPlan,
 	};
 }
 
