@@ -12,7 +12,6 @@ export type AgentCliRouting =
 	| { mode: "nativeEscapeHatch"; recommended: false; interface: "command --command"; reason: string[] };
 
 const NATURAL_ACTION_ALLOWLIST: Record<string, readonly string[]> = {
-	browser_wait: ["navigate", "navigateAndWait", "navigation", "loadState", "networkIdle", "selector", "any", "all", "cancel", "diagnose"],
 	browser_network: ["start", "stop", "status", "clear", "list", "get", "body", "exportHar", "wait"],
 	browser_frame: ["list", "evaluate"],
 	browser_hook: ["listTargets", "installTargets", "listSessions", "install", "status", "collect", "clear", "pause", "resume", "uninstall", "performance"],

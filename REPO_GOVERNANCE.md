@@ -28,3 +28,10 @@ Keep changes biased toward deletion, behavior preservation, and one canonical so
 - Keep public surface changes explicit. Root `index.ts`, the CLI contract, and schema-derived native protocol files are not cleanup fodder.
 - Current high-risk zones: `src/bridge/server/`, `src/apps/daemon/`, and `src/bridge/extension/service_worker/`.
 - `tsconfig.json` excludes `src/bridge/extension/**`; that code is validated separately by `tsconfig.bridge-src.json` and ESLint's second project binding.
+
+## Public Command Contract
+
+- `src/commands/commandCatalog.ts` is the only public `browser_*` tool list. The public surface has no wait/sleep tool; selector, navigation, and network-idle observers are internal operation-supervisor primitives.
+- Every public browser state-changing command must return `browser-operation/v1` and must have a command-specific completion resolver. Governance tests enumerate native protocol write commands and fail when a resolver is missing; acknowledgement or page quiet cannot produce `completed`.
+- Read-only commands remain immediate. Write commands must arm `operation.begin` before dispatch, preserve target generation, and terminate as `completed`, `effect_observed`, `no_effect`, `stalled`, `ambiguous`, `target_lost`, `failed`, or `deadline`.
+- Public schema/help/Skill guidance must not reintroduce a post-action wait, sleep loop, compatibility alias, or optional transaction/monitor switch.

@@ -59,19 +59,6 @@ export function uniqueRecoveryActions(actions: Array<string | undefined | false>
 	return Array.from(new Set(actions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)));
 }
 
-type ExecutionEffectRecoveryLike = {
-	navigated?: boolean;
-	targetDelta?: unknown;
-	requestsFired?: number;
-	hookEventsFired?: number;
-	targetRegionDirty?: boolean;
-	temporal?: {
-		verdict?: {
-			reasons?: unknown;
-		};
-	};
-};
-
 type EvidenceSourceSummaryLike = {
 	ok?: unknown;
 	error_code?: unknown;
@@ -101,17 +88,6 @@ export function nextActionsForEvidenceBundle(sources: Record<string, EvidenceSou
 	return ["evidence bundle is empty — capture started after the action records nothing; start browser_hook/browser_network before the action that should produce evidence, then re-run browser_evidence"];
 }
 
-export function nextActionsForExecutionEffect(effect: ExecutionEffectRecoveryLike | undefined): string[] | undefined {
-	if (!effect) return undefined;
-	const actions = uniqueRecoveryActions([
-		effect.navigated || effect.targetDelta ? "tab identity may have changed; list tabs and use targetRef/tabHandle before the next tab-scoped call if targeting is ambiguous" : undefined,
-		(effect.requestsFired ?? 0) > 0 || (effect.hookEventsFired ?? 0) > 0 ? "effect anchor is available for browser_observe baseline/causal follow-up" : undefined,
-		Array.isArray(effect.temporal?.verdict?.reasons) && effect.temporal.verdict.reasons.includes("target_stale_before_dispatch") ? "target ref was stale before dispatch; refresh with browser_observe before retrying the same bp-ref" : undefined,
-		effect.targetRegionDirty === true ? "target ref region changed after the action; refresh with browser_observe before reusing the same bp-ref" : undefined,
-	]);
-	return actions.length ? actions : undefined;
-}
-
 function abmlRecoveryActions(code: string, details: Record<string, unknown>): string[] {
 	if (!isAbmlRecoveryCode(code)) return [];
 	const ref = typeof details.ref === "string" ? redactSensitiveText(details.ref) : undefined;
@@ -122,7 +98,7 @@ function abmlRecoveryActions(code: string, details: Record<string, unknown>): st
 		code === "REF_SCOPE_VIOLATION" ? "switch to the owning browser session/tab or re-capture the ref in the current scope" : undefined,
 		code === "HANDLE_KIND_MISMATCH" || code === "INVALID_INPUT" ? "retry with a ref/handle and parameters that match the requested ABML operation" : undefined,
 		code === "PRIVACY_BLOCKED" ? "use redacted output or explicitly scoped same-session evidence instead of private cross-scope data" : undefined,
-		["ACTIONABILITY_TIMEOUT", "TARGET_OCCLUDED", "TARGET_DISABLED"].includes(code) ? "wait, scroll, dismiss overlays, or refresh actionability evidence before retrying the ABML action" : undefined,
+		["ACTIONABILITY_TIMEOUT", "TARGET_OCCLUDED", "TARGET_DISABLED"].includes(code) ? "scroll or dismiss overlays in a new operation, or refresh actionability evidence before retrying the ABML action" : undefined,
 		code === "TARGET_NOT_EDITABLE" ? "choose an editable target or focus the editor before retrying" : undefined,
 		code === "BACKEND_UNAVAILABLE" ? "retry after the browser/CDP backend is healthy or refresh the browser session" : undefined,
 		code === "CROSS_ORIGIN_BLOCKED" ? "switch to a reachable frame or use a visual/read fallback when cross-origin access is blocked" : undefined,

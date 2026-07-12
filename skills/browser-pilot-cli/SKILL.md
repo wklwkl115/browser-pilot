@@ -1,6 +1,6 @@
 ---
 name: browser-pilot-cli
-description: Operate and inspect real Chrome or Edge tabs through the Browser Pilot CLI. Use when Codex needs to connect to Browser Pilot, select or inspect tabs, observe the canonical page model, execute JavaScript or trusted input programs, wait for browser conditions, capture screenshots or network traffic, inspect saved artifacts, troubleshoot the local daemon or extension, or discover and validate browser-pilot CLI commands and schemas.
+description: Operate and inspect real Chrome or Edge tabs through the Browser Pilot CLI. Use when Codex needs to connect to Browser Pilot, select or inspect tabs, observe the canonical page model, execute event-driven JavaScript or trusted input transactions, capture screenshots or network traffic, inspect saved artifacts, troubleshoot the local daemon or extension, or discover and validate browser-pilot CLI commands and schemas.
 ---
 
 # Browser Pilot CLI
@@ -62,17 +62,15 @@ Treat live help and schema output as authoritative. Command definitions reject u
 
    Use `--script` for JavaScript and `--program` for trusted CDP mouse/key/text/wait frames. Provide only one of them. There are no dedicated click or type commands. Use the low-level `command` escape hatch only when the public CLI surface cannot express the required native operation.
 
-5. Wait for a meaningful condition after state-changing actions.
+5. Consume the terminal outcome from the same operation call.
 
    ```text
-   browser-pilot wait selector --selector "#result" --target-ref <targetRef> --json
-   browser-pilot wait navigation --target-ref <targetRef> --json
-   browser-pilot wait network-idle --target-ref <targetRef> --json
+   {"version":"browser-operation/v1","operationId":"...","status":"completed",...}
    ```
 
-   Prefer natural wait subcommands. Use `browser-pilot wait --help` and its schema for composite `any` or `all` waits.
+   State-changing commands arm browser and page listeners before dispatch and keep the invocation open until `completed`, `effect_observed`, `no_effect`, `stalled`, `ambiguous`, `target_lost`, `failed`, or `deadline`. Do not issue a separate wait or sleep. `completed` requires command-specific mechanical evidence. `effect_observed` proves a browser effect but not the full business workflow; `no_effect` and `stalled` are not success.
 
-6. Verify with a fresh observation or targeted evidence read. Do not treat command acknowledgement alone as proof that the page reached the intended state.
+6. Continue from the returned evidence, observing again only when the next decision needs a fresh page model. Do not treat command acknowledgement or `effect_observed` as proof that the intended business state was reached. Late effects from the previous operation are surfaced automatically on the same owner's next related operation.
 
 ## Capture Network Evidence
 
@@ -82,7 +80,7 @@ Prefer the one-shot page-load flow:
 browser-pilot network captureReload --session-id <session-id> --target-ref <targetRef> --json
 ```
 
-Use `captureReload` instead of manually starting capture after navigation; it arms the recorder before reload/navigation and avoids missing early requests. Use lower-level `start`, `list`, `wait`, `export-har`, and `stop` only when persistent recorder control is required.
+Use `captureReload` instead of manually starting capture after navigation; it arms the recorder before reload/navigation and avoids missing early requests. Use lower-level `start`, `list`, `export-har`, and `stop` only when persistent recorder control is required; start and stop return only after the recorder is armed or flushed.
 
 ## Read Artifacts Incrementally
 
@@ -114,7 +112,7 @@ Read structured `error`, `diagnostics`, `nextActions`, `target`, and `saved` fie
 
 - Bridge or extension unavailable: run `connect --wait`, then `status` or `doctor`.
 - Stale or missing target: list tabs again and re-run canonical `observe`.
-- Wait timeout: use `wait diagnose` when applicable and inspect temporal diagnostics.
+- Operation `deadline`, `stalled`, or `target_lost`: inspect `dispatch`, `signals`, `target`, `diagnostics`, and any automatically surfaced `lateEffects`; do not replay an acknowledged mutating action blindly.
 - Truncated inline result: follow `saved.path` and `artifact_hints`; increase limits only when a targeted artifact read is insufficient.
 - Invalid arguments: query `schema <command> --json` or validate a parameter file before retrying.
 

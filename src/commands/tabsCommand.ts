@@ -4,10 +4,11 @@ import { BrowserBridgeError } from "../utils/errors.js";
 import { defaultLeaseIdRedactor } from "../kernels/session/leaseRegistry.js";
 import type { BrowserCommandRuntimePort, CommandTabLeaseInfo as BrowserTabLeaseInfo } from "../ports/BrowserCommandRuntimePort.js";
 import { jsonResult } from "../utils/toolResult.js";
-import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams, commandTimeoutMs } from "./commandRuntime.js";
-import { compactBridgeForTabsList, compactTabForList, publicCreateTabResult, publicSnapshot } from "./tabsProjection.js";
+import { defineBrowserCommand, inlineJsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, commandTimeoutMs } from "./commandRuntime.js";
+import { compactBridgeForTabsList, compactTabForList, publicSnapshot } from "./tabsProjection.js";
 import { asPositiveInt, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
+import { withBrowserOperation } from "./browserOperation.js";
 
 const TAB_TARGET_ACTIONS = new Set(["switch", "close", "attachtab", "detachtab", "leasetab", "releasetab"]);
 const SNAPSHOT_NOT_FOUND_RECOVERY = { nextActions: ["browser-pilot observe --json", "browser-pilot tabs --action snapshot --json"] };
@@ -127,9 +128,26 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 				if (action === "snapshot") return tabsSnapshotResult(server, params, browserSession, detailsForTransport, maxChars);
 				const advanced = advancedTabsResult(server, action, params, tabRef, browserSession);
 				if (advanced) return advanced;
-				if (action === "switch") return jsonResult(await server.switchTab(tabRef!, timeoutMs, browserSession), { action });
-				if (action === "create") return jsonResult(publicCreateTabResult(await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { ...browserSession, incognito: params.incognito === true })), { action });
-				if (action === "close") return jsonResult(await server.closeTab(tabRef!, timeoutMs, browserSession), { action });
+				if (["switch", "create", "close"].includes(action)) {
+					const trackedTabId = action === "create" ? undefined : resolveLocalTargetTabId(server, tabRef, browserSession.browserSessionId);
+					const outcome = await withBrowserOperation({
+						server,
+						commandName: "browser_tabs",
+						command: action,
+						action,
+						browserSessionId: browserSession.browserSessionId,
+						tabId: trackedTabId,
+						targetRef: typeof tabRef === "string" ? tabRef : undefined,
+						timeoutMs,
+						ctx,
+						onUpdate: _onUpdate,
+					}, async () => {
+						if (action === "switch") return await server.switchTab(tabRef!, timeoutMs, browserSession);
+						if (action === "create") return await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { ...browserSession, incognito: params.incognito === true });
+						return await server.closeTab(tabRef!, timeoutMs, browserSession);
+					});
+					return inlineJsonCommandResult(outcome, { action, operationId: outcome.operationId, status: outcome.status }, { maxChars }, "browser_tabs");
+				}
 				throw tabsToolError("INVALID_RULE", `Unsupported browser_tabs action: ${params.action}`, { action: params.action });
 			});
 		},

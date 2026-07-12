@@ -157,30 +157,29 @@ src/apps/cli/client.ts
   ▼
 src/apps/daemon/server.ts
   │ validateCommandArgs()
-  │ def.execute(...)
+  │ def.execute(...)；HTTP 请求保持到 operation 终态
   ▼
 src/commands/executeCommand.ts
-  │ server.executeJavaScript(...)
+  │ withBrowserOperation()
+  │ 1. daemon ledger begin + target generation lock
+  │ 2. internal operation.begin（等待 observers armed）
   ▼
-src/bridge/server/BrowserBridgeCommandService.ts
-  │ sendPayload(script)
+extension OperationCoordinator
+  │ tabs/webNavigation/download/debugger/MutationObserver listeners 已安装
   ▼
-WebSocket payload { id, code:string, tabId, timeoutMs }
+dispatch server.executeJavaScript(...)
   ▼
-src/bridge/extension/offscreen/transport.ts
-  │ 转发给 service worker
-  ▼
-src/bridge/extension/service_worker/router.ts
-  │ code 是 string，进入 handleWsExec
-  ▼
-src/bridge/extension/service_worker/exec.ts
+extension exec.ts
   │ chrome.scripting.executeScript 或 CDP Runtime.evaluate fallback
+  │ operation_event 持续上行到 daemon ledger
   ▼
-result/error
+command-specific resolver
+  │ completed 只能由机械完成证据产生
+  │ 否则按 activity/pending/deadline 分类终态
   ▼
-BrowserBridgePendingRequests resolve/reject
+operation.finish + bounded page evidence
   ▼
-daemon response
+browser-operation/v1
   ▼
 CLI renderResult()
 ```
@@ -195,7 +194,8 @@ CLI → daemon /invoke: browser_command
 src/commands/nativeCommand.ts
   │ validate BridgeCommandSchema
   │ rejectUnsafeExecuteCommand
-  │ server.sendCommand(...)
+  │ read command: server.sendCommand(...) 后立即返回
+  │ write command: withBrowserOperation() 后返回 browser-operation/v1
   ▼
 src/bridge/server/BrowserBridgeCommandService.ts
   │ validateBridgeCommand
@@ -211,16 +211,18 @@ src/bridge/extension/service_worker/core_commands.ts
   ▼
 Chrome API / CDP / extension handler
   ▼
-result/error → bridge server → daemon → CLI
+read result 或 write terminal outcome → bridge server → daemon → CLI
 ```
 
 ### 4.3 ACK 与 timeout 语义
 
-Bridge Server 为每个 request 分配 `id`。Extension 收到请求后先返回 `ack`，执行完成后返回 `result` 或 `error`。这让 server 可以区分：
+Bridge Server 为每个 transport request 分配 `id`。Extension 收到请求后先返回 `ack`，执行完成后返回 `result` 或 `error`。这让 server 可以区分：
 
 - 请求未到达 extension：没有 ACK；
 - 请求已到达但执行慢：有 ACK，pending request 仍在运行；
-- 请求完成：收到 result/error。
+- 单个 transport dispatch 完成：收到 result/error。
+
+ACK 或单个 dispatch result 不等于浏览器 operation 完成。write command 的 `/invoke` 会继续保持，直到 command-specific resolver 或通用 liveness 分类器产生 `browser-operation/v1` 终态。CLI transport timeout 为 `max(120s, timeoutMs + 10s)`，上限 310 秒；命令 hard deadline 仍由最多 300 秒的 `timeoutMs` 控制。
 
 对应实现：[`BrowserBridgePendingRequests.ts`](src/bridge/server/BrowserBridgePendingRequests.ts)、[`BrowserBridgeClientMessageService.ts`](src/bridge/server/BrowserBridgeClientMessageService.ts)。
 
@@ -320,7 +322,7 @@ Bridge Server 是 Node 侧浏览器桥。它不直接调用 Chrome API，而是�
 
 ### 5.4 `src/bridge/extension`
 
-Extension 是 MV3 浏览器侧实现。它执行实际浏览器能力：Chrome APIs、CDP、content scripts、network recorder、hook、screenshot、transfer、wait 等。
+Extension 是 MV3 浏览器侧实现。它执行实际浏览器能力：Chrome APIs、CDP、content scripts、network recorder、hook、screenshot、transfer，以及内部 operation observers。selector/navigation/network-idle wait 实现不属于公共工具面。
 
 关键结构：
 
@@ -351,7 +353,9 @@ src/bridge/extension/
 | [`service_worker/input.ts`](src/bridge/extension/service_worker/input.ts) | CDP 输入、pointer/key/touch/ref。 |
 | [`service_worker/network.ts`](src/bridge/extension/service_worker/network.ts) | network recorder、HAR/body/wait。 |
 | [`service_worker/network_events.ts`](src/bridge/extension/service_worker/network_events.ts) | CDP network/page 事件分发与 bounded request/response/WebSocket/SSE 投影。 |
-| [`service_worker/wait.ts`](src/bridge/extension/service_worker/wait.ts) | wait.any/all/cancel/diagnose。 |
+| [`service_worker/operation_coordinator.ts`](src/bridge/extension/service_worker/operation_coordinator.ts) | `operation.begin/finish/cancel`、事件监听、30 秒 passive late-effect 窗口与清理。 |
+| [`service_worker/operation_event_transport.ts`](src/bridge/extension/service_worker/operation_event_transport.ts) | `operation_event` WebSocket 上行。 |
+| [`service_worker/wait.ts`](src/bridge/extension/service_worker/wait.ts) | 内部 selector/navigation/network-idle/composite observer primitives。 |
 | [`service_worker/hook.ts`](src/bridge/extension/service_worker/hook.ts) | Hook action 分发、安装/卸载生命周期与 session 状态。 |
 | [`service_worker/screenshot.ts`](src/bridge/extension/service_worker/screenshot.ts) | screenshot capture。 |
 
@@ -378,6 +382,8 @@ Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向�
 | [`commandDefinition.ts`](src/commands/commandDefinition.ts) | `BrowserCommandDefinition` 等基础类型。 |
 | [`commandManifestIndex.ts`](src/commands/commandManifestIndex.ts) | command definition 收集器。 |
 | [`commandRuntime.ts`](src/commands/commandRuntime.ts) | timeout、target、operation、result helper。 |
+| [`browserOperation.ts`](src/commands/browserOperation.ts) | `withBrowserOperation()` 事务编排、liveness 终态与统一 outcome。 |
+| [`operationResolvers.ts`](src/commands/operationResolvers.ts) | write command completion resolver registry 与治理检查。 |
 | [`resultMiddleware.ts`](src/commands/resultMiddleware.ts) | distilled envelope、artifact、summary、memory。 |
 | [`validationMiddleware.ts`](src/commands/validationMiddleware.ts) | schema validation helper。 |
 | [`distillerRegistry.ts`](src/commands/distillerRegistry.ts) | summary distiller registry。 |
@@ -390,7 +396,7 @@ Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向�
 | `browser_execute` | [`executeCommand.ts`](src/commands/executeCommand.ts) |
 | `browser_observe` | [`observeCommand.ts`](src/commands/observeCommand.ts)、[`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts) |
 | `browser_command` | [`nativeCommand.ts`](src/commands/nativeCommand.ts) |
-| `browser_wait`、`browser_network`、`browser_hook`、`browser_frame` | [`nativeActionCommands.ts`](src/commands/nativeActionCommands.ts) |
+| `browser_network`、`browser_hook`、`browser_frame` | [`nativeActionCommands.ts`](src/commands/nativeActionCommands.ts) |
 | `browser_evidence` | [`evidenceCommand.ts`](src/commands/evidenceCommand.ts) |
 | `browser_artifact` | [`artifactCommand.ts`](src/commands/artifactCommand.ts) |
 | `browser_memory` | [`memoryCommand.ts`](src/commands/memoryCommand.ts) |
@@ -441,7 +447,7 @@ Kernels 是纯逻辑层。这里的代码不做浏览器 I/O、不读写文件�
 | [`browser-runtime/abml/visionRuntime.ts`](src/browser-runtime/abml/visionRuntime.ts) | vision probe、screenshot、artifact。 |
 | [`browser-command-runtime/abml/integration.ts`](src/browser-command-runtime/abml/integration.ts) | commands 与 ABML runtime 集成点。 |
 | [`browser-command-runtime/programEngine.ts`](src/browser-command-runtime/programEngine.ts) | physical input program engine。 |
-| [`browser-command-runtime/waitSupervisor.ts`](src/browser-command-runtime/waitSupervisor.ts) | wait runtime coordination。 |
+| [`browser-command-runtime/waitSupervisor.ts`](src/browser-command-runtime/waitSupervisor.ts) | operation supervisor 使用的内部 temporal/wait coordination。 |
 
 ### 5.8 `capture-src`
 
@@ -502,6 +508,7 @@ TS adapter 位于 [`src/native/browserPilotNativeKernels.ts`](src/native/browser
 | `handleBrowserPilotBridgeWsMessage()` | [`src/bridge/extension/service_worker/router.ts`](src/bridge/extension/service_worker/router.ts) | WebSocket payload 分发。 |
 | `dispatchBrowserPilotBridgeCommand()` | [`src/bridge/extension/service_worker/core_commands.ts`](src/bridge/extension/service_worker/core_commands.ts) | native command dispatch。 |
 | `handleWsExec()` | [`src/bridge/extension/service_worker/exec.ts`](src/bridge/extension/service_worker/exec.ts) | JS 执行与 CDP fallback。 |
+| `handleBrowserPilotOperationCommand()` | [`src/bridge/extension/service_worker/operation_coordinator.ts`](src/bridge/extension/service_worker/operation_coordinator.ts) | 在 dispatch 前 arm observers，并管理 terminal/passive cleanup。 |
 | `connectWS()` | [`src/bridge/extension/offscreen/transport.ts`](src/bridge/extension/offscreen/transport.ts) | offscreen WebSocket 连接。 |
 
 ### 6.4 Commands
@@ -516,6 +523,8 @@ TS adapter 位于 [`src/native/browserPilotNativeKernels.ts`](src/native/browser
 | `commandTimeoutMs()` | [`src/commands/commandRuntime.ts`](src/commands/commandRuntime.ts) | timeout 规范化，硬上限 300 秒。 |
 | `targetTabId()` | [`src/commands/commandRuntime.ts`](src/commands/commandRuntime.ts) | 从 params/body 解析目标 tab。 |
 | `withTrackedOperation()` | [`src/commands/commandRuntime.ts`](src/commands/commandRuntime.ts) | operation 生命周期和进度。 |
+| `withBrowserOperation()` | [`src/commands/browserOperation.ts`](src/commands/browserOperation.ts) | write command 统一事务、事件消费与 `browser-operation/v1` 终态。 |
+| `resolveBrowserOperationCompletion()` | [`src/commands/operationResolvers.ts`](src/commands/operationResolvers.ts) | command-specific mechanical completion evidence。 |
 | `jsonCommandResult()` | [`src/commands/commandRuntime.ts`](src/commands/commandRuntime.ts) | JSON 结果 envelope 入口。 |
 | `distilledJsonResult()` | [`src/commands/resultMiddleware.ts`](src/commands/resultMiddleware.ts) | 摘要、artifact、redaction、memory、evidence envelope。 |
 | `validateCommandArgs()` | [`src/validation/commandArgs.ts`](src/validation/commandArgs.ts) | TypeBox 参数转换与校验。 |
@@ -527,6 +536,8 @@ TS adapter 位于 [`src/native/browserPilotNativeKernels.ts`](src/native/browser
 | `Entity` | [`src/kernels/abml/entity.ts`](src/kernels/abml/entity.ts) | ABML 实体模型。 |
 | `diffEntities()` | [`src/kernels/abml/diff.ts`](src/kernels/abml/diff.ts) | entity diff 纯实现。 |
 | `SessionKernel` | [`src/kernels/session/SessionKernel.ts`](src/kernels/session/SessionKernel.ts) | session/lease/operation/snapshot kernel 聚合。 |
+| `SessionOperationRegistry` | [`src/kernels/session/operationRegistry.ts`](src/kernels/session/operationRegistry.ts) | active/terminal ledger、sequence、200-event bound、TTL 与 owner-isolated late effects。 |
+| `classifyBrowserOperationLiveness()` | [`src/kernels/session/browserOperationState.ts`](src/kernels/session/browserOperationState.ts) | 纯逻辑 `no_effect`/`stalled`/`deadline` 分类；不能产生 `completed`。 |
 | `mintRef()` / `parseRef()` | [`src/kernels/refs/core.ts`](src/kernels/refs/core.ts) | `bp-ref://` URI 创建与解析。 |
 | `RefDescriptor` | [`src/kernels/refs/types.ts`](src/kernels/refs/types.ts) | ABML 与 resource port 共享的 locator、owner、policy、snapshot、epoch、geometry 类型。 |
 | `createBrowserAbmlRuntime()` | [`src/browser-runtime/abml/runtime.ts`](src/browser-runtime/abml/runtime.ts) | 创建 ABML runtime context。 |
@@ -551,7 +562,6 @@ Core tools：
 - `browser_observe`
 - `browser_download`
 - `browser_upload`
-- `browser_wait`
 - `browser_network`
 - `browser_hook`
 - `browser_evidence`
@@ -616,6 +626,8 @@ Daemon `/invoke` 流程会：
 
 命令结果统一经过 `jsonCommandResult()` 或 `textCommandResult()`，最终由 `resultMiddleware.ts` 生成 distilled envelope。
 
+浏览器状态改变型 core command 是例外的稳定公共契约：它们直接返回 `browser-operation/v1`，字段包含 `operationId`、`commandName`、终态 `status`、锁定的 `target`/generation、`dispatch` ACK 生命周期、browser/page `signals`、可选 command-specific `completion`、bounded `pageEffect`/`diagnostics` 和同 owner 下一次相关调用自动浮现的 `lateEffects`。`completed` 只能由 [`operationResolvers.ts`](src/commands/operationResolvers.ts) 的机械证据产生；通用 supervisor 只能产生 `effect_observed`、`no_effect`、`stalled`、`target_lost`、`failed` 或 `deadline`，明确歧义由命令 resolver/error mapping 产生 `ambiguous`。读取型命令仍立即返回既有 envelope。
+
 Envelope 常见字段：
 
 - `tool`
@@ -672,8 +684,10 @@ Provider budget telemetry summary 是 canonical observe diagnostics 的稳定、
 规则：
 
 - `script` 与 `program` 二选一；
+- 不接受 `monitor` 或关闭事务的兼容开关；
 - 只接受 JavaScript，不接受 native bridge command；
 - 页面动作可以通过 JS 或 CDP physical input program 完成；
+- observers 在动作 dispatch 前 arm；JavaScript 非 `undefined` resolve 产生 `completed/script-resolved`，无返回且无效果产生 `no_effect`；
 - 没有独立的 click/type 工具。
 
 关键文件：[`executeCommand.ts`](src/commands/executeCommand.ts)。
@@ -684,11 +698,11 @@ Provider budget telemetry summary 是 canonical observe diagnostics 的稳定、
 
 关键文件：[`nativeCommand.ts`](src/commands/nativeCommand.ts)。
 
-#### `browser_wait` / `browser_network` / `browser_hook` / `browser_frame`
+#### `browser_network` / `browser_hook` / `browser_frame`
 
-这几类工具共享 `defineNativeActionCommand()` 注册模式，将高层 `action` 映射到底层 native command。
+这几类工具共享 `defineNativeActionCommand()` 注册模式，将高层 `action` 映射到底层 native command。read action 立即返回；write action 经 `withBrowserOperation()` 返回统一终态。公开 `browser_wait`/CLI `wait` 已删除，selector/navigation/network-idle 实现只作为 internal supervisor primitive，不能通过 `browser_command` 访问。
 
-`browser_network action=captureReload` 是 page-load network flow 的推荐入口：command 层会在同一 batch 中先执行 `network.start`，再 reload/navigation，随后用 bounded wait/list/export 路径返回 summary、recovery guidance 和 `saved.path`。不要把面向 agent 的文档写成只推荐手动 `network start` 后再 reload/list 的流程，因为该流程容易漏掉早期请求；低层 `start/list/stop/wait/exportHar` 仍保留给需要持续 recorder 控制的场景。captureReload 结果和相关 bridge responses 可包含 bounded `diagnostics.latency` / temporal telemetry，字段限于 elapsed/deadline/ack/queue/runtime/serialize 等操作性 timing 与计数，不包含 command payload、headers、body、postData、cookies 或 URL query。读取 capture artifact 时先用 `browser_artifact mode=inspect` / `mode=paths` 检查实际 path，再用存在的 JSON path 读取。
+`browser_network action=captureReload` 是 page-load network flow 的推荐入口：command 层会在同一 batch 中先执行 `network.start`，再 reload/navigation，随后沿内部 bounded condition/list/export 路径返回 transaction outcome 和 artifact evidence。不要把面向 agent 的文档写成手动 `network start` 后再 reload/sleep/list 的流程，因为该流程容易漏掉早期请求；低层 `start/list/stop/exportHar` 保留给需要持续 recorder 控制的场景，其中 start 只在 recorder armed 后完成，stop 只在停止并 flush 后完成。captureReload 结果和相关 bridge responses 可包含 bounded `diagnostics.latency` / temporal telemetry，字段限于 elapsed/deadline/ack/queue/runtime/serialize 等操作性 timing 与计数，不包含 command payload、headers、body、postData、cookies 或 URL query。读取 capture artifact 时先用 `browser_artifact mode=inspect` / `mode=paths` 检查实际 path，再用存在的 JSON path 读取。
 
 关键文件：[`nativeActionCommands.ts`](src/commands/nativeActionCommands.ts)。
 
@@ -714,6 +728,10 @@ CLI 调用通常是短生命周期的。Daemon 长驻并持有 browser session�
 - extension 连接状态可复用；
 - 多项目共享用户本地 daemon；
 - 每次 `/invoke` 携带 `cwd`，用于 artifacts/memory/evidence 的请求级作用域。
+- pairing `pairingId` 作为 operation owner 传播；没有 pairing 的本地 CLI 使用稳定 `local-cli` owner，late effects 只能被相同 owner + browser session 的下一次相关 operation 消费。
+- `/invoke` 对 write command 保持到 terminal outcome，不在 transport ACK 后提前返回。
+
+Daemon 的 `SessionOperationRegistry` 是持久 operation ledger：最多 256 项，每项最多 200 条 compact/redacted sequenced events，active/terminal TTL 均为 5 分钟。`finish()` 把 active 标记为 terminal 而不删除；terminal 后 30 秒内的事件追加为 `late_effect`，不覆盖原终态，surfaced 后不重复消费。
 
 ### 8.2 Bridge Server 组合关系
 
@@ -742,6 +760,8 @@ Extension offscreen transport 会扫描本地端口范围 `18765-18784`。连接
 
 Bridge Server 收到 `ext_ready` 或 `tabs_update` 后更新 client info 和 tabs router。
 
+OperationCoordinator 通过 offscreen transport 发送独立 `operation_event` message；`BrowserBridgeClientMessageService` 不把它当 pending request result，而是按稳定 `operationId` 追加到账本。事件携带 sequence、timestamp、tab/target/generation 和 compact data。tab removal/replacement、CDP detach 或已 ACK 请求在非 durable reconnect 中丢失结果时必须诚实终止为 `target_lost`/`failed`，不得静默重放 mutating action。
+
 ### 8.4 Native protocol
 
 Native command schema 源头是 [`src/bridge/protocol/native-command.schema.json`](src/bridge/protocol/native-command.schema.json)。同步脚本 [`scripts/sync-native-protocol.mjs`](scripts/sync-native-protocol.mjs) 会生成：
@@ -752,6 +772,8 @@ Native command schema 源头是 [`src/bridge/protocol/native-command.schema.json
 - [`src/types/nativeErrorCodes.ts`](src/types/nativeErrorCodes.ts)
 
 协议 schema 是源头，生成文件不应随意手改。
+
+`operation.begin`、`operation.finish`、`operation.cancel` 以及既有 `wait.*` primitives 都标记为 `internal:true`，不注册 public tool，也不能通过 public `browser_command` 调用。`operation.begin` 只有在 listener/baseline/MutationObserver arm 完成后才返回；`operation.finish` 进入 30 秒 passive window；`operation.cancel` 立即清理 listeners/observer/timer。
 
 ---
 

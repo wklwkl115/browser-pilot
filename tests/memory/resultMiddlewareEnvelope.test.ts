@@ -351,12 +351,11 @@ test("result middleware emits crawl artifact hints for summary items and body wi
 	assert.equal(JSON.stringify(hints.hints).includes("crawl response body"), false);
 });
 
-test("result middleware emits execute artifact hints for result program frames and monitor data", async () => {
+test("result middleware emits execute artifact hints for program frames and resolved data", async () => {
 	const outputPath = await testArtifactPath("execute-hints.json");
 	const rawValue = {
 		executed: [{ frameId: 0, ok: true }],
 		result: { value: "execution result", nested: { count: 1 } },
-		monitor: { events: [{ type: "console", text: "hello" }] },
 		data: { records: [1, 2, 3] },
 		largePayload: "execute payload ".repeat(100),
 	};
@@ -372,7 +371,6 @@ test("result middleware emits execute artifact hints for result program frames a
 	assertPathHint(hints, "data", "data", "primary-data");
 	assertPathHint(hints, "executed", "executed", "program-frames");
 	assertPathHint(hints, "result", "result", "execute-result");
-	assertPathHint(hints, "monitor", "monitor", "execute-monitor");
 	assert.equal(hints.paths.nestedResult, "result.nested");
 	assert.equal(hints.paths.missingResult, undefined);
 	assert.equal(hints.reads.some((read) => read.jsonPath === "result.missing"), false);

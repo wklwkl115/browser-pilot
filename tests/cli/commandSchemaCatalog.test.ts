@@ -6,6 +6,9 @@ import { dispatchProgramElement, validateProgram } from "../../src/browser-comma
 import { PROGRAM_OP_DISCRIMINATORS } from "../../src/browser-command-runtime/programOps.ts";
 import { normalizeObserveMode, selectDiffBaselineSnapshot, validateObserveParams } from "../../src/commands/observeCommand.ts";
 import { legacyProjectionDetails, legacyProjectionSummary } from "../../src/commands/observe/renderCache.ts";
+import { getNativeCommandProtocolSchema } from "../../src/types/nativeProtocol.ts";
+import { hasBrowserOperationResolver } from "../../src/commands/operationResolvers.ts";
+import { helpText } from "../../src/apps/cli/help.ts";
 
 function command(name: string) {
 	const def = collectCommandDefs().find((item) => item.name === name);
@@ -31,7 +34,7 @@ function assertValidationError(schema: unknown, args: Record<string, unknown>, p
 test("command catalog characterization: public browser tool names are stable, unique, and CLI-safe", () => {
 	const defs = collectCommandDefs();
 	const names = defs.map((def) => def.name);
-	assert.equal(names.length, 21);
+	assert.equal(names.length, 20);
 	assert.deepEqual(names, [
 		"browser_tabs",
 		"browser_command",
@@ -39,7 +42,6 @@ test("command catalog characterization: public browser tool names are stable, un
 		"browser_observe",
 		"browser_download",
 		"browser_upload",
-		"browser_wait",
 		"browser_network",
 		"browser_hook",
 		"browser_evidence",
@@ -68,6 +70,24 @@ test("command catalog characterization: CLI subcommands are derived one-to-one f
 		assert.equal(cmd.subcommand, cmd.name.replace(/^browser_/, "").replace(/_/g, "-"));
 		assert.match(cmd.subcommand, /^[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*$/);
 		assert.equal(cmd.def.name, cmd.name);
+	}
+});
+
+test("CLI public help and registry do not expose the removed wait command", () => {
+	assert.equal(buildCliCommands().some((command) => command.subcommand === "wait" || command.name === "browser_wait"), false);
+	assert.doesNotMatch(helpText(), /^\s*wait\s/m);
+});
+
+test("command catalog governance: every public native write command has an operation completion resolver", () => {
+	const schema = getNativeCommandProtocolSchema();
+	for (const [cmd, spec] of Object.entries(schema.commands)) {
+		if (spec.internal === true) continue;
+		const writeMethods = Object.entries(spec.methodSpecs ?? {}).filter(([, method]) => method.accessMode === "write");
+		if (writeMethods.length) {
+			for (const [method] of writeMethods) assert.equal(hasBrowserOperationResolver({ cmd, method }), true, `${cmd}.${method}`);
+			continue;
+		}
+		if (spec.accessMode === "write") assert.equal(hasBrowserOperationResolver({ cmd }), true, cmd);
 	}
 });
 
@@ -102,8 +122,8 @@ test("command schema characterization: required fields and unknown parameters fa
 
 	const execute = command("browser_execute");
 	const executeResult = validateCommandArgs(execute.parameters, { script: "return 1", monitor: "true" });
-	assert.equal(executeResult.ok, true);
-	if (executeResult.ok) assert.deepEqual({ monitor: executeResult.args.monitor }, { monitor: true });
+	assert.equal(executeResult.ok, false);
+	if (!executeResult.ok) assert.match(executeResult.error, /unknown parameter "monitor"/);
 });
 
 test("command schema characterization: key commands expose expected top-level parameter surfaces", () => {
@@ -121,7 +141,7 @@ test("command schema characterization: key commands expose expected top-level pa
 		"targetRef",
 		"url",
 	].sort());
-	assert.deepEqual(Object.keys(schemaProperties(command("browser_execute").parameters)).sort(), ["monitor", "program", "script", "tabId", "targetRef"].sort());
+	assert.deepEqual(Object.keys(schemaProperties(command("browser_execute").parameters)).sort(), ["program", "script", "tabId", "targetRef"].sort());
 	assert.deepEqual(Object.keys(schemaProperties(command("browser_memory").parameters)).sort(), ["action", "body", "evidenceRefs", "freshOnly", "id", "jsonPath", "kind", "limit", "mode", "offset", "query", "scopeKey", "scopeKind", "title", "triggers", "uri", "url"].sort());
 });
 

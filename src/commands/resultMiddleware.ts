@@ -133,7 +133,6 @@ function compactArtifactHints(options: DistillBaseOptions, summary: DistilledSum
 	collectPathHint(paths, preferredReads, rawValue, "pages", "pages", "primary-items");
 	collectPathHint(paths, preferredReads, rawValue, "executed", "executed", "program-frames");
 	collectPathHint(paths, preferredReads, rawValue, "result", "result", "execute-result");
-	collectPathHint(paths, preferredReads, rawValue, "monitor", "monitor", "execute-monitor");
 	collectPathHint(paths, preferredReads, rawValue, "body", "body", "body");
 	collectPathHint(paths, preferredReads, rawValue, "text", "text", "text");
 	collectPathHint(paths, preferredReads, rawValue, "content text", "data.content", "text");

@@ -105,12 +105,16 @@ export async function invokeTool(tool: string, params: Record<string, unknown>, 
 	const pairingToken = resolvePairingToken();
 	let response;
 	try {
+		const requestedTimeoutMs = Number(params.timeoutMs);
+		const transportTimeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
+			? Math.min(310_000, Math.max(120_000, Math.floor(requestedTimeoutMs) + 10_000))
+			: 120_000;
 		response = await controlRequest(
 			info,
 			"POST",
 			"/invoke",
 			{ tool, params, cwd, ...(cli ? { cli } : {}) },
-			120_000,
+			transportTimeoutMs,
 			pairingToken ? { pairingToken } : undefined,
 		);
 	} catch (error) {

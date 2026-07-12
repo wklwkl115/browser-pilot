@@ -13,6 +13,14 @@ const debuggerDetaches: number[] = [];
 const debuggerCommands: DebuggerCommand[] = [];
 const debuggerDetachListeners: Array<(source: Debuggee, reason: string) => void> = [];
 const debuggerEventListeners: Array<(source: Debuggee, method: string, params?: Record<string, unknown>) => void> = [];
+const tabCreatedListeners: Array<(tab: Record<string, unknown>) => void> = [];
+const tabUpdatedListeners: Array<(tabId: number, changeInfo: Record<string, unknown>, tab: Record<string, unknown>) => void> = [];
+const tabRemovedListeners: Array<(tabId: number) => void> = [];
+const tabReplacedListeners: Array<(addedTabId: number, removedTabId: number) => void> = [];
+const tabActivatedListeners: Array<(info: { tabId: number; windowId: number }) => void> = [];
+const downloadCreatedListeners: Array<(item: Record<string, unknown>) => void> = [];
+const downloadChangedListeners: Array<(delta: Record<string, unknown>) => void> = [];
+const navigationListeners: Array<(details: Record<string, unknown> & { tabId?: number; url?: string }) => void> = [];
 const sessionStorage: Record<string, unknown> = {};
 let failRunScriptOnce = false;
 let failNotAttachedOnce = false;
@@ -107,7 +115,18 @@ const chromeStub = {
 		async update(tabId: number) {
 			return { id: tabId, active: true, windowId: 1 };
 		},
+		onCreated: { addListener(listener: (tab: Record<string, unknown>) => void) { tabCreatedListeners.push(listener); }, removeListener(listener: (tab: Record<string, unknown>) => void) { const index = tabCreatedListeners.indexOf(listener); if (index >= 0) tabCreatedListeners.splice(index, 1); } },
+		onUpdated: { addListener(listener: (tabId: number, changeInfo: Record<string, unknown>, tab: Record<string, unknown>) => void) { tabUpdatedListeners.push(listener); }, removeListener(listener: (tabId: number, changeInfo: Record<string, unknown>, tab: Record<string, unknown>) => void) { const index = tabUpdatedListeners.indexOf(listener); if (index >= 0) tabUpdatedListeners.splice(index, 1); } },
+		onRemoved: { addListener(listener: (tabId: number) => void) { tabRemovedListeners.push(listener); }, removeListener(listener: (tabId: number) => void) { const index = tabRemovedListeners.indexOf(listener); if (index >= 0) tabRemovedListeners.splice(index, 1); } },
+		onReplaced: { addListener(listener: (addedTabId: number, removedTabId: number) => void) { tabReplacedListeners.push(listener); }, removeListener(listener: (addedTabId: number, removedTabId: number) => void) { const index = tabReplacedListeners.indexOf(listener); if (index >= 0) tabReplacedListeners.splice(index, 1); } },
+		onActivated: { addListener(listener: (info: { tabId: number; windowId: number }) => void) { tabActivatedListeners.push(listener); }, removeListener(listener: (info: { tabId: number; windowId: number }) => void) { const index = tabActivatedListeners.indexOf(listener); if (index >= 0) tabActivatedListeners.splice(index, 1); } },
 	},
+	scripting: { async executeScript() { return []; } },
+	downloads: {
+		onCreated: { addListener(listener: (item: Record<string, unknown>) => void) { downloadCreatedListeners.push(listener); }, removeListener(listener: (item: Record<string, unknown>) => void) { const index = downloadCreatedListeners.indexOf(listener); if (index >= 0) downloadCreatedListeners.splice(index, 1); } },
+		onChanged: { addListener(listener: (delta: Record<string, unknown>) => void) { downloadChangedListeners.push(listener); }, removeListener(listener: (delta: Record<string, unknown>) => void) { const index = downloadChangedListeners.indexOf(listener); if (index >= 0) downloadChangedListeners.splice(index, 1); } },
+	},
+	webNavigation: Object.fromEntries(["onCommitted", "onCompleted", "onHistoryStateUpdated", "onErrorOccurred"].map((name) => [name, { addListener(listener: (details: Record<string, unknown> & { tabId?: number; url?: string }) => void) { navigationListeners.push(listener); }, removeListener(listener: (details: Record<string, unknown> & { tabId?: number; url?: string }) => void) { const index = navigationListeners.indexOf(listener); if (index >= 0) navigationListeners.splice(index, 1); } }])),
 };
 
 Object.assign(globalThis, { chrome: chromeStub, self: globalThis });
@@ -119,6 +138,7 @@ const runtimeSupport = await import("../../src/bridge/extension/service_worker/r
 const stateStore = await import("../../src/bridge/extension/service_worker/state_store.ts");
 const cdpCommands = await import("../../src/bridge/extension/service_worker/cdp.ts");
 const frameCommands = await import("../../src/bridge/extension/service_worker/frame.ts");
+const operationTransport = await import("../../src/bridge/extension/service_worker/operation_event_transport.ts");
 
 function resetCdpFixtures(): void {
 	cdpCommands.browserPilotPersistentCdpBridge.sessions.clear();
@@ -161,6 +181,27 @@ test("core command direct and batch dispatch share supported command handlers", 
 	assert.equal(batch.ok, true);
 	assert.deepEqual(batch.results, [direct]);
 	assert.equal(typeof coreCommands.resolveBrowserPilotCoreCommandHandler("tabs"), "function");
+});
+
+test("operation coordinator arms listeners before dispatch and keeps late events passive until cancel", async () => {
+	const socket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
+	operationTransport.setBrowserPilotOperationEventSocketGetter(() => socket);
+	const begin = await coreCommands.dispatchBrowserPilotBridgeCommand({ cmd: "operation.begin", operationId: "operation-1", tabId: 7, generation: 3, targetRef: "tab-7" }, sender());
+	assert.equal(begin.ok, true);
+	assert.equal((begin.data as Record<string, unknown>).armed, true);
+	assert.equal((begin.data as Record<string, unknown>).mutationObserverArmed, true);
+	assert.equal(tabUpdatedListeners.length > 0, true);
+	assert.equal(downloadCreatedListeners.length > 0, true);
+	assert.equal(debuggerEventListeners.length > 0, true);
+	debuggerEventListeners.at(-1)?.({ tabId: 7 }, "Network.requestWillBeSent", { requestId: "r1", request: { url: "https://example.test/api" } });
+	assert.equal((JSON.parse(socket.sent.at(-1) || "{}") as Record<string, unknown>).type, "operation_event");
+	const finish = await coreCommands.dispatchBrowserPilotBridgeCommand({ cmd: "operation.finish", operationId: "operation-1" }, sender());
+	assert.equal(finish.ok, true);
+	tabUpdatedListeners.at(-1)?.(7, { status: "complete" }, { id: 7, url: "https://example.test/done" });
+	assert.equal(socket.sent.some((payload) => payload.includes("navigation")), true);
+	const cancel = await coreCommands.dispatchBrowserPilotBridgeCommand({ cmd: "operation.cancel", operationId: "operation-1" }, sender());
+	assert.equal(cancel.ok, true);
+	assert.equal(tabUpdatedListeners.length, 0);
 });
 
 test("core command unknown direct and batch dispatch return command errors", async () => {

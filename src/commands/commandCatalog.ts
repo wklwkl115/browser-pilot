@@ -2,7 +2,7 @@ import { defineArtifactCommand } from "./artifactCommand.js";
 import { defineNativeCommand } from "./nativeCommand.js";
 import { defineEvidenceCommand } from "./evidenceCommand.js";
 import { defineExecuteCommand } from "./executeCommand.js";
-import { defineFrameCommand, defineHookCommand, defineNetworkCommand, defineWaitCommand } from "./nativeActionCommands.js";
+import { defineFrameCommand, defineHookCommand, defineNetworkCommand } from "./nativeActionCommands.js";
 import { defineObserveCommand } from "./observeCommand.js";
 import { defineMemoryCommand } from "./memoryCommand.js";
 import { defineScreenshotCommand } from "./screenshotCommand.js";
@@ -24,7 +24,6 @@ const CORE_BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = [
 	defineObserveCommand,
 	defineDownloadCommand,
 	defineUploadCommand,
-	defineWaitCommand,
 	defineNetworkCommand,
 	defineHookCommand,
 	defineEvidenceCommand,

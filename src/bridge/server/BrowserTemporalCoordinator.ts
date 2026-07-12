@@ -51,19 +51,6 @@ function temporalFromDiagnostics(diagnostics: Record<string, unknown> | undefine
 	return isRecord(diagnostics?.temporal) ? diagnostics.temporal : undefined;
 }
 
-function temporalFromEffect(effect: unknown): Record<string, unknown> | undefined {
-	const record = isRecord(effect) ? effect : undefined;
-	return isRecord(record?.temporal) ? record.temporal : undefined;
-}
-
-function effectFromResult(result: unknown): Record<string, unknown> | undefined {
-	const record = isRecord(result) ? result : undefined;
-	const direct = isRecord(record?.effect) ? record.effect : undefined;
-	if (direct) return direct;
-	const execution = isRecord(record?.execution) ? record.execution : undefined;
-	return isRecord(execution?.effect) ? execution.effect : undefined;
-}
-
 function firstRecord(...values: unknown[]): Record<string, unknown> | undefined {
 	for (const value of values) if (isRecord(value)) return value;
 	return undefined;
@@ -93,15 +80,14 @@ function stringValue(value: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
 }
 
-function profileTarget(input: CommandTemporalProfileSampleInput, effect: Record<string, unknown> | undefined): CommandTemporalProfileSample["target"] {
+function profileTarget(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample["target"] {
 	const resultTarget = input.result?.target;
 	const target = input.target ?? (resultTarget ? {
-		browserSessionId: resultTarget.browserSessionId,
-		tabId: resultTarget.tabId,
-		targetRef: resultTarget.targetRef,
+		...(resultTarget.browserSessionId ? { browserSessionId: resultTarget.browserSessionId } : {}),
+		...(resultTarget.tabId !== undefined ? { tabId: resultTarget.tabId } : {}),
+		...(resultTarget.targetRef ? { targetRef: resultTarget.targetRef } : {}),
 	} : undefined);
-	const targetRef = target?.targetRef || stringValue(effect?.targetRef);
-	return target || targetRef ? { ...target, ...(targetRef ? { targetRef } : {}) } : undefined;
+	return target;
 }
 
 function setSampleValue<K extends keyof CommandTemporalProfileSample>(sample: CommandTemporalProfileSample, key: K, value: CommandTemporalProfileSample[K] | undefined): void {
@@ -211,13 +197,9 @@ export class BrowserTemporalCoordinator {
 	buildProfileSample(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample {
 		const diagnostics = diagnosticsFrom(input);
 		const temporalProfile = temporalProfileFromDiagnostics(diagnostics) ?? {};
-		const effect = effectFromResult(input.result);
-		const effectTemporal = temporalFromEffect(effect);
 		const supervisor = supervisorFromData(input.result?.data) ?? {};
 		const diagnosticsTemporal = temporalFromDiagnostics(diagnostics);
-		const temporal = input.tool === "browser_execute"
-			? firstRecord(effectTemporal, diagnosticsTemporal, supervisor.temporal)
-			: firstRecord(diagnosticsTemporal, supervisor.temporal, effectTemporal);
+		const temporal = firstRecord(diagnosticsTemporal, supervisor.temporal);
 		const temporalRecord = temporal ?? {};
 		const verdict = isRecord(temporalRecord.verdict) ? temporalRecord.verdict : {};
 		const frontier = isRecord(temporalRecord.frontier) ? temporalRecord.frontier : {};
@@ -227,7 +209,7 @@ export class BrowserTemporalCoordinator {
 			elapsedMs: input.elapsedMs,
 		};
 		if (input.operationId) sample.operationId = input.operationId;
-		setSampleValue(sample, "target", profileTarget(input, effect));
+		setSampleValue(sample, "target", profileTarget(input));
 		setSampleValue(sample, "deadlineMs", input.deadlineMs ?? numeric(temporalProfile.deadlineMs));
 		setSampleValue(sample, "bridgeRoundTrips", numeric(temporalProfile.bridgeRoundTrips));
 		setSampleValue(sample, "queueDepthAtEnqueue", numeric(temporalProfile.queueDepthAtEnqueue));

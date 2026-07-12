@@ -10,6 +10,7 @@ import { parseJsonOrThrow } from "../../utils/json.js";
 import { recordValue } from "./bridgeUtils.js";
 import { CONSENT_MESSAGE_TYPES } from "../protocol/consentTypes.js";
 import type { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
+import type { SessionOperationRegistry } from "../../kernels/session/operationRegistry.js";
 
 type IncomingMessage = {
 	type?: unknown;
@@ -35,6 +36,7 @@ type BrowserBridgeClientMessageServiceDeps = {
 	leases: BrowserBridgeLeaseRegistryPort;
 	queues: BrowserCommandQueueRegistry;
 	consent: BrowserBridgeConsentCoordinator;
+	operations: SessionOperationRegistry;
 	migratePerceptionLedger?: (fromTabId: number, toTabId: number, browserSessionIds?: string[]) => void;
 	logLeaseCleanup?: (details: { reason: "disconnect"; releasedLeases: unknown[]; releasedUiLocks: unknown[]; disconnectedTabSessionIds: string[]; affectedBrowserSessionIds: string[] }) => void;
 	notifyExtensionReady?: () => void;
@@ -87,6 +89,22 @@ export class BrowserBridgeClientMessageService {
 		this.deps.clients.markSeen(ws);
 		const type = String(message.type || "");
 		if (type === "ping") return;
+		if (type === "operation_event") {
+			const operationId = typeof message.operationId === "string" ? message.operationId : "";
+			if (!operationId) return;
+			const event = recordValue(message.event) || message;
+			this.deps.operations.recordEvent(operationId, {
+				type: typeof event.type === "string" ? event.type : "unknown",
+				sequence: typeof event.sequence === "number" ? event.sequence : undefined,
+				timestamp: typeof event.timestamp === "number" ? event.timestamp : undefined,
+				targetRef: typeof event.targetRef === "string" ? event.targetRef : undefined,
+				tabId: typeof event.tabId === "number" ? event.tabId : undefined,
+				generation: typeof event.generation === "number" ? event.generation : undefined,
+				progress: event.progress !== false,
+				data: recordValue(event.data),
+			});
+			return;
+		}
 		if (type === CONSENT_MESSAGE_TYPES.response) {
 			this.deps.consent.resolveConsent(String(message.pairingId || ""), message.decision as "approve" | "deny");
 			return;

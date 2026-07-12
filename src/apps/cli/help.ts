@@ -25,7 +25,6 @@ export const COMMAND_SUMMARIES: CliCommandSummary[] = [
 	{ subcommand: "tabs", name: "browser_tabs", description: "List, switch, create, close, or snapshot browser tabs; advanced actions manage scoped browser sessions and tab leases through the Browser Pilot bridge." },
 	{ subcommand: "template", name: "browser_template", description: "Run bounded built-in/custom HTTP template checks or mature nuclei template automation against scoped targets or request templates with structured matches and artifacts." },
 	{ subcommand: "upload", name: "browser_upload", description: "Upload local file(s) through a page file chooser using CDP DOM.setFileInputFiles." },
-	{ subcommand: "wait", name: "browser_wait", description: "Native wait/navigation commands: navigate, navigateAndWait, loadState, networkIdle, selector, any, all, cancel, diagnose. Composite any/all require non-empty waits or conditions." },
 ];
 
 /** Left-align in a column; if the head already fills the column, keep a 2-space gap so the

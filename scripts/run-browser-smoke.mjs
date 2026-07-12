@@ -88,6 +88,14 @@ function resultText(result) {
 	return Array.isArray(result?.content) ? result.content.map((item) => typeof item?.text === "string" ? item.text : "").join("\n") : "";
 }
 
+function operationOutcome(result, label, expectedStatus) {
+	let value;
+	try { value = JSON.parse(resultText(result)); } catch { throw new Error(`${label} did not return JSON: ${resultText(result)}`); }
+	if (value?.version !== "browser-operation/v1") throw new Error(`${label} did not return browser-operation/v1: ${JSON.stringify(value)}`);
+	if (expectedStatus && value.status !== expectedStatus) throw new Error(`${label} returned ${String(value.status)}, expected ${expectedStatus}: ${JSON.stringify(value)}`);
+	return value;
+}
+
 async function invoke(daemon, tool, params) {
 	const result = await daemonJson(daemon, "/invoke", {
 		method: "POST",
@@ -170,7 +178,17 @@ try {
 		tabId,
 		script: "(async()=>{const api=await(await fetch('/api/execute')).json();return{title:document.title,marker:document.querySelector('#smoke-marker')?.textContent,api:api.ok}})()",
 	});
+	operationOutcome(executed, "browser_execute", "completed");
 	if (!resultText(executed).includes("Browser Pilot Smoke")) throw new Error(`browser_execute did not return fixture evidence: ${resultText(executed)}`);
+	const noEffect = await invoke(daemon, "browser_execute", { tabId, script: "void 0" });
+	operationOutcome(noEffect, "browser_execute no-effect", "no_effect");
+	const created = operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}secondary`, active: true }), "browser_tabs create", "completed");
+	const createdTabId = Number(created.target?.tabId);
+	const originalTargetRef = tab?.targetRef || tab?.tabHandle || tabId;
+	if (!Number.isInteger(createdTabId) || createdTabId <= 0 || !created.target?.targetRef) throw new Error(`created tab was not ready/routable: ${JSON.stringify(created)}`);
+	operationOutcome(await invoke(daemon, "browser_tabs", { action: "switch", targetRef: originalTargetRef }), "browser_tabs switch", "completed");
+	operationOutcome(await invoke(daemon, "browser_execute", { targetRef: originalTargetRef, script: "document.title" }), "browser_execute after switch", "completed");
+	operationOutcome(await invoke(daemon, "browser_tabs", { action: "close", targetRef: created.target.targetRef }), "browser_tabs close", "completed");
 	const observed = await invoke(daemon, "browser_observe", { tabId, maxNodes: 200 });
 	if (!resultText(observed).includes("Browser Pilot Smoke")) throw new Error(`browser_observe did not return fixture evidence: ${resultText(observed)}`);
 	const network = await invoke(daemon, "browser_network", {
@@ -209,7 +227,7 @@ try {
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute", "observe", "network-capture-reload", "hook-install-collect-uninstall", "extension-reconnect"],
+		checks: ["extension-handshake", "tabs", "execute-operation", "no-effect", "tab-create-switch-close", "observe", "network-capture-reload", "hook-install-collect-uninstall", "extension-reconnect"],
 		connectionMetrics: reconnected.health?.connectionMetrics,
 	}, null, 2));
 } finally {

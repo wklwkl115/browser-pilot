@@ -10,6 +10,7 @@ export type BrowserCommandExecuteContext = {
 	cwd?: string;
 	hasUI?: boolean;
 	omitTransportDetails?: boolean;
+	operationOwnerId?: string;
 };
 
 export type BrowserCommandDefinition = {

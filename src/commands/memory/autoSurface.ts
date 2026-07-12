@@ -12,7 +12,7 @@ const SKIP_TOOLS = new Set(["browser_memory", "browser_tabs"]);
 // Read-only/observational tools still surface RECALL hints, but never trigger the
 // record nudge: merely looking at a page is not a reusable accomplishment worth
 // crystallizing into a reusable fact — only acting on it is.
-const NON_SALIENT_RECORD_TOOLS = new Set(["browser_observe", "browser_screenshot", "browser_wait", "browser_frame", "browser_artifact"]);
+const NON_SALIENT_RECORD_TOOLS = new Set(["browser_observe", "browser_screenshot", "browser_frame", "browser_artifact"]);
 const WARNED_AUTOMATIC_INDEX_READ_CAP = 2000;
 const warnedAutomaticIndexReads = new Set<string>();
 

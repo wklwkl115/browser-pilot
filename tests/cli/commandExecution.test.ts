@@ -77,6 +77,8 @@ function createRuntime(overrides: Partial<BrowserCommandRuntimePort> = {}): Mock
 		},
 		async sendCommand(command, options) {
 			calls.push({ name: "sendCommand", args: [command, options] });
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, tabId: typeof command.tabId === "number" ? command.tabId : undefined, data: { armed: true } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "operation.finish") return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
 			return { id: "cmd-1", acknowledged: true, tabId: 7, target: { tabId: 7 }, data: { echoed: command } } as BrowserBridgeExecutionResult;
 		},
 		async executeJavaScript(script, options) {
@@ -113,17 +115,17 @@ function createRuntime(overrides: Partial<BrowserCommandRuntimePort> = {}): Mock
 		listObservationSnapshots() { return []; },
 		beginOperation(operation) {
 			operationSeq += 1;
-			const active = { operationId: `op-${operationSeq}`, startedAt: 10, updatedAt: 10, ...operation };
+			const active = { operationId: `op-${operationSeq}`, startedAt: 10, updatedAt: 10, state: "active" as const, sequence: 0, lastProgressAt: 10, events: [], lateEffects: [], ...operation };
 			calls.push({ name: "beginOperation", args: [active] });
 			return active;
 		},
 		updateOperation(operationId, patch) {
-			const updated = { operationId, commandName: "browser_command", phase: "running", startedAt: 10, updatedAt: 20, ...patch };
+			const updated = { operationId, commandName: "browser_command", phase: "running", startedAt: 10, updatedAt: 20, state: "active" as const, sequence: 0, lastProgressAt: 10, events: [], lateEffects: [], ...patch };
 			calls.push({ name: "updateOperation", args: [operationId, patch] });
 			return updated;
 		},
 		finishOperation(operationId) {
-			const finished = { operationId, commandName: "browser_command", phase: "completed", progress: 100, startedAt: 10, updatedAt: 20 };
+			const finished = { operationId, commandName: "browser_command", phase: "completed", progress: 100, startedAt: 10, updatedAt: 20, state: "terminal" as const, sequence: 0, lastProgressAt: 10, events: [], lateEffects: [] };
 			calls.push({ name: "finishOperation", args: [operationId] });
 			return finished;
 		},
@@ -144,7 +146,7 @@ test("commands execution: browser_tabs list returns compact transport envelope f
 	assert.equal(runtime.calls.some((call) => call.name === "refreshTabs"), true);
 });
 
-test("commands execution: browser_tabs runtime failure is returned as structured error envelope", async () => {
+test("commands execution: browser_tabs runtime failure is returned as a terminal operation outcome", async () => {
 	const runtime = createRuntime({
 		async switchTab() {
 			throw new BrowserBridgeError("NO_TAB", "tab vanished", { tabId: 99 });
@@ -153,11 +155,10 @@ test("commands execution: browser_tabs runtime failure is returned as structured
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
 	const result = await command.execute("tool-1", { action: "switch", targetRef: 99 });
 	const body = parseResult(result);
-	const details = result.details?.error as Record<string, unknown>;
-	assert.equal(body.code, "NO_TAB");
-	assert.equal(body.message, "tab vanished");
-	assert.equal(details.code, "NO_TAB");
-	assert.deepEqual((details.diagnostics as Record<string, unknown>).target, { tabId: 99 });
+	assert.equal(body.version, "browser-operation/v1");
+	assert.equal(body.status, "target_lost");
+	assert.equal((body.dispatch as Record<string, unknown>).finished, false);
+	assert.match(JSON.stringify(body.diagnostics), /tab vanished/);
 });
 
 test("commands execution: missing browser_tabs snapshot recovery uses ordinary no-mode observe CLI", async () => {
@@ -199,8 +200,10 @@ test("commands execution: browser_tabs common and advanced actions preserve runt
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
 	const create = parseResult(await command.execute("tool-1", { action: "create", url: "https://example.test/new", active: false, incognito: true, browserSessionId: "session-1" }));
-	assert.equal(create.id, 8);
-	assert.equal(create.requestId, "create-1");
+	assert.equal(create.version, "browser-operation/v1");
+	assert.equal(create.status, "completed");
+	assert.equal((create.target as Record<string, unknown>).tabId, 8);
+	assert.equal((create.completion as Record<string, unknown>).source, "tab-create");
 	assert.deepEqual(runtime.calls.find((call) => call.name === "createTab")?.args, ["https://example.test/new", false, 5_000, { browserSessionId: "session-1", incognito: true }]);
 	await command.execute("tool-2", { action: "switch", targetRef: "tab-7", browserSessionId: "session-1" });
 	await command.execute("tool-3", { action: "close", tabId: 7, browserSessionId: "session-1" });
@@ -273,33 +276,33 @@ test("tabs create projection keeps stable identity precedence and strips nested 
 	});
 });
 
-test("commands execution: browser_command sends validated native command and emits distilled operation envelope", async () => {
+test("commands execution: browser_command read commands return immediately", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const result = await command.execute("tool-1", { command: { cmd: "tabs", method: "list" }, maxChars: 20_000 }, undefined, undefined, { cwd: "project" });
 	const envelope = parseResult(result);
-	const send = runtime.calls.find((call) => call.name === "sendCommand");
+	const send = runtime.calls.find((call) => (call.args[0] as Record<string, unknown>)?.cmd === "tabs");
 	assert.deepEqual(send?.args[0], { cmd: "tabs", method: "list" });
-	assert.equal((envelope.summary as Record<string, unknown>).type, "bridgeResult");
-	assert.equal((envelope.operation as Record<string, unknown>).operationId, "op-1");
-	assert.equal(envelope.activeContext, undefined);
+	assert.equal(envelope.id, "cmd-1");
+	assert.equal(runtime.calls.some((call) => call.name === "beginOperation"), false);
 	assert.equal(result.details?.mode, "command");
 });
 
-test("commands execution: browser_command attaches operation metadata to runtime failures", async () => {
+test("commands execution: browser_command write failures return failed operation outcomes", async () => {
 	const runtime = createRuntime({
-		async sendCommand() {
+		async sendCommand(command) {
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "operation.finish") return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
 			throw new Error("bridge send failed");
 		},
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
-	const result = await command.execute("tool-1", { command: { cmd: "tabs", method: "list" } });
+	const result = await command.execute("tool-1", { command: { cmd: "cdp", method: "Page.reload" }, targetRef: "tab-7" });
 	const body = parseResult(result);
-	const details = result.details?.error as Record<string, unknown>;
-	assert.equal(body.code, "INTERNAL_ERROR");
-	assert.equal(body.message, "bridge send failed");
-	assert.equal((details.details as Record<string, unknown>).operation && typeof (details.details as Record<string, unknown>).operation === "object" ? ((details.details as Record<string, unknown>).operation as Record<string, unknown>).operationId : undefined, "op-1");
-	assert.deepEqual((details.diagnostics as Record<string, unknown>).scopes, ["operation"]);
+	assert.equal(body.version, "browser-operation/v1");
+	assert.equal(body.status, "failed");
+	assert.equal(body.operationId, "op-1");
+	assert.match(JSON.stringify(body.diagnostics), /bridge send failed/);
 });
 
 test("commands execution: browser_execute summarizes successful JavaScript result and runtime target context", async () => {
@@ -308,13 +311,54 @@ test("commands execution: browser_execute summarizes successful JavaScript resul
 	const result = await command.execute("tool-1", { script: "return 42", targetRef: "tab-7", maxChars: 20_000 });
 	const envelope = parseResult(result);
 	const execute = runtime.calls.find((call) => call.name === "executeJavaScript");
-	const summary = envelope.summary as Record<string, unknown>;
 	assert.equal(execute?.args[0], "return 42");
 	assert.deepEqual(execute?.args[1], { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000 });
-	assert.equal(summary.type, "bridgeResult");
-	assert.deepEqual(summary.data, { answer: 42, script: "return 42" });
-	assert.equal((envelope.operation as Record<string, unknown>).operationId, "op-1");
-	assert.equal((envelope.activeContext as Record<string, unknown>).targetRef, "tab-7");
+	assert.equal(envelope.version, "browser-operation/v1");
+	assert.equal(envelope.status, "completed");
+	assert.equal((envelope.completion as Record<string, unknown>).source, "script-resolved");
+	assert.deepEqual(((envelope.completion as Record<string, unknown>).evidence as Record<string, unknown>).result, { answer: 42, script: "return 42" });
+	assert.equal(envelope.operationId, "op-1");
+});
+
+test("commands execution: undefined JavaScript with no browser events returns no_effect after the fixed liveness window", async () => {
+	const runtime = createRuntime({
+		async executeJavaScript() {
+			return { id: "exec-noop", acknowledged: true, tabId: 7, data: "[undefined]" } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const startedAt = Date.now();
+	const outcome = parseResult(await command.execute("tool-noop", { script: "void 0", targetRef: "tab-7" }));
+	assert.equal(outcome.status, "no_effect");
+	assert.equal(Date.now() - startedAt >= 900, true);
+});
+
+test("commands execution: a mutation event without command-specific completion evidence returns effect_observed", async () => {
+	const runtime = createRuntime({
+		async executeJavaScript() {
+			return { id: "exec-modal", acknowledged: true, tabId: 7, data: undefined } as BrowserBridgeExecutionResult;
+		},
+		getOperation(operationId) {
+			return {
+				operationId,
+				commandName: "browser_execute",
+				command: "javascript",
+				phase: "resolving",
+				state: "active",
+				sequence: 1,
+				lastProgressAt: Date.now(),
+				events: [{ operationId, sequence: 1, type: "mutation", timestamp: Date.now(), progress: true, data: { mutationCount: 2 } }],
+				lateEffects: [],
+				startedAt: Date.now(),
+				updatedAt: Date.now(),
+			};
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const outcome = parseResult(await command.execute("tool-modal", { script: "document.body.append(document.createElement('dialog'))", targetRef: "tab-7" }));
+	assert.equal(outcome.status, "effect_observed");
+	assert.equal((outcome.signals as Record<string, unknown>).mutationCount, 2);
+	assert.equal(Array.isArray((outcome.pageEffect as Record<string, unknown>).changed), true);
 });
 
 test("commands execution: browser_execute program path preserves operation and frame summaries", async () => {
@@ -322,16 +366,14 @@ test("commands execution: browser_execute program path preserves operation and f
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const result = await command.execute("tool-program", { program: [{ eval: "return 7" }], targetRef: "tab-7", maxChars: 20_000 });
 	const envelope = parseResult(result);
-	const summary = envelope.summary as Record<string, unknown>;
 	const begin = runtime.calls.find((call) => call.name === "beginOperation")?.args[0] as Record<string, unknown>;
 	assert.equal(begin.command, "program");
 	assert.equal(begin.tabId, 7);
 	assert.equal(result.details?.mode, "program");
-	assert.equal(summary.mode, "program");
-	assert.equal(summary.frameCount, 1);
-	assert.equal(summary.framesOk, 1);
-	assert.equal(summary.framesFailed, 0);
-	assert.equal((envelope.operation as Record<string, unknown>).operationId, "op-1");
+	assert.equal(envelope.version, "browser-operation/v1");
+	assert.equal(envelope.status, "completed");
+	assert.equal((envelope.completion as Record<string, unknown>).source, "program-resolved");
+	assert.equal(envelope.operationId, "op-1");
 	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), true);
 });
 
@@ -433,6 +475,8 @@ test("commands execution: browser_network captureReload batches start before rel
 	const runtime = createRuntime({
 		async sendCommand(command, options) {
 			runtime.calls.push({ name: "sendCommand", args: [command, options] });
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "operation.finish") return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
 			return { id: "batch-1", acknowledged: true, tabId: 7, target: { tabId: 7, source: "explicit", implicit: false, selectionVersionAtDispatch: 1 }, diagnostics: { latency: { totalMs: 12, acked: true } }, data: { results: [
 				{ ok: true, data: { sessionId: "s1" } },
 				{ ok: true, data: { reloaded: true } },
@@ -444,14 +488,15 @@ test("commands execution: browser_network captureReload batches start before rel
 	const command = defineCommand((context) => defineNetworkCommand(context), runtime);
 	const result = await command.execute("tool-1", { action: "captureReload", targetRef: "tab-7", params: { sessionId: "s1", ignoreCache: true }, maxChars: 20_000 });
 	const envelope = parseResult(result);
-	const send = runtime.calls.find((call) => call.name === "sendCommand");
+	const send = runtime.calls.find((call) => (call.args[0] as Record<string, unknown>)?.cmd === "batch");
 	const batch = send?.args[0] as Record<string, unknown>;
 	const commands = batch.commands as Array<Record<string, unknown>>;
 	assert.equal(batch.cmd, "batch");
 	assert.deepEqual(commands.map((entry) => entry.cmd), ["network.start", "cdp", "network.wait", "network.list"]);
 	assert.equal(((commands[1].params as Record<string, unknown>).ignoreCache), true);
-	assert.equal((envelope.summary as Record<string, unknown>).startBeforeNavigation, true);
-	assert.equal(((envelope.diagnostics as Record<string, unknown>).networkCaptureReload as Record<string, unknown>).oneShotBatch, true);
+	assert.equal(envelope.version, "browser-operation/v1");
+	assert.equal(envelope.status, "completed");
+	assert.equal((envelope.completion as Record<string, unknown>).source, "network-capture-completed");
 });
 
 test("commands execution: browser_memory validate returns distilled success envelope without persisting fact", async () => {

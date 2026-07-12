@@ -19,6 +19,31 @@ function coreErrorMessage(error: unknown): string { return error instanceof Erro
 function coreErrorDetails(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) }; }
 function optionalString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
 
+async function probeTabCapabilities(tabId: number, tab: { url?: string; status?: string }, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
+  if (!isScriptable(tab.url)) return bridgeError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'Target tab is not scriptable', { tabId, url: tab.url, scriptable: false });
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, func: () => true });
+  } catch (error) {
+    return bridgeError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'Target tab failed the scriptability probe', { tabId, url: tab.url, scriptable: false, error: coreErrorDetails(error) });
+  }
+  const cdp = browserPilotPersistentCdp();
+  if (!cdp?.send) return bridgeError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'Target tab has no persistent CDP capability', { tabId, url: tab.url, scriptable: true, cdpAvailable: false });
+  const response = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression: '1', returnByValue: true }, { name: 'operation-tab-readiness', persistent: true, timeoutMs }));
+  if (response?.ok === false) return bridgeError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'Target tab CDP capability probe failed', { tabId, url: tab.url, scriptable: true, cdpAvailable: false, cdp: response });
+  return { ok: true, data: { tabId, url: tab.url, status: tab.status, scriptable: true, cdpAvailable: true } };
+}
+
+async function waitForCreatedTabReady(tabId: number, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
+  const deadline = Date.now() + Math.max(100, timeoutMs);
+  let tab = await chrome.tabs.get(tabId);
+  while (tab.status !== 'complete' && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    tab = await chrome.tabs.get(tabId);
+  }
+  if (tab.status !== 'complete') return bridgeError(BROWSER_PILOT_ERROR_CODES.TIMEOUT, 'Created tab did not reach ready state before the command deadline', { tabId, url: tab.url, status: tab.status, timeoutMs });
+  return await probeTabCapabilities(tabId, tab, Math.max(100, deadline - Date.now()));
+}
+
 async function readContentFingerprintViaScript(tabId: number, drainDirty = false): Promise<JsonRecord> {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
@@ -109,7 +134,9 @@ async function handleTabsCommand(msg: BrowserPilotBridgeCommand): Promise<Browse
       const tabId = Number(msg.tabId || 0);
       const tab = await chrome.tabs.update(tabId, { active: true });
       if (tab.windowId !== undefined) await chrome.windows.update(Number(tab.windowId), { focused: true });
-      return { ok: true };
+      const current = await chrome.tabs.get(tabId);
+      const capability = await probeTabCapabilities(tabId, current, Math.max(100, Number(msg.timeoutMs ?? msg.timeout_ms ?? 5000)));
+      return capability.ok === false ? capability : { ok: true, data: { active: true, ...coreRecord(capability.data) } };
     }
     if (msg.method === 'create') {
       const normalized = normalizeBrowserPilotCreateTabUrl(msg.url);
@@ -128,10 +155,15 @@ async function handleTabsCommand(msg: BrowserPilotBridgeCommand): Promise<Browse
         const win = await chrome.windows.create({ url: normalized.url, incognito: true, focused: msg.active !== false });
         const incognitoTab = win && Array.isArray(win.tabs) ? win.tabs[0] : undefined;
         if (!incognitoTab || incognitoTab.id === undefined) return bridgeError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'Incognito window was created but no tab was returned', { cmd: msg.cmd, method: msg.method });
-        return { ok: true, data: { id: incognitoTab.id, tabId: incognitoTab.id, url: incognitoTab.url || normalized.url, title: incognitoTab.title || '', windowId: incognitoTab.windowId, openerTabId: incognitoTab.openerTabId, incognito: true } };
+        const ready = await waitForCreatedTabReady(incognitoTab.id, Math.max(100, Number(msg.timeoutMs ?? msg.timeout_ms ?? 5000)));
+        if (ready.ok === false) return ready;
+        return { ok: true, data: { id: incognitoTab.id, tabId: incognitoTab.id, url: incognitoTab.url || normalized.url, title: incognitoTab.title || '', windowId: incognitoTab.windowId, openerTabId: incognitoTab.openerTabId, incognito: true, ...coreRecord(ready.data) } };
       }
       const tab = await chrome.tabs.create({ url: normalized.url, active: msg.active !== false });
-      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || '', windowId: tab.windowId, openerTabId: tab.openerTabId, incognito: tab.incognito === true } };
+      if (tab.id === undefined) return bridgeError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'Created tab did not return a tab id', { cmd: msg.cmd, method: msg.method });
+      const ready = await waitForCreatedTabReady(tab.id, Math.max(100, Number(msg.timeoutMs ?? msg.timeout_ms ?? 5000)));
+      if (ready.ok === false) return ready;
+      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || '', windowId: tab.windowId, openerTabId: tab.openerTabId, incognito: tab.incognito === true, ...coreRecord(ready.data) } };
     }
     if (msg.method === 'close') {
       const rawTarget = msg.targetTabId ?? msg.closeTabId ?? msg.tabId;

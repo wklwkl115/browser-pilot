@@ -5,6 +5,7 @@ import { enableCspBypassForTab } from "./bridge_info";
 import { dispatchBrowserPilotBridgeCommand, validateBrowserPilotBridgeProtocolMessage } from "./core_commands";
 import { handleWsExec } from "./exec";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeMessageSender } from "./types";
+import { handleBrowserPilotOperationDomEvent } from "./operation_coordinator";
 
 // router.js - protocol validation and command dispatch for Browser Pilot Bridge messages.
 
@@ -38,6 +39,10 @@ function installBrowserPilotBridgeRouter() {
     // Pass-through guard: let transport.ts handle offscreen-prefixed messages.
     if (msg && typeof msg === 'object' && typeof (msg as JsonRecord).type === 'string' && String((msg as JsonRecord).type).startsWith('browser-pilot-offscreen-')) return false;
     const msgType = msg && typeof msg === 'object' ? String((msg as JsonRecord).type ?? '') : '';
+    if (msgType === 'browser-pilot-operation-dom-event') {
+      sendResponse({ ok: handleBrowserPilotOperationDomEvent(msg as JsonRecord) });
+      return false;
+    }
     // Popup→SW consent messages
     if (msgType === 'browser-pilot-consent-poll') {
       const storage = getStorageLocal();

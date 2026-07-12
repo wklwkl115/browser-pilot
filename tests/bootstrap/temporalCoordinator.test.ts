@@ -7,7 +7,7 @@ function executionResult(value: Record<string, unknown>): BrowserBridgeExecution
 	return value as BrowserBridgeExecutionResult;
 }
 
-test("temporal profile samples preserve execute precedence, bounded signals, and metric fallbacks", () => {
+test("temporal profile samples preserve operation diagnostics, bounded signals, and metric fallbacks", () => {
 	const coordinator = new BrowserTemporalCoordinator();
 	const sample = coordinator.buildProfileSample({
 		operationId: "operation-1",
@@ -41,12 +41,6 @@ test("temporal profile samples preserve execute precedence, bounded signals, and
 				},
 				temporal: { verdict: { status: "possibly_stale", reasons: ["diagnostics"] }, frontier: { next: "retry" } },
 			},
-			execution: {
-				effect: {
-					targetRef: "bp-ref://control/submit",
-					temporal: { verdict: { status: "fresh", reasons: ["one", 2, "two", "three", "four"] }, frontier: { next: "reuse_target" } },
-				},
-			},
 		}),
 	});
 
@@ -54,7 +48,7 @@ test("temporal profile samples preserve execute precedence, bounded signals, and
 		operationId: "operation-1",
 		tool: "browser_execute",
 		command: "execute.script",
-		target: { browserSessionId: "session-1", tabId: 7, targetRef: "bp-ref://control/submit" },
+		target: { browserSessionId: "session-1", tabId: 7 },
 		deadlineMs: 500,
 		elapsedMs: 125,
 		bridgeRoundTrips: 4,
@@ -65,9 +59,9 @@ test("temporal profile samples preserve execute precedence, bounded signals, and
 		workerRestarts: 2,
 		historyLost: true,
 		rawSignals: ["one", "two", "three", "four", "five", "six", "seven", "eight"],
-		verdict: "fresh",
-		reasons: ["one", "two", "three"],
-		recovery: "reuse_target",
+		verdict: "possibly_stale",
+		reasons: ["diagnostics"],
+		recovery: "retry",
 	});
 });
 
@@ -75,8 +69,8 @@ test("temporal profile samples prefer command diagnostics outside execute and om
 	const coordinator = new BrowserTemporalCoordinator();
 	const sample = coordinator.buildProfileSample({
 		operationId: "",
-		tool: "browser_wait",
-		command: "wait.selector",
+		tool: "browser_network",
+		command: "network.wait",
 		target: { browserSessionId: "session-input", tabId: 9, targetRef: "bp-ref://control/input" },
 		elapsedMs: 40,
 		diagnostics: {
@@ -88,13 +82,12 @@ test("temporal profile samples prefer command diagnostics outside execute and om
 			acknowledged: true,
 			target: { browserSessionId: "session-result", tabId: 10, targetRef: "bp-ref://control/result" },
 			data: { wait: { supervisor: { temporal: { verdict: { status: "fresh" }, frontier: { next: "reuse_target" } } } } },
-			effect: { targetRef: "bp-ref://control/effect", temporal: { verdict: { status: "possibly_stale" }, frontier: { next: "retry" } } },
 		}),
 	});
 
 	assert.deepEqual(sample, {
-		tool: "browser_wait",
-		command: "wait.selector",
+		tool: "browser_network",
+		command: "network.wait",
 		target: { browserSessionId: "session-input", tabId: 9, targetRef: "bp-ref://control/input" },
 		deadlineMs: 750,
 		elapsedMs: 40,

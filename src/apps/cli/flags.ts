@@ -199,9 +199,8 @@ const ABSENT_FLAG_HINTS: Record<string, string> = {
 	"--max-redirects": "maxRedirects is internal now; use the tool's default replay/crawl behavior.",
 	"--default-scheme": "defaultScheme is internal now; pass an absolute http:// or https:// URL when the scheme matters.",
 	"--cookie-mode": "cookieMode is internal now; bindBrowserSession merges browser cookies by default.",
-	// Action tools (wait/network/hook/frame) take per-action keys inside --params, not as flags. `selector`
-	// is the one agents most often reach for as a flag (e.g. wait --action selector). Point at the shape.
-	"--selector": "action tools (wait/hook/frame) take selector inside --params, e.g. --action selector --params '{\"selector\":\"#id\"}'",
+	// Action tools (network/hook/frame) take per-action keys inside --params, not as flags.
+	"--selector": "action tools (hook/frame) take selector inside --params; inspect the live command schema for the selected action",
 };
 
 function unknownFlagError(token: string, specs: FlagSpec[]): string {

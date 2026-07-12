@@ -18,6 +18,7 @@ import { waitForNetworkIdle } from "./wait_network_idle.js";
 import { waitForSelector } from "./wait_selector.js";
 import { handleBrowserPilotWsCommand } from "./ws.js";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeSender, BrowserPilotNativeProtocolRuntime } from "./types.js";
+import { handleBrowserPilotOperationCommand } from "./operation_coordinator";
 
 // runtime.js - Browser Pilot command runtime (wait/network/hook/frame/html/screenshot).
 
@@ -75,6 +76,9 @@ const PREFIX_HANDLERS: Array<readonly [string, RuntimeHandler]> = [
 
 const NETWORK_COMMANDS = new Set(["network.start", "network.stop", "network.status", "network.clear", "network.list", "network.get", "network.body", "network.exportHar", "network.wait"]);
 const EXACT_HANDLERS = new Map<string, RuntimeHandler>([
+  ["operation.begin", (command, _tabId, message) => handleBrowserPilotOperationCommand(command, message)],
+  ["operation.finish", (command, _tabId, message) => handleBrowserPilotOperationCommand(command, message)],
+  ["operation.cancel", (command, _tabId, message) => handleBrowserPilotOperationCommand(command, message)],
   ["wait.navigate", (_command, tabId, message) => navigateBrowserPilot(tabId, message)],
   ["wait.navigateAndWait", (_command, tabId, message) => navigateAndWait(tabId, message)],
   ["wait.navigation", (_command, tabId, message) => waitForNavigation(tabId, message)],
@@ -97,7 +101,7 @@ function resolveRuntimeHandler(command: string): RuntimeHandler | undefined {
 async function handleBrowserPilot(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender): Promise<BrowserPilotBridgeResponse> {
   const cmd = canonicalBrowserPilotCommand(msg.cmd);
   const tabId = Number(msg.tabId || sender.tab?.id || 0);
-  if (cmd === 'hook.list_sessions') return await handleBrowserPilotImpl(msg, sender, cmd, tabId);
+  if (cmd === 'hook.list_sessions' || cmd.startsWith('operation.')) return await handleBrowserPilotImpl(msg, sender, cmd, tabId);
   if (!tabId) return browserPilotError('NO_SESSION', cmd + ' requires tabId', { cmd, details: {} });
   // Diagnostics must be out-of-band: enqueueing wait.diagnose makes its own
   // queue report show pending/depth=1 and masks the real post-uninstall state.

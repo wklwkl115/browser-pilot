@@ -1,7 +1,8 @@
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
 import type { SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/leaseRegistry.js";
 import type { SessionObservationSnapshotInfo } from "../kernels/session/observationSnapshotRegistry.js";
-import type { SessionActiveOperationInfo } from "../kernels/session/operationRegistry.js";
+import type { SessionActiveOperationInfo, SessionOperationBeginInput } from "../kernels/session/operationRegistry.js";
+import type { BrowserOperationEvent, BrowserOperationLateEffect, BrowserOperationOutcome } from "../kernels/session/browserOperation.js";
 import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionObjectiveKey, PerceptionTraceSnapshot, PerceptionTraceTerm } from "../kernels/session/perceptionLedger.js";
 import type { TemporalConfidence, TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../kernels/temporal/types.js";
 
@@ -146,9 +147,12 @@ export interface BrowserCommandObservationPort {
 }
 
 export interface BrowserCommandOperationPort {
-	beginOperation(operation: Omit<CommandActiveOperationInfo, "operationId" | "startedAt" | "updatedAt"> & { operationId?: string }): CommandActiveOperationInfo;
+	beginOperation(operation: SessionOperationBeginInput): CommandActiveOperationInfo;
 	updateOperation(operationId: string, patch: Partial<Omit<CommandActiveOperationInfo, "operationId" | "startedAt">>): CommandActiveOperationInfo | undefined;
-	finishOperation(operationId: string): CommandActiveOperationInfo | undefined;
+	finishOperation(operationId: string, outcome?: BrowserOperationOutcome): CommandActiveOperationInfo | undefined;
+	getOperation?(operationId: string): CommandActiveOperationInfo | undefined;
+	recordOperationEvent?(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "timestamp"> & { sequence?: number; timestamp?: number }): CommandActiveOperationInfo | undefined;
+	surfaceLateEffects?(input: { ownerId?: string; browserSessionId?: string; excludeOperationId?: string }): BrowserOperationLateEffect[];
 }
 
 export interface BrowserCommandPerceptionPort {

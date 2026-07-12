@@ -63,6 +63,11 @@ type BrowserPilotProtocolSchema = JsonRecord & {
       "content.fingerprint",
       "contentSettings"
     ],
+    "operation": [
+      "operation.begin",
+      "operation.finish",
+      "operation.cancel"
+    ],
     "input": [
       "input.pointer",
       "input.keys",
@@ -169,6 +174,34 @@ type BrowserPilotProtocolSchema = JsonRecord & {
       "accessMode": "read",
       "internal": true,
       "notes": "Internal page fingerprint signal used by execute/observe effect collection."
+    },
+    "operation.begin": {
+      "domain": "operation",
+      "tabScoped": false,
+      "accessMode": "read",
+      "internal": true,
+      "required": [
+        "operationId"
+      ],
+      "notes": "Internal operation supervisor arm command. Observers are installed before the mutating action is dispatched."
+    },
+    "operation.finish": {
+      "domain": "operation",
+      "tabScoped": false,
+      "accessMode": "read",
+      "internal": true,
+      "required": [
+        "operationId"
+      ]
+    },
+    "operation.cancel": {
+      "domain": "operation",
+      "tabScoped": false,
+      "accessMode": "read",
+      "internal": true,
+      "required": [
+        "operationId"
+      ]
     },
     "tabs": {
       "domain": "core",
@@ -312,6 +345,7 @@ type BrowserPilotProtocolSchema = JsonRecord & {
       "domain": "wait",
       "tabScoped": true,
       "accessMode": "write",
+      "internal": true,
       "required": [
         "url"
       ]
@@ -320,6 +354,7 @@ type BrowserPilotProtocolSchema = JsonRecord & {
       "domain": "wait",
       "tabScoped": true,
       "accessMode": "write",
+      "internal": true,
       "required": [
         "url"
       ]
@@ -327,22 +362,26 @@ type BrowserPilotProtocolSchema = JsonRecord & {
     "wait.navigation": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "internal": true
     },
     "wait.loadState": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "internal": true
     },
     "wait.networkIdle": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "internal": true
     },
     "wait.selector": {
       "domain": "wait",
       "tabScoped": true,
       "accessMode": "read",
+      "internal": true,
       "required": [
         "selector"
       ]
@@ -350,22 +389,26 @@ type BrowserPilotProtocolSchema = JsonRecord & {
     "wait.any": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "internal": true
     },
     "wait.all": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "internal": true
     },
     "wait.cancel": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "internal": true
     },
     "wait.diagnose": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "internal": true
     },
     "network.start": {
       "domain": "network",
@@ -1357,99 +1400,6 @@ type BrowserPilotProtocolSchema = JsonRecord & {
   },
   "toolMetadata": {
     "nativeActionTools": {
-      "browser_wait": {
-        "domain": "wait",
-        "parameters": [
-          "action",
-          "params",
-          "tabId",
-          "detailLevel",
-          "outputPath",
-          "timeoutMs",
-          "maxChars",
-          "sessionId"
-        ],
-        "actionDescription": "navigate | navigateAndWait | navigation | loadState | networkIdle | selector | any | all (non-empty waits/conditions) | cancel | diagnose",
-        "actions": [
-          {
-            "action": "navigate",
-            "command": "wait.navigate",
-            "aliases": [
-              "navigate"
-            ]
-          },
-          {
-            "action": "navigateAndWait",
-            "command": "wait.navigateAndWait",
-            "aliases": [
-              "navigateAndWait"
-            ]
-          },
-          {
-            "action": "navigation",
-            "command": "wait.navigation",
-            "aliases": [
-              "waitForNavigation",
-              "navigation"
-            ]
-          },
-          {
-            "action": "loadState",
-            "command": "wait.loadState",
-            "aliases": [
-              "loadState",
-              "waitForLoadState"
-            ]
-          },
-          {
-            "action": "networkIdle",
-            "command": "wait.networkIdle",
-            "aliases": [
-              "networkIdle",
-              "waitForNetworkIdle"
-            ]
-          },
-          {
-            "action": "selector",
-            "command": "wait.selector",
-            "aliases": [
-              "selector",
-              "waitForSelector"
-            ]
-          },
-          {
-            "action": "any",
-            "command": "wait.any",
-            "aliases": [
-              "any",
-              "waitForAny"
-            ]
-          },
-          {
-            "action": "all",
-            "command": "wait.all",
-            "aliases": [
-              "all",
-              "waitForAll"
-            ]
-          },
-          {
-            "action": "cancel",
-            "command": "wait.cancel",
-            "aliases": [
-              "cancel",
-              "cancelWait"
-            ]
-          },
-          {
-            "action": "diagnose",
-            "command": "wait.diagnose",
-            "aliases": [
-              "diagnose"
-            ]
-          }
-        ]
-      },
       "browser_network": {
         "domain": "network",
         "parameters": [

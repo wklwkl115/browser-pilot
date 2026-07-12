@@ -25,7 +25,7 @@ $ browser-pilot observe --json | jq '.summary.pageObservation.gist'
  3 forms (search, login, compose), 47 actionable elements."
 
 $ browser-pilot execute --script "document.querySelector('.topic-list .main-link a').href" --json
-{ "data": "https://linux.do/t/welcome/1" }
+{ "version": "browser-operation/v1", "status": "completed", "completion": { "source": "script-resolved", "evidence": { "result": "https://linux.do/t/welcome/1" } } }
 
 $ browser-pilot network captureReload --json
 $ browser-pilot artifact --mode paths --path <saved.path-from-network-result> --json
@@ -80,7 +80,7 @@ Browser Pilot gives agents what they actually need:
                          │
 ┌────────────────────────▼──────────────────────────────────────────┐
 │  Tool Layer (browser_* tools)                                     │
-│  Core: tabs, observe, execute, command, wait, screenshot,         │
+│  Core: tabs, observe, execute, command, screenshot,              │
 │        network, hook, evidence, frame, artifact, memory,          │
 │        download, upload                                           │
 │  Security: crawl, fuzz, sqli, template, cookie-analyze,           │
@@ -143,9 +143,6 @@ npx browser-pilot execute --script "document.title" --json
 npx browser-pilot execute --program @program.json --json
 npx browser-pilot execute --script-file .\snippet.js --json
 
-# Wait for a selector
-npx browser-pilot wait selector --selector "#result" --json
-
 # Capture page-load network traffic; captureReload starts before reload/navigation
 npx browser-pilot network captureReload --session-id net-1 --json
 npx browser-pilot artifact --mode paths --path <saved.path-from-network-result> --json
@@ -161,7 +158,7 @@ npx browser-pilot --help
 npx browser-pilot schema observe --json
 ```
 
-Core tools include tabs, observe, execute, command, wait, screenshot, network, hook,
+Core tools include tabs, observe, execute, command, screenshot, network, hook,
 evidence, frame, artifact, memory, download, and upload. Security tools include crawl, fuzz,
 sqli, template, cookie-analyze, http-replay, and callback-oast. Use
 `browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface. For native bridge escape-hatch calls, `browser-pilot command --command` accepts inline JSON only; do not use `--command @file`. For large Windows-friendly inputs, use `browser-pilot execute --program @file` or `browser-pilot execute --script-file <path>`.
@@ -171,13 +168,13 @@ sqli, template, cookie-analyze, http-replay, and callback-oast. Use
 ```
 1. tabs list          → find the target tab
 2. observe            → read the canonical ABML page model
-3. execute            → click, type, scroll (JavaScript)
-4. wait               → wait for navigation / selector / network idle
-5. observe / network / evidence → verify the result
-6. artifact           → read detailed saved evidence
+3. execute transaction → click/type/scroll and synchronously receive browser-operation/v1
+4. consume outcome     → distinguish completed/effect_observed/no_effect/stalled/failure states
+5. observe / network / evidence → read the next facts only when the workflow needs them
+6. artifact            → read detailed saved evidence
 ```
 
-There are no `click` or `type` commands — page actions go through `browser_execute`
+State-changing commands arm event listeners before dispatch and remain open until a terminal `browser-operation/v1` status. There is no public `wait` command and agents should not add sleep loops. `completed` requires command-specific evidence; `effect_observed` is not proof of business completion, while `no_effect` and `stalled` are not success. There are no `click` or `type` commands — page actions go through `browser_execute`
 (JavaScript). For trusted-event-gated controls, use `browser_command` with `input.pointer`
 or `input.keys` (CDP physical input).
 

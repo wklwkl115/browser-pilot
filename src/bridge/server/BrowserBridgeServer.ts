@@ -18,6 +18,8 @@ import { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinat
 import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "../protocol/consentTypes.js";
 import type { CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot, CommandTemporalProfileSample, CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
 import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
+import type { SessionOperationBeginInput } from "../../kernels/session/operationRegistry.js";
+import type { BrowserOperationEvent, BrowserOperationOutcome } from "../../kernels/session/browserOperation.js";
 
 export class BrowserBridgeServer implements ConsentPort {
 	readonly host: string;
@@ -81,6 +83,7 @@ export class BrowserBridgeServer implements ConsentPort {
 			leases: this.state.leases,
 			queues: this.queues,
 			consent: this.consentCoordinator,
+			operations: this.state.operations,
 			migratePerceptionLedger: (fromTabId, toTabId, browserSessionIds) => {
 				this.state.perceptionLedger.migrateTabId(fromTabId, toTabId, { browserSessionIds });
 			},
@@ -301,7 +304,7 @@ export class BrowserBridgeServer implements ConsentPort {
 		throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId or targetRef is required", { tabId: value });
 	}
 
-	beginOperation(operation: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt"> & { operationId?: string }): BrowserActiveOperationInfo {
+	beginOperation(operation: SessionOperationBeginInput): BrowserActiveOperationInfo {
 		return this.state.operations.begin(operation);
 	}
 
@@ -309,8 +312,20 @@ export class BrowserBridgeServer implements ConsentPort {
 		return this.state.operations.update(operationId, patch);
 	}
 
-	finishOperation(operationId: string): BrowserActiveOperationInfo | undefined {
-		return this.state.operations.finish(operationId);
+	finishOperation(operationId: string, outcome?: BrowserOperationOutcome): BrowserActiveOperationInfo | undefined {
+		return this.state.operations.finish(operationId, outcome);
+	}
+
+	getOperation(operationId: string): BrowserActiveOperationInfo | undefined {
+		return this.state.operations.get(operationId);
+	}
+
+	recordOperationEvent(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "timestamp"> & { sequence?: number; timestamp?: number }): BrowserActiveOperationInfo | undefined {
+		return this.state.operations.recordEvent(operationId, event);
+	}
+
+	surfaceLateEffects(input: { ownerId?: string; browserSessionId?: string; excludeOperationId?: string }) {
+		return this.state.operations.surfaceLateEffects(input);
 	}
 
 	queueDepth(browserSessionId: string | undefined, tabId: number | undefined): number | undefined {

@@ -5,6 +5,7 @@ import { setBridgeWakeProbe } from "./core_commands";
 import { handleBrowserPilotBridgeWsMessage, setTransportSocketGetter } from "./router";
 import { runStartupRecovery } from "./state_store";
 import { installBrowserPilotTabSync } from "./tab_sync";
+import { setBrowserPilotOperationEventSocketGetter } from "./operation_event_transport";
 import type { JsonRecord, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeAlarm, BrowserPilotChromeTab } from "./types";
 
 type OffscreenMessage = JsonRecord & { type?: string; port?: number; data?: unknown; resetDelay?: boolean };
@@ -266,6 +267,7 @@ function installBrowserPilotTransport(): boolean {
   chrome.alarms.onAlarm.addListener((alarm: BrowserPilotChromeAlarm) => { runTransportTask("transport alarm", async () => { await handleBrowserPilotTransportAlarm(alarm); }); });
   setBridgeWakeProbe(probeAndConnectWS);
   setTransportSocketGetter(getBrowserPilotTransportSocket);
+  setBrowserPilotOperationEventSocketGetter(getBrowserPilotTransportSocket);
   runTransportTask("initial probe", async () => { await probeAndConnectWS(true); });
   chrome.runtime.onStartup.addListener(() => { runTransportTask("startup probe", async () => { await probeAndConnectWS(true); }); });
   installBrowserPilotTabSync({ getSocket: getBrowserPilotTransportSocket, getSockets: getBrowserPilotTransportSockets, probe: probeAndConnectWS });

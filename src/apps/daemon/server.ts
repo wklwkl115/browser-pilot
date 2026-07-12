@@ -229,14 +229,14 @@ function authorizePairing(req: http.IncomingMessage): PairingAuthorization {
 	return { ok: true, record: rec };
 }
 
-function authorizeInvoke(req: http.IncomingMessage, tenantLease: TenantLeaseRegistry): { ok: true } | { ok: false; status: number; body: Record<string, unknown> } {
-	if (process.env[ENV_REQUIRE_PAIRING] !== "1" && !authStore.hasActiveAgents()) return { ok: true };
+function authorizeInvoke(req: http.IncomingMessage, tenantLease: TenantLeaseRegistry): { ok: true; ownerId: string } | { ok: false; status: number; body: Record<string, unknown> } {
+	if (process.env[ENV_REQUIRE_PAIRING] !== "1" && !authStore.hasActiveAgents()) return { ok: true, ownerId: "local-cli" };
 	const auth = authorizePairing(req);
 	if (!auth.ok) return auth;
 	const held = tenantLease.ensureHeld(auth.record.pairingId, auth.record.label);
 	if (!held.ok) return { ok: false, status: 409, body: { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: held.heldBy } };
 	authStore.touch(auth.record.pairingId);
-	return { ok: true };
+	return { ok: true, ownerId: auth.record.pairingId };
 }
 
 function prepareInvoke(body: Record<string, unknown>, toolByName: Map<string, CommandDefinition>): PreparedInvoke | { errorStatus: number; errorBody: Record<string, unknown> } {
@@ -253,7 +253,7 @@ function prepareInvoke(body: Record<string, unknown>, toolByName: Map<string, Co
 	return { tool, cwd, cli, def, args: validation.args, strippedDeprecatedParams };
 }
 
-async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean): Promise<Record<string, unknown>> {
+async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean, operationOwnerId = "local-cli"): Promise<Record<string, unknown>> {
 	const ctx: MiddlewareContext = {
 		method: "invoke",
 		commandName: invocation.tool,
@@ -262,7 +262,7 @@ async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean):
 		...(usageEnabled && invocation.cli ? { cli: invocation.cli } : {}),
 	};
 	try {
-		const result = await invocation.def.execute(`cli-${invocation.tool}-${Date.now()}`, invocation.args, undefined, undefined, { cwd: invocation.cwd, hasUI: false, ...(invocation.cli ? { omitTransportDetails: true } : {}) });
+		const result = await invocation.def.execute(`cli-${invocation.tool}-${Date.now()}`, invocation.args, undefined, undefined, { cwd: invocation.cwd, hasUI: false, operationOwnerId, ...(invocation.cli ? { omitTransportDetails: true } : {}) });
 		if (usageEnabled) ctx.resultBytes = JSON.stringify(result.content).length;
 		emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok", invocation.strippedDeprecatedParams.length ? { strippedDeprecatedParams: invocation.strippedDeprecatedParams } : undefined);
 		const terminate = result.terminate === true;
@@ -279,7 +279,7 @@ export async function handleInvokeRoute({ req, send, body, toolByName, tenantLea
 	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
 	const auth = authorizeInvoke(req, tenantLease);
 	if (!auth.ok) return send(auth.status, auth.body);
-	return send(200, await executeInvoke(prepared, usageEnabled));
+	return send(200, await executeInvoke(prepared, usageEnabled, auth.ownerId));
 }
 
 async function handleConnectRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {

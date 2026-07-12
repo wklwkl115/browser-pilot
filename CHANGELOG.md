@@ -2,13 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Breaking
+
+- Removed the public `browser_wait` tool and CLI `wait` command, including its public schema, help, aliases, and recovery guidance. Internal selector/navigation/network-idle primitives now serve the operation supervisor only.
+- All browser state-changing core commands now run as a single event-driven transaction and return `browser-operation/v1`. Listeners are armed before dispatch; `completed` requires command-specific mechanical evidence, while `effect_observed`, `no_effect`, `stalled`, `ambiguous`, `target_lost`, `failed`, and `deadline` report bounded factual terminal states.
+- Removed `browser_execute.monitor` and the former snapshot-plus-150ms `effect/settled` result model. JavaScript with a non-`undefined` resolved value returns `completed/script-resolved`; physical programs without an observed effect return `no_effect`.
+
+### Added
+
+- Added the daemon operation ledger with bounded sequenced events, five-minute active/terminal retention, owner/session-isolated late-effect surfacing, and a 30-second passive late-effect window.
+- Added internal `operation.begin`, `operation.finish`, and `operation.cancel` protocol commands plus extension `operation_event` messages for tab/navigation/download/dialog/network/DOM/target lifecycle evidence.
+
 ## [0.3.0] - 2026-06-14
 
 ### Added
 
-- **`browser-pilot` CLI** — full shell frontend for all 22 browser tools. Auto-starting
+- **`browser-pilot` CLI** — full shell frontend for the then-current browser tools. Auto-starting
   user-local daemon, `connect --wait` readiness gate, natural subcommands
-  (`wait selector`, `network start`, `frame evaluate`, `hook install-targets`),
+  (`network start`, `frame evaluate`, `hook install-targets`),
   `--script-file` / `@file` for large inputs, `--json` machine output.
 - **Web security tool suite** — `browser_crawl`, `browser_fuzz` (path/vhost/param),
   `browser_sqli` (builtin + sqlmap bridge), `browser_template` (builtin + nuclei bridge),

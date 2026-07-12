@@ -1,11 +1,11 @@
 import { Type } from "typebox";
-import { nativeTransferToolMetadata } from "./nativeActionMetadata.js";
-import { summarizeTransferData } from "./summaries/index.js";
 import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUploadFiles, codedTransferError, requireDownloadTarget, requireUploadConfirmation } from "./transferValidation.js";
-import { artifactFallbackName, defineBrowserCommand, jsonCommandResult, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs } from "./commandRuntime.js";
+import { defineBrowserCommand, inlineJsonCommandResult, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { isRecord } from "../utils/records.js";
+import { resolveLocalTargetTabId } from "./commandRuntime.js";
+import { withBrowserOperation } from "./browserOperation.js";
 
 // B9b: a media/image download that silently completes with a `text/html` body (an anti-bot or redirect
 // page) looked like success. When the caller expects a media MIME, compare the completed download's MIME
@@ -57,20 +57,15 @@ export function defineDownloadCommand({ commands, ensureStarted }: CommandRegist
 				const maxChars = commandMaxChars(params, "browser_download");
 				command.timeoutMs = timeoutMs;
 				const server = await ensureStarted();
-				const result = await server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params) as string | number | undefined, timeoutMs });
-				const expectMime = typeof params.expectMime === "string" && params.expectMime.trim()
-					? params.expectMime.trim().toLowerCase()
-					: (command.mode === "media" ? "image" : undefined);
-				if (expectMime) annotateDownloadMimeMismatch(result, expectMime);
-				return await jsonCommandResult(result, params, ctx, {
-					commandName: "browser_download",
-					command: nativeTransferToolMetadata.browser_download.command,
-					maxChars,
-					fallbackName: artifactFallbackName(nativeTransferToolMetadata.browser_download.artifactPrefix),
-					details: { command: nativeTransferToolMetadata.browser_download.command, mode: command.mode || "click" },
-					artifactValue: result,
-					distill: summarizeTransferData,
+				const rawTarget = targetTabId(params) as string | number | undefined;
+				const tabId = resolveLocalTargetTabId(server, rawTarget, params.browserSessionId);
+				const outcome = await withBrowserOperation({ server, commandName: "browser_download", command: "transfer.download", action: String(command.mode || "click"), browserSessionId: params.browserSessionId, tabId, targetRef: typeof rawTarget === "string" ? rawTarget : undefined, timeoutMs, ctx, onUpdate: _onUpdate }, async () => {
+					const result = await server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: rawTarget, timeoutMs, accessMode: "write" });
+					const expectMime = typeof params.expectMime === "string" && params.expectMime.trim() ? params.expectMime.trim().toLowerCase() : (command.mode === "media" ? "image" : undefined);
+					if (expectMime) annotateDownloadMimeMismatch(result, expectMime);
+					return result;
 				});
+				return inlineJsonCommandResult(outcome, { command: "transfer.download", mode: command.mode || "click", operationId: outcome.operationId, status: outcome.status }, { maxChars }, "browser_download");
 			});
 		},
 	});
@@ -103,16 +98,10 @@ export function defineUploadCommand({ commands, ensureStarted }: CommandRegistra
 				try {
 					const command = buildTransferUploadCommand(selector, files, params.index);
 					command.timeoutMs = timeoutMs;
-					const result = await server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params) as string | number | undefined, timeoutMs });
-					return await jsonCommandResult(result, params, ctx, {
-						commandName: "browser_upload",
-						command: nativeTransferToolMetadata.browser_upload.command,
-						maxChars,
-						fallbackName: artifactFallbackName(nativeTransferToolMetadata.browser_upload.artifactPrefix),
-						details: { command: nativeTransferToolMetadata.browser_upload.command, selector, files_count: files.length },
-						artifactValue: result,
-						distill: summarizeTransferData,
-					});
+					const rawTarget = targetTabId(params) as string | number | undefined;
+					const tabId = resolveLocalTargetTabId(server, rawTarget, params.browserSessionId);
+					const outcome = await withBrowserOperation({ server, commandName: "browser_upload", command: "transfer.upload", action: "upload", browserSessionId: params.browserSessionId, tabId, targetRef: typeof rawTarget === "string" ? rawTarget : undefined, timeoutMs, ctx, onUpdate: _onUpdate }, () => server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: rawTarget, timeoutMs, accessMode: "write" }));
+					return inlineJsonCommandResult(outcome, { command: "transfer.upload", selector, files_count: files.length, operationId: outcome.operationId, status: outcome.status }, { maxChars }, "browser_upload");
 				} finally {
 					server.releaseUiLock(params.browserSessionId);
 				}

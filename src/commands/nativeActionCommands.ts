@@ -5,14 +5,17 @@ import type { DetailLevel } from "../utils/params.js";
 import { isRecord } from "../utils/params.js";
 import type { BridgeCommand } from "../types/nativeProtocol.js";
 import { nativeToolMetadata } from "./nativeActionMetadata.js";
-import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands.js";
+import { frameCommandForAction, hookCommandForAction, networkCommandForAction } from "./actionCommands.js";
 import { readFrameEntities } from "../browser-runtime/abml/frameRuntime.js";
 import type { ToolResultBudgetName } from "./budgets.js";
-import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, buildActiveContext, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
+import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, buildActiveContext, defineBrowserCommand, inlineJsonCommandResult, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs } from "./commandRuntime.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
+import { withBrowserOperation } from "./browserOperation.js";
+import { isNativeWriteCommand } from "./operationResolvers.js";
 
-// Registers the four native bridge-backed tools (wait/network/hook/frame); command names and
+// Registers the three public native bridge-backed tools (network/hook/frame); internal wait
+// primitives remain implementation details of the operation supervisor.
 // metadata come from src/commands/nativeActionMetadata.ts, generated from the native schema.
 type ActionToolConfig = {
 	name: string;
@@ -40,7 +43,7 @@ const ACTION_RESERVED_KEYS = new Set(["action", "params", "browserSessionId", "t
 
 // The per-action REQUIRED keys for a tool, derived from the generated native metadata (the same
 // source-of-truth F4 surfaces in --help). Agents primed by other tools routinely place these at the
-// TOP LEVEL (e.g. browser_wait {action:"navigate", url:"…"}) instead of nesting them under `params`,
+// TOP LEVEL instead of nesting them under `params`,
 // and hit a hard `root: must not have additional properties` (real CTF session 2026-06-07, H2). We
 // accept them as optional top-level aliases and fold them into `params` (below), keeping the schema
 // strict — only these known keys are added, unknown typos are still rejected.
@@ -155,36 +158,19 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 				const trackedTabId = resolveLocalTargetTabId(server, tabId, browserSessionId);
 				const resolvedTabId = tabId as string | number | undefined;
-				const { result, operation } = await withTrackedOperation(server, {
-					commandName: config.name,
-					command: commandName,
-					browserSessionId,
-					tabId: trackedTabId,
-					phase: "running",
-					progress: 10,
-					queueDepth: server.queueDepth(browserSessionId, trackedTabId),
-					leaseOwnerHash: server.leaseOwnerHash(browserSessionId, trackedTabId),
-				}, _onUpdate, async (handle) => {
-					await handle.update({ progress: 45 });
-					const result = captureReload
+				const dispatch = async () => {
+					return captureReload
 						? await server.sendCommand({ cmd: "batch", commands: networkCaptureReloadCommands(body, resolvedTabId, timeoutMs) }, { browserSessionId, tabId: resolvedTabId, timeoutMs, accessMode: "write" })
 						: config.commandExecutor
 							? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs })
 							: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs });
-					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
-					return result;
-				});
-				if (typeof server.buildTemporalProfileSample === "function" && typeof server.recordTemporalProfileSample === "function") {
-					void server.recordTemporalProfileSample(server.buildTemporalProfileSample({
-						operationId: operation.operationId,
-						tool: config.name,
-						command: commandName,
-						target: { browserSessionId, tabId: trackedTabId, targetRef: typeof params.targetRef === "string" ? params.targetRef : undefined },
-						deadlineMs: timeoutMs,
-						elapsedMs: Math.max(0, operation.updatedAt - operation.startedAt),
-						result,
-					}), { cwd: ctx?.cwd });
+				};
+				const writeCommand = captureReload || isNativeWriteCommand(command);
+				if (writeCommand) {
+					const outcome = await withBrowserOperation({ server, commandName: config.name, command: commandName, action: String(params.action || ""), browserSessionId, tabId: trackedTabId, targetRef: typeof params.targetRef === "string" ? params.targetRef : undefined, timeoutMs, ctx, onUpdate: _onUpdate }, dispatch);
+					return inlineJsonCommandResult(outcome, { command: commandName, action: params.action, operationId: outcome.operationId, status: outcome.status }, { maxChars }, config.budgetName);
 				}
+				const result = await dispatch();
 				return await jsonCommandResult(result, params, ctx, {
 					commandName: config.name,
 					budgetName: config.budgetName,
@@ -193,33 +179,13 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 					maxChars,
 					fallbackName: artifactFallbackName(config.artifactPrefix),
 					details: { command: commandName, action: params.action },
-					operation,
 					activeContext: buildActiveContext(server, params),
 					diagnostics: mergeCommandDiagnostics(result, captureReload ? { networkCaptureReload: { oneShotBatch: true, startBeforeNavigation: true, guidance: "network.start ran before reload/navigation; inspect saved.path with browser_artifact mode=paths for available request paths." } } : {}),
-					artifactValue: { ...result, operation },
+					artifactValue: result,
 					...(captureReload ? { distill: (value: unknown) => networkCaptureReloadSummary(value as BrowserBridgeExecutionResult, networkCaptureReloadCommands(body, resolvedTabId, timeoutMs)) } : {}),
 				});
 			}, nativeActionErrorResult);
 		},
-	});
-}
-
-export function defineWaitCommand(context: CommandRegistrarContext) {
-	defineNativeActionCommand(context, {
-		name: "browser_wait",
-		label: "Browser Wait",
-		description: "Native wait/navigation commands: navigate, navigateAndWait, loadState, networkIdle, selector, any, all, cancel, diagnose. Composite any/all require non-empty waits or conditions.",
-		promptSnippet: "Run browser wait/navigation commands with typed action names.",
-		promptGuideline: "Use browser_wait instead of manual sleep loops when waiting for page navigation, selectors, load state, or network idle.",
-		actionDescription: nativeToolMetadata.nativeActionTools.browser_wait.actionDescription,
-		sessionIdDescription: "Logical wait session id",
-		commandForAction: waitCommandForAction,
-		commandExecutor: executeBrowserWaitWithSupervisor,
-		allowZeroTimeout: true,
-		budgetName: "browser_wait",
-		artifactPrefix: "wait-result",
-		defaultDetailLevel: "preview",
-		timeoutForCommand: (commandName) => commandName.includes("wait") || commandName.includes("navigateAndWait") ? DEFAULT_OBSERVATION_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS,
 	});
 }
 

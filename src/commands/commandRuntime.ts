@@ -14,6 +14,7 @@ import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, MECHANI
 import type { CommandMemoryAugmentationPlan } from "./memoryAugmentationTypes.js";
 import type { BrowserCommandDefinition, BrowserCommandSink } from "./commandDefinition.js";
 import type { CommandFactGranularity } from "./resultTypes.js";
+import type { SessionOperationBeginInput } from "../kernels/session/operationRegistry.js";
 
 // Mandatory-read pair with resultMiddleware.ts: this file normalizes params/operation/errors,
 // while resultMiddleware.ts shapes the returned envelope, budgets, redaction, and artifacts.
@@ -21,7 +22,7 @@ import type { CommandFactGranularity } from "./resultTypes.js";
 /** Hard ceiling for any command timeout to prevent unbounded hangs. */
 const MAX_COMMAND_TIMEOUT_MS = 300_000;
 
-export type CommandResultContext = { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean } | undefined;
+export type CommandResultContext = { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean; operationOwnerId?: string } | undefined;
 
 export type StandardToolParams = {
 	browserSessionId?: string;
@@ -108,7 +109,7 @@ export type CommandOnUpdate = ((result: BrowserTextCommandResult) => void | Prom
 export type TrackedOperationHandle = {
 	operation: BrowserActiveOperationInfo;
 	update: (patch: Partial<Omit<BrowserActiveOperationInfo, "operationId" | "startedAt">>, options?: { content?: boolean }) => Promise<BrowserActiveOperationInfo | undefined>;
-	finish: () => BrowserActiveOperationInfo | undefined;
+	finish: (outcome?: import("../kernels/session/browserOperation.js").BrowserOperationOutcome) => BrowserActiveOperationInfo | undefined;
 };
 
 type BrowserCommandOperationResolver<TParams, TPrepared, TValue> = TValue | ((params: TParams, prepared: TPrepared) => TValue);
@@ -313,6 +314,10 @@ function compactOperationForEnvelope(operation: BrowserActiveOperationInfo): Rec
 		snapshotId: operation.snapshotId,
 		sourceMode: operation.sourceMode,
 		details: operation.details,
+		state: operation.state,
+		sequence: operation.sequence,
+		lastProgressAt: operation.lastProgressAt,
+		terminalStatus: operation.terminalStatus,
 		startedAt: operation.startedAt,
 		updatedAt: operation.updatedAt,
 	};
@@ -342,7 +347,7 @@ function attachOperationToError(error: unknown, operation: BrowserActiveOperatio
 	return error;
 }
 
-export async function startTrackedOperation(server: BrowserCommandRuntimePort, meta: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt">, onUpdate?: CommandOnUpdate): Promise<TrackedOperationHandle> {
+export async function startTrackedOperation(server: BrowserCommandRuntimePort, meta: SessionOperationBeginInput, onUpdate?: CommandOnUpdate): Promise<TrackedOperationHandle> {
 	let current = server.beginOperation(meta);
 	await emitTrackedProgress(onUpdate, current);
 	return {
@@ -355,11 +360,11 @@ export async function startTrackedOperation(server: BrowserCommandRuntimePort, m
 			}
 			return next;
 		},
-		finish: () => server.finishOperation(current.operationId),
+		finish: (outcome) => server.finishOperation(current.operationId, outcome),
 	};
 }
 
-export async function withTrackedOperation<T>(server: BrowserCommandRuntimePort, meta: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt">, onUpdate: CommandOnUpdate, run: (handle: TrackedOperationHandle) => Promise<T>): Promise<{ result: T; operation: BrowserActiveOperationInfo }> {
+export async function withTrackedOperation<T>(server: BrowserCommandRuntimePort, meta: SessionOperationBeginInput, onUpdate: CommandOnUpdate, run: (handle: TrackedOperationHandle) => Promise<T>): Promise<{ result: T; operation: BrowserActiveOperationInfo }> {
 	const handle = await startTrackedOperation(server, meta, onUpdate);
 	let heartbeat: NodeJS.Timeout | undefined;
 	try {

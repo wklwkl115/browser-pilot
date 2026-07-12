@@ -1,9 +1,5 @@
 import { commandForNativeToolAction } from "./nativeActionMetadata.js";
 
-export function waitCommandForAction(action: string): string {
-	return commandForNativeToolAction("browser_wait", action);
-}
-
 export function networkCommandForAction(action: string): string {
 	return commandForNativeToolAction("browser_network", action);
 }

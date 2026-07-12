@@ -1,99 +1,56 @@
 import { Type } from "typebox";
 import { BrowserBridgeError } from "../utils/errors.js";
-import { nextActionsForExecutionEffect } from "../kernels/evidence/distill/recovery.js";
+import { jsonResult } from "../utils/toolResult.js";
 import { rejectUnsafeExecuteCommand } from "./transferValidation.js";
-import { buildExecutionJournal, compactExecutionEffect, type ExecuteEffect } from "./executionJournal.js";
-import { commandCollectsExecutionEffect, withExecutionEffect } from "./executionEffect.js";
-import { summarizeGenericValue } from "./summaries/index.js";
-import { artifactFallbackName, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
+import { withBrowserOperation } from "./browserOperation.js";
+import { commandMaxChars, commandTimeoutMs, defineBrowserCommand, inlineJsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
-import { isRecord } from "../utils/params.js";
 import { validateParams } from "./validationMiddleware.js";
 import { BridgeCommandSchema } from "../validation/schemas.js";
+import { hasBrowserOperationResolver, isNativeWriteCommand } from "./operationResolvers.js";
 
 export function defineNativeCommand({ commands, ensureStarted }: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_command",
 		label: "Browser Command",
-		description: "Send a native bridge command object through the Browser Pilot bridge with stable validation and result envelopes.",
-		promptSnippet: "Send a bridge command object through the Browser Pilot bridge.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_command for explicit native bridge commands such as tabs/CDP/management; use browser_execute only for JavaScript."],
+		description: "Send a validated native bridge command. Read commands return immediately; write commands return a browser-operation/v1 terminal outcome.",
+		promptSnippet: "Use the native escape hatch only when a public command cannot express the operation; write calls synchronously return their operation outcome.",
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_command for explicit native CDP/management operations and browser_execute only for JavaScript. Internal operation and retired wait commands are not callable through this public escape hatch."],
 		parameters: strictCommandParameters({
-			command: Type.Object({}, { additionalProperties: true, description: "Bridge command object, e.g. {cmd:'tabs',method:'list'} or {cmd:'cdp',...}" }),
+			command: Type.Object({}, { additionalProperties: true, description: "Validated native bridge command object." }),
 			...sharedTabScopedToolParams(),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, _signal, onUpdate, ctx) {
 			return await runCommandHandler(async () => {
+				if (!params.command || typeof params.command !== "object" || Array.isArray(params.command)) throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", { commandName: "browser_command" });
+				const command = validateParams(BridgeCommandSchema, params.command);
+				rejectUnsafeExecuteCommand(command);
 				const server = await ensureStarted();
 				const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const maxChars = commandMaxChars(params, "browser_command");
-
-				// Runtime validation: ensure command is a valid object
-				if (!params.command || typeof params.command !== "object" || Array.isArray(params.command)) {
-					throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", { commandName: "browser_command" });
-				}
-
-				// Runtime validation: validate command structure with the local TypeBox schema wrapper.
-				const validatedCommand = validateParams(BridgeCommandSchema, params.command);
-
-				// Type-safe command is now guaranteed to have required fields
-				rejectUnsafeExecuteCommand(validatedCommand);
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-				const rawTargetRef = targetTabId(params, validatedCommand);
-				const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
-				const shouldCollectEffect = commandCollectsExecutionEffect(validatedCommand) && tabId !== undefined;
-				const { result, operation } = await withTrackedOperation(server, {
-					commandName: "browser_command",
-					command: String(validatedCommand.cmd || "command"),
-					browserSessionId,
-					tabId,
-					phase: "running",
-					progress: 10,
-					queueDepth: server.queueDepth(browserSessionId, tabId),
-					leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
-				}, _onUpdate, async (handle) => {
-					await handle.update({ progress: 65 });
-					const result = shouldCollectEffect
-						? await (async () => {
-							const executed = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs }, () => server.sendCommand(validatedCommand, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs }));
-							return { ...executed.result, effect: executed.effect };
-						})()
-						: await server.sendCommand(validatedCommand, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs });
-					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
-					return result;
-				});
-				const commandName = String(validatedCommand.cmd || "command");
-				const dispatchKind = commandName.startsWith("input.") ? "input" : "native-command";
-				const text = commandName === "input.keys" && typeof validatedCommand.text === "string" ? { redacted: true as const, charCount: validatedCommand.text.length } : undefined;
-				const execution = buildExecutionJournal({
-					operationId: operation.operationId,
-					target: result.target,
-					dispatch: { kind: dispatchKind, command: commandName, ...(text ? { text } : {}) },
-					effect: (result as typeof result & { effect?: ExecuteEffect }).effect,
-				});
-				const resultValue = { ...result, execution };
-				return await jsonCommandResult(resultValue, params, ctx, {
+				const rawTarget = targetTabId(params, command);
+				const tabId = resolveLocalTargetTabId(server, rawTarget, browserSessionId);
+				const commandName = String(command.cmd || "");
+				if (!isNativeWriteCommand(command)) {
+					const result = await server.sendCommand(command, { browserSessionId, tabId: rawTarget as string | number | undefined, timeoutMs, accessMode: "read" });
+					return jsonResult(result, { mode: "command", command: commandName }, maxChars);
+				}
+				if (!hasBrowserOperationResolver(command)) throw new BrowserBridgeError("INVALID_RULE", `No operation completion resolver is registered for native write command ${commandName}`, { commandName });
+				const outcome = await withBrowserOperation({
+					server,
 					commandName: "browser_command",
 					command: commandName,
-					defaultDetailLevel: "preview",
-					maxChars,
-					fallbackName: artifactFallbackName("command"),
-					details: { mode: "command" },
-					operation,
-					artifactValue: { ...resultValue, operation },
-					distill: (value) => {
-						const effect = isRecord(value) ? compactExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
-						const effectHints = isRecord(value) ? nextActionsForExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
-						return {
-							...summarizeGenericValue(value),
-							operationId: operation.operationId,
-							sourceMode: operation.sourceMode,
-							...(effect ? { effect } : {}),
-							...(effectHints ? { nextActions: effectHints } : {}),
-						};
-					},
-				});
+					action: typeof command.method === "string" ? command.method : typeof command.action === "string" ? command.action : undefined,
+					browserSessionId,
+					tabId,
+					targetRef: typeof rawTarget === "string" ? rawTarget : undefined,
+					timeoutMs,
+					ctx,
+					onUpdate,
+				}, () => server.sendCommand(command, { browserSessionId, tabId: rawTarget as string | number | undefined, timeoutMs, accessMode: "write" }));
+				return inlineJsonCommandResult(outcome, { mode: "command", command: commandName, operationId: outcome.operationId, status: outcome.status }, { maxChars }, "browser_command");
 			});
 		},
 	});

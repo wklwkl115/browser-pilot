@@ -1,0 +1,121 @@
+import { canonicalBridgeCommand, getNativeCommandProtocolSchema, type BridgeCommand } from "../types/nativeProtocol.js";
+import type { BrowserOperationEvent } from "../kernels/session/browserOperation.js";
+import { isRecord } from "../utils/records.js";
+
+export type BrowserOperationCompletion = { source: string; evidence: Record<string, unknown> };
+
+export type BrowserOperationResolverInput = {
+	commandName: string;
+	command?: string;
+	action?: string;
+	mode?: "javascript" | "program";
+	physicalProgram?: boolean;
+	result?: unknown;
+	events: BrowserOperationEvent[];
+};
+
+function bridgeData(value: unknown): unknown {
+	return isRecord(value) && Object.prototype.hasOwnProperty.call(value, "data") ? value.data : value;
+}
+
+function scriptResult(value: unknown): unknown {
+	const result = bridgeData(value);
+	return result === "[undefined]" ? undefined : result;
+}
+
+function findFileEvidence(value: unknown): Record<string, unknown> | undefined {
+	const data = bridgeData(value);
+	if (!isRecord(data)) return undefined;
+	const download = isRecord(data.download) ? data.download : data;
+	const path = download.filePath ?? download.filename ?? download.path ?? download.finalPath;
+	const state = download.state ?? download.status;
+	if (typeof path !== "string" || !path || (typeof state === "string" && !/complete|completed|success/i.test(state))) return undefined;
+	return { path, ...(state ? { state } : {}) };
+}
+
+function nativeCompletionSource(command: string): string | undefined {
+	const sourceByCommand: Array<[RegExp, string]> = [
+		[/^batch$/, "batch-completed"],
+		[/^tabs(?:\.(?:create|switch|close))?$/, "tab-lifecycle"],
+		[/^transfer\.download$/, "download-completed"],
+		[/^transfer\.upload$/, "upload-applied"],
+		[/^network\.start$/, "network-recorder-armed"],
+		[/^network\.stop$/, "network-recorder-flushed"],
+		[/^network\.captureReload$/, "network-capture-completed"],
+		[/^network\.(?:clear)$/, "network-recorder-updated"],
+		[/^hook\.(?:install|install_targets|clear|clear_buffer|pause|resume|uninstall|addEventListener|removeEventListener)$/, "hook-lifecycle"],
+		[/^frame\.(?:evaluate|addNewDocumentScript|removeNewDocumentScript)$/, "frame-command-result"],
+		[/^(?:input\.|cdp$|persistent_cdp$)/, "native-command-result"],
+		[/^(?:management|intercept\.|ws\.)/, "native-command-result"],
+	];
+	return sourceByCommand.find(([pattern]) => pattern.test(command))?.[1];
+}
+
+function nativeCompletion(command: string, result: unknown): BrowserOperationCompletion | undefined {
+	const source = nativeCompletionSource(command);
+	if (!source) return undefined;
+	if (command === "transfer.download") {
+		const file = findFileEvidence(result);
+		return file ? { source, evidence: file } : undefined;
+	}
+	return { source, evidence: { command, result: bridgeData(result) } };
+}
+
+function executeCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
+	const navigation = [...input.events].reverse().find((event) => event.type === "navigation_completed" || (event.type === "navigation" && (event.data?.phase === "complete" || event.data?.phase === "Page.lifecycleEvent" && event.data?.name === "load")));
+	const download = [...input.events].reverse().find((event) => event.type === "download_completed");
+	if (download) return { source: "download-completed", evidence: { event: download.data } };
+	if (navigation) return { source: input.events.some((event) => event.type === "new_tab") ? "new-tab-ready" : "navigation-completed", evidence: { event: navigation.data } };
+	if (input.mode !== "javascript") return input.physicalProgram ? undefined : { source: "program-resolved", evidence: { result: input.result } };
+	const result = scriptResult(input.result);
+	return result !== undefined ? { source: "script-resolved", evidence: { result } } : undefined;
+}
+
+function tabsCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
+	const action = String(input.action || input.command || "").toLowerCase();
+	const result = isRecord(input.result) ? input.result : {};
+	if (action === "create") {
+		const created = isRecord(result.createdTarget) ? result.createdTarget : isRecord(result.target) ? result.target : isRecord(result.data) ? result.data : {};
+		const targetRef = created.targetRef ?? created.tabHandle;
+		return typeof targetRef === "string" && targetRef ? { source: "tab-create", evidence: { targetRef, tabId: created.tabId, url: created.url } } : undefined;
+	}
+	if (action === "switch") return result.acknowledged === true ? { source: "tab-switch", evidence: { target: result.target, result: result.data } } : undefined;
+	if (action === "close") return result.acknowledged === true ? { source: "tab-close", evidence: { target: result.target, result: result.data } } : undefined;
+	return undefined;
+}
+
+function nativeToolCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
+	const prefixes: Record<string, string> = { browser_network: "network", browser_hook: "hook", browser_frame: "frame" };
+	const prefix = prefixes[input.commandName];
+	if (prefix) return nativeCompletion(String(input.command || `${prefix}.${input.action}`), input.result);
+	return input.commandName === "browser_command" ? nativeCompletion(String(input.command || ""), input.result) : undefined;
+}
+
+export function resolveBrowserOperationCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
+	if (input.commandName === "browser_execute") return executeCompletion(input);
+	if (input.commandName === "browser_tabs") return tabsCompletion(input);
+	if (input.commandName === "browser_download") {
+		const file = findFileEvidence(input.result);
+		return file ? { source: "download-completed", evidence: file } : undefined;
+	}
+	if (input.commandName === "browser_upload") return { source: "upload-applied", evidence: { result: bridgeData(input.result) } };
+	return nativeToolCompletion(input);
+}
+
+export function isNativeWriteCommand(command: BridgeCommand): boolean {
+	const schema = getNativeCommandProtocolSchema();
+	const canonical = canonicalBridgeCommand(String(command.cmd || ""), schema);
+	const spec = schema.commands[canonical];
+	if (!spec || spec.internal === true) return false;
+	const method = String(command.method || command.action || spec.defaultMethod || "").toLowerCase();
+	return (spec.methodSpecs?.[method]?.accessMode ?? spec.accessMode) === "write";
+}
+
+export function hasBrowserOperationResolver(command: BridgeCommand): boolean {
+	if (!isNativeWriteCommand(command)) return true;
+	const schema = getNativeCommandProtocolSchema();
+	const canonical = canonicalBridgeCommand(String(command.cmd || ""), schema);
+	const method = String(command.method || command.action || schema.commands[canonical]?.defaultMethod || "").toLowerCase();
+	const effective = canonical === "tabs" && method ? `${canonical}.${method}` : canonical;
+	return nativeCompletionSource(effective) !== undefined;
+}

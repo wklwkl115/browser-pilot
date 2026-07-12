@@ -86,6 +86,14 @@ test("unknown subcommands stay usage errors in json mode", () => {
 	assert.equal(body.code, "CLI_USAGE_ERROR");
 });
 
+test("removed wait subcommand is an explicit unknown command with no compatibility execution", () => {
+	const result = runCli(["wait", "selector", "--selector", "#result", "--json"]);
+	const body = JSON.parse(result.stdout);
+	assert.equal(result.status, 2);
+	assert.equal(body.code, "CLI_USAGE_ERROR");
+	assert.match(String(body.message), /unknown command.*wait/i);
+});
+
 test("daemon status stays a local json command when no daemon is running", () => {
 	const result = runCli(["daemon", "status", "--json"]);
 	const body = JSON.parse(result.stdout);

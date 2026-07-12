@@ -160,7 +160,7 @@ test("BrowserBridgeServer command runtime port exposes snapshot, tabs, sessions,
 		const operation = port.beginOperation({ commandName: "browser_observe", browserSessionId: browserSession.id, tabId: 7, phase: "running" });
 		assert.equal(port.updateOperation(operation.operationId, { progress: 0.5 })?.progress, 0.5);
 		assert.equal(port.finishOperation(operation.operationId)?.operationId, operation.operationId);
-		assert.equal(port.snapshot().operations?.some((item) => item.operationId === operation.operationId), false);
+		assert.equal(port.snapshot().operations?.find((item) => item.operationId === operation.operationId)?.state, "terminal");
 
 		const observation = port.createObservationSnapshot({ browserSessionId: browserSession.id, tabId: 7, sourceMode: "scan", capturedAt: Date.now() });
 		assert.equal(port.getObservationSnapshot(observation.snapshotId)?.sourceMode, "scan");
