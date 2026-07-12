@@ -83,7 +83,7 @@ export function bridgeResultFailure(data: unknown): { message: string; details: 
 
 export function browserTabInfo(session: BrowserTabSession): BrowserTabInfo {
 	const { client: _client, ...info } = session;
-	return { ...info, targetRef: info.tabHandle };
+	return { ...info, targetGeneration: info.generation, targetRef: info.tabHandle };
 }
 
 export function delay(ms: number, signal?: AbortSignal): Promise<void> {

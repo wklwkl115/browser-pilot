@@ -10,6 +10,7 @@ const packagePath = path.join(root, "package.json");
 const abmlReadmePath = path.join(root, "src/kernels/abml/README.md");
 const codeWikiPath = path.join(root, "CODE_WIKI.md");
 const cliHelpPath = path.join(root, "src/apps/cli/help.ts");
+const cliSkillPath = path.join(root, "skills/browser-pilot-cli/SKILL.md");
 const commandSharedPath = path.join(root, "src/commands/commandShared.ts");
 const commandMetadataPath = path.join(root, "src/apps/cli/commandMetadata.ts");
 const commandRuntimePath = path.join(root, "src/commands/commandRuntime.ts");
@@ -115,8 +116,13 @@ test("real browser smoke gate owns live MV3 acceptance and runs in Windows CI", 
 	assert.match(smoke, /--load-extension=/);
 	assert.match(smoke, /browser_execute/);
 	assert.match(smoke, /browser_observe/);
+	assert.match(smoke, /browser-operation\/v2/);
+	assert.match(smoke, /no_effect/);
+	assert.match(smoke, /completionVerified/);
 	assert.match(smoke, /captureReload/);
 	assert.match(smoke, /browser_hook/);
+	assert.match(smoke, /pageEpoch/);
+	assert.match(smoke, /reanchorReason/);
 	assert.match(smoke, /extension reload reconnect/);
 });
 
@@ -273,14 +279,40 @@ test("agent-facing guidance does not recommend unsupported command @file input",
 	assert.deepEqual(offenders, []);
 });
 
-test("public docs and CLI guide page-load network capture through captureReload", () => {
+test("public docs and CLI guide route page-load capture through canonical capture-reload", () => {
 	const readme = text(readmePath);
 	const wiki = text(codeWikiPath);
 	const cliHelp = text(cliHelpPath);
-	for (const source of [readme, wiki, cliHelp]) assert.match(source, /captureReload/);
-	assert.match(readme, /captureReload[\s\S]{0,160}starts before reload\/navigation|starts capture before reload\/navigation[\s\S]{0,160}captureReload/i);
-	assert.match(wiki, /captureReload[\s\S]{0,220}network\.start[\s\S]{0,120}reload\/navigation/i);
-	assert.match(cliHelp, /captureReload[\s\S]{0,120}starts capture before reload\/navigation/i);
+	const cliSkill = text(cliSkillPath);
+	for (const source of [readme, wiki, cliHelp, cliSkill]) {
+		assert.match(source, /capture-reload/);
+		assert.match(source, /captureReload/);
+	}
+	assert.match(readme, /canonical CLI `network capture-reload`[\s\S]{0,220}starts capture before reload\/navigation/i);
+	assert.match(wiki, /canonical CLI `browser-pilot network capture-reload`[\s\S]{0,220}network\.start[\s\S]{0,120}reload\/navigation/i);
+	assert.match(cliHelp, /canonical capture-reload \(raw action captureReload\)[\s\S]{0,120}starts capture before reload\/navigation/i);
+	assert.match(cliSkill, /canonical CLI action `capture-reload`[\s\S]{0,160}`\{"action":"captureReload"\}`/i);
+});
+
+test("public contract docs use operation v2 and do not advertise the camelCase CLI alias", () => {
+	const docs = [readmePath, codeWikiPath, governancePath, cliSkillPath, changelogPath];
+	for (const filePath of docs) {
+		const source = text(filePath);
+		assert.match(source, /browser-operation\/v2/, path.relative(root, filePath));
+		assert.doesNotMatch(source, /browser-operation\/v1/, path.relative(root, filePath));
+		assert.doesNotMatch(source, /(?:^|\n)\s*(?:npx\s+)?browser-pilot\s+network\s+captureReload\b/m, path.relative(root, filePath));
+	}
+	assert.match(text(readmePath), /`network captureReload` is not a CLI alias/);
+	assert.match(text(codeWikiPath), /`network captureReload` 不是 alias/);
+});
+
+test("public contract docs define no-effect as non-success and anchor deltas by page epoch", () => {
+	for (const filePath of [readmePath, codeWikiPath, governancePath, cliSkillPath, changelogPath]) {
+		const source = text(filePath);
+		assert.match(source, /no_effect/, path.relative(root, filePath));
+		assert.match(source, /pageEpoch/, path.relative(root, filePath));
+		assert.match(source, /reanchorReason/, path.relative(root, filePath));
+	}
 });
 
 test("agent-facing guidance does not recommend manual-only page-load network flow", () => {
@@ -289,7 +321,7 @@ test("agent-facing guidance does not recommend manual-only page-load network flo
 	for (const filePath of files) {
 		const relative = path.relative(root, filePath);
 		text(filePath).split(/\r?\n\r?\n/).forEach((block, index) => {
-			if (manualNetworkFlowPattern.test(block) && !/captureReload|low-level|manual recorder control|do not|不要/.test(block)) offenders.push(`${relative}:block ${index + 1}: ${block.replace(/\s+/g, " ").trim()}`);
+			if (manualNetworkFlowPattern.test(block) && !/capture-reload|captureReload|low-level|manual recorder control|do not|不要/.test(block)) offenders.push(`${relative}:block ${index + 1}: ${block.replace(/\s+/g, " ").trim()}`);
 		});
 	}
 	assert.deepEqual(offenders, []);

@@ -59,6 +59,9 @@ function nativeCompletion(command: string, result: unknown): BrowserOperationCom
 		return file ? { source, evidence: file } : undefined;
 	}
 	const data = bridgeData(result);
+	if ((command === "batch" || command === "network.captureReload") && isRecord(data) && Array.isArray(data.results)) {
+		if (!data.results.length || data.results.some((item) => !isRecord(item) || item.ok !== true)) return undefined;
+	}
 	return data === undefined ? undefined : { source, evidence: { command, result: data } };
 }
 

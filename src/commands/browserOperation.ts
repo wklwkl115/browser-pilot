@@ -1,6 +1,14 @@
 import type { BrowserCommandRuntimePort, CommandActiveOperationInfo } from "../ports/BrowserCommandRuntimePort.js";
 import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
-import type { BrowserOperationEvent, BrowserOperationOutcome, BrowserOperationSignals, BrowserOperationStatus, BrowserOperationTarget } from "../kernels/session/browserOperation.js";
+import {
+	BROWSER_OPERATION_SCHEMA,
+	classifyBrowserOperationStatus,
+	type BrowserOperationEvent,
+	type BrowserOperationOutcome,
+	type BrowserOperationSignals,
+	type BrowserOperationStatus,
+	type BrowserOperationTarget,
+} from "../kernels/session/browserOperation.js";
 import { errorToPlain } from "../utils/errors.js";
 import { isRecord } from "../utils/records.js";
 import type { CommandOnUpdate, CommandResultContext } from "./commandRuntime.js";
@@ -178,10 +186,11 @@ export async function withBrowserOperation<T>(options: BrowserOperationOptions, 
 		const settled = await settleStatus(options, operation.operationId, result, dispatchFinishedAt, deadlineAt);
 		const signals = summarizeSignals(settled.events);
 		const outcome: BrowserOperationOutcome = {
-			version: "browser-operation/v1",
+			schema: BROWSER_OPERATION_SCHEMA,
 			operationId: operation.operationId,
 			commandName: options.commandName,
 			status: settled.status,
+			...classifyBrowserOperationStatus(settled.status),
 			target: completedTarget(target, result),
 			dispatch: { acknowledged, started: true, finished: true, startedAt, finishedAt: dispatchFinishedAt },
 			signals,
@@ -198,10 +207,11 @@ export async function withBrowserOperation<T>(options: BrowserOperationOptions, 
 		const status = statusForError(error);
 		const events = options.server.getOperation?.(operation.operationId)?.events ?? [];
 		const outcome: BrowserOperationOutcome = {
-			version: "browser-operation/v1",
+			schema: BROWSER_OPERATION_SCHEMA,
 			operationId: operation.operationId,
 			commandName: options.commandName,
 			status,
+			...classifyBrowserOperationStatus(status),
 			target,
 			dispatch: { acknowledged, started: true, finished: false, startedAt, finishedAt },
 			signals: summarizeSignals(events),

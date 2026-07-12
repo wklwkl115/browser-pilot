@@ -91,9 +91,17 @@ function resultText(result) {
 function operationOutcome(result, label, expectedStatus) {
 	let value;
 	try { value = JSON.parse(resultText(result)); } catch { throw new Error(`${label} did not return JSON: ${resultText(result)}`); }
-	if (value?.version !== "browser-operation/v1") throw new Error(`${label} did not return browser-operation/v1: ${JSON.stringify(value)}`);
+	if (value?.schema !== "browser-operation/v2") throw new Error(`${label} did not return browser-operation/v2: ${JSON.stringify(value)}`);
 	if (expectedStatus && value.status !== expectedStatus) throw new Error(`${label} returned ${String(value.status)}, expected ${expectedStatus}: ${JSON.stringify(value)}`);
+	const completed = value.status === "completed";
+	if (value.ok !== completed || value.completionVerified !== completed || value.classification !== (completed ? "success" : ["effect_observed", "ambiguous", "target_lost", "deadline"].includes(value.status) ? "inconclusive" : "failure")) {
+		throw new Error(`${label} returned inconsistent browser-operation/v2 classification: ${JSON.stringify(value)}`);
+	}
 	return value;
+}
+
+function resultEnvelope(result, label) {
+	try { return JSON.parse(resultText(result)); } catch { throw new Error(`${label} did not return JSON: ${resultText(result)}`); }
 }
 
 async function invoke(daemon, tool, params) {
@@ -181,7 +189,8 @@ try {
 	operationOutcome(executed, "browser_execute", "completed");
 	if (!resultText(executed).includes("Browser Pilot Smoke")) throw new Error(`browser_execute did not return fixture evidence: ${resultText(executed)}`);
 	const noEffect = await invoke(daemon, "browser_execute", { tabId, script: "void 0" });
-	operationOutcome(noEffect, "browser_execute no-effect", "no_effect");
+	const noEffectOutcome = operationOutcome(noEffect, "browser_execute no-effect", "no_effect");
+	if ((noEffectOutcome.ok ? 0 : 1) !== 1) throw new Error(`browser_execute no-effect did not map to a non-zero CLI outcome: ${JSON.stringify(noEffectOutcome)}`);
 	const created = operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}secondary`, active: true }), "browser_tabs create", "completed");
 	const createdTabId = Number(created.target?.tabId);
 	const originalTargetRef = tab?.targetRef || tab?.tabHandle || tabId;
@@ -189,14 +198,23 @@ try {
 	operationOutcome(await invoke(daemon, "browser_tabs", { action: "switch", targetRef: originalTargetRef }), "browser_tabs switch", "completed");
 	operationOutcome(await invoke(daemon, "browser_execute", { targetRef: originalTargetRef, script: "document.title" }), "browser_execute after switch", "completed");
 	operationOutcome(await invoke(daemon, "browser_tabs", { action: "close", targetRef: created.target.targetRef }), "browser_tabs close", "completed");
-	const observed = await invoke(daemon, "browser_observe", { tabId, maxNodes: 200 });
-	if (!resultText(observed).includes("Browser Pilot Smoke")) throw new Error(`browser_observe did not return fixture evidence: ${resultText(observed)}`);
+	const observedResult = await invoke(daemon, "browser_observe", { tabId, maxNodes: 200 });
+	const observed = resultEnvelope(observedResult, "browser_observe full");
+	if (!resultText(observedResult).includes("Browser Pilot Smoke")) throw new Error(`browser_observe did not return fixture evidence: ${resultText(observedResult)}`);
+	const reloadBaselineSnapshotId = observed.snapshot?.snapshotId;
+	const reloadBaselinePageEpoch = observed.snapshot?.pageEpoch;
+	if (typeof reloadBaselineSnapshotId !== "string" || typeof reloadBaselinePageEpoch !== "string") throw new Error(`browser_observe full did not expose page identity: ${JSON.stringify(observed.snapshot)}`);
 	const network = await invoke(daemon, "browser_network", {
 		action: "captureReload",
 		tabId,
 		params: { idleMs: 300, waitTimeoutMs: 10_000, limit: 20 },
 	});
 	if (!/networkCaptureReload|captureReload|api\/boot/.test(resultText(network))) throw new Error(`browser_network did not return capture evidence: ${resultText(network)}`);
+	const sameUrlReload = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, baselineSnapshotId: reloadBaselineSnapshotId, maxNodes: 200 }), "browser_observe after same-url reload");
+	if (sameUrlReload.snapshot?.pageEpoch === reloadBaselinePageEpoch) throw new Error(`same-URL reload reused the old page epoch: ${JSON.stringify(sameUrlReload.snapshot)}`);
+	const reloadReanchorReason = sameUrlReload.reanchorReason ?? sameUrlReload.summary?.reanchorReason ?? sameUrlReload.pageObservation?.reanchorReason;
+	if (reloadReanchorReason !== "document_changed") throw new Error(`same-URL reload did not re-anchor as document_changed: ${JSON.stringify({ reloadReanchorReason, snapshot: sameUrlReload.snapshot })}`);
+	if (sameUrlReload.diff !== undefined || sameUrlReload.treeDiff !== undefined) throw new Error(`same-URL reload reused an old baseline delta: ${JSON.stringify({ diff: sameUrlReload.diff, treeDiff: sameUrlReload.treeDiff })}`);
 	const hookSessionId = `browser-pilot-smoke-${process.pid}`;
 	await invoke(daemon, "browser_hook", {
 		action: "installTargets",
@@ -219,15 +237,32 @@ try {
 	}
 	await invoke(daemon, "browser_hook", { action: "uninstall", tabId, sessionId: hookSessionId });
 
+	const reconnectBaseline = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, maxNodes: 200 }), "browser_observe reconnect baseline");
+	const sameDocumentBaselineId = reconnectBaseline.snapshot?.snapshotId;
+	const sameDocumentPageEpoch = reconnectBaseline.snapshot?.pageEpoch;
+	if (typeof sameDocumentBaselineId !== "string" || typeof sameDocumentPageEpoch !== "string") throw new Error(`browser_observe did not expose page identity: ${JSON.stringify(reconnectBaseline.snapshot)}`);
+	operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "history.pushState({browserPilotSmoke:true},'',`/spa?smoke=${Date.now()}`);document.body.dataset.browserPilotSmokeDelta=String(Date.now());true" }), "browser_execute same-document SPA mutation", "completed");
+	await waitForStatus(daemon, (value) => Array.isArray(value.tabs) && value.tabs.some((item) => Number(item?.tabId ?? item?.id) === tabId && String(item?.url || "").includes("/spa?smoke=")), "SPA history tab sync");
+	const deltaObservation = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, baselineSnapshotId: sameDocumentBaselineId, maxNodes: 200 }), "browser_observe same-document delta");
+	if (deltaObservation.snapshot?.pageEpoch !== sameDocumentPageEpoch) throw new Error(`same-document SPA mutation changed page epoch: ${JSON.stringify(deltaObservation.snapshot)}`);
+	if (deltaObservation.diff === undefined && deltaObservation.treeDiff === undefined && deltaObservation.summary?.diff === undefined && deltaObservation.summary?.pageObservation?.diff === undefined) throw new Error(`same-document observation did not produce a delta: ${JSON.stringify(deltaObservation.summary)}`);
+	const baselineSnapshotId = deltaObservation.snapshot?.snapshotId;
+	const baselinePageEpoch = deltaObservation.snapshot?.pageEpoch;
+	if (typeof baselineSnapshotId !== "string" || typeof baselinePageEpoch !== "string") throw new Error(`delta observation did not expose page identity: ${JSON.stringify(deltaObservation.snapshot)}`);
 	const beforeMetrics = browser.status.health?.connectionMetrics || {};
 	await invoke(daemon, "browser_command", { command: { cmd: "management", method: "reload" } });
 	const reconnected = await waitForStatus(daemon, (value) => value.extensionConnected === true && Number(value.health?.connectionMetrics?.connects || 0) > Number(beforeMetrics.connects || 0), "extension reload reconnect");
+	const reanchored = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, baselineSnapshotId }), "browser_observe after extension reconnect");
+	if (reanchored.snapshot?.pageEpoch === baselinePageEpoch) throw new Error(`extension reconnect reused the old page epoch: ${JSON.stringify(reanchored.snapshot)}`);
+	const reanchorReason = reanchored.reanchorReason ?? reanchored.summary?.reanchorReason ?? reanchored.pageObservation?.reanchorReason;
+	if (!["identity_unproven", "document_changed"].includes(reanchorReason)) throw new Error(`extension reconnect did not force a full re-anchor: ${JSON.stringify({ reanchorReason, snapshot: reanchored.snapshot })}`);
+	if (reanchored.diff !== undefined || reanchored.treeDiff !== undefined) throw new Error(`extension reconnect reused an old baseline delta: ${JSON.stringify({ diff: reanchored.diff, treeDiff: reanchored.treeDiff })}`);
 	console.log(JSON.stringify({
 		ok: true,
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute-operation", "no-effect", "tab-create-switch-close", "observe", "network-capture-reload", "hook-install-collect-uninstall", "extension-reconnect"],
+		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-nonzero", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "extension-reconnect-page-epoch"],
 		connectionMetrics: reconnected.health?.connectionMetrics,
 	}, null, 2));
 } finally {

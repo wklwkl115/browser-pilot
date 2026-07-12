@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const PACKAGE_NAME = "browser-pilot";
-export const DAEMON_PROTOCOL_VERSION = "4";
+export const DAEMON_PROTOCOL_VERSION = 4;
+export const COMMAND_CONTRACT_VERSION = 2 as const;
 
 function packageMetadata(): { root: string; pkg: { name?: unknown; version?: unknown } } | undefined {
 	let dir = path.dirname(fileURLToPath(import.meta.url));

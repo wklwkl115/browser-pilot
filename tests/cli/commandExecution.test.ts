@@ -13,6 +13,11 @@ import { defineNetworkCommand } from "../../src/commands/nativeActionCommands.ts
 import { defineObserveCommand } from "../../src/commands/observeCommand.ts";
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
 import { browserOperationCommandResult } from "../../src/commands/browserOperationResult.ts";
+import {
+	BROWSER_OPERATION_SCHEMA,
+	classifyBrowserOperationStatus,
+	type BrowserOperationStatus,
+} from "../../src/kernels/session/browserOperation.ts";
 import { publicCreateTabResult } from "../../src/commands/tabsProjection.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
@@ -24,6 +29,10 @@ type MockRuntime = BrowserCommandRuntimePort & { calls: RuntimeCall[] };
 
 function parseResult(result: { content: Array<{ text: string }> }): Record<string, unknown> {
 	return JSON.parse(result.content[0]?.text || "{}") as Record<string, unknown>;
+}
+
+function operationContract(status: BrowserOperationStatus) {
+	return { schema: BROWSER_OPERATION_SCHEMA, status, ...classifyBrowserOperationStatus(status) };
 }
 
 function defineCommand(register: (context: { commands: CommandManifestIndex; ensureStarted: () => Promise<BrowserCommandRuntimePort> }) => void, runtime: BrowserCommandRuntimePort): CommandDefinition {
@@ -157,7 +166,7 @@ test("commands execution: browser_tabs runtime failure is returned as a terminal
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
 	const result = await command.execute("tool-1", { action: "switch", targetRef: 99 });
 	const body = parseResult(result);
-	assert.equal(body.version, "browser-operation/v1");
+	assert.equal(body.schema, "browser-operation/v2");
 	assert.equal(body.status, "target_lost");
 	assert.equal((body.dispatch as Record<string, unknown>).finished, false);
 	assert.match(JSON.stringify(body.diagnostics), /tab vanished/);
@@ -202,7 +211,7 @@ test("commands execution: browser_tabs common and advanced actions preserve runt
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
 	const create = parseResult(await command.execute("tool-1", { action: "create", url: "https://example.test/new", active: false, incognito: true, browserSessionId: "session-1" }));
-	assert.equal(create.version, "browser-operation/v1");
+	assert.equal(create.schema, "browser-operation/v2");
 	assert.equal(create.status, "completed");
 	assert.equal((create.target as Record<string, unknown>).tabId, 8);
 	assert.equal((create.completion as Record<string, unknown>).source, "tab-create");
@@ -301,7 +310,7 @@ test("commands execution: browser_command write failures return failed operation
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const result = await command.execute("tool-1", { command: { cmd: "cdp", method: "Page.reload" }, targetRef: "tab-7" });
 	const body = parseResult(result);
-	assert.equal(body.version, "browser-operation/v1");
+	assert.equal(body.schema, "browser-operation/v2");
 	assert.equal(body.status, "failed");
 	assert.equal(body.operationId, "op-1");
 	assert.match(JSON.stringify(body.diagnostics), /bridge send failed/);
@@ -315,7 +324,7 @@ test("commands execution: browser_execute summarizes successful JavaScript resul
 	const execute = runtime.calls.find((call) => call.name === "executeJavaScript");
 	assert.equal(execute?.args[0], "return 42");
 	assert.deepEqual(execute?.args[1], { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000 });
-	assert.equal(envelope.version, "browser-operation/v1");
+	assert.equal(envelope.schema, "browser-operation/v2");
 	assert.equal(envelope.status, "completed");
 	assert.equal((envelope.completion as Record<string, unknown>).source, "script-resolved");
 	assert.deepEqual(((envelope.completion as Record<string, unknown>).evidence as Record<string, unknown>).result, { answer: 42, script: "return 42" });
@@ -376,7 +385,7 @@ test("commands execution: large JavaScript results preserve terminal proof and e
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const result = await command.execute("tool-large", { script: "return window.__large", targetRef: "tab-7", maxChars: 1_200 }, undefined, undefined, { cwd });
 	const outcome = parseResult(result);
-	assert.equal(outcome.version, "browser-operation/v1");
+	assert.equal(outcome.schema, "browser-operation/v2");
 	assert.equal(outcome.status, "completed");
 	assert.equal((outcome.completion as Record<string, unknown>).source, "script-resolved");
 	assert.equal(typeof (outcome.dispatch as Record<string, unknown>).startedAt, "number");
@@ -412,7 +421,7 @@ test("commands execution: artifact write failure cannot erase a completed browse
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const result = await command.execute("tool-artifact-failure", { script: "return window.__large", targetRef: "tab-7", maxChars: 1_200 }, undefined, undefined, { cwd: invalidCwd });
 	const outcome = parseResult(result);
-	assert.equal(outcome.version, "browser-operation/v1");
+	assert.equal(outcome.schema, "browser-operation/v2");
 	assert.equal(outcome.status, "completed");
 	assert.equal((outcome.completion as Record<string, unknown>).source, "script-resolved");
 	assert.deepEqual(outcome.continuation, { next: "inspect_diagnostics", reason: "artifact_save_failed", replay: "do_not_retry" });
@@ -426,10 +435,9 @@ test("commands execution: artifact write failure cannot erase a completed browse
 
 test("operation continuation verifies non-page state when no diagnostics exist", async () => {
 	const result = await browserOperationCommandResult({
-		version: "browser-operation/v1",
+		...operationContract("no_effect"),
 		operationId: "operation-network-no-effect",
 		commandName: "browser_network",
-		status: "no_effect",
 		target: { targetRef: "tab-7", tabId: 7 },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
 		signals: {},
@@ -440,10 +448,9 @@ test("operation continuation verifies non-page state when no diagnostics exist",
 
 test("operation continuation re-observes page-driven download uncertainty", async () => {
 	const result = await browserOperationCommandResult({
-		version: "browser-operation/v1",
+		...operationContract("no_effect"),
 		operationId: "operation-download-no-effect",
 		commandName: "browser_download",
-		status: "no_effect",
 		target: { targetRef: "tab-7", tabId: 7 },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
 		signals: {},
@@ -454,10 +461,9 @@ test("operation continuation re-observes page-driven download uncertainty", asyn
 
 test("operation continuation only selects diagnostics when diagnostics exist", async () => {
 	const result = await browserOperationCommandResult({
-		version: "browser-operation/v1",
+		...operationContract("stalled"),
 		operationId: "operation-network-stalled",
 		commandName: "browser_network",
-		status: "stalled",
 		target: { targetRef: "tab-7", tabId: 7 },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
 		signals: { networkPending: 1 },
@@ -469,10 +475,9 @@ test("operation continuation only selects diagnostics when diagnostics exist", a
 
 test("completed operations reacquire targets after close and new-tab completion", async () => {
 	const close = parseResult(await browserOperationCommandResult({
-		version: "browser-operation/v1",
+		...operationContract("completed"),
 		operationId: "operation-tab-close",
 		commandName: "browser_tabs",
-		status: "completed",
 		target: { targetRef: "tab-7", tabId: 7 },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
 		signals: {},
@@ -481,10 +486,9 @@ test("completed operations reacquire targets after close and new-tab completion"
 	assert.deepEqual(close.continuation, { next: "reacquire_target", reason: "target_no_longer_current", replay: "not_needed" });
 
 	const newTab = parseResult(await browserOperationCommandResult({
-		version: "browser-operation/v1",
+		...operationContract("completed"),
 		operationId: "operation-new-tab",
 		commandName: "browser_execute",
-		status: "completed",
 		target: { targetRef: "tab-7", tabId: 7 },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
 		signals: { newTabs: 1, navigation: "https://example.test/new" },
@@ -496,10 +500,9 @@ test("completed operations reacquire targets after close and new-tab completion"
 test("minimal operation artifact hints follow the returned continuation", async () => {
 	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-operation-diagnostics-"));
 	const result = await browserOperationCommandResult({
-		version: "browser-operation/v1",
+		...operationContract("stalled"),
 		operationId: "operation-diagnostics-large",
 		commandName: "browser_network",
-		status: "stalled",
 		target: { targetRef: "tab-7", tabId: 7 },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
 		signals: { networkPending: 1 },
@@ -515,10 +518,9 @@ test("operation artifacts remain readable across the default bridge payload rang
 	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-operation-too-large-"));
 	const utf8Value = "界".repeat(Math.ceil((MAX_ARTIFACT_READ_BYTES + 4_096) / 3));
 	const result = await browserOperationCommandResult({
-		version: "browser-operation/v1",
+		...operationContract("completed"),
 		operationId: "operation-artifact-too-large",
 		commandName: "browser_execute",
-		status: "completed",
 		target: { targetRef: "tab-7", tabId: 7 },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
 		signals: {},
@@ -537,10 +539,9 @@ test("operation artifacts remain readable across the default bridge payload rang
 test("operation compaction preserves completion with undefined evidence without publishing a missing JSON path", async () => {
 	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-undefined-operation-result-"));
 	const result = await browserOperationCommandResult({
-		version: "browser-operation/v1",
+		...operationContract("completed"),
 		operationId: "operation-undefined-result",
 		commandName: "browser_command",
-		status: "completed",
 		target: { targetRef: "tab-7", tabId: 7 },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
 		signals: { mutationCount: 100 },
@@ -548,7 +549,7 @@ test("operation compaction preserves completion with undefined evidence without 
 		pageEffect: { changed: Array.from({ length: 80 }, (_, index) => ({ index, detail: "x".repeat(200) })) },
 	}, { budgetName: "browser_command", maxChars: 1_200, ctx: { cwd }, details: {} });
 	const outcome = parseResult(result);
-	assert.equal(outcome.version, "browser-operation/v1");
+	assert.equal(outcome.schema, "browser-operation/v2");
 	assert.equal(outcome.status, "completed");
 	assert.equal((outcome.completion as Record<string, unknown>).source, "native-command-result");
 	const paths = (outcome.artifact_hints as Record<string, unknown>).jsonPaths as Record<string, unknown>;
@@ -560,10 +561,9 @@ test("operation minimal response bounds navigation signals and records the omitt
 	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-long-operation-signal-"));
 	const navigation = `https://example.test/?state=${"x".repeat(10_000)}`;
 	const result = await browserOperationCommandResult({
-		version: "browser-operation/v1",
+		...operationContract("completed"),
 		operationId: "operation-long-navigation",
 		commandName: "browser_execute",
-		status: "completed",
 		target: { browserSessionId: "session-1", targetRef: "tab-7", tabId: 7, url: navigation },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
 		signals: { navigation },
@@ -586,7 +586,7 @@ test("commands execution: browser_execute program path preserves operation and f
 	assert.equal(begin.command, "program");
 	assert.equal(begin.tabId, 7);
 	assert.equal(result.details?.mode, "program");
-	assert.equal(envelope.version, "browser-operation/v1");
+	assert.equal(envelope.schema, "browser-operation/v2");
 	assert.equal(envelope.status, "completed");
 	assert.equal((envelope.completion as Record<string, unknown>).source, "program-resolved");
 	assert.equal(envelope.operationId, "op-1");
@@ -710,7 +710,32 @@ test("commands execution: browser_network captureReload batches start before rel
 	assert.equal(batch.cmd, "batch");
 	assert.deepEqual(commands.map((entry) => entry.cmd), ["network.start", "cdp", "network.wait", "network.list"]);
 	assert.equal(((commands[1].params as Record<string, unknown>).ignoreCache), true);
-	assert.equal(envelope.version, "browser-operation/v1");
+	assert.equal(envelope.schema, "browser-operation/v2");
 	assert.equal(envelope.status, "completed");
 	assert.equal((envelope.completion as Record<string, unknown>).source, "network-capture-completed");
+});
+
+test("commands execution: browser_network captureReload cannot report completed when reload fails inside the batch", async () => {
+	const runtime = createRuntime({
+		async sendCommand(command, options) {
+			runtime.calls.push({ name: "sendCommand", args: [command, options] });
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "operation.finish") return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
+			return { id: "batch-failed", acknowledged: true, tabId: 7, data: { results: [
+				{ ok: true, data: { sessionId: "s1" } },
+				{ ok: false, error_code: "INTERNAL_ERROR", error: "reload failed" },
+				{ ok: true, data: { matched: true } },
+				{ ok: true, data: { total: 0, items: [] } },
+			] } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNetworkCommand(context), runtime);
+	const result = await command.execute("tool-1", { action: "captureReload", tabId: 7, params: { sessionId: "s1" }, maxChars: 20_000 });
+	const envelope = parseResult(result);
+	assert.equal(envelope.schema, "browser-operation/v2");
+	assert.equal(envelope.status, "failed");
+	assert.equal(envelope.classification, "failure");
+	assert.equal(envelope.completionVerified, false);
+	assert.equal(envelope.ok, false);
+	assert.equal(envelope.code, "OPERATION_FAILED");
 });

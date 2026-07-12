@@ -8,6 +8,9 @@ import { defineBrowserCommand, resolveLocalTargetTabId, runCommandHandler, share
 import { NativeCommandParamsSchema, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
+import { currentPageIdentity, pageIdentityFromUnknown } from "./observe/pageIdentity.js";
+import { samePageIdentity } from "../kernels/session/pageIdentity.js";
+import type { ValidationIssue } from "./commandDefinition.js";
 
 const OBSERVE_MODES = new Set<ObserveMode>(["scan", "content", "html", "text", "tabs"]);
 
@@ -64,12 +67,37 @@ export function validateObserveParams(mode: ObserveMode, params: ObserveToolPara
 	throw new BrowserBridgeError("INVALID_RULE", `browser_observe mode=${mode} does not accept ${param}`, { mode, param, reason });
 }
 
+function provided(args: Record<string, unknown>, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(args, key) && args[key] !== undefined;
+}
+
+export function validateObserveArguments(args: Record<string, unknown>): ValidationIssue[] {
+	const modeState = normalizeObserveMode(args.mode, args as ObserveToolParams);
+	const params = { ...(args as ObserveToolParams), modeExplicit: modeState.explicit };
+	const issues: ValidationIssue[] = OBSERVE_VALIDATION_RULES
+		.filter(([, , rejects]) => rejects(modeState.mode, params, !modeState.explicit && modeState.mode === "scan"))
+		.map(([param, reason]) => ({
+			code: "OBSERVE_ARGUMENT_CONFLICT",
+			path: `/${param}`,
+			message: `browser_observe rejected ${param} for ${modeState.mode}: ${reason}`,
+		}));
+	const baselineKeys = ["baseline", "baselineSnapshotId", "baselinePath"].filter((key) => provided(args, key));
+	if (baselineKeys.length > 1) issues.push({ code: "OBSERVE_BASELINE_CONFLICT", path: "/", message: `browser_observe accepts only one baseline source, got ${baselineKeys.join(", ")}` });
+	if (args.diff === true && baselineKeys.length) issues.push({ code: "OBSERVE_DIFF_BASELINE_CONFLICT", path: "/diff", message: "browser_observe diff:true cannot be combined with an explicit baseline source" });
+	const readabilityKeys = ["content", "readability"].filter((key) => provided(args, key));
+	if (readabilityKeys.length > 1) issues.push({ code: "OBSERVE_ADDON_CONFLICT", path: "/", message: `browser_observe accepts one Readability selector, got ${readabilityKeys.join(", ")}` });
+	const diagnosticsKeys = ["diagnostics", "debug", "axe", "axeDiagnostics"].filter((key) => provided(args, key));
+	if (diagnosticsKeys.length > 1) issues.push({ code: "OBSERVE_ADDON_CONFLICT", path: "/", message: `browser_observe accepts one accessibility diagnostics selector, got ${diagnosticsKeys.join(", ")}` });
+	return issues;
+}
+
 export function selectDiffBaselineSnapshot(server: BrowserCommandRuntimePort, params: ObserveToolParams): string | undefined {
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const effectiveTabId = resolveLocalTargetTabId(server, targetTabId(params), params.browserSessionId) ?? bridge.defaultTabId;
 	const browserSessionId = bridge.browserSessionId;
+	const pageIdentity = currentPageIdentity(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId });
 	return server.listObservationSnapshots()
-		.filter((snap) => snap.browserSessionId === browserSessionId && snap.tabId === effectiveTabId && snap.sourceMode === "scan" && !snap.expired && Boolean(snap.saved?.path))
+		.filter((snap) => snap.browserSessionId === browserSessionId && snap.tabId === effectiveTabId && samePageIdentity(pageIdentityFromUnknown(snap), pageIdentity) && snap.sourceMode === "scan" && !snap.expired && Boolean(snap.saved?.path))
 		.reduce((latest, snap) => latest === undefined || snap.capturedAt > latest.capturedAt ? snap : latest, undefined as ReturnType<BrowserCommandRuntimePort["listObservationSnapshots"]>[number] | undefined)
 		?.snapshotId;
 }
@@ -82,7 +110,7 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 		promptSnippet: "Observe the current page as the canonical ABML page model with structure, actionables, refs, context, evidence, deltas, and diagnostics.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
-			"Call browser_observe without choosing a mode for normal page understanding. Use canonical-only target/time/budget/delta boundaries such as tabId, targetRef, url, fresh, diff, baseline, baselineSnapshotId, baselinePath, actionRef, timeoutMs, maxChars, detailLevel, outputPath, or explicit optional add-ons such as readability:true/content=readability only on the omitted-mode path. Any explicit mode value, including mode=scan, is marked legacy/debug/projection and rejects canonical-only diff/baseline/actionRef parameters; explicit content/html/text/tabs remain only for compatibility projections.",
+			"Call browser_observe without choosing a mode for normal page understanding. Use canonical-only target/delta boundaries such as tabId, targetRef, url, fresh, diff, baseline, baselineSnapshotId, baselinePath, actionRef, or explicit optional add-ons such as readability:true/content=readability only on the omitted-mode path. Removed mechanical inputs such as timeoutMs, maxChars, detailLevel, and outputPath are rejected. Any explicit mode value, including mode=scan, is marked legacy/debug/projection and rejects canonical-only diff/baseline/actionRef parameters; explicit content/html/text/tabs remain only for compatibility projections.",
 		],
 		parameters: strictCommandParameters({
 			mode: Type.Optional(Type.Union([Type.Literal("scan"), Type.Literal("content"), Type.Literal("html"), Type.Literal("text"), Type.Literal("tabs")], { description: "Legacy/debug/projection override. Omit for the canonical ABML PageObservation; any explicit mode value, including scan, is marked as non-canonical compatibility/debug semantics and cannot use canonical-only diff/baseline/actionRef parameters." })),
@@ -108,6 +136,7 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 			axeDiagnostics: Type.Optional(Type.Boolean({ description: "Canonical no-mode diagnostics-only add-on: true runs bounded axe-core accessibility diagnostics without changing the canonical structural model." })),
 			...sharedTabScopedToolParams(),
 		}),
+		validateArguments: validateObserveArguments,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runCommandHandler(async (): Promise<import("../utils/toolResult.js").BrowserTextCommandResult> => {
 				const toolCtx = ctx ?? {};

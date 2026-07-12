@@ -583,8 +583,8 @@ test("observe scan characterization: ledger facts preserve stable refs across re
 	assert.notEqual(currentFacts[buttonEntity.ref]?.versionStamp, priorFacts[buttonEntity.ref]?.versionStamp);
 	assert.equal(currentFacts[buttonEntity.ref]?.stableStamp, priorFacts[buttonEntity.ref]?.stableStamp);
 	const stableRefs = stableRefsFromCommandFrames(
-		{ key: { browserSessionId: "session-1", tabId: 1, navigationEpoch: "https://example.test" }, snapshotId: "snap-2", capturedAt: 2, facts: currentFacts },
-		{ key: { browserSessionId: "session-1", tabId: 1, navigationEpoch: "https://example.test" }, snapshotId: "snap-1", capturedAt: 1, facts: priorFacts },
+		{ key: { browserSessionId: "session-1", tabId: 1, targetGeneration: 1, pageEpoch: "page-1" }, snapshotId: "snap-2", capturedAt: 2, facts: currentFacts },
+		{ key: { browserSessionId: "session-1", tabId: 1, targetGeneration: 1, pageEpoch: "page-1" }, snapshotId: "snap-1", capturedAt: 1, facts: priorFacts },
 	);
 	assert.deepEqual([...stableRefs], [buttonEntity.ref]);
 });

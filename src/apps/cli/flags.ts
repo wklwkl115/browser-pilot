@@ -2,9 +2,8 @@
  * Schema-driven CLI flag generation + argv parsing.
  *
  * A tool's TypeBox parameter schema is introspected into flag specs; argv is
- * collected into a raw object; then validateCommandArgs (the shared frontend
- * validator) coerces/validates ("5" -> number, "true" -> boolean, enum/union
- * rejection) — we never re-implement coercion.
+ * collected into a typed object; then the shared command pipeline validates it.
+ * CLI number/boolean coercions are explicit here so daemon JSON stays strict.
  */
 import { validateCommandArgs } from "../../validation/commandArgs.js";
 import { readFileSync } from "node:fs";
@@ -16,6 +15,7 @@ export interface FlagSpec {
 	name: string; // param name (camelCase), e.g. detailLevel
 	flag: string; // --detail-level
 	kind: FlagKind;
+	itemKind?: "number" | "string";
 	choices?: string[];
 	description?: string;
 	required: boolean;
@@ -33,6 +33,7 @@ interface JsonSchemaProp {
 	type?: string;
 	anyOf?: Array<{ const?: unknown; type?: string }>;
 	description?: string;
+	items?: JsonSchemaProp;
 }
 
 function kebab(name: string): string {
@@ -44,10 +45,14 @@ function schemaParts(schema: unknown): { properties: Record<string, JsonSchemaPr
 	return { properties: s.properties ?? {}, required: Array.isArray(s.required) ? (s.required as string[]) : [] };
 }
 
-function flagKind(prop: JsonSchemaProp): { kind: FlagKind; choices?: string[] } {
+function flagKind(prop: JsonSchemaProp): { kind: FlagKind; choices?: string[]; itemKind?: "number" | "string" } {
 	if (prop.type === "boolean") return { kind: "boolean" };
 	if (prop.type === "number" || prop.type === "integer") return { kind: "number" };
-	if (prop.type === "array") return { kind: "array" };
+	if (prop.type === "array") return {
+		kind: "array",
+		...(prop.items?.type === "number" || prop.items?.type === "integer" ? { itemKind: "number" as const } : {}),
+		...(prop.items?.type === "string" ? { itemKind: "string" as const } : {}),
+	};
 	if (prop.type === "object") return { kind: "json" };
 	if (Array.isArray(prop.anyOf) && prop.anyOf.length) {
 		const consts = prop.anyOf.map((m) => m.const).filter((c) => c !== undefined);
@@ -60,8 +65,8 @@ function flagKind(prop: JsonSchemaProp): { kind: FlagKind; choices?: string[] } 
 export function buildFlagSpecs(schema: unknown): FlagSpec[] {
 	const { properties, required } = schemaParts(schema);
 	return Object.entries(properties).map(([name, prop]) => {
-		const { kind, choices } = flagKind(prop);
-		return { name, flag: `--${kebab(name)}`, kind, choices, description: prop.description, required: required.includes(name) };
+		const { kind, choices, itemKind } = flagKind(prop);
+		return { name, flag: `--${kebab(name)}`, kind, choices, itemKind, description: prop.description, required: required.includes(name) };
 	});
 }
 
@@ -144,6 +149,11 @@ function parseFlagValue(spec: FlagSpec, value: string, cwd = process.cwd()): { o
 			return { ok: false, error: `flag "${spec.flag}" expects a JSON array or newline list, got ${value}: ${error instanceof Error ? error.message : String(error)}` };
 		}
 	}
+	if (spec.kind === "number") {
+		const number = Number(resolved);
+		if (!resolved.trim() || !Number.isFinite(number)) return { ok: false, error: `flag "${spec.flag}" expects a finite number, got: ${value}` };
+		return { ok: true, value: number };
+	}
 	return { ok: true, value: resolved };
 }
 
@@ -182,7 +192,7 @@ function suggestFlag(token: string, flags: string[]): string | undefined {
 // dumping the accepted list (e.g. browser_artifact has no --detail-level; it sizes with --limit/etc).
 const ABSENT_FLAG_HINTS: Record<string, string> = {
 	"--browser-session-id": "browserSessionId is managed internally; use browser-pilot tabs for session management.",
-	"--detail-level": "detailLevel is internal now; request narrower artifact reads with --limit / --offset / --max-chars / --json-path.",
+	"--detail-level": "detailLevel is internal now; request narrower artifact reads with --limit / --offset / --json-path.",
 	"--max-chars": "maxChars is internal now; request narrower artifact reads with --limit / --offset / --json-path.",
 	"--timeout-ms": "timeoutMs is internal now; use operator config/env for global timeout changes.",
 	"--output-path": "outputPath is internal now; read saved.path from the result.",
@@ -221,9 +231,20 @@ function assignFlagValue(raw: Record<string, unknown>, spec: FlagSpec, value: st
 	}
 	const array = (raw[spec.name] as unknown[] | undefined) ?? [];
 	const isReference = value === "-" || value.startsWith("@");
-	if (Array.isArray(parsed.value) && isReference) array.push(...parsed.value);
-	else if (spec.split === "comma") array.push(...String(parsed.value).split(",").map((item) => item.trim()).filter(Boolean));
-	else array.push(String(parsed.value));
+	const items = Array.isArray(parsed.value) && isReference
+		? parsed.value
+		: spec.split === "comma"
+			? String(parsed.value).split(",").map((item) => item.trim()).filter(Boolean)
+			: [String(parsed.value)];
+	for (const item of items) {
+		if (spec.itemKind !== "number") {
+			array.push(item);
+			continue;
+		}
+		const number = typeof item === "number" ? item : Number(item);
+		if (!Number.isFinite(number)) return { ok: false, error: `flag "${spec.flag}" expects finite numeric array values, got: ${String(item)}` };
+		array.push(number);
+	}
 	raw[spec.name] = array;
 	return { ok: true };
 }
@@ -249,7 +270,12 @@ export function parseArgs(specs: FlagSpec[], argv: string[], cwd = process.cwd()
 		}
 		const spec = byFlag.get(token);
 		if (!spec) return fail(unknownFlagError(token, specs));
-		if (spec.kind === "boolean") { raw[spec.name] = inlineValue === undefined ? true : inlineValue !== "false"; continue; }
+		if (spec.kind === "boolean") {
+			if (inlineValue === undefined) { raw[spec.name] = true; continue; }
+			if (inlineValue !== "true" && inlineValue !== "false") return fail(`flag "${spec.flag}" expects true or false, got: ${inlineValue}`);
+			raw[spec.name] = inlineValue === "true";
+			continue;
+		}
 		const value = inlineValue !== undefined ? inlineValue : argv[i += 1];
 		if (value === undefined) return fail(`flag "${spec.flag}" needs a value`);
 		const assigned = assignFlagValue(raw, spec, value, cwd);
@@ -258,7 +284,7 @@ export function parseArgs(specs: FlagSpec[], argv: string[], cwd = process.cwd()
 	return { ok: true, value: { params: raw, globals } };
 }
 
-/** Coerce + validate raw params against the command schema (reuses the command validator). */
+/** Validate already-typed params against the command schema (legacy export name retained). */
 export function coerceParams(schema: unknown, raw: Record<string, unknown>): { ok: true; args: Record<string, unknown> } | { ok: false; error: string } {
 	return validateCommandArgs(schema, raw);
 }

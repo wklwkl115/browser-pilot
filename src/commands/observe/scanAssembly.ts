@@ -26,7 +26,7 @@ type CaptureObservation = Awaited<ReturnType<typeof executeScanCapture>>["observ
 function abmlAssemblyInputs(observation: CaptureObservation, ledgerFrame: CommandPerceptionLedgerFrame | undefined, baseline: BaselineResolution | undefined) {
 	return {
 		abmlEntities: observation.abmlRead?.ok === true ? (observation.abmlRead.entities ?? []) : null,
-		abmlDiff: observation.abmlRead?.ok === true ? observation.abmlRead.diff : undefined,
+		abmlDiff: observation.abmlRead?.ok === true && baseline ? observation.abmlRead.diff : undefined,
 		ledgerDeltaFields: ledgerFrame && baseline?.snapshotId ? { delta: "session", baselineSnapshotId: baseline.snapshotId } : {},
 		runtimeRelationGraph: observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.relationGraph) ? observation.abmlRead.data.relationGraph : undefined,
 	};

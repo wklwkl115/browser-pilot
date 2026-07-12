@@ -46,6 +46,12 @@ function hasArtifactPath(path: unknown): path is string {
 	return typeof path === "string" && path.trim().length > 0;
 }
 
+function publicPageFingerprint(fingerprint: import("../pageSignals.js").PageFingerprint | undefined) {
+	if (!fingerprint) return undefined;
+	const { pageEpoch: _pageEpoch, documentId: _documentId, ...publicFingerprint } = fingerprint;
+	return publicFingerprint;
+}
+
 async function prepareObservationRequest(
 	server: BrowserCommandRuntimePort,
 	params: ObserveToolParams,
@@ -120,7 +126,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		timings: observeTimings,
 	});
 	if (session.cacheHit) return session.result;
-	const { timeoutMs, hasNavigation, captureMaxChars, scanScript, ledgerFrame, detailLevel, paramsSignature, pageFingerprint, granularityCeiling, baseline, baselineRequested, baselineResolutionError } = session;
+	const { timeoutMs, effectiveTabId, hasNavigation, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, detailLevel, paramsSignature, pageFingerprint, pageIdentity, granularityCeiling, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
 	const capture = await executeScanCapture({
 		server,
 		params,
@@ -128,26 +134,30 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		hasNavigation,
 		rawTargetRef,
 		browserSessionId,
-		tabId,
+		tabId: effectiveTabId,
 		timeoutMs,
 		captureMaxChars,
 		scanScript,
-		baseline,
+		baseline: sessionBaseline,
 		pageFingerprint,
+		pageIdentity,
+		reanchorReason: sessionReanchorReason,
 		timings: observeTimings,
 		onUpdate,
 	});
 	const { observation, fusedPageFingerprint } = capture;
+	const baseline = capture.baseline;
+	const ledgerFrame = capture.reanchorReason ? undefined : sessionLedgerFrame;
 	const data = observation.result.data as Record<string, unknown> | undefined;
-	const scanPageFingerprint = fusedPageFingerprint;
-	const effectivePageFingerprint = pageFingerprint ?? scanPageFingerprint;
+	const scanPageFingerprint = publicPageFingerprint(fusedPageFingerprint);
+	const effectivePageFingerprint = fusedPageFingerprint ?? pageFingerprint;
 	const content = typeof data?.content === "string" ? data.content : JSON.stringify(data ?? observation.result.data, null, 2);
 	const scanMeta = data ? { ...data, content: `[${content.length} chars]` } : undefined;
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const providers = await runObserveProviders({
 		server,
 		params,
-		tabId,
+		tabId: effectiveTabId,
 		rawTargetRef,
 		timeoutMs,
 		baseline,
@@ -159,7 +169,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const { causal, axeDiagnostics, readability, recorderState, hookState } = providers;
 	if (axeDiagnostics.failure) providerFailures.push(axeDiagnostics.failure);
 	if (readability.failure) providerFailures.push(readability.failure);
-	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined, recorderState.lastSeq, hookState.lastSeq);
+	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined, recorderState.lastSeq, hookState.lastSeq, capture.pageIdentity);
 	const renderStartedAt = Date.now();
 	const abmlProviderFailure = providerFailureFromAbmlRead(observation.abmlRead);
 	if (abmlProviderFailure) providerFailures.push(abmlProviderFailure);
@@ -169,7 +179,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		mode,
 		tabs,
 		maxChars,
-		tabId,
+		tabId: effectiveTabId,
 		data,
 		bridge,
 		snapshotMeta,
@@ -185,7 +195,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		mode,
 		ctx,
 		tabs,
-		tabId,
+		tabId: effectiveTabId,
 		maxChars,
 		fallbackName,
 		outputPath,
@@ -200,6 +210,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		baseline,
 		baselineRequested,
 		baselineResolutionError,
+		reanchorReason: capture.reanchorReason,
 		snapshotMeta,
 		timings: observeTimings,
 		providerFailures,

@@ -13,7 +13,20 @@ import { isRecord } from "../../utils/records.js";
 import type { ToolResultLike } from "./render.js";
 
 /** Daemon/bridge unavailable — maps to EXIT.unavailable at the dispatch layer. */
-export class DaemonUnavailableError extends Error {}
+export class DaemonUnavailableError extends Error {
+	constructor(message: string, readonly code = "CLI_DAEMON_UNAVAILABLE") {
+		super(message);
+		this.name = "DaemonUnavailableError";
+	}
+}
+
+function unavailableError(error: unknown): DaemonUnavailableError {
+	const message = error instanceof Error ? error.message : String(error);
+	const code = typeof (error as { code?: unknown } | null)?.code === "string"
+		? String((error as { code: string }).code)
+		: "CLI_DAEMON_UNAVAILABLE";
+	return new DaemonUnavailableError(message, code);
+}
 
 function publicDaemonDiagnostics(json: Record<string, unknown> | undefined): Record<string, unknown> {
 	if (!json) return {};
@@ -100,7 +113,7 @@ export async function invokeTool(tool: string, params: Record<string, unknown>, 
 	try {
 		info = await ensureDaemon();
 	} catch (error) {
-		throw new DaemonUnavailableError(error instanceof Error ? error.message : String(error));
+		throw unavailableError(error);
 	}
 	const pairingToken = resolvePairingToken();
 	let response;
@@ -118,7 +131,7 @@ export async function invokeTool(tool: string, params: Record<string, unknown>, 
 			pairingToken ? { pairingToken } : undefined,
 		);
 	} catch (error) {
-		throw new DaemonUnavailableError(error instanceof Error ? error.message : String(error));
+		throw unavailableError(error);
 	}
 	const { status, json } = response;
 	// 409 LEASE_BUSY: the daemon rejects this invocation because another agent holds the lease

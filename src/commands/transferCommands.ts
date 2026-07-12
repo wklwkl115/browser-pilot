@@ -7,6 +7,33 @@ import { isRecord } from "../utils/records.js";
 import { resolveLocalTargetTabId } from "./commandRuntime.js";
 import { withBrowserOperation } from "./browserOperation.js";
 import { browserOperationCommandResult } from "./browserOperationResult.js";
+import path from "node:path";
+import type { ValidationIssue } from "./commandDefinition.js";
+
+export function validateDownloadArguments(args: Record<string, unknown>): ValidationIssue[] {
+	const hasUrl = typeof args.url === "string" && args.url.trim().length > 0;
+	const hasSelector = typeof args.selector === "string" && args.selector.trim().length > 0;
+	const issues: ValidationIssue[] = [];
+	if (!hasUrl && !hasSelector) issues.push({ code: "DOWNLOAD_TARGET_REQUIRED", path: "/", message: "browser_download requires selector or url" });
+	if (hasUrl && hasSelector) issues.push({ code: "DOWNLOAD_TARGET_CONFLICT", path: "/", message: "browser_download accepts selector or url, not both" });
+	if (hasUrl && args.mode !== undefined && args.mode !== "url") issues.push({ code: "DOWNLOAD_MODE_TARGET_CONFLICT", path: "/mode", message: "browser_download url target only accepts mode:url or omitted mode" });
+	if (hasSelector && args.mode === "url") issues.push({ code: "DOWNLOAD_MODE_TARGET_CONFLICT", path: "/mode", message: "browser_download selector target accepts mode:click, mode:media, or omitted mode" });
+	if (!hasUrl && (args.conflictAction !== undefined || args.saveAs !== undefined)) issues.push({ code: "DOWNLOAD_URL_OPTION_REQUIRES_URL", path: "/", message: "browser_download conflictAction/saveAs are only valid with a url target" });
+	return issues;
+}
+
+export function validateUploadArguments(args: Record<string, unknown>): ValidationIssue[] {
+	const issues: ValidationIssue[] = [];
+	if (args.confirm !== true) issues.push({ code: "UPLOAD_CONFIRMATION_REQUIRED", path: "/confirm", message: "browser_upload requires confirm:true after user approval" });
+	if (typeof args.selector !== "string" || !args.selector.trim()) issues.push({ code: "UPLOAD_SELECTOR_REQUIRED", path: "/selector", message: "browser_upload requires a non-empty selector" });
+	const files = Array.isArray(args.files) ? args.files : [];
+	if (!files.length) issues.push({ code: "UPLOAD_FILES_REQUIRED", path: "/files", message: "browser_upload requires at least one file" });
+	if (files.length > 50) issues.push({ code: "UPLOAD_FILES_LIMIT", path: "/files", message: "browser_upload accepts at most 50 files" });
+	files.forEach((file, index) => {
+		if (typeof file === "string" && file.trim() && !path.isAbsolute(file)) issues.push({ code: "UPLOAD_PATH_NOT_ABSOLUTE", path: `/files/${index}`, message: "browser_upload requires absolute file paths" });
+	});
+	return issues;
+}
 
 // B9b: a media/image download that silently completes with a `text/html` body (an anti-bot or redirect
 // page) looked like success. When the caller expects a media MIME, compare the completed download's MIME
@@ -50,6 +77,7 @@ export function defineDownloadCommand({ commands, ensureStarted }: CommandRegist
 			saveAs: Type.Optional(Type.Boolean({ description: "Direct URL only: ask Chrome to show Save As dialog; default false." })),
 			expectMime: Type.Optional(Type.String({ description: "Expected MIME or category ('image'/'media'/'video'/'audio', or a full type like 'image/png'). media mode defaults to 'image'. If the completed download's MIME doesn't match, the result flags a `mimeMismatch` diagnostic (e.g. an anti-bot text/html page returned for an image)." })),
 		}),
+		validateArguments: validateDownloadArguments,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runCommandHandler(async () => {
 				requireDownloadTarget(params);
@@ -91,6 +119,7 @@ export function defineUploadCommand({ commands, ensureStarted }: CommandRegistra
 			index: Type.Optional(Type.Number({ description: "Zero-based match index when selector matches multiple elements; default 0." })),
 			confirm: Type.Boolean({ description: "Must be true to confirm the user approved uploading these exact local file path(s)." }),
 		}),
+		validateArguments: validateUploadArguments,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runCommandHandler(async () => {
 				requireUploadConfirmation(params.confirm, params.selector);

@@ -6,6 +6,7 @@ import { handleBrowserPilotBridgeWsMessage, setTransportSocketGetter } from "./r
 import { runStartupRecovery } from "./state_store";
 import { installBrowserPilotTabSync } from "./tab_sync";
 import { setBrowserPilotOperationEventSocketGetter } from "./operation_event_transport";
+import { browserPilotPageIdentityFields } from "./page_identity";
 import type { JsonRecord, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeAlarm, BrowserPilotChromeTab } from "./types";
 
 type OffscreenMessage = JsonRecord & { type?: string; port?: number; data?: unknown; resetDelay?: boolean };
@@ -216,7 +217,7 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
     type: "ext_ready",
     consentCapable: true,
     bridge: { ...browserPilotBridgeInfo(), bridgePort: port, primaryPort, ...(extensionInstanceId ? { extensionInstanceId } : {}) },
-    tabs: tabs.map((tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId })),
+    tabs: tabs.map((tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId, ...browserPilotPageIdentityFields(tab) })),
   }));
 }
 

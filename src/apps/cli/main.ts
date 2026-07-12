@@ -3,8 +3,8 @@
  *
  * Parsing/help is local; tool execution is delegated to the daemon.
  */
-import { coerceParams, parseArgs, type GlobalFlags } from "./flags.js";
-import { renderResult, renderUsageError, renderUnavailableError, EXIT } from "./render.js";
+import { parseArgs, type GlobalFlags } from "./flags.js";
+import { renderResult, renderUsageError, renderUnavailableError, writeJsonEnvelope, EXIT, type RenderMode } from "./render.js";
 import { invokeTool, DaemonUnavailableError } from "./client.js";
 import { printHelp } from "./help.js";
 import { translateNaturalActionArgv, legacyActionUsed } from "./naturalRouting.js";
@@ -17,8 +17,28 @@ import { runSelftestCommand, selftestToolError } from "./cliSelftest.js";
 import { runPairCommand } from "./cliPairCommand.js";
 import { runLeaseCommand } from "./cliLeaseCommand.js";
 import { runPairingsCommand, runRevokeCommand } from "./cliPairAdminCommands.js";
+import { validateBrowserCommandArguments, type BrowserCommandValidationResult } from "../../commands/commandValidation.js";
 
 export { applyCliOnlyParams, selftestToolError };
+
+export type OfflineToolInvocationResult =
+	| { ok: true; commandName: string; args: Record<string, unknown>; action?: string }
+	| { ok: false; error: string; issues?: Array<{ code: string; path: string; message: string }> };
+
+/** Parse and validate a tool CLI example without starting/reusing the daemon. */
+export async function validateToolInvocationOffline(sub: string, commandArgv: string[]): Promise<OfflineToolInvocationResult> {
+	const cmd = (await loadCliCommands()).find((item) => item.subcommand === sub);
+	if (!cmd) return { ok: false, error: `unknown command "${sub}"` };
+	const translated = translateNaturalActionArgv(cmd, commandArgv);
+	if (!translated.ok) return { ok: false, error: translated.error };
+	const parsed = parseArgs(invocationFlagSpecs(cmd, translated.natural?.action), translated.argv);
+	if (!parsed.ok) return { ok: false, error: parsed.error };
+	const cliParams = applyCliOnlyParams(cmd, parsed.value.params);
+	if (!cliParams.ok) return { ok: false, error: cliParams.error };
+	const validated = validateBrowserCommandArguments(cmd.def, cliParams.params);
+	if (!validated.ok) return { ok: false, error: validated.error, issues: validated.issues };
+	return { ok: true, commandName: cmd.name, args: validated.args, ...(translated.natural?.action ? { action: translated.natural.action } : {}) };
+}
 
 export async function main(argv: string[]): Promise<number> {
 	const leading = splitLeadingGlobalFlags(argv);
@@ -75,15 +95,24 @@ async function invokeParsedCommand(
 ): Promise<number> {
 	const cliParams = applyCliOnlyParams(cmd, parsed.value.params);
 	if (!cliParams.ok) return renderUsageError(cliParams.error, renderMode(parsed.value.globals), EXIT.input);
-	const coerced = coerceParams(cmd.parameters, cliParams.params);
-	if (!coerced.ok) return renderUsageError(coerced.error, renderMode(parsed.value.globals));
+	const validated = validateBrowserCommandArguments(cmd.def, cliParams.params);
+	if (!validated.ok) return renderCommandValidationFailure(validated, renderMode(parsed.value.globals));
 	try {
-		const result = await invokeTool(cmd.name, coerced.args, process.cwd(), cliInvokeMeta(cmd, commandArgv, translated.natural?.action, coerced.args.action));
+		const result = await invokeTool(cmd.name, validated.args, process.cwd(), cliInvokeMeta(cmd, commandArgv, translated.natural?.action, validated.args.action));
 		return renderResult(result, renderMode(parsed.value.globals));
 	} catch (error) {
-		if (error instanceof DaemonUnavailableError) return renderUnavailableError(error.message, renderMode(parsed.value.globals));
+		if (error instanceof DaemonUnavailableError) return renderUnavailableError(error.message, renderMode(parsed.value.globals), error.code);
 		throw error;
 	}
+}
+
+function renderCommandValidationFailure(result: Extract<BrowserCommandValidationResult, { ok: false }>, mode: RenderMode): number {
+	if (mode === "json") {
+		writeJsonEnvelope({ ok: false, exitCode: EXIT.usage, code: "CLI_VALIDATION_ERROR", message: result.error, issues: result.issues });
+	} else {
+		process.stderr.write(`error: ${result.error}\n`);
+	}
+	return EXIT.usage;
 }
 
 function cliInvokeMeta(cmd: Awaited<ReturnType<typeof loadCliCommands>>[number], commandArgv: string[], action?: string, coercedAction?: unknown): Record<string, unknown> {

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { controlRequest, ensureDaemon, findDaemon, isDaemonVersionCurrent, isPidAlive, lockfilePath, readLockfile, type DaemonInfo, type DaemonStatus } from "../daemon/daemonControl.js";
+import { controlRequest, daemonContractReport, ensureDaemon, findDaemon, isDaemonReadyForReuse, isDaemonVersionCurrent, isPidAlive, lockfilePath, readLockfile, type DaemonInfo, type DaemonStatus } from "../daemon/daemonControl.js";
 import { resolvePairingToken } from "./pairing.js";
 import { daemonVersion } from "../daemon/packageInfo.js";
 import { EXIT } from "./render.js";
@@ -69,6 +69,7 @@ function publicDaemon(info: DaemonInfo, status: DaemonStatus): Record<string, un
 		expectedVersion: daemonVersion(),
 		versionStale: !isDaemonVersionCurrent(info),
 		toolCount: status.tools,
+		contractIdentity: status.contractIdentity ?? null,
 	};
 }
 
@@ -132,7 +133,8 @@ async function fetchLeaseStatus(info: DaemonInfo): Promise<Record<string, unknow
 export async function connectionStatus(cwd = process.cwd(), timeoutMs = 15_000, opts: { tabs?: boolean } = {}): Promise<Record<string, unknown>> {
 	const found = await findDaemon({ tabs: opts.tabs });
 	const staleLockfile = found ? null : staleLockfileDiagnostic();
-	const ready = Boolean(found && isDaemonVersionCurrent(found.info) && found.status.running === true && found.status.extensionConnected === true);
+	const contract = daemonContractReport(found);
+	const ready = Boolean(found && isDaemonReadyForReuse(found) && found.status.running === true && found.status.extensionConnected === true);
 	// Best-effort lease status — omitted (not null) when unavailable
 	const leaseStatus = found ? await fetchLeaseStatus(found.info) : null;
 	const readiness = found
@@ -143,6 +145,7 @@ export async function connectionStatus(cwd = process.cwd(), timeoutMs = 15_000, 
 		ready,
 		readiness,
 		cwd,
+		contract,
 		daemon: found
 			? publicDaemon(found.info, found.status)
 			: {
@@ -183,12 +186,13 @@ function connectFailureEnvelope(message: string, details: Record<string, unknown
 }
 
 function daemonUnavailableResult(error: unknown, timeoutMs: number): { exitCode: number; envelope: Record<string, unknown> } {
+	const code = typeof (error as { code?: unknown } | null)?.code === "string" ? String((error as { code: string }).code) : "CLI_DAEMON_UNAVAILABLE";
 	return {
 		exitCode: EXIT.unavailable,
 		envelope: {
 			ok: false,
 			exitCode: EXIT.unavailable,
-			code: "CLI_DAEMON_UNAVAILABLE",
+			code,
 			command: "connect",
 			ready: false,
 			message: error instanceof Error ? error.message : String(error),

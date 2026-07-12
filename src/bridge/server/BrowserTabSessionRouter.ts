@@ -44,7 +44,7 @@ type ReplacementIdentity = Pick<BrowserTabSession, "logicalTabId" | "tabHandle" 
 type TabIdentity = Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation" | "openerTabId">;
 type TabSyncContext = { ws: WebSocket; browserId: string; bridge?: BrowserBridgeClientInfo; now: number };
 type SyncedTab = { id: string; active: boolean; reconnect?: ReconnectIdentity };
-type TargetInfoExtras = Partial<Pick<BrowserBridgeTargetInfo, "tabHandle" | "targetRef" | "requestedTabId" | "replacedFrom" | "replacedByTabId" | "replacementHops" | "replacementHopsRemaining" | "replacementChainAge" | "browserId" | "openerTabId">>;
+type TargetInfoExtras = Partial<Pick<BrowserBridgeTargetInfo, "tabHandle" | "targetRef" | "requestedTabId" | "replacedFrom" | "replacedByTabId" | "replacementHops" | "replacementHopsRemaining" | "replacementChainAge" | "browserId" | "openerTabId" | "generation" | "pageEpoch" | "documentId">>;
 const NESTED_TARGET_KEYS = ["createdTarget", "createdTab", "target", "tab", "data"] as const;
 
 function normalizedReplacement(raw: unknown, now: number): { from: number; to: number; at: number } | undefined {
@@ -62,7 +62,21 @@ function replacementSessionFields(replacement: ReplacementIdentity | undefined, 
 }
 
 function stringOr(value: unknown, fallback = ""): string { return typeof value === "string" ? value : fallback; }
+function optionalString(value: unknown, fallback?: string): string | undefined { return typeof value === "string" && value ? value : fallback; }
 function booleanOr(value: unknown, fallback?: boolean): boolean | undefined { return typeof value === "boolean" ? value : fallback; }
+
+function syncedPageIdentityFields(
+	tab: Record<string, unknown>,
+	existing: BrowserTabSession | undefined,
+	replacement: ReplacementIdentity | undefined,
+	reconnect: ReconnectIdentity | undefined,
+): Pick<BrowserTabSession, "pageEpoch" | "documentId"> {
+	const previous = replacement || reconnect ? undefined : existing;
+	return {
+		pageEpoch: optionalString(tab.pageEpoch, previous?.pageEpoch),
+		documentId: optionalString(tab.documentId, previous?.documentId),
+	};
+}
 
 export class BrowserTabSessionRouter {
 	readonly sessions = new Map<string, BrowserTabSession>();
@@ -104,6 +118,9 @@ export class BrowserTabSessionRouter {
 			...(tab?.tabHandle ? { tabHandle: tab.tabHandle, targetRef: tab.tabHandle } : {}),
 			...(tab?.browserId ? { browserId: tab.browserId } : {}),
 			...(tab?.openerTabId !== undefined ? { openerTabId: tab.openerTabId } : {}),
+			...(tab?.generation !== undefined ? { generation: tab.generation } : {}),
+			...(tab?.pageEpoch ? { pageEpoch: tab.pageEpoch } : {}),
+			...(tab?.documentId ? { documentId: tab.documentId } : {}),
 			...extras,
 			...(url ? { url } : {}),
 			source,
@@ -171,7 +188,7 @@ export class BrowserTabSessionRouter {
 			const identity = oldSession ? {
 				logicalTabId: oldSession.logicalTabId,
 				tabHandle: oldSession.tabHandle,
-				generation: oldSession.generation,
+				generation: oldSession.generation + 1,
 				openerTabId: oldSession.openerTabId,
 				replacedFromTabId: from,
 				replacedAt: at,
@@ -184,6 +201,8 @@ export class BrowserTabSessionRouter {
 					logicalTabId: identity.logicalTabId,
 					tabHandle: identity.tabHandle,
 					generation: identity.generation,
+					pageEpoch: undefined,
+					documentId: undefined,
 					openerTabId: existingNewSession.openerTabId ?? identity.openerTabId,
 					replacedFromTabId: from,
 					replacedAt: at,
@@ -241,6 +260,7 @@ export class BrowserTabSessionRouter {
 			logicalTabId: identity.logicalTabId,
 			tabHandle: identity.tabHandle,
 			generation: identity.generation,
+			...syncedPageIdentityFields(tab, existing, replacement, reconnect),
 			url: stringOr(tab.url, existing?.url),
 			title: stringOr(tab.title, existing?.title),
 			active: booleanOr(tab.active, existing?.active),

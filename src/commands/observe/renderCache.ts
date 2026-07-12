@@ -95,13 +95,31 @@ export function observeRenderParamsSignature(params: ObserveToolParams, mode: Ob
 	});
 }
 
+function optionalTextMatches(a: string | undefined, b: string | undefined): boolean {
+	return (a ?? "") === (b ?? "");
+}
+
+function optionalCountMatches(a: number | undefined, b: number | undefined): boolean {
+	return (a ?? -1) === (b ?? -1);
+}
+
+function pageDocumentFingerprintMatches(a: PageFingerprint, b: PageFingerprint): boolean {
+	return optionalTextMatches(a.pageEpoch, b.pageEpoch)
+		&& optionalTextMatches(a.documentId, b.documentId)
+		&& optionalTextMatches(a.url, b.url)
+		&& optionalTextMatches(a.title, b.title);
+}
+
+function pageContentFingerprintMatches(a: PageFingerprint, b: PageFingerprint): boolean {
+	return optionalTextMatches(a.readyState, b.readyState)
+		&& optionalCountMatches(a.visibleCount, b.visibleCount)
+		&& optionalCountMatches(a.interactiveCount, b.interactiveCount);
+}
+
 function pageFingerprintMatches(a: PageFingerprint, b: PageFingerprint): boolean {
 	return a.changeSeq === b.changeSeq
-		&& (a.url ?? "") === (b.url ?? "")
-		&& (a.title ?? "") === (b.title ?? "")
-		&& (a.readyState ?? "") === (b.readyState ?? "")
-		&& (a.visibleCount ?? -1) === (b.visibleCount ?? -1)
-		&& (a.interactiveCount ?? -1) === (b.interactiveCount ?? -1);
+		&& pageDocumentFingerprintMatches(a, b)
+		&& pageContentFingerprintMatches(a, b);
 }
 
 function dirtyWindowClean(fingerprint: PageFingerprint): boolean {

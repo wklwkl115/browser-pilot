@@ -179,11 +179,11 @@ command-specific resolver
 operation.finish + bounded page evidence
   ▼
 browserOperationCommandResult()
-  │ 保留 browser-operation/v1 根终态与机械 completion source
+  │ 保留 browser-operation/v2 根终态、分类与机械 completion source
   │ 超预算 completion/effect/diagnostics 保存一次并替换为 typed summary
   │ 返回 continuation + saved.path + verified artifact_hints
   ▼
-browser-operation/v1
+browser-operation/v2
   ▼
 CLI renderResult()
 ```
@@ -199,7 +199,7 @@ src/commands/nativeCommand.ts
   │ validate BridgeCommandSchema
   │ rejectUnsafeExecuteCommand
   │ read command: server.sendCommand(...) 后立即返回
-  │ write command: withBrowserOperation() 后返回 browser-operation/v1
+  │ write command: withBrowserOperation() 后返回 browser-operation/v2
   ▼
 src/bridge/server/BrowserBridgeCommandService.ts
   │ validateBridgeCommand
@@ -226,7 +226,7 @@ Bridge Server 为每个 transport request 分配 `id`。Extension 收到请求�
 - 请求已到达但执行慢：有 ACK，pending request 仍在运行；
 - 单个 transport dispatch 完成：收到 result/error。
 
-ACK 或单个 dispatch result 不等于浏览器 operation 完成。write command 的 `/invoke` 会继续保持，直到 command-specific resolver 或通用 liveness 分类器产生 `browser-operation/v1` 终态。CLI transport timeout 为 `max(120s, timeoutMs + 10s)`，上限 310 秒；命令 hard deadline 仍由最多 300 秒的 `timeoutMs` 控制。
+ACK 或单个 dispatch result 不等于浏览器 operation 完成。write command 的 `/invoke` 会继续保持，直到 command-specific resolver 或通用 liveness 分类器产生 `browser-operation/v2` 终态。CLI transport timeout 为 `max(120s, timeoutMs + 10s)`，上限 310 秒；命令 hard deadline 仍由最多 300 秒的 `timeoutMs` 控制。
 
 对应实现：[`BrowserBridgePendingRequests.ts`](src/bridge/server/BrowserBridgePendingRequests.ts)、[`BrowserBridgeClientMessageService.ts`](src/bridge/server/BrowserBridgeClientMessageService.ts)。
 
@@ -277,6 +277,7 @@ Daemon 层负责：
 |---|---|
 | [`server.ts`](src/apps/daemon/server.ts) | daemon 主体，`startDaemon()` 与 HTTP routes。 |
 | [`daemonControl.ts`](src/apps/daemon/daemonControl.ts) | lockfile、spawn、find、ensure、stop、control request。 |
+| [`contractIdentity.ts`](src/apps/daemon/contractIdentity.ts) | canonical command contract serialization/hash、local/daemon identity compare。 |
 | [`authStore.ts`](src/apps/daemon/authStore.ts) | pairing agent/token 存储。 |
 | [`authTypes.ts`](src/apps/daemon/authTypes.ts) | auth/pairing/lease 类型与常量。 |
 | [`tenantLease.ts`](src/apps/daemon/tenantLease.ts) | 多 agent 互斥 lease。 |
@@ -352,6 +353,7 @@ src/bridge/extension/
 | [`service_worker/runtime.ts`](src/bridge/extension/service_worker/runtime.ts) | Browser Pilot command composition 与 handler dispatch。 |
 | [`service_worker/state_store.ts`](src/bridge/extension/service_worker/state_store.ts) | MV3 持久化恢复、hook session 与 per-tab queue 状态。 |
 | [`service_worker/tab_sync.ts`](src/bridge/extension/service_worker/tab_sync.ts) | tab 同步、replacement/activation 与统一 tab cleanup。 |
+| [`service_worker/page_identity.ts`](src/bridge/extension/service_worker/page_identity.ts) | top-level document commit、SPA/BFCache lineage 与 per-tab page epoch。 |
 | [`service_worker/exec.ts`](src/bridge/extension/service_worker/exec.ts) | JavaScript 执行与 CDP fallback。 |
 | [`service_worker/cdp.ts`](src/bridge/extension/service_worker/cdp.ts) | CDP attach/send/detach/targets/frameTree。 |
 | [`service_worker/input.ts`](src/bridge/extension/service_worker/input.ts) | CDP 输入、pointer/key/touch/ref。 |
@@ -388,6 +390,8 @@ Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向�
 | [`commandRuntime.ts`](src/commands/commandRuntime.ts) | timeout、target、operation、result helper。 |
 | [`browserOperation.ts`](src/commands/browserOperation.ts) | `withBrowserOperation()` 事务编排、liveness 终态与统一 outcome。 |
 | [`browserOperationResult.ts`](src/commands/browserOperationResult.ts) | 所有 write outcome 的唯一公开结果出口：终态续行决策、预算压缩、完整 evidence artifact 与渐进读取 hints。 |
+| [`commandValidation.ts`](src/commands/commandValidation.ts) | CLI/daemon 共享的严格 key → coercion → schema → semantic validation pipeline。 |
+| [`publicActionCatalog.ts`](src/commands/publicActionCatalog.ts) | 合并 generated native action 与 command-owned synthetic action 的 canonical catalog。 |
 | [`operationResolvers.ts`](src/commands/operationResolvers.ts) | write command completion resolver registry 与治理检查。 |
 | [`resultMiddleware.ts`](src/commands/resultMiddleware.ts) | distilled envelope、artifact、summary、evidence。 |
 | [`validationMiddleware.ts`](src/commands/validationMiddleware.ts) | schema validation helper。 |
@@ -413,6 +417,7 @@ Commands 层是 `browser_*` 公共工具面。它向上服务 CLI/daemon，向�
 |---|---|---|
 | 编排 | [`observe/scanRunner.ts`](src/commands/observe/scanRunner.ts) | 规范化请求并串联各阶段，不持有投影细节。 |
 | session | [`observe/scanSession.ts`](src/commands/observe/scanSession.ts) | fingerprint、render cache、ledger baseline 与扫描预算准备。 |
+| page identity | [`observe/pageIdentity.ts`](src/commands/observe/pageIdentity.ts) | current/baseline PageIdentity 解析、re-anchor 分类与 full-frame fallback。 |
 | cache | [`observe/scanCache.ts`](src/commands/observe/scanCache.ts) | render-cache 命中、artifact 恢复与 ledger 延续。 |
 | capture | [`observe/scanCapture.ts`](src/commands/observe/scanCapture.ts) | 可选导航、页面 scan 与 ABML structure 采集。 |
 | providers | [`observe/scanProviders.ts`](src/commands/observe/scanProviders.ts) | recorder 高水位、causal、axe 与 Readability provider。 |
@@ -526,12 +531,14 @@ TS adapter 位于 [`src/native/browserPilotNativeKernels.ts`](src/native/browser
 | `commandTimeoutMs()` | [`src/commands/commandRuntime.ts`](src/commands/commandRuntime.ts) | timeout 规范化，硬上限 300 秒。 |
 | `targetTabId()` | [`src/commands/commandRuntime.ts`](src/commands/commandRuntime.ts) | 从 params/body 解析目标 tab。 |
 | `withTrackedOperation()` | [`src/commands/commandRuntime.ts`](src/commands/commandRuntime.ts) | operation 生命周期和进度。 |
-| `withBrowserOperation()` | [`src/commands/browserOperation.ts`](src/commands/browserOperation.ts) | write command 统一事务、事件消费与 `browser-operation/v1` 终态。 |
+| `withBrowserOperation()` | [`src/commands/browserOperation.ts`](src/commands/browserOperation.ts) | write command 统一事务、事件消费与 `browser-operation/v2` 终态。 |
 | `browserOperationCommandResult()` | [`src/commands/browserOperationResult.ts`](src/commands/browserOperationResult.ts) | 保留根终态契约；按预算保存/压缩 operation evidence，并输出安全 `continuation` 与 artifact JSON path。 |
 | `resolveBrowserOperationCompletion()` | [`src/commands/operationResolvers.ts`](src/commands/operationResolvers.ts) | command-specific mechanical completion evidence。 |
 | `jsonCommandResult()` | [`src/commands/commandRuntime.ts`](src/commands/commandRuntime.ts) | JSON 结果 envelope 入口。 |
 | `distilledJsonResult()` | [`src/commands/resultMiddleware.ts`](src/commands/resultMiddleware.ts) | 摘要、artifact、redaction、evidence envelope。 |
 | `validateCommandArgs()` | [`src/validation/commandArgs.ts`](src/validation/commandArgs.ts) | TypeBox 参数转换与校验。 |
+| `validateBrowserCommandArguments()` | [`src/commands/commandValidation.ts`](src/commands/commandValidation.ts) | 共享严格参数流水线，返回 normalized args 或完整 issue list。 |
+| `publicCommandActionCatalog()` | [`src/commands/publicActionCatalog.ts`](src/commands/publicActionCatalog.ts) | 返回带 raw action、kebab CLI action、owner 与 schemaRef 的 action catalog。 |
 
 ### 6.5 Kernels / Runtime / Native
 
@@ -589,6 +596,8 @@ CLI 子命令由工具名映射而来：去掉 `browser_` 前缀，并把 `_` �
 - `browser_cookie_analyze` → `cookie-analyze`
 - `browser_http_replay` → `http-replay`
 
+带 action 的公开命令额外使用 [`publicActionCatalog.ts`](src/commands/publicActionCatalog.ts) 作为 routing/help/schema/validate 的共同来源。Catalog 合并 native schema 生成 metadata 与 command definition 上的 `actionMetadata`；CLI token 固定 kebab-case，raw JSON `action` 保持 schema spelling。例如 raw `captureReload` 的唯一 canonical CLI route 是 `network capture-reload`，`network captureReload` 不是 alias。
+
 ### 7.2 命令定义模型
 
 每个工具都是一个 `BrowserCommandDefinition`，包含：
@@ -599,7 +608,9 @@ CLI 子命令由工具名映射而来：去掉 `browser_` 前缀，并把 `_` �
 - `promptSnippet`
 - `promptGuidelines`
 - `parameters`
-- `prepareArguments`
+- 可选 `actionMetadata`
+- 可选 `coerceArguments`
+- 可选纯函数 `validateArguments`
 - `execute`
 
 注册流程：
@@ -617,19 +628,23 @@ Daemon 用于真实 execute
 
 ### 7.3 参数校验
 
-大多数命令使用 `strictCommandParameters()` 构造 TypeBox schema，默认拒绝未知参数。
+大多数命令使用 `strictCommandParameters()` 构造 TypeBox schema，默认拒绝未知参数。CLI offline `validate` 与 daemon `/invoke` 共同调用 [`validateBrowserCommandArguments()`](src/commands/commandValidation.ts)，固定顺序为：
 
-Daemon `/invoke` 流程会：
+1. CLI 解析 file/value reference；
+2. 在任何 normalization 前拒绝 unknown、internal、removed key；
+3. 应用 command 显式声明的 canonical `coerceArguments`；
+4. 对已规范化的值做 TypeBox schema check（daemon JSON 不做通用类型转换）；
+5. 调用纯函数 `validateArguments` 做跨字段/action semantic validation；
+6. 成功返回最终 normalized args，失败返回全部 `{code,path,message}` issues；
+7. 只有通过后才执行 `def.execute(...)`。
 
-1. 调用 `def.prepareArguments(params)`；
-2. 调用 `validateCommandArgs(def.parameters, prepared)`；
-3. 通过后再执行 `def.execute(...)`。
+Semantic validation 不启动 daemon/bridge、不访问浏览器、不写 artifact。通用 deprecated-key stripping 已删除；execute 的 script/program exactly-one、observe mode/diff/baseline/add-on 互斥、artifact target/read/search 组合及 action-dependent required/illegal 参数都在共享层校验。
 
 ### 7.4 结果 Envelope
 
 命令结果统一经过 `jsonCommandResult()` 或 `textCommandResult()`，最终由 `resultMiddleware.ts` 生成 distilled envelope。
 
-浏览器状态改变型 core command 是例外的稳定公共契约：它们直接返回 `browser-operation/v1`，字段包含 `operationId`、`commandName`、终态 `status`、锁定的 `target`/generation、`dispatch` ACK 生命周期、browser/page `signals`、可选 command-specific `completion`、bounded `pageEffect`/`diagnostics` 和同 owner 下一次相关调用自动浮现的 `lateEffects`。`completed` 只能由 [`operationResolvers.ts`](src/commands/operationResolvers.ts) 的机械证据产生；通用 supervisor 只能产生 `effect_observed`、`no_effect`、`stalled`、`target_lost`、`failed` 或 `deadline`，明确歧义由 command resolver/error mapping 产生 `ambiguous`。每个 `withBrowserOperation()` 调用点都必须经 [`browserOperationResult.ts`](src/commands/browserOperationResult.ts) 返回：小 outcome 原样保留根终态；大 outcome 保存完整 redacted evidence，并用 typed count/keys/preview summary 替换高体积 `completion.evidence.result`、page effect、late effect data 或 diagnostics details，同时返回 `limits.truncated`、`saved.path` 与仅指向实际存在路径的 `artifact_hints`。artifact 写入位于浏览器终态之后并 fail-open：若落盘失败或最终文件超过 reader ceiling，返回 `ARTIFACT_SAVE_FAILED` / `evidenceUnavailable` 与 `replay:"do_not_retry"`，但不得发布不可读路径，也不得擦除或改写已证明的 `status` 和 `completion.source`。
+浏览器状态改变型 core command 是例外的稳定公共契约：它们直接返回 `browser-operation/v2`，字段包含 `operationId`、`commandName`、终态 `status`、`classification`、`completionVerified`、`ok`、稳定 `code`、原样 `continuation`、锁定的 `target`/generation、`dispatch` ACK 生命周期、browser/page `signals`、可选 command-specific `completion`、bounded `pageEffect`/`diagnostics` 和同 owner 下一次相关调用自动浮现的 `lateEffects`。只有 `completed` 是 `success` / `completionVerified:true` / `ok:true` 并映射 CLI exit 0；其他终态按固定表归为 `inconclusive` 或 `failure`，均映射 exit 1。`completed` 只能由 [`operationResolvers.ts`](src/commands/operationResolvers.ts) 的机械证据产生；通用 supervisor 只能产生 `effect_observed`、`no_effect`、`stalled`、`target_lost`、`failed` 或 `deadline`，明确歧义由 command resolver/error mapping 产生 `ambiguous`。JSON 与 TTY renderer 共享 [`browserOperation.ts`](src/kernels/session/browserOperation.ts) 的纯 classifier，通用 error-shape 检测不决定 operation 成功。每个 `withBrowserOperation()` 调用点都必须经 [`browserOperationResult.ts`](src/commands/browserOperationResult.ts) 返回：小 outcome 原样保留根终态；大 outcome 保存完整 redacted evidence，并用 typed count/keys/preview summary 替换高体积 `completion.evidence.result`、page effect、late effect data 或 diagnostics details，同时返回 `limits.truncated`、`saved.path` 与仅指向实际存在路径的 `artifact_hints`。artifact 写入位于浏览器终态之后并 fail-open：若落盘失败或最终文件超过 reader ceiling，返回 `ARTIFACT_SAVE_FAILED` / `evidenceUnavailable` 与 `replay:"do_not_retry"`，但不得发布不可读路径，也不得擦除或改写已证明的 `status` 和 `completion.source`。
 
 `continuation` 按 evidence domain 映射最小安全决策，而不是把所有非理想状态都变成页面观察：页面状态未验证时用 `observe`；target lost、tab close、new-tab fan-out 或 current target 不再可靠时用 `reacquire_target`；只有 outcome 确有 diagnostics 时才用 `inspect_diagnostics`；非页面不确定状态且没有 diagnostics 时用只读 `verify_command_state`；成功但纯结果被压缩时用 `inspect_artifact`。非成功状态均标记 `replay:"do_not_retry"`，已完成的后续读取标记 `replay:"not_needed"`。读取型命令仍立即返回既有 envelope。
 
@@ -663,7 +678,7 @@ Envelope 常见字段：
 
 大结果会保存 artifact，并在输出中给出读取方式。`artifact_hints` 是 compact descriptor：包含 `kind`、`schemaVersion`、可用 `jsonPaths`、`preferredReads` 和可选 `saved` descriptor，只指向实际存在的 summary / primary items / body-text / provider-specific / saved artifact 路径，不复制大型 artifact 内容；既有 `PageObservation.artifact_hints.jsonPaths` 与 `preferredReads` 继续兼容。`resultMiddleware.ts` 只允许最终 persisted layout 中经验证的 preferred read 进入 `nextActions`，不会再从 operation/snapshot/request/wait/listener correlation ID 合成猜测路径；最终 envelope 覆写 artifact 后会重新收敛 descriptor，使响应、内嵌 envelope 与磁盘真实 UTF-16 chars / UTF-8 bytes 一致。`browser_artifact mode=inspect` 用于读取 artifact metadata、compact summary、preferredReads 和 path descriptions；`mode=paths` 用于先列出实际可用 JSON path，再进行 `mode=json` / `pick` 精读。文档、CLI help 和 recovery guidance 不应推荐猜测的 JSON path 或固定样例 artifact 文件；应引用上一个工具返回的 `saved.path`，并通过 inspect/paths 验证路径存在。
 
-CLI JSON enrichment 把实际 artifact path 仅保存在 `artifacts[].path`；`readCommands` 是 bounded placeholder template descriptor，固定给出 inspect、paths 和至多一个 verified targeted-read 模板，并用 `pathRef` / `jsonPathRef` 解析结构化字段。可读 `command` / `argvTemplate` 不插入实际 path、JSON path 或 snapshot ID，避免 shell 展开与重复长路径造成的 token 膨胀。TTY 对直接 `browser-operation/v1` 至少显示 command/status、operation ID、dispatch ACK、completion source、continuation 与 saved path。
+CLI JSON enrichment 把实际 artifact path 仅保存在 `artifacts[].path`；`readCommands` 是 bounded placeholder template descriptor，固定给出 inspect、paths 和至多一个 verified targeted-read 模板，并用 `pathRef` / `jsonPathRef` 解析结构化字段。可读 `command` / `argvTemplate` 不插入实际 path、JSON path 或 snapshot ID，避免 shell 展开与重复长路径造成的 token 膨胀。TTY 对直接 `browser-operation/v2` 至少显示 command/status、classification、completion verification、operation ID、dispatch ACK、completion source、continuation 与 saved path。
 
 Envelope budget 的最后一级仍是严格预算，不是“尽量压缩”：[`ladder.ts`](src/kernels/evidence/distill/ladder.ts) 的 extreme fallback 会保留 canonical `PageObservation` marker、可操作 error、compact `saved` descriptor 与至多一个必要续行，再删除重复 artifact diagnostics/privacy 和低密度结构面。最终 artifact 固定点更新只回填原 envelope 已保留的 hints，并使用 compact descriptor，不能把已经拟合到预算内的响应重新膨胀。
 
@@ -673,7 +688,7 @@ Envelope budget 的最后一级仍是严格预算，不是“尽量压缩”：[
 
 #### `browser_observe`
 
-用于读取当前浏览器状态的 canonical ABML `PageObservation` 页面模型。正常 agent 工作流应省略 `mode`，只传目标、时间、预算和增量边界（如 `tabId`、`targetRef`、`url`、`fresh`、`diff`、`baseline*`、`timeoutMs`、`maxChars`、`detailLevel`）或显式可选 add-on（如 `content:"readability"` / `readability:true`）。返回模型以 ABML/scan 为结构权威来源，并把 target/context、gist、outline、entities、actionables/refs、relations、collections、snapshot、diff/treeDiff、causal、scan-backed content/text digest、evidence/artifact 引用和 diagnostics 组织为一个稳定 envelope。`diff:true` 的自动 baseline 只会从相同 `browserSessionId` 与 effective tab 的最近 scan snapshot 中选择，避免跨 session 复用同 tabId snapshot。Browser Pilot 不持久化或自动注入跨调用知识；需要复用的任务上下文由调用方显式携带。
+用于读取当前浏览器状态的 canonical ABML `PageObservation` 页面模型。正常 agent 工作流应省略 `mode`，只传目标和增量边界（如 `tabId`、`targetRef`、`url`、`fresh`、`diff`、`baseline*`、`actionRef`）或显式可选 add-on（如 `content:"readability"` / `readability:true`）。已移除的 `timeoutMs`、`maxChars`、`detailLevel` 等 mechanical 参数不会作为 observe 输入被接受。返回模型以 ABML/scan 为结构权威来源，并把 target/context、gist、outline、entities、actionables/refs、relations、collections、snapshot、diff/treeDiff、causal、scan-backed content/text digest、evidence/artifact 引用和 diagnostics 组织为一个稳定 envelope。`diff:true` 的自动 baseline 只会从相同 `browserSessionId`、effective tab、target generation 与 page epoch 的最近 scan snapshot 中选择，避免跨页面身份复用 snapshot。Browser Pilot 不持久化或自动注入跨调用知识；需要复用的任务上下文由调用方显式携带。
 
 Provider budget telemetry summary 是 canonical observe diagnostics 的稳定、bounded 摘要，JSON path 为 `pageObservation.diagnostics.providerBudgetTelemetry`，CLI/result summary 中对应 `summary.pageObservation.diagnostics.providerBudgetTelemetry`，saved observe artifact 中对应同一 `pageObservation.diagnostics.providerBudgetTelemetry`。每个 item 由 [`observe/scanProjection.ts`](src/commands/observe/scanProjection.ts) 从已有 provider diagnostics 派生，包含 `provider`、归一化 `status`（`executed` / `scan-backed` / `skipped` / `failed` / `degraded`），以及可选 `requested`、`durationMs`、compact `counts`、compact `budget`、`truncated`、`degraded`、`reason`、`errorCode` 和 artifact 引用。它只表达来源真实性、耗时、计数、预算、截断/降级和 fallback reason，不复制 axe/readability/full AX 大型原始结果，也不改变 `diagnostics.providers`、provider-specific diagnostics 或公共 tool surface。telemetry 中的 artifact 引用复用 saved observe artifact 路径：HTML provider 指向 `data.html`，evidence 指向 `envelope`，axe/readability 指向各自 runner 写入的 artifact/jsonPath/kind；需要详细内容应通过 `browser_artifact` 按这些稳定 JSON path 定向读取。该 summary 属于 diagnostics-only boundary：任何 `skipped`、`failed`、`degraded` 或预算信息都不得创建、删除、重排或重命名 actionables、refs、entities、relations、collections，也不得改变 content plane、scan/ABML 结构权威、AX/DOM fusion actionability 或 artifact redaction 关系。
 
@@ -712,7 +727,12 @@ Provider budget telemetry summary 是 canonical observe diagnostics 的稳定、
 
 这几类工具共享 `defineNativeActionCommand()` 注册模式，将高层 `action` 映射到底层 native command。read action 立即返回；write action 经 `withBrowserOperation()` 返回统一终态。公开 `browser_wait`/CLI `wait` 已删除，selector/navigation/network-idle 实现只作为 internal supervisor primitive，不能通过 `browser_command` 访问。
 
-`browser_network action=captureReload` 是 page-load network flow 的推荐入口：command 层会在同一 batch 中先执行 `network.start`，再 reload/navigation，随后沿内部 bounded condition/list/export 路径返回 transaction outcome 和 artifact evidence。不要把面向 agent 的文档写成手动 `network start` 后再 reload/sleep/list 的流程，因为该流程容易漏掉早期请求；低层 `start/list/stop/exportHar` 保留给需要持续 recorder 控制的场景，其中 start 只在 recorder armed 后完成，stop 只在停止并 flush 后完成。captureReload 结果和相关 bridge responses 可包含 bounded `diagnostics.latency` / temporal telemetry，字段限于 elapsed/deadline/ack/queue/runtime/serialize 等操作性 timing 与计数，不包含 command payload、headers、body、postData、cookies 或 URL query。读取 capture artifact 时先用 `browser_artifact mode=inspect` / `mode=paths` 检查实际 path，再用存在的 JSON path 读取。
+Raw `browser_network action=captureReload` / canonical CLI `browser-pilot network capture-reload` 是 page-load network flow 的推荐入口：command 层会在同一 batch 中先执行 `network.start`，再 reload/navigation，随后沿内部 bounded condition/list/export 路径返回 transaction outcome 和 artifact evidence。不要把面向 agent 的文档写成手动 `network start` 后再 reload/sleep/list 的流程，因为该流程容易漏掉早期请求；低层 `start/list/stop/exportHar` 保留给需要持续 recorder 控制的场景，其中 start 只在 recorder armed 后完成，stop 只在停止并 flush 后完成。captureReload 结果和相关 bridge responses 可包含 bounded `diagnostics.latency` / temporal telemetry，字段限于 elapsed/deadline/ack/queue/runtime/serialize 等操作性 timing 与计数，不包含 command payload、headers、body、postData、cookies 或 URL query。读取 capture artifact 时先用 `browser_artifact mode=inspect` / `mode=paths` 检查实际 path，再用存在的 JSON path 读取。
+
+```text
+# browser-pilot-executable
+browser-pilot network capture-reload --session-id <session-id> --target-ref <targetRef> --json
+```
 
 关键文件：[`nativeActionCommands.ts`](src/commands/nativeActionCommands.ts)。
 
@@ -743,6 +763,8 @@ CLI 调用通常是短生命周期的。Daemon 长驻并持有 browser session�
 
 Daemon 的 `SessionOperationRegistry` 是持久 operation ledger：最多 256 项，每项最多 200 条 compact/redacted sequenced events，active/terminal TTL 均为 5 分钟。`finish()` 把 active 标记为 terminal 而不删除；terminal 后 30 秒内的事件追加为 `late_effect`，不覆盖原终态，surfaced 后不重复消费。
 
+Daemon reuse 不是 display version 比较。[`contractIdentity.ts`](src/apps/daemon/contractIdentity.ts) 对 public command names/schemas、canonical action metadata、`browser-operation/v2` outcome mapping、daemon protocol 与 native protocol hash 做稳定 key-sorted canonical JSON + SHA-256，形成 `{packageVersion,daemonProtocolVersion,commandContractVersion:2,commandContractHash,toolCount}`。Lock metadata 与 live `/status` 都携带完整 identity；两者和 local identity 全字段一致才可复用。Mismatch 的 managed daemon 进入 drain/graceful shutdown 后才启动 replacement；grace 内无法证明替换成功时返回 `DAEMON_REPLACEMENT_FAILED`，旧 daemon 不接收 invoke。`status` / `doctor` 同时投影 local/daemon/lock identity 与 structured check；普通查询 exit 0，`--check` mismatch exit 1。
+
 ### 8.2 Bridge Server 组合关系
 
 `BrowserBridgeServer` 聚合：
@@ -769,6 +791,10 @@ Extension offscreen transport 会扫描本地端口范围 `18765-18784`。连接
 - 当前 scriptable tabs。
 
 Bridge Server 收到 `ext_ready` 或 `tabs_update` 后更新 client info 和 tabs router。
+
+Extension 同时维护 real page epoch。Top-level `webNavigation.onCommitted` mint 新 epoch；同 document 的 history/hash update 只更新 URL fact；BFCache 仅在当前 worker 能证明 `documentId` lineage 时复用 epoch；tab replacement、worker restart 或无法证明 lineage 时 mint 新 epoch。Bridge 将它与 `browserSessionId`、numeric `tabId` 和 target generation 组合为 [`PageIdentity`](src/kernels/session/pageIdentity.ts)。URL 与可选 `documentId` 不参与 equality。
+
+Observation snapshot、auto/explicit baseline、session delta、perception ledger 和 render cache 全部按 `browserSessionId + tabId + targetGeneration + pageEpoch` 隔离。Identity mismatch 不返回错误 delta，而是丢弃 baseline、运行 full observation，并用 `document_changed`、`target_replaced`、`session_changed`、`identity_unproven` 或 `baseline_missing` 之一作为简短 `reanchorReason`。
 
 OperationCoordinator 通过 offscreen transport 发送独立 `operation_event` message；`BrowserBridgeClientMessageService` 不把它当 pending request result，而是按稳定 `operationId` 追加到账本。事件携带 sequence、timestamp、tab/target/generation 和 compact data。tab removal/replacement、CDP detach 或已 ACK 请求在非 durable reconnect 中丢失结果时必须诚实终止为 `target_lost`/`failed`，不得静默重放 mutating action。
 
@@ -1117,6 +1143,8 @@ node scripts/run-coverage.mjs all
 Observe regression benchmark 位于 [`tests/observe/observeRegressionBenchmark.test.ts`](tests/observe/observeRegressionBenchmark.test.ts)，随 `observe`/`all` scope 运行。新增 case 应使用离线 fixture 与纯逻辑路径，避免真实浏览器、extension、network 或外部站点依赖，并保护 outline/content hints、actionables/control relations、bounded samples、cross-origin 不越权表达和 provider telemetry 兼容路径。真实浏览器生命周期由独立 `mise run smoke-browser` acceptance gate 负责，不把 Chrome/Edge 不确定性混入离线回归组。
 
 Operation progressive-disclosure regression 位于 [`tests/cli/commandExecution.test.ts`](tests/cli/commandExecution.test.ts)：它保护小结果不多绕 artifact、大结果在严格字符预算内仍保留根终态和 completion source、完整 result 可由 returned path/jsonPath 读取、artifact 写失败不覆盖已完成终态，以及 `no_effect` / `effect_observed` 不建议盲重放。Governance test 还枚举 `src/commands` 的 `withBrowserOperation()` 调用点，要求全部使用统一 `browserOperationCommandResult()` owner。
+
+可信契约回归另外由以下 suites 持有：[`tests/cli/operationResultV2.test.ts`](tests/cli/operationResultV2.test.ts) 覆盖 8 个 terminal status 的 JSON/TTY/classification/code/exit/continuation matrix 以及 unknown/malformed schema；[`tests/cli/validationParity.test.ts`](tests/cli/validationParity.test.ts) 使用不少于 50 个 valid/invalid corpus 保护 shared normalized args 与 issue shape；daemon lifecycle/identity tests 保护 canonical hash determinism、全字段 mismatch 与 replacement failure；[`tests/bootstrap/pageIdentity.test.ts`](tests/bootstrap/pageIdentity.test.ts) 及 observe/router tests 保护 document commit、SPA、BFCache、replacement、reconnect 和错误 baseline 零复用。
 
 CI 位于 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)：Ubuntu 与 Windows 运行相同 `verify` 门禁，另有 Windows real-browser job 使用系统 Edge/Chrome 执行 MV3 smoke。核心步骤是：
 

@@ -4,6 +4,8 @@ import { BrowserBridgeError } from "../../utils/errors.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
 import { isRecord } from "../../utils/records.js";
+import type { PageIdentity } from "../../kernels/session/pageIdentity.js";
+import { pageIdentityFromUnknown } from "./pageIdentity.js";
 
 function networkSeqFromBaseline(value: unknown): number | undefined {
 	if (!isRecord(value)) return undefined;
@@ -86,7 +88,7 @@ function savedArtifactPathFromBaseline(value: unknown): string | undefined {
 	return typeof saved?.path === "string" && saved.path.trim() ? saved.path.trim() : undefined;
 }
 
-export type BaselineResolution = { entities: Entity[]; partialBaseline: boolean; networkSeq?: number; hookSeq?: number; snapshotId?: string };
+export type BaselineResolution = { entities: Entity[]; partialBaseline: boolean; networkSeq?: number; hookSeq?: number; snapshotId?: string; pageIdentity?: PageIdentity };
 
 function baselineRecovery(extra: Record<string, unknown> = {}): Record<string, unknown> {
 	return {
@@ -123,10 +125,10 @@ export async function resolveBaselineEntities(server: BrowserCommandRuntimePort,
 		}
 		const fromSaved = baselineEntitiesFromParam(parsedSaved);
 		if (!fromSaved) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline saved artifact does not contain ABML entities", baselineRecovery({ path: savedPath }));
-		return { entities: fromSaved, partialBaseline: false, networkSeq: networkSeqFromBaseline(baseline) ?? networkSeqFromBaseline(parsedSaved), hookSeq: hookSeqFromBaseline(baseline) ?? hookSeqFromBaseline(parsedSaved), snapshotId: baselineSnapshotId(baseline) };
+		return { entities: fromSaved, partialBaseline: false, networkSeq: networkSeqFromBaseline(baseline) ?? networkSeqFromBaseline(parsedSaved), hookSeq: hookSeqFromBaseline(baseline) ?? hookSeqFromBaseline(parsedSaved), snapshotId: baselineSnapshotId(baseline), pageIdentity: pageIdentityFromUnknown(baseline) ?? pageIdentityFromUnknown(parsedSaved) };
 	}
 	const inline = baselineEntitiesFromParam(baseline);
-	if (inline) return { entities: inline, partialBaseline: baselinePartialHint(baseline, inline), networkSeq: networkSeqFromBaseline(baseline), hookSeq: hookSeqFromBaseline(baseline), snapshotId: baselineSnapshotId(baseline) };
+	if (inline) return { entities: inline, partialBaseline: baselinePartialHint(baseline, inline), networkSeq: networkSeqFromBaseline(baseline), hookSeq: hookSeqFromBaseline(baseline), snapshotId: baselineSnapshotId(baseline), pageIdentity: pageIdentityFromUnknown(baseline) };
 	const snapshotId = baselineSnapshotId(baseline);
 	if (!snapshotId) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline must be an entity list, prior scan summary/envelope, or snapshotId", baselineRecovery({ baselineType: typeof baseline }));
 	const snapshot = server.getObservationSnapshot(snapshotId);
@@ -140,5 +142,5 @@ export async function resolveBaselineEntities(server: BrowserCommandRuntimePort,
 	}
 	const fromArtifact = baselineEntitiesFromParam(parsed);
 	if (!fromArtifact) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact does not contain ABML entities", baselineRecovery({ snapshotId, path: snapshot.saved.path }));
-	return { entities: fromArtifact, partialBaseline: false, networkSeq: typeof snapshot.networkSeq === "number" ? snapshot.networkSeq : networkSeqFromBaseline(parsed), hookSeq: typeof snapshot.hookSeq === "number" ? snapshot.hookSeq : hookSeqFromBaseline(parsed), snapshotId };
+	return { entities: fromArtifact, partialBaseline: false, networkSeq: typeof snapshot.networkSeq === "number" ? snapshot.networkSeq : networkSeqFromBaseline(parsed), hookSeq: typeof snapshot.hookSeq === "number" ? snapshot.hookSeq : hookSeqFromBaseline(parsed), snapshotId, pageIdentity: pageIdentityFromUnknown(snapshot) ?? pageIdentityFromUnknown(parsed) };
 }

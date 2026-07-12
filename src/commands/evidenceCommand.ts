@@ -13,7 +13,7 @@ export function defineEvidenceCommand({ commands, ensureStarted }: CommandRegist
 		label: "Browser Evidence",
 		description: "Aggregate native browser evidence from hook, network recorder, and performance entries.",
 		promptSnippet: "Collect native browser evidence across network/dom/console/error/storage/websocket/crypto/dom_sinks.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_evidence when a single evidence bundle is needed; write large bundles to outputPath."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_evidence when a single evidence bundle is needed; follow the returned saved.path for large bundles."],
 		parameters: strictCommandParameters({
 			params: Type.Optional(NativeCommandParamsSchema),
 			...sharedTabScopedToolParams(),

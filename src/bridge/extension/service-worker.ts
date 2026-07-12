@@ -30,6 +30,7 @@ import { __browserPilotBridgeModule_ws_model } from "./service_worker/ws_model";
 import { __browserPilotBridgeModule_ws } from "./service_worker/ws";
 import { __browserPilotBridgeModule_router, installBrowserPilotBridgeRouter } from "./service_worker/router";
 import { __browserPilotBridgeModule_tab_sync } from "./service_worker/tab_sync";
+import { __browserPilotBridgeModule_page_identity } from "./service_worker/page_identity";
 import { __browserPilotBridgeModule_keepalive, installBrowserPilotKeepalivePort } from "./service_worker/keepalive";
 import { __browserPilotBridgeModule_transport, installBrowserPilotTransport } from "./service_worker/transport";
 import { BRIDGE_BUILD_ID, BRIDGE_BUILD_PIPELINE_VERSION, type BridgeBuildInfo } from "./shared/buildInfo";
@@ -72,6 +73,7 @@ export const serviceWorkerCommandModuleGraph = [
 
 export const serviceWorkerStartupModuleGraph = [
 	__browserPilotBridgeModule_router,
+	__browserPilotBridgeModule_page_identity,
 	__browserPilotBridgeModule_tab_sync,
 	__browserPilotBridgeModule_keepalive,
 	__browserPilotBridgeModule_transport,

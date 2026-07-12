@@ -135,7 +135,7 @@ function selectorTimeoutRecovery(command: BridgeCommand, error: unknown): Record
 		...(lastState?.found === false ? { mainDocumentMatches: 0 } : {}),
 		...(typeof lastState?.found === "boolean" ? { lastProbeFound: lastState.found } : {}),
 		recoveryCommands: [
-			`inspect the enclosing browser-operation/v1 diagnostics for operationId and target lifecycle evidence`,
+			`inspect the enclosing browser-operation/v2 diagnostics for operationId and target lifecycle evidence`,
 			"browser_observe to refresh actionables/selectors",
 			"browser_frame list when iframe placement is suspected; explicit legacy/debug projection browser_observe mode=html selector=<nearby-or-parent-selector> can inspect an exact DOM match",
 		],

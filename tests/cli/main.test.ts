@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveDaemonStartCommand } from "../../src/apps/daemon/daemonControl.ts";
 import { normalizeJsonEnvelope, renderResult } from "../../src/apps/cli/render.ts";
+import { BROWSER_OPERATION_SCHEMA, classifyBrowserOperationStatus, type BrowserOperationStatus } from "../../src/kernels/session/browserOperation.ts";
 
 function runNode(args: string[], cwd = process.cwd()) {
 	return spawnSync("node", args, {
@@ -41,6 +42,10 @@ function nestedStringValues(value: unknown): string[] {
 	return [];
 }
 
+function operationEnvelope(status: BrowserOperationStatus, continuation: unknown = null) {
+	return { schema: BROWSER_OPERATION_SCHEMA, status, ...classifyBrowserOperationStatus(status), continuation };
+}
+
 test("schema execute emits local JSON metadata", () => {
 	const result = runCli(["schema", "execute", "--json"]);
 	const body = JSON.parse(result.stdout);
@@ -60,8 +65,7 @@ test("CLI artifact read commands use safe placeholders and bounded returned hint
 	const unverifiedPath = "missing[$env:UNVERIFIED`$(hostname)]";
 	const snapshotId = "snapshot $env:VALUE `$(hostname)";
 	const body = normalizeJsonEnvelope({
-		version: "browser-operation/v1",
-		status: "completed",
+		...operationEnvelope("completed"),
 		saved: { path: savedPath, bytes: 100 },
 		artifact_hints: {
 			jsonPaths: { completionResult: completionPath, diagnostics: nextActionPath },
@@ -135,13 +139,11 @@ test("human rendering exposes the direct browser operation terminal contract", (
 			content: [{
 				type: "text",
 				text: JSON.stringify({
-					version: "browser-operation/v1",
+					...operationEnvelope("completed", { next: "inspect_artifact", replay: "not_needed", reason: "result_compacted" }),
 					operationId: "op-123",
 					commandName: "browser_execute",
-					status: "completed",
 					dispatch: { acknowledged: true, started: true, finished: true },
 					completion: { source: "native-command-result", evidence: { result: 42 } },
-					continuation: { next: "inspect_artifact", replay: "not_needed", reason: "result_compacted" },
 					saved: { path: "C:\\tmp\\operation.json" },
 				}),
 			}],
@@ -162,10 +164,9 @@ test("human rendering never emits a blank line for a small execute success", () 
 			content: [{
 				type: "text",
 				text: JSON.stringify({
-					version: "browser-operation/v1",
+					...operationEnvelope("completed"),
 					operationId: "op-small",
 					commandName: "browser_execute",
-					status: "completed",
 					dispatch: { acknowledged: true, started: true, finished: true },
 					completion: { source: "native-command-result", evidence: { result: 2 } },
 				}),

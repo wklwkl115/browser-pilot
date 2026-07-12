@@ -37,9 +37,6 @@ export const NativeCommandParamsSchema = Type.Object({}, { additionalProperties:
 export const TAB_SCOPED_TOOL_GUIDELINE = "For automation, call browser_tabs list to get a stable tabHandle/targetRef, or reuse browser_tabs create id/targetRef directly. Omit targetRef/tabId to use the selected active tab; pass an explicit target mainly to disambiguate several open tabs. Numeric tabId remains accepted for compatibility and auto-follows unambiguous Chrome replacement chains.";
 export const TAB_ID_DESCRIPTION = "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.";
 export const TARGET_REF_DESCRIPTION = "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.";
-export const DETAIL_LEVEL_DESCRIPTION = "Deprecated compatibility only; stripped before tool validation. Current summaries use command-specific budgets and artifact handles.";
-export const OUTPUT_PATH_DESCRIPTION = "Deprecated compatibility only; stripped before tool validation. Full raw evidence is saved by command-managed artifacts when needed.";
-export const MAX_CHARS_DESCRIPTION = "Deprecated compatibility only; stripped before tool validation. Current commands use committed per-tool budgets.";
 
 function enumLiteralSchemas<const TValue extends readonly [string, string, ...string[]]>(values: TValue): [TSchema, TSchema, ...TSchema[]] {
 	return values.map((value) => Type.Literal(value)) as unknown as [TSchema, TSchema, ...TSchema[]];

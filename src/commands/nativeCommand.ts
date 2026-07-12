@@ -15,7 +15,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 	defineBrowserCommand(commands, {
 		name: "browser_command",
 		label: "Browser Command",
-		description: "Send a validated native bridge command. Read commands return immediately; write commands return a browser-operation/v1 terminal outcome.",
+		description: "Send a validated native bridge command. Read commands return immediately; write commands return a browser-operation/v2 terminal outcome.",
 		promptSnippet: "Use the native escape hatch only when a public command cannot express the operation; write calls synchronously return their operation outcome.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_command for explicit native CDP/management operations and browser_execute only for JavaScript. Internal operation and retired wait commands are not callable through this public escape hatch."],
 		parameters: strictCommandParameters({

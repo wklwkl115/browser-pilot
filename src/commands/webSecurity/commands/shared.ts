@@ -102,22 +102,20 @@ export function stringNumberOrListParam(description: string) {
 	return Type.Optional(Type.Union([Type.String(), Type.Number(), Type.Array(Type.Union([Type.String(), Type.Number()]))], { description }));
 }
 
-export function sharedWebSecurityBrowserSessionParams(timeoutDescription: string) {
+export function sharedWebSecurityBrowserSessionParams(_timeoutDescription: string) {
 	return sharedTabScopedToolParams({
 		tabIdDescription: "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
-		timeoutDescription,
 	});
 }
 
 export function sharedWebSecurityResultParams() {
-	return sharedTabScopedToolParams({ includeTabId: false, includeTimeout: false });
+	return sharedTabScopedToolParams({ includeTabId: false });
 }
 
 export function sharedWebSecurityParams() {
 	return {
 		...sharedTabScopedToolParams({
 			tabIdDescription: "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
-			timeoutDescription: "Per-request timeout in milliseconds",
 		}),
 		allowPrivateTargets: Type.Optional(Type.Boolean({ description: "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures and callback listeners." })),
 	};

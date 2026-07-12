@@ -56,21 +56,25 @@ test("tab session sync normalizes tabs, preserves partial fields, and disconnect
 	assert.equal(router.getTabs({ includeDisconnected: true }).find((tab) => tab.tabId === 7)?.disconnectedAt !== undefined, true);
 });
 
-test("tab replacement preserves stable handles and resolves nested or numeric stale targets", () => {
+test("tab replacement preserves stable handles, advances target generation, and resolves nested or numeric stale targets", () => {
 	const { clients, browserSessions, router } = setup();
 	const ws = connect(clients);
 	browserSessions.selectClient(browserSessions.defaultSession(), ws);
-	router.updateTabs([{ id: 7, url: "https://replace.test/", title: "Before", active: true, windowId: 1 }], ws);
+	router.updateTabs([{ id: 7, url: "https://replace.test/", title: "Before", active: true, windowId: 1, pageEpoch: "page-before", documentId: "doc-before" }], ws);
 	const handle = router.defaultTabHandle();
 	assert.ok(handle);
 
 	const replacements = router.applyTabReplacements([{ from: 7, to: 9 }, { from: 0, to: 2 }, { from: 9, to: 9 }], ws);
 	assert.equal(replacements.length, 1);
-	router.updateTabs([{ id: 9, url: "https://replace.test/after", title: "After", active: true, windowId: 1 }], ws);
+	router.updateTabs([{ id: 9, url: "https://replace.test/after", title: "After", active: true, windowId: 1, pageEpoch: "page-after", documentId: "doc-after" }], ws);
 
 	const current = router.getTabs()[0];
 	assert.equal(current?.tabId, 9);
 	assert.equal(current?.tabHandle, handle);
+	assert.equal(current?.generation, 2);
+	assert.equal(current?.targetGeneration, 2);
+	assert.equal(current?.pageEpoch, "page-after");
+	assert.equal(current?.documentId, "doc-after");
 	assert.equal(current?.replacedFromTabId, 7);
 	assert.equal(router.resolveTargetRef(7)?.tabId, 9);
 	assert.equal(router.resolveTargetRef({ createdTarget: { targetRef: handle } })?.tabId, 9);
@@ -81,7 +85,7 @@ test("same-extension reconnect adopts identity and migrates secondary session se
 	const previous = connect(clients);
 	const defaultSession = browserSessions.defaultSession();
 	browserSessions.selectClient(defaultSession, previous);
-	router.updateTabs([{ id: 7, url: "https://reconnect.test/", title: "Page", active: true, windowId: 3 }], previous);
+	router.updateTabs([{ id: 7, url: "https://reconnect.test/", title: "Page", active: true, windowId: 3, pageEpoch: "worker-1:page:1" }], previous);
 	const previousTab = router.getTabs()[0];
 	assert.ok(previousTab);
 
@@ -92,11 +96,13 @@ test("same-extension reconnect adopts identity and migrates secondary session se
 
 	const reconnected = connect(clients);
 	browserSessions.selectClient(defaultSession, reconnected);
-	router.updateTabs([{ id: 7, url: "https://reconnect.test/", title: "Page", active: true, windowId: 3 }], reconnected);
+	router.updateTabs([{ id: 7, url: "https://reconnect.test/", title: "Page", active: true, windowId: 3, pageEpoch: "worker-2:page:1" }], reconnected);
 
 	const adopted = Array.from(router.sessions.values()).find((session) => session.client === reconnected);
 	assert.ok(adopted);
 	assert.equal(adopted.tabHandle, previousTab.tabHandle);
+	assert.equal(adopted.generation, previousTab.generation);
+	assert.notEqual(adopted.pageEpoch, previousTab.pageEpoch);
 	assert.equal(router.sessions.get(previousTab.id)?.disconnectedAt !== undefined, true);
 	assert.equal(secondary.selectedClient, reconnected);
 	assert.equal(secondary.defaultSessionId, adopted.id);

@@ -10,7 +10,7 @@ function flag(name: string, kind: FlagKind, extra: Partial<FlagSpec> = {}): Flag
 	return { name, flag: `--${name}`, kind, required: false, ...extra };
 }
 
-test("CLI flags characterize schema generation, render mode ordering, and shared coercion", () => {
+test("CLI flags characterize schema generation, render mode ordering, and strict typed validation", () => {
 	const schema = {
 		type: "object",
 		properties: {
@@ -36,7 +36,8 @@ test("CLI flags characterize schema generation, render mode ordering, and shared
 	assert.equal(wantsJson(["--json", "--text", "--json"]), true);
 	assert.equal(wantsJson(["--json", "--text"]), false);
 	const typedSchema = Type.Object({ name: Type.String(), count: Type.Integer(), enabled: Type.Boolean() });
-	assert.deepEqual(coerceParams(typedSchema, { name: "pilot", count: "3", enabled: "true" }), { ok: true, args: { name: "pilot", count: 3, enabled: true } });
+	assert.equal(coerceParams(typedSchema, { name: "pilot", count: "3", enabled: "true" }).ok, false);
+	assert.deepEqual(coerceParams(typedSchema, { name: "pilot", count: 3, enabled: true }), { ok: true, args: { name: "pilot", count: 3, enabled: true } });
 });
 
 test("CLI flags characterize globals, inline values, booleans, enums, arrays, and JSON", () => {
@@ -47,14 +48,15 @@ test("CLI flags characterize globals, inline values, booleans, enums, arrays, an
 		flag("mode", "enum", { choices: ["fast", "safe"] }),
 		flag("tags", "array", { split: "comma" }),
 		flag("inputs", "array"),
+		flag("ports", "array", { split: "comma", itemKind: "number" }),
 		flag("params", "json"),
 	];
-	const parsed = parseArgs(specs, ["--text", "--json", "--name=pilot", "--count", "-1", "--enabled=false", "--mode", "fast", "--tags", "a, b", "--tags=c", "--inputs", "one", "--inputs=two", "--params", "{\"x\":1}", "--no-enabled", "--help"]);
+	const parsed = parseArgs(specs, ["--text", "--json", "--name=pilot", "--count", "-1", "--enabled=false", "--mode", "fast", "--tags", "a, b", "--tags=c", "--inputs", "one", "--inputs=two", "--ports", "80,443", "--params", "{\"x\":1}", "--no-enabled", "--help"]);
 	assert.deepEqual(parsed, {
 		ok: true,
 		value: {
 			globals: { json: true, text: false, help: true },
-			params: { name: "pilot", count: "-1", enabled: false, mode: "fast", tags: ["a", "b", "c"], inputs: ["one", "two"], params: { x: 1 } },
+			params: { name: "pilot", count: -1, enabled: false, mode: "fast", tags: ["a", "b", "c"], inputs: ["one", "two"], ports: [80, 443], params: { x: 1 } },
 		},
 	});
 });
@@ -85,6 +87,7 @@ test("CLI flags characterize parse errors, typo suggestions, and retired-flag gu
 		{ argv: ["--nmae", "pilot"], pattern: /did you mean "--name"/ },
 		{ argv: ["--timeout-ms", "5"], pattern: /timeoutMs is internal now/ },
 		{ argv: ["--name"], pattern: /needs a value/ },
+		{ argv: ["--enabled=maybe"], pattern: /expects true or false/ },
 		{ argv: ["--mode", "turbo"], pattern: /must be one of: fast, safe/ },
 		{ argv: ["--params", "{"], pattern: /expects JSON/ },
 		{ argv: ["--command", "@command.json"], pattern: /file references are not supported/ },

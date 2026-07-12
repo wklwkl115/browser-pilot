@@ -10,6 +10,7 @@ import { asPositiveInt, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { withBrowserOperation } from "./browserOperation.js";
 import { browserOperationCommandResult } from "./browserOperationResult.js";
+import type { ValidationIssue } from "./commandDefinition.js";
 
 const TAB_TARGET_ACTIONS = new Set(["switch", "close", "attachtab", "detachtab", "leasetab", "releasetab"]);
 const SNAPSHOT_NOT_FOUND_RECOVERY = { nextActions: ["browser-pilot observe --json", "browser-pilot tabs --action snapshot --json"] };
@@ -42,6 +43,42 @@ function normalizeCreateTabUrl(value: unknown): string {
 		throw tabsToolError("INVALID_TAB_URL", "browser_tabs create does not accept javascript: or data: URLs; use browser_execute for JavaScript in an existing tab", { url: raw, protocol });
 	}
 	return parsed.href;
+}
+
+const TAB_ACTIONS = ["list", "snapshot", "switch", "create", "close", "selectBrowser", "listSessions", "createSession", "selectSession", "closeSession", "attachTab", "detachTab", "leaseTab", "releaseTab"] as const;
+
+function validateCreateTabArgument(args: Record<string, unknown>): ValidationIssue[] {
+	if (args.action !== "create") return [];
+	try {
+		normalizeCreateTabUrl(args.url);
+		return [];
+	} catch (error) {
+		return [{ code: "INVALID_TAB_URL", path: "/url", message: error instanceof Error ? error.message : String(error) }];
+	}
+}
+
+export function validateTabsArguments(args: Record<string, unknown>): ValidationIssue[] {
+	const action = typeof args.action === "string" ? args.action : "";
+	if (!TAB_ACTIONS.includes(action as typeof TAB_ACTIONS[number])) return [{ code: "TABS_ACTION_UNKNOWN", path: "/action", message: `Unsupported browser_tabs action "${action}"; expected one of ${TAB_ACTIONS.join(", ")}` }];
+	const issues: ValidationIssue[] = [];
+	const targetProvided = args.targetRef !== undefined || args.tabId !== undefined;
+	if (args.targetRef !== undefined && args.tabId !== undefined) issues.push({ code: "TARGET_ARGUMENT_CONFLICT", path: "/", message: "browser_tabs accepts targetRef or tabId, not both" });
+	if (["switch", "close", "attachTab", "detachTab", "leaseTab", "releaseTab"].includes(action) && !targetProvided) issues.push({ code: "TAB_ID_REQUIRED", path: "/", message: `browser_tabs ${action} requires targetRef or tabId` });
+	issues.push(...validateCreateTabArgument(args));
+	if (action === "snapshot" && args.allowExpired !== undefined && args.snapshotId === undefined) issues.push({ code: "TABS_SNAPSHOT_OPTION_CONFLICT", path: "/allowExpired", message: "browser_tabs allowExpired requires snapshotId" });
+	const allowedByAction: Record<string, Set<string>> = {
+		list: new Set(["includeBridgePerTab"]),
+		snapshot: new Set(["snapshotId", "allowExpired"]),
+		create: new Set(["url", "active", "incognito"]),
+		createSession: new Set(["name"]),
+		selectBrowser: new Set(["browserId"]),
+		attachTab: new Set(["browserId"]),
+	};
+	const actionOnly = ["includeBridgePerTab", "snapshotId", "allowExpired", "url", "active", "incognito", "name", "browserId"];
+	const allowed = allowedByAction[action] ?? new Set<string>();
+	for (const key of actionOnly) if (args[key] !== undefined && !allowed.has(key)) issues.push({ code: "TABS_ARGUMENT_NOT_ALLOWED", path: `/${key}`, message: `Argument "${key}" is not valid for browser_tabs action ${action}` });
+	if (action === "selectBrowser" && (typeof args.browserId !== "string" || !args.browserId.trim())) issues.push({ code: "TABS_BROWSER_ID_REQUIRED", path: "/browserId", message: "browser_tabs selectBrowser requires browserId" });
+	return issues;
 }
 
 function stringParam(value: unknown): string | undefined { return typeof value === "string" ? value : undefined; }
@@ -99,7 +136,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 		],
 		parameters: strictCommandParameters({
 			action: Type.String({ description: "Common: list, snapshot, switch, create, close. Advanced (session & lease lifecycle): selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
-			...sharedTabScopedToolParams({ includeBrowserSessionId: true, tabIdDescription: "Compatibility target for switch/close: numeric tabId or tabHandle string.", targetRefDescription: "Preferred stable tabHandle for switch/close/attach/detach/lease/release." }),
+			...sharedTabScopedToolParams({ tabIdDescription: "Compatibility target for switch/close: numeric tabId or tabHandle string.", targetRefDescription: "Preferred stable tabHandle for switch/close/attach/detach/lease/release." }),
 			name: Type.Optional(Type.String({ description: "Browser session display name for createSession." })),
 			browserId: Type.Optional(Type.String({ description: "Browser client id or extension id for selectBrowser" })),
 			snapshotId: Type.Optional(Type.String({ description: "Optional observation snapshot id for browser_tabs action=snapshot." })),
@@ -109,6 +146,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 			active: Type.Optional(Type.Boolean({ description: "Whether created tab should be active" })),
 				incognito: Type.Optional(Type.Boolean({ description: "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint." })),
 		}),
+		validateArguments: validateTabsArguments,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runCommandHandler(async () => {
 				const action = String(params.action || "").trim().toLowerCase();

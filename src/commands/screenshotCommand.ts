@@ -39,7 +39,7 @@ export function defineScreenshotCommand({ commands, ensureStarted }: CommandRegi
 		promptSnippet: "Capture a screenshot of the target browser tab and save it as an artifact file.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_screenshot when visual state is required; prefer browser_observe for text and page structure."],
 		parameters: strictCommandParameters({
-			...sharedTabScopedToolParams({ includeDetailLevel: false, outputPathDescription: "Output image path; defaults to .browser-pilot/artifacts", maxCharsDescription: "Maximum metadata characters returned" }),
+			...sharedTabScopedToolParams(),
 			format: Type.Optional(Type.String({ description: "png | jpeg | webp" })),
 			quality: Type.Optional(Type.Number({ description: "JPEG/WebP quality" })),
 			captureBeyondViewport: Type.Optional(Type.Boolean({ description: "CDP captureBeyondViewport" })),

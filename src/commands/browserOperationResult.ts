@@ -14,7 +14,7 @@ type OperationContinuation = {
 
 type OperationArtifactHints = {
 	kind: "BrowserOperation";
-	schemaVersion: 1;
+	schemaVersion: 2;
 	jsonPaths: Record<string, string>;
 	preferredReads: Array<{ label: string; jsonPath: string; kind: string }>;
 	saved: Record<string, unknown>;
@@ -187,7 +187,7 @@ function artifactHints(outcome: BrowserOperationOutcome, saved: Record<string, u
 	if (outcome.pageEffect) add("pageEffect", "page effect", "pageEffect", "operation-effect");
 	if (outcome.lateEffects?.length) add("lateEffects", "late effects", "lateEffects", "operation-late-effects");
 	if (outcome.diagnostics?.length) add("diagnostics", "operation diagnostics", "diagnostics", "operation-diagnostics");
-	return { kind: "BrowserOperation", schemaVersion: 1, jsonPaths, preferredReads, saved: compactSavedDescriptor(saved) };
+	return { kind: "BrowserOperation", schemaVersion: 2, jsonPaths, preferredReads, saved: compactSavedDescriptor(saved) };
 }
 
 function compactSavedDescriptor(saved: Record<string, unknown>): Record<string, unknown> {
@@ -232,15 +232,21 @@ function minimalOmittedPaths(outcome: BrowserOperationOutcome, base: string[], a
 	if (artifactAvailable) {
 		omitted.add("artifact_metadata");
 	}
-	return Array.from(omitted);
+	const values = Array.from(omitted);
+	const navigation = values.includes("signals.navigation") ? ["signals.navigation"] : [];
+	return [...navigation, ...values.filter((value) => value !== "signals.navigation")].slice(0, 2);
 }
 
 function minimalOperationCore(outcome: BrowserOperationOutcome, artifactAvailable: boolean): Record<string, unknown> {
 	return {
-		version: outcome.version,
+		schema: outcome.schema,
 		operationId: outcome.operationId,
 		commandName: outcome.commandName,
 		status: outcome.status,
+		classification: outcome.classification,
+		completionVerified: outcome.completionVerified,
+		ok: outcome.ok,
+		...(outcome.code ? { code: outcome.code } : {}),
 		target: Object.fromEntries(["browserSessionId", "targetRef", "tabId", "generation"].flatMap((key) => outcome.target[key as keyof typeof outcome.target] === undefined ? [] : [[key, outcome.target[key as keyof typeof outcome.target]] as const])),
 		dispatch: {
 			acknowledged: outcome.dispatch.acknowledged,
@@ -277,8 +283,8 @@ function minimalOperationResponse(input: {
 	const preferredPath = preferredKey ? { [preferredKey]: artifact.hints.jsonPaths[preferredKey]! } : {};
 	return {
 		...minimalOperationCore(outcome, true),
-		...(input.continuation ? { continuation: input.continuation } : {}),
-		limits: { maxChars: input.maxChars, originalChars: input.originalChars, truncated: true, omitted: minimalOmittedPaths(outcome, input.omitted, true) },
+		continuation: input.continuation ?? null,
+		limits: { truncated: true, omitted: minimalOmittedPaths(outcome, input.omitted, true) },
 		artifact_hints: { jsonPaths: preferredPath },
 		saved: { path: artifact.saved.path },
 	};
@@ -320,7 +326,7 @@ function artifactSaveFailureResponse(outcome: BrowserOperationOutcome, error: un
 	const limits = { maxChars, originalChars, truncated: true, omitted: [...compacted.omitted, "artifact"] };
 	const value = { ...markCompletionEvidenceUnavailable(compacted.value), continuation, diagnostics, limits };
 	if (stableJson(value).length <= Math.max(1_000, maxChars)) return value;
-	return { ...minimalOperationCore(outcome, false), continuation, diagnostics: [failure], limits: { ...limits, omitted: minimalOmittedPaths(outcome, limits.omitted, false) } };
+	return { ...minimalOperationCore(outcome, false), continuation, diagnostics: [failure], limits: { truncated: true, omitted: minimalOmittedPaths(outcome, limits.omitted, false) } };
 }
 
 function safeArtifactName(value: string): string {
@@ -333,7 +339,7 @@ async function saveOperationArtifact(outcome: BrowserOperationOutcome, ctx: Comm
 	const pathOnly = { path: artifactPath };
 	const hints = artifactHints(outcome, pathOnly);
 	const continuation = continuationFor(outcome, false);
-	const content = stableJson({ ...outcome, ...(continuation ? { continuation } : {}), artifact_hints: hints, saved: pathOnly });
+	const content = stableJson({ ...outcome, continuation: continuation ?? null, artifact_hints: hints, saved: pathOnly });
 	const bytes = Buffer.byteLength(content, "utf8");
 	if (bytes > MAX_ARTIFACT_READ_BYTES) {
 		throw new ArtifactReaderError("ARTIFACT_TOO_LARGE", `Operation artifact exceeds readable byte limit (${bytes} bytes, max ${MAX_ARTIFACT_READ_BYTES})`, {
@@ -348,7 +354,7 @@ async function saveOperationArtifact(outcome: BrowserOperationOutcome, ctx: Comm
 
 export async function browserOperationCommandResult(outcome: BrowserOperationOutcome, options: OperationResultOptions): Promise<BrowserTextCommandResult> {
 	const continuation = continuationFor(outcome, false);
-	const inlineValue = { ...outcome, ...(continuation ? { continuation } : {}) };
+	const inlineValue = { ...outcome, continuation: continuation ?? null };
 	const originalChars = stableJson(inlineValue).length;
 	if (originalChars <= options.maxChars) {
 		return inlineJsonCommandResult(inlineValue, options.details, { maxChars: options.maxChars }, options.budgetName);
@@ -364,7 +370,7 @@ export async function browserOperationCommandResult(outcome: BrowserOperationOut
 	const compactContinuation = continuationFor(outcome, true);
 	let value: Record<string, unknown> = {
 		...compacted.value,
-		...(compactContinuation ? { continuation: compactContinuation } : {}),
+		continuation: compactContinuation ?? null,
 		limits: { maxChars: options.maxChars, originalChars, truncated: true, omitted: compacted.omitted },
 		artifact_hints: artifact.hints,
 		saved: artifact.saved,

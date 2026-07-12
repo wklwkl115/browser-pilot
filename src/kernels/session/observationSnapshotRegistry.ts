@@ -6,6 +6,9 @@ export type SessionObservationSnapshotInfo = {
 	browserSessionId?: string;
 	tabId?: number;
 	url?: string;
+	targetGeneration?: number;
+	pageEpoch?: string;
+	documentId?: string;
 	frameScope?: string;
 	selectionVersion?: number;
 	sourceMode: string;
@@ -41,6 +44,9 @@ export class SessionObservationSnapshotRegistry {
 			browserSessionId: snapshot.browserSessionId,
 			tabId: snapshot.tabId,
 			url: snapshot.url,
+			targetGeneration: snapshot.targetGeneration,
+			pageEpoch: snapshot.pageEpoch,
+			documentId: snapshot.documentId,
 			frameScope: snapshot.frameScope,
 			selectionVersion: snapshot.selectionVersion,
 			sourceMode: snapshot.sourceMode,

@@ -7,6 +7,7 @@
  * scripts branch.
  */
 import { isRecord } from "../../utils/records.js";
+import { classifyBrowserOperationEnvelope } from "../../kernels/session/browserOperation.js";
 import type { CliJsonEnvelope } from "./envelope.js";
 
 export type RenderMode = "json" | "human";
@@ -64,6 +65,10 @@ function operationHumanLines(env: Record<string, unknown>): string[] {
 	const commandName = typeof env.commandName === "string" ? env.commandName : "browser operation";
 	const status = typeof env.status === "string" ? env.status : "unknown";
 	const lines = [`${bold(commandName)} · ${status}`];
+	if (typeof env.classification === "string") {
+		const verified = env.completionVerified === true ? "completion verified" : "completion unverified";
+		lines.push(`outcome: ${env.classification} · ${verified}${typeof env.code === "string" ? ` · ${env.code}` : ""}`);
+	}
 	if (typeof env.operationId === "string") lines.push(`operation: ${env.operationId}`);
 	const dispatch = operationDispatchLine(env.dispatch);
 	if (dispatch) lines.push(dispatch);
@@ -77,12 +82,12 @@ function operationHumanLines(env: Record<string, unknown>): string[] {
 	return lines;
 }
 
-function renderHumanOk(text: string): number {
+function renderHumanOk(text: string, exitCode: number = EXIT.ok): number {
 	let env: unknown;
-	try { env = JSON.parse(text); } catch { process.stdout.write(`${text}\n`); return EXIT.ok; }
-	if (!isRecord(env)) { process.stdout.write(`${text}\n`); return EXIT.ok; }
+	try { env = JSON.parse(text); } catch { process.stdout.write(`${text}\n`); return exitCode; }
+	if (!isRecord(env)) { process.stdout.write(`${text}\n`); return exitCode; }
 	const lines: string[] = [];
-	if (env.version === "browser-operation/v1") lines.push(...operationHumanLines(env));
+	if (env.schema === "browser-operation/v2") lines.push(...operationHumanLines(env));
 	else if (typeof env.tool === "string") {
 		lines.push(bold(env.tool) + (typeof env.command === "string" ? ` · ${env.command}` : ""));
 	}
@@ -91,7 +96,7 @@ function renderHumanOk(text: string): number {
 	if (isRecord(env.saved) && typeof env.saved.path === "string") lines.push(dim(`artifact: ${env.saved.path}`));
 	if (Array.isArray(env.nextActions) && env.nextActions.length) lines.push(dim(`next: ${env.nextActions.slice(0, 5).join(" | ")}`));
 	process.stdout.write(`${lines.join("\n")}\n`);
-	return EXIT.ok;
+	return exitCode;
 }
 
 function renderHumanError(text: string): number {
@@ -313,6 +318,16 @@ function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 
 export function normalizeJsonEnvelope(text: string | Record<string, unknown>, exitCode: number, fallbackCode: string): CliJsonEnvelope {
 	const env = enrichForCli(typeof text === "string" ? parseJsonObject(text) : text);
+	const operation = classifyBrowserOperationEnvelope(env);
+	if (operation.kind === "operation") {
+		const operationExit = operation.outcome.ok ? EXIT.ok : EXIT.toolError;
+		return operation.outcome.ok
+			? { ...env, ok: true, exitCode: operationExit }
+			: { ...env, ok: false, exitCode: operationExit, code: operation.outcome.code ?? "OPERATION_PROTOCOL_ERROR" };
+	}
+	if (operation.kind === "malformed") {
+		return { ...env, ok: false, exitCode: EXIT.toolError, code: operation.code, message: operation.message };
+	}
 	if (exitCode === EXIT.ok && env.ok !== false) return { ...env, ok: true, exitCode };
 	return { ...env, ok: false, exitCode, code: errorCode(env, fallbackCode) };
 }
@@ -330,6 +345,9 @@ export function writeJsonEnvelope(envelope: CliJsonEnvelope): void {
 export function looksLikeToolError(text: string | Record<string, unknown>): boolean {
 	const env = typeof text === "string" ? parseJsonObject(text) : text;
 	if (!isRecord(env)) return false;
+	const operation = classifyBrowserOperationEnvelope(env);
+	if (operation.kind === "operation") return !operation.outcome.ok;
+	if (operation.kind === "malformed") return true;
 	if (env.failed === true || env.ok === false) return true;
 	if (typeof env.error_code === "string") return true;
 	if (isRecord(env.error) && (typeof env.error.code === "string" || typeof env.error.message === "string")) return true;
@@ -343,6 +361,23 @@ export function looksLikeToolError(text: string | Record<string, unknown>): bool
 export function renderResult(result: ToolResultLike, mode: RenderMode): number {
 	const text = resultText(result);
 	const parsed = parseJsonObject(text);
+	const operation = classifyBrowserOperationEnvelope(parsed);
+	if (operation.kind === "operation") {
+		const exitCode = operation.outcome.ok ? EXIT.ok : EXIT.toolError;
+		if (mode === "json") {
+			writeJsonEnvelope(normalizeJsonEnvelope(parsed, exitCode, operation.outcome.code ?? "OK"));
+			return exitCode;
+		}
+		return renderHumanOk(text, exitCode);
+	}
+	if (operation.kind === "malformed") {
+		const malformed = { ...parsed, ok: false as const, code: operation.code, message: operation.message };
+		if (mode === "json") {
+			writeJsonEnvelope({ ...malformed, exitCode: EXIT.toolError });
+			return EXIT.toolError;
+		}
+		return renderHumanError(JSON.stringify(malformed));
+	}
 	const isError = result.terminate === true || looksLikeToolError(parsed);
 	if (mode === "json") {
 		const exitCode = isError ? EXIT.toolError : EXIT.ok;
@@ -370,12 +405,12 @@ export function renderUsageError(message: string, mode: RenderMode = "human", ex
 	return exitCode;
 }
 
-export function renderUnavailableError(message: string, mode: RenderMode = "human"): number {
+export function renderUnavailableError(message: string, mode: RenderMode = "human", code = "CLI_DAEMON_UNAVAILABLE"): number {
 	if (mode === "json") {
 		writeJsonEnvelope({
 			ok: false,
 			exitCode: EXIT.unavailable,
-			code: "CLI_DAEMON_UNAVAILABLE",
+			code,
 			message,
 			taxonomy: { domain: "cli", category: "daemon", retryable: true, source: "cli" },
 			diagnostics: {},

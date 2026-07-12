@@ -22,6 +22,9 @@ export type BrowserBridgeTargetInfo = {
 	replacementChainAge?: number;
 	browserId?: string;
 	openerTabId?: number;
+	generation?: number;
+	pageEpoch?: string;
+	documentId?: string;
 	url?: string;
 	source: BrowserBridgeTargetSource;
 	implicit: boolean;

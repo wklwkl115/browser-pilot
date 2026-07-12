@@ -215,8 +215,11 @@ test("daemon invoke returns validation errors before authorization", async () =>
 	await activePairing("agent-a");
 	const res = await invoke({ body: { tool: "browser_success", params: {} }, toolByName: tools() });
 	assert.equal(res.status, 400);
+	assert.equal(res.json.code, "COMMAND_VALIDATION_FAILED");
 	assert.match(String(res.json.error), /Invalid parameters/);
 	assert.match(String(res.json.error), /message/);
+	assert.ok(Array.isArray(res.json.issues));
+	assert.ok((res.json.issues as Array<Record<string, unknown>>).every((issue) => typeof issue.code === "string" && typeof issue.path === "string" && typeof issue.message === "string"));
 });
 
 test("daemon invoke wraps command throws as terminating success envelope", async () => {

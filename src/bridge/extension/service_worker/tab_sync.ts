@@ -8,7 +8,8 @@ import { browserPilotSessions, browserPilotTabQueues } from "./state_store.js";
 import { cleanupBrowserPilotPageListenersForTab } from "./wait.js";
 import { cancelWaitsForTab, cleanupTabWaits } from "./wait_coordinator.js";
 import { cleanupWsSessionsForTab } from "./ws.js";
-import type { BrowserPilotBridgeWebSocketLike, BrowserPilotTabSyncTransport, BrowserPilotChromeTab } from "./types.js";
+import { browserPilotPageIdentityFields, forgetBrowserPilotPageIdentity, recordBrowserPilotDocumentCommit, recordBrowserPilotSameDocumentUpdate, replaceBrowserPilotPageIdentity } from "./page_identity";
+import type { BrowserPilotBridgeWebSocketLike, BrowserPilotTabSyncTransport, BrowserPilotChromeTab, JsonRecord } from "./types.js";
 
 // tab_sync.js - tab list synchronization and tab lifecycle hooks.
 
@@ -55,7 +56,7 @@ async function sendTabsUpdate() {
   const payload = JSON.stringify({
     type: 'tabs_update',
     bridge: browserPilotBridgeInfo(),
-    tabs: tabs.map((t: BrowserPilotChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, openerTabId: t.openerTabId, incognito: t.incognito === true })),
+    tabs: tabs.map((t: BrowserPilotChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, openerTabId: t.openerTabId, incognito: t.incognito === true, ...browserPilotPageIdentityFields(t) })),
     ...(replacementRing.length ? { replaced: replacementRing.slice() } : {}),
     ...(lastActivation ? { activation: lastActivation } : {})
   });
@@ -129,10 +130,11 @@ function installBrowserPilotTabSync(deps: BrowserPilotTabSyncTransport | undefin
       safeSendTabsUpdate('tabs.onUpdated');
     }
   });
-  chrome.tabs.onRemoved.addListener((tabId: number) => { cleanupBrowserPilotTab(tabId, 'tab_removed'); safeSendTabsUpdate('tabs.onRemoved'); });
+  chrome.tabs.onRemoved.addListener((tabId: number) => { forgetBrowserPilotPageIdentity(tabId); cleanupBrowserPilotTab(tabId, 'tab_removed'); safeSendTabsUpdate('tabs.onRemoved'); });
   chrome.tabs.onCreated.addListener(() => { safeProbeAndConnectWS('tabs.onCreated.probe'); safeSendTabsUpdate('tabs.onCreated'); });
   chrome.tabs.onReplaced?.addListener((addedTabId: number, removedTabId: number) => {
     recordReplacement(removedTabId, addedTabId);
+    replaceBrowserPilotPageIdentity(removedTabId, addedTabId);
     safeSendTabsUpdate('tabs.onReplaced');
     cleanupBrowserPilotTab(removedTabId, 'tab_replaced');
   });
@@ -140,6 +142,18 @@ function installBrowserPilotTabSync(deps: BrowserPilotTabSyncTransport | undefin
     recordActivation(activeInfo.tabId, activeInfo.windowId);
     safeSendTabsUpdate('tabs.onActivated');
   });
+  chrome.webNavigation?.onCommitted?.addListener((details) => {
+    if (Number(details.frameId ?? 0) !== 0) return;
+    recordBrowserPilotDocumentCommit(details);
+    safeSendTabsUpdate('webNavigation.onCommitted');
+  });
+  const onSameDocument = (details: JsonRecord & { tabId?: number; frameId?: number; url?: string }) => {
+    if (Number(details.frameId ?? 0) !== 0) return;
+    recordBrowserPilotSameDocumentUpdate(details);
+    safeSendTabsUpdate('webNavigation.sameDocument');
+  };
+  chrome.webNavigation?.onHistoryStateUpdated?.addListener(onSameDocument);
+  chrome.webNavigation?.onReferenceFragmentUpdated?.addListener(onSameDocument);
   browserPilotTabSyncInstalled = true;
   return true;
 }

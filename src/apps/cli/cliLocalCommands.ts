@@ -1,14 +1,16 @@
 import path from "node:path";
-import { coerceParams, parseArgs, resolveParamValueReferences, type FlagSpec } from "./flags.js";
-import { renderUsageError, EXIT } from "./render.js";
+import { parseArgs, resolveParamValueReferences, type FlagSpec } from "./flags.js";
+import { renderUsageError, writeJsonEnvelope, EXIT } from "./render.js";
 import { artifactBehaviorMetadata, actionSpecificFlagSpecs, buildCommandFlagSpecs, commandGroup, commandGroupCounts, commandRouting, flagMetadata, kebabAction, naturalRouting, naturalSubcommandMetadata, schemaForFlagSpecs } from "./commandMetadata.js";
 import { naturalActionForToken } from "./naturalRouting.js";
-import { findDaemon, isDaemonVersionCurrent, lockfilePath } from "../daemon/daemonControl.js";
+import { daemonContractReport, findDaemon, isDaemonReadyForReuse, lockfilePath } from "../daemon/daemonControl.js";
 import { daemonVersion, packageVersion } from "../daemon/packageInfo.js";
 import { staleLockfileDiagnostic } from "./connection.js";
 import { pad } from "./help.js";
 import { applyCliOnlyParams } from "./cliFileParams.js";
 import { firstPositional, jsonMode, loadCliCommands, renderLocalJson, renderMode } from "./cliBasics.js";
+import { splitLeadingGlobalFlags } from "./cliBasics.js";
+import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
 
 export async function runCommandsCommand(argv: string[]): Promise<number> {
 	const mode = jsonMode(argv);
@@ -72,25 +74,47 @@ export async function runValidateCommand(argv: string[]): Promise<number> {
 	if (!cmdName || cmdName.startsWith("--")) return renderUsageError("usage: browser-pilot validate <command> --params @params.json --json", mode);
 	const cmd = (await loadCliCommands()).find((item) => item.subcommand === cmdName);
 	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run browser-pilot commands --json`, mode);
-	const extracted = extractParamsArg(positional.rest, mode);
+	const actionPosition = validateActionPosition(positional.rest);
+	const naturalAction = actionPosition.actionToken ? naturalActionForToken(cmd, actionPosition.actionToken) : undefined;
+	if (actionPosition.actionToken && !naturalAction) return renderUsageError(`unknown ${cmd.subcommand} subcommand "${actionPosition.actionToken}"`, mode);
+	const extracted = extractParamsArg(actionPosition.rest, mode);
 	if (!extracted.ok) return extracted.code;
 	const resolved = resolveParamValueReferences(buildCommandFlagSpecs(cmd), extracted.params);
 	if (!resolved.ok) return renderUsageError(resolved.error, mode, EXIT.input);
-	const prepared = (cmd.def.prepareArguments ? cmd.def.prepareArguments(resolved.params) : resolved.params) as Record<string, unknown>;
-	const cliParams = applyCliOnlyParams(cmd, prepared);
+	if (naturalAction && Object.prototype.hasOwnProperty.call(resolved.params, "action")) return renderUsageError(`browser-pilot validate ${cmd.subcommand} ${kebabAction(naturalAction)} cannot combine the action subcommand with params.action`, mode);
+	const actionArgs = naturalAction ? { ...resolved.params, action: naturalAction } : resolved.params;
+	const cliParams = applyCliOnlyParams(cmd, actionArgs);
 	if (!cliParams.ok) return renderUsageError(cliParams.error, mode, EXIT.input);
-	const coerced = coerceParams(cmd.parameters, cliParams.params);
-	if (!coerced.ok) return renderUsageError(coerced.error, mode);
-	if (mode === "json") return renderLocalJson({ command: "validate", name: cmd.subcommand, commandName: cmd.name, valid: true, args: coerced.args });
+	const validated = validateBrowserCommandArguments(cmd.def, cliParams.params);
+	if (!validated.ok) {
+		if (mode === "json") writeJsonEnvelope({ ok: false, exitCode: EXIT.usage, code: "CLI_VALIDATION_ERROR", command: "validate", name: cmd.subcommand, commandName: cmd.name, valid: false, issues: validated.issues, message: validated.error });
+		else process.stderr.write(`invalid: ${cmd.subcommand} — ${validated.error}\n`);
+		return EXIT.usage;
+	}
+	if (mode === "json") return renderLocalJson({ command: "validate", name: cmd.subcommand, commandName: cmd.name, ...(naturalAction ? { naturalSubcommand: kebabAction(naturalAction), action: naturalAction } : {}), valid: true, args: validated.args });
 	process.stdout.write(`valid: ${cmd.subcommand}\n`);
 	return EXIT.ok;
 }
 
+function validateActionPosition(argv: string[]): { actionToken?: string; rest: string[] } {
+	const leading = splitLeadingGlobalFlags(argv);
+	const token = leading.rest[0];
+	if (!token || token.startsWith("--")) return { rest: argv };
+	return { actionToken: token, rest: [...leading.globals, ...leading.rest.slice(1)] };
+}
+
 export async function runDoctorCommand(argv: string[]): Promise<number> {
 	const mode = jsonMode(argv);
+	const parsed = parseArgs([{ name: "check", flag: "--check", kind: "boolean", required: false, description: "Exit 1 when the local and daemon command contracts do not match." }], argv);
+	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
+	if (parsed.value.globals.help) {
+		process.stdout.write("browser-pilot doctor [--check] --json\n\nInspect local, daemon, bridge, extension, and command-contract state.\n");
+		return EXIT.ok;
+	}
 	const found = await findDaemon({ tabs: true });
 	const commands = await loadCliCommands();
 	const groups = commandGroupCounts(commands);
+	const contract = daemonContractReport(found);
 	const report = {
 		command: "doctor",
 		version: packageVersion(),
@@ -98,14 +122,21 @@ export async function runDoctorCommand(argv: string[]): Promise<number> {
 		commandCount: commands.length,
 		commandGroups: groups,
 		webSecurityCommandCount: groups.security,
+		contract,
 		daemon: doctorDaemon(found),
 		activeTab: doctorActiveTab(found?.status.tabs, found?.status.activeTab),
 		artifactRoot: path.join(process.cwd(), ".browser-pilot", "artifacts"),
 		recovery: { commands: doctorRecoveryCommands() },
 	};
-	if (mode === "json") return renderLocalJson(report);
+	const failed = parsed.value.params.check === true && !contract.check.ok;
+	if (mode === "json") {
+		if (!failed) return renderLocalJson({ ...report, ...(parsed.value.params.check === true ? { checked: true } : {}) });
+		writeJsonEnvelope({ ...report, checked: true, ok: false, exitCode: EXIT.toolError, code: contract.check.code } as unknown as Parameters<typeof writeJsonEnvelope>[0]);
+		return EXIT.toolError;
+	}
 	process.stdout.write(`browser-pilot ${report.version}\ndaemon: ${report.daemon.running ? "running" : "not running"}\nextension: ${found?.status.extensionConnected === true ? "connected" : "not connected"}\n`);
-	return EXIT.ok;
+	process.stdout.write(`contract: ${contract.check.ok ? "match" : "mismatch"}\n`);
+	return failed ? EXIT.toolError : EXIT.ok;
 }
 
 function doctorDaemon(found: Awaited<ReturnType<typeof findDaemon>>): Record<string, unknown> {
@@ -118,7 +149,7 @@ function doctorDaemon(found: Awaited<ReturnType<typeof findDaemon>>): Record<str
 		pid: found.info.pid,
 		controlPort: found.info.controlPort,
 		version: found.info.version,
-		versionStale: !isDaemonVersionCurrent(found.info),
+		versionStale: !isDaemonReadyForReuse(found),
 		bridgePort: found.status.bridgePort,
 		bridgeRunning: found.status.running,
 		readiness: found.status.readiness,
@@ -126,6 +157,7 @@ function doctorDaemon(found: Awaited<ReturnType<typeof findDaemon>>): Record<str
 		extension: found.status.extension,
 		health: found.status.health,
 		toolCount: found.status.tools,
+		contractIdentity: found.status.contractIdentity ?? null,
 	};
 }
 

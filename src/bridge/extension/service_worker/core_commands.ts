@@ -4,6 +4,7 @@ import { chromeApi as chrome } from "./runtimeEnv";
 import { isScriptable, browserPilotBridgeInfo } from "./bridge_info";
 import { handleBrowserPilotNativeCommand, isBrowserPilotNativeCommand } from "./runtime.js";
 import { BROWSER_PILOT_ERROR_CODES, bridgeError, normalizeBridgeResponse, normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { browserPilotPageIdentityForTab } from "./page_identity";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeSender, BrowserPilotChromeCookie, BrowserPilotNativeProtocolRuntime } from "./types";
 
 // core_commands.js - non-native bridge commands: tabs, cookies, management, content settings, batch, CDP.
@@ -228,13 +229,19 @@ async function handleContentFingerprintCommand(msg: BrowserPilotBridgeCommand, s
   let messageError: unknown;
   try {
     const response = coreRecord(await chrome.tabs.sendMessage(tabId, msg.drainDirty === true ? { cmd: 'browserPilot.contentFingerprint', drainDirty: true } : { cmd: 'browserPilot.contentFingerprint' }));
-    if (response.ok !== false) return { ok: true, data: coreRecord(response.data ?? response) };
+    if (response.ok !== false) {
+      const data = coreRecord(response.data ?? response);
+      const identity = browserPilotPageIdentityForTab(tabId, typeof data.url === 'string' ? data.url : sender.tab?.url);
+      return { ok: true, data: { ...data, ...(identity ? { pageEpoch: identity.pageEpoch, ...(identity.documentId ? { documentId: identity.documentId } : {}) } : {}) } };
+    }
     messageError = new Error('content fingerprint responder returned ok:false');
   } catch (e) {
     messageError = e;
   }
   try {
-    return { ok: true, data: await readContentFingerprintViaScript(tabId, msg.drainDirty === true) };
+    const data = await readContentFingerprintViaScript(tabId, msg.drainDirty === true);
+    const identity = browserPilotPageIdentityForTab(tabId, typeof data.url === 'string' ? data.url : sender.tab?.url);
+    return { ok: true, data: { ...data, ...(identity ? { pageEpoch: identity.pageEpoch, ...(identity.documentId ? { documentId: identity.documentId } : {}) } : {}) } };
   } catch (scriptError) {
     return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'content fingerprint unavailable', { cmd: msg.cmd, tabId, error: coreErrorDetails(messageError), fallbackError: coreErrorDetails(scriptError) });
   }

@@ -445,7 +445,7 @@ export class BrowserBridgeServer implements ConsentPort {
 
 	private tabInfo(session: BrowserTabSession): BrowserTabInfo {
 		const { client: _client, ...info } = session;
-		return { ...info, targetRef: info.tabHandle };
+		return { ...info, targetGeneration: info.generation, targetRef: info.tabHandle };
 	}
 
 	private startHeartbeat(): void {

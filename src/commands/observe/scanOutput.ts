@@ -12,6 +12,8 @@ import type { ObserveMode, ObserveToolParams } from "./common.js";
 import type { executeScanCapture } from "./scanCapture.js";
 import type { assembleScanSummary } from "./scanAssembly.js";
 import type { runObserveProviders } from "./scanProviders.js";
+import type { PageReanchorReason } from "../../kernels/session/pageIdentity.js";
+import { pageIdentityFromUnknown, perceptionLedgerKey } from "./pageIdentity.js";
 
 export type ObservationProviderFailure = {
 	provider: string;
@@ -39,10 +41,10 @@ function axProviderStatus(abmlRead: CaptureResult["observation"]["abmlRead"]): P
 }
 
 function buildBaselineDiagnostics(options: FinalizeScanObservationOptions) {
-	const { baselineRequested, baseline, baselineResolutionError } = options;
-	if (!baselineRequested) return { diagnostics: undefined, warnings: [] as string[] };
+	const { baselineRequested, baseline, baselineResolutionError, reanchorReason } = options;
+	if (!baselineRequested && !reanchorReason) return { diagnostics: undefined, warnings: [] as string[] };
 	return {
-		diagnostics: { baselineRequested: true as const, baselineApplied: baseline !== undefined, ...(baselineResolutionError ? { baselineResolutionError } : {}) },
+		diagnostics: { baselineRequested, baselineApplied: baseline !== undefined, ...(reanchorReason ? { reanchorReason } : {}), ...(baselineResolutionError ? { baselineResolutionError } : {}) },
 		warnings: !baseline && baselineResolutionError
 			? [`baseline resolution failed — returning full observation instead of diff: ${baselineResolutionError}`]
 			: [],
@@ -71,6 +73,7 @@ type FinalizeScanObservationOptions = {
 	baseline: BaselineResolution | undefined;
 	baselineRequested: boolean;
 	baselineResolutionError: string | undefined;
+	reanchorReason: PageReanchorReason | undefined;
 	snapshotMeta: ReturnType<typeof import("./common.js").currentObserveSnapshotMeta>;
 	timings: ObserveTimingMetrics;
 	providerFailures: ObservationProviderFailure[];
@@ -155,7 +158,7 @@ function buildResultDetails(
 	options: FinalizeScanObservationOptions,
 	diagnostics: ReturnType<typeof buildObserveDiagnostics>,
 ) {
-	const { mode, params, hasNavigation, tabs, bridge, scanMeta, scanPageFingerprint } = options;
+	const { mode, params, hasNavigation, tabs, bridge, scanMeta, scanPageFingerprint, reanchorReason } = options;
 	const { observation } = options.capture;
 	return {
 		mode,
@@ -171,6 +174,7 @@ function buildResultDetails(
 		scan: scanMeta,
 		abml: buildObserveAbmlDetails({ abmlRead: observation.abmlRead, diagnostics: diagnostics.observeTimings }),
 		...(scanPageFingerprint ? { signals: { fingerprint: scanPageFingerprint } } : {}),
+		...(reanchorReason ? { reanchorReason } : {}),
 		diagnostics,
 	};
 }
@@ -206,10 +210,9 @@ function buildArtifactValue(options: FinalizeScanObservationOptions, pageObserva
 }
 
 function buildLedgerProjection(options: FinalizeScanObservationOptions) {
-	const { server, data, bridge, tabId, snapshotMeta } = options;
+	const { server, snapshotMeta } = options;
 	const { attributedEntities } = options.assembly;
-	const pageUrl = typeof data?.url === "string" ? data.url : undefined;
-	const key = pageUrl ? { browserSessionId: bridge.browserSessionId, tabId, navigationEpoch: pageUrl } : undefined;
+	const key = perceptionLedgerKey(pageIdentityFromUnknown(snapshotMeta));
 	const facts = attributedEntities ? factsFromObservedEntities(attributedEntities) : undefined;
 	const frame: CommandPerceptionLedgerFrame | undefined = key && facts
 		? { key, snapshotId: snapshotMeta.snapshotId, capturedAt: snapshotMeta.capturedAt, facts }
@@ -236,6 +239,7 @@ export async function finalizeScanObservation(options: FinalizeScanObservationOp
 	const { causal } = options.providers;
 
 	attachAbmlArtifactHints(summary);
+	if (options.reanchorReason) summary.reanchorReason = options.reanchorReason;
 	const hints = buildScanNextActionHints({ hasBaseline: options.baseline !== undefined, snapshotId: snapshotMeta.snapshotId, recorderActive: options.recorderActive, causal, treeDiff });
 	if (hints.length) summary.nextActions = hints;
 	const artifact = buildObserveArtifactProjection({ summaryRecord: summary, summary, envelopeEntities, envelopeDiff, abmlTreeDiff: treeDiff, artifactRelevance, causalBlock, mode, hasNavigation });
@@ -243,6 +247,7 @@ export async function finalizeScanObservation(options: FinalizeScanObservationOp
 	options.timings.renderMs = elapsedMs(options.renderStartedAt);
 	const diagnostics = buildObserveDiagnostics(options, summary);
 	const pageObservation = buildCanonicalPageObservation(options, summary, diagnostics);
+	if (pageObservation && options.reanchorReason) Object.assign(pageObservation, { reanchorReason: options.reanchorReason });
 	if (pageObservation) summary.pageObservation = pageObservation;
 	const details = buildResultDetails(options, diagnostics);
 	const artifactValue = buildArtifactValue(options, pageObservation, artifact);

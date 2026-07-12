@@ -24,6 +24,7 @@ const navigationListeners: Array<(details: Record<string, unknown> & { tabId?: n
 const sessionStorage: Record<string, unknown> = {};
 let failRunScriptOnce = false;
 let failNotAttachedOnce = false;
+let failAlreadyAttachedOnce = false;
 
 async function debuggerCommandResult(_debuggee: Debuggee, method: string): Promise<unknown> {
 	if (method === "Runtime.compileScript") return { scriptId: "compiled-script-1" };
@@ -82,6 +83,10 @@ const chromeStub = {
 	debugger: {
 		async attach(debuggee: Debuggee) {
 			debuggerAttachments.push(debuggee.tabId);
+			if (failAlreadyAttachedOnce) {
+				failAlreadyAttachedOnce = false;
+				throw new Error("Another debugger is already attached to the tab");
+			}
 		},
 		async detach(debuggee: Debuggee) {
 			debuggerDetaches.push(debuggee.tabId);
@@ -139,6 +144,8 @@ const stateStore = await import("../../src/bridge/extension/service_worker/state
 const cdpCommands = await import("../../src/bridge/extension/service_worker/cdp.ts");
 const frameCommands = await import("../../src/bridge/extension/service_worker/frame.ts");
 const operationTransport = await import("../../src/bridge/extension/service_worker/operation_event_transport.ts");
+const tabSync = await import("../../src/bridge/extension/service_worker/tab_sync.ts");
+const pageIdentity = await import("../../src/bridge/extension/service_worker/page_identity.ts");
 
 function resetCdpFixtures(): void {
 	cdpCommands.browserPilotPersistentCdpBridge.sessions.clear();
@@ -149,6 +156,7 @@ function resetCdpFixtures(): void {
 	debuggerCommands.length = 0;
 	failRunScriptOnce = false;
 	failNotAttachedOnce = false;
+	failAlreadyAttachedOnce = false;
 }
 
 function sender(tabId = 7) {
@@ -383,6 +391,19 @@ test("extension runtime state owner serializes tab queues and reports previous-b
 	await stateStore.forget("ws", "7:lost");
 });
 
+test("hook/session cleanup preserves page identity while actual tab removal forgets it", async () => {
+	pageIdentity.resetBrowserPilotPageIdentitiesForTest();
+	const initial = pageIdentity.ensureBrowserPilotPageIdentity(77, "https://example.test/");
+	tabSync.cleanupBrowserPilotTab(77, "hook_uninstall");
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	const retained = pageIdentity.ensureBrowserPilotPageIdentity(77, "https://example.test/spa");
+	assert.equal(retained?.pageEpoch, initial?.pageEpoch);
+	pageIdentity.forgetBrowserPilotPageIdentity(77);
+	const replaced = pageIdentity.ensureBrowserPilotPageIdentity(77, "https://example.test/");
+	assert.notEqual(replaced?.pageEpoch, initial?.pageEpoch);
+	resetCdpFixtures();
+});
+
 test("persistent CDP send reuses compiled scripts and falls back from stale cache entries", async () => {
 	resetCdpFixtures();
 	const options = { name: "compiled", persistent: true, precompile: true };
@@ -419,6 +440,18 @@ test("persistent CDP send retries detached sessions and releases temporary attac
 	assert.deepEqual(debuggerAttachments, [73]);
 	assert.deepEqual(debuggerDetaches, [73]);
 	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.sessions.size, 0);
+});
+
+test("persistent CDP aliases the default logical session when a named tab debugger is already attached", async () => {
+	resetCdpFixtures();
+	const recorder = await cdpCommands.browserPilotPersistentCdpBridge.send(75, "Network.enable", {}, { name: "network-recorder", persistent: true });
+	assert.equal(recorder.ok, true);
+	failAlreadyAttachedOnce = true;
+	const reload = await cdpCommands.browserPilotPersistentCdpBridge.send(75, "Page.reload", {}, { name: "default", persistent: true });
+	assert.equal(reload.ok, true);
+	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.sessions.has("75:network-recorder"), true);
+	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.sessions.has("75:default"), true);
+	assert.equal(debuggerCommands.some((call) => call.method === "Page.reload"), true);
 });
 
 test("persistent CDP send preserves explicit child-session routing", async () => {

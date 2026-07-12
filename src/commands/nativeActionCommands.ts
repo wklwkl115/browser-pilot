@@ -14,6 +14,9 @@ import type { CommandRegistrarContext } from "./commandShared.js";
 import { withBrowserOperation } from "./browserOperation.js";
 import { browserOperationCommandResult } from "./browserOperationResult.js";
 import { isNativeWriteCommand } from "./operationResolvers.js";
+import type { CommandOwnedActionMetadata, ValidationIssue } from "./commandDefinition.js";
+import { publicActionsForDefinition } from "./publicActionCatalog.js";
+import { assertBridgeBatchSucceeded } from "../utils/bridgeResultValidation.js";
 
 // Registers the three public native bridge-backed tools (network/hook/frame); internal wait
 // primitives remain implementation details of the operation supervisor.
@@ -33,6 +36,7 @@ type ActionToolConfig = {
 	artifactPrefix: string;
 	budgetName: ToolResultBudgetName;
 	defaultDetailLevel?: DetailLevel;
+	actionMetadata?: readonly CommandOwnedActionMetadata[];
 };
 
 function actionTimeoutMs(value: unknown, fallback: number, allowZero: boolean): number {
@@ -64,9 +68,7 @@ function nativeActionErrorResult(error: unknown) {
 }
 
 function isNetworkCaptureReloadAction(commandName: string, action: unknown): boolean {
-	if (commandName !== "browser_network") return false;
-	const normalized = String(action || "").trim().toLowerCase().replace(/[_.-]/g, "");
-	return normalized === "capturereload" || normalized === "reloadcapture" || normalized === "capture";
+	return commandName === "browser_network" && action === "captureReload";
 }
 
 function networkCaptureReloadCommands(body: Record<string, unknown>, tabId: unknown, timeoutMs: number): BridgeCommand[] {
@@ -113,8 +115,26 @@ function networkCaptureReloadSummary(result: BrowserBridgeExecutionResult, comma
 		startBeforeNavigation: commands[0]?.cmd === "network.start" && (commands[1]?.cmd === "wait.navigateAndWait" || commands[1]?.cmd === "cdp"),
 		total: typeof listData.total === "number" ? listData.total : undefined,
 		items: Array.isArray(listData.items) ? listData.items.slice(0, 20) : undefined,
-		recovery: "To capture early page-load requests, use browser_network action=captureReload (or reloadCapture) so network.start runs before reload/navigation; narrow with wait.criteria and then inspect saved.path with browser_artifact mode=paths.",
+		recovery: "To capture early page-load requests, use browser_network action=captureReload so network.start runs before reload/navigation; narrow with wait.criteria and then inspect saved.path with browser_artifact mode=paths.",
 	};
+}
+
+function nativeActionValidation(config: ActionToolConfig, passthroughKeys: readonly string[], args: Record<string, unknown>): ValidationIssue[] {
+	const actions = publicActionsForDefinition({ name: config.name, actionMetadata: config.actionMetadata });
+	const action = actions.find((candidate) => candidate.action === args.action);
+	if (!action) return [{ code: "ACTION_UNKNOWN", path: "/action", message: `Unsupported ${config.name} action "${String(args.action)}"; expected one of ${actions.map((candidate) => candidate.action).join(", ")}` }];
+	const body = isRecord(args.params) ? args.params as Record<string, unknown> : {};
+	const issues: ValidationIssue[] = [];
+	const allowedTopLevel = new Set([...action.required, ...action.requiredAny.flatMap((group) => [...group])]);
+	for (const key of passthroughKeys) {
+		const topProvided = args[key] !== undefined;
+		if (topProvided && body[key] !== undefined) issues.push({ code: "ACTION_ARGUMENT_DUPLICATE", path: `/${key}`, message: `Action argument "${key}" must be supplied either at the top level or in params, not both` });
+		if (topProvided && !allowedTopLevel.has(key)) issues.push({ code: "ACTION_ARGUMENT_NOT_ALLOWED", path: `/${key}`, message: `Argument "${key}" is not valid for action ${action.action}` });
+	}
+	const present = (key: string) => args[key] !== undefined || body[key] !== undefined;
+	for (const key of action.required) if (!present(key)) issues.push({ code: "ACTION_ARGUMENT_REQUIRED", path: `/${key}`, message: `Action ${action.action} requires argument "${key}"` });
+	for (const group of action.requiredAny) if (!group.some(present)) issues.push({ code: "ACTION_ARGUMENT_REQUIRED_ANY", path: "/", message: `Action ${action.action} requires one of ${group.join(", ")}` });
+	return issues;
 }
 
 function mergeCommandDiagnostics(result: BrowserBridgeExecutionResult, diagnostics: Record<string, unknown>): Record<string, unknown> {
@@ -138,9 +158,13 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 		description: config.description,
 		promptSnippet: config.promptSnippet,
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, config.promptGuideline],
+		actionMetadata: config.actionMetadata,
 		parameters: strictCommandParameters(parameterProperties),
+		validateArguments: (args) => nativeActionValidation(config, passthroughKeys, args),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runCommandHandler(async () => {
+				const actionIssues = nativeActionValidation(config, passthroughKeys, params as Record<string, unknown>);
+				if (actionIssues.length) throw new Error(actionIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; "));
 				const server = await ensureStarted();
 				const body = objectParam(params.params);
 				// H2: fold any per-action key passed at the top level into params (params still wins if both set).
@@ -160,11 +184,14 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 				const trackedTabId = resolveLocalTargetTabId(server, tabId, browserSessionId);
 				const resolvedTabId = tabId as string | number | undefined;
 				const dispatch = async () => {
-					return captureReload
-						? await server.sendCommand({ cmd: "batch", commands: networkCaptureReloadCommands(body, resolvedTabId, timeoutMs) }, { browserSessionId, tabId: resolvedTabId, timeoutMs, accessMode: "write" })
-						: config.commandExecutor
-							? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs })
-							: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs });
+					if (captureReload) {
+						const result = await server.sendCommand({ cmd: "batch", commands: networkCaptureReloadCommands(body, resolvedTabId, timeoutMs) }, { browserSessionId, tabId: resolvedTabId, timeoutMs, accessMode: "write" });
+						assertBridgeBatchSucceeded(result, "network.captureReload");
+						return result;
+					}
+					return config.commandExecutor
+						? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs })
+						: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs });
 				};
 				const writeCommand = captureReload || isNativeWriteCommand(command);
 				if (writeCommand) {
@@ -199,10 +226,11 @@ export function defineNetworkCommand(context: CommandRegistrarContext) {
 	defineNativeActionCommand(context, {
 		name: "browser_network",
 		label: "Browser Network",
-		description: "Native Network recorder commands: start, stop, status, clear, list, get, body, exportHar, wait, plus captureReload one-shot reload capture UX.",
+		description: "Native Network recorder commands: start, stop, status, clear, list, get, body, exportHar, plus captureReload one-shot reload capture UX. Internal network wait remains operation-supervisor-only.",
 		promptSnippet: "Control Browser Network recorder and inspect captured requests/bodies/HAR; use action=captureReload to start capture before reload/navigation in one round trip.",
 		promptGuideline: "Use browser_network action=captureReload for page-load traffic so network.start runs before reload/navigation; use low-level start/list/stop for manual recorder control. Prefer this over ad-hoc page fetch monkeypatches.",
-		actionDescription: nativeToolMetadata.nativeActionTools.browser_network.actionDescription,
+		actionDescription: "start | stop | status | clear | list | get | body | exportHar | captureReload",
+		actionMetadata: [{ action: "captureReload", cliAction: "capture-reload", schemaRef: "command:browser_network#captureReload" }],
 		sessionIdDescription: "Recorder session id",
 		commandForAction: networkCommandForAction,
 		budgetName: "browser_network",

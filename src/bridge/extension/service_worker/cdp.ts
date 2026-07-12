@@ -183,10 +183,10 @@ async function browserPilotCdpEnsureSessionCapacity(): Promise<BrowserPilotCdpRe
 function browserPilotCdpReuseAttachedSession(tabId: number, name: string, key: string): BrowserPilotCdpResponse | undefined {
   const existing = browserPilotPersistentCdpSessions.get(browserPilotCdpSessionKey(tabId, 'default'))
     ?? Array.from(browserPilotPersistentCdpSessions.values()).find((rec) => rec?.tabId === tabId);
-  if (!existing) return undefined;
-  existing.lastUsed = browserPilotCdpNow();
-  if (name !== 'default') browserPilotPersistentCdpSessions.set(key, existing);
-  return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: existing.attachedAt, alreadyAttached: true });
+	if (!existing) return undefined;
+	existing.lastUsed = browserPilotCdpNow();
+	browserPilotPersistentCdpSessions.set(key, existing);
+	return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: existing.attachedAt, alreadyAttached: true });
 }
 
 async function browserPilotPersistentCdpAttach(tabId: number, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {

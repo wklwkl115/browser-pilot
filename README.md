@@ -20,14 +20,18 @@ Everything a human can do in DevTools, your agent can do through composable
 > Your agent reads the DOM as a semantic model and writes JavaScript like a developer in DevTools.
 
 ```
+# browser-pilot-executable
 $ browser-pilot observe --json | jq '.summary.pageObservation.gist'
 "Forum topic list with 14 visible rows, navigation sidebar, user menu.
  3 forms (search, login, compose), 47 actionable elements."
 
+# browser-pilot-executable
 $ browser-pilot execute --script "document.querySelector('.topic-list .main-link a').href" --json
-{ "version": "browser-operation/v1", "status": "completed", "completion": { "source": "script-resolved", "evidence": { "result": "https://linux.do/t/welcome/1" } } }
+{ "schema": "browser-operation/v2", "status": "completed", "classification": "success", "completionVerified": true, "ok": true, "continuation": null, "completion": { "source": "script-resolved", "evidence": { "result": "https://linux.do/t/welcome/1" } } }
 
-$ browser-pilot network captureReload --json
+# browser-pilot-executable
+$ browser-pilot network capture-reload --json
+# browser-pilot-executable
 $ browser-pilot artifact --mode paths --path <saved.path-from-network-result> --json
 ```
 
@@ -133,23 +137,28 @@ discoverable while keeping the repository copy as the single source of truth.
 npx browser-pilot connect --wait --json
 
 # Observe the page
+# browser-pilot-executable
 npx browser-pilot observe --json
 
 # Execute JavaScript
+# browser-pilot-executable
 npx browser-pilot execute --script "document.title" --json
 
 # Use files for larger Windows inputs
 npx browser-pilot execute --program @program.json --json
 npx browser-pilot execute --script-file .\snippet.js --json
 
-# Capture page-load network traffic; captureReload starts before reload/navigation
-npx browser-pilot network captureReload --session-id net-1 --json
+# Capture page-load network traffic; capture-reload starts before reload/navigation
+# browser-pilot-executable
+npx browser-pilot network capture-reload --session-id net-1 --json
+# browser-pilot-executable
 npx browser-pilot artifact --mode paths --path <saved.path-from-network-result> --json
 
 # Inspect saved artifact metadata and available JSON paths
 npx browser-pilot artifact --mode inspect --path <saved.path-from-previous-tool> --json
 
 # Take a screenshot
+# browser-pilot-executable
 npx browser-pilot screenshot --json
 
 # Discover commands and flags
@@ -167,17 +176,17 @@ sqli, template, cookie-analyze, http-replay, and callback-oast. Use
 ```
 1. tabs list          → find the target tab
 2. observe            → read the canonical ABML page model
-3. execute transaction → click/type/scroll and synchronously receive browser-operation/v1
+3. execute transaction → click/type/scroll and synchronously receive browser-operation/v2
 4. consume outcome     → distinguish completed/effect_observed/no_effect/stalled/failure states
 5. observe / network / evidence → read the next facts only when the workflow needs them
 6. artifact            → read detailed saved evidence
 ```
 
-State-changing commands arm event listeners before dispatch and remain open until a terminal `browser-operation/v1` status. There is no public `wait` command and agents should not add sleep loops. `completed` requires command-specific evidence; `effect_observed` is not proof of business completion, while `no_effect` and `stalled` are not success. A compact, domain-aware `continuation` field chooses the safe next decision: `observe` for page-state uncertainty, `reacquire_target` when the current target is no longer reliable, `inspect_diagnostics` only when diagnostics exist, `verify_command_state` for non-page uncertainty, and `inspect_artifact` for a compacted successful result. It explicitly prevents blind replay. When completion/effect evidence exceeds the response budget, Browser Pilot preserves the root terminal contract, saves the full redacted outcome once, and returns a typed inline summary plus `saved.path` and verified `artifact_hints`; inspect, list paths, then read the targeted value instead of executing the mutation again. Artifacts that exceed the reader ceiling are not published as unreadable paths. There are no `click` or `type` commands — page actions go through `browser_execute`
+State-changing commands arm event listeners before dispatch and remain open until a terminal `browser-operation/v2` status. There is no public `wait` command and agents should not add sleep loops. Only `completed` means success: it returns `classification:"success"`, `completionVerified:true`, `ok:true`, and CLI exit 0. `effect_observed`, `ambiguous`, `target_lost`, and `deadline` are inconclusive; `no_effect`, `stalled`, and `failed` are failures. Every non-completed terminal status returns `completionVerified:false`, `ok:false`, a stable `OPERATION_*` code, and CLI exit 1. A compact, domain-aware `continuation` field chooses the safe next decision: `observe` for page-state uncertainty, `reacquire_target` when the current target is no longer reliable, `inspect_diagnostics` only when diagnostics exist, `verify_command_state` for non-page uncertainty, and `inspect_artifact` for a compacted successful result. It explicitly prevents blind replay. When completion/effect evidence exceeds the response budget, Browser Pilot preserves the root terminal contract, saves the full redacted outcome once, and returns a typed inline summary plus `saved.path` and verified `artifact_hints`; inspect, list paths, then read the targeted value instead of executing the mutation again. Artifacts that exceed the reader ceiling are not published as unreadable paths. There are no `click` or `type` commands — page actions go through `browser_execute`
 (JavaScript). For trusted-event-gated controls, use `browser_command` with `input.pointer`
 or `input.keys` (CDP physical input).
 
-For page-load request capture, prefer `browser_network action=captureReload` or the CLI `network captureReload` subcommand over a manual `network start` followed by reload; the one-shot flow starts capture before reload/navigation and returns recovery guidance plus a saved artifact path. Use `browser_artifact mode=inspect` or `mode=paths` on the returned `saved.path` to see available JSON paths before targeted reads, instead of guessing paths that may not exist. Bridge responses may include bounded `diagnostics.latency` / temporal telemetry such as elapsed time, deadline, ack state, and queue/runtime timing; these fields are operational diagnostics and do not include command payloads, headers, bodies, or URL query contents.
+For page-load request capture, prefer raw `browser_network action=captureReload` or the canonical CLI `network capture-reload` subcommand over a manual `network start` followed by reload; the one-shot flow starts capture before reload/navigation and returns recovery guidance plus a saved artifact path. CLI action tokens are always kebab-case; raw JSON action values retain the schema spelling, so `network captureReload` is not a CLI alias. Use `browser_artifact mode=inspect` or `mode=paths` on the returned `saved.path` to see available JSON paths before targeted reads, instead of guessing paths that may not exist. Bridge responses may include bounded `diagnostics.latency` / temporal telemetry such as elapsed time, deadline, ack state, and queue/runtime timing; these fields are operational diagnostics and do not include command payloads, headers, bodies, or URL query contents.
 
 ## Key Features
 
@@ -192,10 +201,14 @@ Repeated `browser_observe` on the same tab produces compact delta frames
 (`delta:"session"`) containing only what changed. Multi-step workflows stay
 token-efficient without sacrificing completeness. Default `nextActions` represent an actual recovery or continuation frontier; they do not guess an action from the first entity or duplicate optional artifact reads already described by `artifact_hints`.
 
+Delta and render-cache reuse require the same `browserSessionId + tabId + targetGeneration + pageEpoch`. A top-level document commit or target replacement changes that identity; SPA history updates within the same document do not. If Browser Pilot cannot prove continuity—such as after an extension restart—it discards the old baseline, performs a full observation, and returns a short `reanchorReason` instead of an incorrect delta. URL is reported as a fact but is never used as document identity.
+
 ### Living Tab Sessions
 
 Stable `tabHandle`/`targetRef` identifiers survive tab replacements, MV3 service worker
 restarts, and extension reconnects. Your agent doesn't lose track of tabs.
+
+CLI offline validation and daemon invocation share the same strict validation pipeline. Unknown, internal, removed, and action-incompatible parameters are rejected before normalization; cross-field rules such as execute's exactly-one `script`/`program` input are returned as a complete structured issue list. No invalid parameter is silently stripped.
 
 ### Main Pure-Logic Perception Stages
 

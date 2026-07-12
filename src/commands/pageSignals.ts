@@ -3,6 +3,8 @@ import { isRecord } from "../utils/params.js";
 
 export type PageFingerprint = {
 	changeSeq: number;
+	pageEpoch?: string;
+	documentId?: string;
 	url?: string;
 	title?: string;
 	readyState?: string;
@@ -54,6 +56,8 @@ export function normalizePageFingerprint(value: unknown): PageFingerprint | unde
 	if (!Number.isFinite(changeSeq)) return undefined;
 	return {
 		changeSeq,
+		...(typeof record.pageEpoch === "string" ? { pageEpoch: record.pageEpoch } : {}),
+		...(typeof record.documentId === "string" ? { documentId: record.documentId } : {}),
 		...(typeof record.url === "string" ? { url: record.url } : {}),
 		...(typeof record.title === "string" ? { title: record.title } : {}),
 		...(typeof record.readyState === "string" ? { readyState: record.readyState } : {}),

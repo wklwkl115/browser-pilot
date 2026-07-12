@@ -24,6 +24,9 @@ type MockOptions = {
 	axeThrows?: boolean;
 	readabilityPayload?: unknown;
 	readabilityThrows?: boolean;
+	pageEpoch?: string;
+	targetGeneration?: number;
+	captureTargetPageEpoch?: string;
 };
 
 const articleFixture = {
@@ -83,7 +86,14 @@ function scanData(options: MockOptions): Record<string, unknown> {
 
 function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort & { calls: { refreshTabs: number; getTabs: number; sendCommand: BrowserRuntimeCommand[]; axe: number; readability: number } } {
 	const tabId = options.tabId ?? 7;
-	const tabs = options.tabs ?? [{ id: tabId, tabId, url: options.tabUrl ?? "https://example.test/checkout", title: options.tabTitle ?? "Checkout", active: true }];
+	const tabs = options.tabs ?? [{
+		id: tabId,
+		tabId,
+		url: options.tabUrl ?? "https://example.test/checkout",
+		title: options.tabTitle ?? "Checkout",
+		active: true,
+		...(options.pageEpoch ? { generation: options.targetGeneration ?? 1, targetGeneration: options.targetGeneration ?? 1, pageEpoch: options.pageEpoch, documentId: `document-${options.pageEpoch}` } : {}),
+	}];
 	const fallbackTabs = options.tabFallback ?? tabs;
 	let operationSeq = 0;
 	let snapshotSeq = 0;
@@ -124,6 +134,7 @@ function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort 
 		},
 		async sendCommand(command: BrowserRuntimeCommand) {
 			calls.sendCommand.push(command);
+			if (command.cmd === "content.fingerprint") return { id: "fingerprint", acknowledged: true, tabId, data: { changeSeq: 1, url: options.tabUrl ?? "https://example.test/checkout", ...(options.pageEpoch ? { pageEpoch: options.pageEpoch, documentId: `document-${options.pageEpoch}` } : {}) } } as BrowserBridgeExecutionResult;
 			if (command.cmd === "persistent_cdp" && command.action === "send" && command.cdpMethod === "Runtime.evaluate") {
 				const expression = typeof command.params === "object" && command.params !== null && "expression" in command.params ? String((command.params as { expression?: unknown }).expression) : "";
 				if (expression.includes("axe-core diagnostics timed out") || expression.includes("axe.run")) {
@@ -136,7 +147,24 @@ function createMockServer(options: MockOptions = {}): BrowserCommandRuntimePort 
 					if (options.readabilityThrows) throw Object.assign(new Error("readability provider unavailable"), { code: "READABILITY_PROVIDER_UNAVAILABLE" });
 					return { id: "readability", acknowledged: true, tabId, data: { result: { result: { value: options.readabilityPayload ?? readabilityPayload() } } } } as BrowserBridgeExecutionResult;
 				}
-				return { id: "eval", acknowledged: true, tabId, data: { result: { result: { value: scanData(options) } } } } as BrowserBridgeExecutionResult;
+				return {
+					id: "eval",
+					acknowledged: true,
+					tabId,
+					data: { result: { result: { value: scanData(options) } } },
+					...(options.captureTargetPageEpoch ? {
+						target: {
+							browserSessionId: "session-1",
+							tabId,
+							generation: options.targetGeneration ?? 1,
+							pageEpoch: options.captureTargetPageEpoch,
+							url: options.tabUrl ?? "https://example.test/checkout",
+							source: "explicit",
+							implicit: false,
+							selectionVersionAtDispatch: 1,
+						},
+					} : {}),
+				} as BrowserBridgeExecutionResult;
 			}
 			if (command.cmd === "network.list") return { id: "network", acknowledged: true, tabId, data: { items: [], active: false, lastSeq: 0 } } as BrowserBridgeExecutionResult;
 			if (command.cmd === "hook.collect") return { id: "hook", acknowledged: true, tabId, data: { events: [], active: false, lastSeq: 0 } } as BrowserBridgeExecutionResult;
@@ -269,6 +297,29 @@ test("observe scan runner diagnostics: unavailable artifact marks html and evide
 	assert.equal(((pageObservation.content as Record<string, unknown>).artifact), undefined);
 	const failures = diagnostics.providerFailures as Array<Record<string, unknown>>;
 	assert.equal(failures.some((failure) => failure.provider === "artifact" && failure.code === "ARTIFACT_UNAVAILABLE"), true);
+});
+
+test("observe page identity mismatch discards the baseline and returns a full re-anchor", async () => {
+	const prior = await runObserve({ pageEpoch: "page-old" });
+	const { envelope, pageObservation } = await runObserve({ pageEpoch: "page-new" }, { baseline: prior.pageObservation });
+	const diagnostics = pageObservation.diagnostics as Record<string, unknown>;
+	const baselineDiagnostics = diagnostics.baseline as Record<string, unknown>;
+	assert.equal(envelope.reanchorReason ?? (envelope.summary as Record<string, unknown>).reanchorReason, "document_changed");
+	assert.equal(pageObservation.reanchorReason, "document_changed");
+	assert.equal(baselineDiagnostics.baselineApplied, false);
+	assert.equal(baselineDiagnostics.reanchorReason, "document_changed");
+	assert.equal(pageObservation.diff, undefined);
+	assert.equal(pageObservation.treeDiff, undefined);
+});
+
+test("observe snapshots anchor to the captured target when reconnect races stale tab/fingerprint state", async () => {
+	const prior = await runObserve({ pageEpoch: "page-old" });
+	const { envelope, pageObservation } = await runObserve({ pageEpoch: "page-old", captureTargetPageEpoch: "page-new" }, { baseline: prior.pageObservation });
+	const snapshot = envelope.snapshot as Record<string, unknown>;
+	assert.equal(snapshot.pageEpoch, "page-new");
+	assert.equal(pageObservation.reanchorReason, "identity_unproven");
+	assert.equal(pageObservation.diff, undefined);
+	assert.equal(pageObservation.treeDiff, undefined);
 });
 
 test("observe readability content provider: default canonical observe does not run or imply readability", async () => {

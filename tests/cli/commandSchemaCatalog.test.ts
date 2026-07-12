@@ -9,6 +9,8 @@ import { legacyProjectionDetails, legacyProjectionSummary } from "../../src/comm
 import { getNativeCommandProtocolSchema } from "../../src/types/nativeProtocol.ts";
 import { hasBrowserOperationResolver } from "../../src/commands/operationResolvers.ts";
 import { helpText } from "../../src/apps/cli/help.ts";
+import { publicCommandActionCatalog } from "../../src/commands/publicActionCatalog.ts";
+import { naturalActionForToken } from "../../src/apps/cli/naturalRouting.ts";
 
 function command(name: string) {
 	const def = collectCommandDefs().find((item) => item.name === name);
@@ -73,6 +75,33 @@ test("command catalog characterization: CLI subcommands are derived one-to-one f
 	}
 });
 
+test("public action catalog has one owner per raw/CLI action and canonical kebab-case routes", () => {
+	const definitions = collectCommandDefs();
+	const actions = publicCommandActionCatalog(definitions);
+	assert.ok(actions.length > 0);
+	assert.equal(new Set(actions.map((action) => `${action.commandName}:${action.action}`)).size, actions.length);
+	assert.equal(new Set(actions.map((action) => `${action.commandName}:${action.cliAction}`)).size, actions.length);
+	for (const action of actions) {
+		assert.match(action.cliAction, /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
+		assert.ok(action.schemaRef.length > 0);
+	}
+	const captureReload = actions.find((action) => action.commandName === "browser_network" && action.action === "captureReload");
+	assert.deepEqual(captureReload, {
+		commandName: "browser_network",
+		action: "captureReload",
+		cliAction: "capture-reload",
+		owner: "command",
+		schemaRef: "command:browser_network#captureReload",
+		required: [],
+		requiredAny: [],
+	});
+	const network = buildCliCommands().find((command) => command.name === "browser_network");
+	assert.ok(network);
+	assert.equal(naturalActionForToken(network, "capture-reload"), "captureReload");
+	assert.equal(naturalActionForToken(network, "captureReload"), undefined);
+	assert.equal(naturalActionForToken(network, "capture_reload"), undefined);
+});
+
 test("CLI public help and registry do not expose removed wait or memory commands", () => {
 	assert.equal(buildCliCommands().some((command) => command.subcommand === "wait" || command.name === "browser_wait"), false);
 	assert.equal(buildCliCommands().some((command) => command.subcommand === "memory" || command.name === "browser_memory"), false);
@@ -94,6 +123,11 @@ test("command catalog governance: every public native write command has an opera
 });
 
 test("command schema characterization: every public command has strict object parameters and executable metadata", () => {
+	const retiredOrInternal = new Set([
+		"browserSessionId", "detailLevel", "maxChars", "timeoutMs", "outputPath", "maxBodyBytes", "maxDepth", "maxPages",
+		"maxCases", "maxCandidates", "maxTemplates", "rateLimitPerSecond", "timeoutSeconds", "harMaxEntries", "followRedirects",
+		"maxRedirects", "defaultScheme", "cookieMode", "redact", "monitor", "modeExplicit", "operationId", "toolCallId",
+	]);
 	for (const def of collectCommandDefs()) {
 		assert.equal(typeof def.execute, "function", `${def.name} execute`);
 		assert.equal(typeof def.label, "string", `${def.name} label`);
@@ -105,6 +139,7 @@ test("command schema characterization: every public command has strict object pa
 		assert.equal((def.parameters as { type?: unknown }).type, "object", `${def.name} parameter type`);
 		assert.equal((def.parameters as { additionalProperties?: unknown }).additionalProperties, false, `${def.name} strict parameters`);
 		assert.equal(Object.keys(schemaProperties(def.parameters)).some((name) => name.toLowerCase().includes("memory")), false, `${def.name} memory parameter`);
+		assert.deepEqual(Object.keys(schemaProperties(def.parameters)).filter((name) => retiredOrInternal.has(name)), [], `${def.name} retired/internal parameters`);
 	}
 });
 
@@ -138,7 +173,6 @@ test("command schema characterization: key commands expose expected top-level pa
 		"active",
 		"allowExpired",
 		"browserId",
-		"browserSessionId",
 		"includeBridgePerTab",
 		"incognito",
 		"name",
@@ -226,14 +260,23 @@ test("command schema characterization: browser_observe validation separates cano
 	assert.throws(() => validateObserveParams("content", { diff: true }), /mode=content does not accept diff/);
 });
 
-test("command schema characterization: diff auto-baseline is isolated by browser session and effective tab", () => {
+function pageIdentity(browserSessionId: string, tabId: number, pageEpoch = "page-1") {
+	return { browserSessionId, tabId, targetGeneration: 1, pageEpoch, url: "https://example.test/" };
+}
+
+function pageRuntimeSnapshot(browserSessionId: string, tabId: number, pageEpoch = "page-1") {
+	return { browserSessionId, defaultTabId: tabId, tabs: [{ tabId, generation: 1, targetGeneration: 1, pageEpoch, url: "https://example.test/" }] };
+}
+
+test("command schema characterization: diff auto-baseline is isolated by browser session, effective tab, generation, and page epoch", () => {
 	const snapshots = [
-		{ snapshotId: "other-session", browserSessionId: "session-2", tabId: 7, sourceMode: "scan", capturedAt: 3, ttlMs: 1_000, saved: { path: "other.json" } },
-		{ snapshotId: "same-session-other-tab", browserSessionId: "session-1", tabId: 8, sourceMode: "scan", capturedAt: 2, ttlMs: 1_000, saved: { path: "other-tab.json" } },
-		{ snapshotId: "same-session-same-tab", browserSessionId: "session-1", tabId: 7, sourceMode: "scan", capturedAt: 1, ttlMs: 1_000, saved: { path: "same.json" } },
+		{ snapshotId: "other-session", browserSessionId: "session-2", tabId: 7, pageIdentity: pageIdentity("session-2", 7), sourceMode: "scan", capturedAt: 3, ttlMs: 1_000, saved: { path: "other.json" } },
+		{ snapshotId: "same-session-other-tab", browserSessionId: "session-1", tabId: 8, pageIdentity: pageIdentity("session-1", 8), sourceMode: "scan", capturedAt: 2, ttlMs: 1_000, saved: { path: "other-tab.json" } },
+		{ snapshotId: "same-session-same-tab-wrong-document", browserSessionId: "session-1", tabId: 7, pageIdentity: pageIdentity("session-1", 7, "page-old"), sourceMode: "scan", capturedAt: 4, ttlMs: 1_000, saved: { path: "old-page.json" } },
+		{ snapshotId: "same-session-same-tab", browserSessionId: "session-1", tabId: 7, pageIdentity: pageIdentity("session-1", 7), sourceMode: "scan", capturedAt: 1, ttlMs: 1_000, saved: { path: "same.json" } },
 	];
 	const server = {
-		snapshot: () => ({ browserSessionId: "session-1", defaultTabId: 7 }),
+		snapshot: () => pageRuntimeSnapshot("session-1", 7),
 		resolveTargetTabId: (value: unknown, _browserSessionId?: string) => typeof value === "number" ? value : undefined,
 		listObservationSnapshots: () => snapshots,
 	};
@@ -242,12 +285,12 @@ test("command schema characterization: diff auto-baseline is isolated by browser
 
 test("command schema characterization: diff auto-baseline selects the most recent matching snapshot for same session+tab", () => {
 	const snapshots = [
-		{ snapshotId: "same-session-same-tab-older", browserSessionId: "session-A", tabId: 5, sourceMode: "scan", capturedAt: 50, ttlMs: 300_000, saved: { path: "older.json" } },
-		{ snapshotId: "same-session-same-tab-oldest", browserSessionId: "session-A", tabId: 5, sourceMode: "scan", capturedAt: 10, ttlMs: 300_000, saved: { path: "oldest.json" } },
-		{ snapshotId: "same-session-same-tab-newest", browserSessionId: "session-A", tabId: 5, sourceMode: "scan", capturedAt: 100, ttlMs: 300_000, saved: { path: "newest.json" } },
+		{ snapshotId: "same-session-same-tab-older", browserSessionId: "session-A", tabId: 5, pageIdentity: pageIdentity("session-A", 5), sourceMode: "scan", capturedAt: 50, ttlMs: 300_000, saved: { path: "older.json" } },
+		{ snapshotId: "same-session-same-tab-oldest", browserSessionId: "session-A", tabId: 5, pageIdentity: pageIdentity("session-A", 5), sourceMode: "scan", capturedAt: 10, ttlMs: 300_000, saved: { path: "oldest.json" } },
+		{ snapshotId: "same-session-same-tab-newest", browserSessionId: "session-A", tabId: 5, pageIdentity: pageIdentity("session-A", 5), sourceMode: "scan", capturedAt: 100, ttlMs: 300_000, saved: { path: "newest.json" } },
 	];
 	const server = {
-		snapshot: () => ({ browserSessionId: "session-A", defaultTabId: 5 }),
+		snapshot: () => pageRuntimeSnapshot("session-A", 5),
 		resolveTargetTabId: (value: unknown, _browserSessionId?: string) => typeof value === "number" ? value : undefined,
 		listObservationSnapshots: () => snapshots,
 	};
@@ -256,11 +299,11 @@ test("command schema characterization: diff auto-baseline selects the most recen
 
 test("command schema characterization: diff auto-baseline does not cross session boundary even with same tabId", () => {
 	const snapshots = [
-		{ snapshotId: "wrong-session-newer", browserSessionId: "session-X", tabId: 3, sourceMode: "scan", capturedAt: 200, ttlMs: 300_000, saved: { path: "wrong.json" } },
-		{ snapshotId: "correct-session", browserSessionId: "session-Y", tabId: 3, sourceMode: "scan", capturedAt: 100, ttlMs: 300_000, saved: { path: "correct.json" } },
+		{ snapshotId: "wrong-session-newer", browserSessionId: "session-X", tabId: 3, pageIdentity: pageIdentity("session-X", 3), sourceMode: "scan", capturedAt: 200, ttlMs: 300_000, saved: { path: "wrong.json" } },
+		{ snapshotId: "correct-session", browserSessionId: "session-Y", tabId: 3, pageIdentity: pageIdentity("session-Y", 3), sourceMode: "scan", capturedAt: 100, ttlMs: 300_000, saved: { path: "correct.json" } },
 	];
 	const server = {
-		snapshot: () => ({ browserSessionId: "session-Y", defaultTabId: 3 }),
+		snapshot: () => pageRuntimeSnapshot("session-Y", 3),
 		resolveTargetTabId: (value: unknown, _browserSessionId?: string) => typeof value === "number" ? value : undefined,
 		listObservationSnapshots: () => snapshots,
 	};
@@ -269,12 +312,12 @@ test("command schema characterization: diff auto-baseline does not cross session
 
 test("command schema characterization: diff auto-baseline skips expired snapshots and snapshots without saved.path", () => {
 	const snapshots = [
-		{ snapshotId: "no-saved-path", browserSessionId: "session-Z", tabId: 1, sourceMode: "scan", capturedAt: 150, ttlMs: 300_000, saved: undefined },
-		{ snapshotId: "valid-same-session-tab", browserSessionId: "session-Z", tabId: 1, sourceMode: "scan", capturedAt: 100, ttlMs: 300_000, saved: { path: "valid.json" } },
-		{ snapshotId: "expired-same-session-tab", browserSessionId: "session-Z", tabId: 1, sourceMode: "scan", capturedAt: 200, ttlMs: 1_000, expired: true, saved: { path: "expired.json" } },
+		{ snapshotId: "no-saved-path", browserSessionId: "session-Z", tabId: 1, pageIdentity: pageIdentity("session-Z", 1), sourceMode: "scan", capturedAt: 150, ttlMs: 300_000, saved: undefined },
+		{ snapshotId: "valid-same-session-tab", browserSessionId: "session-Z", tabId: 1, pageIdentity: pageIdentity("session-Z", 1), sourceMode: "scan", capturedAt: 100, ttlMs: 300_000, saved: { path: "valid.json" } },
+		{ snapshotId: "expired-same-session-tab", browserSessionId: "session-Z", tabId: 1, pageIdentity: pageIdentity("session-Z", 1), sourceMode: "scan", capturedAt: 200, ttlMs: 1_000, expired: true, saved: { path: "expired.json" } },
 	];
 	const server = {
-		snapshot: () => ({ browserSessionId: "session-Z", defaultTabId: 1 }),
+		snapshot: () => pageRuntimeSnapshot("session-Z", 1),
 		resolveTargetTabId: (value: unknown, _browserSessionId?: string) => typeof value === "number" ? value : undefined,
 		listObservationSnapshots: () => snapshots,
 	};
@@ -283,10 +326,10 @@ test("command schema characterization: diff auto-baseline skips expired snapshot
 
 test("command schema characterization: diff auto-baseline returns undefined when no matching snapshot exists", () => {
 	const snapshots = [
-		{ snapshotId: "other-session-only", browserSessionId: "session-other", tabId: 7, sourceMode: "scan", capturedAt: 100, ttlMs: 300_000, saved: { path: "other.json" } },
+		{ snapshotId: "other-session-only", browserSessionId: "session-other", tabId: 7, pageIdentity: pageIdentity("session-other", 7), sourceMode: "scan", capturedAt: 100, ttlMs: 300_000, saved: { path: "other.json" } },
 	];
 	const server = {
-		snapshot: () => ({ browserSessionId: "session-new", defaultTabId: 7 }),
+		snapshot: () => pageRuntimeSnapshot("session-new", 7),
 		resolveTargetTabId: (value: unknown, _browserSessionId?: string) => typeof value === "number" ? value : undefined,
 		listObservationSnapshots: () => snapshots,
 	};

@@ -10,7 +10,6 @@ import {
 	kebabParam,
 	naturalActionMetas,
 	naturalRouting,
-	nativeActionToolMeta,
 	supportsNaturalActionRouting,
 	type ActionParamMeta,
 	type AgentCliRouting,
@@ -101,7 +100,7 @@ function actionParamNames(action: ActionParamMeta): Set<string> {
 
 export function actionSpecificFlagSpecs(cmd: CliCommand, actionName: string): FlagSpec[] {
 	const specs = buildCommandFlagSpecs(cmd);
-	const action = nativeActionToolMeta(cmd.name)?.actions?.find((item) => item.action === actionName);
+	const action = naturalActionMetas(cmd).find((item) => item.action === actionName);
 	if (!action) return specs;
 	const actionParams = actionParamNames(action);
 	const common = new Set(["tabId", "targetRef", "sessionId"]);

@@ -4,6 +4,47 @@ import { readBrowserArtifact } from "../artifacts/artifactReader.js";
 import { defineBrowserCommand, inlineJsonCommandResult, runCommandHandler } from "./commandRuntime.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { strictCommandParameters } from "./commandShared.js";
+import type { ValidationIssue } from "./commandDefinition.js";
+
+function nonEmptyString(value: unknown): boolean {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
+function validateArtifactTargets(hasPath: boolean, hasMultiTarget: boolean, mode: string | undefined): ValidationIssue[] {
+	const issues: ValidationIssue[] = [];
+	if (!hasPath && !hasMultiTarget) issues.push({ code: "ARTIFACT_TARGET_REQUIRED", path: "/", message: "browser_artifact requires path, paths, root, or glob" });
+	if (hasPath && hasMultiTarget) issues.push({ code: "ARTIFACT_TARGET_CONFLICT", path: "/path", message: "browser_artifact path cannot be combined with paths, root, or glob" });
+	if (hasMultiTarget && mode !== undefined && mode !== "search") issues.push({ code: "ARTIFACT_MULTI_SEARCH_MODE_INVALID", path: "/mode", message: "browser_artifact paths/root/glob are only valid for mode=search" });
+	return issues;
+}
+
+function validateArtifactSearch(hasMultiTarget: boolean, hasQuery: boolean, mode: string | undefined): ValidationIssue[] {
+	const issues: ValidationIssue[] = [];
+	if ((hasMultiTarget || mode === "search") && !hasQuery) issues.push({ code: "ARTIFACT_SEARCH_QUERY_REQUIRED", path: "/query", message: "browser_artifact search requires a non-empty query" });
+	if (hasQuery && mode !== undefined && mode !== "search") issues.push({ code: "ARTIFACT_QUERY_REQUIRES_SEARCH_MODE", path: "/query", message: `browser_artifact query is only valid for mode=search, not mode=${mode}` });
+	return issues;
+}
+
+function validateArtifactJson(hasJsonPath: boolean, hasPick: boolean, mode: string | undefined): ValidationIssue[] {
+	const issues: ValidationIssue[] = [];
+	if (hasJsonPath && hasPick) issues.push({ code: "ARTIFACT_JSON_TARGET_CONFLICT", path: "/", message: "browser_artifact accepts jsonPath or pick, not both" });
+	if ((hasJsonPath || hasPick) && mode !== undefined && mode !== "json") issues.push({ code: "ARTIFACT_JSON_MODE_REQUIRED", path: "/mode", message: "browser_artifact jsonPath/pick requires mode=json or omitted mode" });
+	return issues;
+}
+
+export function validateArtifactArguments(args: Record<string, unknown>): ValidationIssue[] {
+	const hasPath = nonEmptyString(args.path);
+	const hasMultiTarget = (Array.isArray(args.paths) && args.paths.length > 0) || nonEmptyString(args.root) || nonEmptyString(args.glob);
+	const hasQuery = nonEmptyString(args.query);
+	const mode = typeof args.mode === "string" ? args.mode : undefined;
+	const hasJsonPath = nonEmptyString(args.jsonPath);
+	const hasPick = Array.isArray(args.pick) && args.pick.length > 0;
+	return [
+		...validateArtifactTargets(hasPath, hasMultiTarget, mode),
+		...validateArtifactSearch(hasMultiTarget, hasQuery, mode),
+		...validateArtifactJson(hasJsonPath, hasPick, mode),
+	];
+}
 
 export function defineArtifactCommand({ commands }: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
@@ -44,6 +85,7 @@ export function defineArtifactCommand({ commands }: CommandRegistrarContext) {
 			maxMatchesPerFile: Type.Optional(Type.Number({ description: "Maximum search matches retained per file in bounded multi-artifact search." })),
 			maxTotalMatches: Type.Optional(Type.Number({ description: "Maximum total matches retained across all files in bounded multi-artifact search." })),
 		}),
+		validateArguments: validateArtifactArguments,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runCommandHandler(async () => {
 				const result = await readBrowserArtifact(params, ctx);

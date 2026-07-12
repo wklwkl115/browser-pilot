@@ -81,8 +81,8 @@ export async function runSelftestCommand(argv: string[]): Promise<number> {
 
 async function createSelftestTab(steps: Array<Record<string, unknown>>): Promise<number> {
 	const create = await invokeTool("browser_tabs", { action: "create", url: "about:blank", active: true }, process.cwd());
-	const createEnv = parseSelftestJson(requireSelftestToolOk("create-temp-tab", create), "create-temp-tab") as { version?: string; status?: string; target?: { tabId?: number } };
-	if (createEnv.version !== "browser-operation/v1" || createEnv.status !== "completed") throw new Error(`create-temp-tab did not complete: ${compactText(JSON.stringify(createEnv))}`);
+	const createEnv = parseSelftestJson(requireSelftestToolOk("create-temp-tab", create), "create-temp-tab") as { schema?: string; status?: string; completionVerified?: boolean; target?: { tabId?: number } };
+	if (createEnv.schema !== "browser-operation/v2" || createEnv.status !== "completed" || createEnv.completionVerified !== true) throw new Error(`create-temp-tab did not complete: ${compactText(JSON.stringify(createEnv))}`);
 	const tabId = createEnv.target?.tabId;
 	steps.push({ step: "create-temp-tab", ok: typeof tabId === "number", tabId });
 	if (typeof tabId !== "number") throw new Error("selftest could not create a temporary tab");
@@ -92,8 +92,8 @@ async function createSelftestTab(steps: Array<Record<string, unknown>>): Promise
 async function executeSelftest(tabId: number, steps: Array<Record<string, unknown>>): Promise<void> {
 	const exec = await invokeTool("browser_execute", { tabId, script: "document.title='Browser Pilot Selftest';document.body.textContent='browser-pilot selftest ok';({title:document.title,text:document.body.textContent})" }, process.cwd());
 	const execText = requireSelftestToolOk("execute", exec);
-	const execOutcome = parseSelftestJson(execText, "execute") as { version?: string; status?: string };
-	const ok = execOutcome.version === "browser-operation/v1" && execOutcome.status === "completed" && execText.includes("browser-pilot selftest ok");
+	const execOutcome = parseSelftestJson(execText, "execute") as { schema?: string; status?: string; completionVerified?: boolean };
+	const ok = execOutcome.schema === "browser-operation/v2" && execOutcome.status === "completed" && execOutcome.completionVerified === true && execText.includes("browser-pilot selftest ok");
 	steps.push({ step: "execute", ok });
 	if (!ok) throw new Error(`execute did not return expected marker: ${compactText(execText)}`);
 }
@@ -108,8 +108,8 @@ async function observeSelftest(tabId: number, steps: Array<Record<string, unknow
 
 async function closeSelftestTab(tabId: number, steps: Array<Record<string, unknown>>): Promise<void> {
 	const close = await invokeTool("browser_tabs", { action: "close", tabId }, process.cwd());
-	const closeOutcome = parseSelftestJson(requireSelftestToolOk("close-temp-tab", close), "close-temp-tab") as { version?: string; status?: string };
-	if (closeOutcome.version !== "browser-operation/v1" || closeOutcome.status !== "completed") throw new Error(`close-temp-tab did not complete: ${compactText(JSON.stringify(closeOutcome))}`);
+	const closeOutcome = parseSelftestJson(requireSelftestToolOk("close-temp-tab", close), "close-temp-tab") as { schema?: string; status?: string; completionVerified?: boolean };
+	if (closeOutcome.schema !== "browser-operation/v2" || closeOutcome.status !== "completed" || closeOutcome.completionVerified !== true) throw new Error(`close-temp-tab did not complete: ${compactText(JSON.stringify(closeOutcome))}`);
 	steps.push({ step: "close-temp-tab", ok: true, tabId });
 }
 

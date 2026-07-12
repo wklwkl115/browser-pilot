@@ -3,14 +3,19 @@ import test from "node:test";
 import { SessionOperationRegistry } from "../../src/kernels/session/operationRegistry.ts";
 import { resolveBrowserOperationCompletion } from "../../src/commands/operationResolvers.ts";
 import { classifyBrowserOperationLiveness } from "../../src/kernels/session/browserOperationState.ts";
-import type { BrowserOperationOutcome } from "../../src/kernels/session/browserOperation.ts";
+import {
+	BROWSER_OPERATION_SCHEMA,
+	classifyBrowserOperationStatus,
+	type BrowserOperationOutcome,
+} from "../../src/kernels/session/browserOperation.ts";
 
 function outcome(operationId: string, status: BrowserOperationOutcome["status"] = "effect_observed"): BrowserOperationOutcome {
 	return {
-		version: "browser-operation/v1",
+		schema: BROWSER_OPERATION_SCHEMA,
 		operationId,
 		commandName: "browser_execute",
 		status,
+		...classifyBrowserOperationStatus(status),
 		target: { browserSessionId: "session-1", tabId: 7, generation: 2 },
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 1, finishedAt: 2 },
 		signals: {},
@@ -89,4 +94,6 @@ test("operation completion resolvers require tab and upload result markers beyon
 	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_command", command: "tabs", action: "switch", result: { acknowledged: true, data: { active: true, tabId: 8 } } })?.source, "tab-switch");
 	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_tabs", action: "close", result: { acknowledged: true, data: { tabId: 7 } } })?.source, "tab-close");
 	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_upload", result: { acknowledged: true, data: { uploaded: true, files_count: 2, selector: "#file" } } })?.source, "upload-applied");
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_network", command: "network.captureReload", result: { data: { results: [{ ok: true }, { ok: false, error: "reload failed" }, { ok: true }] } } }), undefined);
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_network", command: "network.captureReload", result: { data: { results: [{ ok: true }, { ok: true }, { ok: true }, { ok: true }] } } })?.source, "network-capture-completed");
 });

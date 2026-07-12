@@ -1,13 +1,8 @@
-export type PerceptionLedgerKey = {
-	browserSessionId?: string;
-	tabId?: number;
-	navigationEpoch?: string;
-};
+import type { PageIdentity } from "./pageIdentity.js";
 
-export type PerceptionObjectiveKey = {
-	tabId?: number;
-	navigationEpoch?: string;
-};
+export type PerceptionLedgerKey = Pick<PageIdentity, "browserSessionId" | "tabId" | "targetGeneration" | "pageEpoch">;
+
+export type PerceptionObjectiveKey = PerceptionLedgerKey;
 
 export type PerceptionLedgerFactState = {
 	versionStamp: string;
@@ -69,11 +64,11 @@ const MAX_FRAMES_PER_SESSION_TAB = 8;
 const MAX_TRACE_TERMS_PER_SESSION = 32;
 
 function frameScopeKey(key: PerceptionLedgerKey): string {
-	return [key.browserSessionId || "default", key.tabId ?? "tab"].join("\u0000");
+	return [key.browserSessionId, key.tabId, key.targetGeneration, key.pageEpoch].join("\u0000");
 }
 
 function keyString(key: PerceptionLedgerKey): string {
-	return [frameScopeKey(key), key.navigationEpoch || "unknown"].join("\u0000");
+	return frameScopeKey(key);
 }
 
 function traceKey(browserSessionId?: string): string {
@@ -81,11 +76,11 @@ function traceKey(browserSessionId?: string): string {
 }
 
 function objectiveKey(key: PerceptionLedgerKey): PerceptionObjectiveKey {
-	return { tabId: key.tabId, navigationEpoch: key.navigationEpoch };
+	return { ...key };
 }
 
 function objectiveKeyString(key: PerceptionObjectiveKey): string {
-	return [key.tabId ?? "tab", key.navigationEpoch || "unknown"].join("\u0000");
+	return keyString(key);
 }
 
 function objectiveFingerprint(frame: PerceptionLedgerFrame): string {
@@ -137,7 +132,7 @@ export class PerceptionLedger {
 			},
 		};
 		if (!priorObjective || !objectiveEquivalent(priorObjective, frame)) {
-			this.objectiveFrames.set(objectiveMapKey, { ...recorded, key: { tabId: objective.tabId, navigationEpoch: objective.navigationEpoch } });
+			this.objectiveFrames.set(objectiveMapKey, { ...recorded, key: { ...objective } });
 			const existing = this.objectiveOrder.indexOf(objectiveMapKey);
 			if (existing >= 0) this.objectiveOrder.splice(existing, 1);
 			this.objectiveOrder.push(objectiveMapKey);

@@ -37,3 +37,13 @@ export function assertBridgeCommandSucceeded(result: { data?: unknown }, command
 	suppressErrorStack(error);
 	throw error;
 }
+
+/** Reject a transport-successful batch when any individual command failed. */
+export function assertBridgeBatchSucceeded(result: { data?: unknown }, command: string): void {
+	const data = recordValue(result.data);
+	const results = Array.isArray(data?.results) ? data.results : undefined;
+	if (!results) return;
+	const failedIndex = results.findIndex((item) => recordValue(item)?.ok === false);
+	if (failedIndex < 0) return;
+	assertBridgeCommandSucceeded({ data: results[failedIndex] }, `${command}[${failedIndex}]`);
+}

@@ -1,16 +1,22 @@
 /**
  * Command parameter validation (TypeBox-based).
  *
- * Replicates the host framework's Value.Convert + Check behavior so callers get
- * the same coercion and rejection semantics without going through CLI/daemon
- * transport.
+ * Checks already-normalized values against the command schema. Canonical
+ * coercion belongs to the CLI parser or an explicit command-owned
+ * `coerceArguments` hook; daemon JSON is never generically converted here.
  */
 import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
 
 export type CommandValidationResult =
 	| { ok: true; args: Record<string, unknown> }
-	| { ok: false; error: string };
+	| { ok: false; error: string; issues: Array<{ code: string; path: string; message: string }> };
+
+function pointer(path: unknown): string {
+	const raw = typeof path === "string" ? path : "/";
+	if (!raw || raw === "/") return "/";
+	return raw.startsWith("/") ? raw : `/${raw}`;
+}
 
 function describeUnknownProperties(schema: TSchema, value: unknown): string | undefined {
 	const s = schema as { additionalProperties?: unknown; properties?: Record<string, unknown> };
@@ -50,10 +56,18 @@ export function validateCommandArgs(
 	const base = rawArgs != null && typeof rawArgs === "object" ? rawArgs : {};
 
 	try {
-		const converted = Value.Convert(tSchema, structuredClone(base));
+		const converted = structuredClone(base);
 
 		if (!Value.Check(tSchema, converted)) {
 			const errors = [...Value.Errors(tSchema, converted)];
+			const issues = errors.map((entry) => {
+				const record = entry as unknown as Record<string, unknown>;
+				return {
+					code: record.keyword === "required" ? "SCHEMA_REQUIRED" : "SCHEMA_VALIDATION_FAILED",
+					path: pointer(record.instancePath),
+					message: String(entry.message),
+				};
+			});
 			const detail = errors
 				.slice(0, 5)
 				.map((e) => {
@@ -64,11 +78,12 @@ export function validateCommandArgs(
 			const unknownNote = describeUnknownProperties(tSchema, converted);
 			const missingNote = describeMissingRequired(tSchema, converted);
 			const friendly = unknownNote ? `${unknownNote}. ${detail}` : missingNote ?? detail;
-			return { ok: false, error: `Invalid parameters — ${friendly}` };
+			return { ok: false, error: `Invalid parameters — ${friendly}`, issues };
 		}
 
 		return { ok: true, args: converted as Record<string, unknown> };
 	} catch (err) {
-		return { ok: false, error: `Parameter validation error: ${String(err)}` };
+		const message = `Parameter validation error: ${String(err)}`;
+		return { ok: false, error: message, issues: [{ code: "SCHEMA_VALIDATION_ERROR", path: "/", message }] };
 	}
 }

@@ -1,6 +1,7 @@
 import type { CliCommand } from "./registry.js";
 import type { GlobalFlags } from "./flags.js";
 import { nativeToolMetadata } from "../../commands/nativeActionMetadata.js";
+import { kebabCaseAction, publicActionsForDefinition } from "../../commands/publicActionCatalog.js";
 
 export type ActionParamMeta = { action: string; aliases?: readonly string[]; required?: readonly string[]; requiredAny?: readonly (readonly string[])[]; notes?: string };
 export type NativeActionToolMeta = { actionDescription?: string; actions?: readonly ActionParamMeta[] };
@@ -11,22 +12,12 @@ export type AgentCliRouting =
 	| { mode: "advancedCompatibility"; recommended: false; interface: "--action/--params"; reason: string[] }
 	| { mode: "nativeEscapeHatch"; recommended: false; interface: "command --command"; reason: string[] };
 
-const NATURAL_ACTION_ALLOWLIST: Record<string, readonly string[]> = {
-	browser_network: ["start", "stop", "status", "clear", "list", "get", "body", "exportHar", "wait"],
-	browser_frame: ["list", "evaluate"],
-	browser_hook: ["listTargets", "installTargets", "listSessions", "install", "status", "collect", "clear", "pause", "resume", "uninstall", "performance"],
-};
-
 export function kebabAction(action: string): string {
-	return action.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`).replace(/_/g, "-").toLowerCase();
+	return kebabCaseAction(action);
 }
 
 export function kebabParam(name: string): string {
 	return name.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
-}
-
-function normalizeActionName(value: string): string {
-	return value.replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
 export function nativeActionToolMeta(commandName: string): NativeActionToolMeta | undefined {
@@ -35,28 +26,25 @@ export function nativeActionToolMeta(commandName: string): NativeActionToolMeta 
 }
 
 export function supportsNaturalActionRouting(cmd: CliCommand): boolean {
-	return Boolean(NATURAL_ACTION_ALLOWLIST[cmd.name]?.length);
+	return publicActionsForDefinition(cmd.def).length > 0;
 }
 
 export function naturalActionMetas(cmd: CliCommand): readonly ActionParamMeta[] {
-	const allowed = NATURAL_ACTION_ALLOWLIST[cmd.name];
-	if (!allowed?.length) return [];
-	const allowedSet = new Set(allowed);
-	return (nativeActionToolMeta(cmd.name)?.actions ?? []).filter((action) => allowedSet.has(action.action));
+	return publicActionsForDefinition(cmd.def).map((action) => ({
+		action: action.action,
+		required: action.required,
+		requiredAny: action.requiredAny,
+		...(action.notes ? { notes: action.notes } : {}),
+	}));
 }
 
 export function naturalActionForToken(cmd: CliCommand, token: string): string | undefined {
 	if (!supportsNaturalActionRouting(cmd)) return undefined;
-	const wanted = normalizeActionName(token);
-	for (const action of naturalActionMetas(cmd)) {
-		const names = [action.action, kebabAction(action.action), ...(action.aliases ?? [])];
-		if (names.some((name) => normalizeActionName(name) === wanted)) return action.action;
-	}
-	return undefined;
+	return publicActionsForDefinition(cmd.def).find((action) => action.cliAction === token)?.action;
 }
 
 function actionToolCompatibilityRouting(cmd: CliCommand): AgentCliRouting | undefined {
-	if (!nativeActionToolMeta(cmd.name)?.actions?.length) return undefined;
+	if (!publicActionsForDefinition(cmd.def).length) return undefined;
 	return {
 		mode: "advancedCompatibility",
 		recommended: false,
@@ -90,7 +78,7 @@ export function naturalRouting(action: string): AgentCliRouting {
 }
 
 export function legacyActionUsed(cmd: CliCommand, argv: string[]): boolean {
-	return Boolean(nativeActionToolMeta(cmd.name)?.actions?.length) && hasFlag(argv, "--action");
+	return publicActionsForDefinition(cmd.def).length > 0 && hasFlag(argv, "--action");
 }
 
 function hasFlag(argv: string[], flag: string): boolean {

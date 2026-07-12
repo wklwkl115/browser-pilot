@@ -10,6 +10,7 @@ import { browserOperationCommandResult } from "./browserOperationResult.js";
 import { commandMaxChars, commandTimeoutMs, defineBrowserCommand, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
+import type { ValidationIssue } from "./commandDefinition.js";
 
 const PROGRAM_MAX_FRAMES = 60;
 
@@ -49,6 +50,26 @@ function prepareExecute(params: ExecuteParams): PreparedExecute {
 	return { mode: "javascript", script };
 }
 
+export function validateExecuteArguments(args: Record<string, unknown>): ValidationIssue[] {
+	const hasScript = typeof args.script === "string" && args.script.length > 0;
+	const hasProgram = Array.isArray(args.program) && args.program.length > 0;
+	if (hasScript === hasProgram) {
+		return [{
+			code: "EXECUTE_EXACTLY_ONE_INPUT",
+			path: "/",
+			message: hasScript ? "browser_execute accepts exactly one of script or program" : "browser_execute requires exactly one of script or program",
+		}];
+	}
+	if (hasProgram) {
+		const program = args.program as unknown[];
+		if (program.length > PROGRAM_MAX_FRAMES) return [{ code: "EXECUTE_PROGRAM_TOO_LARGE", path: "/program", message: `browser_execute program exceeds ${PROGRAM_MAX_FRAMES} frame limit (got ${program.length})` }];
+		const validation = validateProgram(program);
+		if (!validation.ok) return [{ code: "EXECUTE_PROGRAM_INVALID", path: validation.step === undefined ? "/program" : `/program/${validation.step}`, message: validation.error }];
+	}
+	if (hasScript && detectCommandLikeScript(args.script as string)) return [{ code: "EXECUTE_COMMAND_SHAPED_SCRIPT", path: "/script", message: "browser_execute only accepts JavaScript; use browser_command for bridge commands" }];
+	return [];
+}
+
 async function executePrepared(
 	prepared: PreparedExecute,
 	server: Awaited<ReturnType<CommandRegistrarContext["ensureStarted"]>>,
@@ -76,8 +97,8 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 	defineBrowserCommand(commands, {
 		name: "browser_execute",
 		label: "Browser Execute",
-		description: "Execute JavaScript or a trusted physical-input program as one event-driven browser operation transaction and return browser-operation/v1 at its proven terminal state.",
-		promptSnippet: "Execute one JavaScript or trusted input transaction; consume its browser-operation/v1 outcome, continuation, and artifact hints without a follow-up wait or sleep.",
+		description: "Execute JavaScript or a trusted physical-input program as one event-driven browser operation transaction and return browser-operation/v2 at its proven terminal state.",
+		promptSnippet: "Execute one JavaScript or trusted input transaction; consume its browser-operation/v2 outcome, continuation, and artifact hints without a follow-up wait or sleep.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
 			"Use script for JavaScript or program for trusted CDP mouse/key/text frames; pass exactly one.",
@@ -89,6 +110,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 			program: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), { description: "Trusted CDP input/eval frames. Physical frames require an observed browser effect." })),
 			...sharedTabScopedToolParams(),
 		}),
+		validateArguments: validateExecuteArguments,
 		async execute(_toolCallId, params: ExecuteParams, signal, onUpdate, ctx) {
 			return await runCommandHandler(async () => {
 				const prepared = prepareExecute(params);

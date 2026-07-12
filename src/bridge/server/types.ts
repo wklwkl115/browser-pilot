@@ -36,6 +36,8 @@ export type BrowserTabSession = {
 	logicalTabId: string;
 	tabHandle: string;
 	generation: number;
+	pageEpoch?: string;
+	documentId?: string;
 	url: string;
 	title: string;
 	active?: boolean;
@@ -54,6 +56,7 @@ export type BrowserTabSession = {
 
 export type BrowserTabInfo = Omit<BrowserTabSession, "client"> & {
 	targetRef: string;
+	targetGeneration: number;
 };
 
 export type BrowserAutomationSession = {

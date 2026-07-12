@@ -1,6 +1,8 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { createCodedError } from "../../utils/codedError.js";
 import { resolveLocalTargetTabId, targetTabId } from "../commandRuntime.js";
+import type { PageIdentity } from "../../kernels/session/pageIdentity.js";
+import { currentPageIdentity } from "./pageIdentity.js";
 
 export const DEFAULT_CONTENT_TIMEOUT_MS = 35_000;
 export const MIN_CONTENT_TIMEOUT_MS = 100;
@@ -63,13 +65,19 @@ export function withObservationMeta(summary: Record<string, unknown>, mode: Obse
 	return { mode, sourceMode, ...summary };
 }
 
-export function currentObserveSnapshotMeta(server: BrowserCommandRuntimePort, params: ObserveToolParams, sourceMode: "scan" | "content" | "html", savedPath: string | undefined, url: string | undefined, networkSeq?: number, hookSeq?: number) {
+export function currentObserveSnapshotMeta(server: BrowserCommandRuntimePort, params: ObserveToolParams, sourceMode: "scan" | "content" | "html", savedPath: string | undefined, url: string | undefined, networkSeq?: number, hookSeq?: number, identityOverride?: PageIdentity) {
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const rawTargetRef = targetTabId(params);
+	const tabId = resolveLocalTargetTabId(server, rawTargetRef, params.browserSessionId) ?? bridge.defaultTabId;
+	const pageIdentity = identityOverride ?? currentPageIdentity(server, { browserSessionId: params.browserSessionId, tabId });
 	return server.createObservationSnapshot({
 		browserSessionId: bridge.browserSessionId,
-		tabId: resolveLocalTargetTabId(server, rawTargetRef, params.browserSessionId) ?? bridge.defaultTabId,
+		tabId,
 		url,
+		...(pageIdentity ? {
+			targetGeneration: pageIdentity.targetGeneration,
+			pageEpoch: pageIdentity.pageEpoch,
+		} : {}),
 		frameScope: "tab",
 		selectionVersion: bridge.selectionVersion,
 		sourceMode,
