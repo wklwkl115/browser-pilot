@@ -7,6 +7,7 @@ Agent operating guide for Browser Pilot.
 - `AGENTS.md`: agent routing and operating loop.
 - `CODE_WIKI.md`: architecture/development map, module ownership, runtime flow, boundaries, maintenance playbooks.
 - `REPO_GOVERNANCE.md`: canonical contributor workflow, repository boundaries, and validation gates.
+- `skills/browser-pilot-cli/SKILL.md`: Codex-facing CLI operating guide; live `browser-pilot --help` and `browser-pilot schema <command> --json` remain the command-syntax authority.
 - Public docs (`README.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`) are not development-rule owners.
 - Module-local docs may own narrower rules, e.g. `src/kernels/abml/README.md` for ABML kernel boundaries.
 

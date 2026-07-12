@@ -125,6 +125,9 @@ and the Chrome extension bundles (`npm run build:bridge`) automatically. These a
 
 The `browser-pilot` CLI exposes the `browser_*` tool surface as shell subcommands. A
 user-local daemon manages the bridge server — it auto-starts on first use.
+The repository-maintained Codex skill lives at `skills/browser-pilot-cli`; link that
+directory to `$CODEX_HOME/skills/browser-pilot-cli` to make `$browser-pilot-cli`
+discoverable while keeping the repository copy as the single source of truth.
 
 ```bash
 # Readiness gate (recommended for multi-step work)
