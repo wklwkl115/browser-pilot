@@ -114,8 +114,11 @@ export class BrowserTabSessionRouter {
 	}
 
 	targetInfo(source: BrowserBridgeTargetSource, tabId?: number, session = this.browserSession(), extras: TargetInfoExtras = {}): BrowserBridgeTargetInfo {
-		const tab = this.targetSession(tabId, session);
-		const url = tab?.url ?? this.targetUrl(tabId, session);
+		return this.targetInfoForTabSession(source, tabId, this.targetSession(tabId, session), session, extras);
+	}
+
+	private targetInfoForTabSession(source: BrowserBridgeTargetSource, tabId: number | undefined, tab: BrowserTabSession | undefined, session: BrowserAutomationSession, extras: TargetInfoExtras = {}): BrowserBridgeTargetInfo {
+		const url = tab?.url;
 		return {
 			browserSessionId: session.id,
 			tabId,
@@ -377,6 +380,13 @@ export class BrowserTabSessionRouter {
 		});
 	}
 
+	liveSessionForTarget(target: BrowserBridgeTargetInfo | undefined, browserSessionId?: string): BrowserTabSession | undefined {
+		const tabHandle = target?.targetRef ?? target?.tabHandle;
+		if (tabHandle) return this.liveSessionForHandle(tabHandle, browserSessionId);
+		if (target?.tabId !== undefined && target.browserId) return this.liveSessionForTabRef(target.tabId, target.browserId);
+		return target?.tabId !== undefined ? this.liveSessionForTabId(target.tabId, browserSessionId) : undefined;
+	}
+
 	socketForTab(tabId: number, browserSessionId?: string): WebSocket | undefined {
 		return this.liveSessionForTabId(tabId, browserSessionId)?.client;
 	}
@@ -410,7 +420,7 @@ export class BrowserTabSessionRouter {
 					tabs: this.getTabs(),
 				});
 			}
-			return this.targetInfo(source, session.tabId, browserSession, { tabHandle: session.tabHandle, targetRef: session.tabHandle });
+			return this.targetInfoForTabSession(source, session.tabId, session, browserSession, { tabHandle: session.tabHandle, targetRef: session.tabHandle });
 		}
 		const sessionId = this.normalizeTabSessionId(normalizedValue);
 		if (sessionId) {
@@ -422,7 +432,7 @@ export class BrowserTabSessionRouter {
 					tabs: this.getTabs(),
 				});
 			}
-			return this.targetInfo(source, session.tabId, browserSession, { tabHandle: session.tabHandle, targetRef: session.tabHandle });
+			return this.targetInfoForTabSession(source, session.tabId, session, browserSession, { tabHandle: session.tabHandle, targetRef: session.tabHandle });
 		}
 		const requestedTabId = toTabId(normalizedValue);
 		if (!requestedTabId) return undefined;
@@ -600,11 +610,6 @@ export class BrowserTabSessionRouter {
 		const scopeClient = this.browserSessions.selectedOpenClient(browserSession);
 		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
 		return scoped ?? (live.length === 1 ? live[0] : undefined);
-	}
-
-	private targetUrl(tabId: number | undefined, browserSession: BrowserAutomationSession): string | undefined {
-		if (tabId === undefined) return undefined;
-		return this.targetSession(tabId, browserSession)?.url || undefined;
 	}
 
 	private preferredImplicitSessionId(candidates: BrowserTabSession[], browserSession: BrowserAutomationSession): string | undefined {

@@ -100,11 +100,28 @@ async function armExtension(options: BrowserOperationOptions, operation: Command
 		...(target.tabId !== undefined ? { tabId: target.tabId } : {}),
 		...(target.targetRef ? { targetRef: target.targetRef } : {}),
 		...(target.generation !== undefined ? { generation: target.generation } : {}),
-	}, { browserSessionId: target.browserSessionId, timeoutMs: Math.min(5_000, options.timeoutMs), accessMode: "read", internal: true });
+	}, {
+		browserSessionId: target.browserSessionId,
+		...(target.targetRef ? { targetRef: target.targetRef } : target.tabId !== undefined ? { tabId: target.tabId } : {}),
+		timeoutMs: Math.min(5_000, options.timeoutMs),
+		accessMode: "read",
+		internal: true,
+	});
 }
 
-async function finishExtension(options: BrowserOperationOptions, operationId: string): Promise<void> {
-	await options.server.sendCommand({ cmd: "operation.finish", operationId }, { browserSessionId: options.browserSessionId, timeoutMs: Math.min(5_000, options.timeoutMs), accessMode: "read", internal: true }).catch(() => undefined);
+async function finishExtension(options: BrowserOperationOptions, operationId: string, target: BrowserOperationTarget): Promise<void> {
+	await options.server.sendCommand({
+		cmd: "operation.finish",
+		operationId,
+		...(target.tabId !== undefined ? { tabId: target.tabId } : {}),
+		...(target.targetRef ? { targetRef: target.targetRef } : {}),
+	}, {
+		browserSessionId: target.browserSessionId,
+		...(target.targetRef ? { targetRef: target.targetRef } : target.tabId !== undefined ? { tabId: target.tabId } : {}),
+		timeoutMs: Math.min(5_000, options.timeoutMs),
+		accessMode: "read",
+		internal: true,
+	}).catch(() => undefined);
 }
 
 type OperationSettlement = { status: BrowserOperationStatus; events: BrowserOperationEvent[]; completion?: ReturnType<typeof resolveBrowserOperationCompletion> };
@@ -223,7 +240,7 @@ export async function withBrowserOperation<T>(options: BrowserOperationOptions, 
 			...(lateEffects.length ? { lateEffects } : {}),
 		};
 		const publicOutcome = redactSensitiveValue(outcome) as BrowserOperationOutcome;
-		await finishExtension(options, operation.operationId);
+		await finishExtension(options, operation.operationId, target);
 		options.server.finishOperation(operation.operationId, publicOutcome);
 		return publicOutcome;
 	} catch (error) {
@@ -243,7 +260,7 @@ export async function withBrowserOperation<T>(options: BrowserOperationOptions, 
 			...(lateEffects.length ? { lateEffects } : {}),
 		};
 		const publicOutcome = redactSensitiveValue(outcome) as BrowserOperationOutcome;
-		await finishExtension(options, operation.operationId);
+		await finishExtension(options, operation.operationId, target);
 		options.server.finishOperation(operation.operationId, publicOutcome);
 		return publicOutcome;
 	}

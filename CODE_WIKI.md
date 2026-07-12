@@ -800,6 +800,7 @@ Extension offscreen transport 会扫描本地端口范围 `18765-18784`。连接
 - 当前 scriptable tabs。
 
 Bridge Server 收到 `ext_ready` 或 `tabs_update` 后更新 client info 和 tabs router。
+首个 ready client 初始化默认 browser selection；后续其他 client 的普通 `tabs_update` 不得抢占显式选择，只有同一 extension instance 的 reconnect 可以接替其旧 socket。带 `targetRef` 的内部 operation arm/finish 与实际命令始终使用该 tab session 的 owning client，不能回退到 default client。
 
 Extension 同时维护 real page epoch。Top-level `webNavigation.onCommitted` mint 新 epoch；同 document 的 history/hash update 只更新 URL fact；BFCache 仅在当前 worker 能证明 `documentId` lineage 时复用 epoch；tab replacement、worker restart 或无法证明 lineage 时 mint 新 epoch。Bridge 将它与 `browserSessionId`、numeric `tabId` 和 target generation 组合为 [`PageIdentity`](src/kernels/session/pageIdentity.ts)。URL 与可选 `documentId` 不参与 equality。
 

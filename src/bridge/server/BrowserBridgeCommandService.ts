@@ -246,7 +246,7 @@ export class BrowserBridgeCommandService {
 		});
 		if (tabId !== undefined) {
 			const browserSession = this.browserSession(options.browserSessionId);
-			const tab = this.requireLiveTabSession(tabId, browserSession.id);
+			const tab = this.requireLiveTabSession(tabId, browserSession.id, target);
 			if (options.accessMode === "write") {
 				this.assertWriteInvariants(browserSession.id, tab, target);
 				const queuedAt = Date.now();
@@ -263,7 +263,7 @@ export class BrowserBridgeCommandService {
 						...(target.replacementHops !== undefined ? { replacementHops: target.replacementHops } : {}),
 					} : target;
 					const queuedTabId = queuedTarget.tabId ?? tabId;
-					const queuedTab = this.requireLiveTabSession(queuedTabId, browserSession.id);
+					const queuedTab = this.requireLiveTabSession(queuedTabId, browserSession.id, queuedTarget);
 					this.assertWriteInvariants(browserSession.id, queuedTab, queuedTarget);
 					const queuedCodeRecord = recordValue(code);
 					const queuedCode = queuedTabId !== tabId && queuedCodeRecord ? { ...queuedCodeRecord, tabId: queuedTabId } : code;
@@ -317,8 +317,8 @@ export class BrowserBridgeCommandService {
 		return this.deps.clients.requireExtensionClient();
 	}
 
-	private requireLiveTabSession(tabId: number, browserSessionId?: string): BrowserTabSession {
-		const session = this.deps.tabs.liveSessionForTabId(tabId, browserSessionId);
+	private requireLiveTabSession(tabId: number, browserSessionId?: string, target?: BrowserBridgeTargetInfo): BrowserTabSession {
+		const session = target ? this.deps.tabs.liveSessionForTarget(target, browserSessionId) : this.deps.tabs.liveSessionForTabId(tabId, browserSessionId);
 		if (session) return session;
 		const resolution = this.deps.tabs.replacementResolution(tabId, browserSessionId);
 		throw tabNotFoundError({
@@ -359,7 +359,9 @@ export class BrowserBridgeCommandService {
 		const method = String(command.method || command.action || spec?.defaultMethod || "").toLowerCase();
 		const tabId = target?.tabId;
 		if (!spec) return { target, tabId, accessMode: preferred ?? "read" };
-		const requiresTransportTab = spec.tabScoped || (canonical === "tabs" && ["switch", "close"].includes(method));
+		const requiresTransportTab = spec.tabScoped
+			|| (canonical === "tabs" && ["switch", "close"].includes(method))
+			|| (canonical.startsWith("operation.") && tabId !== undefined);
 		const noneTarget = !requiresTransportTab;
 		const accessMode = preferred ?? this.commandAccessMode(spec, method);
 		return {

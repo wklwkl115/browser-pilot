@@ -59,7 +59,11 @@ async function reserveConsecutivePorts(host = "127.0.0.1"): Promise<{ blocker: P
 	throw new Error("could not reserve consecutive test ports");
 }
 
-async function connectExtension(server: BrowserBridgeServer, tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }]): Promise<WebSocket> {
+async function connectExtension(
+	server: BrowserBridgeServer,
+	tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }],
+	identity: { extensionId?: string; extensionInstanceId?: string; workerBootId?: string } = {},
+): Promise<WebSocket> {
 	const ws = new WebSocket(bridgeUrl(server));
 	await new Promise<void>((resolve, reject) => {
 		ws.once("open", resolve);
@@ -67,12 +71,32 @@ async function connectExtension(server: BrowserBridgeServer, tabs: Array<Record<
 	});
 	ws.send(JSON.stringify({
 		type: "ext_ready",
-		bridge: { id: "bridge-1", extensionInstanceId: "instance-1", workerBootId: "worker-1", durableRequests: true },
-		extension: { id: "extension-1" },
+		bridge: {
+			id: identity.extensionId ?? "bridge-1",
+			extensionInstanceId: identity.extensionInstanceId ?? "instance-1",
+			workerBootId: identity.workerBootId ?? "worker-1",
+			durableRequests: true,
+		},
+		extension: { id: identity.extensionId ?? "extension-1" },
 		tabs,
 	}));
-	await server.waitForExtensionReady(undefined, 1_000);
+	const expectedInstanceId = identity.extensionInstanceId ?? "instance-1";
+	const deadlineAt = Date.now() + 1_000;
+	while (!server.snapshot().clients.some((client) => client.extensionInstanceId === expectedInstanceId)) {
+		if (Date.now() >= deadlineAt) throw new Error(`extension fixture did not become ready: ${expectedInstanceId}`);
+		await new Promise((resolve) => setImmediate(resolve));
+	}
 	return ws;
+}
+
+async function waitForCommand(messages: Array<Record<string, unknown>>): Promise<Record<string, unknown>> {
+	const deadlineAt = Date.now() + 1_000;
+	while (true) {
+		const message = messages.find((candidate) => candidate.id !== undefined && candidate.code !== undefined);
+		if (message) return message;
+		if (Date.now() >= deadlineAt) throw new Error("bridge command fixture did not receive a request");
+		await new Promise((resolve) => setImmediate(resolve));
+	}
 }
 
 test("BrowserBridgeServer advances to the next configured port when the requested port is busy", async () => {
@@ -205,6 +229,65 @@ test("BrowserBridgeServer pending request surface records ack/result lifecycle i
 		assert.equal(server.snapshot().pending.length, 0);
 
 		ws.close();
+	});
+});
+
+test("BrowserBridgeServer keeps explicit browser selection stable and routes targeted operations to the owning client", async () => {
+	await withServer(async (server) => {
+		const user = await connectExtension(
+			server,
+			[{ id: 7, url: "https://user.test/", title: "User", active: true }],
+			{ extensionId: "shared-extension", extensionInstanceId: "user-instance", workerBootId: "user-worker" },
+		);
+		const isolated = await connectExtension(
+			server,
+			[{ id: 7, url: "https://isolated.test/", title: "Isolated", active: true }],
+			{ extensionId: "shared-extension", extensionInstanceId: "isolated-instance", workerBootId: "isolated-worker" },
+		);
+		const userMessages: Array<Record<string, unknown>> = [];
+		const isolatedMessages: Array<Record<string, unknown>> = [];
+		user.on("message", (raw) => userMessages.push(JSON.parse(String(raw)) as Record<string, unknown>));
+		isolated.on("message", (raw) => isolatedMessages.push(JSON.parse(String(raw)) as Record<string, unknown>));
+
+		const tabs = server.getTabs();
+		const userTab = tabs.find((tab) => tab.url === "https://user.test/");
+		const isolatedTab = tabs.find((tab) => tab.url === "https://isolated.test/");
+		assert.ok(userTab?.browserId);
+		assert.ok(isolatedTab?.browserId);
+		assert.ok(isolatedTab.targetRef);
+
+		server.selectBrowser(isolatedTab.browserId);
+		user.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 7, url: "https://user.test/updated", title: "User updated", active: true }] }));
+		const updateDeadlineAt = Date.now() + 1_000;
+		while (!server.getTabs().some((tab) => tab.url === "https://user.test/updated")) {
+			if (Date.now() >= updateDeadlineAt) throw new Error("user tabs update was not applied");
+			await new Promise((resolve) => setImmediate(resolve));
+		}
+		assert.equal(server.listBrowserSessions()[0]?.selectedBrowser?.id, isolatedTab.browserId);
+
+		server.selectBrowser(userTab.browserId);
+		const target = server.snapshot().tabs.find((tab) => tab.targetRef === isolatedTab.targetRef);
+		assert.equal(target?.browserId, isolatedTab.browserId);
+		assert.equal(target?.url, "https://isolated.test/");
+		const beginPromise = server.sendCommand({
+			cmd: "operation.begin",
+			operationId: "isolated-operation",
+			tabId: 7,
+			targetRef: isolatedTab.targetRef,
+			generation: isolatedTab.generation,
+		}, { targetRef: isolatedTab.targetRef, timeoutMs: 1_000, accessMode: "read", internal: true });
+		const firstCommand = await Promise.race([
+			waitForCommand(isolatedMessages).then((message) => ({ owner: "isolated", message, socket: isolated })),
+			waitForCommand(userMessages).then((message) => ({ owner: "user", message, socket: user })),
+		]);
+		firstCommand.socket.send(JSON.stringify({ type: "ack", id: firstCommand.message.id }));
+		firstCommand.socket.send(JSON.stringify({ type: "result", id: firstCommand.message.id, result: { armed: true } }));
+		await beginPromise;
+		assert.equal(firstCommand.owner, "isolated");
+		assert.equal(userMessages.length, 0);
+
+		user.close();
+		isolated.close();
 	});
 });
 

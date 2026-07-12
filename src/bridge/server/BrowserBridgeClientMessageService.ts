@@ -134,8 +134,16 @@ export class BrowserBridgeClientMessageService {
 			return;
 		}
 		if (type === "ext_ready" || type === "tabs_update") {
-			this.deps.browserSessions.selectClient(this.deps.browserSessions.defaultSession(), ws);
+			const defaultSession = this.deps.browserSessions.defaultSession();
+			const selectedClient = this.deps.browserSessions.selectedOpenClient(defaultSession);
+			const selectedInstanceId = selectedClient ? this.deps.clients.info(selectedClient)?.extensionInstanceId : undefined;
 			this.deps.clients.updateClientInfo(ws, message.bridge || message.extension);
+			const incomingInstanceId = this.deps.clients.info(ws)?.extensionInstanceId;
+			const replacesSelectedInstance = type === "ext_ready"
+				&& selectedClient !== undefined
+				&& selectedInstanceId !== undefined
+				&& selectedInstanceId === incomingInstanceId;
+			if (!selectedClient || selectedClient === ws || replacesSelectedInstance) this.deps.browserSessions.selectClient(defaultSession, ws);
 			if (type === "ext_ready") {
 				// Classify against peers BEFORE collapsing, then enforce one live socket per
 				// extension instance. Idempotent: a repeat ext_ready on the same socket finds

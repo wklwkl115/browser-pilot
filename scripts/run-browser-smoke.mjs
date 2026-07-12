@@ -300,6 +300,10 @@ try {
 	const tab = browser.status.tabs.find((item) => String(item?.url || "").startsWith(fixture.url));
 	const tabId = Number(tab?.tabId ?? tab?.id);
 	if (!Number.isInteger(tabId) || tabId <= 0) throw new Error(`fixture tab was not routable: ${JSON.stringify(tab)}`);
+	const browserId = typeof tab?.browserId === "string" ? tab.browserId : "";
+	if (!browserId) throw new Error(`fixture browser client was not identifiable: ${JSON.stringify(tab)}`);
+	const selectedBrowser = await invoke(daemon, "browser_tabs", { action: "selectBrowser", browserId });
+	if (!resultText(selectedBrowser).includes(browserId)) throw new Error(`fixture browser client was not selected: ${resultText(selectedBrowser)}`);
 
 	const tabs = await invoke(daemon, "browser_tabs", { action: "list" });
 	if (!resultText(tabs).includes("Browser Pilot Smoke")) throw new Error(`browser_tabs did not expose the fixture tab: ${resultText(tabs)}`);
@@ -381,9 +385,12 @@ try {
 	}), "browser_observe provider telemetry");
 	if (providerObservation.schema !== "browser-page-observation/v3") throw new Error(`provider observation did not use PageObservation v3: ${JSON.stringify(providerObservation)}`);
 	assertProviderBudgetTelemetry(providerObservation);
-	const beforeMetrics = browser.status.health?.connectionMetrics || {};
+	const beforeReloadStatus = await daemonJson(daemon, "/status?tabs=1");
+	const beforeExtensionConnectedAt = Number(beforeReloadStatus.health?.connectedAt || 0);
+	if (!Number.isFinite(beforeExtensionConnectedAt) || beforeExtensionConnectedAt <= 0) throw new Error(`extension reload baseline did not expose connectedAt: ${JSON.stringify(beforeReloadStatus.health)}`);
 	await invoke(daemon, "browser_command", { command: { cmd: "management", method: "reload" } });
-	const reconnected = await waitForStatus(daemon, (value) => value.extensionConnected === true && Number(value.health?.connectionMetrics?.connects || 0) > Number(beforeMetrics.connects || 0), "extension reload reconnect");
+	const reconnected = await waitForStatus(daemon, (value) => value.extensionConnected === true
+		&& Number(value.health?.connectedAt || 0) > beforeExtensionConnectedAt, "extension reload reconnect");
 	const reanchored = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, baselineSnapshotId }), "browser_observe after extension reconnect");
 	if (reanchored.snapshot?.pageEpoch === baselinePageEpoch) throw new Error(`extension reconnect reused the old page epoch: ${JSON.stringify(reanchored.snapshot)}`);
 	const reanchorReason = reanchored.reanchorReason;

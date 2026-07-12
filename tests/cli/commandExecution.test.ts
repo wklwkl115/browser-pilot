@@ -322,8 +322,13 @@ test("commands execution: browser_execute summarizes successful JavaScript resul
 	const result = await command.execute("tool-1", { script: "return 42", targetRef: "tab-7", maxChars: 20_000 });
 	const envelope = parseResult(result);
 	const execute = runtime.calls.find((call) => call.name === "executeJavaScript");
+	const operationBegin = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as { cmd?: string }).cmd === "operation.begin");
+	const operationFinish = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as { cmd?: string }).cmd === "operation.finish");
 	assert.equal(execute?.args[0], "return 42");
 	assert.deepEqual(execute?.args[1], { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000 });
+	assert.deepEqual(operationBegin?.args[1], { browserSessionId: "session-1", targetRef: "tab-7", timeoutMs: 5_000, accessMode: "read", internal: true });
+	assert.deepEqual(operationFinish?.args[0], { cmd: "operation.finish", operationId: "op-1", tabId: 7, targetRef: "tab-7" });
+	assert.deepEqual(operationFinish?.args[1], { browserSessionId: "session-1", targetRef: "tab-7", timeoutMs: 5_000, accessMode: "read", internal: true });
 	assert.equal(envelope.schema, "browser-operation/v2");
 	assert.equal(envelope.status, "completed");
 	assert.equal((envelope.completion as Record<string, unknown>).source, "script-resolved");
