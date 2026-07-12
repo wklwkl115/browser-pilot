@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SessionOperationRegistry } from "../../src/kernels/session/operationRegistry.ts";
+import { resolveBrowserOperationCompletion } from "../../src/commands/operationResolvers.ts";
 import { classifyBrowserOperationLiveness } from "../../src/kernels/session/browserOperationState.ts";
 import type { BrowserOperationOutcome } from "../../src/kernels/session/browserOperation.ts";
 
@@ -76,4 +77,16 @@ test("events outside the passive window are not attributed to a terminal operati
 	now += 30_001;
 	registry.recordEvent(operation.operationId, { type: "mutation" });
 	assert.equal(registry.get(operation.operationId)?.lateEffects.length, 0);
+});
+
+test("operation completion resolvers require tab and upload result markers beyond acknowledgement", () => {
+	const base = { events: [] };
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_tabs", action: "switch", result: { acknowledged: true } }), undefined);
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_tabs", action: "close", result: { acknowledged: true, data: {} } }), undefined);
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_upload", result: { acknowledged: true, data: { uploaded: false, files_count: 2 } } }), undefined);
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_upload", result: { acknowledged: true, data: { uploaded: true, files_count: 0 } } }), undefined);
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_tabs", action: "switch", result: { acknowledged: true, data: { active: true, selectedTabId: 7 } } })?.source, "tab-switch");
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_command", command: "tabs", action: "switch", result: { acknowledged: true, data: { active: true, tabId: 8 } } })?.source, "tab-switch");
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_tabs", action: "close", result: { acknowledged: true, data: { tabId: 7 } } })?.source, "tab-close");
+	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_upload", result: { acknowledged: true, data: { uploaded: true, files_count: 2, selector: "#file" } } })?.source, "upload-applied");
 });

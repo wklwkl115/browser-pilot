@@ -58,7 +58,8 @@ function nativeCompletion(command: string, result: unknown): BrowserOperationCom
 		const file = findFileEvidence(result);
 		return file ? { source, evidence: file } : undefined;
 	}
-	return { source, evidence: { command, result: bridgeData(result) } };
+	const data = bridgeData(result);
+	return data === undefined ? undefined : { source, evidence: { command, result: data } };
 }
 
 function executeCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
@@ -71,24 +72,50 @@ function executeCompletion(input: BrowserOperationResolverInput): BrowserOperati
 	return result !== undefined ? { source: "script-resolved", evidence: { result } } : undefined;
 }
 
+function tabCreateCompletion(result: unknown): BrowserOperationCompletion | undefined {
+	const record = isRecord(result) ? result : {};
+	const created = isRecord(record.createdTarget) ? record.createdTarget : isRecord(record.target) ? record.target : isRecord(record.data) ? record.data : {};
+	const targetRef = created.targetRef ?? created.tabHandle;
+	return typeof targetRef === "string" && targetRef ? { source: "tab-create", evidence: { targetRef, tabId: created.tabId, url: created.url } } : undefined;
+}
+
+function tabSwitchCompletion(data: unknown): BrowserOperationCompletion | undefined {
+	if (!isRecord(data) || data.active !== true) return undefined;
+	const selectedTabId = Number(data.selectedTabId ?? data.tabId);
+	return Number.isInteger(selectedTabId) && selectedTabId > 0
+		? { source: "tab-switch", evidence: { selectedTabId, selectionVersion: data.selectionVersion } }
+		: undefined;
+}
+
+function tabCloseCompletion(data: unknown): BrowserOperationCompletion | undefined {
+	if (!isRecord(data)) return undefined;
+	const closedTabId = Number(data.tabId ?? data.id);
+	return Number.isInteger(closedTabId) && closedTabId > 0 ? { source: "tab-close", evidence: { tabId: closedTabId } } : undefined;
+}
+
 function tabsCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
 	const action = String(input.action || input.command || "").toLowerCase();
-	const result = isRecord(input.result) ? input.result : {};
-	if (action === "create") {
-		const created = isRecord(result.createdTarget) ? result.createdTarget : isRecord(result.target) ? result.target : isRecord(result.data) ? result.data : {};
-		const targetRef = created.targetRef ?? created.tabHandle;
-		return typeof targetRef === "string" && targetRef ? { source: "tab-create", evidence: { targetRef, tabId: created.tabId, url: created.url } } : undefined;
-	}
-	if (action === "switch") return result.acknowledged === true ? { source: "tab-switch", evidence: { target: result.target, result: result.data } } : undefined;
-	if (action === "close") return result.acknowledged === true ? { source: "tab-close", evidence: { target: result.target, result: result.data } } : undefined;
+	if (action === "create") return tabCreateCompletion(input.result);
+	if (action === "switch") return tabSwitchCompletion(bridgeData(input.result));
+	if (action === "close") return tabCloseCompletion(bridgeData(input.result));
 	return undefined;
+}
+
+function uploadCompletion(result: unknown): BrowserOperationCompletion | undefined {
+	const data = bridgeData(result);
+	if (!isRecord(data) || data.uploaded !== true) return undefined;
+	const filesCount = Number(data.files_count);
+	if (!Number.isInteger(filesCount) || filesCount <= 0) return undefined;
+	return { source: "upload-applied", evidence: { uploaded: true, files_count: filesCount, ...(typeof data.selector === "string" ? { selector: data.selector } : {}) } };
 }
 
 function nativeToolCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
 	const prefixes: Record<string, string> = { browser_network: "network", browser_hook: "hook", browser_frame: "frame" };
 	const prefix = prefixes[input.commandName];
 	if (prefix) return nativeCompletion(String(input.command || `${prefix}.${input.action}`), input.result);
-	return input.commandName === "browser_command" ? nativeCompletion(String(input.command || ""), input.result) : undefined;
+	if (input.commandName !== "browser_command") return undefined;
+	if (String(input.command || "") === "tabs") return tabsCompletion(input);
+	return nativeCompletion(String(input.command || ""), input.result);
 }
 
 export function resolveBrowserOperationCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
@@ -98,7 +125,7 @@ export function resolveBrowserOperationCompletion(input: BrowserOperationResolve
 		const file = findFileEvidence(input.result);
 		return file ? { source: "download-completed", evidence: file } : undefined;
 	}
-	if (input.commandName === "browser_upload") return { source: "upload-applied", evidence: { result: bridgeData(input.result) } };
+	if (input.commandName === "browser_upload") return uploadCompletion(input.result);
 	return nativeToolCompletion(input);
 }
 

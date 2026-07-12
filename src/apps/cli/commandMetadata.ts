@@ -37,13 +37,14 @@ type ArtifactBehavior = {
 
 const ARTIFACT_BEHAVIOR: ArtifactBehavior = {
 	resultField: "saved.path",
-	descriptorFields: ["path", "kind", "bytes", "chars", "privacy", "readCommands"],
-	readCommand: "browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
-	readModes: ["json", "text", "search", "sample"],
-	commonJsonPaths: ["data", "data.content", "data.actionables", "data.list_hints"],
+	descriptorFields: ["path", "kind", "bytes", "chars", "privacy", "jsonPaths", "readCommands"],
+	readCommand: "browser-pilot artifact --path <saved.path> --mode inspect --json",
+	readModes: ["inspect", "paths", "json", "text", "search", "sample"],
+	commonJsonPaths: [],
 	notes: [
-		"JSON results that include saved.path are enriched with artifacts[] descriptors; cliNextActions[] only carries non-duplicate executable follow-ups.",
-		"Large or sensitive raw payloads stay in local artifacts; read bounded paths with browser-pilot artifact.",
+		"JSON results that include saved.path are enriched with one artifacts[] descriptor per saved path; jsonPaths lists a bounded set of returned hints independently from the bounded readCommands descriptors.",
+		"readCommands starts with inspect/paths and adds at most one targeted JSON template. Both display commands and argvTemplate use placeholders; pathRef/jsonPathRef resolve the exact descriptor fields without repeating untrusted values in shell text.",
+		"Large or sensitive raw payloads stay in local artifacts; verify paths, then read bounded values with browser-pilot artifact. cliNextActions[] only carries non-duplicate structured follow-ups.",
 	],
 };
 

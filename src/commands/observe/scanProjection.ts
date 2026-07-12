@@ -355,7 +355,7 @@ export function buildScanNextActionHints(input: {
 	const hints: string[] = [];
 	const sid = typeof input.snapshotId === "string" ? input.snapshotId : undefined;
 	if (!input.hasBaseline && sid) {
-		hints.push(`to see what CHANGES after you act here: re-run browser_observe baselineSnapshotId:"${sid}" or browser_observe diff:true → envelope.treeDiff (template-level appeared/disappeared, cleaner than re-extracting before/after)${input.recorderActive ? "; + envelope.causal.requests = which requests your action fired" : ""}`);
+		hints.push(`after acting, use browser_observe diff:true only if the next decision needs fresh state; inspect treeDiff${input.recorderActive ? " and causal.requests" : ""}`);
 	}
 	if (input.hasBaseline && input.causal) {
 		const firedHint = causalFiredHint(input.causal);
@@ -368,7 +368,7 @@ export function buildScanNextActionHints(input: {
 			...(s.sample?.disappeared?.length ? [`-${s.sample.disappeared.slice(0, 3).join(", ")}`] : []),
 			...(s.sample?.changed?.length ? [`~${s.sample.changed.slice(0, 3).join(", ")}`] : []),
 		].join("; ");
-		hints.push(`structure changed (${s.appeared} appeared / ${s.disappeared} disappeared / ${s.changed} changed, template-level)${eg ? ` — e.g. ${eg}` : ""} → envelope.treeDiff.summary.sample names the items; .templates[].instances has the rest (no need to re-extract)`);
+		hints.push(`treeDiff: +${s.appeared}/-${s.disappeared}/~${s.changed} templates${eg ? ` (${eg})` : ""}; expand treeDiff.templates only if the summary sample is insufficient`);
 	}
 	return hints;
 }

@@ -86,15 +86,57 @@ async function executeArtifactPlan(options: DistillBaseOptions, plan: ArtifactPl
 	return await saveTextArtifact(options.ctx, plan.outputPath, plan.fallbackName, plan.text);
 }
 
-async function saveFinalEnvelopeArtifact(options: DistillBaseOptions, saved: Record<string, unknown> | undefined, rawValue: unknown, envelope: DistilledEnvelope): Promise<Record<string, unknown> | undefined> {
-	if (!saved || !isRecord(rawValue) || typeof saved.path !== "string") return saved;
-	const content = stableJson({ ...rawValue, envelope });
-	return await saveTextArtifact(options.ctx, saved.path, options.fallbackName, content);
-}
-
 function compactArtifactDescriptor(saved?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (!saved) return undefined;
 	return pickDefined(saved, ["path", "bytes", "chars", "mime"]);
+}
+
+function envelopeWithArtifactDescriptor(envelope: DistilledEnvelope, saved: Record<string, unknown>): DistilledEnvelope {
+	const descriptor = compactArtifactDescriptor(saved) || {};
+	const diagnostics = envelope.diagnostics && isRecord(envelope.diagnostics.artifact)
+		? { ...envelope.diagnostics, artifact: descriptor }
+		: envelope.diagnostics;
+	const evidence = envelope.evidence
+		? {
+			...envelope.evidence,
+			artifacts: envelope.evidence.artifacts.map((artifact) => artifact.path === saved.path
+				? {
+					...artifact,
+					...(typeof saved.bytes === "number" ? { bytes: saved.bytes } : {}),
+					...(typeof saved.chars === "number" ? { chars: saved.chars } : {}),
+				}
+				: artifact),
+		}
+		: undefined;
+	const artifactHints = envelope.artifact_hints ? { ...envelope.artifact_hints, saved: descriptor } : undefined;
+	return {
+		...envelope,
+		...(artifactHints ? { artifact_hints: artifactHints } : {}),
+		...(diagnostics ? { diagnostics } : {}),
+		saved: descriptor,
+		...(evidence ? { evidence } : {}),
+	};
+}
+
+function finalEnvelopeArtifactContent(rawValue: Record<string, unknown>, envelope: DistilledEnvelope, saved: Record<string, unknown>): { content: string; envelope: DistilledEnvelope; saved: Record<string, unknown> } {
+	let finalSaved = saved;
+	for (let iteration = 0; iteration < 16; iteration += 1) {
+		const finalEnvelope = envelopeWithArtifactDescriptor(envelope, finalSaved);
+		const content = stableJson({ ...rawValue, envelope: finalEnvelope });
+		const chars = content.length;
+		const bytes = Buffer.byteLength(content, "utf8");
+		if (finalSaved.chars === chars && finalSaved.bytes === bytes) return { content, envelope: finalEnvelope, saved: finalSaved };
+		finalSaved = { ...finalSaved, chars, bytes };
+	}
+	throw new Error("final artifact descriptor did not converge");
+}
+
+async function saveFinalEnvelopeArtifact(options: DistillBaseOptions, saved: Record<string, unknown> | undefined, rawValue: unknown, envelope: DistilledEnvelope): Promise<{ envelope: DistilledEnvelope; saved?: Record<string, unknown> }> {
+	if (!saved || !isRecord(rawValue) || typeof saved.path !== "string") return { envelope, saved };
+	const finalized = finalEnvelopeArtifactContent(rawValue, envelope, saved);
+	const persisted = await saveTextArtifact(options.ctx, saved.path, options.fallbackName, finalized.content);
+	const finalSaved = { ...finalized.saved, ...persisted };
+	return { envelope: envelopeWithArtifactDescriptor(finalized.envelope, finalSaved), saved: finalSaved };
 }
 
 function collectPathHint(paths: Record<string, string>, reads: Array<Record<string, unknown>>, value: unknown, label: string, jsonPath: string, kind?: string): void {
@@ -346,8 +388,9 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const target = normalizedTarget(options, fittedSummary);
 	const limits = normalizedLimits(options, fittedSummary);
 	const artifact_hints = compactArtifactHints(options, fittedSummary, saved, options.rawArtifactValue);
+	const savedDescriptor = compactArtifactDescriptor(saved);
 	const privacy = normalizedPrivacy(saved, sensitiveRaw);
-	const nextActions = normalizedNextActions(options, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions, entities);
+	const nextActions = normalizedNextActions(options, redactedSummary, saved, artifact_hints, summaryHintActions);
 	const evidence = buildResultEvidence({
 		summary: fittedSummary,
 		entities,
@@ -379,7 +422,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		operation: redactedOperation,
 		snapshot: redactedSnapshot,
 		...envelopeTail,
-		saved,
+		saved: savedDescriptor,
 		evidence,
 	}, options.maxChars, options);
 }
@@ -431,8 +474,10 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 		}
 		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
 		envelope = renderedEnvelope.envelope;
-		const rendered = renderedEnvelope.rendered;
-		await saveFinalEnvelopeArtifact(options, saved, rawValue, envelope);
+		const finalizedArtifact = await saveFinalEnvelopeArtifact(options, saved, rawValue, envelope);
+		saved = finalizedArtifact.saved;
+		envelope = finalizedArtifact.envelope;
+		const rendered = stableJson(envelope);
 		reportAllocation(options, envelope, rendered);
 		return {
 			content: [{ type: "text", text: rendered }],
@@ -470,8 +515,10 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 		}
 		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
 		envelope = renderedEnvelope.envelope;
-		const rendered = renderedEnvelope.rendered;
-		await saveFinalEnvelopeArtifact(options, saved, rawValue, envelope);
+		const finalizedArtifact = await saveFinalEnvelopeArtifact(options, saved, rawValue, envelope);
+		saved = finalizedArtifact.saved;
+		envelope = finalizedArtifact.envelope;
+		const rendered = stableJson(envelope);
 		reportAllocation(options, envelope, rendered);
 		return {
 			content: [{ type: "text", text: rendered }],

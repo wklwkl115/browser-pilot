@@ -1,6 +1,8 @@
 import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS } from "../utils/safeRegex.js";
 
-export const MAX_ARTIFACT_READ_BYTES = 25 * 1024 * 1024;
+// Keep a readable margin above the default 32 MiB bridge frame. Operation artifacts
+// add a small terminal envelope around the already accepted bridge payload.
+export const MAX_ARTIFACT_READ_BYTES = 40 * 1024 * 1024;
 export const MAX_ARTIFACT_SEARCH_REGEX_CHARS = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS;
 export const MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS = SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS;
 export const MAX_MULTI_ARTIFACT_FILES = 100;

@@ -4,15 +4,16 @@ import { BrowserBridgeError } from "../utils/errors.js";
 import { defaultLeaseIdRedactor } from "../kernels/session/leaseRegistry.js";
 import type { BrowserCommandRuntimePort, CommandTabLeaseInfo as BrowserTabLeaseInfo } from "../ports/BrowserCommandRuntimePort.js";
 import { jsonResult } from "../utils/toolResult.js";
-import { defineBrowserCommand, inlineJsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, commandTimeoutMs } from "./commandRuntime.js";
+import { defineBrowserCommand, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, commandTimeoutMs } from "./commandRuntime.js";
 import { compactBridgeForTabsList, compactTabForList, publicSnapshot } from "./tabsProjection.js";
 import { asPositiveInt, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { withBrowserOperation } from "./browserOperation.js";
+import { browserOperationCommandResult } from "./browserOperationResult.js";
 
 const TAB_TARGET_ACTIONS = new Set(["switch", "close", "attachtab", "detachtab", "leasetab", "releasetab"]);
 const SNAPSHOT_NOT_FOUND_RECOVERY = { nextActions: ["browser-pilot observe --json", "browser-pilot tabs --action snapshot --json"] };
-const SNAPSHOT_EXPIRED_RECOVERY = { nextActions: ["browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json", "browser-pilot artifact --path <saved.path> --mode json --json-path data --json", "browser-pilot observe --json"] };
+const SNAPSHOT_EXPIRED_RECOVERY = { nextActions: ["browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json", "browser-pilot artifact --path <saved.path> --mode inspect --json", "browser-pilot observe --json"] };
 
 type BrowserSessionOptions = { browserSessionId: string | undefined };
 type TabsDetails = (build: () => Record<string, unknown>) => Record<string, unknown>;
@@ -146,7 +147,12 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 						if (action === "create") return await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { ...browserSession, incognito: params.incognito === true });
 						return await server.closeTab(tabRef!, timeoutMs, browserSession);
 					});
-					return inlineJsonCommandResult(outcome, { action, operationId: outcome.operationId, status: outcome.status }, { maxChars }, "browser_tabs");
+					return await browserOperationCommandResult(outcome, {
+						budgetName: "browser_tabs",
+						maxChars,
+						ctx,
+						details: { action, operationId: outcome.operationId, status: outcome.status },
+					});
 				}
 				throw tabsToolError("INVALID_RULE", `Unsupported browser_tabs action: ${params.action}`, { action: params.action });
 			});

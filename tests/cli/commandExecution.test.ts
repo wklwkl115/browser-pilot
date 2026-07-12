@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { MAX_ARTIFACT_READ_BYTES } from "../../src/artifacts/artifactReaderShared.ts";
+import { DEFAULT_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES } from "../../src/bridge/server/BrowserBridgeHttpServer.ts";
 import { defineArtifactCommand } from "../../src/commands/artifactCommand.ts";
 import { CommandManifestIndex, type CommandDefinition } from "../../src/commands/commandManifestIndex.ts";
 import { defineExecuteCommand } from "../../src/commands/executeCommand.ts";
@@ -11,6 +13,7 @@ import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
 import { defineNetworkCommand } from "../../src/commands/nativeActionCommands.ts";
 import { defineObserveCommand } from "../../src/commands/observeCommand.ts";
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
+import { browserOperationCommandResult } from "../../src/commands/browserOperationResult.ts";
 import { publicCreateTabResult } from "../../src/commands/tabsProjection.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
@@ -87,7 +90,7 @@ function createRuntime(overrides: Partial<BrowserCommandRuntimePort> = {}): Mock
 		},
 		async switchTab(...args) {
 			calls.push({ name: "switchTab", args });
-			return { id: "switch-1", acknowledged: true, tabId: Number(args[0]), data: { active: true } } as BrowserBridgeExecutionResult;
+			return { id: "switch-1", acknowledged: true, tabId: 7, data: { active: true, selectedTabId: 7, selectionVersion: 4 } } as BrowserBridgeExecutionResult;
 		},
 		async createTab(...args) {
 			calls.push({ name: "createTab", args });
@@ -95,7 +98,7 @@ function createRuntime(overrides: Partial<BrowserCommandRuntimePort> = {}): Mock
 		},
 		async closeTab(...args) {
 			calls.push({ name: "closeTab", args });
-			return { id: "close-1", acknowledged: true, tabId: Number(args[0]), data: { closed: true } } as BrowserBridgeExecutionResult;
+			return { id: "close-1", acknowledged: true, tabId: 7, data: { closed: true, tabId: 7 } } as BrowserBridgeExecutionResult;
 		},
 		listBrowserSessions() { calls.push({ name: "listBrowserSessions", args: [] }); return []; },
 		createBrowserSession(name) { calls.push({ name: "createBrowserSession", args: [name] }); return { browserSessionId: "session-new", name }; },
@@ -186,7 +189,7 @@ test("commands execution: stale browser_tabs snapshot recovery uses ordinary no-
 	assert.equal(body.code, "INVALID_RULE");
 	assert.deepEqual(nextActions, [
 		"browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json",
-		"browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
+		"browser-pilot artifact --path <saved.path> --mode inspect --json",
 		"browser-pilot observe --json",
 	]);
 	const allowed = parseResult(await command.execute("tool-1", { action: "snapshot", snapshotId: "stale-snap", allowExpired: true }));
@@ -330,6 +333,7 @@ test("commands execution: undefined JavaScript with no browser events returns no
 	const startedAt = Date.now();
 	const outcome = parseResult(await command.execute("tool-noop", { script: "void 0", targetRef: "tab-7" }));
 	assert.equal(outcome.status, "no_effect");
+	assert.deepEqual(outcome.continuation, { next: "observe", reason: "no_effect", replay: "do_not_retry" });
 	assert.equal(Date.now() - startedAt >= 900, true);
 });
 
@@ -359,6 +363,219 @@ test("commands execution: a mutation event without command-specific completion e
 	assert.equal(outcome.status, "effect_observed");
 	assert.equal((outcome.signals as Record<string, unknown>).mutationCount, 2);
 	assert.equal(Array.isArray((outcome.pageEffect as Record<string, unknown>).changed), true);
+	assert.deepEqual(outcome.continuation, { next: "observe", reason: "business_state_unverified", replay: "do_not_retry" });
+});
+
+test("commands execution: large JavaScript results preserve terminal proof and expand through a saved artifact", async () => {
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-execute-operation-"));
+	const items = Array.from({ length: 120 }, (_, index) => ({ id: index, label: `row-${index}`, detail: "payload".repeat(30) }));
+	const runtime = createRuntime({
+		async executeJavaScript() {
+			return { id: "exec-large", acknowledged: true, tabId: 7, data: { items, total: items.length } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const result = await command.execute("tool-large", { script: "return window.__large", targetRef: "tab-7", maxChars: 1_200 }, undefined, undefined, { cwd });
+	const outcome = parseResult(result);
+	assert.equal(outcome.version, "browser-operation/v1");
+	assert.equal(outcome.status, "completed");
+	assert.equal((outcome.completion as Record<string, unknown>).source, "script-resolved");
+	assert.equal(typeof (outcome.dispatch as Record<string, unknown>).startedAt, "number");
+	assert.equal(typeof (outcome.dispatch as Record<string, unknown>).finishedAt, "number");
+	assert.equal((outcome.target as Record<string, unknown>).browserSessionId, "session-1");
+	assert.equal(result.content[0]?.text.length <= 1_200, true);
+	assert.deepEqual(outcome.continuation, { next: "inspect_artifact", reason: "result_compacted", replay: "not_needed" });
+	const inlineResult = ((outcome.completion as Record<string, unknown>).evidence as Record<string, unknown>).result as Record<string, unknown>;
+	assert.equal(inlineResult.type, "object");
+	assert.equal(inlineResult.truncated, true);
+	const saved = outcome.saved as Record<string, unknown>;
+	assert.equal(typeof saved.path, "string");
+	const hints = outcome.artifact_hints as Record<string, unknown>;
+	assert.equal((hints.jsonPaths as Record<string, unknown>).completionResult, "completion.evidence.result");
+	assert.equal(((outcome.limits as Record<string, unknown>).truncated), true);
+	const artifact = JSON.parse(await readFile(String(saved.path), "utf8")) as Record<string, unknown>;
+	const fullResult = ((artifact.completion as Record<string, unknown>).evidence as Record<string, unknown>).result as Record<string, unknown>;
+	assert.equal((fullResult.items as unknown[]).length, items.length);
+	const artifactCommand = defineCommand((context) => defineArtifactCommand(context), createRuntime());
+	const inspected = parseResult(await artifactCommand.execute("tool-inspect", { path: String(saved.path), mode: "inspect", maxChars: 20_000 }));
+	assert.equal((inspected.jsonPaths as Record<string, unknown>).completionResult, "completion.evidence.result");
+});
+
+test("commands execution: artifact write failure cannot erase a completed browser operation", async () => {
+	const root = await mkdtemp(path.join(tmpdir(), "browser-pilot-operation-artifact-failure-"));
+	const invalidCwd = path.join(root, "not-a-directory");
+	await writeFile(invalidCwd, "file blocks artifact directory creation", "utf8");
+	const runtime = createRuntime({
+		async executeJavaScript() {
+			return { id: "exec-large", acknowledged: true, tabId: 7, data: { rows: Array.from({ length: 100 }, (_, index) => ({ index, value: "x".repeat(200) })) } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const result = await command.execute("tool-artifact-failure", { script: "return window.__large", targetRef: "tab-7", maxChars: 1_200 }, undefined, undefined, { cwd: invalidCwd });
+	const outcome = parseResult(result);
+	assert.equal(outcome.version, "browser-operation/v1");
+	assert.equal(outcome.status, "completed");
+	assert.equal((outcome.completion as Record<string, unknown>).source, "script-resolved");
+	assert.deepEqual(outcome.continuation, { next: "inspect_diagnostics", reason: "artifact_save_failed", replay: "do_not_retry" });
+	assert.equal(outcome.saved, undefined);
+	assert.match(JSON.stringify(outcome.diagnostics), /ARTIFACT_SAVE_FAILED/);
+	const failedResult = ((outcome.completion as Record<string, unknown>).evidence as Record<string, unknown>).result as Record<string, unknown>;
+	assert.equal(failedResult.artifactJsonPath, undefined);
+	assert.equal(failedResult.evidenceUnavailable, true);
+	assert.equal(result.content[0]?.text.length <= 1_200, true);
+});
+
+test("operation continuation verifies non-page state when no diagnostics exist", async () => {
+	const result = await browserOperationCommandResult({
+		version: "browser-operation/v1",
+		operationId: "operation-network-no-effect",
+		commandName: "browser_network",
+		status: "no_effect",
+		target: { targetRef: "tab-7", tabId: 7 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
+		signals: {},
+	}, { budgetName: "browser_network", maxChars: 12_000, details: {} });
+	const outcome = parseResult(result);
+	assert.deepEqual(outcome.continuation, { next: "verify_command_state", reason: "no_effect", replay: "do_not_retry" });
+});
+
+test("operation continuation re-observes page-driven download uncertainty", async () => {
+	const result = await browserOperationCommandResult({
+		version: "browser-operation/v1",
+		operationId: "operation-download-no-effect",
+		commandName: "browser_download",
+		status: "no_effect",
+		target: { targetRef: "tab-7", tabId: 7 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
+		signals: {},
+	}, { budgetName: "browser_download", maxChars: 12_000, details: {} });
+	const outcome = parseResult(result);
+	assert.deepEqual(outcome.continuation, { next: "observe", reason: "no_effect", replay: "do_not_retry" });
+});
+
+test("operation continuation only selects diagnostics when diagnostics exist", async () => {
+	const result = await browserOperationCommandResult({
+		version: "browser-operation/v1",
+		operationId: "operation-network-stalled",
+		commandName: "browser_network",
+		status: "stalled",
+		target: { targetRef: "tab-7", tabId: 7 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
+		signals: { networkPending: 1 },
+		diagnostics: [{ code: "RECORDER_PENDING", message: "recorder has not flushed" }],
+	}, { budgetName: "browser_network", maxChars: 12_000, details: {} });
+	const outcome = parseResult(result);
+	assert.deepEqual(outcome.continuation, { next: "inspect_diagnostics", reason: "stalled", replay: "do_not_retry" });
+});
+
+test("completed operations reacquire targets after close and new-tab completion", async () => {
+	const close = parseResult(await browserOperationCommandResult({
+		version: "browser-operation/v1",
+		operationId: "operation-tab-close",
+		commandName: "browser_tabs",
+		status: "completed",
+		target: { targetRef: "tab-7", tabId: 7 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
+		signals: {},
+		completion: { source: "tab-close", evidence: { tabId: 7 } },
+	}, { budgetName: "browser_tabs", maxChars: 12_000, details: {} }));
+	assert.deepEqual(close.continuation, { next: "reacquire_target", reason: "target_no_longer_current", replay: "not_needed" });
+
+	const newTab = parseResult(await browserOperationCommandResult({
+		version: "browser-operation/v1",
+		operationId: "operation-new-tab",
+		commandName: "browser_execute",
+		status: "completed",
+		target: { targetRef: "tab-7", tabId: 7 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
+		signals: { newTabs: 1, navigation: "https://example.test/new" },
+		completion: { source: "new-tab-ready", evidence: { event: { tabId: 8 } } },
+	}, { budgetName: "browser_execute", maxChars: 12_000, details: {} }));
+	assert.deepEqual(newTab.continuation, { next: "reacquire_target", reason: "target_no_longer_current", replay: "not_needed" });
+});
+
+test("minimal operation artifact hints follow the returned continuation", async () => {
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-operation-diagnostics-"));
+	const result = await browserOperationCommandResult({
+		version: "browser-operation/v1",
+		operationId: "operation-diagnostics-large",
+		commandName: "browser_network",
+		status: "stalled",
+		target: { targetRef: "tab-7", tabId: 7 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
+		signals: { networkPending: 1 },
+		diagnostics: Array.from({ length: 80 }, (_, index) => ({ code: `PENDING_${index}`, message: "x".repeat(300) })),
+	}, { budgetName: "browser_network", maxChars: 1_200, ctx: { cwd }, details: {} });
+	const outcome = parseResult(result);
+	assert.deepEqual(outcome.continuation, { next: "inspect_diagnostics", reason: "stalled", replay: "do_not_retry" });
+	assert.deepEqual((outcome.artifact_hints as Record<string, unknown>).jsonPaths, { diagnostics: "diagnostics" });
+});
+
+test("operation artifacts remain readable across the default bridge payload range", async () => {
+	assert.equal(MAX_ARTIFACT_READ_BYTES > DEFAULT_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES, true);
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-operation-too-large-"));
+	const utf8Value = "界".repeat(Math.ceil((MAX_ARTIFACT_READ_BYTES + 4_096) / 3));
+	const result = await browserOperationCommandResult({
+		version: "browser-operation/v1",
+		operationId: "operation-artifact-too-large",
+		commandName: "browser_execute",
+		status: "completed",
+		target: { targetRef: "tab-7", tabId: 7 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
+		signals: {},
+		completion: { source: "script-resolved", evidence: { result: utf8Value } },
+	}, { budgetName: "browser_execute", maxChars: 1_200, ctx: { cwd }, details: {} });
+	const outcome = parseResult(result);
+	assert.equal(outcome.status, "completed");
+	assert.equal(outcome.saved, undefined);
+	assert.match(JSON.stringify(outcome.diagnostics), /ARTIFACT_TOO_LARGE/);
+	const completionResult = ((outcome.completion as Record<string, unknown>).evidence as Record<string, unknown>).result as Record<string, unknown>;
+	assert.equal(completionResult.artifactJsonPath, undefined);
+	assert.equal(completionResult.evidenceUnavailable, true);
+	assert.equal((outcome.continuation as Record<string, unknown>).replay, "do_not_retry");
+});
+
+test("operation compaction preserves completion with undefined evidence without publishing a missing JSON path", async () => {
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-undefined-operation-result-"));
+	const result = await browserOperationCommandResult({
+		version: "browser-operation/v1",
+		operationId: "operation-undefined-result",
+		commandName: "browser_command",
+		status: "completed",
+		target: { targetRef: "tab-7", tabId: 7 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
+		signals: { mutationCount: 100 },
+		completion: { source: "native-command-result", evidence: { result: undefined } },
+		pageEffect: { changed: Array.from({ length: 80 }, (_, index) => ({ index, detail: "x".repeat(200) })) },
+	}, { budgetName: "browser_command", maxChars: 1_200, ctx: { cwd }, details: {} });
+	const outcome = parseResult(result);
+	assert.equal(outcome.version, "browser-operation/v1");
+	assert.equal(outcome.status, "completed");
+	assert.equal((outcome.completion as Record<string, unknown>).source, "native-command-result");
+	const paths = (outcome.artifact_hints as Record<string, unknown>).jsonPaths as Record<string, unknown>;
+	assert.equal(paths.completionResult, undefined);
+	assert.equal(result.content[0]?.text.length <= 1_200, true);
+});
+
+test("operation minimal response bounds navigation signals and records the omitted full value", async () => {
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-pilot-long-operation-signal-"));
+	const navigation = `https://example.test/?state=${"x".repeat(10_000)}`;
+	const result = await browserOperationCommandResult({
+		version: "browser-operation/v1",
+		operationId: "operation-long-navigation",
+		commandName: "browser_execute",
+		status: "completed",
+		target: { browserSessionId: "session-1", targetRef: "tab-7", tabId: 7, url: navigation },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 10, finishedAt: 20 },
+		signals: { navigation },
+		completion: { source: "navigation-completed", evidence: { event: { url: navigation } } },
+	}, { budgetName: "browser_execute", maxChars: 1_200, ctx: { cwd }, details: {} });
+	const outcome = parseResult(result);
+	assert.equal(result.content[0]?.text.length <= 1_200, true);
+	assert.equal(String((outcome.signals as Record<string, unknown>).navigation).length <= 241, true);
+	assert.equal(((outcome.limits as Record<string, unknown>).omitted as string[]).includes("signals.navigation"), true);
+	const artifact = JSON.parse(await readFile(String((outcome.saved as Record<string, unknown>).path), "utf8")) as Record<string, unknown>;
+	assert.equal((artifact.signals as Record<string, unknown>).navigation, navigation);
 });
 
 test("commands execution: browser_execute program path preserves operation and frame summaries", async () => {

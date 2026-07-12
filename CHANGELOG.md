@@ -9,11 +9,23 @@ All notable changes to this project will be documented in this file.
 - Removed the public `browser_wait` tool and CLI `wait` command, including its public schema, help, aliases, and recovery guidance. Internal selector/navigation/network-idle primitives now serve the operation supervisor only.
 - All browser state-changing core commands now run as a single event-driven transaction and return `browser-operation/v1`. Listeners are armed before dispatch; `completed` requires command-specific mechanical evidence, while `effect_observed`, `no_effect`, `stalled`, `ambiguous`, `target_lost`, `failed`, and `deadline` report bounded factual terminal states.
 - Removed `browser_execute.monitor` and the former snapshot-plus-150ms `effect/settled` result model. JavaScript with a non-`undefined` resolved value returns `completed/script-resolved`; physical programs without an observed effect return `no_effect`.
+- CLI JSON artifact `readCommands` are now bounded structured placeholder templates with `pathRef` / `jsonPathRef`, rather than shell command strings containing actual paths. The actual saved path appears once in its artifact descriptor.
 
 ### Added
 
 - Added the daemon operation ledger with bounded sequenced events, five-minute active/terminal retention, owner/session-isolated late-effect surfacing, and a 30-second passive late-effect window.
 - Added internal `operation.begin`, `operation.finish`, and `operation.cancel` protocol commands plus extension `operation_event` messages for tab/navigation/download/dialog/network/DOM/target lifecycle evidence.
+- Added a compact, domain-aware `continuation` decision to terminal browser operations: page uncertainty observes, target loss/close/fan-out reacquires, present diagnostics are inspected, non-page uncertainty uses read-only command-state verification, and compacted successful results inspect their artifact without blindly replaying acknowledged mutations.
+- Added artifact-backed progressive disclosure for every state-changing `browser-operation/v1` result. Oversized completion/effect/diagnostic evidence is saved once and replaced inline by a typed bounded summary with verified `artifact_hints` JSON paths.
+- Operation artifact persistence now fails open: `ARTIFACT_SAVE_FAILED` reports unavailable large evidence without replacing the already-proven browser terminal status, and explicitly forbids replaying the mutation to recreate an artifact.
+- Artifact reads now allow 40 MiB, above the default 32 MiB bridge frame; operation persistence preflights the final UTF-8 size and never publishes a path the reader would reject.
+
+### Changed
+
+- Observe/result `nextActions` now contain only actual recovery or continuation guidance. Browser Pilot no longer guesses `read(ref)`/`click(ref)` pseudo-actions from the first entity or duplicates optional artifact expansion already represented by `saved` and `artifact_hints`.
+- Result middleware now derives artifact reads only from paths verified in the final persisted layout and keeps final `saved.bytes` / `saved.chars` descriptors equal to the actual file. Synthetic correlation reads were removed.
+- Distilled envelope extreme fallback now honors the final character budget, retaining canonical observation markers, actionable errors, compact saved evidence, and required continuation while dropping duplicate artifact metadata and low-density planes.
+- CLI artifact guidance now emits safe inspect → paths → targeted-read templates with strict count/character budgets, and human rendering exposes direct `browser-operation/v1` status, completion, continuation, and artifact information instead of printing an empty line.
 
 ## [0.3.0] - 2026-06-14
 

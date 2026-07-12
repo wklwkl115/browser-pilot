@@ -260,6 +260,65 @@ function markEnvelopeBudgetOmissions<T extends BudgetedEnvelope>(envelope: T, om
 	};
 }
 
+function compactExtremeDiagnostics(value: unknown): Record<string, unknown> | undefined {
+	if (!isRecord(value)) return undefined;
+	const compact = pickDefined(value, ["failed", "code", "error_code", "message", "bodyUnavailableReason", "failureCount", "matchedCount"]);
+	return Object.keys(compact).length ? compact : undefined;
+}
+
+function compactExtremeDescriptor(value: unknown): Record<string, unknown> | undefined {
+	if (!isRecord(value)) return undefined;
+	const compact = pickDefined(value, ["path", "bytes", "chars", "mime"]);
+	return Object.keys(compact).length ? compact : undefined;
+}
+
+function compactExtremePrivacy(value: unknown): Record<string, unknown> | undefined {
+	if (!isRecord(value)) return undefined;
+	const compact = pickDefined(value, ["classification", "localOnly", "sensitiveEvidence"]);
+	return Object.keys(compact).length ? compact : undefined;
+}
+
+function extremeEnvelopeFallback<T extends BudgetedEnvelope>(out: T, budget: number): T {
+	const summary = {
+		...fitSummaryBudget(out.summary, 220),
+		envelopeTruncatedToBudget: true,
+		envelopeOmitted: ["extreme_budget"],
+	};
+	const base = {
+		tool: out.tool,
+		command: out.command,
+		browserSessionId: out.browserSessionId,
+		detailLevel: out.detailLevel,
+		summary,
+		diagnostics: compactExtremeDiagnostics(out.diagnostics),
+		limits: isRecord(out.limits) ? pickDefined(out.limits, ["maxChars", "detailLevel", "truncated", "originalLength", "original_bytes"]) : undefined,
+		privacy: compactExtremePrivacy(out.privacy),
+		nextActions: out.nextActions?.slice(0, 1),
+		saved: compactExtremeDescriptor(out.saved),
+	} as unknown as T;
+	const withCore = { ...base, ...pickPresentEnvelopeFields(out, ENVELOPE_CORE) } as T;
+	if (stableJson(withCore).length <= budget) return withCore;
+	if (stableJson(base).length <= budget) return base;
+	const withoutOptional = { ...base } as T;
+	delete withoutOptional.diagnostics;
+	delete withoutOptional.privacy;
+	if (stableJson(withoutOptional).length <= budget) return withoutOptional;
+	return {
+		tool: out.tool,
+		command: out.command,
+		browserSessionId: out.browserSessionId,
+		detailLevel: out.detailLevel,
+		summary: {
+			...fitSummaryBudget(out.summary, 120),
+			envelopeTruncatedToBudget: true,
+			envelopeOmitted: ["extreme_budget"],
+		},
+		limits: withoutOptional.limits,
+		nextActions: withoutOptional.nextActions,
+		saved: withoutOptional.saved,
+	} as unknown as T;
+}
+
 export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxChars: number): T {
 	const budget = Math.max(1_000, Math.floor(maxChars));
 	if (stableJson(envelope).length <= budget) return envelope;
@@ -313,7 +372,7 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 	if (stableJson(essential).length <= budget) return essential;
 	// Extreme overflow: only the densest CORE orientation survives.
 	const droppedEssential = ENVELOPE_ESSENTIAL.filter((k) => !ENVELOPE_CORE.includes(k as typeof ENVELOPE_CORE[number]) && out[k as keyof T] !== undefined);
-	return markEnvelopeBudgetOmissions({
+	const core = markEnvelopeBudgetOmissions({
 		tool: out.tool,
 		command: out.command,
 		browserSessionId: out.browserSessionId,
@@ -326,4 +385,5 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 		nextActions: out.nextActions?.slice(0, 2),
 		saved: out.saved,
 	} as T, [...omitted, "nonessential_metadata", ...droppedEssential]);
+	return stableJson(core).length <= budget ? core : extremeEnvelopeFallback(out, budget);
 }

@@ -174,7 +174,7 @@ sqli, template, cookie-analyze, http-replay, and callback-oast. Use
 6. artifact            → read detailed saved evidence
 ```
 
-State-changing commands arm event listeners before dispatch and remain open until a terminal `browser-operation/v1` status. There is no public `wait` command and agents should not add sleep loops. `completed` requires command-specific evidence; `effect_observed` is not proof of business completion, while `no_effect` and `stalled` are not success. There are no `click` or `type` commands — page actions go through `browser_execute`
+State-changing commands arm event listeners before dispatch and remain open until a terminal `browser-operation/v1` status. There is no public `wait` command and agents should not add sleep loops. `completed` requires command-specific evidence; `effect_observed` is not proof of business completion, while `no_effect` and `stalled` are not success. A compact, domain-aware `continuation` field chooses the safe next decision: `observe` for page-state uncertainty, `reacquire_target` when the current target is no longer reliable, `inspect_diagnostics` only when diagnostics exist, `verify_command_state` for non-page uncertainty, and `inspect_artifact` for a compacted successful result. It explicitly prevents blind replay. When completion/effect evidence exceeds the response budget, Browser Pilot preserves the root terminal contract, saves the full redacted outcome once, and returns a typed inline summary plus `saved.path` and verified `artifact_hints`; inspect, list paths, then read the targeted value instead of executing the mutation again. Artifacts that exceed the reader ceiling are not published as unreadable paths. There are no `click` or `type` commands — page actions go through `browser_execute`
 (JavaScript). For trusted-event-gated controls, use `browser_command` with `input.pointer`
 or `input.keys` (CDP physical input).
 
@@ -191,7 +191,7 @@ It fuses accessibility/DOM structure with actionables, refs, relations, collecti
 
 Repeated `browser_observe` on the same tab produces compact delta frames
 (`delta:"session"`) containing only what changed. Multi-step workflows stay
-token-efficient without sacrificing completeness.
+token-efficient without sacrificing completeness. Default `nextActions` represent an actual recovery or continuation frontier; they do not guess an action from the first entity or duplicate optional artifact reads already described by `artifact_hints`.
 
 ### Browser Memory
 

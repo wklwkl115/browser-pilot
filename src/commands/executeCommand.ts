@@ -6,7 +6,8 @@ import { BrowserBridgeError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 import { withBrowserOperation } from "./browserOperation.js";
-import { commandMaxChars, commandTimeoutMs, defineBrowserCommand, inlineJsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
+import { browserOperationCommandResult } from "./browserOperationResult.js";
+import { commandMaxChars, commandTimeoutMs, defineBrowserCommand, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 
@@ -76,11 +77,12 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 		name: "browser_execute",
 		label: "Browser Execute",
 		description: "Execute JavaScript or a trusted physical-input program as one event-driven browser operation transaction and return browser-operation/v1 at its proven terminal state.",
-		promptSnippet: "Execute one JavaScript or trusted input transaction; consume its browser-operation/v1 outcome without a follow-up wait or sleep.",
+		promptSnippet: "Execute one JavaScript or trusted input transaction; consume its browser-operation/v1 outcome, continuation, and artifact hints without a follow-up wait or sleep.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
 			"Use script for JavaScript or program for trusted CDP mouse/key/text frames; pass exactly one.",
 			"The call remains open until completed, effect_observed, no_effect, stalled, target_lost, failed, ambiguous, or deadline. effect_observed is browser evidence, not proof of business success; no_effect and stalled are not success.",
+			"Follow continuation before another mutation. Large resolved values stay in saved.path and are addressed by artifact_hints; inspect them instead of replaying the execute call.",
 		],
 		parameters: strictCommandParameters({
 			script: Type.Optional(Type.String({ description: "JavaScript to execute. A non-undefined resolved value is mechanical completed/script-resolved evidence." })),
@@ -109,7 +111,12 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					ctx,
 					onUpdate,
 				}, () => executePrepared(prepared, server, { browserSessionId, rawTarget: rawTarget as string | number | undefined, tabId, timeoutMs, signal }));
-				return inlineJsonCommandResult(outcome, { mode: prepared.mode, operationId: outcome.operationId, status: outcome.status }, { maxChars }, "browser_execute");
+				return await browserOperationCommandResult(outcome, {
+					budgetName: "browser_execute",
+					maxChars,
+					ctx,
+					details: { mode: prepared.mode, operationId: outcome.operationId, status: outcome.status },
+				});
 			});
 		},
 	});

@@ -70,7 +70,11 @@ Treat live help and schema output as authoritative. Command definitions reject u
 
    State-changing commands arm browser and page listeners before dispatch and keep the invocation open until `completed`, `effect_observed`, `no_effect`, `stalled`, `ambiguous`, `target_lost`, `failed`, or `deadline`. Do not issue a separate wait or sleep. `completed` requires command-specific mechanical evidence. `effect_observed` proves a browser effect but not the full business workflow; `no_effect` and `stalled` are not success.
 
-6. Continue from the returned evidence, observing again only when the next decision needs a fresh page model. Do not treat command acknowledgement or `effect_observed` as proof that the intended business state was reached. Late effects from the previous operation are surfaced automatically on the same owner's next related operation.
+   Read `continuation` before choosing the next mutation. `observe` requests a fresh canonical page model; `reacquire_target` requests a fresh tab/target selection; `inspect_diagnostics` is returned only when diagnostics exist; `verify_command_state` requests the command domain's read-only status/list query; `inspect_artifact` means the operation completed but its large result was compacted. None of these decisions authorize replaying an acknowledged mutation.
+
+   Oversized outcomes still keep the `browser-operation/v1` root, terminal status, target, dispatch state, signals, and `completion.source`. A typed object/array/string summary may replace `completion.evidence.result`; follow `saved.path` and the verified `artifact_hints.jsonPaths` (usually `completion.evidence.result`) for the complete redacted outcome.
+
+6. Continue from the returned evidence, observing again only when the next decision needs a fresh page model. Do not treat command acknowledgement or `effect_observed` as proof that the intended business state was reached. Late effects from the previous operation are surfaced automatically on the same owner's next related operation. Treat `nextActions` as required recovery/continuation guidance and `artifact_hints` as optional progressive expansion; the absence of an artifact read in `nextActions` does not make the saved evidence unavailable.
 
 ## Capture Network Evidence
 
@@ -94,6 +98,8 @@ browser-pilot artifact --mode json --path <saved.path> --json-path <verified-pat
 
 Inspect metadata or list available JSON paths before targeted reads. Do not guess JSON paths, invent fixed artifact filenames, or load a large artifact wholesale when `pick`, `search`, `sample`, offsets, or limits can answer the question.
 
+For a compacted operation outcome, prefer the exact path named by `artifact_hints.jsonPaths` over generic artifact defaults. The saved operation artifact embeds the same hints, so `artifact --mode inspect` can validate paths before the targeted read.
+
 ## Apply CLI Boundaries
 
 - Add `--json` to agent-facing calls and parse the structured result.
@@ -112,8 +118,10 @@ Read structured `error`, `diagnostics`, `nextActions`, `target`, and `saved` fie
 
 - Bridge or extension unavailable: run `connect --wait`, then `status` or `doctor`.
 - Stale or missing target: list tabs again and re-run canonical `observe`.
-- Operation `deadline`, `stalled`, or `target_lost`: inspect `dispatch`, `signals`, `target`, `diagnostics`, and any automatically surfaced `lateEffects`; do not replay an acknowledged mutating action blindly.
-- Truncated inline result: follow `saved.path` and `artifact_hints`; increase limits only when a targeted artifact read is insufficient.
+- Operation `target_lost`: inspect `dispatch`, `signals`, `target`, diagnostics, and any automatically surfaced `lateEffects`; reacquire a current target instead of replaying the action against the lost one.
+- Operation `effect_observed`, `no_effect`, `stalled`, `ambiguous`, or `deadline`: follow the returned domain-aware `continuation`. Re-observe only for page-state uncertainty; reacquire changed targets, inspect present diagnostics, or use a read-only command status/list operation for non-page state.
+- `ARTIFACT_SAVE_FAILED`: trust the returned operation status and `completion.source`; the browser action already reached its terminal state, but the omitted large evidence is unavailable. Do not replay it to recreate the artifact.
+- Truncated inline result: follow `saved.path` and `artifact_hints`; a compact typed `completion.evidence.result` is a pointer summary, not the full value. Increase limits only when a targeted artifact read is insufficient.
 - Invalid arguments: query `schema <command> --json` or validate a parameter file before retrying.
 
 When working inside the Browser Pilot source repository, follow `AGENTS.md`, `REPO_GOVERNANCE.md`, and `CODE_WIKI.md` for code changes and validation. Those contributor rules do not replace the live CLI help for operational command syntax.

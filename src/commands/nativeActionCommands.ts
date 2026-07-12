@@ -8,10 +8,11 @@ import { nativeToolMetadata } from "./nativeActionMetadata.js";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction } from "./actionCommands.js";
 import { readFrameEntities } from "../browser-runtime/abml/frameRuntime.js";
 import type { ToolResultBudgetName } from "./budgets.js";
-import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, buildActiveContext, defineBrowserCommand, inlineJsonCommandResult, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs } from "./commandRuntime.js";
+import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, buildActiveContext, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs } from "./commandRuntime.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { withBrowserOperation } from "./browserOperation.js";
+import { browserOperationCommandResult } from "./browserOperationResult.js";
 import { isNativeWriteCommand } from "./operationResolvers.js";
 
 // Registers the three public native bridge-backed tools (network/hook/frame); internal wait
@@ -168,7 +169,12 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 				const writeCommand = captureReload || isNativeWriteCommand(command);
 				if (writeCommand) {
 					const outcome = await withBrowserOperation({ server, commandName: config.name, command: commandName, action: String(params.action || ""), browserSessionId, tabId: trackedTabId, targetRef: typeof params.targetRef === "string" ? params.targetRef : undefined, timeoutMs, ctx, onUpdate: _onUpdate }, dispatch);
-					return inlineJsonCommandResult(outcome, { command: commandName, action: params.action, operationId: outcome.operationId, status: outcome.status }, { maxChars }, config.budgetName);
+					return await browserOperationCommandResult(outcome, {
+						budgetName: config.budgetName,
+						maxChars,
+						ctx,
+						details: { command: commandName, action: params.action, operationId: outcome.operationId, status: outcome.status },
+					});
 				}
 				const result = await dispatch();
 				return await jsonCommandResult(result, params, ctx, {

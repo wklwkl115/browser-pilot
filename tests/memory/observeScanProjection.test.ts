@@ -97,7 +97,7 @@ test("observe scan characterization: ABML detail projection keeps integrated and
 
 test("observe scan characterization: next action hints cover baseline, causal, and treeDiff contracts", () => {
 	assert.deepEqual(buildScanNextActionHints({ hasBaseline: false, snapshotId: "snap-1", recorderActive: true }), [
-		"to see what CHANGES after you act here: re-run browser_observe baselineSnapshotId:\"snap-1\" or browser_observe diff:true → envelope.treeDiff (template-level appeared/disappeared, cleaner than re-extracting before/after); + envelope.causal.requests = which requests your action fired",
+		"after acting, use browser_observe diff:true only if the next decision needs fresh state; inspect treeDiff and causal.requests",
 	]);
 	const hints = buildScanNextActionHints({
 		hasBaseline: true,
@@ -107,7 +107,7 @@ test("observe scan characterization: next action hints cover baseline, causal, a
 	});
 	assert.equal(hints.length, 2);
 	assert.equal(hints[0], "15 request(s) fired since baseline → read envelope.causal.requests (first 1 shown inline; full set via browser_network list) (action→request attribution)");
-	assert.match(hints[1], /structure changed \(2 appeared \/ 1 disappeared \/ 1 changed, template-level\)/);
+	assert.match(hints[1], /treeDiff: \+2\/-1\/~1 templates/);
 	assert.match(hints[1], /\+New CTA, New row, Ignored extra; -Old CTA; ~Price/);
 });
 

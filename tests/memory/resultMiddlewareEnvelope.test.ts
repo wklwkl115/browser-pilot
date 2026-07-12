@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { distilledJsonResult, distilledTextResult } from "../../src/commands/resultMiddleware.ts";
+import { hasJsonPathValue } from "../../src/utils/jsonPath.ts";
 
 type Envelope = Record<string, unknown>;
 
@@ -83,12 +84,19 @@ test("result middleware characterization: default observe budget preserves final
 });
 
 test("result middleware characterization: low observe budget preserves final no-mode canonical marker", async () => {
-	const envelope = await renderEnvelope({ ok: true }, {
+	const outputPath = await testArtifactPath("low-budget-observe.json");
+	const result = await distilledJsonResult({ ok: true }, {
 		commandName: "browser_observe",
 		command: "scan",
+		detailLevel: "summary",
 		maxChars: 1_000,
+		fallbackName: "result.json",
+		outputPath,
 		distill: largeCanonicalObservationSummary,
 	});
+	const rendered = result.content[0]?.text || "";
+	assert.equal(rendered.length <= 1_000, true);
+	const envelope = JSON.parse(rendered) as Envelope;
 	const summary = envelope.summary as Record<string, unknown>;
 	assert.deepEqual(summary.pageObservation, { model: "PageObservation", canonical: true });
 });
@@ -201,7 +209,7 @@ test("result middleware characterization: redaction keeps model-facing pointers 
 
 test("result middleware characterization: saved artifacts include the final rendered envelope", async () => {
 	const outputPath = await testArtifactPath("observe-result.json");
-	const rawValue = { data: { content: "hello" }, pageObservation: { model: "PageObservation", canonical: true } };
+	const rawValue = { data: { content: "你好，Browser Pilot 🌏" }, pageObservation: { model: "PageObservation", canonical: true } };
 	const envelope = await renderEnvelope(rawValue, {
 		commandName: "browser_observe",
 		command: "scan",
@@ -209,11 +217,20 @@ test("result middleware characterization: saved artifacts include the final rend
 		artifactThreshold: 1,
 		distill: () => ({ ok: true, pageObservation: rawValue.pageObservation }),
 	});
-	const artifact = JSON.parse(await readFile(outputPath, "utf8")) as Record<string, unknown>;
+	const artifactText = await readFile(outputPath, "utf8");
+	const artifact = JSON.parse(artifactText) as Record<string, unknown>;
+	const saved = envelope.saved as Record<string, unknown>;
+	const hintSaved = (envelope.artifact_hints as Record<string, unknown>).saved as Record<string, unknown>;
+	const artifactStat = await stat(outputPath);
 	assert.deepEqual(artifact.data, rawValue.data);
 	assert.deepEqual(artifact.envelope, envelope);
 	assert.equal((artifact.envelope as Record<string, unknown>).tool, "browser_observe");
 	assert.deepEqual(((artifact.envelope as Record<string, unknown>).summary as Record<string, unknown>).pageObservation, rawValue.pageObservation);
+	assert.equal(saved.path, path.resolve(outputPath));
+	assert.equal(saved.chars, artifactText.length);
+	assert.equal(saved.bytes, Buffer.byteLength(artifactText, "utf8"));
+	assert.equal(saved.bytes, artifactStat.size);
+	assert.deepEqual(hintSaved, { path: path.resolve(outputPath), bytes: artifactStat.size, chars: artifactText.length });
 });
 
 test("result middleware characterization: summary fitting strips inline nextActions and emits recovery actions", async () => {
@@ -223,7 +240,7 @@ test("result middleware characterization: summary fitting strips inline nextActi
 		distill: () => ({
 			ok: true,
 			data: longText,
-			nextActions: ["click(bp-ref://element/button/submit)", "read_saved_artifact path=/tmp/legacy"],
+			nextActions: ["click(bp-ref://element/button/submit)", "browser_observe diff:true", "read_saved_artifact path=/tmp/legacy"],
 			focus: { primary_entities: [{ ref: "bp-ref://element/button/submit", kind: "control", role: "button" }] },
 		}),
 	});
@@ -231,10 +248,7 @@ test("result middleware characterization: summary fitting strips inline nextActi
 	assert.equal(Object.hasOwn(summary, "nextActions"), false);
 	assert.ok(Array.isArray(summary.summaryOmitted));
 	assert.ok(Array.isArray(envelope.nextActions));
-	assert.deepEqual(envelope.nextActions, [
-		"click(bp-ref://element/button/submit)",
-		"read(bp-ref://element/button/submit)",
-	]);
+	assert.deepEqual(envelope.nextActions, ["browser_observe diff:true"]);
 	assert.ok((envelope.nextActions as string[]).includes("pass explicit targetRef/browserSessionId for follow-up tab-scoped calls") === false);
 });
 
@@ -249,6 +263,7 @@ test("result middleware characterization: saved artifacts drive nextActions and 
 		snapshot: { snapshotId: "snap-1" },
 		distill: () => ({
 			ok: true,
+			dataInline: false,
 			requestId: "req-1",
 			nextOffset: 200,
 			artifact_hints: { preferredReads: [{ label: "items", jsonPath: "items[0]" }] },
@@ -256,15 +271,17 @@ test("result middleware characterization: saved artifacts drive nextActions and 
 		}),
 	});
 	assert.equal(envelope.saved && typeof envelope.saved === "object" ? (envelope.saved as Record<string, unknown>).path : undefined, path.resolve(outputPath));
-	assert.deepEqual((envelope.nextActions as string[]).slice(0, 6), [
-		"read_saved_artifact mode=json jsonPath=items[0]",
-		"read_saved_artifact mode=json jsonPath=operation.operationId",
-		"read_saved_artifact mode=json jsonPath=snapshot.snapshotId",
-		"read_saved_artifact mode=json jsonPath=data.requestId",
-		"read(bp-ref://network-entry/1)",
-		"click(bp-ref://network-entry/1)",
-	]);
-	assert.ok((envelope.nextActions as string[]).includes("read_saved_artifact offset=200"));
+	const artifact = JSON.parse(await readFile(outputPath, "utf8")) as Record<string, unknown>;
+	const preferredReads = ((envelope.artifact_hints as Record<string, unknown>).preferredReads as Array<Record<string, unknown>>)
+		.map((read) => read.jsonPath)
+		.filter((jsonPath): jsonPath is string => typeof jsonPath === "string" && !!jsonPath)
+		.slice(0, 3);
+	const nextActions = envelope.nextActions as string[];
+	const jsonPathActions = nextActions.filter((action) => action.startsWith("read_saved_artifact mode=json jsonPath="));
+	assert.deepEqual(jsonPathActions, preferredReads.map((jsonPath) => `read_saved_artifact mode=json jsonPath=${jsonPath}`));
+	for (const jsonPath of preferredReads) assert.equal(hasJsonPathValue(artifact, jsonPath), true, `expected saved artifact path ${jsonPath}`);
+	assert.equal(jsonPathActions.some((action) => /(?:operation|snapshot)\.|data\.(?:requestId|waitId|listenerId)/.test(action)), false);
+	assert.ok(nextActions.includes("read_saved_artifact offset=200"));
 	const evidence = envelope.evidence as Record<string, unknown>;
 	const artifacts = evidence.artifacts as Array<Record<string, unknown>>;
 	assert.equal(artifacts[0]?.path, path.resolve(outputPath));

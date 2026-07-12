@@ -49,12 +49,43 @@ function uniqueStrings(values: string[]): string[] {
 	return Array.from(new Set(values));
 }
 
+function operationDispatchLine(value: unknown): string | undefined {
+	if (!isRecord(value)) return undefined;
+	let acknowledged = "ack unknown";
+	if (value.acknowledged === true) acknowledged = "acknowledged";
+	else if (value.acknowledged === false) acknowledged = "not acknowledged";
+	let lifecycle: string | undefined;
+	if (value.finished === true) lifecycle = "finished";
+	else if (value.started === true) lifecycle = "started";
+	return `dispatch: ${acknowledged}${lifecycle ? ` · ${lifecycle}` : ""}`;
+}
+
+function operationHumanLines(env: Record<string, unknown>): string[] {
+	const commandName = typeof env.commandName === "string" ? env.commandName : "browser operation";
+	const status = typeof env.status === "string" ? env.status : "unknown";
+	const lines = [`${bold(commandName)} · ${status}`];
+	if (typeof env.operationId === "string") lines.push(`operation: ${env.operationId}`);
+	const dispatch = operationDispatchLine(env.dispatch);
+	if (dispatch) lines.push(dispatch);
+	if (isRecord(env.completion) && typeof env.completion.source === "string") lines.push(`completion: ${env.completion.source}`);
+	if (isRecord(env.continuation)) {
+		const next = typeof env.continuation.next === "string" ? env.continuation.next : "unspecified";
+		const replay = typeof env.continuation.replay === "string" ? ` · replay ${env.continuation.replay}` : "";
+		const reason = typeof env.continuation.reason === "string" ? ` · ${env.continuation.reason}` : "";
+		lines.push(`continuation: ${next}${replay}${reason}`);
+	}
+	return lines;
+}
+
 function renderHumanOk(text: string): number {
 	let env: unknown;
 	try { env = JSON.parse(text); } catch { process.stdout.write(`${text}\n`); return EXIT.ok; }
 	if (!isRecord(env)) { process.stdout.write(`${text}\n`); return EXIT.ok; }
 	const lines: string[] = [];
-	if (typeof env.tool === "string") lines.push(bold(env.tool) + (typeof env.command === "string" ? ` · ${env.command}` : ""));
+	if (env.version === "browser-operation/v1") lines.push(...operationHumanLines(env));
+	else if (typeof env.tool === "string") {
+		lines.push(bold(env.tool) + (typeof env.command === "string" ? ` · ${env.command}` : ""));
+	}
 	if (env.summary !== undefined) lines.push(prettySummary(env.summary));
 	if (isRecord(env.diagnostics) && Array.isArray(env.diagnostics.warnings)) lines.push(dim(`⚠ ${env.diagnostics.warnings.join("; ")}`));
 	if (isRecord(env.saved) && typeof env.saved.path === "string") lines.push(dim(`artifact: ${env.saved.path}`));
@@ -100,95 +131,182 @@ function errorCode(env: Record<string, unknown>, fallback: string): string {
 	return fallback;
 }
 
-function quoteCliArg(value: string): string {
-	return `"${value.replace(/"/g, '\\"')}"`;
+type CliCommandDescriptor = {
+	kind: string;
+	command: string;
+	argv?: string[];
+	argvTemplate?: string[];
+	pathRef?: string;
+	jsonPath?: string;
+	jsonPathRef?: string;
+	offset?: string;
+	source: string;
+};
+
+type ArtifactReadDescriptor = {
+	command: string;
+	argvTemplate: string[];
+	pathRef: "path";
+	jsonPathRef?: string;
+};
+
+const ARTIFACT_INSPECT_COMMAND = "browser-pilot artifact --path <saved.path> --mode inspect --json";
+const ARTIFACT_PATHS_COMMAND = "browser-pilot artifact --path <saved.path> --mode paths --json";
+const ARTIFACT_JSON_COMMAND = "browser-pilot artifact --path <saved.path> --mode json --json-path <verified-json-path> --json";
+const MAX_ARTIFACT_JSON_PATHS = 6;
+const MAX_ARTIFACT_JSON_PATH_CHARS = 512;
+const MAX_ARTIFACT_JSON_PATH_TOTAL_CHARS = 2_048;
+const MAX_CLI_NEXT_ACTIONS = 6;
+const MAX_CLI_REFERENCE_CHARS = 512;
+
+function hintedJsonPathRef(jsonPaths: string[], jsonPath: string): string | undefined {
+	const index = jsonPaths.indexOf(jsonPath);
+	return index >= 0 ? `artifacts[0].jsonPaths[${index}]` : undefined;
 }
 
-function cliActionFromText(action: string, savedPath?: string): Record<string, unknown> | undefined {
+function cliActionFromText(action: string, savedPathAvailable: boolean, jsonPaths: string[]): CliCommandDescriptor | undefined {
 	const artifactJson = action.match(/read_saved_artifact\s+mode=json\s+jsonPath=([^\s]+)/);
-	if (artifactJson && savedPath) return {
-		kind: "artifact-read",
-		command: `browser-pilot artifact --path ${quoteCliArg(savedPath)} --mode json --json-path ${quoteCliArg(artifactJson[1])} --json`,
-		argv: ["browser-pilot", "artifact", "--path", savedPath, "--mode", "json", "--json-path", artifactJson[1], "--json"],
-		source: action,
-	};
+	if (artifactJson && savedPathAvailable) {
+		const jsonPathRef = hintedJsonPathRef(jsonPaths, artifactJson[1]);
+		if (!jsonPathRef) return undefined;
+		return {
+			kind: "artifact-read",
+			command: ARTIFACT_JSON_COMMAND,
+			argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--mode", "json", "--json-path", "<verified-json-path>", "--json"],
+			pathRef: "artifacts[0].path",
+			jsonPathRef,
+			source: "nextActions",
+		};
+	}
 	const artifactText = action.match(/read_saved_artifact\s+mode=text/);
-	if (artifactText && savedPath) return {
+	if (artifactText && savedPathAvailable) return {
 		kind: "artifact-read",
-		command: `browser-pilot artifact --path ${quoteCliArg(savedPath)} --mode text --json`,
-		argv: ["browser-pilot", "artifact", "--path", savedPath, "--mode", "text", "--json"],
-		source: action,
+		command: "browser-pilot artifact --path <saved.path> --mode text --json",
+		argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--mode", "text", "--json"],
+		pathRef: "artifacts[0].path",
+		source: "nextActions",
 	};
-	const artifactOffset = action.match(/read_saved_artifact\s+offset=(\d+)/);
-	if (artifactOffset && savedPath) return {
+	const artifactOffset = action.match(/read_saved_artifact\s+offset=(\d{1,12})(?:\s|$)/);
+	if (artifactOffset && savedPathAvailable) return {
 		kind: "artifact-read",
-		command: `browser-pilot artifact --path ${quoteCliArg(savedPath)} --offset ${artifactOffset[1]} --json`,
-		argv: ["browser-pilot", "artifact", "--path", savedPath, "--offset", artifactOffset[1], "--json"],
-		source: action,
+		command: "browser-pilot artifact --path <saved.path> --offset <offset> --json",
+		argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--offset", "<offset>", "--json"],
+		pathRef: "artifacts[0].path",
+		offset: artifactOffset[1],
+		source: "nextActions",
 	};
 	const baseline = action.match(/baseline:"([^"]+)"|baseline=([0-9a-f-]{16,})/i);
 	if (baseline) {
 		const snapshotId = baseline[1] ?? baseline[2];
+		if (!snapshotId || snapshotId.length > MAX_CLI_REFERENCE_CHARS) return undefined;
 		return {
 			kind: "observe-baseline",
-			command: `browser-pilot observe --baseline-snapshot-id ${snapshotId} --json`,
+			command: "browser-pilot observe --baseline-snapshot-id <snapshot.snapshotId> --json",
 			argv: ["browser-pilot", "observe", "--baseline-snapshot-id", snapshotId, "--json"],
-			source: action,
+			source: "nextActions",
 		};
 	}
 	return undefined;
 }
 
-const COMMON_ARTIFACT_JSON_PATHS = ["data.content", "data.actionables", "data.list_hints"] as const;
-
-function artifactReadCommand(path: string, jsonPath: string): Record<string, unknown> {
+function artifactReadCommand(): ArtifactReadDescriptor {
 	return {
-		kind: "artifact-read",
-		command: `browser-pilot artifact --path ${quoteCliArg(path)} --mode json --json-path ${quoteCliArg(jsonPath)} --json`,
-		argv: ["browser-pilot", "artifact", "--path", path, "--mode", "json", "--json-path", jsonPath, "--json"],
-		source: `saved.path:${jsonPath}`,
+		command: ARTIFACT_JSON_COMMAND,
+		argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--mode", "json", "--json-path", "<verified-json-path>", "--json"],
+		pathRef: "path",
+		jsonPathRef: "jsonPaths[0]",
 	};
+}
+
+function artifactDiscoveryCommands(): ArtifactReadDescriptor[] {
+	return [
+		{ command: ARTIFACT_INSPECT_COMMAND, argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--mode", "inspect", "--json"], pathRef: "path" },
+		{ command: ARTIFACT_PATHS_COMMAND, argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--mode", "paths", "--json"], pathRef: "path" },
+	];
+}
+
+function hintedArtifactJsonPaths(env: Record<string, unknown>): string[] {
+	const hints = isRecord(env.artifact_hints) ? env.artifact_hints : undefined;
+	const paths = isRecord(hints?.jsonPaths) ? Object.values(hints.jsonPaths).filter((value): value is string => typeof value === "string" && value.length > 0) : [];
+	const preferred = Array.isArray(hints?.preferredReads)
+		? hints.preferredReads.flatMap((item) => isRecord(item) && typeof item.jsonPath === "string" && item.jsonPath ? [item.jsonPath] : [])
+		: [];
+	const bounded: string[] = [];
+	const seen = new Set<string>();
+	let chars = 0;
+	for (const jsonPath of [...preferred, ...paths]) {
+		if (seen.has(jsonPath) || jsonPath.length > MAX_ARTIFACT_JSON_PATH_CHARS || chars + jsonPath.length > MAX_ARTIFACT_JSON_PATH_TOTAL_CHARS) continue;
+		seen.add(jsonPath);
+		bounded.push(jsonPath);
+		chars += jsonPath.length;
+		if (bounded.length >= MAX_ARTIFACT_JSON_PATHS) break;
+	}
+	return bounded;
+}
+
+function artifactReadCommands(jsonPaths: string[]): ArtifactReadDescriptor[] {
+	return [
+		...artifactDiscoveryCommands(),
+		...(jsonPaths[0] ? [artifactReadCommand()] : []),
+	];
+}
+
+function artifactReadKey(value: Pick<CliCommandDescriptor, "command" | "jsonPath" | "jsonPathRef">): string {
+	return JSON.stringify([value.command, value.jsonPath ?? value.jsonPathRef?.replace(/^artifacts\[0\]\./, "")]);
+}
+
+function cliArtifactContext(env: Record<string, unknown>, saved: Record<string, unknown> | undefined): {
+	descriptor?: Record<string, unknown>;
+	jsonPaths: string[];
+	readKeys: Set<string>;
+} {
+	if (typeof saved?.path !== "string") return { jsonPaths: [], readKeys: new Set<string>() };
+	const jsonPaths = hintedArtifactJsonPaths(env);
+	const readCommands = artifactReadCommands(jsonPaths);
+	return {
+		jsonPaths,
+		readKeys: new Set(readCommands.map((command) => artifactReadKey(command))),
+		descriptor: {
+			path: saved.path,
+			kind: typeof env.tool === "string" ? env.tool : "browser-result",
+			...(typeof saved.bytes === "number" ? { bytes: saved.bytes } : {}),
+			...(typeof saved.chars === "number" ? { chars: saved.chars } : {}),
+			...(saved.privacy ? { privacy: saved.privacy } : {}),
+			jsonPaths,
+			readCommands,
+		},
+	};
+}
+
+function cliNextActionsForEnvelope(env: Record<string, unknown>, savedPathAvailable: boolean, jsonPaths: string[], readKeys: Set<string>): Record<string, unknown>[] {
+	const actions: Record<string, unknown>[] = [];
+	if (Array.isArray(env.nextActions)) {
+		for (const action of env.nextActions) {
+			if (actions.length >= MAX_CLI_NEXT_ACTIONS) break;
+			if (typeof action !== "string") continue;
+			const cli = cliActionFromText(action, savedPathAvailable, jsonPaths);
+			if (cli?.kind === "artifact-read" && readKeys.has(artifactReadKey(cli))) continue;
+			if (cli) actions.push(cli);
+		}
+	}
+	const snapshot = isRecord(env.snapshot) ? env.snapshot : undefined;
+	if (actions.length < MAX_CLI_NEXT_ACTIONS && typeof snapshot?.snapshotId === "string" && snapshot.snapshotId.length <= MAX_CLI_REFERENCE_CHARS) {
+		actions.push({
+			kind: "observe-baseline",
+			command: "browser-pilot observe --baseline-snapshot-id <snapshot.snapshotId> --json",
+			argv: ["browser-pilot", "observe", "--baseline-snapshot-id", snapshot.snapshotId, "--json"],
+			source: "snapshot.snapshotId",
+		});
+	}
+	return actions;
 }
 
 function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 	const additions: Record<string, unknown> = {};
 	const saved = isRecord(env.saved) ? env.saved : undefined;
-	const artifactReadCommandStrings = new Set<string>();
-	if (saved && typeof saved.path === "string") {
-		const savedPath = saved.path;
-		const readCommands = [
-			`browser-pilot artifact --path ${quoteCliArg(savedPath)} --mode json --json-path data --json`,
-			...COMMON_ARTIFACT_JSON_PATHS.map((jsonPath) => String(artifactReadCommand(savedPath, jsonPath).command)),
-			`browser-pilot artifact --path ${quoteCliArg(savedPath)} --mode search --query "<text>" --json`,
-		];
-		for (const command of readCommands) artifactReadCommandStrings.add(command);
-		additions.artifacts = [{
-			path: savedPath,
-			kind: typeof env.tool === "string" ? env.tool : "browser-result",
-			...(typeof saved.bytes === "number" ? { bytes: saved.bytes } : {}),
-			...(typeof saved.chars === "number" ? { chars: saved.chars } : {}),
-			...(saved.privacy ? { privacy: saved.privacy } : {}),
-			readCommands,
-		}];
-	}
-	const cliNextActions: Record<string, unknown>[] = [];
-	if (Array.isArray(env.nextActions)) {
-		for (const action of env.nextActions) {
-			if (typeof action !== "string") continue;
-			const cli = cliActionFromText(action, typeof saved?.path === "string" ? saved.path : undefined);
-			if (cli?.kind === "artifact-read" && typeof cli.command === "string" && artifactReadCommandStrings.has(cli.command)) continue;
-			if (cli) cliNextActions.push(cli);
-		}
-	}
-	const snapshot = isRecord(env.snapshot) ? env.snapshot : undefined;
-	if (typeof snapshot?.snapshotId === "string") {
-		cliNextActions.push({
-			kind: "observe-baseline",
-			command: `browser-pilot observe --baseline-snapshot-id ${snapshot.snapshotId} --json`,
-			argv: ["browser-pilot", "observe", "--baseline-snapshot-id", snapshot.snapshotId, "--json"],
-			source: "snapshot.snapshotId",
-		});
-	}
+	const artifact = cliArtifactContext(env, saved);
+	if (artifact.descriptor) additions.artifacts = [artifact.descriptor];
+	const cliNextActions = cliNextActionsForEnvelope(env, typeof saved?.path === "string", artifact.jsonPaths, artifact.readKeys);
 	if (cliNextActions.length) additions.cliNextActions = cliNextActions;
 	return { ...env, ...additions };
 }

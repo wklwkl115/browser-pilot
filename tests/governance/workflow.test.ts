@@ -26,6 +26,7 @@ const misePath = path.join(root, "mise.toml");
 const verifyWorkflowPath = path.join(root, ".github/workflows/verify.yml");
 const kernelRoot = path.join(root, "src", "kernels");
 const sessionKernelRoot = path.join(kernelRoot, "session");
+const commandsRoot = path.join(root, "src", "commands");
 
 function text(filePath: string) {
 	return readFileSync(filePath, "utf8");
@@ -71,6 +72,20 @@ test("repo governance uses mise-first gate commands", () => {
 	assert.doesNotMatch(governance, /npm run /);
 });
 
+test("state-changing command call sites use the canonical budgeted operation result owner", () => {
+	const callSites = walkSourceFiles(commandsRoot).filter((filePath) => {
+		if (path.basename(filePath) === "browserOperation.ts") return false;
+		return text(filePath).includes("withBrowserOperation(");
+	});
+	assert.ok(callSites.length > 0);
+	for (const filePath of callSites) {
+		const source = text(filePath);
+		const operationCalls = source.match(/\bwithBrowserOperation\s*\(/g)?.length ?? 0;
+		const resultCalls = source.match(/\bbrowserOperationCommandResult\s*\(/g)?.length ?? 0;
+		assert.equal(resultCalls, operationCalls, path.relative(root, filePath));
+	}
+});
+
 test("repo governance documents one explicit child-agent workflow", () => {
 	const governance = text(governancePath);
 	assert.match(governance, /^## Child-Agent Workflow$/m);
@@ -114,7 +129,7 @@ test("verify owns an exact complexity ratchet", () => {
 	const complexity = text(complexityScriptPath);
 	const validation = text(validationScriptPath);
 	const pkg = JSON.parse(text(packagePath)) as { scripts?: Record<string, string> };
-	assert.match(complexity, /expectedComplexFunctions\s*=\s*85/);
+	assert.match(complexity, /expectedComplexFunctions\s*=\s*84/);
 	assert.match(complexity, /expectedLongFunctions\s*=\s*0/);
 	assert.match(complexity, /assertExactBudget/);
 	assert.match(validation, /scripts\/audit-complexity\.mjs/);

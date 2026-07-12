@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveDaemonStartCommand } from "../../src/apps/daemon/daemonControl.ts";
+import { normalizeJsonEnvelope, renderResult } from "../../src/apps/cli/render.ts";
 
 function runNode(args: string[], cwd = process.cwd()) {
 	return spawnSync("node", args, {
@@ -18,6 +19,28 @@ function runCli(args: string[]) {
 	return runNode(["--import", "tsx", "src/apps/cli/bin.ts", ...args]);
 }
 
+function captureStdout(run: () => void): string {
+	const originalWrite = process.stdout.write;
+	const chunks: string[] = [];
+	process.stdout.write = ((chunk: string | Uint8Array) => {
+		chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+		return true;
+	}) as typeof process.stdout.write;
+	try {
+		run();
+	} finally {
+		process.stdout.write = originalWrite;
+	}
+	return chunks.join("");
+}
+
+function nestedStringValues(value: unknown): string[] {
+	if (typeof value === "string") return [value];
+	if (Array.isArray(value)) return value.flatMap(nestedStringValues);
+	if (value && typeof value === "object") return Object.values(value).flatMap(nestedStringValues);
+	return [];
+}
+
 test("schema execute emits local JSON metadata", () => {
 	const result = runCli(["schema", "execute", "--json"]);
 	const body = JSON.parse(result.stdout);
@@ -28,6 +51,130 @@ test("schema execute emits local JSON metadata", () => {
 	assert.equal(body.commandName, "browser_execute");
 	assert.equal(body.agentCli.mode, "standard");
 	assert.ok(body.flags.some((flag: { name: string }) => flag.name === "scriptFile"));
+});
+
+test("CLI artifact read commands use safe placeholders and bounded returned hints", () => {
+	const savedPath = "C:\\tmp\\artifact space $(whoami) `tick` $env:SECRET \\\"quoted\\\".json";
+	const completionPath = "completion.evidence[$env:SECRET`$(whoami)]";
+	const nextActionPath = "diagnostics[$env:OTHER`$(hostname)]";
+	const unverifiedPath = "missing[$env:UNVERIFIED`$(hostname)]";
+	const snapshotId = "snapshot $env:VALUE `$(hostname)";
+	const body = normalizeJsonEnvelope({
+		version: "browser-operation/v1",
+		status: "completed",
+		saved: { path: savedPath, bytes: 100 },
+		artifact_hints: {
+			jsonPaths: { completionResult: completionPath, diagnostics: nextActionPath },
+			preferredReads: [{ jsonPath: completionPath }, { jsonPath: nextActionPath }],
+		},
+		nextActions: [
+			`read_saved_artifact mode=json jsonPath=${completionPath}`,
+			`read_saved_artifact mode=json jsonPath=${nextActionPath}`,
+			`read_saved_artifact mode=json jsonPath=${unverifiedPath}`,
+		],
+		snapshot: { snapshotId },
+	}, 0, "OK") as Record<string, unknown>;
+	const artifacts = body.artifacts as Array<Record<string, unknown>>;
+	assert.equal(artifacts.length, 1);
+	assert.equal(artifacts[0]?.path, savedPath);
+	assert.deepEqual(artifacts[0]?.jsonPaths, [completionPath, nextActionPath]);
+	const reads = artifacts[0]?.readCommands as Array<{ command: string; argvTemplate: string[]; pathRef: string; jsonPathRef?: string }>;
+	assert.equal(nestedStringValues(artifacts[0]).filter((value) => value === savedPath).length, 1);
+	assert.equal(reads.length, 3);
+	assert.deepEqual(reads.map((read) => read.command), [
+		"browser-pilot artifact --path <saved.path> --mode inspect --json",
+		"browser-pilot artifact --path <saved.path> --mode paths --json",
+		"browser-pilot artifact --path <saved.path> --mode json --json-path <verified-json-path> --json",
+	]);
+	for (const read of reads) {
+		assert.equal(read.command.includes(savedPath), false);
+		assert.equal(read.command.includes(completionPath), false);
+		assert.equal(read.argvTemplate[3], "<saved.path>");
+		assert.equal(read.pathRef, "path");
+		assert.equal(JSON.stringify(read).includes(savedPath), false);
+	}
+	assert.equal(reads.some((read) => read.command.includes("--mode search")), false);
+	assert.equal(reads[2]?.argvTemplate[7], "<verified-json-path>");
+	assert.equal(reads[2]?.jsonPathRef, "jsonPaths[0]");
+
+	const cliNextActions = body.cliNextActions as Array<{ kind: string; command: string; argv?: string[]; argvTemplate?: string[]; pathRef?: string; jsonPathRef?: string }>;
+	const artifactActions = cliNextActions.filter((action) => action.kind === "artifact-read");
+	assert.equal(artifactActions.length, 1);
+	const artifactAction = artifactActions[0];
+	assert.equal(artifactAction?.command, "browser-pilot artifact --path <saved.path> --mode json --json-path <verified-json-path> --json");
+	assert.equal(artifactAction?.command.includes(savedPath), false);
+	assert.equal(artifactAction?.command.includes(nextActionPath), false);
+	assert.equal(artifactAction?.argvTemplate?.[3], "<saved.path>");
+	assert.equal(artifactAction?.argvTemplate?.[7], "<verified-json-path>");
+	assert.equal(artifactAction?.pathRef, "artifacts[0].path");
+	assert.equal(artifactAction?.jsonPathRef, "artifacts[0].jsonPaths[1]");
+	assert.equal(nestedStringValues(cliNextActions).includes(savedPath), false);
+	assert.equal(nestedStringValues(cliNextActions).includes(unverifiedPath), false);
+	const baselineAction = cliNextActions.find((action) => action.kind === "observe-baseline");
+	assert.equal(baselineAction?.command, "browser-pilot observe --baseline-snapshot-id <snapshot.snapshotId> --json");
+	assert.equal(baselineAction?.command.includes(snapshotId), false);
+	assert.equal(baselineAction?.argv?.[3], snapshotId);
+});
+
+test("CLI artifact read commands omit targeted and search reads without verified hints", () => {
+	const body = normalizeJsonEnvelope({
+		saved: { path: "C:\\tmp\\operation.json" },
+	}, 0, "OK") as Record<string, unknown>;
+	const artifact = (body.artifacts as Array<Record<string, unknown>>)[0];
+	const reads = artifact?.readCommands as Array<{ command: string }>;
+	assert.deepEqual(artifact?.jsonPaths, []);
+	assert.equal(reads.length, 2);
+	assert.equal(reads.some((read) => read.command.includes("--mode search")), false);
+	assert.equal(reads.some((read) => read.command.includes("--mode json")), false);
+});
+
+test("human rendering exposes the direct browser operation terminal contract", () => {
+	let exitCode = -1;
+	const output = captureStdout(() => {
+		exitCode = renderResult({
+			content: [{
+				type: "text",
+				text: JSON.stringify({
+					version: "browser-operation/v1",
+					operationId: "op-123",
+					commandName: "browser_execute",
+					status: "completed",
+					dispatch: { acknowledged: true, started: true, finished: true },
+					completion: { source: "native-command-result", evidence: { result: 42 } },
+					continuation: { next: "inspect_artifact", replay: "not_needed", reason: "result_compacted" },
+					saved: { path: "C:\\tmp\\operation.json" },
+				}),
+			}],
+		}, "human");
+	});
+	assert.equal(exitCode, 0);
+	assert.match(output, /^browser_execute · completed/m);
+	assert.match(output, /^operation: op-123/m);
+	assert.match(output, /^dispatch: acknowledged · finished/m);
+	assert.match(output, /^completion: native-command-result/m);
+	assert.match(output, /^continuation: inspect_artifact · replay not_needed · result_compacted/m);
+	assert.match(output, /^artifact: C:\\tmp\\operation\.json/m);
+});
+
+test("human rendering never emits a blank line for a small execute success", () => {
+	const output = captureStdout(() => {
+		renderResult({
+			content: [{
+				type: "text",
+				text: JSON.stringify({
+					version: "browser-operation/v1",
+					operationId: "op-small",
+					commandName: "browser_execute",
+					status: "completed",
+					dispatch: { acknowledged: true, started: true, finished: true },
+					completion: { source: "native-command-result", evidence: { result: 2 } },
+				}),
+			}],
+		}, "human");
+	});
+	assert.notEqual(output, "\n");
+	assert.match(output, /^browser_execute · completed/m);
+	assert.match(output, /^completion: native-command-result/m);
 });
 
 test("validate execute loads --script-file into args.script", () => {

@@ -3,7 +3,8 @@ import { BrowserBridgeError } from "../utils/errors.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { rejectUnsafeExecuteCommand } from "./transferValidation.js";
 import { withBrowserOperation } from "./browserOperation.js";
-import { commandMaxChars, commandTimeoutMs, defineBrowserCommand, inlineJsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
+import { browserOperationCommandResult } from "./browserOperationResult.js";
+import { commandMaxChars, commandTimeoutMs, defineBrowserCommand, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { validateParams } from "./validationMiddleware.js";
@@ -50,7 +51,12 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 					ctx,
 					onUpdate,
 				}, () => server.sendCommand(command, { browserSessionId, tabId: rawTarget as string | number | undefined, timeoutMs, accessMode: "write" }));
-				return inlineJsonCommandResult(outcome, { mode: "command", command: commandName, operationId: outcome.operationId, status: outcome.status }, { maxChars }, "browser_command");
+				return await browserOperationCommandResult(outcome, {
+					budgetName: "browser_command",
+					maxChars,
+					ctx,
+					details: { mode: "command", command: commandName, operationId: outcome.operationId, status: outcome.status },
+				});
 			});
 		},
 	});
