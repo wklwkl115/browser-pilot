@@ -450,6 +450,30 @@ test("handler: confirmation, owner deny, one-shot, busy, identity stop, stale, a
 	assert.equal((fillWithTraceFail.trace as { unavailableReason?: string }).unavailableReason, "forced_trace_failure");
 	evidence.traceFailOpen = fillWithTraceFail;
 
+	// post-view fail-open: observe succeeds for preflight/dispatch path, fails only after settle
+	let observeCalls = 0;
+	setAgentObserveRunnerForTests(async () => {
+		observeCalls += 1;
+		// act preflight (1) + post-view (2+): fail post-view only
+		if (observeCalls >= 2) throw new Error("post_view_forced_failure");
+		return fixtureObservation({ pageEpoch: "epoch-postview" });
+	});
+	const viewPv = asEnvelope(await viewCmd.execute("15", {}, undefined, undefined, { operationOwnerId: "owner-pv" }));
+	// view also calls observe once → reset counter after view
+	observeCalls = 0;
+	const ctxPv = (viewPv.context as { contextRef: string }).contextRef;
+	const fillPv = (viewPv.candidates as Array<{ ref: string; actions: string[] }>).find((c) => c.actions.includes("fill"))?.ref
+		?? (viewPv.candidates as Array<{ ref: string }>)[0]!.ref;
+	const postViewFail = asEnvelope(await actCmd.execute("16", {
+		contextRef: ctxPv,
+		action: { kind: "fill", ref: fillPv, value: "postview@example.test" },
+	}, undefined, undefined, { operationOwnerId: "owner-pv" }));
+	assert.equal((postViewFail.outcome as { status: string }).status, "completed", "settled outcome must survive post-view failure");
+	assert.equal((postViewFail.outcome as { ok: boolean }).ok, true);
+	assert.equal(postViewFail.viewStatus, "unavailable");
+	assert.match(String(postViewFail.viewUnavailableReason ?? ""), /post_view_forced_failure|VIEW_UNAVAILABLE/i);
+	evidence.postViewFailOpen = postViewFail;
+
 	// daemon restart expires contexts
 	agentContextPort().expireAll();
 	assert.deepEqual(agentContextPort().get(contextRef, "owner-a"), { error: "CONTEXT_EXPIRED" });
