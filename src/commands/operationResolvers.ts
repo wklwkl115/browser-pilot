@@ -177,6 +177,30 @@ export const SEMANTIC_ACTION_COMPLETION_RESOLVER_REGISTRY = {
 		}
 		return undefined;
 	},
+	"semantic.select": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
+		// Exact: successful program frames only — option click without verified program is not completed.
+		if (input.physicalProgram && isSuccessfulSemanticProgramResult(input.result)) {
+			return { source: "semantic-select-applied", evidence: { result: input.result } };
+		}
+		return undefined;
+	},
+	"semantic.drag": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
+		if (input.physicalProgram && isSuccessfulSemanticProgramResult(input.result)) {
+			return { source: "semantic-drag-applied", evidence: { result: input.result } };
+		}
+		return undefined;
+	},
+	"semantic.submit": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
+		if (input.physicalProgram && isSuccessfulSemanticProgramResult(input.result)) {
+			const nav = executeCompletion({ ...input, mode: input.mode ?? "program", physicalProgram: true });
+			if (nav?.source === "navigation-completed" || nav?.source === "new-tab-ready" || nav?.source === "download-completed") {
+				return nav;
+			}
+			return { source: "semantic-submit-applied", evidence: { result: input.result } };
+		}
+		if (isRecord(input.result) && input.result.aborted) return undefined;
+		return undefined;
+	},
 	"semantic.navigate": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
 		const nav = executeCompletion({ ...input, mode: "javascript" });
 		if (nav) return nav;

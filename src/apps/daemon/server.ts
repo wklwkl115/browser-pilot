@@ -30,6 +30,8 @@ import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.
 import { daemonVersion } from "./packageInfo.js";
 import { createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
 import { AgentContextService, getAgentContextService, installAgentContextService } from "./AgentContextService.js";
+import { ActionConfirmationService, installActionConfirmationService, getActionConfirmationService } from "./ActionConfirmationService.js";
+import { AgentTraceStore, installAgentTraceStore, getAgentTraceStore } from "./AgentTraceStore.js";
 import * as authStore from "./authStore.js";
 import { TenantLeaseRegistry } from "./tenantLease.js";
 import {
@@ -474,6 +476,8 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	};
 
 	installAgentContextService(new AgentContextService());
+	installActionConfirmationService(new ActionConfirmationService());
+	installAgentTraceStore(new AgentTraceStore());
 
 	const AGENT_FACADE_NAMES = new Set(["browser_view", "browser_act", "browser_read"]);
 	let commandDefinitions: CommandDefinition[];
@@ -503,6 +507,8 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		tenantLease.stop();
 		try {
 			getAgentContextService().expireAll();
+			getActionConfirmationService().expireAll();
+			getAgentTraceStore().expireAll();
 		} catch {
 			/* best-effort */
 		}

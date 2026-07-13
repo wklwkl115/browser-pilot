@@ -300,8 +300,94 @@ export function compileSemanticAction(
 		};
 	}
 
+	if (action.kind === "select") {
+		const binding = requireBinding(action.ref, bindings);
+		if (isCompileError(binding)) return binding;
+		if (!binding.allowedActions.includes("select")) {
+			return { code: "ACTION_NOT_ALLOWED", message: `select not allowed on ${action.ref}` };
+		}
+		if (typeof action.value !== "string" || !action.value.trim()) {
+			return { code: "INVALID_AGENT_REQUEST", message: "select requires a non-empty value" };
+		}
+		// Native select: focus, type option text, confirm with Enter (trusted key/text only).
+		const program: TrustedProgramPrimitive[] = [
+			...clickProgram(binding.resourceRef),
+			{ text: action.value },
+			{ key: "down", code: "Enter" },
+			{ key: "up", code: "Enter" },
+		];
+		const invalid = assertProgramValid(program);
+		if (invalid) return invalid;
+		return {
+			actionKind: action.kind,
+			physical: true,
+			targetBindings: [binding],
+			execution: { kind: "program", program },
+			completionResolverId: resolverId,
+			safety: { requiresConfirmation: false },
+			debugPlan: { kind: action.kind, resourceRefs: [binding.resourceRef], frames: program.length },
+		};
+	}
+
+	if (action.kind === "drag") {
+		const from = requireBinding(action.fromRef, bindings);
+		if (isCompileError(from)) return from;
+		const to = requireBinding(action.toRef, bindings);
+		if (isCompileError(to)) return to;
+		if (!from.allowedActions.includes("drag") && !from.allowedActions.includes("activate")) {
+			return { code: "ACTION_NOT_ALLOWED", message: `drag not allowed from ${action.fromRef}` };
+		}
+		const program: TrustedProgramPrimitive[] = [
+			{ mouse: "drag", ref: from.resourceRef, toRef: to.resourceRef, button: "left" },
+		];
+		const invalid = assertProgramValid(program);
+		if (invalid) return invalid;
+		return {
+			actionKind: action.kind,
+			physical: true,
+			targetBindings: [from, to],
+			execution: { kind: "program", program },
+			completionResolverId: resolverId,
+			safety: { requiresConfirmation: false },
+			debugPlan: {
+				kind: action.kind,
+				resourceRefs: [from.resourceRef, to.resourceRef],
+				frames: program.length,
+			},
+		};
+	}
+
+	if (action.kind === "submit") {
+		const binding = requireBinding(action.ref, bindings);
+		if (isCompileError(binding)) return binding;
+		if (!binding.allowedActions.includes("submit") && !binding.allowedActions.includes("activate")) {
+			return { code: "ACTION_NOT_ALLOWED", message: `submit not allowed on ${action.ref}` };
+		}
+		const program: TrustedProgramPrimitive[] = [
+			...clickProgram(binding.resourceRef),
+			// Enter as secondary path for form controls
+			{ key: "down", code: "Enter" },
+			{ key: "up", code: "Enter" },
+		];
+		const invalid = assertProgramValid(program);
+		if (invalid) return invalid;
+		return {
+			actionKind: action.kind,
+			physical: true,
+			targetBindings: [binding],
+			execution: { kind: "program", program },
+			completionResolverId: resolverId,
+			safety: {
+				requiresConfirmation: true,
+				confirmationReason: "form_submit",
+			},
+			debugPlan: { kind: action.kind, resourceRefs: [binding.resourceRef], frames: program.length },
+		};
+	}
+
+	const exhaustive: never = action;
 	return {
 		code: "ACTION_UNSUPPORTED_SURFACE",
-		message: `unsupported action ${action.kind}`,
+		message: `unsupported action ${(exhaustive as { kind?: string }).kind ?? "unknown"}`,
 	};
 }

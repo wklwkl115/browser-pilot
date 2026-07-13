@@ -77,11 +77,14 @@ test("compile press/scroll emit valid key/wheel frames", () => {
 	}
 });
 
-test("rejects unpublished select on agent-preview", () => {
-	const bindings = new Map([["a_01", binding()]]);
-	const result = compileSemanticAction({ kind: "select", ref: "a_01", value: "x" }, bindings);
-	assert.ok("code" in result);
-	assert.equal(result.code, "ACTION_UNSUPPORTED_SURFACE");
+test("select without allowedActions is rejected; with select action compiles", () => {
+	const bindings = new Map([["a_01", binding("a_01", ["activate"])]]);
+	const denied = compileSemanticAction({ kind: "select", ref: "a_01", value: "x" }, bindings);
+	assert.ok("code" in denied);
+	assert.equal(denied.code, "ACTION_NOT_ALLOWED");
+	const allowed = new Map([["a_01", binding("a_01", ["select"])]]);
+	const ok = compileSemanticAction({ kind: "select", ref: "a_01", value: "US" }, allowed);
+	assert.ok("execution" in ok);
 });
 
 test("navigate without url and press without key fail at compile", () => {

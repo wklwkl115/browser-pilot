@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 - Agent Interaction Plane **preview**: invokable `browser_view`, `browser_act`, and `browser_read` façades with owner-isolated mechanical context, deterministic AgentView projection, semantic action compilation into trusted Program Engine primitives, and `browser-agent-turn/v1` outcome mapping. Public catalog v3 remains 19 tools; use `browser-pilot commands --profile agent-preview --json` for the three-tool agent surface. Human CLI stays expert-first.
 - Pure agent kernels (`src/kernels/agent/*`), daemon `AgentContextService`, capability profile catalog, and `examples/agent-preview/` structured invoke samples.
+- Action-scoped one-shot confirmation (`ActionConfirmationService`), owner-isolated TTL `AgentTraceStore` with fail-open `traceRef`, published select/drag/submit semantic kinds with exact completion resolvers, fixture cognitive baseline harness (`scripts/agent-cognitive-baseline.mjs`), and recovery gates (busy/owner/no post-ACK replay). Catalog GA (19→22) is not claimed.
 
 ### Changed
 

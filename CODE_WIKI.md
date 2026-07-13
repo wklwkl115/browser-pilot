@@ -1284,10 +1284,11 @@ mise run dev-governance
 
 1. 公共 catalog v3 仍为 **19** 工具；façade 可 invoke，但不计入 contract toolCount。
 2. `capabilityProfileCatalog.ts` 只过滤 name set；schema 仍来自 command 定义。
-3. Daemon 持有 `AgentContextService`（owner isolation / revision / TTL）；commands 经 port 访问。
-4. Pure kernels 负责投影、outcome 映射、recovery 分类、context transition。
+3. Daemon 持有 `AgentContextService`、`ActionConfirmationService`、`AgentTraceStore`（owner isolation / revision / TTL / one-shot confirm / fail-open trace）；commands 经 port/service 访问。
+4. Pure kernels 负责投影、outcome 映射、recovery 分类、context transition、confirmation digests、cognitive metrics。
 5. 人类 CLI 默认 expert-first；`browser-pilot commands --profile agent-preview --json` 只列出三个 façade 工具。
-6. 设计归档：`docs/archive/agent-interaction-plane.md`（不再作为第二规则源）。
+6. 敏感 act（submit/navigate/irreversible）需 `confirmationRef`；ACK 后永不自动重放 mutation。
+7. 设计归档：`docs/archive/agent-interaction-plane.md`（不再作为第二规则源）；agent-default catalog GA 需独立 SLO 证据。
 
 ---
 

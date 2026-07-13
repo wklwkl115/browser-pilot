@@ -21,8 +21,13 @@ import {
 } from "./agentFacadeRuntime.js";
 import { agentError } from "./agentErrors.js";
 import { failClosedAgentView } from "./agentEnvelopeSanitize.js";
+import { getActionConfirmationService } from "../../apps/daemon/ActionConfirmationService.js";
+import { getAgentTraceStore } from "../../apps/daemon/AgentTraceStore.js";
+import { pageReanchorReason } from "../../kernels/session/pageIdentity.js";
+import { identityFromObservation } from "../../kernels/agent/agentView.js";
+import { mayAutoReplayMutation } from "../../kernels/agent/recoveryPolicy.js";
 
-const ACTION_KINDS = ["activate", "fill", "press", "scroll", "navigate", "history"] as const;
+const ACTION_KINDS = ["activate", "fill", "press", "scroll", "select", "drag", "submit", "navigate", "history"] as const;
 const SCROLL_DIRS = new Set(["up", "down", "left", "right"]);
 const HISTORY_DIRS = new Set(["back", "forward", "reload"]);
 
@@ -67,6 +72,19 @@ function validateActArguments(args: Record<string, unknown>): ValidationIssue[] 
 	}
 	if (kind === "history" && (typeof action.direction !== "string" || !HISTORY_DIRS.has(action.direction))) {
 		issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/direction", message: "history requires direction back|forward|reload" });
+	}
+	if (kind === "select") {
+		if (!nonEmptyString(action.ref)) issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/ref", message: "select requires action.ref" });
+		if (typeof action.value !== "string" || !action.value.trim()) {
+			issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/value", message: "select requires non-empty action.value" });
+		}
+	}
+	if (kind === "drag") {
+		if (!nonEmptyString(action.fromRef)) issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/fromRef", message: "drag requires fromRef" });
+		if (!nonEmptyString(action.toRef)) issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/toRef", message: "drag requires toRef" });
+	}
+	if (kind === "submit" && !nonEmptyString(action.ref)) {
+		issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/ref", message: "submit requires action.ref" });
 	}
 	return issues;
 }
@@ -131,20 +149,97 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 				await ensureRuntimeReady(server);
 
 				const action = params.action as SemanticActionV1;
+				const revisionBefore = record.revision;
+
+				// Pre-dispatch identity stop: if context claims anchored but identity drifted, re-anchor/stop.
+				if (record.state === "ambiguous") {
+					throw agentError("TARGET_AMBIGUOUS", "target lineage is ambiguous; choose tab via browser_view");
+				}
+
 				const compiledOrError = compileSemanticAction(action, record.candidateBindings);
 				if (!("execution" in compiledOrError)) {
 					throw agentError(compiledOrError.code, compiledOrError.message);
 				}
 				const compiled = compiledOrError;
 
+				// Action confirmation (sensitive/submit/navigate)
+				const confirmSvc = getActionConfirmationService();
+				const candidateRef = "ref" in action && typeof action.ref === "string" ? action.ref : undefined;
+				const candidateRisk = candidateRef
+					? record.candidateBindings.get(candidateRef)?.risk
+					: undefined;
+				const needConfirm = confirmSvc.requiresConfirmation({
+					action,
+					candidateRisk,
+				});
+				const requiresConfirm = needConfirm.required || compiled.safety.requiresConfirmation;
+				if (requiresConfirm) {
+					const confirmationRef = typeof params.confirmationRef === "string" ? params.confirmationRef : undefined;
+					if (!confirmationRef) {
+						const minted = confirmSvc.mint({
+							owner,
+							contextRef: record.id,
+							contextRevision: record.revision,
+							pageIdentity: record.pageIdentity,
+							action,
+							reason: needConfirm.reason || compiled.safety.confirmationReason || "sensitive_action",
+						});
+						const blockedTurn = {
+							schema: AGENT_TURN_SCHEMA,
+							context: contextSummary(record, false),
+							outcome: {
+								classification: "failure" as const,
+								status: "failed" as const,
+								completionVerified: false,
+								ok: false,
+								code: "CONFIRMATION_REQUIRED",
+								replay: "do_not_retry" as const,
+								automaticActionsTaken: [],
+							},
+							viewStatus: "unavailable" as const,
+							viewUnavailableReason: "CONFIRMATION_REQUIRED",
+							decision: {
+								kind: "confirm" as const,
+								confirmationRef: minted.confirmationRef,
+								reason: minted.reason,
+							},
+							trace: { available: false, unavailableReason: "not_dispatched" },
+						};
+						return inlineJsonCommandResult(blockedTurn, {
+							action: "act",
+							code: "CONFIRMATION_REQUIRED",
+							confirmationRef: minted.confirmationRef,
+						}, params, "browser_execute");
+					}
+					const decision = confirmSvc.consume({
+						confirmationRef,
+						owner,
+						contextRef: record.id,
+						contextRevision: record.revision,
+						pageIdentity: record.pageIdentity,
+						action,
+					});
+					if (decision.kind === "expired") throw agentError("CONFIRMATION_MISMATCH", "confirmation expired", { decision: "expired" });
+					if (decision.kind === "consumed") throw agentError("CONFIRMATION_CONSUMED", "confirmation already consumed");
+					if (decision.kind === "mismatch") throw agentError("CONFIRMATION_MISMATCH", `confirmation mismatch: ${decision.reason}`, { decision });
+				}
+
+				// Hard rule: never auto-replay after ACK (dispatch boundary starts not_started).
+				if (!mayAutoReplayMutation("not_started")) {
+					throw agentError("INVALID_AGENT_REQUEST", "mutation replay denied");
+				}
+
 				const operationId = `agent_act_${randomBytes(8).toString("hex")}`;
 				const begin = port.beginMutation(record, operationId);
 				if ("error" in begin) throw agentError(begin.error, "context is busy with another mutation");
 
-				const automaticActionsTaken: Array<{ kind: "ensure_runtime"; result: "reused" }> = [{ kind: "ensure_runtime", result: "reused" }];
+				const automaticActionsTaken: Array<{ kind: "ensure_runtime"; result: "reused" } | { kind: "reanchor_page"; reason: string }> = [
+					{ kind: "ensure_runtime", result: "reused" },
+				];
 				let outcomeStatus: import("../../kernels/session/browserOperation.js").BrowserOperationStatus = "failed";
 				let completionSource: string | undefined;
 				let rawOperation: Record<string, unknown> | undefined;
+				let dispatchBoundary: "not_started" | "prepared" | "sent_unacked" | "acked" | "terminal" = "prepared";
 
 				try {
 					const opBudget = remainingBudget(deadlineAt, postViewReserveMs);
@@ -209,9 +304,11 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 								browserSessionId,
 							});
 						});
+						dispatchBoundary = outcome.dispatch?.acknowledged ? "acked" : "sent_unacked";
 						outcomeStatus = outcome.status;
 						completionSource = outcome.completion?.source;
 						rawOperation = outcome as unknown as Record<string, unknown>;
+						dispatchBoundary = "terminal";
 					} else {
 						const program = compiled.execution.program;
 						const outcome = await withBrowserOperation({
@@ -237,9 +334,15 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 							signal: signal ?? new AbortController().signal,
 							evalTimeoutMs: opBudget,
 						}));
+						dispatchBoundary = outcome.dispatch?.acknowledged ? "acked" : "sent_unacked";
+						// Post-ACK hard stop for any automatic replay path
+						if (dispatchBoundary === "acked" && !mayAutoReplayMutation("acked")) {
+							/* settle only — never re-dispatch */
+						}
 						outcomeStatus = outcome.status;
 						completionSource = outcome.completion?.source;
 						rawOperation = outcome as unknown as Record<string, unknown>;
+						dispatchBoundary = "terminal";
 					}
 				} finally {
 					port.endMutation(record, outcomeStatus === "completed" ? "anchored" : "needs_reanchor");
@@ -251,10 +354,11 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 				});
 				assertAgentOutcomeInvariants(agentOutcome);
 
-				// Outcome-first post-view: failures fail open.
+				// Outcome-first post-view: failures fail open; never rewrite settled outcome.
 				let viewStatus: "available" | "unavailable" = "unavailable";
 				let view: import("../../kernels/agent/agentTypes.js").AgentViewV1 | undefined;
 				let viewUnavailableReason: string | undefined = "VIEW_UNAVAILABLE";
+				const settledStatus = outcomeStatus;
 				const viewBudget = Math.max(500, deadlineAt - Date.now());
 				try {
 					const observation = await runCanonicalObserve(server, {
@@ -262,6 +366,12 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 						browserSessionId: record.pageIdentity?.browserSessionId,
 						timeoutMs: Math.min(viewBudget, postViewReserveMs + 1_000),
 					});
+					const currentIdentity = identityFromObservation(observation);
+					const reanchor = pageReanchorReason(record.pageIdentity, currentIdentity);
+					if (reanchor) {
+						port.applyIdentity(record, currentIdentity, reanchor);
+						automaticActionsTaken.push({ kind: "reanchor_page", reason: reanchor });
+					}
 					view = projectAndBindView({
 						observation,
 						record,
@@ -273,6 +383,8 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 					viewStatus = "unavailable";
 					viewUnavailableReason = error instanceof Error ? error.message : "VIEW_UNAVAILABLE";
 				}
+				// Guard: post-view cannot change settled operation status
+				outcomeStatus = settledStatus;
 
 				const decision = decideAfterAct({
 					outcome: agentOutcome,
@@ -283,6 +395,40 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 				const safeView = view
 					? (failClosedAgentView(view as unknown as Record<string, unknown>) as unknown as typeof view)
 					: undefined;
+
+				// Trace fail-open
+				const traceStore = getAgentTraceStore();
+				const traced = traceStore.record({
+					contextRef: record.id,
+					owner,
+					contextRevisionBefore: revisionBefore,
+					contextRevisionAfter: record.revision,
+					requestSummary: {
+						actionKind: action.kind,
+						confirmation: Boolean(params.confirmationRef),
+					},
+					compiledPlanSummary: {
+						kind: compiled.actionKind,
+						frames: compiled.debugPlan.frames,
+						physical: compiled.physical,
+						resolverId: compiled.completionResolverId,
+					},
+					rawOperationRef: typeof rawOperation?.operationId === "string" ? rawOperation.operationId : operationId,
+					automaticActionsTaken,
+					projectionReport: {
+						candidatesConsidered: safeView?.candidates.length ?? 0,
+						candidatesReturned: safeView?.candidates.length ?? 0,
+						readsBound: safeView?.reads?.length ?? 0,
+						chars: safeView?.limits.cost.chars ?? 0,
+						bytes: safeView?.limits.cost.bytes ?? 0,
+						estimatedTokens: safeView?.limits.cost.estimatedTokens ?? 0,
+					},
+				});
+				const trace = traced.ok
+					? { available: true as const, traceRef: traced.record.traceRef }
+					: { available: false as const, unavailableReason: traced.reason };
+				if (traced.ok) record.lastTraceRef = traced.record.traceRef;
+
 				const turn = {
 					schema: AGENT_TURN_SCHEMA,
 					context: contextSummary(record, true),
@@ -297,21 +443,16 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 							reads: safeView.reads,
 						})
 						: decision,
-					trace: {
-						available: Boolean(rawOperation),
-						...(rawOperation
-							? { traceRef: `trace_${operationId}` }
-							: { unavailableReason: "operation_trace_inline_only" }),
-					},
+					trace,
 				};
 
 				return inlineJsonCommandResult(turn, {
 					action: "act",
 					contextRef: record.id,
 					operationStatus: outcomeStatus,
-					// expert-only raw operation for diagnostics path
 					rawOperationStatus: outcomeStatus,
 					completionSource,
+					dispatchBoundary,
 				}, params, "browser_execute");
 			});
 		},

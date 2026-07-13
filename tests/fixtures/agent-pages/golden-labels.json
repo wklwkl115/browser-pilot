@@ -3,8 +3,16 @@
     {
       "id": "form-fill-email",
       "fixture": "form.html",
-      "requiredActionableRefs": ["bp-ref://fixture/email"],
+      "requiredActionableRefs": ["bp-ref://fixture/email", "bp-ref://fixture/submit"],
       "blockingControls": [],
+      "surfaceClass": "native",
+      "expectedDecisionKind": "choose_action"
+    },
+    {
+      "id": "form-blocking-dialog",
+      "fixture": "form.html",
+      "requiredActionableRefs": ["bp-ref://fixture/email"],
+      "blockingControls": ["bp-ref://fixture/submit"],
       "surfaceClass": "native",
       "expectedDecisionKind": "choose_action"
     }

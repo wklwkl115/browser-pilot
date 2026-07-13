@@ -16,11 +16,21 @@ test("browser_act validates published kinds and required fields", () => {
 		action: { kind: "activate", ref: "a_01" },
 	});
 	assert.equal(ok.ok, true);
-	const bad = validateBrowserCommandArguments(act.def, {
+	const selectOk = validateBrowserCommandArguments(act.def, {
 		contextRef: "ctx",
 		action: { kind: "select", ref: "a_01", value: "x" },
 	});
-	assert.equal(bad.ok, false);
+	assert.equal(selectOk.ok, true);
+	const selectMissingValue = validateBrowserCommandArguments(act.def, {
+		contextRef: "ctx",
+		action: { kind: "select", ref: "a_01" },
+	});
+	assert.equal(selectMissingValue.ok, false);
+	const evaluateDenied = validateBrowserCommandArguments(act.def, {
+		contextRef: "ctx",
+		action: { kind: "evaluate", script: "1" },
+	});
+	assert.equal(evaluateDenied.ok, false);
 	const navigateNoUrl = validateBrowserCommandArguments(act.def, {
 		contextRef: "ctx",
 		action: { kind: "navigate" },

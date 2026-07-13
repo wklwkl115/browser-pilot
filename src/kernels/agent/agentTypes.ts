@@ -208,12 +208,15 @@ export type SemanticActionV1 =
 	| { kind: "navigate"; url: string; disposition?: "current" | "new_tab" }
 	| { kind: "history"; direction: "back" | "forward" | "reload" };
 
-/** Published agent-profile write kinds for v1 preview (select/drag/submit deferred). */
+/** Published agent-profile write kinds for v1 (select/drag/submit included with exact resolvers). */
 export const AGENT_PUBLISHED_WRITE_KINDS = [
 	"activate",
 	"fill",
 	"press",
 	"scroll",
+	"select",
+	"drag",
+	"submit",
 	"navigate",
 	"history",
 ] as const satisfies readonly AgentSemanticActionKind[];
@@ -228,6 +231,7 @@ export interface AgentCandidateBinding {
 	role: string;
 	label?: string;
 	allowedActions: AgentCandidateAction[];
+	risk?: AgentRisk;
 	createdAt: number;
 }
 

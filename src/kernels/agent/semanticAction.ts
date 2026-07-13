@@ -24,14 +24,21 @@ export function candidateActionsForRole(role: string, state?: {
 		}
 	}
 	if (kind === "listbox" || kind === "select" || kind === "combobox") {
-		// v1 generic select only for native select evidence; still advertise activate/press.
-		if (enabled) actions.push("activate", "press");
+		if (enabled) {
+			// Native select advertises select; custom combobox stays activate/press only via role=combobox without select kind.
+			if (kind === "select" || kind === "listbox") actions.push("select", "activate", "press");
+			else actions.push("activate", "press");
+		}
 	}
 	if (["scrollbar", "region", "document", "main", "list"].includes(kind) || kind === "generic") {
 		actions.push("scroll");
 	}
-	if (kind === "form" || kind === "button") {
-		if (enabled && kind === "form") actions.push("submit");
+	if (kind === "form") {
+		if (enabled) actions.push("submit");
+	}
+	if (kind === "button" && enabled) {
+		// submit may target a submit button
+		actions.push("submit");
 	}
 	// de-dupe preserving order
 	return [...new Set(actions)];
@@ -53,6 +60,9 @@ export type SemanticCompletionResolverId =
 	| "semantic.fill"
 	| "semantic.press"
 	| "semantic.scroll"
+	| "semantic.select"
+	| "semantic.drag"
+	| "semantic.submit"
 	| "semantic.navigate"
 	| "semantic.history";
 
@@ -61,6 +71,9 @@ export const SEMANTIC_COMPLETION_RESOLVER_IDS: Record<AgentPublishedWriteKind, S
 	fill: "semantic.fill",
 	press: "semantic.press",
 	scroll: "semantic.scroll",
+	select: "semantic.select",
+	drag: "semantic.drag",
+	submit: "semantic.submit",
 	navigate: "semantic.navigate",
 	history: "semantic.history",
 };
