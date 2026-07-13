@@ -7,15 +7,17 @@ All notable changes to this project will be documented in this file.
 ### Breaking
 
 - Removed the redundant CLI-only `--script-file` flag. `browser-pilot execute --script` is now the single JavaScript input surface and uniformly accepts inline source, `@file`, or stdin (`-`). Temporary JavaScript must remain memory-only: complex/generated source must use stdin, transient local script files are forbidden, and `@file` is reserved for durable source.
+- Public command catalog / contract `toolCount` is now **22** (was 19). Agent façade tools `browser_view`, `browser_act`, and `browser_read` are part of catalog v3 wire, `commandContractHash`, and daemon identity. Managed daemons from older identities are replaced on mismatch.
 
 ### Added
 
-- Agent Interaction Plane **preview**: invokable `browser_view`, `browser_act`, and `browser_read` façades with owner-isolated mechanical context, deterministic AgentView projection, semantic action compilation into trusted Program Engine primitives, and `browser-agent-turn/v1` outcome mapping. Public catalog v3 remains 19 tools; use `browser-pilot commands --profile agent-preview --json` for the three-tool agent surface. Human CLI stays expert-first.
-- Pure agent kernels (`src/kernels/agent/*`), daemon `AgentContextService`, capability profile catalog, and `examples/agent-preview/` structured invoke samples.
-- Action-scoped one-shot confirmation (`ActionConfirmationService`), owner-isolated TTL `AgentTraceStore` with fail-open `traceRef`, published select/drag/submit semantic kinds with exact completion resolvers, fixture cognitive baseline harness (`scripts/agent-cognitive-baseline.mjs`), and recovery gates (busy/owner/no post-ACK replay). Catalog GA (19→22) is not claimed.
+- Agent Interaction Plane façade: invokable `browser_view`, `browser_act`, and `browser_read` with owner-isolated mechanical context, deterministic AgentView projection, semantic action compilation into trusted Program Engine primitives, and `browser-agent-turn/v1` outcome mapping.
+- Pure agent kernels (`src/kernels/agent/*`), daemon `AgentContextService`, capability profile catalog (`agent` / `agent-preview`), and `examples/agent-preview/` structured invoke samples.
+- Action-scoped one-shot confirmation (`ActionConfirmationService`), owner-isolated TTL `AgentTraceStore` with fail-open `traceRef`, published select/drag/submit semantic kinds with exact completion resolvers, fixture cognitive baseline harness (`scripts/agent-cognitive-baseline.mjs`), and recovery gates (busy/owner/no post-ACK replay).
 
 ### Changed
 
+- Product default for agents is **skill + CLI** (`skills/browser-pilot-cli/SKILL.md`) with the three-tool loop; expert/security tools are escalation. Catalog GA includes façade in `toolCount` 22 (≤25 KiB compact catalog retained).
 - Persistent CDP now coalesces concurrent attaches per tab, arms independent operation domains concurrently, lazily enables domains, caches background focus-emulation setup per live session, and keeps execute fallback sessions warm instead of attaching and detaching for every background/CSP execution.
 - CDP precompilation now evaluates one-off scripts directly and compiles only scripts seen again. Hot-script tracking and compiled-script indexes are bounded, reducing the first-call round trips and preventing temporary JavaScript from growing an unbounded in-memory cache.
 - Daemon/bridge shutdown now closes lingering loopback keep-alive connections, terminates live extension sockets, waits for both WebSocket and HTTP listeners to close, and gives the foreground daemon a bounded terminal-exit fallback, so CLI or offscreen reconnects cannot hold a draining stale daemon past the managed replacement deadline.

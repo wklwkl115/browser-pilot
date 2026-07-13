@@ -21,9 +21,10 @@ const metrics = {
 	mutationReplayAttempts: 0,
 	tasks: labels.tasks?.length ?? 0,
 	labels: labels.tasks ?? [],
-	catalogPublicToolCount: 19,
-	agentPreviewTools: ["browser_view", "browser_act", "browser_read"],
-	gaDefaultClaimed: false,
+	catalogPublicToolCount: 22,
+	agentTools: ["browser_view", "browser_act", "browser_read"],
+	catalogGaClaimed: true,
+	agentUsage: "skill+cli",
 };
 
 const out = process.argv[2];

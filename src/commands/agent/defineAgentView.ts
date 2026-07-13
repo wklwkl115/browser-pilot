@@ -32,7 +32,7 @@ export function defineAgentViewCommand({ commands, ensureStarted }: CommandRegis
 	defineBrowserCommand(commands, {
 		name: "browser_view",
 		label: "Browser View",
-		description: "Agent-preview façade: ensure readiness, observe the page, and return a compact AgentViewV1 with contextRef and candidate aliases.",
+		description: "Agent façade: ensure readiness, observe the page, and return a compact AgentViewV1 with contextRef and candidate aliases.",
 		promptSnippet: "Call browser_view to obtain contextRef and decision-oriented candidates without tabId/pageEpoch/paths.",
 		promptGuidelines: [
 			"Omit contextRef to create a new mechanical context; reuse contextRef for subsequent turns.",

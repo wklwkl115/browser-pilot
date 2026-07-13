@@ -7,9 +7,12 @@ import { COMMAND_CATALOG_SCHEMA_V3, COMMAND_SCHEMA_V3 } from "../../commands/pub
 
 export const COMMAND_CATALOG_V3 = COMMAND_CATALOG_SCHEMA_V3;
 
+/** Public catalog tool count after agent façade GA (core 12 + security 7 + view/act/read). */
+export const PUBLIC_CATALOG_TOOL_COUNT = 22 as const;
+
 export interface CommandCatalogV3 {
 	schema: typeof COMMAND_CATALOG_V3;
-	contract: { version: 3; hash: string; toolCount: 19 };
+	contract: { version: 3; hash: string; toolCount: typeof PUBLIC_CATALOG_TOOL_COUNT };
 	artifact: {
 		resultField: "saved.path";
 		inspectArgv: ["browser-pilot", "artifact", "--mode", "inspect", "--path", "<saved.path>", "--json"];
@@ -26,10 +29,12 @@ export interface CommandCatalogV3 {
 
 export function buildCommandCatalogV3(commands: readonly CliCommand[]): CommandCatalogV3 {
 	const identity = localDaemonContractIdentity();
-	if (identity.toolCount !== 19 || commands.length !== 19) throw new Error(`command catalog v3 requires exactly 19 tools; found identity=${identity.toolCount}, registry=${commands.length}`);
+	if (identity.toolCount !== PUBLIC_CATALOG_TOOL_COUNT || commands.length !== PUBLIC_CATALOG_TOOL_COUNT) {
+		throw new Error(`command catalog v3 requires exactly ${PUBLIC_CATALOG_TOOL_COUNT} tools; found identity=${identity.toolCount}, registry=${commands.length}`);
+	}
 	return {
 		schema: COMMAND_CATALOG_V3,
-		contract: { version: 3, hash: identity.commandContractHash, toolCount: 19 },
+		contract: { version: 3, hash: identity.commandContractHash, toolCount: PUBLIC_CATALOG_TOOL_COUNT },
 		artifact: {
 			resultField: "saved.path",
 			inspectArgv: ["browser-pilot", "artifact", "--mode", "inspect", "--path", "<saved.path>", "--json"],

@@ -1,92 +1,111 @@
 ---
 name: browser-pilot-cli
-description: Operate and inspect real Chrome or Edge tabs through the Browser Pilot CLI. Use when Codex needs to connect to Browser Pilot, select or inspect tabs, observe the canonical page model, execute event-driven JavaScript or trusted input transactions, capture screenshots or network traffic, inspect saved artifacts, troubleshoot the local daemon or extension, or discover and validate browser-pilot CLI commands and schemas.
+description: Drive a real Chrome/Edge tab for AI agents through the Browser Pilot CLI. Prefer the agent loop view → act → read with contextRef; use schema/validate for closed params; escalate to expert tools only when the façade is blocked.
 ---
 
-# Browser Pilot CLI
+# Browser Pilot (Agent skill + CLI)
 
-Use the `browser-pilot` CLI to control a connected real browser through the user-local daemon. Prefer structured JSON, stable tab references, and the live command schema over remembered flags.
+Browser Pilot is an **agent-first** browser control surface. Primary usage is this skill plus the `browser-pilot` CLI (`--json`). Do not invent click/type tools; do not sleep/wait after mutations.
 
 ## Resolve the CLI
 
-Choose one invocation prefix and use it consistently:
+- Installed: `browser-pilot`
+- Package-local: `npx browser-pilot`
+- Source without build: `npx tsx src/apps/cli/bin.ts`
 
-- Installed package: `browser-pilot`
-- Package-local execution: `npx browser-pilot`
-- Source checkout without a usable build: `npx tsx src/apps/cli/bin.ts`
-
-Discover the live contract before using an unfamiliar command:
+Authoritative discovery:
 
 ```text
-browser-pilot --help
-browser-pilot <command> --help
-browser-pilot schema <command> --json
-browser-pilot validate <command> --params @params.json --json
+browser-pilot commands --profile agent --json
+browser-pilot schema view --json
+browser-pilot schema act --json
+browser-pilot schema read --json
+browser-pilot validate <view|act|read> --params @params.json --json
 ```
 
-Treat live help and schema output as authoritative. Command definitions reject unknown parameters. Do not treat the examples in this skill as an exhaustive command catalog.
+Public catalog v3 lists **22** tools (core + security + façade). **Agents use only three by default:** `view`, `act`, `read` (`browser_view` / `browser_act` / `browser_read`). Live schema is authoritative over remembered flags.
 
-Machine discovery is contract v3 only: `commands --json` returns the compact `browser-pilot-command-catalog/v3` root, while `schema <command> <kebab-action> --json` returns the closed `browser-pilot-command-schema/v3` action schema. The catalog carries schema argv references instead of repeating flags or full schemas. CLI action tokens are canonical kebab-case; the action schema exposes the corresponding raw action `const` and the only permitted nested `params` keys.
+## Agent loop (default)
 
-### Agent-preview façade (opt-in)
+1. **view** — readiness + compact decision surface + `contextRef`.
+2. **act** — one semantic mutation; settle in the same call; only mechanical `completed` is success.
+3. **read** — expand a server-issued `readRef` when the decision needs more content.
 
-When the caller explicitly uses the agent profile (`commands --profile agent-preview`), only three tools are visible: `view`, `act`, `read` (`browser_view` / `browser_act` / `browser_read`). Carry `contextRef` plus semantic candidate/tab/read refs; do not require `tabId`, `pageEpoch`, baseline ids, or raw `saved.path` on the agent envelope. One `act` call settles a mutation and returns `browser-agent-turn/v1` with outcome-first semantics: only `completed` is success; never auto-replay after ACK; do not post-action wait/sleep. Expert workflows below remain the human CLI default.
+```text
+# browser-pilot-executable
+browser-pilot view --json
+```
 
-## Follow the Operating Loop
+```text
+# browser-pilot-executable
+browser-pilot act --context-ref ctx --action '{"kind":"activate","ref":"a_01"}' --json
+```
 
-1. Establish readiness.
+```text
+# browser-pilot-executable
+browser-pilot read --context-ref ctx --read-ref r_01 --json
+```
 
-   ```text
-   browser-pilot connect --wait --json
-   ```
+Carry only **`contextRef`** plus semantic **`ref` / `tabRef` / `readRef` / `confirmationRef`**. Never require `tabId`, `pageEpoch`, baseline ids, or raw `saved.path` on the agent envelope. Identity continuity still uses `browserSessionId + tabId + targetGeneration + pageEpoch` internally; when a returned `reanchorReason` says `document_changed`, `target_replaced`, `session_changed`, `identity_unproven`, or `baseline_missing`, take a fresh `view` and do not reuse old refs.
 
-   On failure, inspect `browser-pilot status --json`, then `browser-pilot doctor --json`. The CLI normally auto-starts the user-local daemon; do not start parallel daemons casually.
+### Semantic actions
 
-2. Select a stable target.
+Published `action.kind` values: `activate`, `fill`, `press`, `scroll`, `navigate`, `history`, `select`, `drag`, `submit`.
 
-   ```text
-   # browser-pilot-executable
-   browser-pilot tabs --action list --json
-   ```
+- Prefer candidates from the latest `view` / post-act `view`.
+- Sensitive kinds (submit / navigate / irreversible) need a one-shot **`confirmationRef`** from the decision surface; mismatch/expired/consumed rejects without dispatch.
+- Do not auto-replay after ACK. If outcome is not `completed`, follow `decision` / typed error codes; re-`view` or reacquire instead of replaying the same mutation.
+- Do not post-action `sleep` / public wait. Settlement is inside `act`.
+- Temporary JavaScript is **not** part of the default agent loop. Raw JS is expert-only via `execute`.
 
-   Preserve the returned `targetRef` or tab handle and pass it with `--target-ref` when the workflow must stay on a specific tab. Prefer it over numeric `tabId`; omit both only when the selected active tab is intentional.
+### Outcomes
 
-3. Observe before acting.
+- `browser_view` → `browser-agent-view/v1` (`contextRef`, candidates, decision).
+- `browser_act` → `browser-agent-turn/v1` (maps an internal `browser-operation/v2` 1:1; outcome-first; post-view is fail-open and must not rewrite a settled outcome).
+- `browser_read` → `browser-agent-read/v1`.
+- Only mechanical **`completed`** is success. Primitive expert writes return `browser-operation/v2` with the same rule: `no_effect`, `effect_observed`, `stalled`, `ambiguous`, `target_lost`, `failed`, and `deadline` are never success.
 
-   ```text
-   # browser-pilot-executable
-   browser-pilot observe --target-ref <targetRef> --json
-   ```
+### Readiness and failures
 
-   Omit `--mode` for the canonical `browser-page-observation/v3` ABML `PageObservation`. The observation is the JSON root, with no nested observation wrapper. Any explicit mode, including `scan`, is a legacy/debug/projection override. Read `gist`, `outline`, `entities`, the compact ref-based `actionables`, relations, collections, provider reports, `frontier`, `saved`, `artifact_hints`, and `nextActions` instead of assuming DOM state.
+- Happy path: first `view` ensures daemon/bridge/extension readiness; no manual connect/schema ritual required.
+- On readiness failure: `browser-pilot connect --wait --json`, then `status --json` / `doctor --json` (admin/local commands; not part of the agent tool profile).
 
-   Provider entries report whether causal/axe/Readability work was planned, executed, skipped, failed, or degraded, along with the reason, reserved/actual milliseconds, bridge round trips, and `{chars,bytes,estimatedTokens}` cost. Optional provider failure is fail-open; it does not invalidate canonical structure. `limits.cost` describes the exact final rendered JSON.
+- Stable façade codes include `CONTEXT_*`, `TARGET_AMBIGUOUS`, `READ_UNAVAILABLE`, `RUNTIME_NOT_READY`, confirmation mismatch, and busy/revision conflicts.
+- Daemon restart expires contexts: create a new context with `view`.
 
-4. Act through `execute`.
+## Profile filter
 
-   ```text
-   # browser-pilot-executable
-   browser-pilot execute --target-ref <targetRef> --script "document.title" --json
-   browser-pilot execute --target-ref <targetRef> --script - --json
-   browser-pilot execute --target-ref <targetRef> --script @script.js --json
-   browser-pilot execute --target-ref <targetRef> --program @program.json --json
-   ```
+Use `browser-pilot commands --profile agent --json` for the three-tool agent surface (`agent` and `agent-preview` are aliases). Full catalog (`commands --json`) remains available for discovery of expert/security tools.
 
-   Use `--script` for JavaScript and `--program` for trusted CDP mouse/key/text/wait frames. Provide only one of them. `--script` accepts inline source, `@file`, or stdin (`-`). Temporary or generated JavaScript MUST stay in memory: use inline source only for short shell-safe code and use stdin for multiline, complex, or quote-sensitive code. Agents MUST NOT create a local script file merely to pass transient JavaScript to `execute`; `--script @file` is reserved for durable source that already exists or that the user explicitly asked to preserve. There are no dedicated click or type commands. Use the low-level `command` escape hatch only when the public CLI surface cannot express the required native operation.
+## Expert escalation (only when blocked)
 
-5. Consume the terminal outcome from the same operation call.
+Use when `decision=blocked` / inconclusive with an explicit capability boundary, or when the user explicitly authorizes security/network deep work.
 
-   ```text
-   {"schema":"browser-operation/v2","operationId":"...","status":"completed","classification":"success","completionVerified":true,"ok":true,"continuation":null,...}
-   ```
+```text
+# browser-pilot-executable
+browser-pilot observe --json
+```
 
-   State-changing commands arm browser and page listeners before dispatch and keep the invocation open until `completed`, `effect_observed`, `no_effect`, `stalled`, `ambiguous`, `target_lost`, `failed`, or `deadline`. Do not issue a separate wait or sleep. Only `completed` is success and returns `classification:"success"`, `completionVerified:true`, `ok:true`, and CLI exit 0. All other terminal statuses return `completionVerified:false`, `ok:false`, a stable `OPERATION_*` code, and CLI exit 1; `effect_observed`, `ambiguous`, `target_lost`, and `deadline` are inconclusive, while `no_effect`, `stalled`, and `failed` are failures.
+```text
+# browser-pilot-executable
+browser-pilot execute --script "document.title" --json
+```
 
-   Read `continuation` before choosing the next mutation. `observe` requests a fresh canonical page model; `reacquire_target` requests a fresh tab/target selection; `inspect_diagnostics` is returned only when diagnostics exist; `verify_command_state` requests the command domain's read-only status/list query; `inspect_artifact` means the operation completed but its large result was compacted. None of these decisions authorize replaying an acknowledged mutation.
+```text
+# browser-pilot-executable
+browser-pilot network capture-reload --json
+```
 
-   Oversized outcomes still keep the `browser-operation/v2` root, classification, terminal status, target, dispatch state, signals, `continuation`, and `completion.source`. A typed object/array/string summary may replace `completion.evidence.result`; follow `saved.path` and the verified `artifact_hints.jsonPaths` (usually `completion.evidence.result`) for the complete redacted outcome.
+Prefer the one-shot page-load flow. Use canonical CLI action `capture-reload` instead of manually starting capture after navigation; it translates to raw `{"action":"captureReload"}`, arms the recorder before reload/navigation, and avoids missing early requests. CLI action tokens are kebab-case and camelCase tokens are not aliases. Use lower-level `start`, `list`, `export-har`, and `stop` only when persistent recorder control is required.
 
-6. Continue from the returned evidence, observing again only when the next decision needs a fresh page model. Do not treat command acknowledgement or `effect_observed` as proof that the intended business state was reached. Late effects from the previous operation are surfaced automatically on the same owner's next related operation. Treat `nextActions` as required recovery/continuation guidance and `artifact_hints` as optional progressive expansion; the absence of an artifact read in `nextActions` does not make the saved evidence unavailable.
+```text
+# browser-pilot-executable
+browser-pilot artifact --mode inspect --path <saved.path> --json
+```
+
+Inspect metadata or list available JSON paths before targeted reads. Do not guess JSON paths.
+
+Re-enter the agent loop with a fresh `view` after expert steps.
 
 ## Enforce In-Memory Temporary JavaScript
 
@@ -98,62 +117,9 @@ This is a mandatory operating rule, not a preference:
 - `--script @file` MAY be used only for durable source that already exists or that the user explicitly requested as a persistent artifact.
 - If the calling environment cannot pipe stdin directly, use its process stdin API or repair the invocation path; do not fall back to a temporary script file.
 
-## Capture Network Evidence
+## Hard rules
 
-Prefer the one-shot page-load flow:
-
-```text
-# browser-pilot-executable
-browser-pilot network capture-reload --session-id <session-id> --target-ref <targetRef> --json
-```
-
-Use canonical CLI action `capture-reload` instead of manually starting capture after navigation; it translates to raw `{"action":"captureReload"}`, arms the recorder before reload/navigation, and avoids missing early requests. CLI action tokens are kebab-case and camelCase tokens are not aliases. Use lower-level `start`, `list`, `export-har`, and `stop` only when persistent recorder control is required; start and stop return only after the recorder is armed or flushed.
-
-## Read Artifacts Incrementally
-
-Always start from the `saved.path` returned by the preceding command:
-
-```text
-# browser-pilot-executable
-browser-pilot artifact --mode inspect --path <saved.path> --json
-# browser-pilot-executable
-browser-pilot artifact --mode paths --path <saved.path> --json
-# browser-pilot-executable
-browser-pilot artifact --mode json --path <saved.path> --json-path <verified-path> --json
-```
-
-Inspect metadata or list available JSON paths before targeted reads. Do not guess JSON paths, invent fixed artifact filenames, or load a large artifact wholesale when `pick`, `search`, `sample`, offsets, or limits can answer the question.
-
-When an observation folds template instances, collection windows, content, or diagnostics, follow the matching `frontier.items[].read` descriptor exactly: substitute the returned `saved.path` for `pathRef:"saved.path"`, retain the verified `jsonPath` and optional offset/limit, and call `browser_artifact mode=json`. A frontier item without a read must state `unavailableReason`; do not invent a path or an automatic click/scroll continuation.
-
-For a compacted operation outcome, prefer the exact path named by `artifact_hints.jsonPaths` over generic artifact defaults. The saved operation artifact embeds the same hints, so `artifact --mode inspect` can validate paths before the targeted read.
-
-## Apply CLI Boundaries
-
-- Add `--json` to agent-facing calls and parse the structured result.
-- Preserve `targetRef`, `browserSessionId`, operation IDs, snapshot IDs, and returned artifact paths when a follow-up call depends on them.
-- Use `--program @file` for large structured input on Windows.
-- Keep temporary JavaScript in memory. Use `--script -` for generated, multiline, complex, or quote-sensitive source and pipe the exact source over stdin; never create a transient local script file. Use `--script @file` only for durable source that already exists or that the user explicitly asked to preserve.
-- Pass `browser-pilot command --command` as inline JSON only. Do not use `--command @file`.
-- Prefer `network capture-reload` for page-load capture.
-- Re-observe when refs are missing, stale, covered, or invalid instead of retrying a mutating action blindly.
-- Keep security crawl, fuzz, SQLi, template, replay, cookie, and callback operations within the target scope explicitly authorized by the user.
-- Avoid printing full request bodies, cookies, authorization values, or large raw artifacts. Use the CLI's bounded summaries, redaction, and targeted artifact reads.
-
-## Recover from Failures
-
-Read structured `error`, `diagnostics`, `nextActions`, `target`, and `saved` fields first.
-
-- Bridge or extension unavailable: run `connect --wait`, then `status` or `doctor`.
-- Stale or missing target: list tabs again and re-run canonical `observe`.
-- Operation `target_lost`: inspect `dispatch`, `signals`, `target`, diagnostics, and any automatically surfaced `lateEffects`; reacquire a current target instead of replaying the action against the lost one.
-- Operation `effect_observed`, `no_effect`, `stalled`, `ambiguous`, or `deadline`: follow the returned domain-aware `continuation`. Re-observe only for page-state uncertainty; reacquire changed targets, inspect present diagnostics, or use a read-only command status/list operation for non-page state.
-- `ARTIFACT_SAVE_FAILED`: trust the returned operation status and `completion.source`; the browser action already reached its terminal state, but the omitted large evidence is unavailable. Do not replay it to recreate the artifact.
-- Truncated inline result: follow `saved.path` and `artifact_hints`; a compact typed `completion.evidence.result` is a pointer summary, not the full value. Increase limits only when a targeted artifact read is insufficient.
-- Invalid arguments: query `schema <command> --json` or validate a parameter file before retrying.
-
-Offline `validate` and daemon invocation run the same strict pipeline. Unknown, internal, removed, and illegal cross-field/action combinations return a complete issue list and exit 2; Browser Pilot does not silently strip them. Use `schema <command> <kebab-action> --json` and `validate <command> <kebab-action> --params @params.json --json` for action-specific checks.
-
-Observe deltas and caches are anchored by `browserSessionId + tabId + targetGeneration + pageEpoch`, never URL. When a returned `reanchorReason` says `document_changed`, `target_replaced`, `session_changed`, `identity_unproven`, or `baseline_missing`, consume the full observation as the new anchor; do not reuse refs or assumptions from the discarded baseline.
-
-When working inside the Browser Pilot source repository, follow `AGENTS.md`, `REPO_GOVERNANCE.md`, and `CODE_WIKI.md` for code changes and validation. Those contributor rules do not replace the live CLI help for operational command syntax.
+- Add `--json` and parse structured results.
+- One semantic mutation per `act`; never blind-replay after ACK.
+- Keep secrets out of logs; confirmation digests never include passwords/tokens.
+- Contributor rules (`AGENTS.md`, `REPO_GOVERNANCE.md`, `CODE_WIKI.md`) apply only when editing this repository; live CLI schema owns operational syntax.

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
+import { defineAgentFacadeCommands } from "../../commands/agent/defineAgentFacadeCommands.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { contractActionMetadata } from "../../commands/publicActionCatalog.js";
 import { BROWSER_OPERATION_OUTCOME_CONTRACT, BROWSER_OPERATION_SCHEMA } from "../../kernels/session/browserOperation.js";
@@ -200,6 +201,7 @@ export function localDaemonContractIdentity(): DaemonContractIdentity {
 	if (cachedLocalIdentity) return { ...cachedLocalIdentity };
 	const commands = new CommandManifestIndex();
 	defineBrowserCommands(commands, placeholderRuntime, noopEnsureStarted);
+	defineAgentFacadeCommands({ commands, ensureStarted: noopEnsureStarted });
 	cachedLocalIdentity = createDaemonContractIdentity(commands.getCommands());
 	return { ...cachedLocalIdentity };
 }

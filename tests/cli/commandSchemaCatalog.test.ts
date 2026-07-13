@@ -36,7 +36,7 @@ function assertValidationError(schema: unknown, args: Record<string, unknown>, p
 test("command catalog characterization: public browser tool names are stable, unique, and CLI-safe", () => {
 	const defs = collectCommandDefs();
 	const names = defs.map((def) => def.name);
-	assert.equal(names.length, 19);
+	assert.equal(names.length, 22);
 	assert.deepEqual(names, [
 		"browser_tabs",
 		"browser_command",
@@ -57,6 +57,9 @@ test("command catalog characterization: public browser tool names are stable, un
 		"browser_callback_oast",
 		"browser_cookie_analyze",
 		"browser_http_replay",
+		"browser_view",
+		"browser_act",
+		"browser_read",
 	]);
 	assert.equal(names.includes("browser_memory"), false);
 	assert.equal(new Set(names).size, names.length);

@@ -78,8 +78,12 @@ test("repo governance uses mise-first gate commands", () => {
 });
 
 test("state-changing command call sites use the canonical budgeted operation result owner", () => {
+	// browser_act maps settled browser-operation/v2 through AgentOutcome → browser-agent-turn/v1
+	// (REPO_GOVERNANCE Agent Interaction Plane exception); it must not re-wrap via browserOperationCommandResult.
+	const agentTurnOwners = new Set(["defineAgentAct.ts"]);
 	const callSites = walkSourceFiles(commandsRoot).filter((filePath) => {
 		if (path.basename(filePath) === "browserOperation.ts") return false;
+		if (agentTurnOwners.has(path.basename(filePath))) return false;
 		return text(filePath).includes("withBrowserOperation(");
 	});
 	assert.ok(callSites.length > 0);
@@ -89,6 +93,10 @@ test("state-changing command call sites use the canonical budgeted operation res
 		const resultCalls = source.match(/\bbrowserOperationCommandResult\s*\(/g)?.length ?? 0;
 		assert.equal(resultCalls, operationCalls, path.relative(root, filePath));
 	}
+	const agentAct = text(path.join(commandsRoot, "agent", "defineAgentAct.ts"));
+	assert.match(agentAct, /withBrowserOperation\s*\(/);
+	assert.match(agentAct, /mapBrowserOperationToAgentOutcome/);
+	assert.doesNotMatch(agentAct, /browserOperationCommandResult\s*\(/);
 });
 
 test("repo governance documents one explicit child-agent workflow", () => {

@@ -24,7 +24,7 @@ export function defineAgentReadCommand({ commands }: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_read",
 		label: "Browser Read",
-		description: "Agent-preview façade: read a server-issued readRef without exposing local paths or unverified JSON paths.",
+		description: "Agent façade: read a server-issued readRef without exposing local paths or unverified JSON paths.",
 		promptSnippet: "Use browser_read with a readRef from AgentView to fetch windowed verified content.",
 		promptGuidelines: [
 			"Only use readRef values issued by browser_view/browser_act.",

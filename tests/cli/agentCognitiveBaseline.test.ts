@@ -19,7 +19,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const scratchDefault = process.env.AGENT_COMPLETE_SCRATCH
 	?? path.join(tmpdir(), "agent-complete-bench");
 
-test("fixture baseline: L0 recall + hard gates + catalog 19 / agent 3", () => {
+test("fixture baseline: L0 recall + hard gates + catalog 22 / agent 3", () => {
 	const labels = JSON.parse(readFileSync(path.join(root, "tests/fixtures/agent-pages/golden-labels.json"), "utf8")) as {
 		tasks: Array<{
 			id: string;
@@ -80,20 +80,20 @@ test("fixture baseline: L0 recall + hard gates + catalog 19 / agent 3", () => {
 	const gates = hardGatesPass(metrics);
 	assert.equal(gates.ok, true, gates.failures.join(","));
 	assert.equal(metrics.mutationReplayAttempts, 0);
-	assert.equal(collectCommandDefs().length, 19);
+	assert.equal(collectCommandDefs().length, 22);
 	assert.equal(collectAgentFacadeDefs().length, 3);
-	assert.deepEqual([...toolsForProfile("agent-preview")].sort(), ["browser_act", "browser_read", "browser_view"].sort());
+	assert.deepEqual([...toolsForProfile("agent")].sort(), ["browser_act", "browser_read", "browser_view"].sort());
 
 	mkdirSync(scratchDefault, { recursive: true });
 	const outDir = mkdtempSync(path.join(scratchDefault, "bench-"));
 	const outPath = path.join(outDir, "agent-complete-bench.json");
 	const payload = {
 		...metrics,
-		gaDefaultClaimed: false,
-		catalogPublicToolCount: 19,
-		agentPreviewToolCount: 3,
+		catalogGaClaimed: true,
+		catalogPublicToolCount: 22,
+		agentProfileToolCount: 3,
 		fixture: "tests/fixtures/agent-pages",
-		note: "No agent-default GA; mutationReplay=0 hard gate holds on fixture baseline",
+		note: "Catalog GA 22 includes façade; agent skill primary loop is view/act/read; mutationReplay=0 hard gate holds on fixture baseline",
 	};
 	writeFileSync(outPath, JSON.stringify(payload, null, 2));
 	assert.ok(readFileSync(outPath, "utf8").includes("mutationReplayAttempts"));
@@ -107,5 +107,7 @@ test("fixture baseline: L0 recall + hard gates + catalog 19 / agent 3", () => {
 	assert.equal(run.status, 0, run.stderr);
 	const scriptBody = JSON.parse(readFileSync(scriptOut, "utf8"));
 	assert.equal(scriptBody.mutationReplayAttempts, 0);
-	assert.equal(scriptBody.gaDefaultClaimed, false);
+	assert.equal(scriptBody.catalogPublicToolCount, 22);
+	assert.equal(scriptBody.catalogGaClaimed, true);
+	assert.equal(scriptBody.agentUsage, "skill+cli");
 });

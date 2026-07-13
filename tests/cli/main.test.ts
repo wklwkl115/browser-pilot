@@ -219,7 +219,7 @@ test("commands emits registered subcommands in json mode", () => {
 	assert.equal(result.status, 0);
 	assert.equal(body.schema, "browser-pilot-command-catalog/v3");
 	assert.equal(body.contract.version, 3);
-	assert.equal(body.contract.toolCount, 19);
+	assert.equal(body.contract.toolCount, 22);
 	assert.ok(body.commands.some((command: { cli: string; tool: string }) => command.cli === "execute" && command.tool === "browser_execute"));
 	assert.equal(Buffer.byteLength(result.stdout, "utf8") <= 25 * 1024, true);
 	assert.equal(body.commands.some((command: Record<string, unknown>) => "flags" in command || "artifactBehavior" in command), false);
@@ -380,9 +380,13 @@ test("bin --help prints top-level usage and exits cleanly", () => {
 	const result = runCli(["--help"]);
 	assert.equal(result.status, 0);
 	assert.equal(result.stderr, "");
-	assert.match(result.stdout, /browser-pilot — drive a live browser via the bridge daemon/);
+	assert.match(result.stdout, /browser-pilot — agent browser control via the local bridge daemon/);
+	assert.match(result.stdout, /Agent primary loop/);
 	assert.match(result.stdout, /^Usage:/m);
 	assert.match(result.stdout, /^Commands:/m);
+	assert.match(result.stdout, /^\s+view\s+/m);
+	assert.match(result.stdout, /^\s+act\s+/m);
+	assert.match(result.stdout, /^\s+read\s+/m);
 });
 
 test("cli main refactor target stays within the file-size budget", () => {

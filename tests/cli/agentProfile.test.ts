@@ -20,21 +20,24 @@ function runCli(args: string[]) {
 	});
 }
 
-test("public catalog remains 19 tools; runnable adds agent façade", () => {
-	assert.equal(collectCommandDefs().length, 19);
-	assert.equal(buildCliCommands().length, 19);
+test("public catalog is 22 tools including agent façade", () => {
+	assert.equal(collectCommandDefs().length, 22);
+	assert.equal(buildCliCommands().length, 22);
 	const runnable = buildRunnableCliCommands();
 	assert.equal(runnable.length, 22);
 	for (const name of AGENT_FACADE_TOOL_NAMES) {
 		assert.ok(runnable.some((cmd) => cmd.name === name));
+		assert.ok(buildCliCommands().some((cmd) => cmd.name === name));
 	}
 });
 
-test("agent-preview profile filters to three tools", () => {
-	const names = toolsForProfile("agent-preview");
-	assert.deepEqual([...names].sort(), [...AGENT_FACADE_TOOL_NAMES].sort());
-	const filtered = filterToolsByProfile(buildRunnableCliCommands().map((c) => ({ name: c.name })), "agent-preview");
-	assert.equal(filtered.length, 3);
+test("agent and agent-preview profiles filter to three tools", () => {
+	for (const profile of ["agent", "agent-preview"] as const) {
+		const names = toolsForProfile(profile);
+		assert.deepEqual([...names].sort(), [...AGENT_FACADE_TOOL_NAMES].sort());
+		const filtered = filterToolsByProfile(buildRunnableCliCommands().map((c) => ({ name: c.name })), profile);
+		assert.equal(filtered.length, 3);
+	}
 });
 
 test("expert profile keeps core commands and excludes security", () => {
@@ -52,19 +55,23 @@ test("closed schema rejects unknown fields on browser_view", () => {
 	assert.equal(validated.ok, false);
 });
 
-test("CLI commands --profile agent-preview lists only façade tools", () => {
-	const result = runCli(["commands", "--profile", "agent-preview", "--json"]);
+test("CLI commands --profile agent lists only façade tools", () => {
+	const result = runCli(["commands", "--profile", "agent", "--json"]);
 	assert.equal(result.status, 0, result.stderr);
 	const body = JSON.parse(result.stdout);
-	assert.equal(body.profile, "agent-preview");
+	assert.equal(body.profile, "agent");
 	assert.deepEqual(body.tools.sort(), [...AGENT_FACADE_TOOL_NAMES].sort());
 	assert.equal(body.commands.length, 3);
 });
 
-test("public commands --json still reports toolCount 19", () => {
+test("public commands --json reports toolCount 22 including façade", () => {
 	const result = runCli(["commands", "--json"]);
 	assert.equal(result.status, 0, result.stderr);
 	const body = JSON.parse(result.stdout);
-	assert.equal(body.contract.toolCount, 19);
-	assert.equal(body.commands.length, 19);
+	assert.equal(body.contract.toolCount, 22);
+	assert.equal(body.commands.length, 22);
+	assert.ok(body.commands.some((c: { tool: string }) => c.tool === "browser_view"));
+	assert.ok(body.commands.some((c: { tool: string }) => c.tool === "browser_act"));
+	assert.ok(body.commands.some((c: { tool: string }) => c.tool === "browser_read"));
+	assert.equal(Buffer.byteLength(result.stdout, "utf8") <= 25 * 1024, true);
 });

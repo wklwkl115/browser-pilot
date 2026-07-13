@@ -36,16 +36,17 @@ export function fromSubcommand(subcommand: string): string {
 	return `browser_${subcommand.replace(/-/g, "_")}`;
 }
 
-/** Public catalog definitions only (contract toolCount 19). */
+/** Public catalog definitions (contract toolCount 22: core + security + agent façade). */
 export function collectCommandDefs(): CommandDefinition[] {
 	if (cachedCommandDefs) return cachedCommandDefs;
 	const adapter = new CommandManifestIndex();
 	defineBrowserCommands(adapter, placeholderServer, noopEnsureStarted);
+	defineAgentFacadeCommands({ commands: adapter, ensureStarted: noopEnsureStarted });
 	cachedCommandDefs = adapter.getCommands();
 	return cachedCommandDefs;
 }
 
-/** Agent-preview façade definitions (not part of catalog v3 wire). */
+/** Agent façade definitions only (view/act/read). */
 export function collectAgentFacadeDefs(): CommandDefinition[] {
 	if (cachedAgentFacadeDefs) return cachedAgentFacadeDefs;
 	const adapter = new CommandManifestIndex();
@@ -66,16 +67,16 @@ function toCliCommands(defs: readonly CommandDefinition[]): CliCommand[] {
 		.sort((a, b) => a.subcommand.localeCompare(b.subcommand));
 }
 
-/** Public CLI catalog list (exactly 19 tools). */
+/** Public CLI catalog list (exactly 22 tools). */
 export function buildCliCommands(): CliCommand[] {
 	if (cachedCliCommands) return cachedCliCommands;
 	cachedCliCommands = toCliCommands(collectCommandDefs());
 	return cachedCliCommands;
 }
 
-/** Runnable CLI list includes agent-preview façade tools for invoke/schema/validate. */
+/** Runnable CLI list equals public catalog after agent façade GA. */
 export function buildRunnableCliCommands(): CliCommand[] {
 	if (cachedRunnableCliCommands) return cachedRunnableCliCommands;
-	cachedRunnableCliCommands = toCliCommands([...collectCommandDefs(), ...collectAgentFacadeDefs()]);
+	cachedRunnableCliCommands = buildCliCommands();
 	return cachedRunnableCliCommands;
 }

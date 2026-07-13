@@ -136,7 +136,7 @@ export function compileSemanticAction(
 	if (!isPublishedWriteKind(action.kind)) {
 		return {
 			code: "ACTION_UNSUPPORTED_SURFACE",
-			message: `semantic action ${action.kind} is not published on agent-preview v1`,
+			message: `semantic action ${action.kind} is not published on agent façade v1`,
 		};
 	}
 

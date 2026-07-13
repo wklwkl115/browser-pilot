@@ -600,7 +600,7 @@ CLI 子命令由工具名映射而来：去掉 `browser_` 前缀，并把 `_` �
 
 带 action 的公开命令额外使用 [`publicActionCatalog.ts`](src/commands/publicActionCatalog.ts) 作为 routing/help/schema/validate 的共同来源。Catalog 合并 native schema 生成 metadata 与 command definition 上的 `actionMetadata`；CLI token 固定 kebab-case，raw JSON `action` 保持 schema spelling。例如 raw `captureReload` 的唯一 canonical CLI route 是 `network capture-reload`，`network captureReload` 不是 alias。
 
-公共 discovery 直接使用 contract v3，不双写旧形态。`commands --json` 由 command registry 派生 `browser-pilot-command-catalog/v3`：root 只出现一次 contract identity 与 artifact read 规则，每个 command 只保留 `cli/tool/group/summary/schemaArgv` 和 canonical kebab-case action references；19-tool catalog 的 UTF-8 硬上限为 25 KiB。`schema <command> --json` 返回公共参数与 action references，`schema <command> <action> --json` 才展开 `browser-pilot-command-schema/v3` 的 closed action schema。Action schema 固定包含 raw action `const`、公共 target/session/output 字段、该 action 唯一允许的 nested `params`、required/required-any 和 `additionalProperties:false`。Native network/hook/frame metadata 由 protocol schema 生成，`captureReload` 等 synthetic action 由 command definition 自己持有；help、schema、offline validate、daemon validate、execution routing 与 contract hash 读取同一 owner。
+公共 discovery 直接使用 contract v3，不双写旧形态。`commands --json` 由 command registry 派生 `browser-pilot-command-catalog/v3`：root 只出现一次 contract identity 与 artifact read 规则，每个 command 只保留 `cli/tool/group/summary/schemaArgv` 和 canonical kebab-case action references；22-tool catalog 的 UTF-8 硬上限为 25 KiB。`schema <command> --json` 返回公共参数与 action references，`schema <command> <action> --json` 才展开 `browser-pilot-command-schema/v3` 的 closed action schema。Action schema 固定包含 raw action `const`、公共 target/session/output 字段、该 action 唯一允许的 nested `params`、required/required-any 和 `additionalProperties:false`。Native network/hook/frame metadata 由 protocol schema 生成，`captureReload` 等 synthetic action 由 command definition 自己持有；help、schema、offline validate、daemon validate、execution routing 与 contract hash 读取同一 owner。
 
 ### 7.2 命令定义模型
 
@@ -1268,11 +1268,11 @@ mise run dev-governance
 | 修改 scan 页面脚本 | `capture-src/entries/scanTemplate.ts`、`src/scan/buildScanScript.ts`。 |
 | 修改 content 提取 | `capture-src/entries/contentTemplate.ts`、`src/content/buildContentScript.ts`。 |
 | 修改 Rust 加速 | `native/browser-pilot-kernels/src/main.rs`、`src/native/browserPilotNativeKernels.ts`。 |
-| Agent Interaction Plane（preview） | `src/kernels/agent/*`、`src/kernels/session/agentContextRegistry.ts`、`src/commands/agent/*`、`src/commands/capabilityProfileCatalog.ts`、`src/apps/daemon/AgentContextService.ts`、`src/browser-command-runtime/semanticActionCompiler.ts`。 |
+| Agent Interaction Plane（skill+CLI / catalog 22） | `src/kernels/agent/*`、`src/kernels/session/agentContextRegistry.ts`、`src/commands/agent/*`、`src/commands/capabilityProfileCatalog.ts`、`src/apps/daemon/AgentContextService.ts`、`src/browser-command-runtime/semanticActionCompiler.ts`、`skills/browser-pilot-cli/SKILL.md`。 |
 
-### 14.7 Agent Interaction Plane（agent-preview）
+### 14.7 Agent Interaction Plane（skill + CLI）
 
-面向 Agent 的防腐层，**不**替代 PageObservationV3 / browser-operation/v2 权威真值：
+面向 Agent 的防腐层，**不**替代 PageObservationV3 / browser-operation/v2 权威真值。产品主路径是 **skill + CLI** 的三工具循环，不是人类 expert CLI 工作流。
 
 | 工具 | 角色 | 返回 |
 |---|---|---|
@@ -1282,13 +1282,13 @@ mise run dev-governance
 
 约束摘要：
 
-1. 公共 catalog v3 仍为 **19** 工具；façade 可 invoke，但不计入 contract toolCount。
-2. `capabilityProfileCatalog.ts` 只过滤 name set；schema 仍来自 command 定义。
+1. 公共 catalog v3 为 **22** 工具（core 12 + security 7 + façade 3）；façade 计入 contract `toolCount` / hash / daemon identity。
+2. Agent 默认只使用三个 façade；`capabilityProfileCatalog.ts` 的 `agent` / `agent-preview` profile 只过滤 name set；schema 仍来自 command 定义。
 3. Daemon 持有 `AgentContextService`、`ActionConfirmationService`、`AgentTraceStore`（owner isolation / revision / TTL / one-shot confirm / fail-open trace）；commands 经 port/service 访问。
 4. Pure kernels 负责投影、outcome 映射、recovery 分类、context transition、confirmation digests、cognitive metrics。
-5. 人类 CLI 默认 expert-first；`browser-pilot commands --profile agent-preview --json` 只列出三个 façade 工具。
+5. 权威操作说明在 `skills/browser-pilot-cli/SKILL.md`；`browser-pilot commands --profile agent --json` 列出三个 façade 工具。expert/security 仅作能力边界 escalation。
 6. 敏感 act（submit/navigate/irreversible）需 `confirmationRef`；ACK 后永不自动重放 mutation。
-7. 设计归档：`docs/archive/agent-interaction-plane.md`（不再作为第二规则源）；agent-default catalog GA 需独立 SLO 证据。
+7. 设计归档：`docs/archive/agent-interaction-plane.md`（不再作为第二规则源）。
 
 ---
 

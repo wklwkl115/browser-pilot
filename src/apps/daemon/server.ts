@@ -479,22 +479,18 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	installActionConfirmationService(new ActionConfirmationService());
 	installAgentTraceStore(new AgentTraceStore());
 
-	const AGENT_FACADE_NAMES = new Set(["browser_view", "browser_act", "browser_read"]);
 	let commandDefinitions: CommandDefinition[];
-	let publicCommandDefinitions: CommandDefinition[];
 	if (options.commandDefinitions) {
 		commandDefinitions = [...options.commandDefinitions];
-		publicCommandDefinitions = commandDefinitions.filter((def) => !AGENT_FACADE_NAMES.has(def.name));
 	} else {
 		const adapter = new CommandManifestIndex();
 		defineBrowserCommands(adapter, bridgeServer, ensureStarted);
-		publicCommandDefinitions = adapter.getCommands();
 		defineAgentFacadeCommands({ commands: adapter, ensureStarted });
 		commandDefinitions = adapter.getCommands();
 	}
 	const toolByName = new Map<string, CommandDefinition>(commandDefinitions.map((def) => [def.name, def]));
-	// Contract identity / toolCount remain public catalog only (preview must not rewrite v3 wire).
-	const contractIdentity = createDaemonContractIdentity(publicCommandDefinitions);
+	// Public catalog identity includes agent façade (toolCount 22).
+	const contractIdentity = createDaemonContractIdentity(commandDefinitions);
 	const toolCount = contractIdentity.toolCount;
 
 	const token = randomBytes(24).toString("hex");

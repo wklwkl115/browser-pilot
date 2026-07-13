@@ -50,7 +50,7 @@ function validateActArguments(args: Record<string, unknown>): ValidationIssue[] 
 		issues.push({
 			code: "ACTION_UNSUPPORTED_SURFACE",
 			path: "/action/kind",
-			message: `action kind ${String(kind)} is not published on agent-preview; expected one of ${ACTION_KINDS.join(", ")}`,
+			message: `action kind ${String(kind)} is not published on agent façade; expected one of ${ACTION_KINDS.join(", ")}`,
 		});
 		return issues;
 	}
@@ -97,7 +97,7 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 	defineBrowserCommand(commands, {
 		name: "browser_act",
 		label: "Browser Act",
-		description: "Agent-preview façade: compile a semantic action, settle one browser operation, and return AgentTurn with outcome-first post-action view.",
+		description: "Agent façade: compile a semantic action, settle one browser operation, and return AgentTurn with outcome-first post-action view.",
 		promptSnippet: "Call browser_act once per mutation with contextRef and a semantic action; do not wait/sleep or replay after ACK.",
 		promptGuidelines: [
 			"Use candidate refs from the latest browser_view/browser_act view only.",

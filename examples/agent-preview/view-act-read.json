@@ -1,7 +1,14 @@
 {
-  "description": "Agent-preview structured invoke examples (daemon JSON). Not a second schema source.",
-  "profile": "agent-preview",
+  "description": "Agent skill+CLI structured invoke examples (daemon JSON / CLI --params). Not a second schema source.",
+  "profile": "agent",
+  "usage": "skill+cli",
   "tools": ["browser_view", "browser_act", "browser_read"],
+  "cli": [
+    "browser-pilot view --json",
+    "browser-pilot act --params @act.json --json",
+    "browser-pilot read --params @read.json --json",
+    "browser-pilot commands --profile agent --json"
+  ],
   "sequence": [
     {
       "tool": "browser_view",
