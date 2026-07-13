@@ -32,6 +32,15 @@ export type CommandOwnedActionMetadata = {
 	paramsSchema: Record<string, unknown>;
 };
 
+export type CommandOwnedCliSubcommandMetadata = {
+	/** Canonical kebab-case positional token after the CLI command name. */
+	token: string;
+	/** Existing top-level command parameter populated by the route. */
+	parameter: string;
+	/** Existing schema value assigned to the parameter. */
+	value: string;
+};
+
 export type BrowserCommandDefinition = {
 	name: string;
 	label?: string;
@@ -40,6 +49,7 @@ export type BrowserCommandDefinition = {
 	promptGuidelines?: string[];
 	parameters?: unknown;
 	actionMetadata?: readonly CommandOwnedActionMetadata[];
+	cliSubcommands?: readonly CommandOwnedCliSubcommandMetadata[];
 	/** Explicit, command-owned canonical normalization; never removes unknown keys. */
 	coerceArguments?: (args: Record<string, unknown>) => Record<string, unknown>;
 	removedArguments?: readonly string[];

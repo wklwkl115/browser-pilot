@@ -10,7 +10,7 @@ import { getNativeCommandProtocolSchema } from "../../src/types/nativeProtocol.t
 import { hasBrowserOperationResolver } from "../../src/commands/operationResolvers.ts";
 import { helpText } from "../../src/apps/cli/help.ts";
 import { publicCommandActionCatalog } from "../../src/commands/publicActionCatalog.ts";
-import { naturalActionForToken } from "../../src/apps/cli/naturalRouting.ts";
+import { naturalActionForToken, naturalSubcommandForToken } from "../../src/apps/cli/naturalRouting.ts";
 
 function command(name: string) {
 	const def = collectCommandDefs().find((item) => item.name === name);
@@ -36,7 +36,7 @@ function assertValidationError(schema: unknown, args: Record<string, unknown>, p
 test("command catalog characterization: public browser tool names are stable, unique, and CLI-safe", () => {
 	const defs = collectCommandDefs();
 	const names = defs.map((def) => def.name);
-	assert.equal(names.length, 22);
+	assert.equal(names.length, 19);
 	assert.deepEqual(names, [
 		"browser_tabs",
 		"browser_command",
@@ -57,9 +57,6 @@ test("command catalog characterization: public browser tool names are stable, un
 		"browser_callback_oast",
 		"browser_cookie_analyze",
 		"browser_http_replay",
-		"browser_view",
-		"browser_act",
-		"browser_read",
 	]);
 	assert.equal(names.includes("browser_memory"), false);
 	assert.equal(new Set(names).size, names.length);
@@ -105,6 +102,27 @@ test("public action catalog has one owner per raw/CLI action and canonical kebab
 	assert.equal(naturalActionForToken(network, "capture-reload"), "captureReload");
 	assert.equal(naturalActionForToken(network, "captureReload"), undefined);
 	assert.equal(naturalActionForToken(network, "capture_reload"), undefined);
+});
+
+test("command-owned natural routes map canonical tokens to existing top-level parameters", () => {
+	const tabs = buildCliCommands().find((item) => item.name === "browser_tabs");
+	const artifact = buildCliCommands().find((item) => item.name === "browser_artifact");
+	assert.ok(tabs);
+	assert.ok(artifact);
+	assert.deepEqual(naturalSubcommandForToken(tabs, "list"), {
+		token: "list",
+		parameter: "action",
+		value: "list",
+		owner: "command",
+	});
+	for (const mode of ["inspect", "paths", "json"]) {
+		assert.deepEqual(naturalSubcommandForToken(artifact, mode), {
+			token: mode,
+			parameter: "mode",
+			value: mode,
+			owner: "command",
+		});
+	}
 });
 
 test("CLI public help and registry do not expose removed wait or memory commands", () => {

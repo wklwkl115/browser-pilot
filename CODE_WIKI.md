@@ -598,9 +598,9 @@ CLI 子命令由工具名映射而来：去掉 `browser_` 前缀，并把 `_` �
 - `browser_cookie_analyze` → `cookie-analyze`
 - `browser_http_replay` → `http-replay`
 
-带 action 的公开命令额外使用 [`publicActionCatalog.ts`](src/commands/publicActionCatalog.ts) 作为 routing/help/schema/validate 的共同来源。Catalog 合并 native schema 生成 metadata 与 command definition 上的 `actionMetadata`；CLI token 固定 kebab-case，raw JSON `action` 保持 schema spelling。例如 raw `captureReload` 的唯一 canonical CLI route 是 `network capture-reload`，`network captureReload` 不是 alias。
+带 action 的公开命令额外使用 [`publicActionCatalog.ts`](src/commands/publicActionCatalog.ts) 作为 routing/help/schema/validate 的共同来源。Catalog 合并 native schema 生成 metadata 与 command definition 上的 `actionMetadata`；CLI token 固定 kebab-case，raw JSON `action` 保持 schema spelling。例如 raw `captureReload` 的唯一 canonical CLI route 是 `network capture-reload`，`network captureReload` 不是 alias。对既有 top-level 参数的 canonical positional route 由同一 command definition 的 `cliSubcommands` 唯一声明；`tabs list` 映射 `action=list`，`artifact inspect/paths/json` 映射对应 `mode`，parser/help/schema/validate/catalog/contract hash 不另建手写 route 表。
 
-公共 discovery 直接使用 contract v3，不双写旧形态。`commands --json` 由 command registry 派生 `browser-pilot-command-catalog/v3`：root 只出现一次 contract identity 与 artifact read 规则，每个 command 只保留 `cli/tool/group/summary/schemaArgv` 和 canonical kebab-case action references；22-tool catalog 的 UTF-8 硬上限为 25 KiB。`schema <command> --json` 返回公共参数与 action references，`schema <command> <action> --json` 才展开 `browser-pilot-command-schema/v3` 的 closed action schema。Action schema 固定包含 raw action `const`、公共 target/session/output 字段、该 action 唯一允许的 nested `params`、required/required-any 和 `additionalProperties:false`。Native network/hook/frame metadata 由 protocol schema 生成，`captureReload` 等 synthetic action 由 command definition 自己持有；help、schema、offline validate、daemon validate、execution routing 与 contract hash 读取同一 owner。
+公共 discovery 直接使用 contract v3，不双写旧形态。`commands --json` 由 command registry 派生 `browser-pilot-command-catalog/v3`：root 只出现一次 contract identity 与 artifact read 规则，每个 command 只保留 `cli/tool/group/summary/schemaArgv`、canonical kebab-case action references 和 bounded command-owned subcommand references；19-tool catalog 的 UTF-8 硬上限为 25 KiB。`schema <command> --json` 返回公共参数与 route references，`schema <command> <subcommand> --json` 展开 `browser-pilot-command-schema/v3`：action route 返回 closed action schema，top-level route 则把已有 discriminant 参数收窄为对应 `const`。Action schema 固定包含 raw action `const`、公共 target/session/output 字段、该 action 唯一允许的 nested `params`、required/required-any 和 `additionalProperties:false`。Native network/hook/frame metadata 由 protocol schema 生成，`captureReload` 等 synthetic action 与 top-level `cliSubcommands` 都由 command definition 自己持有；help、schema、offline validate、daemon validate、execution routing 与 contract hash 读取同一 owner。
 
 ### 7.2 命令定义模型
 
@@ -682,7 +682,7 @@ Envelope 常见字段：
 
 该列表描述 generic result envelope；canonical `browser_observe` 是明确例外。Observe 的公共结果、cache value 与 saved artifact 都直接是 `browser-page-observation/v3` root，不再由 generic middleware 重建 nested observation、generic summary/evidence、第二份 artifact mirror 或重复 correlation/content/templates/actionable records。Inline 预算压缩只折叠同一 v3 schema 中的可选 plane，并通过 `frontier` 指向完整 saved root，不产生另一种 compact observation schema。
 
-大结果会保存 artifact，并在输出中给出读取方式。`artifact_hints` 是 compact descriptor：包含 `kind`、`schemaVersion`、可用 `jsonPaths`、`preferredReads` 和可选 `saved` descriptor，只指向实际存在的 summary / primary items / body-text / provider-specific / saved artifact 路径，不复制大型 artifact 内容；既有 `PageObservation.artifact_hints.jsonPaths` 与 `preferredReads` 继续兼容。`resultMiddleware.ts` 只允许最终 persisted layout 中经验证的 preferred read 进入 `nextActions`，不会再从 operation/snapshot/request/wait/listener correlation ID 合成猜测路径；最终 envelope 覆写 artifact 后会重新收敛 descriptor，使响应、内嵌 envelope 与磁盘真实 UTF-16 chars / UTF-8 bytes 一致。`browser_artifact mode=inspect` 用于读取 artifact metadata、compact summary、preferredReads 和 path descriptions；`mode=paths` 用于先列出实际可用 JSON path，再进行 `mode=json` / `pick` 精读。文档、CLI help 和 recovery guidance 不应推荐猜测的 JSON path 或固定样例 artifact 文件；应引用上一个工具返回的 `saved.path`，并通过 inspect/paths 验证路径存在。
+大结果会保存 artifact，并在输出中给出读取方式。`artifact_hints` 是 compact descriptor：包含 `kind`、`schemaVersion`、可用 `jsonPaths`、`preferredReads` 和可选 `saved` descriptor，只指向实际存在的 summary / primary items / body-text / provider-specific / saved artifact 路径，不复制大型 artifact 内容；既有 `PageObservation.artifact_hints.jsonPaths` 与 `preferredReads` 继续兼容。`resultMiddleware.ts` 只允许最终 persisted layout 中经验证的 preferred read 进入 `nextActions`，不会再从 operation/snapshot/request/wait/listener correlation ID 合成猜测路径；最终 envelope 覆写 artifact 后会重新收敛 descriptor，使响应、内嵌 envelope 与磁盘真实 UTF-16 chars / UTF-8 bytes 一致。Canonical CLI `browser-pilot artifact inspect` 用于读取 artifact metadata、compact summary、preferredReads 和 path descriptions；`artifact paths` 用于先列出实际可用 JSON path，再通过 `artifact json` / `--pick` 精读。文档、CLI help 和 recovery guidance 不应推荐猜测的 JSON path 或固定样例 artifact 文件；应引用上一个工具返回的 `saved.path`，并通过 inspect/paths 验证路径存在。
 
 Observation/distillation cost 的唯一纯 owner 是 [`src/kernels/evidence/cost.ts`](src/kernels/evidence/cost.ts)，shape 固定为 `{chars,bytes,estimatedTokens}`。Stable JSON chars、UTF-8 bytes 与 estimated tokens 由同一函数计算；fact allocation 以 tokens 为主、bytes 为 tie-break，公开 `maxChars` 仍是硬上限。PageObservation renderer 与 artifact descriptor 使用固定点拟合，最终 `limits.cost` 必须逐项等于实际 serialized root，不能留下写入前的 estimate。
 
@@ -737,7 +737,7 @@ Provider scheduling 的纯 owner 是 [`observeProviderPlan.ts`](src/kernels/abml
 
 这几类工具共享 `defineNativeActionCommand()` 注册模式，将高层 `action` 映射到底层 native command。read action 立即返回；write action 经 `withBrowserOperation()` 返回统一终态。公开 `browser_wait`/CLI `wait` 已删除，selector/navigation/network-idle 实现只作为 internal supervisor primitive，不能通过 `browser_command` 访问。
 
-Raw `browser_network action=captureReload` / canonical CLI `browser-pilot network capture-reload` 是 page-load network flow 的推荐入口：command 层会在同一 batch 中先执行 `network.start`，再 reload/navigation，随后沿内部 bounded condition/list/export 路径返回 transaction outcome 和 artifact evidence。不要把面向 agent 的文档写成手动 `network start` 后再 reload/sleep/list 的流程，因为该流程容易漏掉早期请求；低层 `start/list/stop/exportHar` 保留给需要持续 recorder 控制的场景，其中 start 只在 recorder armed 后完成，stop 只在停止并 flush 后完成。captureReload 结果和相关 bridge responses 可包含 bounded `diagnostics.latency` / temporal telemetry，字段限于 elapsed/deadline/ack/queue/runtime/serialize 等操作性 timing 与计数，不包含 command payload、headers、body、postData、cookies 或 URL query。读取 capture artifact 时先用 `browser_artifact mode=inspect` / `mode=paths` 检查实际 path，再用存在的 JSON path 读取。
+Raw `browser_network action=captureReload` / canonical CLI `browser-pilot network capture-reload` 是 page-load network flow 的推荐入口：command 层会在同一 batch 中先执行 `network.start`，再 reload/navigation，随后沿内部 bounded condition/list/export 路径返回 transaction outcome 和 artifact evidence。不要把面向 agent 的文档写成手动 `network start` 后再 reload/sleep/list 的流程，因为该流程容易漏掉早期请求；低层 `start/list/stop/exportHar` 保留给需要持续 recorder 控制的场景，其中 start 只在 recorder armed 后完成，stop 只在停止并 flush 后完成。captureReload 结果和相关 bridge responses 可包含 bounded `diagnostics.latency` / temporal telemetry，字段限于 elapsed/deadline/ack/queue/runtime/serialize 等操作性 timing 与计数，不包含 command payload、headers、body、postData、cookies 或 URL query。读取 capture artifact 时先用 canonical CLI `browser-pilot artifact inspect` / `artifact paths` 检查实际 path，再通过 `artifact json` 读取存在的 JSON path。
 
 ```text
 # browser-pilot-executable
@@ -1268,27 +1268,6 @@ mise run dev-governance
 | 修改 scan 页面脚本 | `capture-src/entries/scanTemplate.ts`、`src/scan/buildScanScript.ts`。 |
 | 修改 content 提取 | `capture-src/entries/contentTemplate.ts`、`src/content/buildContentScript.ts`。 |
 | 修改 Rust 加速 | `native/browser-pilot-kernels/src/main.rs`、`src/native/browserPilotNativeKernels.ts`。 |
-| Agent Interaction Plane（skill+CLI / catalog 22） | `src/kernels/agent/*`、`src/kernels/session/agentContextRegistry.ts`、`src/commands/agent/*`、`src/commands/capabilityProfileCatalog.ts`、`src/apps/daemon/AgentContextService.ts`、`src/browser-command-runtime/semanticActionCompiler.ts`、`skills/browser-pilot-cli/SKILL.md`。 |
-
-### 14.7 Agent Interaction Plane（skill + CLI）
-
-面向 Agent 的防腐层，**不**替代 PageObservationV3 / browser-operation/v2 权威真值。产品主路径是 **skill + CLI** 的三工具循环，不是人类 expert CLI 工作流。
-
-| 工具 | 角色 | 返回 |
-|---|---|---|
-| `browser_view` | readiness + observe + 投影 | `browser-agent-view/v1` + `contextRef` |
-| `browser_act` | semantic action → trusted program/navigation + settlement | `browser-agent-turn/v1`（outcome-first） |
-| `browser_read` | 仅服务端签发的 `readRef` | `browser-agent-read/v1` |
-
-约束摘要：
-
-1. 公共 catalog v3 为 **22** 工具（core 12 + security 7 + façade 3）；façade 计入 contract `toolCount` / hash / daemon identity。
-2. Agent 默认只使用三个 façade；`capabilityProfileCatalog.ts` 的 `agent` / `agent-preview` profile 只过滤 name set；schema 仍来自 command 定义。
-3. Daemon 持有 `AgentContextService`、`ActionConfirmationService`、`AgentTraceStore`（owner isolation / revision / TTL / one-shot confirm / fail-open trace）；commands 经 port/service 访问。
-4. Pure kernels 负责投影、outcome 映射、recovery 分类、context transition、confirmation digests、cognitive metrics。
-5. 权威操作说明在 `skills/browser-pilot-cli/SKILL.md`；`browser-pilot commands --profile agent --json` 列出三个 façade 工具。expert/security 仅作能力边界 escalation。
-6. 敏感 act（submit/navigate/irreversible）需 `confirmationRef`；ACK 后永不自动重放 mutation。
-7. 设计归档：`docs/archive/agent-interaction-plane.md`（不再作为第二规则源）。
 
 ---
 
@@ -1306,4 +1285,3 @@ mise run dev-governance
 10. `dist/` 和 `bridge/browser_pilot_bridge/` 是生成产物，不手改。
 11. 完成或发布前以 `mise run verify` 为准。
 12. Observe 默认提供 task entry points 而不猜动作；write operation 默认提供终态而不倾倒大 evidence。恢复/续行走 `nextActions`/`continuation`，可选细节走 `saved.path` + `artifact_hints` 渐进展开。
-13. Agent Interaction Plane 是防腐层：默认 Agent 只见 view/act/read；completed-only success 与 no mutation replay 不可放宽；canonical observation/operation 仍可 expert 下钻。

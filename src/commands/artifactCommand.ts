@@ -62,6 +62,11 @@ export function defineArtifactCommand({ commands }: CommandRegistrarContext) {
 			"Keep maxChars small and request the next offset, column window, or a narrower jsonPath/query when more detail is needed.",
 			"When a previous tool returns correlation metadata, prefer browser_artifact mode=json with jsonPath like operation.operationId, snapshot.snapshotId, or data.requestId/data.waitId/data.listenerId before reading the whole artifact.",
 		],
+		cliSubcommands: [
+			{ token: "inspect", parameter: "mode", value: "inspect" },
+			{ token: "paths", parameter: "mode", value: "paths" },
+			{ token: "json", parameter: "mode", value: "json" },
+		],
 		parameters: strictCommandParameters({
 			path: Type.Optional(Type.String({ description: "Artifact path returned by a browser tool, absolute or relative to cwd" })),
 			paths: Type.Optional(Type.Array(Type.String(), { description: "Explicit artifact paths for bounded multi-artifact search mode." })),

@@ -5,7 +5,6 @@ export type CliCommandSummary = {
 };
 
 export const COMMAND_SUMMARIES: CliCommandSummary[] = [
-	{ subcommand: "act", name: "browser_act", description: "Agent façade: run one semantic action (activate/fill/press/scroll/navigate/history/select/drag/submit), settle the operation, and return browser-agent-turn/v1." },
 	{ subcommand: "artifact", name: "browser_artifact", description: "Read, inspect, list available JSON paths, sample, search, or pick local artifacts without loading the whole file." },
 	{ subcommand: "callback-oast", name: "browser_callback_oast", description: "Run local HTTP/HTTPS/DNS callback listeners with correlation IDs, trigger helpers, persisted events, and external callback metadata." },
 	{ subcommand: "command", name: "browser_command", description: "Send a native bridge command object through the Browser Pilot bridge with stable validation and result envelopes." },
@@ -13,20 +12,18 @@ export const COMMAND_SUMMARIES: CliCommandSummary[] = [
 	{ subcommand: "crawl", name: "browser_crawl", description: "Collect scoped Web metadata through bounded fingerprint probing or recursive crawl for links, forms, known files, JS endpoints, OpenAPI/GraphQL, source maps, service workers, and response evidence." },
 	{ subcommand: "download", name: "browser_download", description: "Trigger or wait for a browser download and return the completed local file path from Chrome downloads." },
 	{ subcommand: "evidence", name: "browser_evidence", description: "Aggregate native browser evidence from hook, network recorder, and performance entries." },
-	{ subcommand: "execute", name: "browser_execute", description: "Execute JavaScript in a connected real browser tab (expert escalation)." },
+	{ subcommand: "execute", name: "browser_execute", description: "Execute JavaScript in a connected real browser tab." },
 	{ subcommand: "frame", name: "browser_frame", description: "Native frame commands: list frames, evaluate in a frame, add/remove new-document scripts." },
 	{ subcommand: "fuzz", name: "browser_fuzz", description: "Run bounded path, vhost, or parameter fuzzing against explicit scoped HTTP targets with baseline filtering, clustering, response deltas, and evidence artifacts." },
 	{ subcommand: "hook", name: "browser_hook", description: "Native browser event hook commands: listTargets, installTargets, install, collect, status, clear, pause, resume, uninstall, evaluate, event listener, performance entries." },
 	{ subcommand: "http-replay", name: "browser_http_replay", description: "Replay raw or structured HTTP requests with method/header/body mutation, HAR dependency graph evidence, artifact output, and optional browser-session cookie injection." },
-	{ subcommand: "network", name: "browser_network", description: "Native Network recorder commands including canonical capture-reload (raw action captureReload), which starts capture before reload/navigation to catch page-load requests. Prefer capture-reload over manual network start then reload." },
-	{ subcommand: "observe", name: "browser_observe", description: "Observe the current page as the canonical ABML page model (expert escalation); agents prefer view." },
-	{ subcommand: "read", name: "browser_read", description: "Agent façade: expand a server-issued readRef from the current agent context without raw saved.path." },
+	{ subcommand: "network", name: "browser_network", description: "Native Network recorder commands including canonical capture-reload (raw action captureReload), which starts capture before reload/navigation to catch page-load requests." },
+	{ subcommand: "observe", name: "browser_observe", description: "Observe the current page as the canonical ABML page model; omit mode for ordinary use, with explicit modes reserved for legacy/debug projections." },
 	{ subcommand: "screenshot", name: "browser_screenshot", description: "Native screenshot capture. Saves the image to disk by default and returns the file path." },
 	{ subcommand: "sqli", name: "browser_sqli", description: "Probe SQL injection or run bounded sqlmap automation from explicit scoped request templates with boolean/error/time/union evidence, mature-engine findings, and artifacts." },
 	{ subcommand: "tabs", name: "browser_tabs", description: "List, switch, create, close, or snapshot browser tabs; advanced actions manage scoped browser sessions and tab leases through the Browser Pilot bridge." },
 	{ subcommand: "template", name: "browser_template", description: "Run bounded built-in/custom HTTP template checks or mature nuclei template automation against scoped targets or request templates with structured matches and artifacts." },
 	{ subcommand: "upload", name: "browser_upload", description: "Upload local file(s) through a page file chooser using CDP DOM.setFileInputFiles." },
-	{ subcommand: "view", name: "browser_view", description: "Agent façade: ensure readiness, observe, and return AgentViewV1 with contextRef and candidate refs." },
 ];
 
 /** Left-align in a column; if the head already fills the column, keep a 2-space gap so the
@@ -37,13 +34,7 @@ export function pad(head: string, width: number): string {
 
 export function helpText(): string {
 	const lines = [
-		"browser-pilot — agent browser control via the local bridge daemon (skill + CLI)",
-		"",
-		"Agent primary loop:",
-		"  browser-pilot view --json",
-		"  browser-pilot act --params '{...}' --json",
-		"  browser-pilot read --params '{...}' --json",
-		"  browser-pilot commands --profile agent --json",
+		"browser-pilot — drive a live browser via the bridge daemon",
 		"",
 		"Usage:",
 		"  browser-pilot <command> [--flags]",

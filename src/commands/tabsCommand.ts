@@ -14,7 +14,7 @@ import type { ValidationIssue } from "./commandDefinition.js";
 
 const TAB_TARGET_ACTIONS = new Set(["switch", "close", "attachtab", "detachtab", "leasetab", "releasetab"]);
 const SNAPSHOT_NOT_FOUND_RECOVERY = { nextActions: ["browser-pilot observe --json", "browser-pilot tabs --action snapshot --json"] };
-const SNAPSHOT_EXPIRED_RECOVERY = { nextActions: ["browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json", "browser-pilot artifact --path <saved.path> --mode inspect --json", "browser-pilot observe --json"] };
+const SNAPSHOT_EXPIRED_RECOVERY = { nextActions: ["browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json", "browser-pilot artifact inspect --path <saved.path> --json", "browser-pilot observe --json"] };
 
 type BrowserSessionOptions = { browserSessionId: string | undefined };
 type TabsDetails = (build: () => Record<string, unknown>) => Record<string, unknown>;
@@ -134,6 +134,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 			"Prefer the returned id/targetRef/tabHandle for later tab-scoped browser_* calls; numeric tabId remains compatibility input.",
 			"Everyday tab control is list/switch/create/close/snapshot; the session & lease actions (selectBrowser/listSessions/createSession/selectSession/closeSession/attachTab/detachTab/leaseTab/releaseTab) are advanced multi-agent isolation/coordination — skip them unless you are managing browser sessions or tab leases.",
 		],
+		cliSubcommands: [{ token: "list", parameter: "action", value: "list" }],
 		parameters: strictCommandParameters({
 			action: Type.String({ description: "Common: list, snapshot, switch, create, close. Advanced (session & lease lifecycle): selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
 			...sharedTabScopedToolParams({ tabIdDescription: "Compatibility target for switch/close: numeric tabId or tabHandle string.", targetRefDescription: "Preferred stable tabHandle for switch/close/attach/detach/lease/release." }),

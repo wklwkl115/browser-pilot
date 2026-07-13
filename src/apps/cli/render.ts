@@ -155,9 +155,9 @@ type ArtifactReadDescriptor = {
 	jsonPathRef?: string;
 };
 
-const ARTIFACT_INSPECT_COMMAND = "browser-pilot artifact --path <saved.path> --mode inspect --json";
-const ARTIFACT_PATHS_COMMAND = "browser-pilot artifact --path <saved.path> --mode paths --json";
-const ARTIFACT_JSON_COMMAND = "browser-pilot artifact --path <saved.path> --mode json --json-path <verified-json-path> --json";
+const ARTIFACT_INSPECT_COMMAND = "browser-pilot artifact inspect --path <saved.path> --json";
+const ARTIFACT_PATHS_COMMAND = "browser-pilot artifact paths --path <saved.path> --json";
+const ARTIFACT_JSON_COMMAND = "browser-pilot artifact json --path <saved.path> --json-path <verified-json-path> --json";
 const MAX_ARTIFACT_JSON_PATHS = 6;
 const MAX_ARTIFACT_JSON_PATH_CHARS = 512;
 const MAX_ARTIFACT_JSON_PATH_TOTAL_CHARS = 2_048;
@@ -177,7 +177,7 @@ function cliActionFromText(action: string, savedPathAvailable: boolean, jsonPath
 		return {
 			kind: "artifact-read",
 			command: ARTIFACT_JSON_COMMAND,
-			argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--mode", "json", "--json-path", "<verified-json-path>", "--json"],
+			argvTemplate: ["browser-pilot", "artifact", "json", "--path", "<saved.path>", "--json-path", "<verified-json-path>", "--json"],
 			pathRef: "artifacts[0].path",
 			jsonPathRef,
 			source: "nextActions",
@@ -217,7 +217,7 @@ function cliActionFromText(action: string, savedPathAvailable: boolean, jsonPath
 function artifactReadCommand(): ArtifactReadDescriptor {
 	return {
 		command: ARTIFACT_JSON_COMMAND,
-		argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--mode", "json", "--json-path", "<verified-json-path>", "--json"],
+		argvTemplate: ["browser-pilot", "artifact", "json", "--path", "<saved.path>", "--json-path", "<verified-json-path>", "--json"],
 		pathRef: "path",
 		jsonPathRef: "jsonPaths[0]",
 	};
@@ -225,8 +225,8 @@ function artifactReadCommand(): ArtifactReadDescriptor {
 
 function artifactDiscoveryCommands(): ArtifactReadDescriptor[] {
 	return [
-		{ command: ARTIFACT_INSPECT_COMMAND, argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--mode", "inspect", "--json"], pathRef: "path" },
-		{ command: ARTIFACT_PATHS_COMMAND, argvTemplate: ["browser-pilot", "artifact", "--path", "<saved.path>", "--mode", "paths", "--json"], pathRef: "path" },
+		{ command: ARTIFACT_INSPECT_COMMAND, argvTemplate: ["browser-pilot", "artifact", "inspect", "--path", "<saved.path>", "--json"], pathRef: "path" },
+		{ command: ARTIFACT_PATHS_COMMAND, argvTemplate: ["browser-pilot", "artifact", "paths", "--path", "<saved.path>", "--json"], pathRef: "path" },
 	];
 }
 

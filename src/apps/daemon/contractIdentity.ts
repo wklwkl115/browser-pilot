@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
-import { defineAgentFacadeCommands } from "../../commands/agent/defineAgentFacadeCommands.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { contractActionMetadata } from "../../commands/publicActionCatalog.js";
 import { BROWSER_OPERATION_OUTCOME_CONTRACT, BROWSER_OPERATION_SCHEMA } from "../../kernels/session/browserOperation.js";
@@ -140,7 +139,7 @@ export function nativeProtocolContractHash(): string {
 }
 
 export type CommandContractPayload = {
-	commands: Array<{ name: string; parameters: unknown }>;
+	commands: Array<{ name: string; parameters: unknown; cliSubcommands: Array<{ token: string; parameter: string; value: string }> }>;
 	actions: Array<Record<string, unknown>>;
 	operationResult: {
 		schema: typeof BROWSER_OPERATION_SCHEMA;
@@ -158,7 +157,13 @@ export type CommandContractPayload = {
 
 export function commandContractPayload(definitions: readonly CommandDefinition[]): CommandContractPayload {
 	const commands = definitions
-		.map((definition) => ({ name: definition.name, parameters: contractSchema(definition.parameters ?? null) }))
+		.map((definition) => ({
+			name: definition.name,
+			parameters: contractSchema(definition.parameters ?? null),
+			cliSubcommands: [...(definition.cliSubcommands ?? [])]
+				.map((route) => ({ token: route.token, parameter: route.parameter, value: route.value }))
+				.sort((left, right) => left.token.localeCompare(right.token)),
+		}))
 		.sort((left, right) => left.name.localeCompare(right.name));
 	const nativeProtocolHash = nativeProtocolContractHash();
 	return {
@@ -201,7 +206,6 @@ export function localDaemonContractIdentity(): DaemonContractIdentity {
 	if (cachedLocalIdentity) return { ...cachedLocalIdentity };
 	const commands = new CommandManifestIndex();
 	defineBrowserCommands(commands, placeholderRuntime, noopEnsureStarted);
-	defineAgentFacadeCommands({ commands, ensureStarted: noopEnsureStarted });
 	cachedLocalIdentity = createDaemonContractIdentity(commands.getCommands());
 	return { ...cachedLocalIdentity };
 }

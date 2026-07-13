@@ -7,9 +7,9 @@ import { parseArgs, type GlobalFlags } from "./flags.js";
 import { renderResult, renderUsageError, renderUnavailableError, writeJsonEnvelope, EXIT, type RenderMode } from "./render.js";
 import { invokeTool, DaemonUnavailableError } from "./client.js";
 import { printHelp } from "./help.js";
-import { translateNaturalActionArgv, legacyActionUsed } from "./naturalRouting.js";
-import { invocationFlagSpecs, kebabAction, nestNaturalActionParams, printCommandHelp } from "./commandMetadata.js";
-import { loadCliCommands, loadRunnableCliCommands, renderMode, splitLeadingGlobalFlags } from "./cliBasics.js";
+import { translateNaturalActionArgv, legacyActionUsed, type NaturalSubcommandInvocation } from "./naturalRouting.js";
+import { invocationFlagSpecs, nestNaturalActionParams, printCommandHelp } from "./commandMetadata.js";
+import { loadCliCommands, renderMode, splitLeadingGlobalFlags } from "./cliBasics.js";
 import { runCommandsCommand, runDoctorCommand, runSchemaCommand, runValidateCommand } from "./cliLocalCommands.js";
 import { daemonAction, runConnectCommand, runDaemonControl, runStatusCommand } from "./cliConnectionCommands.js";
 import { runSelftestCommand, selftestToolError } from "./cliSelftest.js";
@@ -26,7 +26,7 @@ export type OfflineToolInvocationResult =
 
 /** Parse and validate a tool CLI example without starting/reusing the daemon. */
 export async function validateToolInvocationOffline(sub: string, commandArgv: string[]): Promise<OfflineToolInvocationResult> {
-	const cmd = (await loadRunnableCliCommands()).find((item) => item.subcommand === sub);
+	const cmd = (await loadCliCommands()).find((item) => item.subcommand === sub);
 	if (!cmd) return { ok: false, error: `unknown command "${sub}"` };
 	const translated = translateNaturalActionArgv(cmd, commandArgv);
 	if (!translated.ok) return { ok: false, error: translated.error };
@@ -60,7 +60,7 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 async function runToolCommand(sub: string, commandArgv: string[]): Promise<number> {
-	const cmd = (await loadRunnableCliCommands()).find((item) => item.subcommand === sub);
+	const cmd = (await loadCliCommands()).find((item) => item.subcommand === sub);
 	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'browser-pilot --help'`, wantsJsonMode(commandArgv));
 	const translated = translateNaturalActionArgv(cmd, commandArgv);
 	if (!translated.ok) return renderUsageError(translated.error, renderMode(translated.globals));
@@ -74,7 +74,7 @@ function wantsJsonMode(argv: string[]): ReturnType<typeof renderMode> {
 	return renderMode(globals);
 }
 
-function parseInvocation(cmd: Awaited<ReturnType<typeof loadRunnableCliCommands>>[number], translated: { ok: true; argv: string[]; natural?: { action: string }; globals?: never }) {
+function parseInvocation(cmd: Awaited<ReturnType<typeof loadCliCommands>>[number], translated: { ok: true; argv: string[]; natural?: NaturalSubcommandInvocation; globals?: never }) {
 	const specs = invocationFlagSpecs(cmd, translated.natural?.action);
 	const parsed = parseArgs(specs, translated.argv);
 	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
@@ -86,16 +86,16 @@ function parseInvocation(cmd: Awaited<ReturnType<typeof loadRunnableCliCommands>
 }
 
 async function invokeParsedCommand(
-	cmd: Awaited<ReturnType<typeof loadRunnableCliCommands>>[number],
+	cmd: Awaited<ReturnType<typeof loadCliCommands>>[number],
 	commandArgv: string[],
-	translated: { ok: true; argv: string[]; natural?: { action: string } },
+	translated: { ok: true; argv: string[]; natural?: NaturalSubcommandInvocation },
 	parsed: ReturnType<typeof parseArgs> & { ok: true },
 ): Promise<number> {
 	const params = nestNaturalActionParams(cmd, translated.natural?.action, parsed.value.params);
 	const validated = validateBrowserCommandArguments(cmd.def, params);
 	if (!validated.ok) return renderCommandValidationFailure(validated, renderMode(parsed.value.globals));
 	try {
-		const result = await invokeTool(cmd.name, validated.args, process.cwd(), cliInvokeMeta(cmd, commandArgv, translated.natural?.action, validated.args.action));
+		const result = await invokeTool(cmd.name, validated.args, process.cwd(), cliInvokeMeta(cmd, commandArgv, translated.natural, validated.args.action));
 		return renderResult(result, renderMode(parsed.value.globals));
 	} catch (error) {
 		if (error instanceof DaemonUnavailableError) return renderUnavailableError(error.message, renderMode(parsed.value.globals), error.code);
@@ -112,8 +112,15 @@ function renderCommandValidationFailure(result: Extract<BrowserCommandValidation
 	return EXIT.usage;
 }
 
-function cliInvokeMeta(cmd: Awaited<ReturnType<typeof loadCliCommands>>[number], commandArgv: string[], action?: string, coercedAction?: unknown): Record<string, unknown> {
-	if (action) return { command: cmd.subcommand, routing: "natural", naturalSubcommand: kebabAction(action), action };
+function cliInvokeMeta(cmd: Awaited<ReturnType<typeof loadCliCommands>>[number], commandArgv: string[], natural?: NaturalSubcommandInvocation, coercedAction?: unknown): Record<string, unknown> {
+	if (natural) return {
+		command: cmd.subcommand,
+		routing: "natural",
+		naturalSubcommand: natural.token,
+		parameter: natural.parameter,
+		value: natural.value,
+		...(natural.action ? { action: natural.action } : {}),
+	};
 	if (legacyActionUsed(cmd, commandArgv)) return { command: cmd.subcommand, routing: "advancedCompatibility", compatibilityInterface: "--action/--params", action: typeof coercedAction === "string" ? coercedAction : undefined };
 	return { command: cmd.subcommand, routing: cmd.name === "browser_command" ? "nativeEscapeHatch" : "standard", ...(cmd.name === "browser_command" ? { compatibilityInterface: "command --command" } : {}) };
 }

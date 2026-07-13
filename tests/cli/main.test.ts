@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveDaemonStartCommand } from "../../src/apps/daemon/daemonControl.ts";
 import { normalizeJsonEnvelope, renderResult } from "../../src/apps/cli/render.ts";
+import { validateToolInvocationOffline } from "../../src/apps/cli/main.ts";
 import { BROWSER_OPERATION_SCHEMA, classifyBrowserOperationStatus, type BrowserOperationStatus } from "../../src/kernels/session/browserOperation.ts";
 
 function runNode(args: string[], cwd = process.cwd()) {
@@ -89,30 +90,30 @@ test("CLI artifact read commands use safe placeholders and bounded returned hint
 	assert.equal(nestedStringValues(artifacts[0]).filter((value) => value === savedPath).length, 1);
 	assert.equal(reads.length, 3);
 	assert.deepEqual(reads.map((read) => read.command), [
-		"browser-pilot artifact --path <saved.path> --mode inspect --json",
-		"browser-pilot artifact --path <saved.path> --mode paths --json",
-		"browser-pilot artifact --path <saved.path> --mode json --json-path <verified-json-path> --json",
+		"browser-pilot artifact inspect --path <saved.path> --json",
+		"browser-pilot artifact paths --path <saved.path> --json",
+		"browser-pilot artifact json --path <saved.path> --json-path <verified-json-path> --json",
 	]);
 	for (const read of reads) {
 		assert.equal(read.command.includes(savedPath), false);
 		assert.equal(read.command.includes(completionPath), false);
-		assert.equal(read.argvTemplate[3], "<saved.path>");
+		assert.equal(read.argvTemplate[4], "<saved.path>");
 		assert.equal(read.pathRef, "path");
 		assert.equal(JSON.stringify(read).includes(savedPath), false);
 	}
 	assert.equal(reads.some((read) => read.command.includes("--mode search")), false);
-	assert.equal(reads[2]?.argvTemplate[7], "<verified-json-path>");
+	assert.equal(reads[2]?.argvTemplate[6], "<verified-json-path>");
 	assert.equal(reads[2]?.jsonPathRef, "jsonPaths[0]");
 
 	const cliNextActions = body.cliNextActions as Array<{ kind: string; command: string; argv?: string[]; argvTemplate?: string[]; pathRef?: string; jsonPathRef?: string }>;
 	const artifactActions = cliNextActions.filter((action) => action.kind === "artifact-read");
 	assert.equal(artifactActions.length, 1);
 	const artifactAction = artifactActions[0];
-	assert.equal(artifactAction?.command, "browser-pilot artifact --path <saved.path> --mode json --json-path <verified-json-path> --json");
+	assert.equal(artifactAction?.command, "browser-pilot artifact json --path <saved.path> --json-path <verified-json-path> --json");
 	assert.equal(artifactAction?.command.includes(savedPath), false);
 	assert.equal(artifactAction?.command.includes(nextActionPath), false);
-	assert.equal(artifactAction?.argvTemplate?.[3], "<saved.path>");
-	assert.equal(artifactAction?.argvTemplate?.[7], "<verified-json-path>");
+	assert.equal(artifactAction?.argvTemplate?.[4], "<saved.path>");
+	assert.equal(artifactAction?.argvTemplate?.[6], "<verified-json-path>");
 	assert.equal(artifactAction?.pathRef, "artifacts[0].path");
 	assert.equal(artifactAction?.jsonPathRef, "artifacts[0].jsonPaths[1]");
 	assert.equal(nestedStringValues(cliNextActions).includes(savedPath), false);
@@ -213,14 +214,64 @@ test("validate execute reports script @file read failures as CLI input errors", 
 	assert.match(body.message, /cannot read .*does-not-exist\.js/i);
 });
 
+test("execute --script accepts inline, stdin, and durable @file source through the real offline parser", async () => {
+	const dir = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-cli-script-inputs-"));
+	const scriptPath = path.join(dir, "durable-snippet.js");
+	writeFileSync(scriptPath, "document.body.dataset.durable", "utf8");
+	const inline = await validateToolInvocationOffline("execute", ["--script", "document.title", "--json"]);
+	const durable = await validateToolInvocationOffline("execute", ["--script", `@${scriptPath}`, "--json"]);
+	assert.equal(inline.ok, true);
+	assert.equal(durable.ok, true);
+	if (inline.ok) assert.equal(inline.args.script, "document.title");
+	if (durable.ok) assert.equal(durable.args.script, "document.body.dataset.durable");
+
+	const childSource = [
+		"const { validateToolInvocationOffline } = await import('./src/apps/cli/main.ts');",
+		"const result = await validateToolInvocationOffline('execute', ['--script', '-', '--json']);",
+		"process.stdout.write(JSON.stringify(result));",
+	].join("\n");
+	const stdin = spawnSync("node", ["--import", "tsx", "--input-type=module", "-e", childSource], {
+		cwd: process.cwd(),
+		encoding: "utf8",
+		input: "document.body.dataset.ephemeral",
+	});
+	assert.equal(stdin.status, 0, stdin.stderr);
+	const stdinBody = JSON.parse(stdin.stdout) as { ok: boolean; args?: Record<string, unknown> };
+	assert.equal(stdinBody.ok, true);
+	assert.equal(stdinBody.args?.script, "document.body.dataset.ephemeral");
+});
+
 test("commands emits registered subcommands in json mode", () => {
 	const result = runCli(["commands", "--json"]);
 	const body = JSON.parse(result.stdout);
 	assert.equal(result.status, 0);
 	assert.equal(body.schema, "browser-pilot-command-catalog/v3");
 	assert.equal(body.contract.version, 3);
-	assert.equal(body.contract.toolCount, 22);
-	assert.ok(body.commands.some((command: { cli: string; tool: string }) => command.cli === "execute" && command.tool === "browser_execute"));
+	assert.equal(body.contract.toolCount, 19);
+	assert.deepEqual(body.commands.map((command: { tool: string }) => command.tool), [
+		"browser_artifact",
+		"browser_callback_oast",
+		"browser_command",
+		"browser_cookie_analyze",
+		"browser_crawl",
+		"browser_download",
+		"browser_evidence",
+		"browser_execute",
+		"browser_frame",
+		"browser_fuzz",
+		"browser_hook",
+		"browser_http_replay",
+		"browser_network",
+		"browser_observe",
+		"browser_screenshot",
+		"browser_sqli",
+		"browser_tabs",
+		"browser_template",
+		"browser_upload",
+	]);
+	for (const retired of ["view", "act", "read"]) {
+		assert.equal(body.commands.some((command: { cli: string; tool: string }) => command.cli === retired || command.tool === `browser_${retired}`), false);
+	}
 	assert.equal(Buffer.byteLength(result.stdout, "utf8") <= 25 * 1024, true);
 	assert.equal(body.commands.some((command: Record<string, unknown>) => "flags" in command || "artifactBehavior" in command), false);
 });
@@ -239,6 +290,23 @@ test("unknown subcommands stay usage errors in json mode", () => {
 	const body = JSON.parse(result.stdout);
 	assert.equal(result.status, 2);
 	assert.equal(body.code, "CLI_USAGE_ERROR");
+});
+
+test("retired interaction commands are unknown for direct, schema, and validate dispatch", () => {
+	for (const retired of ["view", "act", "read"]) {
+		const invocations = [
+			[retired, "--json"],
+			["schema", retired, "--json"],
+			["validate", retired, "--params", "{}", "--json"],
+		];
+		for (const invocation of invocations) {
+			const result = runCli(invocation);
+			const body = JSON.parse(result.stdout) as { code?: string; message?: string };
+			assert.equal(result.status, 2, invocation.join(" "));
+			assert.equal(body.code, "CLI_USAGE_ERROR", invocation.join(" "));
+			assert.match(String(body.message), new RegExp(`unknown command.*${retired}`, "i"), invocation.join(" "));
+		}
+	}
 });
 
 test("removed wait subcommand is an explicit unknown command with no compatibility execution", () => {
@@ -308,6 +376,44 @@ test("schema command marks --command as inline-only", () => {
 	assert.equal(body.flags, undefined);
 });
 
+test("canonical tabs and artifact subcommands share schema and offline validation", () => {
+	const cases = [
+		{ command: "tabs", subcommand: "list", params: {}, parameter: "action", value: "list" },
+		{ command: "artifact", subcommand: "inspect", params: { path: "artifact.json" }, parameter: "mode", value: "inspect" },
+		{ command: "artifact", subcommand: "paths", params: { path: "artifact.json" }, parameter: "mode", value: "paths" },
+		{ command: "artifact", subcommand: "json", params: { path: "artifact.json", jsonPath: "data" }, parameter: "mode", value: "json" },
+	];
+	for (const item of cases) {
+		const schema = runCli(["schema", item.command, item.subcommand, "--json"]);
+		const schemaBody = JSON.parse(schema.stdout) as { schema: string; parameters: { properties: Record<string, { const?: unknown }> } };
+		assert.equal(schema.status, 0, `${item.command} ${item.subcommand}: ${schema.stderr}`);
+		assert.equal(schemaBody.schema, "browser-pilot-command-schema/v3");
+		assert.equal(schemaBody.parameters.properties[item.parameter]?.const, item.value);
+
+		const validation = runCli(["validate", item.command, item.subcommand, "--params", JSON.stringify(item.params), "--json"]);
+		const validationBody = JSON.parse(validation.stdout) as { valid?: boolean; args?: Record<string, unknown>; naturalSubcommand?: string };
+		assert.equal(validation.status, 0, `${item.command} ${item.subcommand}: ${validation.stderr}`);
+		assert.equal(validationBody.valid, true);
+		assert.equal(validationBody.naturalSubcommand, item.subcommand);
+		assert.equal(validationBody.args?.[item.parameter], item.value);
+	}
+});
+
+test("network capture-reload is canonical and camelCase remains unknown", () => {
+	const canonical = runCli(["validate", "network", "capture-reload", "--params", "{}", "--json"]);
+	const canonicalBody = JSON.parse(canonical.stdout) as { valid?: boolean; action?: string; args?: Record<string, unknown> };
+	assert.equal(canonical.status, 0, canonical.stderr);
+	assert.equal(canonicalBody.valid, true);
+	assert.equal(canonicalBody.action, "captureReload");
+	assert.equal(canonicalBody.args?.action, "captureReload");
+
+	const camelCase = runCli(["validate", "network", "captureReload", "--params", "{}", "--json"]);
+	const camelCaseBody = JSON.parse(camelCase.stdout) as { code?: string; message?: string };
+	assert.equal(camelCase.status, 2);
+	assert.equal(camelCaseBody.code, "CLI_USAGE_ERROR");
+	assert.match(String(camelCaseBody.message), /unknown network subcommand "captureReload"/);
+});
+
 test("command help rejects --command @file guidance and execute help recommends unified script inputs", () => {
 	const command = runCli(["command", "--help"]);
 	const execute = runCli(["execute", "--help"]);
@@ -320,7 +426,7 @@ test("command help rejects --command @file guidance and execute help recommends 
 	assert.match(execute.stdout, /--program @file/);
 	assert.match(execute.stdout, /--script @file/);
 	assert.match(execute.stdout, /--script -/);
-	assert.doesNotMatch(execute.stdout, /--script-file/);
+	assert.equal(execute.stdout.includes(["--script", "file"].join("-")), false);
 });
 
 test("command --command @file fails as inline-only", () => {
@@ -380,13 +486,9 @@ test("bin --help prints top-level usage and exits cleanly", () => {
 	const result = runCli(["--help"]);
 	assert.equal(result.status, 0);
 	assert.equal(result.stderr, "");
-	assert.match(result.stdout, /browser-pilot — agent browser control via the local bridge daemon/);
-	assert.match(result.stdout, /Agent primary loop/);
+	assert.match(result.stdout, /browser-pilot — drive a live browser via the bridge daemon/);
 	assert.match(result.stdout, /^Usage:/m);
 	assert.match(result.stdout, /^Commands:/m);
-	assert.match(result.stdout, /^\s+view\s+/m);
-	assert.match(result.stdout, /^\s+act\s+/m);
-	assert.match(result.stdout, /^\s+read\s+/m);
 });
 
 test("cli main refactor target stays within the file-size budget", () => {

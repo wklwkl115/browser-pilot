@@ -11,6 +11,8 @@ const abmlReadmePath = path.join(root, "src/kernels/abml/README.md");
 const codeWikiPath = path.join(root, "CODE_WIKI.md");
 const cliHelpPath = path.join(root, "src/apps/cli/help.ts");
 const cliSkillPath = path.join(root, "skills/browser-pilot-cli/SKILL.md");
+const cliSkillAgentPath = path.join(root, "skills/browser-pilot-cli/agents/openai.yaml");
+const agentGuidePath = path.join(root, "AGENTS.md");
 const commandSharedPath = path.join(root, "src/commands/commandShared.ts");
 const commandMetadataPath = path.join(root, "src/apps/cli/commandMetadata.ts");
 const commandRuntimePath = path.join(root, "src/commands/commandRuntime.ts");
@@ -78,12 +80,8 @@ test("repo governance uses mise-first gate commands", () => {
 });
 
 test("state-changing command call sites use the canonical budgeted operation result owner", () => {
-	// browser_act maps settled browser-operation/v2 through AgentOutcome → browser-agent-turn/v1
-	// (REPO_GOVERNANCE Agent Interaction Plane exception); it must not re-wrap via browserOperationCommandResult.
-	const agentTurnOwners = new Set(["defineAgentAct.ts"]);
 	const callSites = walkSourceFiles(commandsRoot).filter((filePath) => {
 		if (path.basename(filePath) === "browserOperation.ts") return false;
-		if (agentTurnOwners.has(path.basename(filePath))) return false;
 		return text(filePath).includes("withBrowserOperation(");
 	});
 	assert.ok(callSites.length > 0);
@@ -93,10 +91,6 @@ test("state-changing command call sites use the canonical budgeted operation res
 		const resultCalls = source.match(/\bbrowserOperationCommandResult\s*\(/g)?.length ?? 0;
 		assert.equal(resultCalls, operationCalls, path.relative(root, filePath));
 	}
-	const agentAct = text(path.join(commandsRoot, "agent", "defineAgentAct.ts"));
-	assert.match(agentAct, /withBrowserOperation\s*\(/);
-	assert.match(agentAct, /mapBrowserOperationToAgentOutcome/);
-	assert.doesNotMatch(agentAct, /browserOperationCommandResult\s*\(/);
 });
 
 test("repo governance documents one explicit child-agent workflow", () => {
@@ -344,6 +338,53 @@ test("CLI guidance requires transient JavaScript to stay in memory", () => {
 	assert.match(text(codeWikiPath), /临时 JavaScript 必须只在内存中传递/);
 });
 
+test("CLI skill keeps concise expert routing and command-owned canonical examples", () => {
+	const skill = text(cliSkillPath);
+	const lines = skill.split(/\r?\n/);
+	assert.ok(lines.length >= 110 && lines.length <= 150, `expected 110-150 Skill lines, got ${lines.length}`);
+	const frontmatter = skill.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+	assert.ok(frontmatter);
+	assert.deepEqual(frontmatter[1]!.split(/\r?\n/).map((line) => line.match(/^([a-z][a-z-]*):/)?.[1]).filter(Boolean), ["name", "description"]);
+	assert.match(skill, /commands --json[\s\S]{0,240}(?:help|schema|validate)[\s\S]{0,240}(?:authoritative|authority)/i);
+	assert.match(skill, /browser-pilot tabs list --json/);
+	for (const mode of ["inspect", "paths", "json"]) assert.match(skill, new RegExp(`browser-pilot artifact ${mode}\\b`));
+	assert.doesNotMatch(skill, /browser-pilot tabs --action list/);
+	assert.doesNotMatch(skill, /browser-pilot artifact[^\n]*--mode (?:inspect|paths|json)/);
+
+	const agentMetadata = text(cliSkillAgentPath);
+	assert.match(agentMetadata, /display_name: "Browser Pilot CLI"/);
+	assert.match(agentMetadata, /short_description: "Operate real browser tabs through Browser Pilot CLI"/);
+	assert.match(agentMetadata, /default_prompt: "Use \$browser-pilot-cli to inspect and automate the current browser tab safely through the CLI\."/);
+});
+
+test("owner docs and CLI guidance exclude retired interaction surfaces", () => {
+	const docs = [agentGuidePath, readmePath, changelogPath, codeWikiPath, governancePath, abmlReadmePath, cliHelpPath, cliSkillPath];
+	const retiredCommands = ["view", "act", "read"].flatMap((name) => [`browser_${name}`, `browser-pilot ${name}`]);
+	const retiredSchemas = ["view", "turn", "read"].map((name) => ["browser", "agent", name].join("-") + "/v1");
+	const staleTokens = [
+		...retiredCommands,
+		...retiredSchemas,
+		["agent", "preview"].join("-"),
+		["confirmation", "Ref"].join(""),
+		["Agent", "Interaction", "Plane"].join(" "),
+		["agent", "façade"].join(" "),
+		["agent", "facade"].join(" "),
+		["--script", "file"].join("-"),
+	];
+	const staleToolCount = String(19 + 3);
+	const staleCountPatterns = [
+		new RegExp(`\\b${staleToolCount}(?:[- ]tools?)\\b`, "i"),
+		new RegExp(`toolCount[^\\n]{0,24}${staleToolCount}\\b`, "i"),
+	];
+	const publicWaitOrSleep = /^\s*(?:[$>]\s*)?(?:npx\s+)?browser-pilot\s+(?:wait|sleep)\b/im;
+	for (const filePath of docs) {
+		const source = text(filePath);
+		for (const token of staleTokens) assert.equal(source.toLowerCase().includes(token.toLowerCase()), false, `${path.relative(root, filePath)}: ${token}`);
+		for (const pattern of staleCountPatterns) assert.doesNotMatch(source, pattern, path.relative(root, filePath));
+		assert.doesNotMatch(source, publicWaitOrSleep, path.relative(root, filePath));
+	}
+});
+
 test("public contract docs use operation v2 and do not advertise the camelCase CLI alias", () => {
 	const docs = [readmePath, codeWikiPath, governancePath, cliSkillPath, changelogPath];
 	for (const filePath of docs) {
@@ -382,8 +423,8 @@ test("artifact path guidance uses inspect or paths before targeted reads", () =>
 	const wiki = text(codeWikiPath);
 	const cliHelp = text(cliHelpPath);
 	for (const source of [readme, wiki, cliHelp]) assert.match(source, /inspect|paths/);
-	assert.match(readme, /saved\.path[\s\S]{0,160}mode=inspect|mode=inspect[\s\S]{0,160}saved\.path/i);
-	assert.match(wiki, /mode=inspect[\s\S]{0,120}mode=paths|mode=paths[\s\S]{0,160}实际可用 JSON path/i);
+	assert.match(readme, /saved\.path[\s\S]{0,180}artifact inspect|artifact inspect[\s\S]{0,180}saved\.path/i);
+	assert.match(wiki, /artifact inspect[\s\S]{0,140}artifact paths|artifact paths[\s\S]{0,180}实际可用 JSON path/i);
 	assert.match(wiki, /不应推荐猜测的 JSON path|验证路径存在/);
 });
 

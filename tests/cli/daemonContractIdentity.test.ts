@@ -49,6 +49,7 @@ test("command contract canonicalization and SHA-256 identity are stable", () => 
 	assert.equal(new Set(identities.map((item) => item.commandContractHash)).size, 1);
 	assert.match(identities[0]!.commandContractHash, /^[a-f0-9]{64}$/);
 	assert.equal(identities[0]!.toolCount, definitions.length);
+	assert.equal(identities[0]!.toolCount, 19);
 	assert.deepEqual(Object.keys(identities[0]!).sort(), [
 		"commandContractHash",
 		"commandContractVersion",
@@ -71,6 +72,8 @@ test("contract payload includes canonical actions, operation-v2 outcomes, and na
 	assert.ok(payload.actions.some((action) => action.commandName === "browser_network" && action.action === "captureReload" && action.cliAction === "capture-reload"));
 	assert.equal(payload.actions.some((action) => action.commandName === "browser_network" && action.action === "wait"), false);
 	assert.ok(payload.commands.some((command) => command.name === "browser_execute"));
+	assert.ok(payload.commands.some((command) => command.name === "browser_tabs" && command.cliSubcommands.some((route) => route.token === "list" && route.parameter === "action" && route.value === "list")));
+	assert.ok(payload.commands.some((command) => command.name === "browser_artifact" && ["inspect", "paths", "json"].every((token) => command.cliSubcommands.some((route) => route.token === token && route.parameter === "mode" && route.value === token))));
 });
 
 test("every declared contract component participates in the outer hash", () => {
@@ -83,7 +86,7 @@ test("every declared contract component participates in the outer hash", () => {
 	};
 	type Outcome = { classification: string; completionVerified: boolean; ok: boolean; code?: string };
 	type CommandContractPayloadClone = {
-		commands: Array<{ name: string; parameters: unknown }>;
+		commands: Array<{ name: string; parameters: unknown; cliSubcommands: Array<{ token: string; parameter: string; value: string }> }>;
 		actions: Array<Record<string, unknown>>;
 		operationResult: { schema: string; outcomes: Record<string, Outcome> };
 		daemonProtocolVersion: number;
@@ -91,6 +94,9 @@ test("every declared contract component participates in the outer hash", () => {
 	};
 	assert.notEqual(mutate((copy) => { copy.commands[0]!.name += "_changed"; }), original);
 	assert.notEqual(mutate((copy) => { copy.commands[0]!.parameters = { type: "null" }; }), original);
+	const routedCommandIndex = payload.commands.findIndex((command) => command.cliSubcommands.length > 0);
+	assert.ok(routedCommandIndex >= 0);
+	assert.notEqual(mutate((copy) => { copy.commands[routedCommandIndex]!.cliSubcommands[0]!.value += "_changed"; }), original);
 	assert.notEqual(mutate((copy) => { copy.actions[0]!.schemaRef = "changed"; }), original);
 	assert.notEqual(mutate((copy) => { copy.operationResult.outcomes.failed!.code = "CHANGED"; }), original);
 	assert.notEqual(mutate((copy) => { copy.daemonProtocolVersion += 1; }), original);
@@ -283,7 +289,8 @@ test("managed lifecycle drains and replaces a daemon whose lock identity is stal
 		const staleLock = JSON.parse(readFileSync(lockPath, "utf8")) as DaemonInfo;
 		const firstPid = staleLock.pid;
 		assert.ok(staleLock.contractIdentity);
-		staleLock.contractIdentity = { ...staleLock.contractIdentity, toolCount: staleLock.contractIdentity.toolCount - 1 };
+		assert.equal(staleLock.contractIdentity.toolCount, 19);
+		staleLock.contractIdentity = { ...staleLock.contractIdentity, toolCount: staleLock.contractIdentity.toolCount + 3 };
 		writeFileSync(lockPath, `${JSON.stringify(staleLock, null, 2)}\n`, "utf8");
 
 		const replaced = runCli(["connect", "--json"], stateDir);

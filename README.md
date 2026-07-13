@@ -21,17 +21,18 @@ Everything a human can do in DevTools, your agent can do through composable
 
 ```
 # browser-pilot-executable
-$ browser-pilot view --json
-# → browser-agent-view/v1 with contextRef + candidates
+$ browser-pilot observe --json | jq '.gist'
+"Forum topic list with 14 visible rows, navigation sidebar, user menu.
+ 3 forms (search, login, compose), 47 actionable elements."
 
 # browser-pilot-executable
-$ browser-pilot act --context-ref ctx --action '{"kind":"activate","ref":"a_01"}' --json
-# → browser-agent-turn/v1 (maps internal browser-operation/v2; completed-only success)
+$ browser-pilot execute --script "document.querySelector('.topic-list .main-link a').href" --json
+{ "schema": "browser-operation/v2", "status": "completed", "classification": "success", "completionVerified": true, "ok": true, "continuation": null, "completion": { "source": "script-resolved", "evidence": { "result": "https://linux.do/t/welcome/1" } } }
 
 # browser-pilot-executable
 $ browser-pilot network capture-reload --json
 # browser-pilot-executable
-$ browser-pilot artifact --mode paths --path <saved.path-from-network-result> --json
+$ browser-pilot artifact paths --path <saved.path-from-network-result> --json
 ```
 
 ## Why Browser Pilot
@@ -151,10 +152,10 @@ npx browser-pilot execute --script @snippet.js --json
 # browser-pilot-executable
 npx browser-pilot network capture-reload --session-id net-1 --json
 # browser-pilot-executable
-npx browser-pilot artifact --mode paths --path <saved.path-from-network-result> --json
+npx browser-pilot artifact paths --path <saved.path-from-network-result> --json
 
 # Inspect saved artifact metadata and available JSON paths
-npx browser-pilot artifact --mode inspect --path <saved.path-from-previous-tool> --json
+npx browser-pilot artifact inspect --path <saved.path-from-previous-tool> --json
 
 # Take a screenshot
 # browser-pilot-executable
@@ -181,38 +182,24 @@ return { title: document.title, headings };
 '@ | npx browser-pilot execute --script - --json
 ```
 
-Machine discovery uses the compact command contract v3. `browser-pilot commands --json` returns one root artifact rule plus **22** canonical command entries (core + security + agent façade) and action schema references; it does not repeat flags, schemas, routing prose, or legacy aliases per command. `browser-pilot schema <command> <kebab-action> --json` expands the closed action-specific schema, including the raw action `const`, shared target/session/output fields, and the only allowed nested `params`. Help, offline validation, daemon validation, and execution routing all derive from that same owner.
-
-### Agent primary loop (skill + CLI)
-
-Browser Pilot is designed for **AI agents**. Default usage is the skill (`skills/browser-pilot-cli/SKILL.md`) plus CLI `--json` with three façade tools:
-
-```text
-browser-pilot commands --profile agent --json
-browser-pilot view --json
-browser-pilot act --context-ref <ctx> --action "{\"kind\":\"activate\",\"ref\":\"a_01\"}" --json
-browser-pilot read --context-ref <ctx> --read-ref <r_01> --json
-```
-
-- `browser_view` / `browser_act` / `browser_read` carry a short-lived `contextRef` and semantic refs only (no required `tabId` / `pageEpoch` / `saved.path` on the agent envelope).
-- `browser_act` returns `browser-agent-turn/v1`; `completed` remains the only success, and acknowledged mutations are never auto-replayed.
-- Expert tools (`observe` / `execute` / `artifact` / security) remain for escalation and scoped security work, not the default agent language. See `examples/agent-preview/` and CODE_WIKI §14.7.
+Machine discovery uses the compact command contract v3. `browser-pilot commands --json` returns one root artifact rule plus 19 canonical command entries, action schema references, and bounded command-owned subcommand references; it does not repeat flags, schemas, routing prose, or legacy aliases per command. `browser-pilot schema <command> <kebab-subcommand> --json` expands the route-specific schema: action routes include the raw action `const`, shared target/session/output fields, and the only allowed nested `params`, while routes such as `tabs list` and `artifact inspect` narrow an existing top-level parameter. Help, offline validation, daemon validation, execution routing, and contract identity all derive from the same command metadata.
 
 ## Typical Workflow
 
 ```
-1. view               → readiness + contextRef + candidates / decision
-2. act                → one semantic mutation; settle in the same call
-3. read (optional)    → expand a server-issued readRef when needed
-4. re-view / re-act   → continue from decision; never blind-replay after ACK
-5. expert tools only  → when decision=blocked or user authorizes deep work
+1. tabs list          → find the target tab
+2. observe            → read the canonical ABML page model
+3. execute transaction → click/type/scroll and synchronously receive browser-operation/v2
+4. consume outcome     → distinguish completed/effect_observed/no_effect/stalled/failure states
+5. observe / network / evidence → read the next facts only when the workflow needs them
+6. artifact            → read detailed saved evidence
 ```
 
-Façade writes settle inside `browser_act` and return `browser-agent-turn/v1` after obtaining a full internal `browser-operation/v2` outcome. Primitive write tools still return `browser-operation/v2` with the same completed-only success rule: only `completed` means success (`classification:"success"`, `completionVerified:true`, `ok:true`, CLI exit 0). `effect_observed`, `ambiguous`, `target_lost`, and `deadline` are inconclusive; `no_effect`, `stalled`, and `failed` are failures. There is no public `wait` command and agents should not add sleep loops. There are no dedicated `click` or `type` tools — default page actions go through semantic `act` kinds; raw JavaScript remains expert `execute` (memory-only stdin for transient code).
+State-changing commands arm event listeners before dispatch and remain open until a terminal `browser-operation/v2` status. There is no public `wait` command and agents should not add sleep loops. Only `completed` means success: it returns `classification:"success"`, `completionVerified:true`, `ok:true`, and CLI exit 0. `effect_observed`, `ambiguous`, `target_lost`, and `deadline` are inconclusive; `no_effect`, `stalled`, and `failed` are failures. Every non-completed terminal status returns `completionVerified:false`, `ok:false`, a stable `OPERATION_*` code, and CLI exit 1. A compact, domain-aware `continuation` field chooses the safe next decision: `observe` for page-state uncertainty, `reacquire_target` when the current target is no longer reliable, `inspect_diagnostics` only when diagnostics exist, `verify_command_state` for non-page uncertainty, and `inspect_artifact` for a compacted successful result. It explicitly prevents blind replay. When completion/effect evidence exceeds the response budget, Browser Pilot preserves the root terminal contract, saves the full redacted outcome once, and returns a typed inline summary plus `saved.path` and verified `artifact_hints`; inspect, list paths, then read the targeted value instead of executing the mutation again. Artifacts that exceed the reader ceiling are not published as unreadable paths. There are no `click` or `type` commands — page actions go through `browser_execute`
+(JavaScript). For trusted-event-gated controls, use `browser_command` with `input.pointer`
+or `input.keys` (CDP physical input).
 
-Observation continuity is `browserSessionId + tabId + targetGeneration + pageEpoch` (never URL alone). When a returned `reanchorReason` says the identity changed, take a fresh `view` / `observe` and discard old refs.
-
-For page-load request capture (expert), prefer raw `browser_network action=captureReload` or the canonical CLI `network capture-reload` subcommand over a manual `network start` followed by reload; the one-shot flow starts capture before reload/navigation and returns recovery guidance plus a saved artifact path. CLI action tokens are always kebab-case; raw JSON action values retain the schema spelling, so `network captureReload` is not a CLI alias. Use `browser_artifact mode=inspect` or `mode=paths` on the returned `saved.path` to see available JSON paths before targeted reads, instead of guessing paths that may not exist. Bridge responses may include bounded `diagnostics.latency` / temporal telemetry such as elapsed time, deadline, ack state, and queue/runtime timing; these fields are operational diagnostics and do not include command payloads, headers, bodies, or URL query contents.
+For page-load request capture, prefer raw `browser_network action=captureReload` or the canonical CLI `network capture-reload` subcommand over a manual `network start` followed by reload; the one-shot flow starts capture before reload/navigation and returns recovery guidance plus a saved artifact path. CLI action tokens are always kebab-case; raw JSON action values retain the schema spelling, so `network captureReload` is not a CLI alias. Use canonical CLI `artifact inspect` or `artifact paths` on the returned `saved.path` to see available JSON paths before targeted reads, instead of guessing paths that may not exist. Bridge responses may include bounded `diagnostics.latency` / temporal telemetry such as elapsed time, deadline, ack state, and queue/runtime timing; these fields are operational diagnostics and do not include command payloads, headers, bodies, or URL query contents.
 
 ## Key Features
 

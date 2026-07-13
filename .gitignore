@@ -27,3 +27,5 @@ target/
 # Local scratch files
 log
 nul
+/tmp-connect.json
+/tmp-exec-out.json

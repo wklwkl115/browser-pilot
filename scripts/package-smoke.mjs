@@ -152,9 +152,17 @@ if (!value || !Array.isArray(value.appeared)) throw new Error("TypeScript kernel
 	runCli(["--help"]);
 	const catalogResult = runCli(["commands", "--json"]);
 	const catalog = parseJsonOutput(catalogResult, "commands --json");
-	if (catalog.schema !== "browser-pilot-command-catalog/v3" || catalog.contract?.toolCount !== 22 || Buffer.byteLength(catalogResult.stdout, "utf8") > 25 * 1024) throw new Error("installed compact command catalog contract failed");
+	if (catalog.schema !== "browser-pilot-command-catalog/v3" || catalog.contract?.toolCount !== 19 || Buffer.byteLength(catalogResult.stdout, "utf8") > 25 * 1024) throw new Error("installed compact command catalog contract failed");
+	const retiredCommands = ["view", "act", "read"];
+	if (catalog.commands?.length !== 19 || retiredCommands.some((name) => catalog.commands.some((command) => command.cli === name || command.tool === `browser_${name}`))) throw new Error("installed public command set failed");
+	const tabsCatalog = catalog.commands.find((command) => command.cli === "tabs");
+	const artifactCatalog = catalog.commands.find((command) => command.cli === "artifact");
+	if (!tabsCatalog?.subcommands?.some((route) => route.cli === "list" && route.parameter === "action" && route.value === "list")) throw new Error("installed tabs list route failed");
+	if (!["inspect", "paths", "json"].every((mode) => artifactCatalog?.subcommands?.some((route) => route.cli === mode && route.parameter === "mode" && route.value === mode))) throw new Error("installed artifact routes failed");
 	const schema = parseJsonOutput(runCli(["schema", "network", "capture-reload", "--json"]), "action schema");
 	if (schema.schema !== "browser-pilot-command-schema/v3" || schema.action?.raw !== "captureReload" || schema.parameters?.additionalProperties !== false) throw new Error("installed action-specific schema contract failed");
+	const artifactSchema = parseJsonOutput(runCli(["schema", "artifact", "inspect", "--json"]), "artifact inspect schema");
+	if (artifactSchema.schema !== "browser-pilot-command-schema/v3" || artifactSchema.parameters?.properties?.mode?.const !== "inspect") throw new Error("installed artifact inspect schema failed");
 	const validation = parseJsonOutput(runCli(["validate", "execute", "--params", JSON.stringify({ script: "document.title" }), "--json"]), "offline validate");
 	if (validation.valid !== true || validation.args?.script !== "document.title") throw new Error("installed offline validation failed");
 	const status = runCli(["status", "--check", "--json"], [1]);

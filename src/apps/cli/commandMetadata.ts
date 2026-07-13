@@ -10,9 +10,11 @@ import {
 	kebabParam,
 	naturalActionMetas,
 	naturalRouting,
-	supportsNaturalActionRouting,
+	naturalSubcommandRoutes,
+	supportsNaturalSubcommandRouting,
 	type ActionParamMeta,
 	type AgentCliRouting,
+	type NaturalSubcommandInvocation,
 } from "./naturalRouting.js";
 
 const WEB_SECURITY_TOOL_NAMES = new Set([
@@ -37,7 +39,7 @@ type ArtifactBehavior = {
 const ARTIFACT_BEHAVIOR: ArtifactBehavior = {
 	resultField: "saved.path",
 	descriptorFields: ["path", "kind", "bytes", "chars", "privacy", "jsonPaths", "readCommands"],
-	readCommand: "browser-pilot artifact --path <saved.path> --mode inspect --json",
+	readCommand: "browser-pilot artifact inspect --path <saved.path> --json",
 	readModes: ["inspect", "paths", "json", "text", "search", "sample"],
 	commonJsonPaths: [],
 	notes: [
@@ -168,9 +170,12 @@ export function invocationFlagSpecs(cmd: CliCommand, naturalAction?: string): Fl
 	];
 }
 
-function naturalActionRows(cmd: CliCommand): string[] {
-	if (!supportsNaturalActionRouting(cmd)) return [];
-	return naturalActionMetas(cmd).map((action) => {
+function naturalSubcommandRows(cmd: CliCommand): string[] {
+	const actions = new Map(naturalActionMetas(cmd).map((action) => [action.action, action]));
+	return naturalSubcommandRoutes(cmd).map((route) => {
+		if (!route.action) return `  ${pad(route.token, 18)}browser-pilot ${cmd.subcommand} ${route.token}`;
+		const action = actions.get(route.action);
+		if (!action) throw new Error(`Missing action metadata for ${cmd.name}:${route.action}`);
 		const parts: string[] = [];
 		const required = [...actionParamNames(action)];
 		if (required.length) parts.push(`requires --${required.map(kebabParam).join(" / --")}`);
@@ -180,34 +185,55 @@ function naturalActionRows(cmd: CliCommand): string[] {
 	});
 }
 
-export function printCommandHelp(cmd: CliCommand, natural?: { action: string }): void {
-	const specs = natural ? actionSpecificFlagSpecs(cmd, natural.action) : buildCommandFlagSpecs(cmd);
-	const title = natural ? `browser-pilot ${cmd.subcommand} ${kebabAction(natural.action)}` : `browser-pilot ${cmd.subcommand}`;
+function helpFlagSpecs(cmd: CliCommand, natural?: NaturalSubcommandInvocation): FlagSpec[] {
+	if (natural?.action) return actionSpecificFlagSpecs(cmd, natural.action);
+	if (natural) return buildCommandFlagSpecs(cmd).filter((spec) => spec.name !== natural.parameter);
+	return buildCommandFlagSpecs(cmd);
+}
+
+function renderHelpFlag(spec: FlagSpec): string {
+	const meta = spec.kind === "enum" && spec.choices ? ` (${spec.choices.join("|")})` : spec.kind === "boolean" ? "" : ` <${spec.kind}>`;
+	return `  ${pad(`${spec.flag}${meta}`, 30)}${spec.required ? "[required] " : ""}${spec.description ?? ""}`.trimEnd();
+}
+
+function appendAdvancedEquivalent(lines: string[], cmd: CliCommand, natural?: NaturalSubcommandInvocation): void {
+	if (!natural) return;
+	if (natural.action) {
+		lines.push("", `Advanced equivalent: browser-pilot ${cmd.subcommand} --action ${natural.action} --params <json>`);
+		return;
+	}
+	lines.push("", `Advanced equivalent: browser-pilot ${cmd.subcommand} --${kebabParam(natural.parameter)} ${natural.value}`);
+}
+
+function appendCommandInputNotes(lines: string[], cmd: CliCommand, natural?: NaturalSubcommandInvocation): void {
+	if (natural) return;
+	if (cmd.name === "browser_command") lines.push("", "File input note: --command accepts inline JSON only; do not use --command @file.");
+	if (cmd.name === "browser_execute") lines.push("", "Input rule: temporary JavaScript must stay in memory. Use inline source only for short shell-safe code and --script - for complex/generated stdin; never create a transient script file. Reserve --script @file for durable source. Use --program @file for JSON/newline program frames.");
+}
+
+export function printCommandHelp(cmd: CliCommand, natural?: NaturalSubcommandInvocation): void {
+	const specs = helpFlagSpecs(cmd, natural);
+	const title = natural ? `browser-pilot ${cmd.subcommand} ${natural.token}` : `browser-pilot ${cmd.subcommand}`;
 	const lines = [`${title}${cmd.description ? ` — ${cmd.description}` : ""}`, ""];
-	const naturalRows = natural ? [] : naturalActionRows(cmd);
+	const naturalRows = natural ? [] : naturalSubcommandRows(cmd);
 	if (naturalRows.length) {
 		lines.push("Natural subcommands (recommended):", ...naturalRows, "");
 	}
-	const renderFlag = (s: FlagSpec): string => {
-		const meta = s.kind === "enum" && s.choices ? ` (${s.choices.join("|")})` : s.kind === "boolean" ? "" : ` <${s.kind}>`;
-		return `  ${pad(`${s.flag}${meta}`, 30)}${s.required ? "[required] " : ""}${s.description ?? ""}`.trimEnd();
-	};
 	// Split the agent's real choices from ignorable plumbing.
 	const intentSpecs = specs.filter((s) => paramClassFor(cmd, s.name) === "intent");
 	const plumbingSpecs = specs.filter((s) => paramClassFor(cmd, s.name) === "mechanical");
-	lines.push(natural ? "Flags:" : supportsNaturalActionRouting(cmd) ? "Advanced legacy flags:" : "Flags:");
-	for (const s of intentSpecs) lines.push(renderFlag(s));
+	lines.push(natural ? "Flags:" : supportsNaturalSubcommandRouting(cmd) ? "Advanced flags:" : "Flags:");
+	for (const spec of intentSpecs) lines.push(renderHelpFlag(spec));
 	if (plumbingSpecs.length) {
 		lines.push("", "Plumbing (optional; defaults apply — usually omit):");
-		for (const s of plumbingSpecs) lines.push(renderFlag(s));
+		for (const spec of plumbingSpecs) lines.push(renderHelpFlag(spec));
 	}
 	const actionParams = natural ? [] : nativeActionParamsHelp(cmd.name);
 	if (actionParams.length) {
 		lines.push("", "Per-action --params keys (a JSON object; optional keys may also apply — see the action list above):", ...actionParams);
 	}
-	if (natural) lines.push("", `Advanced equivalent: browser-pilot ${cmd.subcommand} --action ${natural.action} --params <json>`);
-	if (!natural && cmd.name === "browser_command") lines.push("", "File input note: --command accepts inline JSON only; do not use --command @file.");
-	if (!natural && cmd.name === "browser_execute") lines.push("", "Input rule: temporary JavaScript must stay in memory. Use inline source only for short shell-safe code and --script - for complex/generated stdin; never create a transient script file. Reserve --script @file for durable source. Use --program @file for JSON/newline program frames.");
+	appendAdvancedEquivalent(lines, cmd, natural);
+	appendCommandInputNotes(lines, cmd, natural);
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
@@ -251,17 +277,29 @@ export function flagMetadata(cmd: CliCommand, naturalAction?: string): Record<st
 }
 
 export function naturalSubcommandMetadata(cmd: CliCommand): Record<string, unknown>[] | undefined {
-	const rows = naturalActionMetas(cmd);
-	if (!supportsNaturalActionRouting(cmd) || !rows?.length) return undefined;
-	return rows.map((action) => ({
-		name: kebabAction(action.action),
-		action: action.action,
-		agentCli: naturalRouting(action.action),
-		required: [...(action.required ?? [])],
-		requiredAny: (action.requiredAny ?? []).map((group) => [...group]),
-		flags: flagMetadata(cmd, action.action),
-		example: `browser-pilot ${cmd.subcommand} ${kebabAction(action.action)}`,
-	}));
+	const actionByName = new Map(naturalActionMetas(cmd).map((action) => [action.action, action]));
+	const routes = naturalSubcommandRoutes(cmd);
+	if (!routes.length) return undefined;
+	return routes.map((route) => {
+		if (!route.action) return {
+			name: route.token,
+			parameter: route.parameter,
+			value: route.value,
+			flags: flagMetadata(cmd).filter((flag) => flag.name !== route.parameter),
+			example: `browser-pilot ${cmd.subcommand} ${route.token}`,
+		};
+		const action = actionByName.get(route.action);
+		if (!action) throw new Error(`Missing action metadata for ${cmd.name}:${route.action}`);
+		return {
+			name: route.token,
+			action: action.action,
+			agentCli: naturalRouting(action.action),
+			required: [...(action.required ?? [])],
+			requiredAny: (action.requiredAny ?? []).map((group) => [...group]),
+			flags: flagMetadata(cmd, action.action),
+			example: `browser-pilot ${cmd.subcommand} ${route.token}`,
+		};
+	});
 }
 
 export { commandRouting, kebabAction, naturalRouting };

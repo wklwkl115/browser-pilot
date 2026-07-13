@@ -55,6 +55,7 @@ function cliArgv(line: string): string[] {
 
 test("marked public documentation examples pass the real offline CLI parser and validator", async () => {
 	let total = 0;
+	const skillRoutes = new Set<string>();
 	for (const relative of docs) {
 		const commands = markedCommands(relative);
 		assert.ok(commands.length > 0, `${relative} must own at least one executable example`);
@@ -65,6 +66,13 @@ test("marked public documentation examples pass the real offline CLI parser and 
 			assert.ok(subcommand, command);
 			const result = await validateToolInvocationOffline(subcommand, argv);
 			assert.equal(result.ok, true, `${relative}: ${command}: ${result.ok ? "" : result.error}`);
+			if (relative === "skills/browser-pilot-cli/SKILL.md") {
+				if (subcommand === "tabs" && argv[0] === "list") skillRoutes.add("tabs list");
+				if (subcommand === "observe" && argv.includes("--target-ref")) skillRoutes.add("observe --target-ref");
+				if (subcommand === "execute" && argv.includes("--script")) skillRoutes.add("execute --script");
+				if (subcommand === "network" && argv[0] === "capture-reload") skillRoutes.add("network capture-reload");
+				if (subcommand === "artifact" && ["inspect", "paths", "json"].includes(argv[0] ?? "")) skillRoutes.add(`artifact ${argv[0]}`);
+			}
 			if (subcommand === "network" && argv[0] === "capture-reload") {
 				hasCanonicalCaptureReload = true;
 				assert.equal(result.action, "captureReload", `${relative}: canonical CLI action did not resolve to the raw schema action`);
@@ -73,6 +81,15 @@ test("marked public documentation examples pass the real offline CLI parser and 
 		}
 		assert.equal(hasCanonicalCaptureReload, true, `${relative} must exercise canonical network capture-reload`);
 	}
+	assert.deepEqual([...skillRoutes].sort(), [
+		"artifact inspect",
+		"artifact json",
+		"artifact paths",
+		"execute --script",
+		"network capture-reload",
+		"observe --target-ref",
+		"tabs list",
+	]);
 	assert.ok(total >= 10, `expected a representative executable example set, got ${total}`);
 });
 

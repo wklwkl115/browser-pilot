@@ -197,7 +197,7 @@ test("commands execution: stale browser_tabs snapshot recovery uses ordinary no-
 	assert.equal(body.code, "INVALID_RULE");
 	assert.deepEqual(nextActions, [
 		"browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json",
-		"browser-pilot artifact --path <saved.path> --mode inspect --json",
+		"browser-pilot artifact inspect --path <saved.path> --json",
 		"browser-pilot observe --json",
 	]);
 	const allowed = parseResult(await command.execute("tool-1", { action: "snapshot", snapshotId: "stale-snap", allowExpired: true }));

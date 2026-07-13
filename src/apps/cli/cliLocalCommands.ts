@@ -1,47 +1,19 @@
 import path from "node:path";
 import { parseArgs, resolveParamValueReferences, type FlagSpec } from "./flags.js";
 import { renderUsageError, writeJsonEnvelope, EXIT } from "./render.js";
-import { buildCommandFlagSpecs, commandGroupCounts, kebabAction } from "./commandMetadata.js";
-import { naturalActionForToken } from "./naturalRouting.js";
+import { buildCommandFlagSpecs, commandGroupCounts } from "./commandMetadata.js";
+import { naturalSubcommandForToken } from "./naturalRouting.js";
 import { daemonContractReport, findDaemon, isDaemonReadyForReuse, lockfilePath } from "../daemon/daemonControl.js";
 import { daemonVersion, packageVersion } from "../daemon/packageInfo.js";
 import { staleLockfileDiagnostic } from "./connection.js";
 import { pad } from "./help.js";
-import { firstPositional, jsonMode, loadCliCommands, loadRunnableCliCommands, renderLocalJson, renderMode } from "./cliBasics.js";
+import { firstPositional, jsonMode, loadCliCommands, renderLocalJson, renderMode } from "./cliBasics.js";
 import { splitLeadingGlobalFlags } from "./cliBasics.js";
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
 import { buildCommandCatalogV3, buildCommandSchemaV3 } from "./publicContract.js";
-import { filterToolsByProfile, parseCapabilityProfile, toolsForProfile } from "../../commands/capabilityProfileCatalog.js";
 
 export async function runCommandsCommand(argv: string[]): Promise<number> {
 	const mode = jsonMode(argv);
-	const profileFlag = (() => {
-		const index = argv.findIndex((arg) => arg === "--profile" || arg.startsWith("--profile="));
-		if (index < 0) return undefined;
-		const arg = argv[index]!;
-		if (arg.startsWith("--profile=")) return parseCapabilityProfile(arg.slice("--profile=".length));
-		return parseCapabilityProfile(argv[index + 1]);
-	})();
-	if (profileFlag === "agent" || profileFlag === "agent-preview") {
-		const runnable = await loadRunnableCliCommands();
-		const agentTools = filterToolsByProfile(runnable.map((c) => ({ name: c.name, cli: c })), profileFlag);
-		const payload = {
-			schema: "browser-pilot-agent-profile/v1",
-			profile: profileFlag,
-			tools: toolsForProfile(profileFlag),
-			commands: agentTools.map((item) => ({
-				cli: item.cli.subcommand,
-				tool: item.name,
-				summary: item.cli.description ?? item.name,
-			})),
-		};
-		if (mode === "json") {
-			process.stdout.write(`${JSON.stringify(payload)}\n`);
-			return EXIT.ok;
-		}
-		for (const cmd of payload.commands) process.stdout.write(`${pad(cmd.cli, 22)}${cmd.summary}\n`);
-		return EXIT.ok;
-	}
 	const catalog = buildCommandCatalogV3(await loadCliCommands());
 	if (mode === "json") {
 		process.stdout.write(`${JSON.stringify(catalog)}\n`);
@@ -56,12 +28,12 @@ export async function runSchemaCommand(argv: string[]): Promise<number> {
 	const first = firstPositional(argv);
 	const cmdName = first.value;
 	if (!cmdName) return renderUsageError("usage: browser-pilot schema <command> --json", mode);
-	const cmd = (await loadRunnableCliCommands()).find((item) => item.subcommand === cmdName);
+	const cmd = (await loadCliCommands()).find((item) => item.subcommand === cmdName);
 	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run browser-pilot commands --json`, mode);
 	const second = firstPositional(first.rest);
-	const naturalAction = second.value ? naturalActionForToken(cmd, second.value) : undefined;
-	if (second.value && !naturalAction) return renderUsageError(`unknown ${cmd.subcommand} subcommand "${second.value}"`, mode);
-	const schema = buildCommandSchemaV3(cmd, naturalAction);
+	const natural = second.value ? naturalSubcommandForToken(cmd, second.value) : undefined;
+	if (second.value && !natural) return renderUsageError(`unknown ${cmd.subcommand} subcommand "${second.value}"`, mode);
+	const schema = buildCommandSchemaV3(cmd, natural?.action, natural && !natural.action ? natural : undefined);
 	if (mode === "json") {
 		process.stdout.write(`${JSON.stringify(schema)}\n`);
 		return EXIT.ok;
@@ -84,36 +56,36 @@ export async function runValidateCommand(argv: string[], writeJson: typeof write
 	const positional = firstPositional(argv);
 	const cmdName = positional.value;
 	if (!cmdName || cmdName.startsWith("--")) return renderUsageError("usage: browser-pilot validate <command> --params @params.json --json", mode);
-	const cmd = (await loadRunnableCliCommands()).find((item) => item.subcommand === cmdName);
+	const cmd = (await loadCliCommands()).find((item) => item.subcommand === cmdName);
 	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run browser-pilot commands --json`, mode);
-	const actionPosition = validateActionPosition(positional.rest);
-	const naturalAction = actionPosition.actionToken ? naturalActionForToken(cmd, actionPosition.actionToken) : undefined;
-	if (actionPosition.actionToken && !naturalAction) return renderUsageError(`unknown ${cmd.subcommand} subcommand "${actionPosition.actionToken}"`, mode);
-	const extracted = extractParamsArg(actionPosition.rest, mode);
+	const subcommandPosition = validateSubcommandPosition(positional.rest);
+	const natural = subcommandPosition.token ? naturalSubcommandForToken(cmd, subcommandPosition.token) : undefined;
+	if (subcommandPosition.token && !natural) return renderUsageError(`unknown ${cmd.subcommand} subcommand "${subcommandPosition.token}"`, mode);
+	const extracted = extractParamsArg(subcommandPosition.rest, mode);
 	if (!extracted.ok) return extracted.code;
 	const resolved = resolveParamValueReferences(buildCommandFlagSpecs(cmd), extracted.params);
 	if (!resolved.ok) return renderUsageError(resolved.error, mode, EXIT.input);
-	if (naturalAction && Object.prototype.hasOwnProperty.call(resolved.params, "action")) return renderUsageError(`browser-pilot validate ${cmd.subcommand} ${kebabAction(naturalAction)} cannot combine the action subcommand with params.action`, mode);
-	const actionArgs = naturalAction ? { ...resolved.params, action: naturalAction } : resolved.params;
-	const validated = validateBrowserCommandArguments(cmd.def, actionArgs);
+	if (natural && Object.prototype.hasOwnProperty.call(resolved.params, natural.parameter)) return renderUsageError(`browser-pilot validate ${cmd.subcommand} ${natural.token} cannot combine the natural subcommand with params.${natural.parameter}`, mode);
+	const routedArgs = natural ? { ...resolved.params, [natural.parameter]: natural.value } : resolved.params;
+	const validated = validateBrowserCommandArguments(cmd.def, routedArgs);
 	if (!validated.ok) {
 		if (mode === "json") writeJson({ ok: false, exitCode: EXIT.usage, code: "CLI_VALIDATION_ERROR", command: "validate", name: cmd.subcommand, commandName: cmd.name, valid: false, issues: validated.issues, message: validated.error });
 		else process.stderr.write(`invalid: ${cmd.subcommand} — ${validated.error}\n`);
 		return EXIT.usage;
 	}
 	if (mode === "json") {
-		writeJson({ ok: true, exitCode: EXIT.ok, command: "validate", name: cmd.subcommand, commandName: cmd.name, ...(naturalAction ? { naturalSubcommand: kebabAction(naturalAction), action: naturalAction } : {}), valid: true, args: validated.args });
+		writeJson({ ok: true, exitCode: EXIT.ok, command: "validate", name: cmd.subcommand, commandName: cmd.name, ...(natural ? { naturalSubcommand: natural.token, ...(natural.action ? { action: natural.action } : {}) } : {}), valid: true, args: validated.args });
 		return EXIT.ok;
 	}
 	process.stdout.write(`valid: ${cmd.subcommand}\n`);
 	return EXIT.ok;
 }
 
-function validateActionPosition(argv: string[]): { actionToken?: string; rest: string[] } {
+function validateSubcommandPosition(argv: string[]): { token?: string; rest: string[] } {
 	const leading = splitLeadingGlobalFlags(argv);
 	const token = leading.rest[0];
 	if (!token || token.startsWith("--")) return { rest: argv };
-	return { actionToken: token, rest: [...leading.globals, ...leading.rest.slice(1)] };
+	return { token, rest: [...leading.globals, ...leading.rest.slice(1)] };
 }
 
 export async function runDoctorCommand(argv: string[]): Promise<number> {

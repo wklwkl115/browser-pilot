@@ -6,21 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Breaking
 
-- Removed the redundant CLI-only `--script-file` flag. `browser-pilot execute --script` is now the single JavaScript input surface and uniformly accepts inline source, `@file`, or stdin (`-`). Temporary JavaScript must remain memory-only: complex/generated source must use stdin, transient local script files are forbidden, and `@file` is reserved for durable source.
-- Public command catalog / contract `toolCount` is now **22** (was 19). Agent façade tools `browser_view`, `browser_act`, and `browser_read` are part of catalog v3 wire, `commandContractHash`, and daemon identity. Managed daemons from older identities are replaced on mismatch.
-
-### Added
-
-- Agent Interaction Plane façade: invokable `browser_view`, `browser_act`, and `browser_read` with owner-isolated mechanical context, deterministic AgentView projection, semantic action compilation into trusted Program Engine primitives, and `browser-agent-turn/v1` outcome mapping.
-- Pure agent kernels (`src/kernels/agent/*`), daemon `AgentContextService`, capability profile catalog (`agent` / `agent-preview`), and `examples/agent-preview/` structured invoke samples.
-- Action-scoped one-shot confirmation (`ActionConfirmationService`), owner-isolated TTL `AgentTraceStore` with fail-open `traceRef`, published select/drag/submit semantic kinds with exact completion resolvers, fixture cognitive baseline harness (`scripts/agent-cognitive-baseline.mjs`), and recovery gates (busy/owner/no post-ACK replay).
+- Removed the redundant secondary CLI script-input flag. `browser-pilot execute --script` is now the single JavaScript input surface and uniformly accepts inline source, `@file`, or stdin (`-`). Temporary JavaScript must remain memory-only: complex/generated source must use stdin, transient local script files are forbidden, and `@file` is reserved for durable source.
 
 ### Changed
 
-- Product default for agents is **skill + CLI** (`skills/browser-pilot-cli/SKILL.md`) with the three-tool loop; expert/security tools are escalation. Catalog GA includes façade in `toolCount` 22 (≤25 KiB compact catalog retained).
 - Persistent CDP now coalesces concurrent attaches per tab, arms independent operation domains concurrently, lazily enables domains, caches background focus-emulation setup per live session, and keeps execute fallback sessions warm instead of attaching and detaching for every background/CSP execution.
 - CDP precompilation now evaluates one-off scripts directly and compiles only scripts seen again. Hot-script tracking and compiled-script indexes are bounded, reducing the first-call round trips and preventing temporary JavaScript from growing an unbounded in-memory cache.
 - Daemon/bridge shutdown now closes lingering loopback keep-alive connections, terminates live extension sockets, waits for both WebSocket and HTTP listeners to close, and gives the foreground daemon a bounded terminal-exit fallback, so CLI or offscreen reconnects cannot hold a draining stale daemon past the managed replacement deadline.
+- Command-owned CLI routing now exposes canonical `tabs list` and `artifact inspect` / `artifact paths` / `artifact json` subcommands. Help, catalog references, route-specific schema, offline validation, invocation parsing, and the contract hash derive from the same route metadata.
 
 ## [0.4.0] - 2026-07-12
 
@@ -75,7 +68,7 @@ All notable changes to this project will be documented in this file.
 - **`browser-pilot` CLI** — full shell frontend for the then-current browser tools. Auto-starting
   user-local daemon, `connect --wait` readiness gate, natural subcommands
   (`network start`, `frame evaluate`, `hook install-targets`),
-  `--script-file` / `@file` for large inputs, `--json` machine output.
+  file-backed script input for large durable sources, and `--json` machine output.
 - **Web security tool suite** — `browser_crawl`, `browser_fuzz` (path/vhost/param),
   `browser_sqli` (builtin + sqlmap bridge), `browser_template` (builtin + nuclei bridge),
   `browser_cookie_analyze` (Cookie/JWT/JWE/PASETO/Rails), `browser_http_replay`,

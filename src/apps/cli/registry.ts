@@ -5,7 +5,6 @@
  */
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
-import { defineAgentFacadeCommands } from "../../commands/agent/defineAgentFacadeCommands.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 
 export type CliCommand = {
@@ -24,9 +23,7 @@ export type CliCommand = {
 const placeholderServer = {} as unknown as BrowserCommandRuntimePort;
 const noopEnsureStarted = async () => placeholderServer;
 let cachedCommandDefs: CommandDefinition[] | undefined;
-let cachedAgentFacadeDefs: CommandDefinition[] | undefined;
 let cachedCliCommands: CliCommand[] | undefined;
-let cachedRunnableCliCommands: CliCommand[] | undefined;
 
 export function toSubcommand(commandName: string): string {
 	return commandName.replace(/^browser_/, "").replace(/_/g, "-");
@@ -36,27 +33,19 @@ export function fromSubcommand(subcommand: string): string {
 	return `browser_${subcommand.replace(/-/g, "_")}`;
 }
 
-/** Public catalog definitions (contract toolCount 22: core + security + agent façade). */
+/** Collect all registered command definitions. */
 export function collectCommandDefs(): CommandDefinition[] {
 	if (cachedCommandDefs) return cachedCommandDefs;
 	const adapter = new CommandManifestIndex();
 	defineBrowserCommands(adapter, placeholderServer, noopEnsureStarted);
-	defineAgentFacadeCommands({ commands: adapter, ensureStarted: noopEnsureStarted });
 	cachedCommandDefs = adapter.getCommands();
 	return cachedCommandDefs;
 }
 
-/** Agent façade definitions only (view/act/read). */
-export function collectAgentFacadeDefs(): CommandDefinition[] {
-	if (cachedAgentFacadeDefs) return cachedAgentFacadeDefs;
-	const adapter = new CommandManifestIndex();
-	defineAgentFacadeCommands({ commands: adapter, ensureStarted: noopEnsureStarted });
-	cachedAgentFacadeDefs = adapter.getCommands();
-	return cachedAgentFacadeDefs;
-}
-
-function toCliCommands(defs: readonly CommandDefinition[]): CliCommand[] {
-	return defs
+/** Build the CLI command list (one per registered command). */
+export function buildCliCommands(): CliCommand[] {
+	if (cachedCliCommands) return cachedCliCommands;
+	cachedCliCommands = collectCommandDefs()
 		.map((def) => ({
 			name: def.name,
 			subcommand: toSubcommand(def.name),
@@ -65,18 +54,5 @@ function toCliCommands(defs: readonly CommandDefinition[]): CliCommand[] {
 			def,
 		}))
 		.sort((a, b) => a.subcommand.localeCompare(b.subcommand));
-}
-
-/** Public CLI catalog list (exactly 22 tools). */
-export function buildCliCommands(): CliCommand[] {
-	if (cachedCliCommands) return cachedCliCommands;
-	cachedCliCommands = toCliCommands(collectCommandDefs());
 	return cachedCliCommands;
-}
-
-/** Runnable CLI list equals public catalog after agent façade GA. */
-export function buildRunnableCliCommands(): CliCommand[] {
-	if (cachedRunnableCliCommands) return cachedRunnableCliCommands;
-	cachedRunnableCliCommands = buildCliCommands();
-	return cachedRunnableCliCommands;
 }

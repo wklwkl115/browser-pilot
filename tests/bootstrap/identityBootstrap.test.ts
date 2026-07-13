@@ -21,6 +21,26 @@ test("bootstrapScanBackendNodeIds keeps diagnostic jsonPath stable when actionab
 	assert.equal(result.stats.records[0]?.jsonPath, "data.structure.actionables[0]");
 });
 
+test("bootstrapScanBackendNodeIds spatial index preserves ambiguity, overflow, and stale-selector semantics", () => {
+	const result = bootstrapScanBackendNodeIds(pageWorldScanBundle({
+		structure: { actionables: [
+			{ selector: "#ambiguous", rect: { x: -10, y: -10, width: 10, height: 10 } },
+			{ selector: "#oversized", rect: { x: 0, y: 0, width: 2_000, height: 2_000 } },
+			{ selector: "#stale", rect: { x: 4_000, y: 4_000, width: 10, height: 10 } },
+		] },
+	}), [
+		{ backendNodeId: 1, bounds: { x: -10, y: -10, w: 10, h: 10 }, attrs: { id: "ambiguous" } },
+		{ backendNodeId: 2, bounds: { x: -10, y: -10, w: 10, h: 10 } },
+		{ backendNodeId: 3, bounds: { x: 0, y: 0, w: 2_000, h: 2_000 }, attrs: { id: "oversized" } },
+		{ backendNodeId: 4, bounds: { x: 5_000, y: 5_000, w: 10, h: 10 }, attrs: { id: "stale" } },
+	]);
+
+	assert.deepEqual(result.stats.records.map((record) => record.status), ["ambiguous", "matched", "stale"]);
+	assert.equal(result.stats.records[0]?.candidateCount, 2);
+	assert.equal(result.stats.records[1]?.backendNodeId, 3);
+	assert.equal(result.stats.records[2]?.backendNodeId, 4);
+});
+
 test("bootstrapScanBackendNodeIds stays bounded on large exact-match datasets", () => {
 	const entries = Array.from({ length: 10000 }, (_, index) => ({
 		backendNodeId: index + 1,

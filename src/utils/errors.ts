@@ -122,15 +122,6 @@ export function errorTaxonomyForCode(code: string, details: Record<string, unkno
 		return { domain: "cdp", category: "runtime.cdp", retryable: /TIMEOUT|FAILED|DETACH|ATTACH|SEND/.test(code), summary: "Persistent CDP bridge failure.", source: "heuristic" };
 	}
 	if (["ELEMENT_INDEX_OUT_OF_RANGE", "ELEMENT_NOT_CLICKABLE", "MEDIA_URL_NOT_FOUND"].includes(code)) return { domain: "page", category: "runtime.page", retryable: false, summary: "Page-side element operation failed.", source: "heuristic" };
-	if (details.agentFacade === true || /^(CONTEXT_|REF_STALE|IDENTITY_CHANGED|TARGET_AMBIGUOUS|ACTION_|CONFIRMATION_|RUNTIME_NOT_READY|VIEW_UNAVAILABLE|READ_UNAVAILABLE|INVALID_AGENT_REQUEST)/.test(code)) {
-		return {
-			domain: "tool",
-			category: "tool.agent_facade",
-			retryable: code === "CONTEXT_BUSY" || code === "RUNTIME_NOT_READY",
-			summary: `Agent façade failure: ${code}`,
-			source: "heuristic",
-		};
-	}
 	return { domain: "unknown", category: "unknown", retryable: false, summary: code || "Unknown error.", source: "heuristic" };
 }
 

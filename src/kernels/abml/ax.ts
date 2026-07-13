@@ -3,6 +3,7 @@ import { isRecord } from "../../utils/records.js";
 import type { BuiltEntity, Entity, EntityKind, EntityState, EntityStructure, RelationType } from "./entity.js";
 import type { Locator } from "./types.js";
 import { sanitizeSemanticText } from "./semanticText.js";
+import { buildBoundedSpatialIndex, queryBoundedSpatialIndex, type BoundedSpatialIndex } from "./spatialIndex.js";
 
 export type AxTreeNode = Record<string, unknown>;
 export type AxContext = {
@@ -20,6 +21,24 @@ type EntityMatchInfo = {
 	point?: { x: number; y: number };
 	box?: { x: number; y: number; w: number; h: number };
 };
+
+type SemanticRoleCandidates = {
+	all: Set<number>;
+	unnamed: Set<number>;
+	byName: Map<string, Set<number>>;
+	withoutPoint: Set<number>;
+	unnamedWithoutPoint: Set<number>;
+	withoutPointByName: Map<string, Set<number>>;
+};
+
+type DomMatchIndex = {
+	byBackendNodeId: Map<number, Set<number>>;
+	boxes: BoundedSpatialIndex<number>;
+	points: BoundedSpatialIndex<number>;
+	byRole: Map<string, SemanticRoleCandidates>;
+};
+
+type ScoredMatch = { index: number; score: number; count: number };
 
 export type AxFusionDiagnostics = {
 	scanBacked: number;
@@ -65,6 +84,8 @@ const LANDMARK_ROLES = new Set(["banner", "navigation", "main", "complementary",
 const AX_AUTHORITATIVE_STATE = ["checked", "selected", "pressed", "expanded", "current"] as const;
 const GEOMETRY_MATCH_RADIUS_PX = 24;
 const COINCIDENT_BOX_IOU = 0.8;
+const AX_GEOMETRY_BUCKET_SIZE = 64;
+const MAX_AX_GEOMETRY_BUCKETS_PER_RECT = 256;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
 	return isRecord(value) ? value : undefined;
@@ -476,84 +497,200 @@ function axMatchScore(dom: EntityMatchInfo, ax: EntityMatchInfo): { score: numbe
 	return undefined;
 }
 
+function appendSetIndexValue<K>(index: Map<K, Set<number>>, key: K, value: number): void {
+	const values = index.get(key);
+	if (values) values.add(value);
+	else index.set(key, new Set([value]));
+}
+
+function emptySemanticRoleCandidates(): SemanticRoleCandidates {
+	return {
+		all: new Set(),
+		unnamed: new Set(),
+		byName: new Map(),
+		withoutPoint: new Set(),
+		unnamedWithoutPoint: new Set(),
+		withoutPointByName: new Map(),
+	};
+}
+
+function buildDomMatchIndex(entities: Entity[], prepared: EntityMatchInfo[]): DomMatchIndex {
+	const byBackendNodeId = new Map<number, Set<number>>();
+	const boxItems: Array<{ value: number; rect: { x: number; y: number; w: number; h: number } }> = [];
+	const pointItems: Array<{ value: number; rect: { x: number; y: number; w: number; h: number } }> = [];
+	const byRole = new Map<string, SemanticRoleCandidates>();
+	for (let index = 0; index < entities.length; index += 1) {
+		const backendNodeId = entityBackendNodeId(entities[index]!);
+		if (backendNodeId !== undefined) appendSetIndexValue(byBackendNodeId, backendNodeId, index);
+		const info = prepared[index]!;
+		if (info.box) boxItems.push({ value: index, rect: info.box });
+		if (info.point) pointItems.push({ value: index, rect: { ...info.point, w: 0, h: 0 } });
+		let semantic = byRole.get(info.role);
+		if (!semantic) {
+			semantic = emptySemanticRoleCandidates();
+			byRole.set(info.role, semantic);
+		}
+		semantic.all.add(index);
+		if (info.name === undefined) semantic.unnamed.add(index);
+		else appendSetIndexValue(semantic.byName, info.name, index);
+		if (info.point !== undefined) continue;
+		semantic.withoutPoint.add(index);
+		if (info.name === undefined) semantic.unnamedWithoutPoint.add(index);
+		else appendSetIndexValue(semantic.withoutPointByName, info.name, index);
+	}
+	const spatialOptions = { bucketSize: AX_GEOMETRY_BUCKET_SIZE, maxBucketsPerRect: MAX_AX_GEOMETRY_BUCKETS_PER_RECT };
+	return {
+		byBackendNodeId,
+		boxes: buildBoundedSpatialIndex(boxItems, spatialOptions),
+		points: buildBoundedSpatialIndex(pointItems, spatialOptions),
+		byRole,
+	};
+}
+
+function retireDomMatchCandidate(index: DomMatchIndex, domIndex: number, entity: Entity, info: EntityMatchInfo): void {
+	const backendNodeId = entityBackendNodeId(entity);
+	if (backendNodeId !== undefined) index.byBackendNodeId.get(backendNodeId)?.delete(domIndex);
+	const semantic = index.byRole.get(info.role);
+	if (!semantic) return;
+	semantic.all.delete(domIndex);
+	if (info.name === undefined) semantic.unnamed.delete(domIndex);
+	else semantic.byName.get(info.name)?.delete(domIndex);
+	if (info.point !== undefined) return;
+	semantic.withoutPoint.delete(domIndex);
+	if (info.name === undefined) semantic.unnamedWithoutPoint.delete(domIndex);
+	else semantic.withoutPointByName.get(info.name)?.delete(domIndex);
+}
+
+function addCandidates(target: Set<number>, candidates: Iterable<number>): void {
+	for (const candidate of candidates) target.add(candidate);
+}
+
+function geometryMatchCandidates(ax: EntityMatchInfo, index: DomMatchIndex): Set<number> {
+	const candidates = new Set<number>();
+	if (ax.box) addCandidates(candidates, queryBoundedSpatialIndex(index.boxes, ax.box));
+	if (ax.point) {
+		addCandidates(candidates, queryBoundedSpatialIndex(index.points, {
+			x: ax.point.x - GEOMETRY_MATCH_RADIUS_PX,
+			y: ax.point.y - GEOMETRY_MATCH_RADIUS_PX,
+			w: GEOMETRY_MATCH_RADIUS_PX * 2,
+			h: GEOMETRY_MATCH_RADIUS_PX * 2,
+		}));
+	}
+	return candidates;
+}
+
+function bestMatch(candidates: Iterable<number>, usedDom: Uint8Array, domPrepared: EntityMatchInfo[], ax: EntityMatchInfo, geometryOnly: boolean): { index: number; ambiguous: boolean } {
+	let bestIndex = -1;
+	let bestScore = 0;
+	let ambiguous = false;
+	for (const domIndex of candidates) {
+		if (usedDom[domIndex]) continue;
+		const match = axMatchScore(domPrepared[domIndex]!, ax);
+		if (match === undefined || (geometryOnly && !match.geometryBacked)) continue;
+		if (match.score > bestScore) {
+			bestScore = match.score;
+			bestIndex = domIndex;
+			ambiguous = false;
+		} else if (match.score === bestScore && bestIndex >= 0) {
+			ambiguous = true;
+		}
+	}
+	return { index: bestIndex, ambiguous };
+}
+
+function considerScoredMatch(best: ScoredMatch, index: number, score: number, count = 1): void {
+	if (count <= 0) return;
+	if (score > best.score) {
+		best.index = index;
+		best.score = score;
+		best.count = count;
+	} else if (score === best.score) {
+		best.count += count;
+	}
+}
+
+function availableGroupExcluding(group: Set<number> | undefined, excluded: Set<number>): { index: number; count: number } {
+	if (!group?.size) return { index: -1, count: 0 };
+	let excludedCount = 0;
+	for (const candidate of excluded) if (group.has(candidate)) excludedCount += 1;
+	const count = group.size - excludedCount;
+	if (count <= 0) return { index: -1, count: 0 };
+	for (const candidate of group) {
+		if (!excluded.has(candidate)) return { index: candidate, count };
+	}
+	return { index: -1, count: 0 };
+}
+
+function considerSemanticGroup(best: ScoredMatch, group: Set<number> | undefined, geometryCandidates: Set<number>, score: number): void {
+	const available = availableGroupExcluding(group, geometryCandidates);
+	if (available.index >= 0) considerScoredMatch(best, available.index, score, available.count);
+}
+
+function bestSemanticMatch(ax: EntityMatchInfo, index: DomMatchIndex, usedDom: Uint8Array, domPrepared: EntityMatchInfo[]): { index: number; ambiguous: boolean } {
+	const geometryCandidates = geometryMatchCandidates(ax, index);
+	const best: ScoredMatch = { index: -1, score: 0, count: 0 };
+	for (const domIndex of geometryCandidates) {
+		if (usedDom[domIndex]) continue;
+		const match = axMatchScore(domPrepared[domIndex]!, ax);
+		if (match) considerScoredMatch(best, domIndex, match.score);
+	}
+	const semantic = index.byRole.get(ax.role);
+	if (!semantic) return { index: best.index, ambiguous: best.count > 1 };
+	const requireWithoutPoint = ax.point !== undefined;
+	if (ax.name === undefined) {
+		considerSemanticGroup(best, requireWithoutPoint ? semantic.withoutPoint : semantic.all, geometryCandidates, 40);
+	} else {
+		considerSemanticGroup(best, (requireWithoutPoint ? semantic.withoutPointByName : semantic.byName).get(ax.name), geometryCandidates, 60);
+		considerSemanticGroup(best, requireWithoutPoint ? semantic.unnamedWithoutPoint : semantic.unnamed, geometryCandidates, 40);
+	}
+	return { index: best.index, ambiguous: best.count > 1 };
+}
+
 export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEntity[]): AxFusionResult {
 	const merged: Entity[] = domEntities.map((entity) => ({ ...entity, ...(entity.hints ? { hints: { ...entity.hints } } : {}) }));
 	const diagnostics = emptyFusionDiagnostics(domEntities.length);
 	const domPrepared = merged.map((entity) => buildEntityMatchInfo(entity));
 	const axPrepared = axEntities.map((ax) => buildEntityMatchInfo(ax.entity));
-	const usedAx = new Set<number>();
-	const usedDom = new Set<number>();
-	const unsafeAx = new Set<number>();
+	const matchIndex = buildDomMatchIndex(merged, domPrepared);
+	const usedAx = new Uint8Array(axEntities.length);
+	const usedDom = new Uint8Array(merged.length);
+	const unsafeAx = new Uint8Array(axEntities.length);
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
 		const hints = axEntities[axIndex]!.entity.hints;
 		if (hints?.unsafeNameSkipped === true || hints?.unsafeValueSkipped === true) {
-			unsafeAx.add(axIndex);
+			unsafeAx[axIndex] = 1;
 			diagnostics.skipped.unsafeSemantic += 1;
 		}
 	}
 	const commit = (axIndex: number, domIndex: number): void => {
+		retireDomMatchCandidate(matchIndex, domIndex, merged[domIndex]!, domPrepared[domIndex]!);
 		merged[domIndex] = mergedEntity(merged[domIndex]!, axEntities[axIndex]!.entity);
 		domPrepared[domIndex] = buildEntityMatchInfo(merged[domIndex]!);
-		usedAx.add(axIndex);
-		usedDom.add(domIndex);
+		usedAx[axIndex] = 1;
+		usedDom[domIndex] = 1;
 		diagnostics.axEnriched += 1;
 	};
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
-		if (unsafeAx.has(axIndex)) continue;
+		if (unsafeAx[axIndex]) continue;
 		const axBackendNodeId = entityBackendNodeId(axEntities[axIndex]!.entity);
 		if (axBackendNodeId === undefined) continue;
-		let matchIndex = -1;
-		let ambiguous = false;
-		for (let domIndex = 0; domIndex < merged.length; domIndex += 1) {
-			if (usedDom.has(domIndex)) continue;
-			if (entityBackendNodeId(merged[domIndex]!) !== axBackendNodeId) continue;
-			if (matchIndex >= 0) ambiguous = true;
-			else matchIndex = domIndex;
-		}
-		if (matchIndex >= 0 && !ambiguous) commit(axIndex, matchIndex);
-		else if (matchIndex >= 0) diagnostics.skipped.ambiguousBackend += 1;
+		const backendCandidates = matchIndex.byBackendNodeId.get(axBackendNodeId);
+		if (backendCandidates?.size === 1) commit(axIndex, backendCandidates.values().next().value!);
+		else if (backendCandidates && backendCandidates.size > 1) diagnostics.skipped.ambiguousBackend += 1;
 	}
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
-		if (usedAx.has(axIndex) || unsafeAx.has(axIndex)) continue;
-		let bestIndex = -1;
-		let bestScore = 0;
-		let ambiguous = false;
-		for (let domIndex = 0; domIndex < merged.length; domIndex += 1) {
-			if (usedDom.has(domIndex)) continue;
-			const match = axMatchScore(domPrepared[domIndex]!, axPrepared[axIndex]!);
-			if (!match?.geometryBacked) continue;
-			if (match.score > bestScore) {
-				bestScore = match.score;
-				bestIndex = domIndex;
-				ambiguous = false;
-			} else if (match.score === bestScore && bestIndex >= 0) {
-				ambiguous = true;
-			}
-		}
-		if (bestIndex >= 0 && !ambiguous) commit(axIndex, bestIndex);
-		else if (bestIndex >= 0) diagnostics.skipped.ambiguousGeometry += 1;
+		if (usedAx[axIndex] || unsafeAx[axIndex]) continue;
+		const match = bestMatch(geometryMatchCandidates(axPrepared[axIndex]!, matchIndex), usedDom, domPrepared, axPrepared[axIndex]!, true);
+		if (match.index >= 0 && !match.ambiguous) commit(axIndex, match.index);
+		else if (match.index >= 0) diagnostics.skipped.ambiguousGeometry += 1;
 	}
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
-		if (usedAx.has(axIndex) || unsafeAx.has(axIndex)) continue;
-		let bestIndex = -1;
-		let bestScore = 0;
-		let ambiguous = false;
-		for (let domIndex = 0; domIndex < merged.length; domIndex += 1) {
-			if (usedDom.has(domIndex)) continue;
-			const match = axMatchScore(domPrepared[domIndex]!, axPrepared[axIndex]!);
-			if (match === undefined) continue;
-			if (match.score > bestScore) {
-				bestScore = match.score;
-				bestIndex = domIndex;
-				ambiguous = false;
-			} else if (match.score === bestScore && bestIndex >= 0) {
-				ambiguous = true;
-			}
-		}
-		if (bestIndex >= 0 && !ambiguous) commit(axIndex, bestIndex);
-		else if (bestIndex >= 0) diagnostics.skipped.ambiguousSemantic += 1;
+		if (usedAx[axIndex] || unsafeAx[axIndex]) continue;
+		const match = bestSemanticMatch(axPrepared[axIndex]!, matchIndex, usedDom, domPrepared);
+		if (match.index >= 0 && !match.ambiguous) commit(axIndex, match.index);
+		else if (match.index >= 0) diagnostics.skipped.ambiguousSemantic += 1;
 	}
-	const unmatchedAx = axEntities.filter((_, index) => !usedAx.has(index) && !unsafeAx.has(index));
+	const unmatchedAx = axEntities.filter((_, index) => !usedAx[index] && !unsafeAx[index]);
 	diagnostics.axOnly = unmatchedAx.length;
 	diagnostics.degraded = Object.values(diagnostics.skipped).some((count) => count > 0);
 	return { merged, unmatchedAx, diagnostics };

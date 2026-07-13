@@ -47,6 +47,7 @@ The modules below make up the kernel's public surface — consumers import them 
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |
 | `identityBootstrap.ts` | Best-effort scan rect ↔ DOMSnapshot backendNodeId bootstrap with fail-open diagnostics. |
+| `spatialIndex.ts` | Shared bounded spatial candidate index with correctness-preserving overflow fallback. |
 | `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
 | `treeDiff.ts` | Template-level living diff over repeated structures; O(change) projection without ref-mint changes. |
 | `semanticRefAnchor.ts` | Semantic ref-anchor candidate derivation for repeated structures. |
