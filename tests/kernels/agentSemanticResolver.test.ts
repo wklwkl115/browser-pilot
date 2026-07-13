@@ -38,6 +38,26 @@ test("semantic.fill does not complete on aborted or failed program", () => {
 	});
 	assert.equal(aborted, undefined);
 
+	// Navigation after aborted fill must not promote to completed.
+	const navAfterAbort = resolveSemanticActionCompletion("semantic.fill", {
+		commandName: "browser_execute",
+		mode: "program",
+		physicalProgram: true,
+		result: {
+			frames: [{ step: 0, kind: "mouse:press", ok: true, durationMs: 1 }],
+			aborted: { reason: "navigation", atStep: 0, newUrl: "https://x.test/next" },
+		},
+		events: [{
+			type: "navigation_completed",
+			operationId: "op",
+			sequence: 1,
+			timestamp: 1,
+			progress: true,
+			data: { url: "https://x.test/next" },
+		}],
+	});
+	assert.equal(navAfterAbort, undefined);
+
 	const failedFrame = resolveSemanticActionCompletion("semantic.fill", {
 		commandName: "browser_execute",
 		mode: "program",

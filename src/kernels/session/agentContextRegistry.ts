@@ -85,7 +85,12 @@ export class AgentContextRegistry {
 	}
 
 	setState(record: AgentContextRecord, state: AgentContextState): void {
-		record.state = state;
+		// Anchored requires a proven pageIdentity; without one, force needs_reanchor.
+		if (state === "anchored" && !record.pageIdentity) {
+			record.state = "needs_reanchor";
+		} else {
+			record.state = state;
+		}
 		this.touch(record);
 	}
 
@@ -207,14 +212,14 @@ export class AgentContextRegistry {
 		return full;
 	}
 
+	/**
+	 * Presence in candidateBindings means the binding is live for this context.
+	 * Bindings are cleared on identity reanchor and replaced wholesale on re-project;
+	 * revision is not used as a secondary staleness key here.
+	 */
 	resolveCandidate(record: AgentContextRecord, ref: string): AgentCandidateBinding | { error: "REF_STALE" } {
 		const binding = record.candidateBindings.get(ref);
 		if (!binding) return { error: "REF_STALE" };
-		if (binding.contextRevision > record.revision) return { error: "REF_STALE" };
-		// binding from older revision is stale after rebuild
-		if (binding.contextRevision < record.revision && record.candidateBindings.size > 0) {
-			// allow same-revision only after rebuild — if map still has the key it was rebound
-		}
 		return binding;
 	}
 

@@ -79,6 +79,17 @@ export function projectActionableToCandidate(
 	};
 }
 
+function sanitizeNoticeMessage(message: string): string {
+	return message
+		.replace(/pageEpoch[=:]\s*\S+/gi, "pageEpoch=[redacted]")
+		.replace(/browserSessionId[=:]\s*\S+/gi, "browserSessionId=[redacted]")
+		.replace(/"tabId"\s*:\s*\d+/g, '"tabId":0')
+		.replace(/tabId[=:]\s*\d+/gi, "tabId=[redacted]")
+		.replace(/backendNodeId[=:]\s*\d+/gi, "backendNodeId=[redacted]")
+		.replace(/[A-Za-z]:\\[^\s"]+/g, "[path-redacted]")
+		.slice(0, 200);
+}
+
 function buildNotices(observation: PageObservationV3): AgentNotice[] {
 	const notices: AgentNotice[] = [];
 	const diagnostics = observation.diagnostics;
@@ -87,7 +98,7 @@ function buildNotices(observation: PageObservationV3): AgentNotice[] {
 		if (Array.isArray(errors)) {
 			for (const err of errors.slice(0, 4)) {
 				const message = typeof err === "string" ? err : JSON.stringify(err);
-				notices.push({ kind: "error", message: message.slice(0, 200) });
+				notices.push({ kind: "error", message: sanitizeNoticeMessage(message) });
 			}
 		}
 	}
@@ -156,20 +167,28 @@ export function projectAgentView(input: AgentViewProjectionInput): {
 
 	const candidateBindings: Array<{ alias: string; resourceRef: string; role: string; label?: string; actions: AgentCandidateAction[] }> = [];
 	const candidates: AgentCandidate[] = [];
+	const focusRoles = input.focus?.roles?.map((r) => r.toLowerCase()) ?? [];
+	const pinnedRefs = new Set([...(input.blockingRefs ?? []), ...(input.actionRef ? [input.actionRef] : [])]);
+	let aliasIndex = 0;
 	for (let i = 0; i < limited.length; i++) {
-		const alias = `a_${String(i + 1).padStart(2, "0")}`;
-		const projected = projectActionableToCandidate(limited[i]!, alias);
-		if (input.focus?.roles?.length && !input.focus.roles.some((r) => projected.role.includes(r))) {
-			// focus filters ordering only after pins; skip non-matching non-pinned if over budget later
+		const item = limited[i]!;
+		const projected = projectActionableToCandidate(item, "tmp");
+		const isPinned = pinnedRefs.has(item.ref);
+		if (focusRoles.length && !isPinned && !focusRoles.some((r) => projected.role.toLowerCase().includes(r))) {
+			continue;
 		}
-		candidates.push(projected);
+		aliasIndex += 1;
+		const alias = `a_${String(aliasIndex).padStart(2, "0")}`;
+		const candidate = { ...projected, ref: alias };
+		candidates.push(candidate);
 		candidateBindings.push({
 			alias,
-			resourceRef: limited[i]!.ref,
-			role: projected.role,
-			label: projected.label,
-			actions: projected.actions,
+			resourceRef: item.ref,
+			role: candidate.role,
+			label: candidate.label,
+			actions: candidate.actions,
 		});
+		if (candidates.length >= maxCandidates) break;
 	}
 
 	const notices = buildNotices(input.observation);

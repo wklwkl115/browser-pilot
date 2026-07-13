@@ -148,12 +148,29 @@ export const SEMANTIC_ACTION_COMPLETION_RESOLVER_REGISTRY = {
 	},
 	"semantic.fill": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
 		// Fill completes only when trusted program finished successfully (no abort, all frames ok).
+		// Do NOT fall back to navigation/download completion — a focus click that navigates
+		// must not report fill as completed when text frames never applied.
 		if (input.physicalProgram && isSuccessfulSemanticProgramResult(input.result)) {
 			return { source: "semantic-fill-applied", evidence: { result: input.result } };
 		}
-		return executeCompletion(input);
+		return undefined;
 	},
-	"semantic.press": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => executeCompletion({ ...input, physicalProgram: true }),
+	"semantic.press": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
+		// Press may complete via navigation (e.g. Enter submit) only when key frames succeeded
+		// or when pure navigation evidence exists without a failed program.
+		if (input.physicalProgram && isSuccessfulSemanticProgramResult(input.result)) {
+			const nav = executeCompletion({ ...input, mode: input.mode ?? "program", physicalProgram: true });
+			if (nav?.source === "navigation-completed" || nav?.source === "new-tab-ready" || nav?.source === "download-completed") {
+				return nav;
+			}
+			return { source: "semantic-press-applied", evidence: { result: input.result } };
+		}
+		// No successful program: still allow pure navigation evidence only if result is not an aborted program.
+		if (isRecord(input.result) && input.result.aborted) return undefined;
+		const nav = executeCompletion({ ...input, mode: input.mode ?? "program", physicalProgram: true });
+		if (nav?.source === "navigation-completed" || nav?.source === "new-tab-ready" || nav?.source === "download-completed") return nav;
+		return undefined;
+	},
 	"semantic.scroll": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
 		if (isSuccessfulSemanticProgramResult(input.result)) {
 			return { source: "semantic-scroll-applied", evidence: { result: input.result } };

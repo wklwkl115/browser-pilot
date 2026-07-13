@@ -8,7 +8,7 @@ import { validateBrowserCommandArguments } from "../../src/commands/commandValid
 import { compileSemanticAction } from "../../src/browser-command-runtime/semanticActionCompiler.js";
 import type { AgentCandidateBinding } from "../../src/kernels/agent/agentTypes.js";
 
-test("browser_act validates published kinds only", () => {
+test("browser_act validates published kinds and required fields", () => {
 	const act = buildRunnableCliCommands().find((c) => c.name === "browser_act");
 	assert.ok(act);
 	const ok = validateBrowserCommandArguments(act.def, {
@@ -21,6 +21,21 @@ test("browser_act validates published kinds only", () => {
 		action: { kind: "select", ref: "a_01", value: "x" },
 	});
 	assert.equal(bad.ok, false);
+	const navigateNoUrl = validateBrowserCommandArguments(act.def, {
+		contextRef: "ctx",
+		action: { kind: "navigate" },
+	});
+	assert.equal(navigateNoUrl.ok, false);
+	const pressNoKey = validateBrowserCommandArguments(act.def, {
+		contextRef: "ctx",
+		action: { kind: "press" },
+	});
+	assert.equal(pressNoKey.ok, false);
+	const fillNoValue = validateBrowserCommandArguments(act.def, {
+		contextRef: "ctx",
+		action: { kind: "fill", ref: "a_01" },
+	});
+	assert.equal(fillNoValue.ok, false);
 });
 
 test("AgentTurn outcome-first: post-view absence cannot invent success", () => {

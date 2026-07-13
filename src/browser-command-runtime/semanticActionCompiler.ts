@@ -104,13 +104,20 @@ function clickProgram(resourceRef: string): TrustedProgramPrimitive[] {
 	];
 }
 
-/** Select-all chord then insert text (replace default). */
-function selectAllProgram(): TrustedProgramPrimitive[] {
+/**
+ * Platform select-all chord for fill replace.
+ * macOS uses Meta+A; other platforms use Control+A.
+ * Injected platform string keeps kernels free of Node process dependency at compile call sites.
+ */
+export function selectAllProgram(platform: string = typeof process !== "undefined" ? process.platform : "linux"): TrustedProgramPrimitive[] {
+	const isDarwin = platform === "darwin";
+	const modKey = isDarwin ? "MetaLeft" : "ControlLeft";
+	const mod: "meta" | "ctrl" = isDarwin ? "meta" : "ctrl";
 	return [
-		{ key: "down", code: "ControlLeft" },
-		{ key: "down", code: "KeyA", modifiers: ["ctrl"] },
-		{ key: "up", code: "KeyA", modifiers: ["ctrl"] },
-		{ key: "up", code: "ControlLeft" },
+		{ key: "down", code: modKey },
+		{ key: "down", code: "KeyA", modifiers: [mod] },
+		{ key: "up", code: "KeyA", modifiers: [mod] },
+		{ key: "up", code: modKey },
 	];
 }
 
@@ -136,13 +143,17 @@ export function compileSemanticAction(
 	const resolverId = resolverIdForKind(action.kind);
 
 	if (action.kind === "navigate") {
+		const url = typeof action.url === "string" ? action.url.trim() : "";
+		if (!url) {
+			return { code: "INVALID_AGENT_REQUEST", message: "navigate requires a non-empty url" };
+		}
 		return {
 			actionKind: action.kind,
 			physical: false,
 			targetBindings: [],
 			execution: {
 				kind: "navigation",
-				plan: { type: "navigate", url: action.url, disposition: action.disposition ?? "current" },
+				plan: { type: "navigate", url, disposition: action.disposition ?? "current" },
 			},
 			completionResolverId: resolverId,
 			safety: { requiresConfirmation: false },
@@ -151,13 +162,17 @@ export function compileSemanticAction(
 	}
 
 	if (action.kind === "history") {
+		const direction = action.direction;
+		if (direction !== "back" && direction !== "forward" && direction !== "reload") {
+			return { code: "INVALID_AGENT_REQUEST", message: "history requires direction back|forward|reload" };
+		}
 		return {
 			actionKind: action.kind,
 			physical: false,
 			targetBindings: [],
 			execution: {
 				kind: "navigation",
-				plan: { type: "history", direction: action.direction },
+				plan: { type: "history", direction },
 			},
 			completionResolverId: resolverId,
 			safety: { requiresConfirmation: false },
@@ -166,6 +181,9 @@ export function compileSemanticAction(
 	}
 
 	if (action.kind === "activate") {
+		if (typeof action.ref !== "string" || !action.ref.trim()) {
+			return { code: "INVALID_AGENT_REQUEST", message: "activate requires a candidate ref" };
+		}
 		const binding = requireBinding(action.ref, bindings);
 		if (isCompileError(binding)) return binding;
 		if (!binding.allowedActions.includes("activate")) {
@@ -191,6 +209,9 @@ export function compileSemanticAction(
 		if (!binding.allowedActions.includes("fill")) {
 			return { code: "ACTION_NOT_ALLOWED", message: `fill not allowed on ${action.ref}` };
 		}
+		if (typeof action.value !== "string") {
+			return { code: "INVALID_AGENT_REQUEST", message: "fill requires a string value" };
+		}
 		const program: TrustedProgramPrimitive[] = [
 			...clickProgram(binding.resourceRef),
 			...(action.replace === false ? [] : selectAllProgram()),
@@ -210,6 +231,9 @@ export function compileSemanticAction(
 	}
 
 	if (action.kind === "press") {
+		if (typeof action.key !== "string" || !action.key.trim()) {
+			return { code: "INVALID_AGENT_REQUEST", message: "press requires a non-empty key" };
+		}
 		const binding = action.ref ? requireBinding(action.ref, bindings) : undefined;
 		if (binding && isCompileError(binding)) return binding;
 		if (binding && !binding.allowedActions.includes("press")) {
@@ -240,11 +264,18 @@ export function compileSemanticAction(
 	}
 
 	if (action.kind === "scroll") {
+		const direction = action.direction;
+		if (direction !== "up" && direction !== "down" && direction !== "left" && direction !== "right") {
+			return { code: "INVALID_AGENT_REQUEST", message: "scroll requires direction up|down|left|right" };
+		}
 		const binding = action.ref ? requireBinding(action.ref, bindings) : undefined;
 		if (binding && isCompileError(binding)) return binding;
+		if (binding && !binding.allowedActions.includes("scroll")) {
+			return { code: "ACTION_NOT_ALLOWED", message: `scroll not allowed on ${action.ref}` };
+		}
 		const amount = action.amount === "page" ? 600 : 200;
-		const delta = action.direction === "up" || action.direction === "left" ? -amount : amount;
-		const horizontal = action.direction === "left" || action.direction === "right";
+		const delta = direction === "up" || direction === "left" ? -amount : amount;
+		const horizontal = direction === "left" || direction === "right";
 		const program: TrustedProgramPrimitive[] = [
 			{
 				mouse: "wheel",

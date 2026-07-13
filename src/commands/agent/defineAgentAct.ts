@@ -20,8 +20,15 @@ import {
 	runCanonicalObserve,
 } from "./agentFacadeRuntime.js";
 import { agentError } from "./agentErrors.js";
+import { failClosedAgentView } from "./agentEnvelopeSanitize.js";
 
 const ACTION_KINDS = ["activate", "fill", "press", "scroll", "navigate", "history"] as const;
+const SCROLL_DIRS = new Set(["up", "down", "left", "right"]);
+const HISTORY_DIRS = new Set(["back", "forward", "reload"]);
+
+function nonEmptyString(value: unknown): value is string {
+	return typeof value === "string" && value.trim().length > 0;
+}
 
 function validateActArguments(args: Record<string, unknown>): ValidationIssue[] {
 	const issues: ValidationIssue[] = [];
@@ -32,12 +39,34 @@ function validateActArguments(args: Record<string, unknown>): ValidationIssue[] 
 		issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action", message: "action with kind is required" });
 		return issues;
 	}
-	if (!isPublishedWriteKind(args.action.kind)) {
+	const action = args.action;
+	const kind = action.kind;
+	if (typeof kind !== "string" || !isPublishedWriteKind(kind)) {
 		issues.push({
 			code: "ACTION_UNSUPPORTED_SURFACE",
 			path: "/action/kind",
-			message: `action kind ${args.action.kind} is not published on agent-preview; expected one of ${ACTION_KINDS.join(", ")}`,
+			message: `action kind ${String(kind)} is not published on agent-preview; expected one of ${ACTION_KINDS.join(", ")}`,
 		});
+		return issues;
+	}
+	if (kind === "activate" && !nonEmptyString(action.ref)) {
+		issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/ref", message: "activate requires action.ref" });
+	}
+	if (kind === "fill") {
+		if (!nonEmptyString(action.ref)) issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/ref", message: "fill requires action.ref" });
+		if (typeof action.value !== "string") issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/value", message: "fill requires action.value string" });
+	}
+	if (kind === "press" && !nonEmptyString(action.key)) {
+		issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/key", message: "press requires action.key" });
+	}
+	if (kind === "scroll" && (typeof action.direction !== "string" || !SCROLL_DIRS.has(action.direction))) {
+		issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/direction", message: "scroll requires direction up|down|left|right" });
+	}
+	if (kind === "navigate" && !nonEmptyString(action.url)) {
+		issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/url", message: "navigate requires a non-empty action.url" });
+	}
+	if (kind === "history" && (typeof action.direction !== "string" || !HISTORY_DIRS.has(action.direction))) {
+		issues.push({ code: "INVALID_AGENT_REQUEST", path: "/action/direction", message: "history requires direction back|forward|reload" });
 	}
 	return issues;
 }
@@ -133,6 +162,17 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 
 					if (compiled.execution.kind === "navigation") {
 						const plan = compiled.execution.plan;
+						if (plan.type === "navigate") {
+							const url = typeof plan.url === "string" ? plan.url.trim() : "";
+							if (!url) throw agentError("INVALID_AGENT_REQUEST", "navigate requires a non-empty url");
+						} else if (plan.type === "history") {
+							const direction = plan.direction;
+							if (direction !== "back" && direction !== "forward" && direction !== "reload") {
+								throw agentError("INVALID_AGENT_REQUEST", "history requires direction back|forward|reload");
+							}
+						} else {
+							throw agentError("INVALID_AGENT_REQUEST", "unknown navigation plan type");
+						}
 						const outcome = await withBrowserOperation({
 							server,
 							commandName: plan.type === "navigate" && plan.disposition === "new_tab" ? "browser_tabs" : "browser_execute",
@@ -146,16 +186,18 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 							ctx,
 							onUpdate,
 						}, async () => {
-							if (plan.type === "navigate" && plan.url) {
+							if (plan.type === "navigate") {
+								const url = plan.url!.trim();
 								if (plan.disposition === "new_tab") {
-									return await server.createTab(plan.url, true, Math.min(opBudget, 15_000), { browserSessionId });
+									return await server.createTab(url, true, Math.min(opBudget, 15_000), { browserSessionId });
 								}
 								return await server.executeJavaScript(
-									`location.assign(${JSON.stringify(plan.url)}); return location.href;`,
+									`location.assign(${JSON.stringify(url)}); return location.href;`,
 									{ tabId: resolvedTabId, timeoutMs: Math.min(opBudget, 15_000), browserSessionId },
 								);
 							}
-							const direction = plan.direction ?? "reload";
+							// plan.type === "history" — never fall through from navigate
+							const direction = plan.direction as "back" | "forward" | "reload";
 							const code = direction === "back"
 								? "history.back(); return location.href;"
 								: direction === "forward"
@@ -238,30 +280,30 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 					reads: view?.reads,
 				});
 
+				const safeView = view
+					? (failClosedAgentView(view as unknown as Record<string, unknown>) as unknown as typeof view)
+					: undefined;
 				const turn = {
 					schema: AGENT_TURN_SCHEMA,
 					context: contextSummary(record, true),
 					outcome: agentOutcome,
 					viewStatus,
-					...(view ? { view } : {}),
+					...(safeView ? { view: safeView } : {}),
 					...(viewUnavailableReason ? { viewUnavailableReason } : {}),
-					decision,
+					decision: safeView
+						? decideAfterAct({
+							outcome: agentOutcome,
+							candidates: safeView.candidates,
+							reads: safeView.reads,
+						})
+						: decision,
 					trace: {
 						available: Boolean(rawOperation),
 						...(rawOperation
 							? { traceRef: `trace_${operationId}` }
 							: { unavailableReason: "operation_trace_inline_only" }),
 					},
-					// raw operation retained only in details for expert — not in agent envelope root beyond outcome mapping
 				};
-
-				// Strip any accidental mechanical leakage from view if present
-				if (turn.view) {
-					const text = JSON.stringify(turn.view);
-					if (/pageEpoch|browserSessionId|backendNodeId|"tabId":\s*\d+/.test(text) && /"candidates"/.test(text)) {
-						// candidates/context must not expose raw ids; regenerate summary only
-					}
-				}
 
 				return inlineJsonCommandResult(turn, {
 					action: "act",

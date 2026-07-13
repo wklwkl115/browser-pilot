@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compileSemanticAction } from "../../src/browser-command-runtime/semanticActionCompiler.js";
+import { compileSemanticAction, selectAllProgram } from "../../src/browser-command-runtime/semanticActionCompiler.js";
 import { dispatchProgramElement, validateProgram } from "../../src/browser-command-runtime/programDispatcher.js";
 import type { AgentCandidateBinding } from "../../src/kernels/agent/agentTypes.js";
 import { SEMANTIC_ACTION_COMPLETION_RESOLVER_REGISTRY } from "../../src/commands/operationResolvers.js";
@@ -82,6 +82,34 @@ test("rejects unpublished select on agent-preview", () => {
 	const result = compileSemanticAction({ kind: "select", ref: "a_01", value: "x" }, bindings);
 	assert.ok("code" in result);
 	assert.equal(result.code, "ACTION_UNSUPPORTED_SURFACE");
+});
+
+test("navigate without url and press without key fail at compile", () => {
+	const bindings = new Map([["a_01", binding()]]);
+	const nav = compileSemanticAction({ kind: "navigate", url: "" } as never, bindings);
+	assert.ok("code" in nav);
+	assert.equal(nav.code, "INVALID_AGENT_REQUEST");
+	const press = compileSemanticAction({ kind: "press" } as never, bindings);
+	assert.ok("code" in press);
+	assert.equal(press.code, "INVALID_AGENT_REQUEST");
+});
+
+test("select-all chord is Meta on darwin and Control elsewhere", () => {
+	const mac = selectAllProgram("darwin");
+	assert.equal(mac[0]?.code, "MetaLeft");
+	assert.deepEqual(mac[1]?.modifiers, ["meta"]);
+	const win = selectAllProgram("win32");
+	assert.equal(win[0]?.code, "ControlLeft");
+	assert.deepEqual(win[1]?.modifiers, ["ctrl"]);
+	assertValidProgram(mac);
+	assertValidProgram(win);
+});
+
+test("scroll on ref without scroll action is rejected", () => {
+	const bindings = new Map([["a_01", binding("a_01", ["activate"])]]);
+	const result = compileSemanticAction({ kind: "scroll", ref: "a_01", direction: "down" }, bindings);
+	assert.ok("code" in result);
+	assert.equal(result.code, "ACTION_NOT_ALLOWED");
 });
 
 test("semantic resolver registry covers every published write kind", () => {

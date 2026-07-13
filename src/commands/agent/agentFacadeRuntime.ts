@@ -14,6 +14,7 @@ import type {
 import { AGENT_VIEW_SCHEMA } from "../../kernels/agent/agentTypes.js";
 import { isRecord } from "../../utils/records.js";
 import { agentError } from "./agentErrors.js";
+import { failClosedAgentView } from "./agentEnvelopeSanitize.js";
 
 export function resolveAgentOwner(ctx: { operationOwnerId?: string } | undefined): string {
 	return ctx?.operationOwnerId?.trim() || "local-cli";
@@ -271,5 +272,5 @@ export function projectAndBindView(input: {
 	};
 	view.schema = AGENT_VIEW_SCHEMA;
 	port.touch(input.record);
-	return view;
+	return failClosedAgentView(view as unknown as Record<string, unknown>) as unknown as typeof view;
 }
