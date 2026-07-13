@@ -1,9 +1,11 @@
 /**
  * Compiles SemanticActionV1 into existing trusted Program Engine primitives.
+ * Frames must match programOps discriminator schema (mouse/key/text/wait/eval).
  * Does not implement hit-test, editable detection, or completion classification.
  */
 import type { AgentCandidateBinding, SemanticActionV1 } from "../kernels/agent/agentTypes.js";
 import { isPublishedWriteKind, resolverIdForKind, type SemanticCompletionResolverId } from "../kernels/agent/semanticAction.js";
+import { validateProgram } from "./programDispatcher.js";
 
 export type TrustedProgramPrimitive = Record<string, unknown>;
 
@@ -43,6 +45,81 @@ function requireBinding(
 
 function isCompileError(value: AgentCandidateBinding | CompileError): value is CompileError {
 	return "code" in value && "message" in value && !("resourceRef" in value);
+}
+
+/** Map semantic key names to KeyboardEvent.code values used by the key op. */
+export function toKeyboardEventCode(key: string): string {
+	const raw = key.trim();
+	if (!raw) return "Unidentified";
+	const aliases: Record<string, string> = {
+		enter: "Enter",
+		return: "Enter",
+		tab: "Tab",
+		escape: "Escape",
+		esc: "Escape",
+		backspace: "Backspace",
+		delete: "Delete",
+		del: "Delete",
+		space: "Space",
+		" ": "Space",
+		arrowup: "ArrowUp",
+		arrowdown: "ArrowDown",
+		arrowleft: "ArrowLeft",
+		arrowright: "ArrowRight",
+		home: "Home",
+		end: "End",
+		pageup: "PageUp",
+		pagedown: "PageDown",
+	};
+	const lower = raw.toLowerCase();
+	if (aliases[lower]) return aliases[lower]!;
+	if (/^key[a-z]$/i.test(raw) || /^digit[0-9]$/i.test(raw) || /^f\d{1,2}$/i.test(raw)) {
+		return raw[0]!.toUpperCase() + raw.slice(1);
+	}
+	if (/^[a-z]$/i.test(raw)) return `Key${raw.toUpperCase()}`;
+	if (/^[0-9]$/.test(raw)) return `Digit${raw}`;
+	// Already a plausible KeyboardEvent.code (Enter, ControlLeft, …)
+	if (/^[A-Z][A-Za-z0-9]+$/.test(raw)) return raw;
+	return raw;
+}
+
+function mapModifiers(modifiers: string[] | undefined): Array<"ctrl" | "shift" | "alt" | "meta"> | undefined {
+	if (!modifiers?.length) return undefined;
+	const out: Array<"ctrl" | "shift" | "alt" | "meta"> = [];
+	for (const mod of modifiers) {
+		const m = mod.toLowerCase();
+		if (m === "ctrl" || m === "control") out.push("ctrl");
+		else if (m === "shift") out.push("shift");
+		else if (m === "alt") out.push("alt");
+		else if (m === "meta" || m === "cmd" || m === "command") out.push("meta");
+	}
+	return out.length ? out : undefined;
+}
+
+/** Trusted left-click: press then release at the same ref. */
+function clickProgram(resourceRef: string): TrustedProgramPrimitive[] {
+	return [
+		{ mouse: "press", ref: resourceRef, button: "left" },
+		{ mouse: "release", ref: resourceRef, button: "left" },
+	];
+}
+
+/** Select-all chord then insert text (replace default). */
+function selectAllProgram(): TrustedProgramPrimitive[] {
+	return [
+		{ key: "down", code: "ControlLeft" },
+		{ key: "down", code: "KeyA", modifiers: ["ctrl"] },
+		{ key: "up", code: "KeyA", modifiers: ["ctrl"] },
+		{ key: "up", code: "ControlLeft" },
+	];
+}
+
+function assertProgramValid(program: TrustedProgramPrimitive[]): CompileError | undefined {
+	const validation = validateProgram(program);
+	if (!validation.ok) {
+		return { code: "INVALID_AGENT_REQUEST", message: `compiled program invalid: ${validation.error}` };
+	}
+	return undefined;
 }
 
 export function compileSemanticAction(
@@ -94,9 +171,9 @@ export function compileSemanticAction(
 		if (!binding.allowedActions.includes("activate")) {
 			return { code: "ACTION_NOT_ALLOWED", message: `activate not allowed on ${action.ref}` };
 		}
-		const program: TrustedProgramPrimitive[] = [
-			{ kind: "mouse", action: "click", ref: binding.resourceRef },
-		];
+		const program = clickProgram(binding.resourceRef);
+		const invalid = assertProgramValid(program);
+		if (invalid) return invalid;
 		return {
 			actionKind: action.kind,
 			physical: true,
@@ -115,10 +192,12 @@ export function compileSemanticAction(
 			return { code: "ACTION_NOT_ALLOWED", message: `fill not allowed on ${action.ref}` };
 		}
 		const program: TrustedProgramPrimitive[] = [
-			{ kind: "mouse", action: "click", ref: binding.resourceRef },
-			...(action.replace === false ? [] : [{ kind: "key", action: "chord", keys: ["Control", "a"] }]),
-			{ kind: "text", text: action.value, ref: binding.resourceRef },
+			...clickProgram(binding.resourceRef),
+			...(action.replace === false ? [] : selectAllProgram()),
+			{ text: action.value },
 		];
+		const invalid = assertProgramValid(program);
+		if (invalid) return invalid;
 		return {
 			actionKind: action.kind,
 			physical: true,
@@ -136,15 +215,15 @@ export function compileSemanticAction(
 		if (binding && !binding.allowedActions.includes("press")) {
 			return { code: "ACTION_NOT_ALLOWED", message: `press not allowed on ${action.ref}` };
 		}
+		const code = toKeyboardEventCode(action.key);
+		const modifiers = mapModifiers(action.modifiers);
 		const program: TrustedProgramPrimitive[] = [
-			{
-				kind: "key",
-				action: "press",
-				key: action.key,
-				...(action.modifiers?.length ? { modifiers: action.modifiers } : {}),
-				...(binding ? { ref: binding.resourceRef } : {}),
-			},
+			...(binding ? clickProgram(binding.resourceRef) : []),
+			{ key: "down", code, ...(modifiers ? { modifiers } : {}) },
+			{ key: "up", code, ...(modifiers ? { modifiers } : {}) },
 		];
+		const invalid = assertProgramValid(program);
+		if (invalid) return invalid;
 		return {
 			actionKind: action.kind,
 			physical: true,
@@ -168,11 +247,13 @@ export function compileSemanticAction(
 		const horizontal = action.direction === "left" || action.direction === "right";
 		const program: TrustedProgramPrimitive[] = [
 			{
-				kind: "wheel",
-				...(horizontal ? { deltaX: delta } : { deltaY: delta }),
-				...(binding ? { ref: binding.resourceRef } : {}),
+				mouse: "wheel",
+				...(binding ? { ref: binding.resourceRef } : { x: 0, y: 0 }),
+				...(horizontal ? { dx: delta, dy: 0 } : { dx: 0, dy: delta }),
 			},
 		];
+		const invalid = assertProgramValid(program);
+		if (invalid) return invalid;
 		return {
 			actionKind: action.kind,
 			physical: true,

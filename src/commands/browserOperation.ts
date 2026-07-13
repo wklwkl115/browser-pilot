@@ -12,7 +12,12 @@ import {
 import { errorToPlain } from "../utils/errors.js";
 import { isRecord } from "../utils/records.js";
 import type { CommandOnUpdate, CommandResultContext } from "./commandRuntime.js";
-import { resolveBrowserOperationCompletion, type BrowserOperationResolverInput } from "./operationResolvers.js";
+import {
+	resolveBrowserOperationCompletion,
+	resolveSemanticActionCompletion,
+	type BrowserOperationResolverInput,
+	type SemanticActionCompletionResolverId,
+} from "./operationResolvers.js";
 import { classifyBrowserOperationLiveness, nextBrowserOperationLivenessBoundary } from "../kernels/session/browserOperationState.js";
 import { redactSensitiveValue } from "../utils/redaction.js";
 
@@ -24,6 +29,8 @@ type BrowserOperationOptions = Omit<BrowserOperationResolverInput, "result" | "e
 	timeoutMs: number;
 	ctx?: CommandResultContext;
 	onUpdate?: CommandOnUpdate;
+	/** When set (agent façade), settlement uses the semantic-kind exact resolver instead of commandName routing. */
+	semanticCompletionResolverId?: SemanticActionCompletionResolverId;
 };
 
 function resolveTarget(options: BrowserOperationOptions): BrowserOperationTarget {
@@ -126,10 +133,26 @@ async function finishExtension(options: BrowserOperationOptions, operationId: st
 
 type OperationSettlement = { status: BrowserOperationStatus; events: BrowserOperationEvent[]; completion?: ReturnType<typeof resolveBrowserOperationCompletion> };
 
+function resolveOperationCompletion(options: BrowserOperationOptions, result: unknown, events: BrowserOperationEvent[]) {
+	const input: BrowserOperationResolverInput = {
+		commandName: options.commandName,
+		command: options.command,
+		action: options.action,
+		mode: options.mode,
+		physicalProgram: options.physicalProgram,
+		result,
+		events,
+	};
+	if (options.semanticCompletionResolverId) {
+		return resolveSemanticActionCompletion(options.semanticCompletionResolverId, input);
+	}
+	return resolveBrowserOperationCompletion(input);
+}
+
 function terminalEvidence(options: BrowserOperationOptions, result: unknown, events: BrowserOperationEvent[]): OperationSettlement | undefined {
 	if (events.filter((event) => event.type === "new_tab").length > 1) return { status: "ambiguous", events };
 	if (events.filter((event) => event.type === "download_started").length > 1) return { status: "ambiguous", events };
-	const completion = resolveBrowserOperationCompletion({ ...options, result, events });
+	const completion = resolveOperationCompletion(options, result, events);
 	return completion ? { status: "completed", events, completion } : undefined;
 }
 

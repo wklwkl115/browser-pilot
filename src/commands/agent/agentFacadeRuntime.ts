@@ -75,6 +75,23 @@ export function extractJsonPayload(result: { content?: Array<{ type: string; tex
 	}
 }
 
+export type AgentObserveRunner = (
+	server: BrowserCommandRuntimePort,
+	options: {
+		browserSessionId?: string;
+		tabId?: number;
+		targetRef?: string;
+		timeoutMs: number;
+	},
+) => Promise<PageObservationV3>;
+
+let observeRunner: AgentObserveRunner | undefined;
+
+/** Test-only injection for handler-driven façades without a live page capture. */
+export function setAgentObserveRunnerForTests(runner: AgentObserveRunner | undefined): void {
+	observeRunner = runner;
+}
+
 export async function runCanonicalObserve(
 	server: BrowserCommandRuntimePort,
 	options: {
@@ -84,8 +101,8 @@ export async function runCanonicalObserve(
 		timeoutMs: number;
 	},
 ): Promise<PageObservationV3> {
+	if (observeRunner) return observeRunner(server, options);
 	// Invoke observe path through the same server the command runtime uses.
-	// Prefer the in-process observe command registration when available via dynamic import of handler helpers.
 	const { defineObserveCommand } = await import("../observeCommand.js");
 	const { CommandManifestIndex } = await import("../commandManifestIndex.js");
 	const index = new CommandManifestIndex();
