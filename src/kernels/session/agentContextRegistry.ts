@@ -130,6 +130,9 @@ export class AgentContextRegistry {
 				if (binding.pageIdentity) record.readBindings.delete(key);
 			}
 			record.baselineSnapshotId = undefined;
+			// Allow a new mutation of the same kind after document/target identity change.
+			record.lastAckedActionDigest = undefined;
+			record.lastAckedAtRevision = undefined;
 		}
 		this.touch(record);
 		return { reanchorReason: transition.reanchorReason, cleared: transition.clearPageBindings };

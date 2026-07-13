@@ -275,6 +275,9 @@ export interface AgentContextRecord {
 	readBindings: Map<string, AgentReadBinding>;
 	activeOperationId?: string;
 	lastTraceRef?: string;
+	/** Digest of last mutation that was ACK'd; blocks identical re-dispatch until context rebinds/revises. */
+	lastAckedActionDigest?: string;
+	lastAckedAtRevision?: number;
 	createdAt: number;
 	updatedAt: number;
 	idleExpiresAt: number;

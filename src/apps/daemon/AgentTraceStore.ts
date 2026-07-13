@@ -16,9 +16,15 @@ const MAX_PER_OWNER = 64;
 export class AgentTraceStore {
 	private readonly traces = new Map<string, AgentTraceRecord>();
 	private nowFn: () => number;
+	private forceFailReason: string | undefined;
 
 	constructor(options: { now?: () => number } = {}) {
 		this.nowFn = options.now ?? (() => Date.now());
+	}
+
+	/** Test/diagnostics: next record() fails open without throwing. */
+	forceNextRecordFailure(reason = "trace_store_forced_failure"): void {
+		this.forceFailReason = reason;
 	}
 
 	record(input: {
@@ -34,6 +40,11 @@ export class AgentTraceStore {
 		projectionReport?: AgentTraceRecord["projectionReport"];
 		ttlMs?: number;
 	}): { ok: true; record: AgentTraceRecord } | { ok: false; reason: string } {
+		if (this.forceFailReason) {
+			const reason = this.forceFailReason;
+			this.forceFailReason = undefined;
+			return { ok: false, reason };
+		}
 		try {
 			this.evict();
 			const ownerCount = [...this.traces.values()].filter((t) => t.owner === input.owner).length;

@@ -35,4 +35,25 @@ test("trace record fail-open path returns reason without throwing", () => {
 	assert.equal(redacted.token, "[redacted]");
 	assert.equal(redacted.path, "[path-redacted]");
 	assert.equal(redacted.kind, "fill");
+
+	const store = new AgentTraceStore();
+	store.forceNextRecordFailure("forced_failure");
+	const failed = store.record({
+		contextRef: "ctx",
+		owner: "o1",
+		contextRevisionBefore: 1,
+		contextRevisionAfter: 2,
+		requestSummary: { kind: "fill" },
+	});
+	assert.equal(failed.ok, false);
+	if (!failed.ok) assert.equal(failed.reason, "forced_failure");
+
+	const ok = store.record({
+		contextRef: "ctx",
+		owner: "o1",
+		contextRevisionBefore: 1,
+		contextRevisionAfter: 2,
+		requestSummary: { kind: "fill" },
+	});
+	assert.equal(ok.ok, true);
 });

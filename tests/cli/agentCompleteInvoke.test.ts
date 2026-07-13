@@ -1,15 +1,15 @@
 /**
- * Full remaining DoD: confirmation, recovery codes, select/drag/submit compile,
- * traceRef fail-open, owner deny, busy, aborted fill.
+ * Full remaining DoD: confirmation, recovery codes, select/drag/submit,
+ * trace fail-open, owner deny, busy, identity reanchor stop, aborted fill, no replay.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CommandManifestIndex } from "../../src/commands/commandManifestIndex.js";
 import { defineAgentFacadeCommands } from "../../src/commands/agent/defineAgentFacadeCommands.js";
-import { setAgentObserveRunnerForTests, extractJsonPayload } from "../../src/commands/agent/agentFacadeRuntime.js";
+import { setAgentObserveRunnerForTests, extractJsonPayload, agentContextPort } from "../../src/commands/agent/agentFacadeRuntime.js";
 import {
 	installAgentContextService,
 	resetAgentContextServiceForTests,
@@ -24,6 +24,7 @@ import {
 	installAgentTraceStore,
 	resetAgentTraceStoreForTests,
 	AgentTraceStore,
+	getAgentTraceStore,
 } from "../../src/apps/daemon/AgentTraceStore.js";
 import { registerRefDescriptor } from "../../src/resources/resourceStore.js";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.js";
@@ -36,10 +37,12 @@ import { SEMANTIC_ACTION_COMPLETION_RESOLVER_REGISTRY } from "../../src/commands
 import { AGENT_PUBLISHED_WRITE_KINDS } from "../../src/kernels/agent/agentTypes.js";
 import { SEMANTIC_COMPLETION_RESOLVER_IDS } from "../../src/kernels/agent/semanticAction.js";
 import { mayAutoReplayMutation } from "../../src/kernels/agent/recoveryPolicy.js";
+import type { BrowserTextCommandResult } from "../../src/utils/toolResult.js";
 
-function fixtureObservation(over: Partial<PageObservationV3> = {}): PageObservationV3 {
+function fixtureObservation(over: Partial<PageObservationV3> & { pageEpoch?: string } = {}): PageObservationV3 {
 	const dir = mkdtempSync(path.join(tmpdir(), "agent-complete-"));
 	const savedPath = path.join(dir, "obs.json");
+	const epoch = over.pageEpoch ?? "epoch-1";
 	const observation = {
 		schema: PAGE_OBSERVATION_SCHEMA_V3,
 		tool: "browser_observe",
@@ -49,7 +52,7 @@ function fixtureObservation(over: Partial<PageObservationV3> = {}): PageObservat
 			browserSessionId: "sess-1",
 			tabId: 7,
 			targetGeneration: 1,
-			pageEpoch: "epoch-1",
+			pageEpoch: epoch,
 			url: "https://fixture.test/form",
 		},
 		snapshot: {
@@ -57,7 +60,7 @@ function fixtureObservation(over: Partial<PageObservationV3> = {}): PageObservat
 			browserSessionId: "sess-1",
 			tabId: 7,
 			targetGeneration: 1,
-			pageEpoch: "epoch-1",
+			pageEpoch: epoch,
 			url: "https://fixture.test/form",
 			sourceMode: "scan",
 			capturedAt: Date.now(),
@@ -75,6 +78,9 @@ function fixtureObservation(over: Partial<PageObservationV3> = {}): PageObservat
 		saved: { path: savedPath, chars: 10, bytes: 10 },
 		...over,
 	} as PageObservationV3;
+	// re-apply epoch after spread
+	observation.target.pageEpoch = epoch;
+	observation.snapshot.pageEpoch = epoch;
 	writeFileSync(savedPath, JSON.stringify(observation));
 	return observation;
 }
@@ -174,6 +180,19 @@ function registerRefs() {
 	}
 }
 
+function errorCode(result: BrowserTextCommandResult): string | undefined {
+	const details = result.details as { error?: { code?: string; details?: { code?: string; agentCode?: string } } } | undefined;
+	return details?.error?.code
+		?? details?.error?.details?.agentCode
+		?? details?.error?.details?.code;
+}
+
+function asEnvelope(result: BrowserTextCommandResult): Record<string, unknown> {
+	const payload = extractJsonPayload(result);
+	assert.ok(payload && typeof payload === "object");
+	return payload as Record<string, unknown>;
+}
+
 test("enum↔resolver coverage includes select/drag/submit", () => {
 	for (const kind of AGENT_PUBLISHED_WRITE_KINDS) {
 		const id = SEMANTIC_COMPLETION_RESOLVER_IDS[kind];
@@ -234,7 +253,7 @@ test("select/drag/submit compile to valid programOps frames", () => {
 	assert.equal(submit.safety.requiresConfirmation, true);
 });
 
-test("handler: confirmation required for navigate; one-shot consume; foreign owner deny; busy; traceRef", async () => {
+test("handler: confirmation, owner deny, one-shot, busy, identity stop, stale, abort, replay deny, trace fail-open", async () => {
 	resetAgentContextServiceForTests();
 	resetActionConfirmationServiceForTests();
 	resetAgentTraceStoreForTests();
@@ -243,114 +262,203 @@ test("handler: confirmation required for navigate; one-shot consume; foreign own
 	installAgentTraceStore(new AgentTraceStore());
 	registerRefs();
 
-	const observation = fixtureObservation();
-	setAgentObserveRunnerForTests(async () => observation);
+	let observeEpoch = "epoch-1";
+	setAgentObserveRunnerForTests(async () => fixtureObservation({ pageEpoch: observeEpoch }));
 	const server = createMockServer();
 	const index = new CommandManifestIndex();
 	defineAgentFacadeCommands({ commands: index, ensureStarted: async () => server });
 	const viewCmd = index.getCommand("browser_view")!;
 	const actCmd = index.getCommand("browser_act")!;
 
-	const view = extractJsonPayload(await viewCmd.execute("1", {}, undefined, undefined, { operationOwnerId: "owner-a" })) as {
-		schema: string;
-		context: { contextRef: string };
-		candidates: Array<{ ref: string; actions: string[] }>;
-	};
+	const evidence: Record<string, unknown> = {};
+
+	const view = asEnvelope(await viewCmd.execute("1", {}, undefined, undefined, { operationOwnerId: "owner-a" }));
 	assert.equal(view.schema, AGENT_VIEW_SCHEMA);
-	const contextRef = view.context.contextRef;
+	const contextRef = (view.context as { contextRef: string }).contextRef;
+	const candidates = view.candidates as Array<{ ref: string; actions: string[] }>;
+	evidence.view = view;
 
 	// navigate without confirmation
-	const needConfirm = extractJsonPayload(await actCmd.execute("2", {
+	const needConfirm = asEnvelope(await actCmd.execute("2", {
 		contextRef,
 		action: { kind: "navigate", url: "https://example.test/pay" },
-	}, undefined, undefined, { operationOwnerId: "owner-a" })) as {
-		schema: string;
-		decision: { kind: string; confirmationRef?: string };
-		outcome: { code?: string; ok: boolean };
-	};
+	}, undefined, undefined, { operationOwnerId: "owner-a" }));
 	assert.equal(needConfirm.schema, AGENT_TURN_SCHEMA);
-	assert.equal(needConfirm.decision.kind, "confirm");
-	assert.ok(needConfirm.decision.confirmationRef);
-	assert.equal(needConfirm.outcome.ok, false);
+	assert.equal((needConfirm.decision as { kind: string }).kind, "confirm");
+	assert.equal((needConfirm.outcome as { ok: boolean }).ok, false);
+	assert.equal((needConfirm.outcome as { code?: string }).code, "CONFIRMATION_REQUIRED");
+	const confirmRef = (needConfirm.decision as { confirmationRef: string }).confirmationRef;
+	assert.ok(confirmRef);
+	evidence.confirmationRequired = needConfirm;
 
-	// wrong owner cannot use confirmation from other flows — mint then steal
-	const confirmRef = needConfirm.decision.confirmationRef!;
-	try {
-		await actCmd.execute("3", {
-			contextRef,
-			confirmationRef: confirmRef,
-			action: { kind: "navigate", url: "https://example.test/pay" },
-		}, undefined, undefined, { operationOwnerId: "owner-b" });
-		assert.fail("expected owner mismatch");
-	} catch {
-		/* BrowserBridgeError path may throw or return error result depending on runCommandHandler */
-	}
-
-	// correct confirmation allows dispatch
-	const confirmed = extractJsonPayload(await actCmd.execute("4", {
+	// foreign owner steal of confirmationRef → CONFIRMATION_MISMATCH (owner digest)
+	const steal = await actCmd.execute("3", {
 		contextRef,
 		confirmationRef: confirmRef,
 		action: { kind: "navigate", url: "https://example.test/pay" },
-	}, undefined, undefined, { operationOwnerId: "owner-a" })) as {
-		schema: string;
-		trace: { available: boolean; traceRef?: string };
-		outcome: { status: string };
-	};
-	assert.equal(confirmed.schema, AGENT_TURN_SCHEMA);
-	// second consume of same ref must fail (one-shot)
-	try {
-		const again = await actCmd.execute("5", {
-			contextRef,
-			confirmationRef: confirmRef,
-			action: { kind: "navigate", url: "https://example.test/pay" },
-		}, undefined, undefined, { operationOwnerId: "owner-a" });
-		const body = extractJsonPayload(again) as { decision?: { kind: string }; outcome?: { code?: string } };
-		// either error result or confirmation required again
-		assert.ok(body);
-	} catch {
-		/* ok */
-	}
+	}, undefined, undefined, { operationOwnerId: "owner-b" });
+	// owner-b cannot get context either — may be CONTEXT_OWNER_MISMATCH first
+	const stealCode = errorCode(steal);
+	assert.ok(
+		stealCode === "CONTEXT_OWNER_MISMATCH" || stealCode === "CONFIRMATION_MISMATCH",
+		`expected owner/confirmation deny, got ${stealCode}`,
+	);
+	evidence.foreignOwnerDeny = { code: stealCode, details: steal.details };
 
-	// fill happy path has traceRef
-	const fillRef = view.candidates.find((c) => c.actions.includes("fill"))?.ref ?? view.candidates[0]!.ref;
-	const fillTurn = extractJsonPayload(await actCmd.execute("6", {
+	// correct confirmation allows dispatch
+	const confirmed = asEnvelope(await actCmd.execute("4", {
+		contextRef,
+		confirmationRef: confirmRef,
+		action: { kind: "navigate", url: "https://example.test/pay" },
+	}, undefined, undefined, { operationOwnerId: "owner-a" }));
+	assert.equal(confirmed.schema, AGENT_TURN_SCHEMA);
+	evidence.confirmedNavigate = confirmed;
+
+	// one-shot re-consume → CONFIRMATION_MISMATCH or CONSUMED / required again
+	const again = await actCmd.execute("5", {
+		contextRef,
+		confirmationRef: confirmRef,
+		action: { kind: "navigate", url: "https://example.test/pay" },
+	}, undefined, undefined, { operationOwnerId: "owner-a" });
+	const againCode = errorCode(again) ?? (extractJsonPayload(again) as { outcome?: { code?: string }; decision?: { kind?: string } })?.outcome?.code;
+	const againBody = extractJsonPayload(again) as { decision?: { kind?: string }; outcome?: { code?: string } } | undefined;
+	assert.ok(
+		againCode === "CONFIRMATION_MISMATCH"
+		|| againCode === "CONFIRMATION_CONSUMED"
+		|| againBody?.decision?.kind === "confirm"
+		|| againBody?.outcome?.code === "CONFIRMATION_REQUIRED",
+		`expected one-shot failure, got code=${againCode} decision=${againBody?.decision?.kind}`,
+	);
+	evidence.oneShotReconsume = { code: againCode, body: againBody };
+
+	// fill happy path + trace
+	const fillRef = candidates.find((c) => c.actions.includes("fill"))?.ref ?? candidates[0]!.ref;
+	const fillTurn = asEnvelope(await actCmd.execute("6", {
 		contextRef,
 		action: { kind: "fill", ref: fillRef, value: "a@b.c" },
-	}, undefined, undefined, { operationOwnerId: "owner-a" })) as {
-		trace: { available: boolean; traceRef?: string };
-		outcome: { status: string; ok: boolean };
-	};
-	assert.equal(fillTurn.trace.available, true);
-	assert.ok(fillTurn.trace.traceRef?.startsWith("tr_"));
+	}, undefined, undefined, { operationOwnerId: "owner-a" }));
+	assert.equal((fillTurn.trace as { available: boolean }).available, true);
+	assert.ok(String((fillTurn.trace as { traceRef?: string }).traceRef).startsWith("tr_"));
+	assert.equal((fillTurn.outcome as { status: string }).status, "completed");
+	evidence.fill = fillTurn;
 
-	// CONTEXT_BUSY: begin mutation then concurrent act
-	const port = (await import("../../src/commands/agent/agentFacadeRuntime.js")).agentContextPort();
+	// identical fill replay at same revision after ACK → MUTATION_REPLAY_DENIED / INVALID_AGENT_REQUEST
+	const replay = await actCmd.execute("6b", {
+		contextRef,
+		action: { kind: "fill", ref: fillRef, value: "a@b.c" },
+	}, undefined, undefined, { operationOwnerId: "owner-a" });
+	const replayCode = errorCode(replay);
+	assert.ok(
+		replayCode === "INVALID_AGENT_REQUEST" || replayCode === "MUTATION_REPLAY_DENIED",
+		`expected replay deny, got ${replayCode}`,
+	);
+	const replayDetails = (replay.details as { error?: { details?: { code?: string; replay?: string } } })?.error?.details;
+	assert.ok(
+		replayDetails?.code === "MUTATION_REPLAY_DENIED" || replayDetails?.replay === "do_not_retry" || /acknowledged|replay/i.test(JSON.stringify(replay.details)),
+		`expected replay denial details, got ${JSON.stringify(replay.details)}`,
+	);
+	evidence.mutationReplayDenied = { code: replayCode, details: replay.details };
+	assert.equal(mayAutoReplayMutation("acked"), false);
+
+	// CONTEXT_BUSY with hard code assert (use an activate-capable candidate)
+	const port = agentContextPort();
 	const rec = port.get(contextRef, "owner-a");
 	assert.ok(!("error" in rec));
+	const activateRef = candidates.find((c) => c.actions.includes("activate"))?.ref
+		?? candidates.find((c) => c.actions.includes("fill"))?.ref
+		?? candidates[0]!.ref;
+	const busyAction = candidates.find((c) => c.actions.includes("activate"))
+		? { kind: "activate" as const, ref: activateRef }
+		: { kind: "fill" as const, ref: activateRef, value: "busy-test" };
 	if (!("error" in rec)) {
 		port.beginMutation(rec, "hold-op");
-		try {
-			await actCmd.execute("7", {
-				contextRef,
-				action: { kind: "activate", ref: view.candidates[0]!.ref },
-			}, undefined, undefined, { operationOwnerId: "owner-a" });
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			assert.match(msg, /busy|CONTEXT_BUSY/i);
-		}
+		const busy = await actCmd.execute("7", {
+			contextRef,
+			action: busyAction,
+		}, undefined, undefined, { operationOwnerId: "owner-a" });
+		const busyCode = errorCode(busy);
+		assert.equal(busyCode, "CONTEXT_BUSY", `expected CONTEXT_BUSY, got ${busyCode} ${JSON.stringify(busy.details)}`);
+		evidence.contextBusy = { code: busyCode };
 		port.endMutation(rec, "anchored");
 	}
 
-	// foreign owner deny
+	// foreign owner on context
 	const denied = port.get(contextRef, "owner-other");
 	assert.deepEqual(denied, { error: "CONTEXT_OWNER_MISMATCH" });
+	evidence.foreignOwnerContext = denied;
 
-	// recovery hard rule
-	assert.equal(mayAutoReplayMutation("acked"), false);
+	// identity change pre-dispatch stop (document_changed) — no mutation
+	observeEpoch = "epoch-2-document-changed";
+	const identityStop = asEnvelope(await actCmd.execute("8", {
+		contextRef,
+		action: { kind: "activate", ref: candidates[0]!.ref },
+	}, undefined, undefined, { operationOwnerId: "owner-a" }));
+	assert.equal((identityStop.outcome as { code?: string }).code, "IDENTITY_CHANGED");
+	assert.equal((identityStop.outcome as { ok: boolean }).ok, false);
+	assert.notEqual((identityStop as { details?: { dispatched?: boolean } }).details?.dispatched, true);
+	// details from inlineJsonCommandResult
+	evidence.identityChanged = identityStop;
+	// reset epoch for further steps
+	observeEpoch = "epoch-2-document-changed";
 
-	// daemon restart expiry
-	port.expireAll();
-	assert.deepEqual(port.get(contextRef, "owner-a"), { error: "CONTEXT_EXPIRED" });
+	// re-view to rebind after identity change
+	const view2 = asEnvelope(await viewCmd.execute("9", { contextRef }, undefined, undefined, { operationOwnerId: "owner-a" }));
+	const candidates2 = view2.candidates as Array<{ ref: string; actions: string[] }>;
+	const fillRef2 = candidates2.find((c) => c.actions.includes("fill"))?.ref ?? candidates2[0]!.ref;
+
+	// stale ref (old a_01 from prior view) should fail REF_STALE
+	const stale = await actCmd.execute("10", {
+		contextRef,
+		action: { kind: "fill", ref: "a_99_missing", value: "x" },
+	}, undefined, undefined, { operationOwnerId: "owner-a" });
+	const staleCode = errorCode(stale);
+	assert.equal(staleCode, "REF_STALE", `expected REF_STALE, got ${staleCode}`);
+	evidence.staleRef = { code: staleCode };
+
+	// aborted program (unregistered ref in observation) never completed
+	const deadObs = fixtureObservation({
+		pageEpoch: observeEpoch,
+		actionables: [{ ref: "bp-ref://element/unregistered-missing", kind: "textbox", name: "Ghost" }],
+		saved: undefined,
+	} as never);
+	setAgentObserveRunnerForTests(async () => deadObs);
+	const viewDead = asEnvelope(await viewCmd.execute("11", {}, undefined, undefined, { operationOwnerId: "owner-dead" }));
+	const ctxDead = (viewDead.context as { contextRef: string }).contextRef;
+	const deadFillRef = (viewDead.candidates as Array<{ ref: string }>)[0]!.ref;
+	const failTurn = asEnvelope(await actCmd.execute("12", {
+		contextRef: ctxDead,
+		action: { kind: "fill", ref: deadFillRef, value: "should-fail" },
+	}, undefined, undefined, { operationOwnerId: "owner-dead" }));
+	assert.notEqual((failTurn.outcome as { status: string }).status, "completed");
+	assert.equal((failTurn.outcome as { ok: boolean }).ok, false);
+	evidence.abortedFill = failTurn;
+
+	// trace store fail-open: outcome preserved when store fails
+	setAgentObserveRunnerForTests(async () => fixtureObservation({ pageEpoch: "epoch-trace" }));
+	const viewT = asEnvelope(await viewCmd.execute("13", {}, undefined, undefined, { operationOwnerId: "owner-trace" }));
+	const ctxT = (viewT.context as { contextRef: string }).contextRef;
+	const fillT = (viewT.candidates as Array<{ ref: string; actions: string[] }>).find((c) => c.actions.includes("fill"))?.ref
+		?? (viewT.candidates as Array<{ ref: string }>)[0]!.ref;
+	getAgentTraceStore().forceNextRecordFailure("forced_trace_failure");
+	const fillWithTraceFail = asEnvelope(await actCmd.execute("14", {
+		contextRef: ctxT,
+		action: { kind: "fill", ref: fillT, value: "ok@example.test" },
+	}, undefined, undefined, { operationOwnerId: "owner-trace" }));
+	assert.equal((fillWithTraceFail.outcome as { status: string }).status, "completed");
+	assert.equal((fillWithTraceFail.outcome as { ok: boolean }).ok, true);
+	assert.equal((fillWithTraceFail.trace as { available: boolean }).available, false);
+	assert.equal((fillWithTraceFail.trace as { unavailableReason?: string }).unavailableReason, "forced_trace_failure");
+	evidence.traceFailOpen = fillWithTraceFail;
+
+	// daemon restart expires contexts
+	agentContextPort().expireAll();
+	assert.deepEqual(agentContextPort().get(contextRef, "owner-a"), { error: "CONTEXT_EXPIRED" });
+	evidence.daemonExpire = { error: "CONTEXT_EXPIRED" };
+
+	// write evidence for verifier
+	const scratch = process.env.AGENT_COMPLETE_SCRATCH ?? path.join(tmpdir(), "agent-complete-evidence");
+	mkdirSync(scratch, { recursive: true });
+	writeFileSync(path.join(scratch, "agent-complete-invoke.json"), JSON.stringify(evidence, null, 2));
 
 	setAgentObserveRunnerForTests(undefined);
 	resetAgentContextServiceForTests();

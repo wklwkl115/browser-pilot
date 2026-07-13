@@ -21,11 +21,11 @@ import {
 } from "./agentFacadeRuntime.js";
 import { agentError } from "./agentErrors.js";
 import { failClosedAgentView } from "./agentEnvelopeSanitize.js";
-import { getActionConfirmationService } from "../../apps/daemon/ActionConfirmationService.js";
+import { getActionConfirmationService, semanticActionDigest } from "../../apps/daemon/ActionConfirmationService.js";
 import { getAgentTraceStore } from "../../apps/daemon/AgentTraceStore.js";
 import { pageReanchorReason } from "../../kernels/session/pageIdentity.js";
 import { identityFromObservation } from "../../kernels/agent/agentView.js";
-import { mayAutoReplayMutation } from "../../kernels/agent/recoveryPolicy.js";
+import { classifyRecovery, mayAutoReplayMutation } from "../../kernels/agent/recoveryPolicy.js";
 
 const ACTION_KINDS = ["activate", "fill", "press", "scroll", "select", "drag", "submit", "navigate", "history"] as const;
 const SCROLL_DIRS = new Set(["up", "down", "left", "right"]);
@@ -150,17 +150,111 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 
 				const action = params.action as SemanticActionV1;
 				const revisionBefore = record.revision;
+				const automaticActionsTaken: Array<{ kind: "ensure_runtime"; result: "reused" } | { kind: "reanchor_page"; reason: string }> = [
+					{ kind: "ensure_runtime", result: "reused" },
+				];
+				const maxChars = commandMaxChars(params, "browser_observe");
 
-				// Pre-dispatch identity stop: if context claims anchored but identity drifted, re-anchor/stop.
 				if (record.state === "ambiguous") {
 					throw agentError("TARGET_AMBIGUOUS", "target lineage is ambiguous; choose tab via browser_view");
 				}
 
+				// Pre-dispatch identity preflight: observe current page and stop before mutation on identity change.
+				const preflightBudget = Math.min(remainingBudget(deadlineAt, postViewReserveMs + 2_000), 8_000);
+				if (preflightBudget < 500) {
+					throw agentError("INVALID_AGENT_REQUEST", "insufficient budget for pre-dispatch identity preflight");
+				}
+				let preObservation: import("../../kernels/abml/pageObservation.js").PageObservationV3 | undefined;
+				try {
+					preObservation = await runCanonicalObserve(server, {
+						tabId: record.pageIdentity?.tabId,
+						browserSessionId: record.pageIdentity?.browserSessionId,
+						timeoutMs: preflightBudget,
+					});
+				} catch {
+					// If observe fails, still allow act only when context has no prior identity (first bind).
+					if (record.pageIdentity) {
+						throw agentError("RUNTIME_NOT_READY", "pre-dispatch observe failed; cannot prove page identity");
+					}
+				}
+				if (preObservation) {
+					const currentIdentity = identityFromObservation(preObservation);
+					const reanchorReason = pageReanchorReason(record.pageIdentity, currentIdentity);
+					if (reanchorReason) {
+						const recovery = classifyRecovery({
+							condition: reanchorReason === "target_replaced"
+								? "unique_target_replacement_pre_dispatch"
+								: "page_identity_changed_pre_dispatch",
+							dispatchBoundary: "prepared",
+						});
+						// Always stop mutation with old refs; re-anchor and return fresh view.
+						port.applyIdentity(record, currentIdentity, reanchorReason);
+						automaticActionsTaken.push({ kind: "reanchor_page", reason: reanchorReason });
+						const freshView = projectAndBindView({
+							observation: preObservation,
+							record,
+							maxChars,
+						});
+						const safeView = failClosedAgentView(freshView as unknown as Record<string, unknown>) as unknown as typeof freshView;
+						const blockedTurn = {
+							schema: AGENT_TURN_SCHEMA,
+							context: contextSummary(record, true),
+							outcome: {
+								classification: "inconclusive" as const,
+								status: "ambiguous" as const,
+								completionVerified: false,
+								ok: false,
+								code: "IDENTITY_CHANGED",
+								replay: "do_not_retry" as const,
+								automaticActionsTaken,
+							},
+							viewStatus: "available" as const,
+							view: safeView,
+							decision: decideAfterAct({
+								outcome: {
+									classification: "inconclusive",
+									status: "ambiguous",
+									completionVerified: false,
+									ok: false,
+									replay: "do_not_retry",
+									automaticActionsTaken,
+								},
+								candidates: safeView.candidates,
+								reads: safeView.reads,
+							}),
+							trace: { available: false, unavailableReason: "not_dispatched_identity_changed" },
+							recovery: { action: recovery.action, mutationReplay: recovery.mutationReplay, reason: reanchorReason },
+						};
+						return inlineJsonCommandResult(blockedTurn, {
+							action: "act",
+							code: "IDENTITY_CHANGED",
+							reanchorReason,
+							dispatched: false,
+						}, params, "browser_execute");
+					}
+					// Keep preObservation for post-view reuse when identity stable.
+					if (!record.pageIdentity && currentIdentity) {
+						port.applyIdentity(record, currentIdentity);
+					}
+				}
+
 				const compiledOrError = compileSemanticAction(action, record.candidateBindings);
 				if (!("execution" in compiledOrError)) {
+					// Stale/missing candidate ref after rebind → REF_STALE / ACTION_NOT_ALLOWED
 					throw agentError(compiledOrError.code, compiledOrError.message);
 				}
 				const compiled = compiledOrError;
+
+				// Stale binding identity vs context anchor
+				for (const binding of compiled.targetBindings) {
+					const mismatch = pageReanchorReason(binding.pageIdentity, record.pageIdentity);
+					if (mismatch) {
+						throw agentError("REF_STALE", `candidate binding identity stale: ${mismatch}`, {
+							ref: binding.ref,
+							reanchorReason: mismatch,
+						});
+					}
+				}
 
 				// Action confirmation (sensitive/submit/navigate)
 				const confirmSvc = getActionConfirmationService();
@@ -194,7 +288,7 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 								ok: false,
 								code: "CONFIRMATION_REQUIRED",
 								replay: "do_not_retry" as const,
-								automaticActionsTaken: [],
+								automaticActionsTaken,
 							},
 							viewStatus: "unavailable" as const,
 							viewUnavailableReason: "CONFIRMATION_REQUIRED",
@@ -224,18 +318,20 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 					if (decision.kind === "mismatch") throw agentError("CONFIRMATION_MISMATCH", `confirmation mismatch: ${decision.reason}`, { decision });
 				}
 
-				// Hard rule: never auto-replay after ACK (dispatch boundary starts not_started).
-				if (!mayAutoReplayMutation("not_started")) {
-					throw agentError("INVALID_AGENT_REQUEST", "mutation replay denied");
+				// Deny identical mutation re-dispatch after ACK until identity re-anchor clears the marker.
+				const actionDigest = semanticActionDigest(action);
+				if (record.lastAckedActionDigest === actionDigest && !mayAutoReplayMutation("acked")) {
+					throw agentError("INVALID_AGENT_REQUEST", "mutation already acknowledged; do not replay", {
+						code: "MUTATION_REPLAY_DENIED",
+						replay: "do_not_retry",
+						actionDigest,
+					});
 				}
 
 				const operationId = `agent_act_${randomBytes(8).toString("hex")}`;
 				const begin = port.beginMutation(record, operationId);
-				if ("error" in begin) throw agentError(begin.error, "context is busy with another mutation");
+				if ("error" in begin) throw agentError(begin.error, "context is busy with another mutation", { code: "CONTEXT_BUSY" });
 
-				const automaticActionsTaken: Array<{ kind: "ensure_runtime"; result: "reused" } | { kind: "reanchor_page"; reason: string }> = [
-					{ kind: "ensure_runtime", result: "reused" },
-				];
 				let outcomeStatus: import("../../kernels/session/browserOperation.js").BrowserOperationStatus = "failed";
 				let completionSource: string | undefined;
 				let rawOperation: Record<string, unknown> | undefined;
@@ -304,7 +400,12 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 								browserSessionId,
 							});
 						});
-						dispatchBoundary = outcome.dispatch?.acknowledged ? "acked" : "sent_unacked";
+						// withBrowserOperation always arms+dispatches; treat return as post-dispatch (sent/acked).
+						const acked = outcome.dispatch?.acknowledged === true || outcome.dispatch?.started === true;
+						dispatchBoundary = acked ? "acked" : "sent_unacked";
+						if (acked && !mayAutoReplayMutation("acked")) {
+							record.lastAckedActionDigest = actionDigest;
+						}
 						outcomeStatus = outcome.status;
 						completionSource = outcome.completion?.source;
 						rawOperation = outcome as unknown as Record<string, unknown>;
@@ -334,10 +435,11 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 							signal: signal ?? new AbortController().signal,
 							evalTimeoutMs: opBudget,
 						}));
-						dispatchBoundary = outcome.dispatch?.acknowledged ? "acked" : "sent_unacked";
-						// Post-ACK hard stop for any automatic replay path
-						if (dispatchBoundary === "acked" && !mayAutoReplayMutation("acked")) {
-							/* settle only — never re-dispatch */
+						// Program results rarely set acknowledged=true; started means dispatch crossed the boundary.
+						const acked = outcome.dispatch?.acknowledged === true || outcome.dispatch?.started === true;
+						dispatchBoundary = acked ? "acked" : "sent_unacked";
+						if (acked && !mayAutoReplayMutation("acked")) {
+							record.lastAckedActionDigest = actionDigest;
 						}
 						outcomeStatus = outcome.status;
 						completionSource = outcome.completion?.source;
@@ -346,13 +448,10 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 					}
 				} finally {
 					port.endMutation(record, outcomeStatus === "completed" ? "anchored" : "needs_reanchor");
+					if (record.lastAckedActionDigest === actionDigest) {
+						record.lastAckedAtRevision = record.revision;
+					}
 				}
-
-				const agentOutcome = mapBrowserOperationToAgentOutcome(outcomeStatus, {
-					completionSource,
-					automaticActionsTaken,
-				});
-				assertAgentOutcomeInvariants(agentOutcome);
 
 				// Outcome-first post-view: failures fail open; never rewrite settled outcome.
 				let viewStatus: "available" | "unavailable" = "unavailable";
@@ -361,11 +460,18 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 				const settledStatus = outcomeStatus;
 				const viewBudget = Math.max(500, deadlineAt - Date.now());
 				try {
-					const observation = await runCanonicalObserve(server, {
-						tabId: record.pageIdentity?.tabId,
-						browserSessionId: record.pageIdentity?.browserSessionId,
-						timeoutMs: Math.min(viewBudget, postViewReserveMs + 1_000),
-					});
+					// Prefer a fresh post-action observe; fall back to preflight only if budget is exhausted.
+					const observation = viewBudget >= 800
+						? await runCanonicalObserve(server, {
+							tabId: record.pageIdentity?.tabId,
+							browserSessionId: record.pageIdentity?.browserSessionId,
+							timeoutMs: Math.min(viewBudget, postViewReserveMs + 1_000),
+						})
+						: preObservation ?? await runCanonicalObserve(server, {
+							tabId: record.pageIdentity?.tabId,
+							browserSessionId: record.pageIdentity?.browserSessionId,
+							timeoutMs: Math.min(1_000, postViewReserveMs),
+						});
 					const currentIdentity = identityFromObservation(observation);
 					const reanchor = pageReanchorReason(record.pageIdentity, currentIdentity);
 					if (reanchor) {
@@ -375,7 +481,7 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 					view = projectAndBindView({
 						observation,
 						record,
-						maxChars: commandMaxChars(params, "browser_observe"),
+						maxChars,
 					});
 					viewStatus = "available";
 					viewUnavailableReason = undefined;
@@ -385,6 +491,12 @@ export function defineAgentActCommand({ commands, ensureStarted }: CommandRegist
 				}
 				// Guard: post-view cannot change settled operation status
 				outcomeStatus = settledStatus;
+
+				const agentOutcome = mapBrowserOperationToAgentOutcome(outcomeStatus, {
+					completionSource,
+					automaticActionsTaken,
+				});
+				assertAgentOutcomeInvariants(agentOutcome);
 
 				const decision = decideAfterAct({
 					outcome: agentOutcome,
