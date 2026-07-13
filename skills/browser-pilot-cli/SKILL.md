@@ -58,13 +58,21 @@ Treat `commands --json`, live help, schema, validate, generated contracts, and c
    browser-pilot execute --target-ref <targetRef> --script "document.title" --json
    ```
 
-   Use `execute --script` for JavaScript or `execute --program @program.json` for trusted CDP mouse/key/text/program frames. Supply exactly one input. Use `command --command '<inline-json>'` only when the normal command surface cannot express a required native operation; pass inline JSON only.
+   Use `execute --script` for JavaScript or `execute --program @program.json` for trusted CDP mouse/key/text/program frames. Supply exactly one input. For a non-idempotent mutation, also supply a stable `--intent-id` and keep it unchanged across every recovery attempt. Use `command --command '<inline-json>'` only when the normal command surface cannot express a required native operation; pass inline JSON only.
+
+   A physical program that does not navigate or download should finish with exactly one explicit postcondition frame:
+
+   ```json
+   {"eval":"document.querySelector('[aria-pressed=true]') !== null","verify":true}
+   ```
+
+   The verification frame must be the sole final verifier and passes only when it resolves to `true` or an object containing `{"verified":true}`. Browser Pilot revalidates the fully expanded frame sequence, preserves physical-frame acknowledgement even when the result transport is lost, and returns `completed/program-verified` only after that proof. Within the current daemon process, a completed `intentId` is reused only for the same script/program payload; an uncertain repeat is blocked and a different payload is rejected as an intent conflict.
 
 5. Classify the returned operation before continuing.
 
    Require the same state-changing call to return `browser-operation/v2`. Treat only `status:"completed"` with `classification:"success"`, `completionVerified:true`, and `ok:true` as success. Treat `effect_observed`, `ambiguous`, `target_lost`, and `deadline` as inconclusive; treat `no_effect`, `stalled`, and `failed` as failures.
 
-   Read `dispatch`, `completion.source`, `signals`, `diagnostics`, `continuation`, `saved`, and `artifact_hints`. Never equate acknowledgement or a visible effect with verified completion. Do not blindly replay an acknowledged mutation; follow `observe`, `reacquire_target`, `inspect_diagnostics`, `verify_command_state`, or `inspect_artifact` guidance according to the returned continuation.
+   Read `dispatch`, `completion.source`, `signals`, `diagnostics`, `continuation`, `saved`, and `artifact_hints`. Never equate acknowledgement or a visible effect with verified completion. Do not blindly replay an acknowledged mutation; follow `observe`, `reacquire_target`, `inspect_diagnostics`, `verify_command_state`, or `inspect_artifact` guidance according to the returned continuation. Browser Pilot serializes writes on the same owner/session/stable target. After an acknowledged but unverified mutation, later `execute` or native-command writes remain blocked until a fresh canonical `observe` begins after settlement and verifies the same page identity; reusing the same `intentId` remains blocked even after observation. Mint a new intent only after read-only evidence proves the prior intent did not take effect.
 
 6. Expand large evidence progressively.
 

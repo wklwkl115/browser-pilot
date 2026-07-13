@@ -101,6 +101,19 @@ export class BrowserBridgeServer implements ConsentPort {
 					this.recordOperationEvent(operation.operationId, { type: "target_lost", tabId: fromTabId, generation: operation.generation, data: { reason: "target_replaced", replacementTabId: toTabId } });
 				}
 			},
+			recordOperationWorkerRestart: (details) => {
+				for (const operation of this.state.operations.snapshot({ includeTerminal: false })) {
+					const selectedClient = this.state.browserSessions.selectedOpenClient(this.browserSession(operation.browserSessionId));
+					const operationInstanceId = selectedClient ? this.clients.info(selectedClient)?.extensionInstanceId : undefined;
+					if (details.extensionInstanceId && operationInstanceId !== details.extensionInstanceId) continue;
+					this.recordOperationEvent(operation.operationId, {
+						type: "observer_lost",
+						tabId: operation.tabId,
+						generation: operation.generation,
+						data: { reason: "extension_worker_restarted", ...details },
+					});
+				}
+			},
 		});
 		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws, reason) => this.unregisterClient(ws, reason), { onTick: (now) => this.sweepLeases(now) });
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd, maxPayloadBytes: options.maxPayloadBytes });
@@ -129,7 +142,7 @@ export class BrowserBridgeServer implements ConsentPort {
 		this.tabs.clear();
 		this.releaseAllOperationWaiters();
 		this.knownRecorderStates.clear();
-		this.state.operations.clear();
+		this.state.operations.clear({ preserveMutationEvidence: true });
 		this.state.observationSnapshots.clear();
 		this.state.perceptionLedger.clear();
 		await this.httpEndpoint.stop();
@@ -334,6 +347,14 @@ export class BrowserBridgeServer implements ConsentPort {
 		const next = this.state.operations.finish(operationId, outcome);
 		if (next) this.releaseOperationWaiters(operationId);
 		return next;
+	}
+
+	mutationReplayGuard(input: import("../../kernels/session/operationRegistry.js").SessionMutationGuardInput) {
+		return this.state.operations.mutationReplayGuard(input);
+	}
+
+	markMutationObserved(input: Omit<import("../../kernels/session/operationRegistry.js").SessionMutationGuardInput, "intentId">): number {
+		return this.state.operations.markMutationObserved(input);
 	}
 
 	getOperation(operationId: string): BrowserActiveOperationInfo | undefined {

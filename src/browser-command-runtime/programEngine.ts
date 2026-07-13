@@ -14,8 +14,9 @@ import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.
 import type { ResourceRefDescriptor as RefDescriptor } from "../ports/ResourceRefStorePort.js";
 import { resolveRefUriDetailed, resolveRefUri } from "../resources/resourceRefs.js";
 import { prepareExecuteStdlib } from "./executeStdlib.js";
-import { dispatchProgramElement } from "./programDispatcher.js";
+import { dispatchProgramElement, validateProgram } from "./programDispatcher.js";
 import { isRecord } from "../utils/records.js";
+import { errorWasAcknowledged } from "../utils/errors.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -37,16 +38,20 @@ export interface ProgramFrameResult {
 	step: number;
 	kind: string;
 	ok: boolean;
+	acknowledged?: boolean;
 	durationMs: number;
 	result?: unknown;
 	resolved?: { x: number; y: number };
 	eventCount?: number;
+	verification?: { passed: boolean };
 	error?: string;
 }
 
 export interface ProgramResult {
 	frames: ProgramFrameResult[];
 	result: unknown;
+	acknowledged: boolean;
+	verification?: { step: number; passed: boolean; result: unknown };
 	aborted?: { reason: string; atStep: number; newUrl?: string };
 	refCheckResults?: Record<string, "alive" | "stale-but-relocatable" | "dead">;
 }
@@ -58,6 +63,36 @@ const MAX_FRAMES = 60;
 const DEFAULT_TOTAL_TIMEOUT_MS = 55_000; // leaves 5s headroom from 60s tool limit
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+function verificationPassed(value: unknown): boolean {
+	return value === true || (isRecord(value) && value.verified === true);
+}
+
+function programResult(
+	frames: ProgramFrameResult[],
+	result: unknown,
+	extras: Pick<ProgramResult, "aborted" | "refCheckResults"> = {},
+): ProgramResult {
+	const verifier = [...frames].reverse().find((frame) => frame.verification !== undefined);
+	return {
+		frames,
+		result,
+		acknowledged: frames.some((frame) => frame.acknowledged === true),
+		...(verifier ? { verification: { step: verifier.step, passed: verifier.verification!.passed, result: verifier.result } } : {}),
+		...extras,
+	};
+}
+
+function failedFrame(step: number, kind: string, startedAt: number, error: unknown): ProgramFrameResult {
+	return {
+		step,
+		kind,
+		ok: false,
+		...(errorWasAcknowledged(error) ? { acknowledged: true } : {}),
+		durationMs: Date.now() - startedAt,
+		error: error instanceof Error ? error.message : String(error),
+	};
+}
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
@@ -319,17 +354,13 @@ async function executeEvalFrame(
 			step,
 			kind: "eval",
 			ok: true,
+			acknowledged: result.acknowledged,
 			durationMs: Date.now() - startedAt,
 			result: evalResult,
+			...(element.verify === true ? { verification: { passed: verificationPassed(evalResult) } } : {}),
 		};
 	} catch (error) {
-		return {
-			step,
-			kind: "eval",
-			ok: false,
-			durationMs: Date.now() - startedAt,
-			error: error instanceof Error ? error.message : String(error),
-		};
+		return failedFrame(step, "eval", startedAt, error);
 	}
 }
 
@@ -444,12 +475,13 @@ async function executeMouseFrame(
 			step,
 			kind,
 			ok: true,
+			acknowledged: result.acknowledged,
 			durationMs: Date.now() - startedAt,
 			...(resolved ? { resolved } : {}),
 			...(eventCount !== undefined ? { eventCount } : {}),
 		};
 	} catch (error) {
-		return { step, kind, ok: false, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) };
+		return failedFrame(step, kind, startedAt, error);
 	}
 }
 
@@ -490,11 +522,12 @@ async function executeKeyFrame(
 			step,
 			kind,
 			ok: true,
+			acknowledged: result.acknowledged,
 			durationMs: Date.now() - startedAt,
 			...(eventCount !== undefined ? { eventCount } : {}),
 		};
 	} catch (error) {
-		return { step, kind, ok: false, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) };
+		return failedFrame(step, kind, startedAt, error);
 	}
 }
 
@@ -525,11 +558,12 @@ async function executeTextFrame(
 			step,
 			kind: "text",
 			ok: true,
+			acknowledged: result.acknowledged,
 			durationMs: Date.now() - startedAt,
 			...(eventCount !== undefined ? { eventCount } : {}),
 		};
 	} catch (error) {
-		return { step, kind: "text", ok: false, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) };
+		return failedFrame(step, "text", startedAt, error);
 	}
 }
 
@@ -550,9 +584,9 @@ async function executeWaitFrame(
 			timeoutMs: Math.min(ms * 2 + 1000, 5000),
 		});
 
-		return { step, kind: "wait", ok: true, durationMs: Date.now() - startedAt, result: result.data };
+		return { step, kind: "wait", ok: true, acknowledged: result.acknowledged, durationMs: Date.now() - startedAt, result: result.data };
 	} catch (error) {
-		return { step, kind: "wait", ok: false, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) };
+		return failedFrame(step, "wait", startedAt, error);
 	}
 }
 
@@ -620,12 +654,7 @@ export async function executeProgram(
 	// Ref precheck
 	const refCheck = precheckRefs(program, ctx);
 	if (refCheck.deadRefs.length > 0) {
-		return {
-			frames,
-			result: undefined,
-			aborted: { reason: `ref precheck failed — dead refs: ${refCheck.deadRefs.join(", ")}`, atStep: -1 },
-			refCheckResults: refCheck.results,
-		};
+		return programResult(frames, undefined, { aborted: { reason: `ref precheck failed — dead refs: ${refCheck.deadRefs.join(", ")}`, atStep: -1 }, refCheckResults: refCheck.results });
 	}
 
 	// Expand phase
@@ -633,25 +662,25 @@ export async function executeProgram(
 	for (let i = 0; i < program.length; i++) {
 		const dispatched = dispatchProgramElement(program[i], i);
 		if (!dispatched.ok) {
-			return { frames, result: undefined, aborted: { reason: dispatched.error, atStep: i }, refCheckResults: refCheck.results };
+			return programResult(frames, undefined, { aborted: { reason: dispatched.error, atStep: i }, refCheckResults: refCheck.results });
 		}
 
 		if (dispatched.discriminator === "eval" && dispatched.element.expand === true) {
 			const evalResult = await executeEvalFrame(dispatched.element, ctx, i);
 			frames.push(evalResult);
 			if (!evalResult.ok) {
-				return { frames, result: undefined, aborted: { reason: evalResult.error ?? "expand eval failed", atStep: i }, refCheckResults: refCheck.results };
+				return programResult(frames, undefined, { aborted: { reason: evalResult.error ?? "expand eval failed", atStep: i }, refCheckResults: refCheck.results });
 			}
 			if (!Array.isArray(evalResult.result)) {
-				return { frames, result: undefined, aborted: { reason: `Step ${i}: expand=true but eval result is not an array`, atStep: i }, refCheckResults: refCheck.results };
+				return programResult(frames, undefined, { aborted: { reason: `Step ${i}: expand=true but eval result is not an array`, atStep: i }, refCheckResults: refCheck.results });
 			}
 			for (let j = 0; j < evalResult.result.length; j++) {
 				if (expanded.length >= MAX_FRAMES) {
-					return { frames, result: undefined, aborted: { reason: `program exceeded ${MAX_FRAMES} frame limit after expansion`, atStep: i }, refCheckResults: refCheck.results };
+					return programResult(frames, undefined, { aborted: { reason: `program exceeded ${MAX_FRAMES} frame limit after expansion`, atStep: i }, refCheckResults: refCheck.results });
 				}
 				const subDispatched = dispatchProgramElement(evalResult.result[j], i);
 				if (!subDispatched.ok) {
-					return { frames, result: undefined, aborted: { reason: `Step ${i} expanded[${j}]: ${subDispatched.error}`, atStep: i }, refCheckResults: refCheck.results };
+					return programResult(frames, undefined, { aborted: { reason: `Step ${i} expanded[${j}]: ${subDispatched.error}`, atStep: i }, refCheckResults: refCheck.results });
 				}
 				expanded.push({ element: subDispatched.element, discriminator: subDispatched.discriminator, modifiers: subDispatched.modifiers });
 			}
@@ -659,6 +688,21 @@ export async function executeProgram(
 		} else {
 			expanded.push({ element: dispatched.element, discriminator: dispatched.discriminator, modifiers: dispatched.modifiers });
 		}
+	}
+	const expandedProgram = expanded.map(({ element, modifiers }) => ({ ...element, ...modifiers }));
+	const expandedValidation = validateProgram(expandedProgram);
+	if (!expandedValidation.ok) {
+		return programResult(frames, ctx.lastEvalResult, {
+			aborted: { reason: `Expanded ${expandedValidation.error}`, atStep: expandedValidation.step },
+			refCheckResults: refCheck.results,
+		});
+	}
+	const nestedExpandStep = expanded.findIndex(({ discriminator, element }) => discriminator === "eval" && element.expand === true);
+	if (nestedExpandStep >= 0) {
+		return programResult(frames, ctx.lastEvalResult, {
+			aborted: { reason: `Expanded Step ${nestedExpandStep}: nested expand frames are not supported`, atStep: nestedExpandStep },
+			refCheckResults: refCheck.results,
+		});
 	}
 
 	// Execute expanded sequence. Navigation detection is checked only AFTER frames that can
@@ -669,7 +713,7 @@ export async function executeProgram(
 	let lastUrl = await getCurrentUrl(ctx);
 	for (let i = 0; i < expanded.length; i++) {
 		if (combinedSignal.aborted) {
-			return { frames, result: ctx.lastEvalResult, aborted: { reason: "timeout", atStep: i }, refCheckResults: refCheck.results };
+			return programResult(frames, ctx.lastEvalResult, { aborted: { reason: "timeout", atStep: i }, refCheckResults: refCheck.results });
 		}
 
 		const { element, discriminator, modifiers } = expanded[i];
@@ -680,7 +724,7 @@ export async function executeProgram(
 				// Wait but respect abort signal
 				await sleep(delayMs);
 				if (combinedSignal.aborted) {
-					return { frames, result: ctx.lastEvalResult, aborted: { reason: "timeout", atStep: i }, refCheckResults: refCheck.results };
+					return programResult(frames, ctx.lastEvalResult, { aborted: { reason: "timeout", atStep: i }, refCheckResults: refCheck.results });
 				}
 			}
 		}
@@ -689,7 +733,7 @@ export async function executeProgram(
 		frames.push(frameResult);
 
 		if (!frameResult.ok) {
-			return { frames, result: ctx.lastEvalResult, aborted: { reason: frameResult.error ?? "frame failed", atStep: i }, refCheckResults: refCheck.results };
+			return programResult(frames, ctx.lastEvalResult, { aborted: { reason: frameResult.error ?? "frame failed", atStep: i }, refCheckResults: refCheck.results });
 		}
 
 		if (discriminator === "eval") {
@@ -700,13 +744,13 @@ export async function executeProgram(
 		if (frameCanNavigate(discriminator, element)) {
 			const currentUrl = await getCurrentUrl(ctx);
 			if (currentUrl !== undefined && lastUrl !== undefined && currentUrl !== lastUrl) {
-				return { frames, result: ctx.lastEvalResult, aborted: { reason: "navigation", atStep: i, newUrl: currentUrl }, refCheckResults: refCheck.results };
+				return programResult(frames, ctx.lastEvalResult, { aborted: { reason: "navigation", atStep: i, newUrl: currentUrl }, refCheckResults: refCheck.results });
 			}
 			lastUrl = currentUrl ?? lastUrl;
 		}
 	}
 
-	return { frames, result: ctx.lastEvalResult, refCheckResults: refCheck.results };
+	return programResult(frames, ctx.lastEvalResult, { refCheckResults: refCheck.results });
 }
 
 // ── collectProgramTargetRefs ───────────────────────────────────────────────

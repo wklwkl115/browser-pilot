@@ -1,7 +1,7 @@
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
 import type { SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/leaseRegistry.js";
 import type { SessionObservationSnapshotInfo } from "../kernels/session/observationSnapshotRegistry.js";
-import type { SessionActiveOperationInfo, SessionOperationBeginInput } from "../kernels/session/operationRegistry.js";
+import type { SessionActiveOperationInfo, SessionMutationGuardInput, SessionMutationReplayGuard, SessionOperationBeginInput } from "../kernels/session/operationRegistry.js";
 import type { BrowserOperationEvent, BrowserOperationLateEffect, BrowserOperationOutcome } from "../kernels/session/browserOperation.js";
 import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionObjectiveKey, PerceptionTraceSnapshot, PerceptionTraceTerm } from "../kernels/session/perceptionLedger.js";
 import type { TemporalConfidence, TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../kernels/temporal/types.js";
@@ -154,6 +154,8 @@ export interface BrowserCommandOperationPort {
 	waitForOperationChange?(operationId: string, afterRevision: number, timeoutMs: number, signal?: AbortSignal): Promise<CommandActiveOperationInfo | undefined>;
 	recordOperationEvent?(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "timestamp"> & { sequence?: number; timestamp?: number }): CommandActiveOperationInfo | undefined;
 	surfaceLateEffects?(input: { ownerId?: string; browserSessionId?: string; excludeOperationId?: string }): BrowserOperationLateEffect[];
+	mutationReplayGuard?(input: SessionMutationGuardInput): SessionMutationReplayGuard | undefined;
+	markMutationObserved?(input: Omit<SessionMutationGuardInput, "intentId">): number;
 }
 
 export interface BrowserCommandRecorderStatePort {

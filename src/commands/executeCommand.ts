@@ -17,6 +17,7 @@ const PROGRAM_MAX_FRAMES = 60;
 type ExecuteParams = {
 	script?: unknown;
 	program?: unknown;
+	intentId?: unknown;
 	browserSessionId?: unknown;
 	tabId?: number | string;
 	targetRef?: string;
@@ -104,10 +105,12 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 			"Use script for JavaScript or program for trusted CDP mouse/key/text frames; pass exactly one.",
 			"The call remains open until completed, effect_observed, no_effect, stalled, target_lost, failed, ambiguous, or deadline. effect_observed is browser evidence, not proof of business success; no_effect and stalled are not success.",
 			"Follow continuation before another mutation. Large resolved values stay in saved.path and are addressed by artifact_hints; inspect them instead of replaying the execute call.",
+			"For non-idempotent mutations, supply a stable intentId and keep both it and the script/program payload unchanged across recovery attempts. A physical program can complete only through navigation/download evidence or the sole final eval frame with verify:true whose value is true or {verified:true}; the fully expanded sequence is revalidated. Within the current daemon process, the same completed intent+payload is reused without dispatch, while uncertain replay or payload conflict is blocked.",
 		],
 		parameters: strictCommandParameters({
 			script: Type.Optional(Type.String({ description: "JavaScript to execute. A non-undefined resolved value is mechanical completed/script-resolved evidence." })),
-			program: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), { description: "Trusted CDP input/eval frames. Physical frames require an observed browser effect." })),
+			program: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), { description: "Trusted CDP input/eval frames. Physical mutations should end with an explicit eval frame verify:true; it passes only on true or {verified:true}." })),
+			intentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", description: "Stable daemon-process idempotency intent for a non-idempotent mutation. Reuse it only with the identical script/program payload; completed results are reused and uncertain/conflicting repeats are not dispatched." })),
 			...sharedTabScopedToolParams(),
 		}),
 		validateArguments: validateExecuteArguments,
@@ -126,6 +129,8 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					command: prepared.mode === "program" ? "program" : "javascript",
 					mode: prepared.mode,
 					physicalProgram: prepared.mode === "program" ? prepared.physical : false,
+					intentId: typeof params.intentId === "string" ? params.intentId : undefined,
+					intentPayload: prepared.mode === "program" ? { mode: prepared.mode, program: prepared.program } : { mode: prepared.mode, script: prepared.script },
 					browserSessionId,
 					tabId,
 					targetRef: typeof rawTarget === "string" ? rawTarget : undefined,

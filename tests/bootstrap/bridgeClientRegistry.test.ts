@@ -63,15 +63,32 @@ test("supersedeInstanceClients is a no-op without an instance id (older extensio
 test("connection metrics tally connects, disconnects, sw-restarts, and reconnect latency", () => {
 	const registry = new BrowserBridgeClientRegistry(18765);
 	const a = connect(registry, "X", "boot-1");
-	registry.recordConnect(registry.classifyConnect(a, "X", "boot-1")); // cold
+	registry.recordConnect(registry.classifyConnect(a, "X", "boot-1"), "X", "boot-1"); // cold
 	registry.recordHandshake();
-	registry.recordDisconnect("ws_close");
+	registry.recordDisconnect("ws_close", "X");
 	const b = connect(registry, "X", "boot-2"); // peer a still open, new boot → sw-restart
-	registry.recordConnect(registry.classifyConnect(b, "X", "boot-2"));
+	registry.recordConnect(registry.classifyConnect(b, "X", "boot-2"), "X", "boot-2");
 	const m = registry.metrics();
 	assert.equal(m.connects, 2);
 	assert.equal(m.disconnects, 1);
 	assert.equal(m.swRestarts, 1);
 	assert.equal(m.reconnects, 1);
 	assert.equal(typeof m.lastReconnectLatencyMs, "number");
+});
+
+test("closed-socket worker reboot remains a sw-restart and same-socket restart does not reuse old latency", () => {
+	const registry = new BrowserBridgeClientRegistry(18765);
+	const first = connect(registry, "X", "boot-1");
+	registry.recordConnect(registry.classifyConnect(first, "X", "boot-1"), "X", "boot-1");
+	registry.recordHandshake();
+	registry.recordDisconnect("ws_close", "X");
+	first.close();
+	registry.unregister(first);
+	const second = connect(registry, "X", "boot-2");
+	assert.equal(registry.classifyConnect(second, "X", "boot-2"), "sw-restart");
+	registry.recordConnect("sw-restart", "X", "boot-2");
+	const reconnectLatency = registry.metrics().lastReconnectLatencyMs;
+	assert.equal(typeof reconnectLatency, "number");
+	registry.recordConnect("sw-restart", "X", "boot-3");
+	assert.equal(registry.metrics().lastReconnectLatencyMs, reconnectLatency);
 });

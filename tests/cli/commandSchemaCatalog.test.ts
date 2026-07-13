@@ -204,7 +204,7 @@ test("command schema characterization: key commands expose expected top-level pa
 		"targetRef",
 		"url",
 	].sort());
-	assert.deepEqual(Object.keys(schemaProperties(command("browser_execute").parameters)).sort(), ["program", "script", "tabId", "targetRef"].sort());
+	assert.deepEqual(Object.keys(schemaProperties(command("browser_execute").parameters)).sort(), ["intentId", "program", "script", "tabId", "targetRef"].sort());
 });
 
 test("command schema characterization: browser_observe metadata presents canonical no-mode ABML observation", () => {
@@ -362,6 +362,15 @@ test("command schema characterization: diff auto-baseline returns undefined when
 test("program dispatch characterization: discriminator boundary rejects ambiguous and malformed frames", () => {
 	assert.deepEqual([...PROGRAM_OP_DISCRIMINATORS], ["eval", "mouse", "key", "text", "wait"]);
 	assert.equal(validateProgram([{ eval: "document.title" }, { wait: 50, delay: 5 }]).ok, true);
+	assert.equal(validateProgram([{ mouse: "press", x: 10, y: 10 }, { mouse: "release", x: 10, y: 10 }, { eval: "true", verify: true }]).ok, true);
+
+	const verifierBeforeMutation = validateProgram([{ eval: "true", verify: true }, { text: "unsafe replay" }]);
+	assert.equal(verifierBeforeMutation.ok, false);
+	if (!verifierBeforeMutation.ok) assert.match(verifierBeforeMutation.error, /verification frame must be the final program frame/i);
+
+	const expandingVerifier = validateProgram([{ eval: "[1]", expand: true, verify: true }]);
+	assert.equal(expandingVerifier.ok, false);
+	if (!expandingVerifier.ok) assert.match(expandingVerifier.error, /verification frame cannot expand/i);
 
 	const ambiguous = dispatchProgramElement({ eval: "1", mouse: "click" }, 3);
 	assert.equal(ambiguous.ok, false);

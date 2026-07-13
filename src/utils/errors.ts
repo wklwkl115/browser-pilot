@@ -67,6 +67,14 @@ export function errorToPlain(error: unknown): Record<string, unknown> {
 	return compactError(error);
 }
 
+export function errorWasAcknowledged(error: unknown): boolean {
+	const plain = errorToPlain(error);
+	const details = isRecord(plain.details) ? plain.details : {};
+	const diagnostics = isRecord(details.diagnostics) ? details.diagnostics : {};
+	const latency = isRecord(diagnostics.latency) ? diagnostics.latency : {};
+	return plain.acknowledged === true || plain.acked === true || details.acknowledged === true || details.acked === true || latency.acked === true;
+}
+
 function stripStackFields(value: unknown, seen = new WeakSet<object>()): unknown {
 	if (value === null || value === undefined || typeof value !== "object") return value;
 	if (seen.has(value)) return "[Circular]";

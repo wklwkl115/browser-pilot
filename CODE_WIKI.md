@@ -159,14 +159,15 @@ src/apps/daemon/server.ts
   │ def.execute(...)；HTTP 请求保持到 operation 终态
   ▼
 src/commands/executeCommand.ts
-  │ withBrowserOperation()
-  │ 1. daemon ledger begin + target generation lock
-  │ 2. internal operation.begin（等待 observers armed）
-  ▼
+│ withBrowserOperation()
+│ 0. mutation replay guard（同 intent 复用完成结果；未 observe 的 ACK mutation 拒绝再次 dispatch）
+│ 1. daemon ledger begin + target generation lock
+│ 2. internal operation.begin（等待 observers armed）
+▼
 extension OperationCoordinator
   │ tabs/webNavigation/download/debugger/MutationObserver listeners 已安装
   ▼
-dispatch server.executeJavaScript(...)
+dispatch server.executeJavaScript(...) / programEngine physical frames
   ▼
 extension exec.ts
   │ foreground chrome.scripting.executeScript；background/CSP fallback 复用 persistent CDP Runtime.evaluate
@@ -174,8 +175,8 @@ extension exec.ts
   │ operation_event 持续上行到 daemon ledger
   ▼
 command-specific resolver
-  │ completed 只能由机械完成证据产生
-  │ 否则按 activity/pending/deadline 分类终态
+│ JavaScript resolve、navigation/download，或 physical program 最终 verify:true 后置条件产生 completed
+│ 否则按 activity/pending/deadline 分类终态
   ▼
 operation.finish + bounded page evidence
   ▼
@@ -652,6 +653,12 @@ Semantic validation 不启动 daemon/bridge、不访问浏览器、不写 artifa
 
 `continuation` 按 evidence domain 映射最小安全决策，而不是把所有非理想状态都变成页面观察：页面状态未验证时用 `observe`；target lost、tab close、new-tab fan-out 或 current target 不再可靠时用 `reacquire_target`；只有 outcome 确有 diagnostics 时才用 `inspect_diagnostics`；非页面不确定状态且没有 diagnostics 时用只读 `verify_command_state`；成功但纯结果被压缩时用 `inspect_artifact`。非成功状态均标记 `replay:"do_not_retry"`，已完成的后续读取标记 `replay:"not_needed"`。读取型命令仍立即返回既有 envelope。
 
+所有 `withBrowserOperation()` write route 共享 daemon 内的 at-most-once mutation guard。相同 owner、browser session 与 stable `targetRef`（generation suffix 归一化；无 ref 时退回 tabId）的 active mutation 在 dispatch 前串行，不能由 `browser_command` 绕过 `browser_execute` barrier。Program engine 把 eval/mouse/key/text/wait frame 的 ACK（包括 frame transport error 的 `acked:true`）聚合到顶层；`expand` 完成后会对真实最终序列重新执行唯一/final verifier 校验，动态生成的 physical frame 也按 physical program 结算。含 physical frame且不发生 navigation/download 的 program，只有唯一最后一个 `{eval:"...",verify:true}` 返回 `true` 或 `{verified:true}` 才产生 `completed/program-verified`。ACK 后未完成的 mutation 建立 observation barrier；只有在 mutation 结算后开始、强制 fresh capture、且结束时仍是同一 page identity/target generation 的 canonical no-mode `browser_observe` 才能清障。Program abort、显式验证失败和 frame summary 进入 bounded diagnostics，不再丢失物理输入是否已 ACK 的事实。
+
+`browser_execute.intentId` 与原始 script/program payload 分别只保存 SHA hash。带 intent 的 completed tombstone 与未 observe barrier 不受普通五分钟 operation TTL 或 256 项 operation 容量淘汰，并在同一 bridge server stop/start 时保留；当前 retention 边界是 daemon process。相同 intent + 相同 payload 的完成调用复用旧 outcome 而不 dispatch，不确定 intent 即使 observe 后仍拒绝重放；相同 intent + 不同 payload 返回 `intent_conflict`。Protected mutation evidence 独立上限为 4096，达到上限时新 intent write fail closed，不得通过淘汰旧证据腾位。若 `operation.begin`/observer arming 在实际 dispatch 前失败，intent hash 会随 `dispatch.started:false` 清除，不污染可安全重试的 intent。
+
+Extension `ext_ready` 在同一 socket 或已断开的同 instance replacement socket 上报告新的 `workerBootId` 时按 `sw-restart` 计数；最近 boot 按 `extensionInstanceId` 保留，restart 不复用无关 disconnect 的 reconnect latency。Bridge 只向由该 extension instance 选中的 browser session active operation 写入 `observer_lost`，不得污染其他浏览器。该证据在缺少 command-specific completion proof 时覆盖 dispatch failure/target-loss 映射并产生 `ambiguous`；transport/frame error 中的 `acked:true` 会回填根 `dispatch.acknowledged`，确保 mutation guard 不把结果未知误当作未发送。
+
 Envelope 常见字段：
 
 - `tool`
@@ -720,7 +727,10 @@ Provider scheduling 的纯 owner 是 [`observeProviderPlan.ts`](src/kernels/abml
 - 不接受 `monitor` 或关闭事务的兼容开关；
 - 只接受 JavaScript，不接受 native bridge command；
 - 页面动作可以通过 JS 或 CDP physical input program 完成；
+- 非幂等 mutation 应携带稳定 `intentId`；同一 daemon process 内，相同 intent + payload 的完成结果直接复用，不确定 intent 禁止再次 dispatch，不同 payload 明确冲突；
+- physical program 会聚合成功与失败 frame 的 ACK，并在 expand 后重新验证真实序列。非 navigation/download 动作应以唯一且最终的 `{eval:"...",verify:true}` 后置条件结束；只接受 `true` 或 `{verified:true}` 作为 `completed/program-verified` 证明；
 - observers 在动作 dispatch 前 arm；JavaScript 非 `undefined` resolve 产生 `completed/script-resolved`，无返回且无效果产生 `no_effect`；
+- 同 target 的 active write 先串行；ACK 后未验证的任意 write 会阻止 execute/native 后续 mutation，直到结算后开始的 fresh、same-page canonical no-mode observe 建立只读边界；同一 `intentId` 仍保持去重；
 - 所有终态经统一 operation result owner 做预算检查；大返回保留 `completion.source` 机械证明，完整 `completion.evidence.result` 保存到 artifact，inline 只保留 type/count/keys/preview 或最小 pointer；
 - `continuation` 是下一次决策提示而不是业务成功证明；页面状态才重新观察，target 变化先重获，非页面状态做只读验证，只有存在 diagnostics 才检查 diagnostics，任何情况都不能盲重放 mutation；
 - 没有独立的 click/type 工具。
@@ -771,7 +781,7 @@ CLI 调用通常是短生命周期的。Daemon 长驻并持有 browser session�
 - pairing `pairingId` 作为 operation owner 传播；没有 pairing 的本地 CLI 使用稳定 `local-cli` owner，late effects 只能被相同 owner + browser session 的下一次相关 operation 消费。
 - `/invoke` 对 write command 保持到 terminal outcome，不在 transport ACK 后提前返回。
 
-Daemon 的 `SessionOperationRegistry` 是持久 operation ledger：最多 256 项，每项最多 200 条 compact/redacted sequenced events，active/terminal TTL 均为 5 分钟。`finish()` 把 active 标记为 terminal 而不删除；terminal 后 30 秒内的事件追加为 `late_effect`，不覆盖原终态，surfaced 后不重复消费。
+Daemon 的 `SessionOperationRegistry` 是 process-local operation ledger：普通 operation 最多 256 项，每项最多 200 条 compact/redacted sequenced events，普通 active/terminal TTL 为 5 分钟。`finish()` 把 active 标记为 terminal 而不删除；terminal 后 30 秒内的事件追加为 `late_effect`，不覆盖原终态，surfaced 后不重复消费。Mutation evidence 走更保守的保留规则：active mutation、intent tombstone、未观察 barrier 不参与普通 TTL/256 项淘汰；bridge stop 将 active mutation 转成需 observe 的 ambiguous terminal 并保留证据。Protected mutation evidence 最多 4096 项，满时新 intent write fail closed；新 daemon process 才是清空边界。
 
 Daemon reuse 不是 display version 比较。0.4.0 使用 daemon protocol 5 与 command contract 3。[`contractIdentity.ts`](src/apps/daemon/contractIdentity.ts) 对 compact catalog/schema v3、全部 action-specific schemas、`browser-page-observation/v3`、`browser-page-scan/v1`、`browser-operation/v2` outcome mapping 与 native protocol 做 stable key-sorted canonical JSON + SHA-256，形成 `{packageVersion,daemonProtocolVersion,commandContractVersion:3,commandContractHash,toolCount}`。Lock metadata 与 live `/status` 都携带完整 identity；两者和 local identity 全字段一致才可复用。Mismatch 的 managed daemon 进入 drain/graceful shutdown 后才启动 replacement；grace 内无法证明替换成功时返回 `DAEMON_REPLACEMENT_FAILED`，旧 daemon 不接收 invoke。`status` / `doctor` 同时投影 local/daemon/lock identity 与 structured check；普通查询 exit 0，`--check` mismatch exit 1。
 
@@ -808,7 +818,7 @@ Extension 同时维护 real page epoch。Top-level `webNavigation.onCommitted` m
 
 Observation snapshot、auto/explicit baseline、session delta、perception ledger 和 render cache 全部按 `browserSessionId + tabId + targetGeneration + pageEpoch` 隔离。Identity mismatch 不返回错误 delta，而是丢弃 baseline、运行 full observation，并用 `document_changed`、`target_replaced`、`session_changed`、`identity_unproven` 或 `baseline_missing` 之一作为简短 `reanchorReason`。
 
-OperationCoordinator 通过 offscreen transport 发送独立 `operation_event` message；每个 operation 在 `operation.begin` 成功后绑定到实际接收 begin 的 WebSocket，避免重连期间多个 offscreen socket 把 completion evidence 发给 stale daemon。`BrowserBridgeClientMessageService` 不把事件当 pending request result，而是按稳定 `operationId` 追加到账本。Registry 的 begin/update/event/finish/abort/clear 都推进单调 revision 并释放 one-shot waiters；settlement 只等待 revision change 或纯 liveness kernel 给出的下一 no-effect/stalled/deadline 边界，不允许 interval、固定 25ms timeout 或 registry polling fallback。Prerender2 若保留 numeric tab id，content script 在真实 `prerenderingchange`/`activationStart` 后上报 same-tab replacement，router 只递增一次 target generation；仍会发原生 `tabs.onReplaced` 的浏览器继续走 numeric replacement chain。tab removal/replacement、CDP detach 或已 ACK 请求在非 durable reconnect 中丢失结果时必须诚实终止为 `target_lost`/`failed`，不得静默重放 mutating action。
+OperationCoordinator 通过 offscreen transport 发送独立 `operation_event` message；每个 operation 在 `operation.begin` 成功后绑定到实际接收 begin 的 WebSocket，避免重连期间多个 offscreen socket 把 completion evidence 发给 stale daemon。`BrowserBridgeClientMessageService` 不把事件当 pending request result，而是按稳定 `operationId` 追加到账本。Registry 的 begin/update/event/finish/abort/clear 都推进单调 revision 并释放 one-shot waiters；settlement 只等待 revision change 或纯 liveness kernel 给出的下一 no-effect/stalled/deadline 边界，不允许 interval、固定 25ms timeout 或 registry polling fallback。Prerender2 若保留 numeric tab id，content script 在真实 `prerenderingchange`/`activationStart` 后上报 same-tab replacement，router 只递增一次 target generation；仍会发原生 `tabs.onReplaced` 的浏览器继续走 numeric replacement chain。未 ACK 的确定 target removal/detach 可终止为 `target_lost`/`failed`；physical/native dispatch 已 ACK 后若 result 或 observer 因非 durable reconnect/worker restart 丢失，则必须保留 ACK 并终止为 `ambiguous`，不得静默重放 mutating action。
 
 Observe 在任何 page I/O 前检查 extension capture contract；版本不匹配返回 `EXTENSION_CONTRACT_MISMATCH` 与 reload recovery。页面 capture 只能返回 [`PageWorldScanBundleV1`](src/kernels/abml/pageWorldScan.ts) 的 `browser-page-scan/v1` camelCase wire shape（`page/content/structure/frames/signals/stats`）。Bridge boundary 对 schema、exact keys、nested scalar/array/object types 做严格 runtime validation，malformed/unknown/legacy bundle 返回 `SCAN_BUNDLE_INVALID`，不能通过 untyped record cast 继续执行。
 
@@ -1168,7 +1178,7 @@ node scripts/run-coverage.mjs all
 
 Observe regression benchmark 位于 [`tests/observe/observeRegressionBenchmark.test.ts`](tests/observe/observeRegressionBenchmark.test.ts)，随 `observe`/`all` scope 运行。Immutable baseline [`observe-v2-baseline-1573380.json`](tests/fixtures/observe-v2-baseline-1573380.json) 由 [`update-observe-benchmark-baseline.mjs`](scripts/update-observe-benchmark-baseline.mjs) 从 Git object `1573380` 的 archive 中执行旧 owner 得到，只有显式 `mise run update-observe-benchmark` 才能改写。Gate 同时要求 catalog ≤25 KiB；observation bytes 与 estimated tokens 的中位数各下降至少 25%；任一 fixture ≤旧值 105%；final cost 与 serialization 完全一致；required facts/actionable refs/relations/collection properties recall 100%；forbidden pollution/sensitive leakage/duplicate ownership/silent truncation 为 0；所有 folded/truncated block 有 verified read 或 unavailable reason。新增 case 继续使用离线 fixture 与纯逻辑路径；真实浏览器生命周期由独立 smoke gate 负责。
 
-Operation progressive-disclosure regression 位于 [`tests/cli/commandExecution.test.ts`](tests/cli/commandExecution.test.ts)：它保护小结果不多绕 artifact、大结果在严格字符预算内仍保留根终态和 completion source、完整 result 可由 returned path/jsonPath 读取、artifact 写失败不覆盖已完成终态，以及 `no_effect` / `effect_observed` 不建议盲重放。Governance test 还枚举 `src/commands` 的 `withBrowserOperation()` 调用点，要求全部使用统一 `browserOperationCommandResult()` owner。
+Operation progressive-disclosure 与 at-most-once regression 位于 [`tests/cli/commandExecution.test.ts`](tests/cli/commandExecution.test.ts) 及 bootstrap operation/program suites：它们保护小结果不多绕 artifact、大结果在严格字符预算内仍保留根终态和 completion source、完整 result 可由 returned path/jsonPath 读取、artifact 写失败不覆盖已完成终态、ACK-error frame、expand 后 verifier ordering、动态 physical classification、active/cross-command barrier、same-page observe 时序、intent payload conflict、TTL/capacity/bridge reset retention，以及 worker restart instance isolation。真实浏览器 smoke 使用只接受 trusted event 的 toggle，同时验证 completed intent 复用和“物理效果已发生但 verifier 未证明”时同 intent 在 observe 前后都不能再次 dispatch。Governance test 枚举 `src/commands` 的 `withBrowserOperation()` 调用点，要求全部使用统一 `browserOperationCommandResult()` owner。
 
 可信契约回归另外由以下 suites 持有：[`tests/cli/operationResultV2.test.ts`](tests/cli/operationResultV2.test.ts) 覆盖 8 个 terminal status 的 JSON/TTY/classification/code/exit/continuation matrix 以及 unknown/malformed schema；[`tests/cli/validationParity.test.ts`](tests/cli/validationParity.test.ts) 使用不少于 50 个 valid/invalid corpus 保护 shared normalized args 与 issue shape；daemon lifecycle/identity tests 保护 canonical hash determinism、全字段 mismatch 与 replacement failure；[`tests/bootstrap/pageIdentity.test.ts`](tests/bootstrap/pageIdentity.test.ts) 及 observe/router tests 保护 document commit、SPA、BFCache、replacement、reconnect 和错误 baseline 零复用。
 

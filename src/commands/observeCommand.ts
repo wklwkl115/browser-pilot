@@ -102,6 +102,50 @@ export function selectDiffBaselineSnapshot(server: BrowserCommandRuntimePort, pa
 		?.snapshotId;
 }
 
+type MutationObservationVerification = {
+	startedAt: number;
+	clearAllowed: boolean;
+	effectiveTabId?: number;
+	targetRef?: string;
+	initialIdentity?: ReturnType<typeof currentPageIdentity>;
+};
+
+function prepareMutationObservationVerification(server: BrowserCommandRuntimePort, params: ObserveToolParams, normalized: NormalizedObserveMode, ownerId?: string): MutationObservationVerification {
+	const startedAt = Date.now();
+	if (normalized.explicit || normalized.mode !== "scan" || typeof params.url === "string") return { startedAt, clearAllowed: false };
+	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
+	const effectiveTabId = resolveLocalTargetTabId(server, targetTabId(params), params.browserSessionId) ?? bridge.defaultTabId;
+	const initialIdentity = currentPageIdentity(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId });
+	const tab = bridge.tabs.find((item) => item.tabId === effectiveTabId);
+	const targetRef = typeof tab?.targetRef === "string" ? tab.targetRef : typeof tab?.tabHandle === "string" ? tab.tabHandle : undefined;
+	const guard = initialIdentity ? server.mutationReplayGuard?.({
+		ownerId,
+		browserSessionId: initialIdentity.browserSessionId,
+		tabId: initialIdentity.tabId,
+		targetRef,
+		generation: initialIdentity.targetGeneration,
+		commandName: "browser_execute",
+	}) : undefined;
+	const incompatibleFreshOptions = params.diff === true || params.baseline !== undefined || params.baselineSnapshotId !== undefined || params.baselinePath !== undefined;
+	if (guard?.kind === "observation_required" && params.fresh === undefined && !incompatibleFreshOptions) params.fresh = true;
+	return { startedAt, clearAllowed: guard?.kind === "observation_required" && params.fresh === true, effectiveTabId, targetRef, initialIdentity };
+}
+
+function markCanonicalMutationObserved(server: BrowserCommandRuntimePort, verification: MutationObservationVerification, ownerId?: string): void {
+	if (!verification.clearAllowed || !verification.initialIdentity) return;
+	const identity = currentPageIdentity(server, { browserSessionId: verification.initialIdentity.browserSessionId, tabId: verification.effectiveTabId });
+	if (!identity || !samePageIdentity(identity, verification.initialIdentity)) return;
+	server.markMutationObserved?.({
+		ownerId,
+		browserSessionId: identity.browserSessionId,
+		tabId: identity.tabId,
+		targetRef: verification.targetRef,
+		generation: identity.targetGeneration,
+		commandName: "browser_execute",
+		observationStartedAt: verification.startedAt,
+	});
+}
+
 export function defineObserveCommand({ commands, ensureStarted }: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_observe",
@@ -152,6 +196,7 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 				observeParams.mode = mode;
 				observeParams.modeExplicit = normalized.explicit;
 				observeParams.modeInferred = normalized.inferred;
+				const mutationVerification = prepareMutationObservationVerification(server, observeParams, normalized, toolCtx.operationOwnerId);
 				if (observeParams.baseline === undefined && !normalized.explicit) {
 					const raw = params as Record<string, unknown>;
 					const baselinePath = typeof raw.baselinePath === "string" ? raw.baselinePath.trim() : "";
@@ -167,9 +212,12 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 					const latestSnapshotId = selectDiffBaselineSnapshot(server, observeParams);
 					if (latestSnapshotId) observeParams.baseline = { snapshotId: latestSnapshotId };
 				}
-				if (mode === "scan" || mode === "text" || mode === "tabs") return await runScanObservation(server, observeParams, toolCtx, mode, _onUpdate);
-				if (mode === "content") return await runContentObservation(server, observeParams, toolCtx, _onUpdate);
-				return await runHtmlObservation(server, observeParams, toolCtx, _onUpdate);
+				let result: import("../utils/toolResult.js").BrowserTextCommandResult;
+				if (mode === "scan" || mode === "text" || mode === "tabs") result = await runScanObservation(server, observeParams, toolCtx, mode, _onUpdate);
+				else if (mode === "content") result = await runContentObservation(server, observeParams, toolCtx, _onUpdate);
+				else result = await runHtmlObservation(server, observeParams, toolCtx, _onUpdate);
+				if (!result.details?.error) markCanonicalMutationObserved(server, mutationVerification, toolCtx.operationOwnerId);
+				return result;
 			}, observeErrorResult);
 		},
 	});

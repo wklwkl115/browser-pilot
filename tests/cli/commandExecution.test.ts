@@ -316,6 +316,21 @@ test("commands execution: browser_command write failures return failed operation
 	assert.match(JSON.stringify(body.diagnostics), /bridge send failed/);
 });
 
+test("commands execution: acknowledged transport loss preserves at-most-once dispatch evidence", async () => {
+	const runtime = createRuntime({
+		async sendCommand(command) {
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "operation.finish") return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
+			throw new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", "result lost after extension restart", { acked: true, outcome: "inflight-unknown" });
+		},
+	});
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const outcome = parseResult(await command.execute("tool-acked-loss", { command: { cmd: "cdp", method: "Page.reload" }, targetRef: "tab-7" }));
+	assert.equal(outcome.status, "ambiguous");
+	assert.equal((outcome.dispatch as Record<string, unknown>).acknowledged, true);
+	assert.deepEqual((outcome.continuation as Record<string, unknown>).replay, "do_not_retry");
+});
+
 test("commands execution: browser_execute summarizes successful JavaScript result and runtime target context", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
@@ -597,6 +612,132 @@ test("commands execution: browser_execute program path preserves operation and f
 	assert.equal((envelope.completion as Record<string, unknown>).source, "program-resolved");
 	assert.equal(envelope.operationId, "op-1");
 	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), true);
+});
+
+test("commands execution: acknowledged physical program completes only through an explicit final verifier", async () => {
+	const runtime = createRuntime({
+		async executeJavaScript(script) {
+			return { id: "exec-physical", acknowledged: true, tabId: 7, data: script === "location.href" ? "https://example.test/" : { verified: true, liked: true } } as BrowserBridgeExecutionResult;
+		},
+		async sendCommand(command) {
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "operation.finish") return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
+			return { id: "input", acknowledged: true, tabId: 7, data: { sent: [{ type: String(command.cmd) }] } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const outcome = parseResult(await command.execute("tool-physical", {
+		intentId: "like-note-42",
+		targetRef: "tab-7",
+		program: [
+			{ mouse: "press", x: 10, y: 10 },
+			{ mouse: "release", x: 10, y: 10 },
+			{ eval: "({verified:true,liked:true})", verify: true },
+		],
+	}));
+	assert.equal(outcome.status, "completed");
+	assert.equal((outcome.dispatch as Record<string, unknown>).acknowledged, true);
+	assert.equal((outcome.completion as Record<string, unknown>).source, "program-verified");
+	assert.deepEqual(((outcome.completion as Record<string, unknown>).evidence as Record<string, unknown>).verification, { step: 2, passed: true, result: { verified: true, liked: true } });
+});
+
+test("commands execution: acknowledged unverified physical effect requires observation before another mutation", async () => {
+	let activeOperationId = "";
+	const registry = new (await import("../../src/kernels/session/operationRegistry.ts")).SessionOperationRegistry();
+	let inputDispatches = 0;
+	const runtime = createRuntime({
+		beginOperation(operation) {
+			const active = registry.begin(operation);
+			activeOperationId = active.operationId;
+			return active;
+		},
+		updateOperation(operationId, patch) { return registry.update(operationId, patch); },
+		finishOperation(operationId, outcome) { return registry.finish(operationId, outcome); },
+		getOperation(operationId) { return registry.get(operationId); },
+		mutationReplayGuard(input) { return registry.mutationReplayGuard(input); },
+		markMutationObserved(input) { return registry.markMutationObserved(input); },
+		async sendCommand(command) {
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "operation.finish") return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
+			inputDispatches += 1;
+			registry.recordEvent(activeOperationId, { type: "mutation", data: { mutationCount: inputDispatches } });
+			return { id: `input-${inputDispatches}`, acknowledged: true, data: { sent: [{ type: "input" }] } } as BrowserBridgeExecutionResult;
+		},
+		async executeJavaScript(script) {
+			return { id: "url", acknowledged: true, data: script === "location.href" ? "https://example.test/" : "[undefined]" } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const params = { targetRef: "tab-7", program: [{ text: "one comment" }] };
+	const first = parseResult(await command.execute("tool-first", params, undefined, undefined, { operationOwnerId: "agent-a" }));
+	assert.equal(first.status, "effect_observed");
+	assert.equal((first.dispatch as Record<string, unknown>).acknowledged, true);
+	assert.equal(inputDispatches, 1);
+
+	const blocked = parseResult(await command.execute("tool-second", params, undefined, undefined, { operationOwnerId: "agent-a" }));
+	assert.equal(blocked.status, "ambiguous");
+	assert.match(JSON.stringify(blocked.diagnostics), /MUTATION_REPLAY_BLOCKED/);
+	assert.equal(inputDispatches, 1);
+});
+
+test("commands execution: acknowledged physical result loss is ambiguous and blocks replay", async () => {
+	const registry = new (await import("../../src/kernels/session/operationRegistry.ts")).SessionOperationRegistry();
+	let inputDispatches = 0;
+	const runtime = createRuntime({
+		beginOperation(operation) { return registry.begin(operation); },
+		updateOperation(operationId, patch) { return registry.update(operationId, patch); },
+		finishOperation(operationId, outcome) { return registry.finish(operationId, outcome); },
+		getOperation(operationId) { return registry.get(operationId); },
+		mutationReplayGuard(input) { return registry.mutationReplayGuard(input); },
+		markMutationObserved(input) { return registry.markMutationObserved(input); },
+		async sendCommand(command) {
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "operation.finish") return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
+			inputDispatches += 1;
+			throw new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", "physical result lost", { acked: true, outcome: "inflight-unknown" });
+		},
+		async executeJavaScript() {
+			return { id: "url", acknowledged: true, data: "https://example.test/" } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const params = { targetRef: "tab-7", program: [{ text: "one comment" }] };
+	const first = parseResult(await command.execute("tool-acked-first", params, undefined, undefined, { operationOwnerId: "agent-a" }));
+	assert.equal(first.status, "ambiguous");
+	assert.equal((first.dispatch as Record<string, unknown>).acknowledged, true);
+	assert.equal(inputDispatches, 1);
+	const blocked = parseResult(await command.execute("tool-acked-second", params, undefined, undefined, { operationOwnerId: "agent-a" }));
+	assert.equal(blocked.status, "ambiguous");
+	assert.match(JSON.stringify(blocked.diagnostics), /MUTATION_REPLAY_BLOCKED/);
+	assert.equal(inputDispatches, 1);
+});
+
+test("commands execution: one intent cannot be reused with a different mutation payload", async () => {
+	const registry = new (await import("../../src/kernels/session/operationRegistry.ts")).SessionOperationRegistry();
+	let scriptDispatches = 0;
+	const runtime = createRuntime({
+		beginOperation(operation) { return registry.begin(operation); },
+		updateOperation(operationId, patch) { return registry.update(operationId, patch); },
+		finishOperation(operationId, outcome) { return registry.finish(operationId, outcome); },
+		getOperation(operationId) { return registry.get(operationId); },
+		mutationReplayGuard(input) { return registry.mutationReplayGuard(input); },
+		markMutationObserved(input) { return registry.markMutationObserved(input); },
+		async sendCommand(command) {
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
+		},
+		async executeJavaScript(script) {
+			scriptDispatches += 1;
+			return { id: `exec-${scriptDispatches}`, acknowledged: true, data: { script } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const first = parseResult(await command.execute("tool-intent-first", { targetRef: "tab-7", intentId: "comment-note-42", script: "'first comment'" }, undefined, undefined, { operationOwnerId: "agent-a" }));
+	assert.equal(first.status, "completed");
+	const conflict = parseResult(await command.execute("tool-intent-conflict", { targetRef: "tab-7", intentId: "comment-note-42", script: "'different comment'" }, undefined, undefined, { operationOwnerId: "agent-a" }));
+	assert.equal(conflict.status, "ambiguous");
+	assert.match(JSON.stringify(conflict.diagnostics), /intent_conflict/);
+	assert.equal(scriptDispatches, 1);
 });
 
 test("commands execution: browser_execute rejects invalid program inputs before operation tracking", async () => {

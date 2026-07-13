@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { WebSocket } from "ws";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const extensionDir = path.join(root, "bridge", "browser_pilot_bridge");
@@ -133,7 +134,7 @@ async function startFixtureServer() {
 			send(res, `<!doctype html><html><head><title>Prerender Target</title><script>globalThis.__browserPilotWasPrerendered=document.prerendering===true;if(document.prerendering){fetch('/api/prerender-ready?token=${token}')}document.addEventListener('prerenderingchange',()=>{globalThis.__browserPilotWasPrerendered=true},{once:true})</script></head><body><main><h1 id="prerender-marker">Prerender Target</h1></main></body></html>`);
 			return;
 		}
-		const body = "<!doctype html><html><head><title>Browser Pilot Smoke</title></head><body><main><h1 id=\"smoke-marker\">Browser Pilot Smoke</h1><button id=\"smoke-button\" type=\"button\">Run smoke</button></main><script>fetch('/api/boot').then(r=>r.json()).then(v=>globalThis.__smokeBoot=v)</script></body></html>";
+		const body = "<!doctype html><html><head><title>Browser Pilot Smoke</title></head><body><main><h1 id=\"smoke-marker\">Browser Pilot Smoke</h1><button id=\"smoke-button\" type=\"button\">Run smoke</button><button id=\"smoke-toggle\" type=\"button\" aria-pressed=\"false\" data-toggle-count=\"0\">Verified physical toggle</button></main><script>document.querySelector('#smoke-toggle').addEventListener('click',event=>{if(!event.isTrusted)return;const button=event.currentTarget;const next=button.getAttribute('aria-pressed')!=='true';button.setAttribute('aria-pressed',String(next));button.dataset.toggleCount=String(Number(button.dataset.toggleCount||0)+1)});fetch('/api/boot').then(r=>r.json()).then(v=>globalThis.__smokeBoot=v)</script></body></html>";
 		send(res, body);
 	});
 	await new Promise((resolve, reject) => {
@@ -251,23 +252,80 @@ function captureProcessOutput(child) {
 	return () => output;
 }
 
-async function stopBrowser(child) {
-	if (!child || child.exitCode !== null) return;
-	child.kill();
-	await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(2_000)]);
-	if (child.exitCode === null) child.kill("SIGKILL");
+async function closeBrowserViaCdp(profileDir) {
+	let endpoint;
+	try {
+		const [portLine, socketPath] = (await readFile(path.join(profileDir, "DevToolsActivePort"), "utf8")).trim().split(/\r?\n/);
+		const port = Number(portLine);
+		if (!Number.isInteger(port) || port <= 0 || !socketPath?.startsWith("/")) return false;
+		endpoint = `ws://127.0.0.1:${port}${socketPath}`;
+	} catch {
+		return false;
+	}
+	return await new Promise((resolve) => {
+		const socket = new WebSocket(endpoint);
+		let settled = false;
+		const finish = (value) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			resolve(value);
+		};
+		const timer = setTimeout(() => {
+			socket.terminate();
+			finish(false);
+		}, 2_000);
+		socket.once("open", () => socket.send(JSON.stringify({ id: 1, method: "Browser.close" })));
+		socket.on("message", (data) => {
+			try {
+				const message = JSON.parse(String(data));
+				if (message?.id !== 1) return;
+				if (message.error) finish(false);
+				else finish(true);
+			} catch {
+				/* wait for the Browser.close response or socket close */
+			}
+		});
+		socket.once("close", () => finish(true));
+		socket.once("error", () => finish(false));
+	});
 }
 
-async function launchConnectedBrowser(daemon, fixtureUrl, profileDir) {
+async function stopBrowser(child, profileDir) {
+	if (profileDir && await closeBrowserViaCdp(profileDir)) await delay(1_000);
+	if (!child || child.exitCode !== null) return;
+	child.kill();
+	const exited = await Promise.race([
+		new Promise((resolve) => child.once("exit", () => resolve(true))),
+		delay(2_000).then(() => false),
+	]);
+	if (exited || child.exitCode !== null) return;
+	child.kill("SIGKILL");
+	await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(2_000)]);
+}
+
+async function removeProfileDir(profileDir) {
+	try {
+		await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+	} catch (error) {
+		const code = error && typeof error === "object" ? String(error.code || "") : "";
+		if (!["EBUSY", "ENOTEMPTY", "EPERM"].includes(code)) throw error;
+		console.warn(`[browser-pilot-smoke] temporary profile cleanup was deferred after a Windows file lock (${code}): ${path.basename(profileDir)}`);
+	}
+}
+
+async function launchConnectedBrowser(daemon, fixtureUrl, profileRoot) {
 	const candidates = await existingBrowserCandidates();
 	if (!candidates.length) throw new Error("no Chrome/Edge/Chromium executable found; set BROWSER_PILOT_SMOKE_BROWSER");
 	const failures = [];
 	for (const executable of candidates) {
+		const profileDir = await mkdtemp(path.join(profileRoot, "candidate-"));
 		const child = spawn(executable, [
 			"--headless=new",
 			"--disable-gpu",
 			"--no-first-run",
 			"--no-default-browser-check",
+			"--remote-debugging-port=0",
 			"--enable-features=Prerender2",
 			"--disable-features=PreloadingHoldback,Prerender2MemoryControls",
 			`--user-data-dir=${profileDir}`,
@@ -279,10 +337,10 @@ async function launchConnectedBrowser(daemon, fixtureUrl, profileDir) {
 		const output = captureProcessOutput(child);
 		try {
 			const status = await waitForStatus(daemon, (value) => value.extensionConnected === true && Array.isArray(value.tabs) && value.tabs.some((tab) => String(tab?.url || "").startsWith(fixtureUrl)), `extension handshake via ${executable}`);
-			return { child, executable, status, output };
+			return { child, executable, status, output, profileDir };
 		} catch (error) {
 			failures.push({ executable, error: error instanceof Error ? error.message : String(error), output: output() });
-			await stopBrowser(child);
+			await stopBrowser(child, profileDir);
 		}
 	}
 	throw new Error(`no browser completed the extension handshake: ${JSON.stringify(failures)}`);
@@ -316,6 +374,40 @@ try {
 	const noEffect = await invoke(daemon, "browser_execute", { tabId, script: "void 0" });
 	const noEffectOutcome = operationOutcome(noEffect, "browser_execute no-effect", "no_effect");
 	if ((noEffectOutcome.ok ? 0 : 1) !== 1) throw new Error(`browser_execute no-effect did not map to a non-zero CLI outcome: ${JSON.stringify(noEffectOutcome)}`);
+	const noEffectObservation = JSON.parse(resultText(await invoke(daemon, "browser_observe", { tabId, maxChars: 20_000 })));
+	if (noEffectObservation?.schema !== "browser-page-observation/v3") throw new Error(`no-effect recovery did not perform the required canonical observation: ${JSON.stringify(noEffectObservation)}`);
+	const physicalIntentId = `physical-toggle-${process.pid}-${Date.now()}`;
+	const physicalProgram = [
+		{ eval: "(()=>{const r=document.querySelector('#smoke-toggle').getBoundingClientRect();return{point:{x:r.left+r.width/2,y:r.top+r.height/2}}})()", as: "toggleTarget" },
+		{ mouse: "press", refFrom: "toggleTarget" },
+		{ mouse: "release", refFrom: "toggleTarget" },
+		{ eval: "document.querySelector('#smoke-toggle').getAttribute('aria-pressed')==='true'", verify: true },
+	];
+	const physical = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: physicalIntentId, program: physicalProgram }), "browser_execute verified physical toggle", "completed");
+	if (physical.completion?.source !== "program-verified" || physical.dispatch?.acknowledged !== true) throw new Error(`physical program did not preserve verified acknowledgement: ${JSON.stringify(physical)}`);
+	const reused = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: physicalIntentId, program: physicalProgram }), "browser_execute repeated physical intent", "completed");
+	if (!JSON.stringify(reused.diagnostics || []).includes("INTENT_RESULT_REUSED")) throw new Error(`repeated physical intent was not reused safely: ${JSON.stringify(reused)}`);
+	const toggleProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "({pressed:document.querySelector('#smoke-toggle').getAttribute('aria-pressed'),count:Number(document.querySelector('#smoke-toggle').dataset.toggleCount)})" }), "browser_execute physical toggle proof", "completed");
+	const toggleResult = toggleProof.completion?.evidence?.result;
+	if (toggleResult?.pressed !== "true" || toggleResult?.count !== 1) throw new Error(`repeated intent toggled the control twice: ${JSON.stringify(toggleProof)}`);
+	operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "(()=>{const el=document.querySelector('#smoke-toggle');el.setAttribute('aria-pressed','false');el.dataset.toggleCount='0';return true})()" }), "browser_execute reset physical toggle", "completed");
+	const uncertainIntentId = `physical-uncertain-${process.pid}-${Date.now()}`;
+	const uncertainProgram = [
+		{ eval: "(()=>{const r=document.querySelector('#smoke-toggle').getBoundingClientRect();return{point:{x:r.left+r.width/2,y:r.top+r.height/2}}})()", as: "toggleTarget" },
+		{ mouse: "press", refFrom: "toggleTarget" },
+		{ mouse: "release", refFrom: "toggleTarget" },
+		{ eval: "false", verify: true },
+	];
+	const uncertain = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: uncertainIntentId, program: uncertainProgram }), "browser_execute uncertain physical toggle", "ambiguous");
+	if (uncertain.dispatch?.acknowledged !== true) throw new Error(`uncertain physical program lost acknowledgement: ${JSON.stringify(uncertain)}`);
+	const blockedUncertain = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: uncertainIntentId, program: uncertainProgram }), "browser_execute blocked uncertain replay", "ambiguous");
+	if (!JSON.stringify(blockedUncertain.diagnostics || []).includes("MUTATION_REPLAY_BLOCKED")) throw new Error(`uncertain intent replay was not blocked: ${JSON.stringify(blockedUncertain)}`);
+	const uncertainObservation = JSON.parse(resultText(await invoke(daemon, "browser_observe", { tabId, maxChars: 20_000 })));
+	if (uncertainObservation?.schema !== "browser-page-observation/v3") throw new Error(`uncertain recovery did not complete canonical observation: ${JSON.stringify(uncertainObservation)}`);
+	const blockedAfterObserve = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: uncertainIntentId, program: uncertainProgram }), "browser_execute blocked uncertain replay after observe", "ambiguous");
+	if (!JSON.stringify(blockedAfterObserve.diagnostics || []).includes("intent_replay")) throw new Error(`observation incorrectly released the same uncertain intent: ${JSON.stringify(blockedAfterObserve)}`);
+	const uncertainProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "({pressed:document.querySelector('#smoke-toggle').getAttribute('aria-pressed'),count:Number(document.querySelector('#smoke-toggle').dataset.toggleCount)})" }), "browser_execute uncertain toggle proof", "completed");
+	if (uncertainProof.completion?.evidence?.result?.pressed !== "true" || uncertainProof.completion?.evidence?.result?.count !== 1) throw new Error(`uncertain intent replay changed the control more than once: ${JSON.stringify(uncertainProof)}`);
 	const created = operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}secondary`, active: true }), "browser_tabs create", "completed");
 	const createdTabId = Number(created.target?.tabId);
 	const originalTargetRef = tab?.targetRef || tab?.tabHandle || tabId;
@@ -539,13 +631,13 @@ try {
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-nonzero", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "provider-budget-telemetry", "extension-reconnect-page-epoch", "operation-completion-event-wakeup", "bfcache-back-forward-lineage", "frontier-artifact-targeted-read", "prerender-tabs-onReplaced", "target-close-new-target"],
+		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-nonzero", "physical-program-verified-idempotent", "physical-program-uncertain-replay-blocked", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "provider-budget-telemetry", "extension-reconnect-page-epoch", "operation-completion-event-wakeup", "bfcache-back-forward-lineage", "frontier-artifact-targeted-read", "prerender-tabs-onReplaced", "target-close-new-target"],
 		operationCompletionEventMs: completionEventElapsedMs,
 		connectionMetrics: reconnected.health?.connectionMetrics,
 	}, null, 2));
 } finally {
-	await stopBrowser(browser?.child);
+	await stopBrowser(browser?.child, browser?.profileDir);
 	await daemon.close();
 	await fixture.close();
-	await rm(profileDir, { recursive: true, force: true });
+	await removeProfileDir(profileDir);
 }

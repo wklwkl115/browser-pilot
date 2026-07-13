@@ -20,6 +20,7 @@ const EvalSchema = Type.Object({
 	eval: Type.String({ description: "JavaScript expression to evaluate." }),
 	as: Type.Optional(Type.String({ description: "Name to bind the result to in program context for later refFrom." })),
 	expand: Type.Optional(Type.Boolean({ description: "If true, result must be an array; elements are spliced into the program as new frames." })),
+	verify: Type.Optional(Type.Boolean({ description: "Mark this final eval as the explicit transaction postcondition. It passes only when the result is true or an object with verified:true." })),
 	frameId: Type.Optional(Type.String({ description: "Frame to evaluate in. Default: main frame." })),
 }, { additionalProperties: false });
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SessionOperationRegistry } from "../../src/kernels/session/operationRegistry.ts";
-import { resolveBrowserOperationCompletion } from "../../src/commands/operationResolvers.ts";
+import { resolveBrowserOperationCompletion, resolveBrowserOperationDispatchTerminal } from "../../src/commands/operationResolvers.ts";
 import { classifyBrowserOperationLiveness, nextBrowserOperationLivenessBoundary } from "../../src/kernels/session/browserOperationState.ts";
 import { BrowserBridgeServer } from "../../src/bridge/server/BrowserBridgeServer.ts";
 import { readFile } from "node:fs/promises";
@@ -80,6 +80,7 @@ test("late effects surface once only to the same owner and browser session, then
 	now += 10;
 	registry.recordEvent(operation.operationId, { type: "navigation_completed" });
 	assert.equal(registry.surfaceLateEffects({ ownerId: "agent-a", browserSessionId: "session-1" }).length, 1);
+	assert.equal(registry.markMutationObserved({ ownerId: "agent-a", browserSessionId: "session-1", tabId: 7, commandName: "browser_execute" }), 1);
 	now += 5 * 60_000 + 1;
 	assert.equal(registry.get(operation.operationId), undefined);
 });
@@ -151,4 +152,179 @@ test("operation completion resolvers require tab and upload result markers beyon
 	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_upload", result: { acknowledged: true, data: { uploaded: true, files_count: 2, selector: "#file" } } })?.source, "upload-applied");
 	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_network", command: "network.captureReload", result: { data: { results: [{ ok: true }, { ok: false, error: "reload failed" }, { ok: true }] } } }), undefined);
 	assert.equal(resolveBrowserOperationCompletion({ ...base, commandName: "browser_network", command: "network.captureReload", result: { data: { results: [{ ok: true }, { ok: true }, { ok: true }, { ok: true }] } } })?.source, "network-capture-completed");
+});
+
+test("physical program completion requires an explicit passed verifier after acknowledged input", () => {
+	const result = {
+		acknowledged: true,
+		frames: [
+			{ step: 0, kind: "mouse:release", ok: true, acknowledged: true, durationMs: 2, eventCount: 1 },
+			{ step: 1, kind: "eval", ok: true, acknowledged: true, durationMs: 1, result: { verified: true, liked: true }, verification: { passed: true } },
+		],
+		result: { verified: true, liked: true },
+		verification: { step: 1, passed: true, result: { verified: true, liked: true } },
+	};
+	const completion = resolveBrowserOperationCompletion({ commandName: "browser_execute", mode: "program", physicalProgram: true, result, events: [] });
+	assert.equal(completion?.source, "program-verified");
+	assert.deepEqual(completion?.evidence.verification, result.verification);
+	assert.equal(resolveBrowserOperationCompletion({ commandName: "browser_execute", mode: "program", physicalProgram: true, result: { ...result, verification: undefined }, events: [] }), undefined);
+});
+
+test("program aborts and failed explicit verification settle factually before generic liveness", () => {
+	const partial = resolveBrowserOperationDispatchTerminal({
+		commandName: "browser_execute",
+		mode: "program",
+		physicalProgram: true,
+		result: { acknowledged: true, frames: [{ step: 0, kind: "text", ok: true, acknowledged: true, durationMs: 1 }], result: undefined, aborted: { reason: "submit frame failed", atStep: 1 } },
+		events: [],
+	});
+	assert.equal(partial?.status, "ambiguous");
+	assert.match(JSON.stringify(partial?.diagnostics), /PROGRAM_PARTIAL_DISPATCH/);
+
+	const verificationFailed = resolveBrowserOperationDispatchTerminal({
+		commandName: "browser_execute",
+		mode: "program",
+		physicalProgram: true,
+		result: { acknowledged: true, frames: [], result: false, verification: { step: 2, passed: false, result: false } },
+		events: [],
+	});
+	assert.equal(verificationFailed?.status, "ambiguous");
+	assert.match(JSON.stringify(verificationFailed?.diagnostics), /PROGRAM_VERIFICATION_FAILED/);
+
+	const preDispatch = resolveBrowserOperationDispatchTerminal({
+		commandName: "browser_execute",
+		mode: "program",
+		physicalProgram: false,
+		result: { acknowledged: false, frames: [], result: undefined, aborted: { reason: "ref precheck failed", atStep: -1 } },
+		events: [],
+	});
+	assert.equal(preDispatch?.status, "failed");
+});
+
+test("operation registry blocks unobserved acknowledged mutations and permanently dedupes an explicit intent", () => {
+	const registry = new SessionOperationRegistry();
+	const operation = registry.begin({ commandName: "browser_execute", command: "program", browserSessionId: "session-1", tabId: 7, generation: 2, ownerId: "agent-a", intentId: "like-note-42", phase: "arming" });
+	registry.finish(operation.operationId, {
+		...outcome(operation.operationId, "effect_observed"),
+		target: { browserSessionId: "session-1", tabId: 7, generation: 2 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 1, finishedAt: 2 },
+	});
+	const base = { ownerId: "agent-a", browserSessionId: "session-1", tabId: 7, generation: 2, commandName: "browser_execute" };
+	assert.equal(registry.mutationReplayGuard({ ...base, intentId: "other-action" })?.kind, "observation_required");
+	assert.equal(registry.markMutationObserved(base), 1);
+	assert.equal(registry.mutationReplayGuard({ ...base, intentId: "other-action" }), undefined);
+	assert.equal(registry.mutationReplayGuard({ ...base, intentId: "like-note-42" })?.kind, "intent_replay");
+});
+
+test("expanded trusted input is resolved as physical even when the source program was eval-only", () => {
+	const result = {
+		acknowledged: true,
+		frames: [
+			{ step: 0, kind: "eval", ok: true, acknowledged: true, durationMs: 1, result: [{ text: "comment" }] },
+			{ step: 1, kind: "text", ok: true, acknowledged: true, durationMs: 1 },
+		],
+		result: [{ text: "comment" }],
+	};
+	assert.equal(resolveBrowserOperationCompletion({ commandName: "browser_execute", mode: "program", physicalProgram: false, result, events: [] }), undefined);
+});
+
+test("operation registry blocks concurrent and cross-command mutations on the same target", () => {
+	const registry = new SessionOperationRegistry();
+	const scope = { ownerId: "agent-a", browserSessionId: "session-1", tabId: 7, generation: 2 };
+	const active = registry.begin({
+		...scope,
+		commandName: "browser_execute",
+		command: "program",
+		phase: "dispatching",
+		mutation: true,
+	} as Parameters<SessionOperationRegistry["begin"]>[0]);
+	assert.equal(registry.mutationReplayGuard({ ...scope, commandName: "browser_command" })?.kind, "mutation_in_progress");
+	registry.finish(active.operationId, {
+		...outcome(active.operationId, "effect_observed"),
+		target: { browserSessionId: "session-1", tabId: 7, generation: 2 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 1, finishedAt: 2 },
+	});
+	assert.equal(registry.mutationReplayGuard({ ...scope, commandName: "browser_command" })?.kind, "observation_required");
+});
+
+test("intent and unobserved mutation evidence survive ordinary operation TTL and capacity pruning", () => {
+	let now = 1_000;
+	const registry = new SessionOperationRegistry({ ttlMs: 1_000, maxOperations: 2, now: () => now });
+	const scope = { ownerId: "agent-a", browserSessionId: "session-1", tabId: 7, generation: 2 };
+	const original = registry.begin({ ...scope, commandName: "browser_execute", command: "program", intentId: "like-note-42", phase: "dispatching", mutation: true } as Parameters<SessionOperationRegistry["begin"]>[0]);
+	registry.finish(original.operationId, {
+		...outcome(original.operationId, "effect_observed"),
+		target: { browserSessionId: "session-1", tabId: 7, generation: 2 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 1, finishedAt: 2 },
+	});
+	now += 2_000;
+	for (let i = 0; i < 3; i++) {
+		const disposable = registry.begin({ commandName: "browser_observe", browserSessionId: "session-1", tabId: 7, phase: "running" });
+		registry.finish(disposable.operationId);
+	}
+	assert.equal(registry.mutationReplayGuard({ ...scope, commandName: "browser_execute", intentId: "like-note-42" })?.kind, "intent_replay");
+	assert.equal(registry.mutationReplayGuard({ ...scope, commandName: "browser_command", intentId: "other" })?.kind, "observation_required");
+});
+
+test("intent replay binds the mutation payload and stable target across generation changes", () => {
+	const registry = new SessionOperationRegistry();
+	const operation = registry.begin({
+		commandName: "browser_execute",
+		browserSessionId: "session-1",
+		tabId: 7,
+		targetRef: "tabh_browser_logical_g1",
+		generation: 1,
+		ownerId: "agent-a",
+		intentId: "comment-note-42",
+		intentPayload: { mode: "program", program: [{ text: "first comment" }] },
+		phase: "dispatching",
+		mutation: true,
+	});
+	registry.finish(operation.operationId, {
+		...outcome(operation.operationId, "completed"),
+		target: { browserSessionId: "session-1", tabId: 7, generation: 1 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 1, finishedAt: 2 },
+	});
+	const nextScope = { ownerId: "agent-a", browserSessionId: "session-1", tabId: 8, targetRef: "tabh_browser_logical_g2", generation: 2, commandName: "browser_execute", intentId: "comment-note-42" };
+	assert.equal(registry.mutationReplayGuard({ ...nextScope, intentPayload: { mode: "program", program: [{ text: "first comment" }] } })?.kind, "intent_replay");
+	assert.equal(registry.mutationReplayGuard({ ...nextScope, intentPayload: { mode: "program", program: [{ text: "different comment" }] } })?.kind, "intent_conflict");
+});
+
+test("observation only clears a barrier when it began after settlement on the same generation", () => {
+	const now = 2_000;
+	const registry = new SessionOperationRegistry({ now: () => now });
+	const operation = registry.begin({ commandName: "browser_execute", browserSessionId: "session-1", tabId: 7, targetRef: "tabh_browser_logical_g1", generation: 1, ownerId: "agent-a", phase: "dispatching", mutation: true });
+	registry.finish(operation.operationId, {
+		...outcome(operation.operationId, "effect_observed"),
+		target: { browserSessionId: "session-1", tabId: 7, generation: 1 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 1, finishedAt: 2 },
+	});
+	const scope = { ownerId: "agent-a", browserSessionId: "session-1", tabId: 7, targetRef: "tabh_browser_logical_g1", commandName: "browser_execute" };
+	assert.equal(registry.markMutationObserved({ ...scope, generation: 1, observationStartedAt: 1_999 }), 0);
+	assert.equal(registry.markMutationObserved({ ...scope, generation: 2, observationStartedAt: 2_001 }), 0);
+	assert.equal(registry.markMutationObserved({ ...scope, generation: 1, observationStartedAt: 2_001 }), 1);
+});
+
+test("protected mutation evidence survives bridge reset and ledger capacity fails closed", () => {
+	const registry = new SessionOperationRegistry({ maxProtectedMutations: 1 });
+	const operation = registry.begin({ commandName: "browser_execute", browserSessionId: "session-1", tabId: 7, ownerId: "agent-a", intentId: "like-note-42", phase: "dispatching", mutation: true });
+	registry.finish(operation.operationId, {
+		...outcome(operation.operationId, "completed"),
+		target: { browserSessionId: "session-1", tabId: 7 },
+		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 1, finishedAt: 2 },
+	});
+	registry.clear({ preserveMutationEvidence: true });
+	assert.equal(registry.mutationReplayGuard({ ownerId: "agent-a", browserSessionId: "session-1", tabId: 7, commandName: "browser_execute", intentId: "like-note-42" })?.kind, "intent_replay");
+	assert.equal(registry.mutationReplayGuard({ ownerId: "agent-a", browserSessionId: "session-1", tabId: 8, commandName: "browser_execute", intentId: "new-intent" })?.kind, "ledger_capacity");
+});
+
+test("an intent is reusable when observer arming failed before mutation dispatch", () => {
+	const registry = new SessionOperationRegistry();
+	const operation = registry.begin({ commandName: "browser_execute", browserSessionId: "session-1", tabId: 7, ownerId: "agent-a", intentId: "like-note-42", phase: "arming", mutation: true });
+	registry.finish(operation.operationId, {
+		...outcome(operation.operationId, "failed"),
+		target: { browserSessionId: "session-1", tabId: 7 },
+		dispatch: { acknowledged: false, started: false, finished: false, startedAt: 1, finishedAt: 2 },
+	});
+	assert.equal(registry.mutationReplayGuard({ ownerId: "agent-a", browserSessionId: "session-1", tabId: 7, commandName: "browser_execute", intentId: "like-note-42" }), undefined);
 });

@@ -647,6 +647,7 @@ test("browser command runtime program adapter covers success, failure, timeout, 
 	assert.equal(success.aborted, undefined);
 	assert.equal(success.frames.length, 2);
 	assert.deepEqual(success.result, [1, 2, 3]);
+	assert.equal(success.acknowledged, true);
 	assert.deepEqual(calls.map((call) => call.name), ["executeJavaScript", "executeJavaScript", "executeJavaScript", "sendCommand"]);
 
 	const failure = await executeProgram([{ text: "hello" }], createProgramContext({
@@ -683,4 +684,60 @@ test("browser command runtime program adapter covers success, failure, timeout, 
 	}));
 	assert.deepEqual(malformed.aborted, { reason: "Step 0: expand=true but eval result is not an array", atStep: 0 });
 	assert.equal(malformed.frames[0]?.ok, true);
+});
+
+test("physical program carries frame acknowledgement and explicit final verification", async () => {
+	const server = {
+		async executeJavaScript(script: string) {
+			const data = script === "location.href" ? "https://example.test/" : { verified: true, liked: true };
+			return { id: "exec", acknowledged: true, data } as BrowserBridgeExecutionResult;
+		},
+		async sendCommand() {
+			return { id: "input", acknowledged: true, data: { sent: [{ type: "mousePressed" }] } } as BrowserBridgeExecutionResult;
+		},
+	};
+	const result = await executeProgram([
+		{ mouse: "press", x: 10, y: 10 },
+		{ mouse: "release", x: 10, y: 10 },
+		{ eval: "({verified:true,liked:true})", verify: true },
+	], createProgramContext(server));
+	assert.equal(result.acknowledged, true);
+	assert.equal(result.frames.filter((frame) => frame.kind.startsWith("mouse:")).every((frame) => frame.acknowledged === true), true);
+	assert.deepEqual(result.verification, { step: 2, passed: true, result: { verified: true, liked: true } });
+});
+
+test("physical program retains acknowledgement when the transport loses the frame result", async () => {
+	const result = await executeProgram([{ text: "one comment" }], createProgramContext({
+		async executeJavaScript() {
+			return { id: "url", acknowledged: true, data: "https://example.test/" } as BrowserBridgeExecutionResult;
+		},
+		async sendCommand() {
+			throw Object.assign(new Error("result lost after acknowledgement"), { details: { acked: true, outcome: "inflight-unknown" } });
+		},
+	}));
+	assert.equal(result.acknowledged, true);
+	assert.equal(result.frames[0]?.ok, false);
+	assert.equal(result.frames[0]?.acknowledged, true);
+	assert.deepEqual(result.aborted, { reason: "result lost after acknowledgement", atStep: 0 });
+});
+
+test("expanded programs enforce final verifier ordering before trusted input dispatch", async () => {
+	let inputDispatches = 0;
+	const result = await executeProgram([{ eval: "dynamic frames", expand: true }], createProgramContext({
+		async executeJavaScript(script: string) {
+			return {
+				id: "expand",
+				acknowledged: true,
+				data: script === "location.href"
+					? "https://example.test/"
+					: [{ eval: "({verified:true})", verify: true }, { text: "must not dispatch" }],
+			} as BrowserBridgeExecutionResult;
+		},
+		async sendCommand() {
+			inputDispatches += 1;
+			return { id: "input", acknowledged: true, data: { sent: [{ type: "input" }] } } as BrowserBridgeExecutionResult;
+		},
+	}));
+	assert.equal(inputDispatches, 0);
+	assert.match(String(result.aborted?.reason), /verification frame must be the final program frame/);
 });

@@ -291,6 +291,65 @@ test("BrowserBridgeServer keeps explicit browser selection stable and routes tar
 	});
 });
 
+test("same-socket worker reboot is classified as sw-restart and invalidates active operation observers", async () => {
+	await withServer(async (server) => {
+		const ws = await connectExtension(server, undefined, { extensionInstanceId: "stable-instance", workerBootId: "worker-1" });
+		const tab = server.getTabs()[0];
+		assert.ok(tab);
+		const operation = server.beginOperation({
+			commandName: "browser_execute",
+			command: "program",
+			browserSessionId: "default",
+			tabId: tab.tabId,
+			generation: tab.generation,
+			phase: "resolving",
+		});
+		ws.send(JSON.stringify({
+			type: "ext_ready",
+			bridge: { id: "bridge-1", extensionInstanceId: "stable-instance", workerBootId: "worker-2", durableRequests: false },
+			tabs: [{ id: tab.tabId, url: tab.url, title: tab.title, active: true }],
+		}));
+		const deadlineAt = Date.now() + 1_000;
+		while (!server.getOperation(operation.operationId)?.events.some((event) => event.type === "observer_lost")) {
+			if (Date.now() >= deadlineAt) throw new Error("worker restart did not invalidate the active operation observer");
+			await new Promise((resolve) => setImmediate(resolve));
+		}
+		assert.equal(server.snapshot().connectionMetrics?.swRestarts, 1);
+		assert.equal(server.snapshot().connectionMetrics?.reconnects, 1);
+		assert.match(JSON.stringify(server.getOperation(operation.operationId)?.events), /extension_worker_restarted/);
+		ws.close();
+	});
+});
+
+test("worker reboot invalidates only operations owned by the restarted browser instance", async () => {
+	await withServer(async (server) => {
+		const user = await connectExtension(server, [{ id: 7, url: "https://user.test/", title: "User", active: true }], { extensionInstanceId: "user-instance", workerBootId: "user-worker-1" });
+		const isolated = await connectExtension(server, [{ id: 7, url: "https://isolated.test/", title: "Isolated", active: true }], { extensionInstanceId: "isolated-instance", workerBootId: "isolated-worker-1" });
+		const userTab = server.getTabs().find((tab) => tab.url === "https://user.test/");
+		const isolatedTab = server.getTabs().find((tab) => tab.url === "https://isolated.test/");
+		assert.ok(userTab?.browserId);
+		assert.ok(isolatedTab?.browserId);
+		const secondary = server.createBrowserSession("isolated-session");
+		server.selectBrowser(userTab.browserId, { browserSessionId: "default" });
+		server.selectBrowser(isolatedTab.browserId, { browserSessionId: secondary.id });
+		const userOperation = server.beginOperation({ commandName: "browser_execute", browserSessionId: "default", tabId: userTab.tabId, generation: userTab.generation, phase: "resolving", mutation: true });
+		const isolatedOperation = server.beginOperation({ commandName: "browser_execute", browserSessionId: secondary.id, tabId: isolatedTab.tabId, generation: isolatedTab.generation, phase: "resolving", mutation: true });
+		isolated.send(JSON.stringify({
+			type: "ext_ready",
+			bridge: { id: "bridge-1", extensionInstanceId: "isolated-instance", workerBootId: "isolated-worker-2", durableRequests: false },
+			tabs: [{ id: 7, url: "https://isolated.test/", title: "Isolated", active: true }],
+		}));
+		const deadlineAt = Date.now() + 1_000;
+		while (!server.getOperation(isolatedOperation.operationId)?.events.some((event) => event.type === "observer_lost")) {
+			if (Date.now() >= deadlineAt) throw new Error("isolated worker restart did not invalidate its operation");
+			await new Promise((resolve) => setImmediate(resolve));
+		}
+		assert.equal(server.getOperation(userOperation.operationId)?.events.some((event) => event.type === "observer_lost"), false);
+		user.close();
+		isolated.close();
+	});
+});
+
 test("BrowserBridgeServer consent port sends requests, resolves decisions and broadcasts agents", async () => {
 	await withServer(async (server) => {
 		const ws = await connectExtension(server);

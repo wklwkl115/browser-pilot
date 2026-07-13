@@ -90,9 +90,15 @@ export function dispatchProgramElement(element: unknown, step: number): Dispatch
  * Returns the first error encountered, or null if all elements are valid.
  */
 export function validateProgram(program: unknown[]): { ok: true } | { ok: false; error: string; step: number } {
+	let verifierStep: number | undefined;
 	for (let i = 0; i < program.length; i++) {
 		const result = dispatchProgramElement(program[i], i);
 		if (!result.ok) return result;
+		if (result.discriminator !== "eval" || result.element.verify !== true) continue;
+		if (verifierStep !== undefined) return { ok: false, error: `Step ${i}: program accepts only one verification frame (already declared at step ${verifierStep})`, step: i };
+		if (result.element.expand === true) return { ok: false, error: `Step ${i}: verification frame cannot expand`, step: i };
+		if (i !== program.length - 1) return { ok: false, error: `Step ${i}: verification frame must be the final program frame`, step: i };
+		verifierStep = i;
 	}
 	return { ok: true };
 }

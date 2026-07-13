@@ -44,6 +44,7 @@ type BrowserBridgeClientMessageServiceDeps = {
 	notifyExtensionReady?: () => void;
 	notifyOperationTopologyChange?: () => void;
 	recordTargetReplacement?: (fromTabId: number, toTabId: number) => void;
+	recordOperationWorkerRestart?: (details: { extensionInstanceId?: string; previousWorkerBootId?: string; workerBootId?: string }) => void;
 };
 
 type AppliedTabReplacement = ReturnType<BrowserTabSessionRouter["applyTabReplacements"]>[number];
@@ -73,7 +74,7 @@ export class BrowserBridgeClientMessageService {
 		// the owning instance before unregister so a same-instance reconnect can correlate.
 		const instanceId = this.deps.clients.info(ws)?.extensionInstanceId;
 		this.deps.pendingRequests.drainClient(ws, instanceId, requestGraceMs());
-		if (reason) this.deps.clients.recordDisconnect(reason);
+		if (reason) this.deps.clients.recordDisconnect(reason, instanceId, !this.deps.clients.hasOpenInstanceClient(instanceId, ws));
 		this.deps.clients.unregister(ws);
 		this.deps.tabs.markClientDisconnected(ws);
 		const releasedLeases = this.deps.leases.releaseLeasesForTabSessions(disconnectedTabSessionIds, "disconnect");
@@ -137,6 +138,9 @@ export class BrowserBridgeClientMessageService {
 			const defaultSession = this.deps.browserSessions.defaultSession();
 			const selectedClient = this.deps.browserSessions.selectedOpenClient(defaultSession);
 			const selectedInstanceId = selectedClient ? this.deps.clients.info(selectedClient)?.extensionInstanceId : undefined;
+			const priorInfo = this.deps.clients.info(ws);
+			const previousInstanceId = priorInfo?.extensionInstanceId;
+			const previousWorkerBootId = priorInfo?.workerBootId;
 			this.deps.clients.updateClientInfo(ws, message.bridge || message.extension);
 			const incomingInstanceId = this.deps.clients.info(ws)?.extensionInstanceId;
 			const replacesSelectedInstance = type === "ext_ready"
@@ -149,10 +153,20 @@ export class BrowserBridgeClientMessageService {
 				// extension instance. Idempotent: a repeat ext_ready on the same socket finds
 				// no peer to supersede and just refreshes selection/info.
 				const info = this.deps.clients.info(ws);
-				const connectKind = this.deps.clients.classifyConnect(ws, info?.extensionInstanceId, info?.workerBootId);
+				const sameSocketRestart = previousInstanceId !== undefined
+					&& previousInstanceId === info?.extensionInstanceId
+					&& previousWorkerBootId !== undefined
+					&& info?.workerBootId !== undefined
+					&& previousWorkerBootId !== info.workerBootId;
+				const sameSocketDuplicate = previousInstanceId !== undefined
+					&& previousInstanceId === info?.extensionInstanceId
+					&& previousWorkerBootId !== undefined
+					&& previousWorkerBootId === info?.workerBootId;
+				const connectKind = sameSocketRestart ? "sw-restart" : sameSocketDuplicate ? "duplicate" : this.deps.clients.classifyConnect(ws, info?.extensionInstanceId, info?.workerBootId);
 				if (info) info.connectKind = connectKind;
-				this.deps.clients.recordConnect(connectKind);
+				this.deps.clients.recordConnect(connectKind, info?.extensionInstanceId, info?.workerBootId);
 				this.deps.clients.recordHandshake();
+				if (connectKind === "sw-restart") this.deps.recordOperationWorkerRestart?.({ extensionInstanceId: info?.extensionInstanceId, previousWorkerBootId, workerBootId: info?.workerBootId });
 				const graceMs = requestGraceMs();
 				// Drain a superseded peer's in-flight requests synchronously (its async close would
 				// otherwise race the reconcile below), then reconcile all draining requests for this

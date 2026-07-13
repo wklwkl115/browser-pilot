@@ -14,6 +14,9 @@ export class BrowserBridgeClientRegistry {
 	private everHandshaked = false;
 	private _lastDisconnectReason?: string;
 	private _lastDisconnectAt?: number;
+	private pendingReconnectAt?: number;
+	private readonly pendingReconnectAtByInstance = new Map<string, number>();
+	private readonly lastWorkerBootByInstance = new Map<string, string>();
 	private readonly _metrics: BridgeConnectionMetrics = { connects: 0, reconnects: 0, swRestarts: 0, duplicates: 0, disconnects: 0 };
 	private readonly getPort: () => number;
 	private readonly expectedBuild: ExpectedExtensionBuild;
@@ -43,21 +46,29 @@ export class BrowserBridgeClientRegistry {
 		if (this.extensionClient === ws) this.extensionClient = undefined;
 	}
 
-	recordDisconnect(reason: string): void {
+	recordDisconnect(reason: string, instanceId?: string, reconnectEligible = true): void {
+		const now = Date.now();
 		this._lastDisconnectReason = reason;
-		this._lastDisconnectAt = Date.now();
+		this._lastDisconnectAt = now;
 		this._metrics.disconnects += 1;
+		if (!reconnectEligible) return;
+		if (instanceId) this.pendingReconnectAtByInstance.set(instanceId, now);
+		else this.pendingReconnectAt = now;
 	}
 
 	/** Tally an ext_ready handshake by its classified kind, and record reconnect latency. */
-	recordConnect(kind: "cold" | "reconnect" | "sw-restart" | "duplicate"): void {
+	recordConnect(kind: "cold" | "reconnect" | "sw-restart" | "duplicate", instanceId?: string, workerBootId?: string): void {
 		this._metrics.connects += 1;
 		if (kind === "reconnect" || kind === "sw-restart") {
 			this._metrics.reconnects += 1;
-			if (typeof this._lastDisconnectAt === "number") this._metrics.lastReconnectLatencyMs = Math.max(0, Date.now() - this._lastDisconnectAt);
+			const disconnectedAt = instanceId ? this.pendingReconnectAtByInstance.get(instanceId) : this.pendingReconnectAt;
+			if (typeof disconnectedAt === "number") this._metrics.lastReconnectLatencyMs = Math.max(0, Date.now() - disconnectedAt);
+			if (instanceId) this.pendingReconnectAtByInstance.delete(instanceId);
+			else this.pendingReconnectAt = undefined;
 		}
 		if (kind === "sw-restart") this._metrics.swRestarts += 1;
 		if (kind === "duplicate") this._metrics.duplicates += 1;
+		if (instanceId && workerBootId) this.lastWorkerBootByInstance.set(instanceId, workerBootId);
 	}
 
 	metrics(): BridgeConnectionMetrics {
@@ -83,6 +94,9 @@ export class BrowserBridgeClientRegistry {
 		this.clients.clear();
 		this.clientInfo.clear();
 		this.extensionClient = undefined;
+		this.pendingReconnectAt = undefined;
+		this.pendingReconnectAtByInstance.clear();
+		this.lastWorkerBootByInstance.clear();
 	}
 
 	markSeen(ws: WebSocket): void {
@@ -147,8 +161,15 @@ export class BrowserBridgeClientRegistry {
 				if (info.extensionInstanceId !== instanceId) continue;
 				return info.workerBootId && workerBootId && info.workerBootId === workerBootId ? "duplicate" : "sw-restart";
 			}
+			const previousWorkerBootId = this.lastWorkerBootByInstance.get(instanceId);
+			if (previousWorkerBootId && workerBootId && previousWorkerBootId !== workerBootId) return "sw-restart";
 		}
 		return this.everHandshaked ? "reconnect" : "cold";
+	}
+
+	hasOpenInstanceClient(instanceId: string | undefined, exclude?: WebSocket): boolean {
+		if (!instanceId) return false;
+		return Array.from(this.clientInfo.entries()).some(([ws, info]) => ws !== exclude && info.extensionInstanceId === instanceId && isOpen(ws));
 	}
 
 	recordHandshake(): void {
