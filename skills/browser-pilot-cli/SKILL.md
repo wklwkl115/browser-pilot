@@ -28,6 +28,10 @@ Treat live help and schema output as authoritative. Command definitions reject u
 
 Machine discovery is contract v3 only: `commands --json` returns the compact `browser-pilot-command-catalog/v3` root, while `schema <command> <kebab-action> --json` returns the closed `browser-pilot-command-schema/v3` action schema. The catalog carries schema argv references instead of repeating flags or full schemas. CLI action tokens are canonical kebab-case; the action schema exposes the corresponding raw action `const` and the only permitted nested `params` keys.
 
+### Agent-preview façade (opt-in)
+
+When the caller explicitly uses the agent profile (`commands --profile agent-preview`), only three tools are visible: `view`, `act`, `read` (`browser_view` / `browser_act` / `browser_read`). Carry `contextRef` plus semantic candidate/tab/read refs; do not require `tabId`, `pageEpoch`, baseline ids, or raw `saved.path` on the agent envelope. One `act` call settles a mutation and returns `browser-agent-turn/v1` with outcome-first semantics: only `completed` is success; never auto-replay after ACK; do not post-action wait/sleep. Expert workflows below remain the human CLI default.
+
 ## Follow the Operating Loop
 
 1. Establish readiness.

@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 
 - Removed the redundant CLI-only `--script-file` flag. `browser-pilot execute --script` is now the single JavaScript input surface and uniformly accepts inline source, `@file`, or stdin (`-`). Temporary JavaScript must remain memory-only: complex/generated source must use stdin, transient local script files are forbidden, and `@file` is reserved for durable source.
 
+### Added
+
+- Agent Interaction Plane **preview**: invokable `browser_view`, `browser_act`, and `browser_read` façades with owner-isolated mechanical context, deterministic AgentView projection, semantic action compilation into trusted Program Engine primitives, and `browser-agent-turn/v1` outcome mapping. Public catalog v3 remains 19 tools; use `browser-pilot commands --profile agent-preview --json` for the three-tool agent surface. Human CLI stays expert-first.
+- Pure agent kernels (`src/kernels/agent/*`), daemon `AgentContextService`, capability profile catalog, and `examples/agent-preview/` structured invoke samples.
+
 ### Changed
 
 - Persistent CDP now coalesces concurrent attaches per tab, arms independent operation domains concurrently, lazily enables domains, caches background focus-emulation setup per live session, and keeps execute fallback sessions warm instead of attaching and detaching for every background/CSP execution.

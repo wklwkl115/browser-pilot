@@ -7,13 +7,41 @@ import { daemonContractReport, findDaemon, isDaemonReadyForReuse, lockfilePath }
 import { daemonVersion, packageVersion } from "../daemon/packageInfo.js";
 import { staleLockfileDiagnostic } from "./connection.js";
 import { pad } from "./help.js";
-import { firstPositional, jsonMode, loadCliCommands, renderLocalJson, renderMode } from "./cliBasics.js";
+import { firstPositional, jsonMode, loadCliCommands, loadRunnableCliCommands, renderLocalJson, renderMode } from "./cliBasics.js";
 import { splitLeadingGlobalFlags } from "./cliBasics.js";
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
 import { buildCommandCatalogV3, buildCommandSchemaV3 } from "./publicContract.js";
+import { filterToolsByProfile, parseCapabilityProfile, toolsForProfile } from "../../commands/capabilityProfileCatalog.js";
 
 export async function runCommandsCommand(argv: string[]): Promise<number> {
 	const mode = jsonMode(argv);
+	const profileFlag = (() => {
+		const index = argv.findIndex((arg) => arg === "--profile" || arg.startsWith("--profile="));
+		if (index < 0) return undefined;
+		const arg = argv[index]!;
+		if (arg.startsWith("--profile=")) return parseCapabilityProfile(arg.slice("--profile=".length));
+		return parseCapabilityProfile(argv[index + 1]);
+	})();
+	if (profileFlag === "agent" || profileFlag === "agent-preview") {
+		const runnable = await loadRunnableCliCommands();
+		const agentTools = filterToolsByProfile(runnable.map((c) => ({ name: c.name, cli: c })), profileFlag);
+		const payload = {
+			schema: "browser-pilot-agent-profile/v1",
+			profile: profileFlag,
+			tools: toolsForProfile(profileFlag),
+			commands: agentTools.map((item) => ({
+				cli: item.cli.subcommand,
+				tool: item.name,
+				summary: item.cli.description ?? item.name,
+			})),
+		};
+		if (mode === "json") {
+			process.stdout.write(`${JSON.stringify(payload)}\n`);
+			return EXIT.ok;
+		}
+		for (const cmd of payload.commands) process.stdout.write(`${pad(cmd.cli, 22)}${cmd.summary}\n`);
+		return EXIT.ok;
+	}
 	const catalog = buildCommandCatalogV3(await loadCliCommands());
 	if (mode === "json") {
 		process.stdout.write(`${JSON.stringify(catalog)}\n`);
@@ -28,7 +56,7 @@ export async function runSchemaCommand(argv: string[]): Promise<number> {
 	const first = firstPositional(argv);
 	const cmdName = first.value;
 	if (!cmdName) return renderUsageError("usage: browser-pilot schema <command> --json", mode);
-	const cmd = (await loadCliCommands()).find((item) => item.subcommand === cmdName);
+	const cmd = (await loadRunnableCliCommands()).find((item) => item.subcommand === cmdName);
 	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run browser-pilot commands --json`, mode);
 	const second = firstPositional(first.rest);
 	const naturalAction = second.value ? naturalActionForToken(cmd, second.value) : undefined;
@@ -56,7 +84,7 @@ export async function runValidateCommand(argv: string[], writeJson: typeof write
 	const positional = firstPositional(argv);
 	const cmdName = positional.value;
 	if (!cmdName || cmdName.startsWith("--")) return renderUsageError("usage: browser-pilot validate <command> --params @params.json --json", mode);
-	const cmd = (await loadCliCommands()).find((item) => item.subcommand === cmdName);
+	const cmd = (await loadRunnableCliCommands()).find((item) => item.subcommand === cmdName);
 	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run browser-pilot commands --json`, mode);
 	const actionPosition = validateActionPosition(positional.rest);
 	const naturalAction = actionPosition.actionToken ? naturalActionForToken(cmd, actionPosition.actionToken) : undefined;

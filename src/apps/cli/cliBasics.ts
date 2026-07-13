@@ -2,9 +2,16 @@ import type { CliCommand } from "./registry.js";
 import { wantsJson, type GlobalFlags } from "./flags.js";
 import { writeJsonEnvelope, EXIT, type RenderMode } from "./render.js";
 
+/** Public catalog commands (19 tools; catalog/contract identity). */
 export async function loadCliCommands(): Promise<CliCommand[]> {
 	const registry = await import("./registry.js");
 	return registry.buildCliCommands();
+}
+
+/** Runnable commands including agent-preview façade (view/act/read). */
+export async function loadRunnableCliCommands(): Promise<CliCommand[]> {
+	const registry = await import("./registry.js");
+	return registry.buildRunnableCliCommands();
 }
 
 export function renderLocalJson(obj: Record<string, unknown>): number {

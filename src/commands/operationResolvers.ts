@@ -121,6 +121,46 @@ function nativeToolCompletion(input: BrowserOperationResolverInput): BrowserOper
 	return nativeCompletion(String(input.command || ""), input.result);
 }
 
+/**
+ * Semantic-action completion resolvers for agent façade writes.
+ * Each published kind maps to exact evidence; generic DOM mutation is never completed.
+ */
+export const SEMANTIC_ACTION_COMPLETION_RESOLVER_REGISTRY = {
+	"semantic.activate": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
+		const nav = executeCompletion({ ...input, mode: input.mode ?? "program", physicalProgram: true });
+		if (nav?.source === "navigation-completed" || nav?.source === "new-tab-ready" || nav?.source === "download-completed") return nav;
+		// Physical click without navigation stays effect_observed unless program-resolved with explicit result.
+		return undefined;
+	},
+	"semantic.fill": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
+		// Fill completes only when trusted program resolved with a result payload (value proof deferred to program).
+		if (input.physicalProgram && input.result !== undefined) {
+			return { source: "semantic-fill-applied", evidence: { result: input.result } };
+		}
+		return executeCompletion(input);
+	},
+	"semantic.press": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => executeCompletion({ ...input, physicalProgram: true }),
+	"semantic.scroll": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
+		if (input.result !== undefined) return { source: "semantic-scroll-applied", evidence: { result: input.result } };
+		return undefined;
+	},
+	"semantic.navigate": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
+		const nav = executeCompletion({ ...input, mode: "javascript" });
+		if (nav) return nav;
+		return tabsCompletion(input);
+	},
+	"semantic.history": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => executeCompletion({ ...input, mode: "javascript" }),
+} as const;
+
+export type SemanticActionCompletionResolverId = keyof typeof SEMANTIC_ACTION_COMPLETION_RESOLVER_REGISTRY;
+
+export function resolveSemanticActionCompletion(
+	resolverId: SemanticActionCompletionResolverId,
+	input: BrowserOperationResolverInput,
+): BrowserOperationCompletion | undefined {
+	return SEMANTIC_ACTION_COMPLETION_RESOLVER_REGISTRY[resolverId](input);
+}
+
 export function resolveBrowserOperationCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
 	if (input.commandName === "browser_execute") return executeCompletion(input);
 	if (input.commandName === "browser_tabs") return tabsCompletion(input);

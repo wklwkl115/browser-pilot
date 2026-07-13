@@ -1,0 +1,195 @@
+/**
+ * Compiles SemanticActionV1 into existing trusted Program Engine primitives.
+ * Does not implement hit-test, editable detection, or completion classification.
+ */
+import type { AgentCandidateBinding, SemanticActionV1 } from "../kernels/agent/agentTypes.js";
+import { isPublishedWriteKind, resolverIdForKind, type SemanticCompletionResolverId } from "../kernels/agent/semanticAction.js";
+
+export type TrustedProgramPrimitive = Record<string, unknown>;
+
+export type CompiledSemanticAction = {
+	actionKind: SemanticActionV1["kind"];
+	physical: boolean;
+	targetBindings: AgentCandidateBinding[];
+	execution:
+		| { kind: "program"; program: TrustedProgramPrimitive[] }
+		| { kind: "navigation"; plan: { type: "navigate" | "history"; url?: string; direction?: string; disposition?: string } };
+	completionResolverId: SemanticCompletionResolverId;
+	safety: {
+		requiresConfirmation: boolean;
+		confirmationReason?: string;
+	};
+	debugPlan: {
+		kind: SemanticActionV1["kind"];
+		resourceRefs: string[];
+		frames: number;
+	};
+};
+
+export type CompileError = {
+	code: "ACTION_NOT_ALLOWED" | "ACTION_UNSUPPORTED_SURFACE" | "REF_STALE" | "INVALID_AGENT_REQUEST";
+	message: string;
+};
+
+function requireBinding(
+	ref: string | undefined,
+	bindings: Map<string, AgentCandidateBinding>,
+): AgentCandidateBinding | CompileError {
+	if (!ref) return { code: "INVALID_AGENT_REQUEST", message: "action requires a candidate ref" };
+	const binding = bindings.get(ref);
+	if (!binding) return { code: "REF_STALE", message: `unknown or stale candidate ref ${ref}` };
+	return binding;
+}
+
+function isCompileError(value: AgentCandidateBinding | CompileError): value is CompileError {
+	return "code" in value && "message" in value && !("resourceRef" in value);
+}
+
+export function compileSemanticAction(
+	action: SemanticActionV1,
+	bindings: Map<string, AgentCandidateBinding>,
+): CompiledSemanticAction | CompileError {
+	if (!isPublishedWriteKind(action.kind)) {
+		return {
+			code: "ACTION_UNSUPPORTED_SURFACE",
+			message: `semantic action ${action.kind} is not published on agent-preview v1`,
+		};
+	}
+
+	const resolverId = resolverIdForKind(action.kind);
+
+	if (action.kind === "navigate") {
+		return {
+			actionKind: action.kind,
+			physical: false,
+			targetBindings: [],
+			execution: {
+				kind: "navigation",
+				plan: { type: "navigate", url: action.url, disposition: action.disposition ?? "current" },
+			},
+			completionResolverId: resolverId,
+			safety: { requiresConfirmation: false },
+			debugPlan: { kind: action.kind, resourceRefs: [], frames: 0 },
+		};
+	}
+
+	if (action.kind === "history") {
+		return {
+			actionKind: action.kind,
+			physical: false,
+			targetBindings: [],
+			execution: {
+				kind: "navigation",
+				plan: { type: "history", direction: action.direction },
+			},
+			completionResolverId: resolverId,
+			safety: { requiresConfirmation: false },
+			debugPlan: { kind: action.kind, resourceRefs: [], frames: 0 },
+		};
+	}
+
+	if (action.kind === "activate") {
+		const binding = requireBinding(action.ref, bindings);
+		if (isCompileError(binding)) return binding;
+		if (!binding.allowedActions.includes("activate")) {
+			return { code: "ACTION_NOT_ALLOWED", message: `activate not allowed on ${action.ref}` };
+		}
+		const program: TrustedProgramPrimitive[] = [
+			{ kind: "mouse", action: "click", ref: binding.resourceRef },
+		];
+		return {
+			actionKind: action.kind,
+			physical: true,
+			targetBindings: [binding],
+			execution: { kind: "program", program },
+			completionResolverId: resolverId,
+			safety: { requiresConfirmation: false },
+			debugPlan: { kind: action.kind, resourceRefs: [binding.resourceRef], frames: program.length },
+		};
+	}
+
+	if (action.kind === "fill") {
+		const binding = requireBinding(action.ref, bindings);
+		if (isCompileError(binding)) return binding;
+		if (!binding.allowedActions.includes("fill")) {
+			return { code: "ACTION_NOT_ALLOWED", message: `fill not allowed on ${action.ref}` };
+		}
+		const program: TrustedProgramPrimitive[] = [
+			{ kind: "mouse", action: "click", ref: binding.resourceRef },
+			...(action.replace === false ? [] : [{ kind: "key", action: "chord", keys: ["Control", "a"] }]),
+			{ kind: "text", text: action.value, ref: binding.resourceRef },
+		];
+		return {
+			actionKind: action.kind,
+			physical: true,
+			targetBindings: [binding],
+			execution: { kind: "program", program },
+			completionResolverId: resolverId,
+			safety: { requiresConfirmation: false },
+			debugPlan: { kind: action.kind, resourceRefs: [binding.resourceRef], frames: program.length },
+		};
+	}
+
+	if (action.kind === "press") {
+		const binding = action.ref ? requireBinding(action.ref, bindings) : undefined;
+		if (binding && isCompileError(binding)) return binding;
+		if (binding && !binding.allowedActions.includes("press")) {
+			return { code: "ACTION_NOT_ALLOWED", message: `press not allowed on ${action.ref}` };
+		}
+		const program: TrustedProgramPrimitive[] = [
+			{
+				kind: "key",
+				action: "press",
+				key: action.key,
+				...(action.modifiers?.length ? { modifiers: action.modifiers } : {}),
+				...(binding ? { ref: binding.resourceRef } : {}),
+			},
+		];
+		return {
+			actionKind: action.kind,
+			physical: true,
+			targetBindings: binding ? [binding] : [],
+			execution: { kind: "program", program },
+			completionResolverId: resolverId,
+			safety: { requiresConfirmation: false },
+			debugPlan: {
+				kind: action.kind,
+				resourceRefs: binding ? [binding.resourceRef] : [],
+				frames: program.length,
+			},
+		};
+	}
+
+	if (action.kind === "scroll") {
+		const binding = action.ref ? requireBinding(action.ref, bindings) : undefined;
+		if (binding && isCompileError(binding)) return binding;
+		const amount = action.amount === "page" ? 600 : 200;
+		const delta = action.direction === "up" || action.direction === "left" ? -amount : amount;
+		const horizontal = action.direction === "left" || action.direction === "right";
+		const program: TrustedProgramPrimitive[] = [
+			{
+				kind: "wheel",
+				...(horizontal ? { deltaX: delta } : { deltaY: delta }),
+				...(binding ? { ref: binding.resourceRef } : {}),
+			},
+		];
+		return {
+			actionKind: action.kind,
+			physical: true,
+			targetBindings: binding ? [binding] : [],
+			execution: { kind: "program", program },
+			completionResolverId: resolverId,
+			safety: { requiresConfirmation: false },
+			debugPlan: {
+				kind: action.kind,
+				resourceRefs: binding ? [binding.resourceRef] : [],
+				frames: program.length,
+			},
+		};
+	}
+
+	return {
+		code: "ACTION_UNSUPPORTED_SURFACE",
+		message: `unsupported action ${action.kind}`,
+	};
+}

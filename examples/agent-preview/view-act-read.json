@@ -1,0 +1,35 @@
+{
+  "description": "Agent-preview structured invoke examples (daemon JSON). Not a second schema source.",
+  "profile": "agent-preview",
+  "tools": ["browser_view", "browser_act", "browser_read"],
+  "sequence": [
+    {
+      "tool": "browser_view",
+      "params": {
+        "target": { "use": "active" },
+        "detail": "decision"
+      },
+      "notes": "Creates contextRef; no tabId/pageEpoch/path required"
+    },
+    {
+      "tool": "browser_act",
+      "params": {
+        "contextRef": "<from view.context.contextRef>",
+        "action": {
+          "kind": "fill",
+          "ref": "<from view.candidates[].ref>",
+          "value": "Browser Pilot"
+        }
+      },
+      "notes": "One mutation; completed is only success; no wait/sleep"
+    },
+    {
+      "tool": "browser_read",
+      "params": {
+        "contextRef": "<from turn.context.contextRef>",
+        "readRef": "<from view.reads[].readRef>"
+      },
+      "notes": "Only server-issued readRef; no saved.path"
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js"
 import { deriveBridgeReadiness } from "../../bridge/server/bridgeUtils.js";
 import type { BrowserBridgeSnapshot, BrowserTabInfo } from "../../bridge/server/types.js";
 import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
+import { defineAgentFacadeCommands } from "../../commands/agent/defineAgentFacadeCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
@@ -28,6 +29,7 @@ import { isRecord } from "../../utils/records.js";
 import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
 import { daemonVersion } from "./packageInfo.js";
 import { createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
+import { AgentContextService, getAgentContextService, installAgentContextService } from "./AgentContextService.js";
 import * as authStore from "./authStore.js";
 import { TenantLeaseRegistry } from "./tenantLease.js";
 import {
@@ -471,17 +473,25 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		return bridgeServer;
 	};
 
+	installAgentContextService(new AgentContextService());
+
+	const AGENT_FACADE_NAMES = new Set(["browser_view", "browser_act", "browser_read"]);
 	let commandDefinitions: CommandDefinition[];
+	let publicCommandDefinitions: CommandDefinition[];
 	if (options.commandDefinitions) {
 		commandDefinitions = [...options.commandDefinitions];
+		publicCommandDefinitions = commandDefinitions.filter((def) => !AGENT_FACADE_NAMES.has(def.name));
 	} else {
 		const adapter = new CommandManifestIndex();
 		defineBrowserCommands(adapter, bridgeServer, ensureStarted);
+		publicCommandDefinitions = adapter.getCommands();
+		defineAgentFacadeCommands({ commands: adapter, ensureStarted });
 		commandDefinitions = adapter.getCommands();
 	}
 	const toolByName = new Map<string, CommandDefinition>(commandDefinitions.map((def) => [def.name, def]));
-	const toolCount = toolByName.size;
-	const contractIdentity = createDaemonContractIdentity(commandDefinitions);
+	// Contract identity / toolCount remain public catalog only (preview must not rewrite v3 wire).
+	const contractIdentity = createDaemonContractIdentity(publicCommandDefinitions);
+	const toolCount = contractIdentity.toolCount;
 
 	const token = randomBytes(24).toString("hex");
 	const usageEnabled = resolveUsageLogOptions().enabled;
@@ -491,6 +501,11 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		if (closing) return;
 		closing = true;
 		tenantLease.stop();
+		try {
+			getAgentContextService().expireAll();
+		} catch {
+			/* best-effort */
+		}
 		await new Promise<void>((resolve) => {
 			server.close(() => resolve());
 			server.closeIdleConnections?.();

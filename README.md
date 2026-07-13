@@ -184,6 +184,21 @@ return { title: document.title, headings };
 
 Machine discovery uses the compact command contract v3. `browser-pilot commands --json` returns one root artifact rule plus 19 canonical command entries and action schema references; it does not repeat flags, schemas, routing prose, or legacy aliases per command. `browser-pilot schema <command> <kebab-action> --json` expands the closed action-specific schema, including the raw action `const`, shared target/session/output fields, and the only allowed nested `params`. Help, offline validation, daemon validation, and execution routing all derive from that same owner.
 
+### Agent preview (opt-in)
+
+Ordinary agent integrations can opt into a three-tool façade without changing the public catalog:
+
+```text
+browser-pilot commands --profile agent-preview --json
+browser-pilot view --json
+browser-pilot act --params "{\"contextRef\":\"...\",\"action\":{\"kind\":\"activate\",\"ref\":\"a_01\"}}" --json
+browser-pilot read --params "{\"contextRef\":\"...\",\"readRef\":\"r_01\"}" --json
+```
+
+- `browser_view` / `browser_act` / `browser_read` carry a short-lived `contextRef` and semantic refs only (no required `tabId` / `pageEpoch` / `saved.path` on the agent envelope).
+- `browser_act` returns `browser-agent-turn/v1`; `completed` remains the only success, and acknowledged mutations are never auto-replayed.
+- Human CLI remains expert-first (tabs/observe/execute). See `examples/agent-preview/` and CODE_WIKI §14.7.
+
 ## Typical Workflow
 
 ```

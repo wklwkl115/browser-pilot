@@ -1,14 +1,10 @@
 # Browser Pilot Agent Interaction Plane 设计方案
 
-> 状态：设计提案（Draft），尚未成为公共契约或实现规则。
+> 状态：**已归档（Archived）**。实现与公共契约以 [CODE_WIKI.md](../../CODE_WIKI.md)、[REPO_GOVERNANCE.md](../../REPO_GOVERNANCE.md) 和 [AGENTS.md](../../AGENTS.md) 为准。
 >
-> 权威边界：当前架构、公共命令契约和验证门禁仍分别以 [CODE_WIKI.md](CODE_WIKI.md)、[REPO_GOVERNANCE.md](REPO_GOVERNANCE.md) 和 [AGENTS.md](AGENTS.md) 为准。本文只描述拟议目标和迁移路径，不覆盖现有 owner。
+> 本文仅保留设计决策历史，**不是**运行时规则或第二权威。稳定结论已同步到 CODE_WIKI §14.7 与 REPO_GOVERNANCE Agent Interaction Plane 条款。
 >
-> 文档生命周期：方案被接受并进入实现后，应把稳定的架构结论同步回 CODE_WIKI.md，把公共契约和门禁同步回 REPO_GOVERNANCE.md，再删除或归档本文，避免形成第二套长期规则。
->
-> 更新日期：2026-07-13
->
-> 修订说明：根据工程化/产品化评审补齐产品旅程、发布通道、失败体验、时延预算、golden fixture、过渡期 transport、Phase 2 PR 边界与里程碑验收；核心 ADR 与安全约束不变。
+> 归档日期：2026-07-13
 
 ## 1. 执行摘要
 

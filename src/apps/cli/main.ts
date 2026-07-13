@@ -9,7 +9,7 @@ import { invokeTool, DaemonUnavailableError } from "./client.js";
 import { printHelp } from "./help.js";
 import { translateNaturalActionArgv, legacyActionUsed } from "./naturalRouting.js";
 import { invocationFlagSpecs, kebabAction, nestNaturalActionParams, printCommandHelp } from "./commandMetadata.js";
-import { loadCliCommands, renderMode, splitLeadingGlobalFlags } from "./cliBasics.js";
+import { loadCliCommands, loadRunnableCliCommands, renderMode, splitLeadingGlobalFlags } from "./cliBasics.js";
 import { runCommandsCommand, runDoctorCommand, runSchemaCommand, runValidateCommand } from "./cliLocalCommands.js";
 import { daemonAction, runConnectCommand, runDaemonControl, runStatusCommand } from "./cliConnectionCommands.js";
 import { runSelftestCommand, selftestToolError } from "./cliSelftest.js";
@@ -26,7 +26,7 @@ export type OfflineToolInvocationResult =
 
 /** Parse and validate a tool CLI example without starting/reusing the daemon. */
 export async function validateToolInvocationOffline(sub: string, commandArgv: string[]): Promise<OfflineToolInvocationResult> {
-	const cmd = (await loadCliCommands()).find((item) => item.subcommand === sub);
+	const cmd = (await loadRunnableCliCommands()).find((item) => item.subcommand === sub);
 	if (!cmd) return { ok: false, error: `unknown command "${sub}"` };
 	const translated = translateNaturalActionArgv(cmd, commandArgv);
 	if (!translated.ok) return { ok: false, error: translated.error };
@@ -60,7 +60,7 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 async function runToolCommand(sub: string, commandArgv: string[]): Promise<number> {
-	const cmd = (await loadCliCommands()).find((item) => item.subcommand === sub);
+	const cmd = (await loadRunnableCliCommands()).find((item) => item.subcommand === sub);
 	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'browser-pilot --help'`, wantsJsonMode(commandArgv));
 	const translated = translateNaturalActionArgv(cmd, commandArgv);
 	if (!translated.ok) return renderUsageError(translated.error, renderMode(translated.globals));
@@ -74,7 +74,7 @@ function wantsJsonMode(argv: string[]): ReturnType<typeof renderMode> {
 	return renderMode(globals);
 }
 
-function parseInvocation(cmd: Awaited<ReturnType<typeof loadCliCommands>>[number], translated: { ok: true; argv: string[]; natural?: { action: string }; globals?: never }) {
+function parseInvocation(cmd: Awaited<ReturnType<typeof loadRunnableCliCommands>>[number], translated: { ok: true; argv: string[]; natural?: { action: string }; globals?: never }) {
 	const specs = invocationFlagSpecs(cmd, translated.natural?.action);
 	const parsed = parseArgs(specs, translated.argv);
 	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
@@ -86,7 +86,7 @@ function parseInvocation(cmd: Awaited<ReturnType<typeof loadCliCommands>>[number
 }
 
 async function invokeParsedCommand(
-	cmd: Awaited<ReturnType<typeof loadCliCommands>>[number],
+	cmd: Awaited<ReturnType<typeof loadRunnableCliCommands>>[number],
 	commandArgv: string[],
 	translated: { ok: true; argv: string[]; natural?: { action: string } },
 	parsed: ReturnType<typeof parseArgs> & { ok: true },

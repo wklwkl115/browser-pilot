@@ -1268,6 +1268,26 @@ mise run dev-governance
 | 修改 scan 页面脚本 | `capture-src/entries/scanTemplate.ts`、`src/scan/buildScanScript.ts`。 |
 | 修改 content 提取 | `capture-src/entries/contentTemplate.ts`、`src/content/buildContentScript.ts`。 |
 | 修改 Rust 加速 | `native/browser-pilot-kernels/src/main.rs`、`src/native/browserPilotNativeKernels.ts`。 |
+| Agent Interaction Plane（preview） | `src/kernels/agent/*`、`src/kernels/session/agentContextRegistry.ts`、`src/commands/agent/*`、`src/commands/capabilityProfileCatalog.ts`、`src/apps/daemon/AgentContextService.ts`、`src/browser-command-runtime/semanticActionCompiler.ts`。 |
+
+### 14.7 Agent Interaction Plane（agent-preview）
+
+面向 Agent 的防腐层，**不**替代 PageObservationV3 / browser-operation/v2 权威真值：
+
+| 工具 | 角色 | 返回 |
+|---|---|---|
+| `browser_view` | readiness + observe + 投影 | `browser-agent-view/v1` + `contextRef` |
+| `browser_act` | semantic action → trusted program/navigation + settlement | `browser-agent-turn/v1`（outcome-first） |
+| `browser_read` | 仅服务端签发的 `readRef` | `browser-agent-read/v1` |
+
+约束摘要：
+
+1. 公共 catalog v3 仍为 **19** 工具；façade 可 invoke，但不计入 contract toolCount。
+2. `capabilityProfileCatalog.ts` 只过滤 name set；schema 仍来自 command 定义。
+3. Daemon 持有 `AgentContextService`（owner isolation / revision / TTL）；commands 经 port 访问。
+4. Pure kernels 负责投影、outcome 映射、recovery 分类、context transition。
+5. 人类 CLI 默认 expert-first；`browser-pilot commands --profile agent-preview --json` 只列出三个 façade 工具。
+6. 设计归档：`docs/archive/agent-interaction-plane.md`（不再作为第二规则源）。
 
 ---
 
@@ -1285,3 +1305,4 @@ mise run dev-governance
 10. `dist/` 和 `bridge/browser_pilot_bridge/` 是生成产物，不手改。
 11. 完成或发布前以 `mise run verify` 为准。
 12. Observe 默认提供 task entry points 而不猜动作；write operation 默认提供终态而不倾倒大 evidence。恢复/续行走 `nextActions`/`continuation`，可选细节走 `saved.path` + `artifact_hints` 渐进展开。
+13. Agent Interaction Plane 是防腐层：默认 Agent 只见 view/act/read；completed-only success 与 no mutation replay 不可放宽；canonical observation/operation 仍可 expert 下钻。
