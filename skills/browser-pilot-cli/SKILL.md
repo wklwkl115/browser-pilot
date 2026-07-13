@@ -63,11 +63,12 @@ Machine discovery is contract v3 only: `commands --json` returns the compact `br
    ```text
    # browser-pilot-executable
    browser-pilot execute --target-ref <targetRef> --script "document.title" --json
+   browser-pilot execute --target-ref <targetRef> --script - --json
+   browser-pilot execute --target-ref <targetRef> --script @script.js --json
    browser-pilot execute --target-ref <targetRef> --program @program.json --json
-   browser-pilot execute --target-ref <targetRef> --script-file <script-path> --json
    ```
 
-   Use `--script` for JavaScript and `--program` for trusted CDP mouse/key/text/wait frames. Provide only one of them. There are no dedicated click or type commands. Use the low-level `command` escape hatch only when the public CLI surface cannot express the required native operation.
+   Use `--script` for JavaScript and `--program` for trusted CDP mouse/key/text/wait frames. Provide only one of them. `--script` accepts inline source, `@file`, or stdin (`-`). Temporary or generated JavaScript MUST stay in memory: use inline source only for short shell-safe code and use stdin for multiline, complex, or quote-sensitive code. Agents MUST NOT create a local script file merely to pass transient JavaScript to `execute`; `--script @file` is reserved for durable source that already exists or that the user explicitly asked to preserve. There are no dedicated click or type commands. Use the low-level `command` escape hatch only when the public CLI surface cannot express the required native operation.
 
 5. Consume the terminal outcome from the same operation call.
 
@@ -82,6 +83,16 @@ Machine discovery is contract v3 only: `commands --json` returns the compact `br
    Oversized outcomes still keep the `browser-operation/v2` root, classification, terminal status, target, dispatch state, signals, `continuation`, and `completion.source`. A typed object/array/string summary may replace `completion.evidence.result`; follow `saved.path` and the verified `artifact_hints.jsonPaths` (usually `completion.evidence.result`) for the complete redacted outcome.
 
 6. Continue from the returned evidence, observing again only when the next decision needs a fresh page model. Do not treat command acknowledgement or `effect_observed` as proof that the intended business state was reached. Late effects from the previous operation are surfaced automatically on the same owner's next related operation. Treat `nextActions` as required recovery/continuation guidance and `artifact_hints` as optional progressive expansion; the absence of an artifact read in `nextActions` does not make the saved evidence unavailable.
+
+## Enforce In-Memory Temporary JavaScript
+
+This is a mandatory operating rule, not a preference:
+
+- Temporary, generated, multiline, complex, or quote-sensitive JavaScript MUST be piped directly to `browser-pilot execute --script -` over stdin.
+- Agents MUST NOT create a temporary `.js`, `.mjs`, text, or other local file and then pass it through `--script @file` merely to execute transient JavaScript.
+- Short shell-safe JavaScript MAY remain inline because it is also memory-only.
+- `--script @file` MAY be used only for durable source that already exists or that the user explicitly requested as a persistent artifact.
+- If the calling environment cannot pipe stdin directly, use its process stdin API or repair the invocation path; do not fall back to a temporary script file.
 
 ## Capture Network Evidence
 
@@ -118,7 +129,7 @@ For a compacted operation outcome, prefer the exact path named by `artifact_hint
 - Add `--json` to agent-facing calls and parse the structured result.
 - Preserve `targetRef`, `browserSessionId`, operation IDs, snapshot IDs, and returned artifact paths when a follow-up call depends on them.
 - Use `--program @file` for large structured input on Windows.
-- Use `--script-file <path>` for JavaScript files. `--script-file @file` is not file-loading syntax.
+- Keep temporary JavaScript in memory. Use `--script -` for generated, multiline, complex, or quote-sensitive source and pipe the exact source over stdin; never create a transient local script file. Use `--script @file` only for durable source that already exists or that the user explicitly asked to preserve.
 - Pass `browser-pilot command --command` as inline JSON only. Do not use `--command @file`.
 - Prefer `network capture-reload` for page-load capture.
 - Re-observe when refs are missing, stale, covered, or invalid instead of retrying a mutating action blindly.

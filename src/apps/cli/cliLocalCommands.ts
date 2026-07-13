@@ -7,7 +7,6 @@ import { daemonContractReport, findDaemon, isDaemonReadyForReuse, lockfilePath }
 import { daemonVersion, packageVersion } from "../daemon/packageInfo.js";
 import { staleLockfileDiagnostic } from "./connection.js";
 import { pad } from "./help.js";
-import { applyCliOnlyParams } from "./cliFileParams.js";
 import { firstPositional, jsonMode, loadCliCommands, renderLocalJson, renderMode } from "./cliBasics.js";
 import { splitLeadingGlobalFlags } from "./cliBasics.js";
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
@@ -68,9 +67,7 @@ export async function runValidateCommand(argv: string[], writeJson: typeof write
 	if (!resolved.ok) return renderUsageError(resolved.error, mode, EXIT.input);
 	if (naturalAction && Object.prototype.hasOwnProperty.call(resolved.params, "action")) return renderUsageError(`browser-pilot validate ${cmd.subcommand} ${kebabAction(naturalAction)} cannot combine the action subcommand with params.action`, mode);
 	const actionArgs = naturalAction ? { ...resolved.params, action: naturalAction } : resolved.params;
-	const cliParams = applyCliOnlyParams(cmd, actionArgs);
-	if (!cliParams.ok) return renderUsageError(cliParams.error, mode, EXIT.input);
-	const validated = validateBrowserCommandArguments(cmd.def, cliParams.params);
+	const validated = validateBrowserCommandArguments(cmd.def, actionArgs);
 	if (!validated.ok) {
 		if (mode === "json") writeJson({ ok: false, exitCode: EXIT.usage, code: "CLI_VALIDATION_ERROR", command: "validate", name: cmd.subcommand, commandName: cmd.name, valid: false, issues: validated.issues, message: validated.error });
 		else process.stderr.write(`invalid: ${cmd.subcommand} — ${validated.error}\n`);

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Breaking
+
+- Removed the redundant CLI-only `--script-file` flag. `browser-pilot execute --script` is now the single JavaScript input surface and uniformly accepts inline source, `@file`, or stdin (`-`). Temporary JavaScript must remain memory-only: complex/generated source must use stdin, transient local script files are forbidden, and `@file` is reserved for durable source.
+
+### Changed
+
+- Persistent CDP now coalesces concurrent attaches per tab, arms independent operation domains concurrently, lazily enables domains, caches background focus-emulation setup per live session, and keeps execute fallback sessions warm instead of attaching and detaching for every background/CSP execution.
+- CDP precompilation now evaluates one-off scripts directly and compiles only scripts seen again. Hot-script tracking and compiled-script indexes are bounded, reducing the first-call round trips and preventing temporary JavaScript from growing an unbounded in-memory cache.
+- Daemon/bridge shutdown now closes lingering loopback keep-alive connections, terminates live extension sockets, waits for both WebSocket and HTTP listeners to close, and gives the foreground daemon a bounded terminal-exit fallback, so CLI or offscreen reconnects cannot hold a draining stale daemon past the managed replacement deadline.
+
 ## [0.4.0] - 2026-07-12
 
 ### Breaking

@@ -7,7 +7,7 @@ type CreatedListener = (tab: BrowserPilotChromeTab) => void;
 const createdListeners = new Set<CreatedListener>();
 const updateCalls: Array<{ tabId: number; update: Record<string, unknown> }> = [];
 const createCalls: Array<Record<string, unknown>> = [];
-const cdpCalls: Array<{ method: string; params: Record<string, unknown> }> = [];
+const cdpCalls: Array<{ method: string; params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
 let executeCalls = 0;
 let backgroundTab = false;
 let executeResult: unknown = [{ result: { ok: true, data: "main-result" } }];
@@ -46,8 +46,8 @@ Object.assign(globalThis, { chrome: chromeStub, self: globalThis });
 const { handleWsExec } = await import("../../src/bridge/extension/service_worker/exec.ts");
 
 const cdpBridge = {
-	async send(_tabId: number, method: string, params: Record<string, unknown>) {
-		cdpCalls.push({ method, params });
+	async send(_tabId: number, method: string, params: Record<string, unknown>, options?: Record<string, unknown>) {
+		cdpCalls.push({ method, params, options });
 		if (method === "Runtime.evaluate") return { ok: true, data: { result: { result: { value: { ok: true, data: "cdp-result" } } } } };
 		return { ok: true, data: { result: {} } };
 	},
@@ -130,7 +130,8 @@ test("exec dispatch routes background tabs directly through persistent CDP", asy
 	await handleWsExec({ id: "cdp", tabId: 7, code: "await Promise.resolve(42)", timeoutMs: 2_000 }, value);
 	const result = messages(value).at(-1);
 	assert.equal(executeCalls, 0);
-	assert.deepEqual(cdpCalls.map((call) => call.method), ["Emulation.setFocusEmulationEnabled", "Runtime.evaluate"]);
+	assert.deepEqual(cdpCalls.map((call) => call.method), ["Runtime.evaluate"]);
+	assert.deepEqual(cdpCalls[0]?.options, { name: "default", persistent: true, focusEmulation: true, timeoutMs: 2_000 });
 	assert.equal(result?.type, "result");
 	assert.equal(result?.result, "cdp-result");
 	assert.equal(createdListeners.size, 0);

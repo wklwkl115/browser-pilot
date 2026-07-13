@@ -63,7 +63,7 @@ export interface StartDaemonOptions {
 	 * tests (writeLock:false) skip it to avoid binding a real port.
 	 */
 	startBridgeEagerly?: boolean;
-	/** Called after /shutdown has closed the server (foreground daemon exits the process here). */
+	/** Called after /shutdown closes the server, or by its bounded terminal fallback if a close callback stalls. */
 	onShutdown?: () => void;
 	/** Hermetic test injection: replace the command registry without adding a public validation route. */
 	commandDefinitions?: readonly CommandDefinition[];
@@ -370,7 +370,19 @@ async function handleLeaseRoute(context: DaemonControlContext, req: http.Incomin
 
 function scheduleShutdown(context: DaemonControlContext): void {
 	setImmediate(() => {
-		void context.close().then(() => context.onShutdown?.(), () => context.onShutdown?.());
+		let completed = false;
+		let fallback: NodeJS.Timeout | undefined;
+		const complete = (): void => {
+			if (completed) return;
+			completed = true;
+			if (fallback) clearTimeout(fallback);
+			context.onShutdown?.();
+		};
+		// Foreground daemon shutdown is terminal. If a browser/HTTP close callback is
+		// lost, invoke the process-level shutdown hook before managed replacement's
+		// five-second proof window expires; the OS then closes any residual handles.
+		if (context.onShutdown) fallback = setTimeout(complete, 2_000);
+		void context.close().then(complete, complete);
 	});
 }
 
@@ -479,7 +491,14 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		if (closing) return;
 		closing = true;
 		tenantLease.stop();
-		await new Promise<void>((resolve) => server.close(() => resolve()));
+		await new Promise<void>((resolve) => {
+			server.close(() => resolve());
+			server.closeIdleConnections?.();
+			// /shutdown has already acknowledged before close() is scheduled. Force any
+			// lingering loopback keep-alive request closed on the next turn so one CLI
+			// connection cannot hold a draining daemon beyond replacement grace.
+			setImmediate(() => server.closeAllConnections?.());
+		});
 		await bridgeServer.stop().catch(() => {
 			/* best-effort */
 		});

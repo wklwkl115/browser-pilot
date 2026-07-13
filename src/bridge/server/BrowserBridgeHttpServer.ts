@@ -127,28 +127,36 @@ export class BrowserBridgeHttpServer {
 	}
 
 	async stop(): Promise<void> {
-		await new Promise<void>((resolve) => {
-			if (!this.wss && !this.httpServer) { resolve(); return; }
-			const wss = this.wss;
-			if (wss) {
-				for (const client of wss.clients) {
-					try {
-						client.close(1001, "server stopping");
-					} catch {
-						/* best-effort websocket client close during stop */
-					}
-				}
-			}
+		const wss = this.wss;
+		const server = this.httpServer;
+		this.wss = undefined;
+		this.httpServer = undefined;
+		if (!wss && !server) return;
+		// Stop is terminal, so do not wait for a graceful WebSocket close handshake:
+		// the extension's offscreen transport continuously reconnects local ports and
+		// can otherwise keep a draining daemon alive past its replacement deadline.
+		for (const client of wss?.clients ?? []) {
 			try {
-				wss?.close();
+				client.terminate();
 			} catch {
-				/* best-effort websocket server close during stop */
+				/* best-effort websocket termination during stop */
 			}
-			const server = this.httpServer;
-			this.wss = undefined;
-			this.httpServer = undefined;
-			if (!server?.listening) { resolve(); return; }
-			server.close(() => resolve());
-		});
+		}
+		await Promise.all([
+			new Promise<void>((resolve) => {
+				if (!wss) { resolve(); return; }
+				try { wss.close(() => resolve()); }
+				catch { resolve(); }
+			}),
+			new Promise<void>((resolve) => {
+				if (!server?.listening) { resolve(); return; }
+				try {
+					server.close(() => resolve());
+					server.closeIdleConnections?.();
+					server.closeAllConnections?.();
+				}
+				catch { resolve(); }
+			}),
+		]);
 	}
 }

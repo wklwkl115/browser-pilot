@@ -144,9 +144,9 @@ npx browser-pilot observe --json
 # browser-pilot-executable
 npx browser-pilot execute --script "document.title" --json
 
-# Use files for larger Windows inputs
+# Use the same --script flag for file-backed JavaScript; @file is read in memory
 npx browser-pilot execute --program @program.json --json
-npx browser-pilot execute --script-file .\snippet.js --json
+npx browser-pilot execute --script @snippet.js --json
 
 # Capture page-load network traffic; capture-reload starts before reload/navigation
 # browser-pilot-executable
@@ -169,7 +169,18 @@ npx browser-pilot schema observe --json
 Core tools include tabs, observe, execute, command, screenshot, network, hook,
 evidence, frame, artifact, download, and upload. Security tools include crawl, fuzz,
 sqli, template, cookie-analyze, http-replay, and callback-oast. Use
-`browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface. For native bridge escape-hatch calls, `browser-pilot command --command` accepts inline JSON only; do not use `--command @file`. For large Windows-friendly inputs, use `browser-pilot execute --program @file` or `browser-pilot execute --script-file <path>`.
+`browser-pilot --help` and `browser-pilot schema <command> --json` for the live command surface. For native bridge escape-hatch calls, `browser-pilot command --command` accepts inline JSON only; do not use `--command @file`. `browser-pilot execute --script` uniformly accepts inline source, `@file`, or stdin (`-`). Temporary JavaScript must stay in memory: use inline source only for short shell-safe code, pipe multiline/complex/generated source to `--script -`, and never create a transient local script file merely to execute it. Reserve `--script @file` for durable source that already exists or that the user explicitly wants to preserve; use `--program @file` for large structured input programs.
+
+On PowerShell, an in-memory here-string avoids both shell quote escaping and a temporary file:
+
+```powershell
+@'
+const headings = [...document.querySelectorAll('h1, h2')]
+  .map(({ textContent }) => textContent?.trim())
+  .filter(Boolean);
+return { title: document.title, headings };
+'@ | npx browser-pilot execute --script - --json
+```
 
 Machine discovery uses the compact command contract v3. `browser-pilot commands --json` returns one root artifact rule plus 19 canonical command entries and action schema references; it does not repeat flags, schemas, routing prose, or legacy aliases per command. `browser-pilot schema <command> <kebab-action> --json` expands the closed action-specific schema, including the raw action `const`, shared target/session/output fields, and the only allowed nested `params`. Help, offline validation, daemon validation, and execution routing all derive from that same owner.
 

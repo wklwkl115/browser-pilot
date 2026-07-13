@@ -326,6 +326,16 @@ test("public docs and CLI guide route page-load capture through canonical captur
 	assert.match(cliSkill, /canonical CLI action `capture-reload`[\s\S]{0,160}`\{"action":"captureReload"\}`/i);
 });
 
+test("CLI guidance requires transient JavaScript to stay in memory", () => {
+	const cliSkill = text(cliSkillPath);
+	assert.match(cliSkill, /mandatory operating rule, not a preference/i);
+	assert.match(cliSkill, /JavaScript MUST be piped directly to `browser-pilot execute --script -` over stdin/);
+	assert.match(cliSkill, /MUST NOT create a temporary `\.js`, `\.mjs`, text, or other local file/);
+	assert.match(cliSkill, /`--script @file` MAY be used only for durable source/);
+	assert.match(text(commandMetadataPath), /Temporary JavaScript must stay in memory/);
+	assert.match(text(codeWikiPath), /临时 JavaScript 必须只在内存中传递/);
+});
+
 test("public contract docs use operation v2 and do not advertise the camelCase CLI alias", () => {
 	const docs = [readmePath, codeWikiPath, governancePath, cliSkillPath, changelogPath];
 	for (const filePath of docs) {

@@ -25,8 +25,15 @@ const sessionStorage: Record<string, unknown> = {};
 let failRunScriptOnce = false;
 let failNotAttachedOnce = false;
 let failAlreadyAttachedOnce = false;
+let domainEnableConcurrency: { active: number; max: number } | undefined;
 
 async function debuggerCommandResult(_debuggee: Debuggee, method: string): Promise<unknown> {
+	if (domainEnableConcurrency && ["Page.enable", "Network.enable", "Runtime.enable"].includes(method)) {
+		domainEnableConcurrency.active += 1;
+		domainEnableConcurrency.max = Math.max(domainEnableConcurrency.max, domainEnableConcurrency.active);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		domainEnableConcurrency.active -= 1;
+	}
 	if (method === "Runtime.compileScript") return { scriptId: "compiled-script-1" };
 	if (method === "Runtime.runScript") {
 		if (failRunScriptOnce) {
@@ -142,6 +149,7 @@ const router = await import("../../src/bridge/extension/service_worker/router.ts
 const runtimeSupport = await import("../../src/bridge/extension/service_worker/runtimeSupport.ts");
 const stateStore = await import("../../src/bridge/extension/service_worker/state_store.ts");
 const cdpCommands = await import("../../src/bridge/extension/service_worker/cdp.ts");
+const waitCdp = await import("../../src/bridge/extension/service_worker/wait_cdp.ts");
 const frameCommands = await import("../../src/bridge/extension/service_worker/frame.ts");
 const operationTransport = await import("../../src/bridge/extension/service_worker/operation_event_transport.ts");
 const tabSync = await import("../../src/bridge/extension/service_worker/tab_sync.ts");
@@ -157,6 +165,7 @@ function resetCdpFixtures(): void {
 	failRunScriptOnce = false;
 	failNotAttachedOnce = false;
 	failAlreadyAttachedOnce = false;
+	domainEnableConcurrency = undefined;
 }
 
 function sender(tabId = 7) {
@@ -421,7 +430,7 @@ test("hook/session cleanup preserves page identity while actual tab removal forg
 	resetCdpFixtures();
 });
 
-test("persistent CDP send reuses compiled scripts and falls back from stale cache entries", async () => {
+test("persistent CDP evaluates one-off scripts directly, then compiles hot scripts and falls back from stale cache entries", async () => {
 	resetCdpFixtures();
 	const options = { name: "compiled", persistent: true, precompile: true };
 	const first = await cdpCommands.browserPilotPersistentCdpBridge.send(71, "Runtime.evaluate", { expression: "21 * 2", returnByValue: true }, options);
@@ -430,15 +439,105 @@ test("persistent CDP send reuses compiled scripts and falls back from stale cach
 	assert.equal(first.ok, true);
 	assert.equal(second.ok, true);
 	assert.deepEqual(debuggerAttachments, [71]);
-	assert.deepEqual(debuggerCommands.map((call) => call.method), ["Page.enable", "Runtime.enable", "Runtime.compileScript", "Runtime.runScript", "Runtime.runScript"]);
+	assert.deepEqual(debuggerCommands.map((call) => call.method), ["Runtime.evaluate", "Runtime.compileScript", "Runtime.runScript"]);
 	assert.equal(debuggerCommands.filter((call) => call.method === "Runtime.compileScript").length, 1);
-	assert.equal((first.data as Record<string, unknown>).precompiled, true);
+	assert.equal((first.data as Record<string, unknown>).precompiled, undefined);
+	assert.equal((second.data as Record<string, unknown>).precompiled, true);
 
 	failRunScriptOnce = true;
 	const stale = await cdpCommands.browserPilotPersistentCdpBridge.send(71, "Runtime.evaluate", { expression: "21 * 2", returnByValue: true }, options);
 	assert.equal(stale.ok, true);
 	assert.deepEqual(debuggerCommands.slice(-2).map((call) => call.method), ["Runtime.runScript", "Runtime.evaluate"]);
 	assert.equal((stale.data as Record<string, unknown>).precompiled, undefined);
+});
+
+test("persistent CDP coalesces concurrent compilation after a script becomes hot", async () => {
+	resetCdpFixtures();
+	const options = { name: "compile-race", persistent: true, precompile: true };
+	await cdpCommands.browserPilotPersistentCdpBridge.send(70, "Runtime.evaluate", { expression: "40 + 2", returnByValue: true }, options);
+	debuggerCommands.length = 0;
+
+	const results = await Promise.all(Array.from({ length: 3 }, () => cdpCommands.browserPilotPersistentCdpBridge.send(70, "Runtime.evaluate", { expression: "40 + 2", returnByValue: true }, options)));
+
+	assert.equal(results.every((result) => result.ok), true);
+	assert.equal(debuggerCommands.filter((call) => call.method === "Runtime.compileScript").length, 1);
+	assert.equal(debuggerCommands.filter((call) => call.method === "Runtime.runScript").length, 3);
+});
+
+test("persistent CDP coalesces concurrent tab attaches without eager domain round trips", async () => {
+	resetCdpFixtures();
+	const [first, second] = await Promise.all([
+		cdpCommands.browserPilotPersistentCdpBridge.send(76, "Runtime.evaluate", { expression: "1" }, { name: "first", persistent: true }),
+		cdpCommands.browserPilotPersistentCdpBridge.send(76, "Runtime.evaluate", { expression: "2" }, { name: "second", persistent: true }),
+	]);
+
+	assert.equal(first.ok, true);
+	assert.equal(second.ok, true);
+	assert.deepEqual(debuggerAttachments, [76]);
+	assert.deepEqual(debuggerCommands.map((call) => call.method), ["Runtime.evaluate", "Runtime.evaluate"]);
+	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.sessions.has("76:first"), true);
+	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.sessions.has("76:second"), true);
+});
+
+test("operation CDP domain arming runs independent domain round trips concurrently", async () => {
+	resetCdpFixtures();
+	const concurrency = { active: 0, max: 0 };
+	domainEnableConcurrency = concurrency;
+	const record = { key: "operation:parallel-domains", waitId: "parallel-domains", kind: "operation", tabId: 81, cdpDomains: new Set<string>(), cdpSubscriptions: [] } as never;
+	await waitCdp.enableBrowserPilotCdpDomains(record, ["Page", "Network", "Runtime"]);
+
+	assert.equal(concurrency.max, 3);
+	waitCdp.releaseBrowserPilotCdpDomains(record, ["Page", "Network", "Runtime"], "test_cleanup");
+	domainEnableConcurrency = undefined;
+});
+
+test("persistent CDP coalesces per-session focus setup for concurrent evaluation", async () => {
+	resetCdpFixtures();
+	const [first, second] = await Promise.all([
+		cdpCommands.browserPilotPersistentCdpBridge.send(78, "Runtime.evaluate", { expression: "1" }, { name: "focused", persistent: true, focusEmulation: true }),
+		cdpCommands.browserPilotPersistentCdpBridge.send(78, "Runtime.evaluate", { expression: "2" }, { name: "focused", persistent: true, focusEmulation: true }),
+	]);
+
+	assert.equal(first.ok, true);
+	assert.equal(second.ok, true);
+	assert.equal(debuggerCommands.filter((call) => call.method === "Emulation.setFocusEmulationEnabled").length, 1);
+	assert.equal(debuggerCommands.filter((call) => call.method === "Runtime.evaluate").length, 2);
+});
+
+test("persistent CDP keeps a concurrent temporary attachment until the final command settles", async () => {
+	resetCdpFixtures();
+	const [first, second] = await Promise.all([
+		cdpCommands.browserPilotPersistentCdpBridge.send(79, "Runtime.evaluate", { expression: "1" }, { name: "temporary-a", persistent: false }),
+		cdpCommands.browserPilotPersistentCdpBridge.send(79, "Runtime.evaluate", { expression: "2" }, { name: "temporary-b", persistent: false }),
+	]);
+
+	assert.equal(first.ok, true);
+	assert.equal(second.ok, true);
+	assert.deepEqual(debuggerAttachments, [79]);
+	assert.deepEqual(debuggerDetaches, [79]);
+	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.sessions.size, 0);
+});
+
+test("persistent CDP enables Page lazily once for repeated frame-tree reads", async () => {
+	resetCdpFixtures();
+	const first = await cdpCommands.browserPilotPersistentCdpBridge.frameTree(77, { name: "frames", persistent: true });
+	const second = await cdpCommands.browserPilotPersistentCdpBridge.frameTree(77, { name: "frames", persistent: true });
+
+	assert.equal(first.ok, true);
+	assert.equal(second.ok, true);
+	assert.deepEqual(debuggerAttachments, [77]);
+	assert.deepEqual(debuggerCommands.map((call) => call.method), ["Page.enable", "Page.getFrameTree", "Page.getFrameTree"]);
+});
+
+test("persistent CDP re-enables a required domain after an explicit disable", async () => {
+	resetCdpFixtures();
+	const options = { name: "domain-state", persistent: true };
+	await cdpCommands.browserPilotPersistentCdpBridge.send(80, "Page.enable", {}, options);
+	await cdpCommands.browserPilotPersistentCdpBridge.send(80, "Page.disable", {}, options);
+	const tree = await cdpCommands.browserPilotPersistentCdpBridge.frameTree(80, options);
+
+	assert.equal(tree.ok, true);
+	assert.deepEqual(debuggerCommands.map((call) => call.method), ["Page.enable", "Page.disable", "Page.enable", "Page.getFrameTree"]);
 });
 
 test("persistent CDP send retries detached sessions and releases temporary attachments", async () => {

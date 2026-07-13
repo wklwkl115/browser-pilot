@@ -9,7 +9,6 @@ import { invokeTool, DaemonUnavailableError } from "./client.js";
 import { printHelp } from "./help.js";
 import { translateNaturalActionArgv, legacyActionUsed } from "./naturalRouting.js";
 import { invocationFlagSpecs, kebabAction, nestNaturalActionParams, printCommandHelp } from "./commandMetadata.js";
-import { applyCliOnlyParams } from "./cliFileParams.js";
 import { loadCliCommands, renderMode, splitLeadingGlobalFlags } from "./cliBasics.js";
 import { runCommandsCommand, runDoctorCommand, runSchemaCommand, runValidateCommand } from "./cliLocalCommands.js";
 import { daemonAction, runConnectCommand, runDaemonControl, runStatusCommand } from "./cliConnectionCommands.js";
@@ -19,7 +18,7 @@ import { runLeaseCommand } from "./cliLeaseCommand.js";
 import { runPairingsCommand, runRevokeCommand } from "./cliPairAdminCommands.js";
 import { validateBrowserCommandArguments, type BrowserCommandValidationResult } from "../../commands/commandValidation.js";
 
-export { applyCliOnlyParams, selftestToolError };
+export { selftestToolError };
 
 export type OfflineToolInvocationResult =
 	| { ok: true; commandName: string; args: Record<string, unknown>; action?: string }
@@ -33,9 +32,8 @@ export async function validateToolInvocationOffline(sub: string, commandArgv: st
 	if (!translated.ok) return { ok: false, error: translated.error };
 	const parsed = parseArgs(invocationFlagSpecs(cmd, translated.natural?.action), translated.argv);
 	if (!parsed.ok) return { ok: false, error: parsed.error };
-	const cliParams = applyCliOnlyParams(cmd, nestNaturalActionParams(cmd, translated.natural?.action, parsed.value.params));
-	if (!cliParams.ok) return { ok: false, error: cliParams.error };
-	const validated = validateBrowserCommandArguments(cmd.def, cliParams.params);
+	const params = nestNaturalActionParams(cmd, translated.natural?.action, parsed.value.params);
+	const validated = validateBrowserCommandArguments(cmd.def, params);
 	if (!validated.ok) return { ok: false, error: validated.error, issues: validated.issues };
 	return { ok: true, commandName: cmd.name, args: validated.args, ...(translated.natural?.action ? { action: translated.natural.action } : {}) };
 }
@@ -93,9 +91,8 @@ async function invokeParsedCommand(
 	translated: { ok: true; argv: string[]; natural?: { action: string } },
 	parsed: ReturnType<typeof parseArgs> & { ok: true },
 ): Promise<number> {
-	const cliParams = applyCliOnlyParams(cmd, nestNaturalActionParams(cmd, translated.natural?.action, parsed.value.params));
-	if (!cliParams.ok) return renderUsageError(cliParams.error, renderMode(parsed.value.globals), EXIT.input);
-	const validated = validateBrowserCommandArguments(cmd.def, cliParams.params);
+	const params = nestNaturalActionParams(cmd, translated.natural?.action, parsed.value.params);
+	const validated = validateBrowserCommandArguments(cmd.def, params);
 	if (!validated.ok) return renderCommandValidationFailure(validated, renderMode(parsed.value.globals));
 	try {
 		const result = await invokeTool(cmd.name, validated.args, process.cwd(), cliInvokeMeta(cmd, commandArgv, translated.natural?.action, validated.args.action));

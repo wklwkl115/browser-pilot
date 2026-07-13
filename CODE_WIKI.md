@@ -169,7 +169,8 @@ extension OperationCoordinator
 dispatch server.executeJavaScript(...)
   ▼
 extension exec.ts
-  │ chrome.scripting.executeScript 或 CDP Runtime.evaluate fallback
+  │ foreground chrome.scripting.executeScript；background/CSP fallback 复用 persistent CDP Runtime.evaluate
+  │ concurrent attach 按 tab 合并；operation domains 并行 arm；domain/focus 按需配置；one-shot script 直接 evaluate
   │ operation_event 持续上行到 daemon ledger
   ▼
 command-specific resolver
@@ -354,8 +355,8 @@ src/bridge/extension/
 | [`service_worker/state_store.ts`](src/bridge/extension/service_worker/state_store.ts) | MV3 持久化恢复、hook session 与 per-tab queue 状态。 |
 | [`service_worker/tab_sync.ts`](src/bridge/extension/service_worker/tab_sync.ts) | tab 同步、replacement/activation 与统一 tab cleanup。 |
 | [`service_worker/page_identity.ts`](src/bridge/extension/service_worker/page_identity.ts) | top-level document commit、SPA/BFCache lineage 与 per-tab page epoch。 |
-| [`service_worker/exec.ts`](src/bridge/extension/service_worker/exec.ts) | JavaScript 执行与 CDP fallback。 |
-| [`service_worker/cdp.ts`](src/bridge/extension/service_worker/cdp.ts) | CDP attach/send/detach/targets/frameTree。 |
+| [`service_worker/exec.ts`](src/bridge/extension/service_worker/exec.ts) | JavaScript 执行；foreground 走 MAIN world，background/CSP fallback 复用 persistent CDP。 |
+| [`service_worker/cdp.ts`](src/bridge/extension/service_worker/cdp.ts) | 按 tab 合并并发 attach，按需配置 domain/focus，send/detach/targets/frameTree 与 hot-script bounded cache。 |
 | [`service_worker/input.ts`](src/bridge/extension/service_worker/input.ts) | CDP 输入、pointer/key/touch/ref。 |
 | [`service_worker/network.ts`](src/bridge/extension/service_worker/network.ts) | network recorder、HAR/body/wait。 |
 | [`service_worker/network_events.ts`](src/bridge/extension/service_worker/network_events.ts) | CDP network/page 事件分发与 bounded request/response/WebSocket/SSE 投影。 |
@@ -366,6 +367,7 @@ src/bridge/extension/
 | [`service_worker/screenshot.ts`](src/bridge/extension/service_worker/screenshot.ts) | screenshot capture。 |
 
 MV3 service worker 不能稳定持有长期 WebSocket，因此项目使用 offscreen document 作为 WebSocket transport，service worker 专注于命令调度和 Chrome API/CDP 调用。
+Daemon/bridge stop 是 terminal lifecycle：daemon 会关闭残留 loopback keep-alive，bridge 会终止已连接的 extension sockets，并等待 WebSocket 与 HTTP listener 都关闭；foreground daemon 另有短于 managed replacement proof window 的 bounded terminal-exit fallback，避免 CLI/offscreen 自动重连或丢失的 close callback 把旧 daemon 留在 draining 状态。
 
 ### 5.5 `src/commands`
 
@@ -710,7 +712,7 @@ Provider scheduling 的纯 owner 是 [`observeProviderPlan.ts`](src/kernels/abml
 
 #### `browser_execute`
 
-用于在真实 tab 执行 JavaScript，或执行结构化 physical input program。CLI 大输入在 Windows 上应优先使用 `--program @file` 读取 JSON array / newline program frames，或使用 `--script-file <path>` 从该路径读取 JavaScript source；`--script-file @file` 不表示加载 JS 文件，只会把文件内容当成路径字符串解析，因此不作为推荐用法。
+用于在真实 tab 执行 JavaScript，或执行结构化 physical input program。CLI 的 `--script` 对 JavaScript 一视同仁：接受 inline source、`@file` 或 stdin（`-`）。临时 JavaScript 必须只在内存中传递：只有短且 shell-safe 的源码可以 inline，多行、复杂、生成式或引号敏感源码必须经 `--script -` 从 stdin 传入；不得为了执行 transient JavaScript 创建本地临时脚本文件再交给 `--script @file`。`@file` 仅用于原本就存在或用户明确要求保留的持久源码。结构化 program 使用 `--program @file` 读取 JSON array / newline frames。
 
 规则：
 
@@ -727,7 +729,7 @@ Provider scheduling 的纯 owner 是 [`observeProviderPlan.ts`](src/kernels/abml
 
 #### `browser_command`
 
-底层 native bridge command escape hatch。它发送 `{ cmd, ... }` 对象到 extension，但仍经过 schema 校验和安全拒绝逻辑。CLI `--command` 只接受内联 JSON，不支持也不推荐 `--command @file`；需要文件化的大段交互应改用 `browser_execute --program @file` 或 `browser-pilot execute --script-file <path>`。
+底层 native bridge command escape hatch。它发送 `{ cmd, ... }` 对象到 extension，但仍经过 schema 校验和安全拒绝逻辑。CLI `--command` 只接受内联 JSON，不支持也不推荐 `--command @file`；大段结构化交互使用 `browser_execute --program @file`。临时 JavaScript 必须以内存方式传给 `browser-pilot execute --script -`，不得为此创建临时脚本文件；只有持久源码才使用 `browser-pilot execute --script @file`。
 
 关键文件：[`nativeCommand.ts`](src/commands/nativeCommand.ts)。
 

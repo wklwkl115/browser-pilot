@@ -181,7 +181,7 @@ test("human rendering never emits a blank line for a small execute success", () 
 	assert.match(output, /^completion: native-command-result/m);
 });
 
-test("validate execute loads --script-file into args.script", () => {
+test("validate execute loads a script @file into args.script", () => {
 	const dir = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-cli-"));
 	const scriptPath = path.join(dir, "snippet.js");
 	writeFileSync(scriptPath, "1 + 1;\n", "utf8");
@@ -189,7 +189,7 @@ test("validate execute loads --script-file into args.script", () => {
 		"validate",
 		"execute",
 		"--params",
-		JSON.stringify({ tabId: 1, scriptFile: scriptPath }),
+		JSON.stringify({ tabId: 1, script: `@${scriptPath}` }),
 		"--json",
 	]);
 	const body = JSON.parse(result.stdout);
@@ -199,18 +199,18 @@ test("validate execute loads --script-file into args.script", () => {
 	assert.deepEqual(body.args, { tabId: 1, script: "1 + 1;\n" });
 });
 
-test("validate execute reports script-file read failures as CLI input errors", () => {
+test("validate execute reports script @file read failures as CLI input errors", () => {
 	const result = runCli([
 		"validate",
 		"execute",
 		"--params",
-		JSON.stringify({ tabId: 1, scriptFile: "./does-not-exist.js" }),
+		JSON.stringify({ tabId: 1, script: "@./does-not-exist.js" }),
 		"--json",
 	]);
 	const body = JSON.parse(result.stdout);
 	assert.equal(result.status, 4);
 	assert.equal(body.code, "CLI_INPUT_ERROR");
-	assert.match(body.message, /cannot read --script-file/i);
+	assert.match(body.message, /cannot read .*does-not-exist\.js/i);
 });
 
 test("commands emits registered subcommands in json mode", () => {
@@ -294,7 +294,8 @@ test("pairings and execute keep their local help surfaces", () => {
 	assert.match(pairings.stdout, /^browser-pilot pairings \[--json\]/m);
 	assert.equal(execute.status, 0);
 	assert.match(execute.stdout, /^browser-pilot execute/u);
-	assert.match(execute.stdout, /--script-file <string>/);
+	assert.match(execute.stdout, /--script <string>/);
+	assert.match(execute.stdout, /stdin \(-\)/i);
 });
 
 test("schema command marks --command as inline-only", () => {
@@ -307,7 +308,7 @@ test("schema command marks --command as inline-only", () => {
 	assert.equal(body.flags, undefined);
 });
 
-test("command help rejects --command @file guidance and execute help recommends real file inputs", () => {
+test("command help rejects --command @file guidance and execute help recommends unified script inputs", () => {
 	const command = runCli(["command", "--help"]);
 	const execute = runCli(["execute", "--help"]);
 	assert.equal(command.status, 0);
@@ -316,9 +317,10 @@ test("command help rejects --command @file guidance and execute help recommends 
 	assert.match(command.stdout, /do not use --command @file/);
 	assert.equal(execute.status, 0);
 	assert.match(execute.stdout, /--program <array>/);
-	assert.match(execute.stdout, /--script-file <string>/);
 	assert.match(execute.stdout, /--program @file/);
-	assert.match(execute.stdout, /--script-file <path>/);
+	assert.match(execute.stdout, /--script @file/);
+	assert.match(execute.stdout, /--script -/);
+	assert.doesNotMatch(execute.stdout, /--script-file/);
 });
 
 test("command --command @file fails as inline-only", () => {

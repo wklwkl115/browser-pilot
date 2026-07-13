@@ -246,14 +246,9 @@ async function executeThroughCdp(tabId: number, executionCode: string, timeoutMs
   try {
     const cdp = browserPilotPersistentCdp();
     if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
-    try {
-      await cdp.send(tabId, 'Emulation.setFocusEmulationEnabled', { enabled:true }, { name:'default', persistent:false, timeoutMs:2000 });
-    } catch (_focusError) {
-      /* best-effort background timer throttle lift */
-    }
     const response = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Runtime.evaluate', {
       expression:buildCdpScript(executionCode), awaitPromise:true, returnByValue:true,
-    }, { name:'default', persistent:false, timeoutMs }));
+    }, { name:'default', persistent:true, focusEmulation:true, timeoutMs }));
     if (!response || response.ok === false) throw new Error(String(response?.error || response?.message || 'persistent CDP Runtime.evaluate failed'));
     const responseData = asJsonRecord(response.data);
     const cdpResult = asJsonRecord(responseData.result || response.result || response.data);

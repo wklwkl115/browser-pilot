@@ -3,13 +3,13 @@ import { RECOVERY_CODES, forget as forgetState, get as getState, persist as pers
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeSender } from "./types";
 
 type BrowserPilotCdpResponse = BrowserPilotBridgeResponse<JsonRecord>;
-type BrowserPilotCdpSession = { tabId: number; name: string; key: string; attachedAt: number; lastUsed: number; commands: number; pending: number; lockedUntil: number; compiledScripts: Map<string, string> };
+type BrowserPilotCdpSession = { tabId: number; name: string; key: string; attachedAt: number; lastUsed: number; commands: number; pending: number; lockedUntil: number; autoDetach: boolean; compiledScripts: Map<string, string>; scriptCompiles: Map<string, Promise<string | undefined>>; scriptHits: Map<string, number>; configuredFeatures: Set<string>; featurePromises: Map<string, Promise<void>> };
 type BrowserPilotCdpChildSession = { tabId: number; parentKey: string; key: string; targetId: string; sessionId: string; name: string; attachedAt: number; lastUsed: number; commands: number; pending: number };
 type BrowserPilotCdpCommandTarget = { debuggee: { tabId: number; sessionId?: string }; route: JsonRecord; child?: BrowserPilotCdpChildSession };
 type BrowserPilotCdpNewDocumentScript = { key: string; tabId: number; identifier: string; sessionKey?: unknown; cdpSessionName: string; method: string; createdAt: number; runImmediately: boolean; includeCommandLineAPI: boolean; worldName?: string };
 type BrowserPilotCdpFrame = { id: string; frameId: string; parentId: string | null; url: string; name: string; mimeType: string; securityOrigin: string; childFrames?: BrowserPilotCdpFrame[]; children?: BrowserPilotCdpFrame[] };
 type BrowserPilotCdpFrameTreeNode = JsonRecord & { frame?: JsonRecord; childFrames?: BrowserPilotCdpFrameTreeNode[] };
-type BrowserPilotCdpOptions = BrowserPilotBridgeCommand & { name?: string; protocolVersion?: string; bringToFront?: boolean; persistent?: boolean; detachOnError?: boolean; frame?: unknown; frameId?: unknown; targetId?: unknown; sessionId?: unknown; worldName?: string; grantUniversalAccess?: boolean; awaitPromise?: boolean; returnByValue?: boolean; userGesture?: boolean; includeCommandLineAPI?: boolean; runImmediately?: boolean; precompile?: boolean; scriptHash?: string; __browserPilotRetryAfterNotAttached?: boolean };
+type BrowserPilotCdpOptions = BrowserPilotBridgeCommand & { name?: string; protocolVersion?: string; bringToFront?: boolean; persistent?: boolean; detachOnError?: boolean; frame?: unknown; frameId?: unknown; targetId?: unknown; sessionId?: unknown; worldName?: string; grantUniversalAccess?: boolean; awaitPromise?: boolean; returnByValue?: boolean; userGesture?: boolean; includeCommandLineAPI?: boolean; runImmediately?: boolean; precompile?: boolean; scriptHash?: string; focusEmulation?: boolean; requiredDomains?: string[]; __browserPilotRetryAfterNotAttached?: boolean };
 
 function cdpRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function cdpErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
@@ -19,13 +19,16 @@ function cdpRawError(error: unknown): JsonRecord { return error instanceof Error
 // Flat Target sessions are optional and explicit: the default route remains tab-scoped, while
 // callers with a targetId can attach that child target and send through chrome.debugger sessionId.
 
-const BROWSER_PILOT_PERSISTENT_CDP_VERSION = 'p4.0.0';
+const BROWSER_PILOT_PERSISTENT_CDP_VERSION = 'p4.1.0';
 const BROWSER_PILOT_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS = 15000;
 const BROWSER_PILOT_PERSISTENT_CDP_MAX_SESSIONS = 16;
+const BROWSER_PILOT_CDP_MAX_COMPILED_SCRIPTS = 32;
+const BROWSER_PILOT_CDP_MAX_SCRIPT_HITS = 64;
 
 const browserPilotPersistentCdpSessions = new Map<string, BrowserPilotCdpSession>();
 const browserPilotPersistentCdpChildSessions = new Map<string, BrowserPilotCdpChildSession>();
 const browserPilotPersistentCdpNewDocumentScripts = new Map<string, BrowserPilotCdpNewDocumentScript>();
+const browserPilotPersistentCdpTabAttaches = new Map<number, Promise<BrowserPilotCdpResponse>>();
 
 function browserPilotPersistentCdpHasSessionForTab(tabId: unknown): boolean {
   return Array.from(browserPilotPersistentCdpSessions.values()).some(rec => Number(rec.tabId) === Number(tabId));
@@ -189,15 +192,7 @@ function browserPilotCdpReuseAttachedSession(tabId: number, name: string, key: s
 	return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: existing.attachedAt, alreadyAttached: true });
 }
 
-async function browserPilotPersistentCdpAttach(tabId: number, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {
-  if (!tabId) return browserPilotCdpError('NO_TAB_ID', 'tabId is required');
-  const name = options?.name || 'default';
-  const key = browserPilotCdpSessionKey(tabId, name);
-  if (browserPilotPersistentCdpSessions.has(key)) {
-    const old = browserPilotPersistentCdpSessions.get(key)!;
-    old.lastUsed = browserPilotCdpNow();
-    return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: old.attachedAt });
-  }
+async function browserPilotPersistentCdpAttachFresh(tabId: number, name: string, key: string, options: BrowserPilotCdpOptions): Promise<BrowserPilotCdpResponse> {
   // Long-running sessions accumulate persistent attachments faster than tab-close
   // cleanup releases them, so evict idle entries before enforcing the hard cap.
   const capacityError = await browserPilotCdpEnsureSessionCapacity();
@@ -205,13 +200,8 @@ async function browserPilotPersistentCdpAttach(tabId: number, options: BrowserPi
   try {
     if (options?.bringToFront) await chrome.tabs.update(tabId, { active: true });
     await chrome.debugger.attach({ tabId }, options?.protocolVersion || '1.3');
-    const rec = { tabId, name, key, attachedAt: browserPilotCdpNow(), lastUsed: browserPilotCdpNow(), commands: 0, pending: 0, lockedUntil: 0, compiledScripts: new Map<string, string>() };
+    const rec: BrowserPilotCdpSession = { tabId, name, key, attachedAt: browserPilotCdpNow(), lastUsed: browserPilotCdpNow(), commands: 0, pending: 0, lockedUntil: 0, autoDetach: options?.persistent === false, compiledScripts: new Map<string, string>(), scriptCompiles: new Map<string, Promise<string | undefined>>(), scriptHits: new Map<string, number>(), configuredFeatures: new Set<string>(), featurePromises: new Map<string, Promise<void>>() };
     browserPilotPersistentCdpSessions.set(key, rec);
-    // Enable Page/Runtime domains immediately. Without this, Chrome may return only
-    // the main frame from Page.getFrameTree until domains are explicitly enabled,
-    // which breaks iframe-targeted evaluation in fresh persistent sessions.
-    try { await browserPilotPersistentCdpSend(tabId, 'Page.enable', {}, { name }); } catch (error) { console.warn('[BROWSER-PILOT-CDP] Failed to enable Page domain after attach', key, error); }
-    try { await browserPilotPersistentCdpSend(tabId, 'Runtime.enable', {}, { name }); } catch (error) { console.warn('[BROWSER-PILOT-CDP] Failed to enable Runtime domain after attach', key, error); }
     return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: false, attachedAt: rec.attachedAt });
   } catch (e) {
     const msg = cdpErrorMessage(e);
@@ -220,6 +210,31 @@ async function browserPilotPersistentCdpAttach(tabId: number, options: BrowserPi
       if (reused) return reused;
     }
     return browserPilotCdpError('ATTACH_FAILED', msg, { tabId, name, raw: browserPilotCdpRawError(e) });
+  }
+}
+
+async function browserPilotPersistentCdpAttach(tabId: number, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {
+  if (!tabId) return browserPilotCdpError('NO_TAB_ID', 'tabId is required');
+  const name = String(options?.name || 'default');
+  const key = browserPilotCdpSessionKey(tabId, name);
+  const existing = browserPilotPersistentCdpSessions.get(key);
+  if (existing) {
+    existing.lastUsed = browserPilotCdpNow();
+    return browserPilotCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: existing.attachedAt });
+  }
+  const attaching = browserPilotPersistentCdpTabAttaches.get(tabId);
+  if (attaching) {
+    const attached = await attaching;
+    if (!attached.ok) return attached;
+    return browserPilotCdpReuseAttachedSession(tabId, name, key)
+      ?? browserPilotCdpError('ATTACH_FAILED', 'CDP session missing after concurrent attach', { tabId, name });
+  }
+  const pending = browserPilotPersistentCdpAttachFresh(tabId, name, key, options);
+  browserPilotPersistentCdpTabAttaches.set(tabId, pending);
+  try {
+    return await pending;
+  } finally {
+    if (browserPilotPersistentCdpTabAttaches.get(tabId) === pending) browserPilotPersistentCdpTabAttaches.delete(tabId);
   }
 }
 
@@ -334,7 +349,7 @@ async function browserPilotPersistentCdpCommandTarget(tabId: number, name: strin
   return browserPilotCdpCommandTargetOk({ debuggee: { tabId: rec.tabId, sessionId: childSessionId }, route: { targetScoped: true, attachRouteUsed: true, attachMethod: cdpRecord(attached.data).attachMethod || 'Target.setAutoAttach', targetId, sessionId: childSessionId, childSessionKey: child?.key }, child });
 }
 
-type BrowserPilotCdpSendSession = { name: string; key: string; rec: BrowserPilotCdpSession; temporary: boolean; retrying: boolean };
+type BrowserPilotCdpSendSession = { name: string; key: string; rec: BrowserPilotCdpSession; retrying: boolean };
 type BrowserPilotCdpSendSessionResult = { ok: true; session: BrowserPilotCdpSendSession } | { ok: false; response: BrowserPilotCdpResponse };
 type BrowserPilotCdpPreparedCommand = { data: unknown; precompiled: boolean };
 
@@ -342,15 +357,16 @@ async function browserPilotCdpAcquireSendSession(tabId: number, options: Browser
   const name = options?.name || 'default';
   const key = browserPilotCdpSessionKey(tabId, name);
   let rec = browserPilotPersistentCdpSessions.get(key);
-  let temporary = false;
   if (!rec) {
-    const attached = await browserPilotPersistentCdpAttach(tabId, { name, protocolVersion: options?.protocolVersion, bringToFront: options?.bringToFront });
+    const attached = await browserPilotPersistentCdpAttach(tabId, { name, protocolVersion: options?.protocolVersion, bringToFront: options?.bringToFront, persistent: options?.persistent });
     if (!attached.ok) return { ok: false, response: attached };
     rec = browserPilotPersistentCdpSessions.get(key);
-    temporary = options?.persistent === false;
   }
   if (!rec) return { ok: false, response: browserPilotCdpError('ATTACH_FAILED', 'CDP session missing after attach', { tabId, name }) };
-  return { ok: true, session: { name: String(name), key, rec, temporary, retrying: Boolean(options?.__browserPilotRetryAfterNotAttached) } };
+  // A persistent caller promotes a concurrently-created temporary attachment.
+  // Temporary callers never demote an already-owned persistent session.
+  if (options?.persistent !== false) rec.autoDetach = false;
+  return { ok: true, session: { name: String(name), key, rec, retrying: Boolean(options?.__browserPilotRetryAfterNotAttached) } };
 }
 
 function browserPilotCdpBeginSend(rec: BrowserPilotCdpSession, options: BrowserPilotCdpOptions): void {
@@ -390,14 +406,91 @@ async function browserPilotCdpCompileScript(debuggee: BrowserPilotCdpCommandTarg
   }
 }
 
+function browserPilotCdpTouchBounded<K, V>(map: Map<K, V>, key: K, value: V, maxEntries: number): void {
+  map.delete(key);
+  map.set(key, value);
+  while (map.size > maxEntries) {
+    const oldest = map.keys().next().value as K | undefined;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
+function browserPilotCdpFeatureKey(debuggee: BrowserPilotCdpCommandTarget['debuggee'], feature: string): string {
+  return (debuggee.sessionId || 'root') + ':' + feature;
+}
+
+async function browserPilotCdpEnsureFeature(session: BrowserPilotCdpSendSession, feature: string, configure: () => Promise<unknown>): Promise<void> {
+  if (session.rec.configuredFeatures.has(feature)) return;
+  let pending = session.rec.featurePromises.get(feature);
+  if (!pending) {
+    pending = (async () => {
+      await configure();
+      session.rec.configuredFeatures.add(feature);
+    })();
+    session.rec.featurePromises.set(feature, pending);
+  }
+  try {
+    await pending;
+  } finally {
+    if (session.rec.featurePromises.get(feature) === pending) session.rec.featurePromises.delete(feature);
+  }
+}
+
+async function browserPilotCdpPrepareSessionFeatures(session: BrowserPilotCdpSendSession, debuggee: BrowserPilotCdpCommandTarget['debuggee'], options: BrowserPilotCdpOptions): Promise<void> {
+  for (const rawDomain of options.requiredDomains || []) {
+    const domain = String(rawDomain || '');
+    if (!/^[A-Z][A-Za-z0-9]*$/.test(domain)) continue;
+    const feature = browserPilotCdpFeatureKey(debuggee, 'domain:' + domain);
+    await browserPilotCdpEnsureFeature(session, feature, () => browserPilotCdpWithTimeout(chrome.debugger.sendCommand(debuggee, domain + '.enable', {}), options?.timeoutMs, domain + '.enable'));
+  }
+  if (options.focusEmulation !== true) return;
+  const focusFeature = browserPilotCdpFeatureKey(debuggee, 'focus-emulation');
+  try {
+    await browserPilotCdpEnsureFeature(session, focusFeature, () => browserPilotCdpWithTimeout(chrome.debugger.sendCommand(debuggee, 'Emulation.setFocusEmulationEnabled', { enabled: true }), Math.min(2000, Number(options?.timeoutMs || 2000)), 'Emulation.setFocusEmulationEnabled'));
+  } catch (error) {
+    // Timer-throttle mitigation is best-effort; Runtime.evaluate remains usable on
+    // browsers that do not expose Emulation.setFocusEmulationEnabled.
+    console.debug('[BROWSER-PILOT-CDP] focus emulation unavailable', session.key, cdpErrorMessage(error));
+  }
+}
+
+function browserPilotCdpRecordDomainState(session: BrowserPilotCdpSendSession, debuggee: BrowserPilotCdpCommandTarget['debuggee'], method: string): void {
+  const match = /^([A-Z][A-Za-z0-9]*)\.(enable|disable)$/.exec(method);
+  if (!match) return;
+  const feature = browserPilotCdpFeatureKey(debuggee, 'domain:' + match[1]);
+  if (match[2] === 'enable') session.rec.configuredFeatures.add(feature);
+  else session.rec.configuredFeatures.delete(feature);
+}
+
 async function browserPilotCdpPrepareCommand(method: string, params: JsonRecord, options: BrowserPilotCdpOptions, session: BrowserPilotCdpSendSession, debuggee: BrowserPilotCdpCommandTarget['debuggee']): Promise<BrowserPilotCdpPreparedCommand> {
   const expression = typeof params.expression === 'string' ? params.expression : '';
   if (options?.precompile !== true || method !== 'Runtime.evaluate' || !expression) return { data: undefined, precompiled: false };
   const cacheKey = browserPilotCdpScriptCacheKey(expression, params, options) + ':' + (debuggee.sessionId || 'root');
   let scriptId = session.rec.compiledScripts.get(cacheKey);
+  if (scriptId) browserPilotCdpTouchBounded(session.rec.compiledScripts, cacheKey, scriptId, BROWSER_PILOT_CDP_MAX_COMPILED_SCRIPTS);
   if (!scriptId) {
-    scriptId = await browserPilotCdpCompileScript(debuggee, expression, params, options, session.name, session.key, cacheKey);
-    if (scriptId) session.rec.compiledScripts.set(cacheKey, scriptId);
+    const hits = (session.rec.scriptHits.get(cacheKey) || 0) + 1;
+    browserPilotCdpTouchBounded(session.rec.scriptHits, cacheKey, hits, BROWSER_PILOT_CDP_MAX_SCRIPT_HITS);
+    // One-off scripts are normally temporary. Evaluate them directly on first use;
+    // only a second identical request pays compile+run and occupies the persistent
+    // V8 script cache. Two calls cost the same total CDP trips as eager compilation,
+    // while the common one-shot case saves a trip and leaves no compiled script.
+    if (hits < 2) return { data: undefined, precompiled: false };
+    let compiling = session.rec.scriptCompiles.get(cacheKey);
+    if (!compiling) {
+      compiling = browserPilotCdpCompileScript(debuggee, expression, params, options, session.name, session.key, cacheKey);
+      session.rec.scriptCompiles.set(cacheKey, compiling);
+    }
+    try {
+      scriptId = await compiling;
+    } finally {
+      if (session.rec.scriptCompiles.get(cacheKey) === compiling) session.rec.scriptCompiles.delete(cacheKey);
+    }
+    if (scriptId) {
+      session.rec.scriptHits.delete(cacheKey);
+      browserPilotCdpTouchBounded(session.rec.compiledScripts, cacheKey, scriptId, BROWSER_PILOT_CDP_MAX_COMPILED_SCRIPTS);
+    }
   }
   if (!scriptId) return { data: undefined, precompiled: false };
   try {
@@ -407,16 +500,20 @@ async function browserPilotCdpPrepareCommand(method: string, params: JsonRecord,
     const message = cdpErrorMessage(runError);
     if (!/No script with given id/i.test(message)) throw runError;
     session.rec.compiledScripts.delete(cacheKey);
+    browserPilotCdpTouchBounded(session.rec.scriptHits, cacheKey, 1, BROWSER_PILOT_CDP_MAX_SCRIPT_HITS);
     console.debug('[BROWSER-PILOT-CDP] Runtime.runScript script cache stale; fallback to evaluate', session.key, message);
     return { data: undefined, precompiled: false };
   }
 }
 
 async function browserPilotCdpExecuteCommand(method: string, params: JsonRecord, options: BrowserPilotCdpOptions, session: BrowserPilotCdpSendSession, debuggee: BrowserPilotCdpCommandTarget['debuggee']): Promise<BrowserPilotCdpPreparedCommand> {
+  await browserPilotCdpPrepareSessionFeatures(session, debuggee, options);
   const prepared = await browserPilotCdpPrepareCommand(method, params, options, session, debuggee);
   if (prepared.data !== undefined) return prepared;
+  const data = await browserPilotCdpWithTimeout(chrome.debugger.sendCommand(debuggee, method, params || {}), options?.timeoutMs, method);
+  browserPilotCdpRecordDomainState(session, debuggee, method);
   return {
-    data: await browserPilotCdpWithTimeout(chrome.debugger.sendCommand(debuggee, method, params || {}), options?.timeoutMs, method),
+    data,
     precompiled: prepared.precompiled,
   };
 }
@@ -431,14 +528,18 @@ function browserPilotCdpRecordSend(session: BrowserPilotCdpSendSession, child?: 
 }
 
 function browserPilotCdpPurgeTabSessions(tabId: number): void {
+  browserPilotPersistentCdpTabAttaches.delete(Number(tabId));
   for (const [staleKey, staleRec] of Array.from(browserPilotPersistentCdpSessions.entries())) {
     if (staleRec && Number(staleRec.tabId) === Number(tabId)) browserPilotPersistentCdpSessions.delete(staleKey);
+  }
+  for (const [staleKey, staleRec] of Array.from(browserPilotPersistentCdpChildSessions.entries())) {
+    if (staleRec && Number(staleRec.tabId) === Number(tabId)) browserPilotPersistentCdpChildSessions.delete(staleKey);
   }
 }
 
 async function browserPilotCdpHandleSendError(tabId: number, method: string, params: JsonRecord, options: BrowserPilotCdpOptions, session: BrowserPilotCdpSendSession, error: unknown): Promise<BrowserPilotCdpResponse> {
   const message = cdpErrorMessage(error);
-  if (!session.retrying && /Debugger is not attached|Cannot access a chrome:\/\/ URL|No tab with id/i.test(String(message || ''))) {
+  if (!session.retrying && /Debugger is not attached|Detached while handling command|Session with given id not found|No session with given id/i.test(String(message || ''))) {
     browserPilotCdpPurgeTabSessions(session.rec.tabId);
     return browserPilotPersistentCdpSend(tabId, method, params, { ...(options || {}), __browserPilotRetryAfterNotAttached: true });
   }
@@ -446,12 +547,15 @@ async function browserPilotCdpHandleSendError(tabId: number, method: string, par
   return browserPilotCdpError('SEND_FAILED', message || String(error), { sessionKey: session.key, method, raw: browserPilotCdpRawError(error) });
 }
 
-async function browserPilotCdpFinishSend(tabId: number, session: BrowserPilotCdpSendSession, child?: BrowserPilotCdpChildSession): Promise<void> {
+async function browserPilotCdpFinishSend(session: BrowserPilotCdpSendSession, child?: BrowserPilotCdpChildSession): Promise<void> {
   session.rec.pending = Math.max(0, (session.rec.pending || 1) - 1);
   if (child) child.pending = Math.max(0, (child.pending || 1) - 1);
   session.rec.lockedUntil = 0;
   session.rec.lastUsed = browserPilotCdpNow();
-  if (session.temporary) await browserPilotPersistentCdpDetach(tabId, { name: session.name });
+  if (session.rec.autoDetach && session.rec.pending === 0) {
+    const aliases = Array.from(browserPilotPersistentCdpSessions.entries()).filter(([, rec]) => rec === session.rec).map(([key]) => key);
+    for (const key of aliases) await browserPilotPersistentCdpDetachEntry(key);
+  }
 }
 
 async function browserPilotPersistentCdpSend(tabId: number, method: string, params: JsonRecord = {}, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {
@@ -473,12 +577,15 @@ async function browserPilotPersistentCdpSend(tabId: number, method: string, para
   } catch (e) {
     return browserPilotCdpHandleSendError(tabId, method, params, options, session, e);
   } finally {
-    await browserPilotCdpFinishSend(tabId, session, child);
+    await browserPilotCdpFinishSend(session, child);
   }
 }
 
 async function browserPilotPersistentCdpFrameTree(tabId: number, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {
-  const resp = await browserPilotPersistentCdpSend(tabId, 'Page.getFrameTree', {}, options || {});
+  // Page.getFrameTree can be incomplete on a fresh debugger attachment until the
+  // Page domain is enabled. Request it as an in-session preflight so ordinary CDP
+  // calls avoid eager Page/Runtime setup and temporary sessions still attach once.
+  const resp = await browserPilotPersistentCdpSend(tabId, 'Page.getFrameTree', {}, { ...(options || {}), requiredDomains: ['Page'] });
   if (!resp.ok) return resp;
   const rawTree = cdpRecord(cdpRecord(cdpRecord(resp.data).result).frameTree) as BrowserPilotCdpFrameTreeNode;
   return browserPilotCdpOk({ frameTree: browserPilotCdpNormalizeFrameTreeNode(rawTree), frames: browserPilotCdpFlattenFrameTree(rawTree, []) });
@@ -631,6 +738,7 @@ async function browserPilotPersistentCdpTargets(tabId?: unknown): Promise<Browse
 // returns; the physical chrome.debugger.detach completes best-effort afterwards.
 function cleanupPersistentCdpForTab(tabId: number, _reason?: string): JsonRecord {
   const target = Number(tabId);
+  browserPilotPersistentCdpTabAttaches.delete(target);
   const removed: string[] = [];
   for (const [key, rec] of Array.from(browserPilotPersistentCdpSessions.entries())) {
     if (!rec || Number(rec.tabId) !== target) continue;
@@ -673,6 +781,7 @@ async function handlePersistentCdpCommand(msg: BrowserPilotBridgeCommand, sender
 
 chrome.debugger.onDetach.addListener((source, _reason) => {
   if (!source || !source.tabId) return;
+  browserPilotPersistentCdpTabAttaches.delete(Number(source.tabId));
   for (const [key, rec] of Array.from(browserPilotPersistentCdpSessions.entries())) {
     if (rec.tabId === source.tabId) browserPilotPersistentCdpSessions.delete(key);
   }

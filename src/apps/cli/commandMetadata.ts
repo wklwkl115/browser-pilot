@@ -77,17 +77,15 @@ function withCommaSplit(spec: FlagSpec): FlagSpec {
 }
 
 export function buildCommandFlagSpecs(cmd: CliCommand): FlagSpec[] {
-	const specs = buildFlagSpecs(cmd.parameters).map((spec) => cmd.name === "browser_command" && spec.name === "command" ? { ...spec, valueReferences: false, description: `${spec.description ?? "Bridge command object."} CLI accepts inline JSON only; use browser_execute --program @file or execute --script-file <path> for large Windows inputs.` } : spec);
-	if (cmd.name === "browser_execute") {
-		specs.push({
-			name: "scriptFile",
-			flag: "--script-file",
-			kind: "string",
-			description: "Read JavaScript source from this local file path and pass it as --script. CLI-only; cannot be combined with --script.",
-			required: false,
-			valueReferences: false,
-		});
-	}
+	const specs = buildFlagSpecs(cmd.parameters).map((spec) => {
+		if (cmd.name === "browser_command" && spec.name === "command") {
+			return { ...spec, valueReferences: false, description: `${spec.description ?? "Bridge command object."} CLI accepts inline JSON only; use browser_execute --program @file, --script @file, or --script - for larger inputs.` };
+		}
+		if (cmd.name === "browser_execute" && spec.name === "script") {
+			return { ...spec, description: `${spec.description ?? "JavaScript to execute."} CLI accepts inline source, @file, or stdin (-). Temporary JavaScript must stay in memory: use inline only for short shell-safe code, use stdin for complex/generated code, and never create a transient script file. @file is for durable source.` };
+		}
+		return spec;
+	});
 	return specs.map(withCommaSplit);
 }
 
@@ -130,7 +128,7 @@ export function nestNaturalActionParams(cmd: CliCommand, actionName: string | un
 
 /**
  * Read a flag's intent/mechanical class from the command schema.
- * Synthetic CLI-only flags with no schema property (e.g. --script-file) default to intent.
+ * Synthetic CLI-only flags with no schema property default to intent.
  */
 function paramClassFor(cmd: CliCommand, name: string): ParamClass {
 	const root = isRecord(cmd.parameters) ? cmd.parameters : {};
@@ -209,7 +207,7 @@ export function printCommandHelp(cmd: CliCommand, natural?: { action: string }):
 	}
 	if (natural) lines.push("", `Advanced equivalent: browser-pilot ${cmd.subcommand} --action ${natural.action} --params <json>`);
 	if (!natural && cmd.name === "browser_command") lines.push("", "File input note: --command accepts inline JSON only; do not use --command @file.");
-	if (!natural && cmd.name === "browser_execute") lines.push("", "File input note: use --program @file for JSON/newline program frames, or --script-file <path> to load JavaScript source from a file path.");
+	if (!natural && cmd.name === "browser_execute") lines.push("", "Input rule: temporary JavaScript must stay in memory. Use inline source only for short shell-safe code and --script - for complex/generated stdin; never create a transient script file. Reserve --script @file for durable source. Use --program @file for JSON/newline program frames.");
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 

@@ -154,17 +154,20 @@ async function enableBrowserPilotCdpDomains(record: BrowserPilotWaitRecord, doma
   if (!unique.length) return { mode: 'none', domains: [] };
   const acquired: string[] = [];
   let mode = 'none';
-  try {
-    for (const domain of unique) {
-      mode = await acquireBrowserPilotCdpDomain(record, domain);
-      acquired.push(domain);
-    }
-    return { mode, domains: unique, refcounted: true, refs: diagnoseBrowserPilotCdpDomainRefs(record.tabId) };
-  } catch (e) {
-    record.lastError = waitCdpErrorMessage(e);
+  const results = await Promise.allSettled(unique.map((domain) => acquireBrowserPilotCdpDomain(record, domain)));
+  let failure: unknown;
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      acquired.push(unique[index]);
+      mode = result.value;
+    } else if (failure === undefined) failure = result.reason;
+  });
+  if (failure !== undefined) {
+    record.lastError = waitCdpErrorMessage(failure);
     releaseBrowserPilotCdpDomains(record, acquired, 'enable_failed');
-    throw e;
+    throw failure;
   }
+  return { mode, domains: unique, refcounted: true, refs: diagnoseBrowserPilotCdpDomainRefs(record.tabId) };
 }
 async function attachDebuggerForWait(record: BrowserPilotWaitRecord, domains: Iterable<string> | string[] | undefined) { return await enableBrowserPilotCdpDomains(record, domains); }
 function subscribeBrowserPilotCdp(tabId: number, event: string | string[], handler: (source: { tabId?: number }, method: string, params: JsonRecord) => void, record?: BrowserPilotCdpSubscriptionRecord | null): string | null {

@@ -195,7 +195,7 @@ function runValidateProcess(args: string[], input?: string) {
 	});
 }
 
-test("validate parser resolves params files, value files, script-file, and stdin without bypassing validation", () => {
+test("validate parser resolves params files, script @files, and ephemeral script stdin without bypassing validation", () => {
 	const directory = mkdtempSync(path.join(tmpdir(), "browser-pilot-validation-parity-"));
 	const paramsPath = path.join(directory, "params.json");
 	const scriptPath = path.join(directory, "script.js");
@@ -204,8 +204,8 @@ test("validate parser resolves params files, value files, script-file, and stdin
 
 	const cases = [
 		{ name: "params @file", result: runValidateProcess(["execute", "--params", `@${paramsPath}`, "--json"]), script: "document.title" },
-		{ name: "nested value @file", result: runValidateProcess(["execute", "--params", JSON.stringify({ script: `@${scriptPath}` }), "--json"]), script: "document.body.dataset.validation" },
-		{ name: "script-file", result: runValidateProcess(["execute", "--params", JSON.stringify({ scriptFile: scriptPath }), "--json"]), script: "document.body.dataset.validation" },
+		{ name: "script @file", result: runValidateProcess(["execute", "--params", JSON.stringify({ script: `@${scriptPath}` }), "--json"]), script: "document.body.dataset.validation" },
+		{ name: "script stdin", result: runValidateProcess(["execute", "--params", JSON.stringify({ script: "-" }), "--json"], "document.body.dataset.ephemeral"), script: "document.body.dataset.ephemeral" },
 		{ name: "params stdin", result: runValidateProcess(["execute", "--params", "-", "--json"], JSON.stringify({ script: "location.href" })), script: "location.href" },
 	];
 	for (const item of cases) {
