@@ -122,6 +122,20 @@ function nativeToolCompletion(input: BrowserOperationResolverInput): BrowserOper
 }
 
 /**
+ * ProgramResult success gate for semantic fill/scroll.
+ * Aborted programs, dead-ref precheck, or any failed frame never count as completed.
+ */
+export function isSuccessfulSemanticProgramResult(result: unknown): boolean {
+	if (!isRecord(result)) return false;
+	if (result.aborted !== undefined && result.aborted !== null) return false;
+	if (!Array.isArray(result.frames) || result.frames.length === 0) return false;
+	for (const frame of result.frames) {
+		if (!isRecord(frame) || frame.ok !== true) return false;
+	}
+	return true;
+}
+
+/**
  * Semantic-action completion resolvers for agent façade writes.
  * Each published kind maps to exact evidence; generic DOM mutation is never completed.
  */
@@ -133,15 +147,17 @@ export const SEMANTIC_ACTION_COMPLETION_RESOLVER_REGISTRY = {
 		return undefined;
 	},
 	"semantic.fill": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
-		// Fill completes only when trusted program resolved with a result payload (value proof deferred to program).
-		if (input.physicalProgram && input.result !== undefined) {
+		// Fill completes only when trusted program finished successfully (no abort, all frames ok).
+		if (input.physicalProgram && isSuccessfulSemanticProgramResult(input.result)) {
 			return { source: "semantic-fill-applied", evidence: { result: input.result } };
 		}
 		return executeCompletion(input);
 	},
 	"semantic.press": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => executeCompletion({ ...input, physicalProgram: true }),
 	"semantic.scroll": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {
-		if (input.result !== undefined) return { source: "semantic-scroll-applied", evidence: { result: input.result } };
+		if (isSuccessfulSemanticProgramResult(input.result)) {
+			return { source: "semantic-scroll-applied", evidence: { result: input.result } };
+		}
 		return undefined;
 	},
 	"semantic.navigate": (input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined => {

@@ -256,30 +256,33 @@ test("handler-driven browser_view/act/read produce AgentView/AgentTurn/AgentRead
 	}, undefined, undefined, { operationOwnerId: "owner-test" });
 	const turn = parseEnvelope(actResult);
 	assert.equal(turn.schema, AGENT_TURN_SCHEMA);
-	const outcome = turn.outcome as { status: string; ok: boolean; classification: string; replay: string };
-	assert.ok(outcome.status);
-	assert.equal(typeof outcome.ok, "boolean");
-	if (outcome.status !== "completed") {
-		assert.equal(outcome.ok, false);
-		assert.notEqual(outcome.classification, "success");
-		assert.equal(outcome.replay, "do_not_retry");
-	} else {
-		assert.equal(outcome.ok, true);
-		assert.equal(outcome.classification, "success");
-	}
+	const outcome = turn.outcome as { status: string; ok: boolean; classification: string; replay: string; completionSource?: string };
+	// Happy path: registered refs + successful frames → completed via semantic.fill
+	assert.equal(outcome.status, "completed");
+	assert.equal(outcome.ok, true);
+	assert.equal(outcome.classification, "success");
+	assert.equal(outcome.completionSource, "semantic-fill-applied");
 	assert.ok(turn.viewStatus === "available" || turn.viewStatus === "unavailable");
-	assertNoMechanicalLeak({ ...turn, /* allow internal details only on result wrapper */ });
+	assertNoMechanicalLeak(turn);
 
-	// Semantic fill resolver is live: program result present → completed via semantic.fill path
-	const semanticFill = resolveSemanticActionCompletion("semantic.fill", {
+	// Resolver gate: aborted / empty frames must not complete
+	assert.equal(resolveSemanticActionCompletion("semantic.fill", {
+		commandName: "browser_execute",
+		mode: "program",
+		physicalProgram: true,
+		result: {
+			frames: [{ step: 0, kind: "mouse:press", ok: false, durationMs: 1 }],
+			aborted: { reason: "ref precheck failed — dead refs: bp-ref://missing", atStep: -1 },
+		},
+		events: [],
+	}), undefined);
+	assert.equal(resolveSemanticActionCompletion("semantic.fill", {
 		commandName: "browser_execute",
 		mode: "program",
 		physicalProgram: true,
 		result: { frames: [], result: { ok: true } },
 		events: [],
-	});
-	assert.ok(semanticFill);
-	assert.equal(semanticFill?.source, "semantic-fill-applied");
+	}), undefined);
 
 	const reads = (turn.view as { reads?: Array<{ readRef: string }> } | undefined)?.reads
 		?? (view.reads as Array<{ readRef: string }> | undefined);
@@ -318,14 +321,31 @@ test("handler-driven browser_view/act/read produce AgentView/AgentTurn/AgentRead
 	assert.equal(activateTurn.schema, AGENT_TURN_SCHEMA);
 	const activateOutcome = activateTurn.outcome as { status: string; ok: boolean; classification: string };
 	// Without navigation/download evidence, activate must not invent success via generic mutation.
-	if (activateOutcome.status === "completed") {
-		// only allowed if semantic/nav evidence proved completion
-		assert.equal(activateOutcome.ok, true);
-	} else {
-		assert.equal(activateOutcome.ok, false);
-		assert.notEqual(activateOutcome.classification, "success");
-	}
+	assert.notEqual(activateOutcome.status, "completed");
+	assert.equal(activateOutcome.ok, false);
+	assert.notEqual(activateOutcome.classification, "success");
 	assertNoMechanicalLeak(activateTurn);
+
+	// Failure path: fill against unregistered ref aborts program → must not promote to completed
+	const deadObs = {
+		...observation,
+		actionables: [{ ref: "bp-ref://element/unregistered-missing", kind: "textbox", name: "Ghost" }],
+		saved: undefined,
+	} as PageObservationV3;
+	setAgentObserveRunnerForTests(async () => deadObs);
+	const viewDead = parseEnvelope(await viewCmd.execute("t8", {}, undefined, undefined, { operationOwnerId: "owner-dead" }));
+	const ctxDead = (viewDead.context as { contextRef: string }).contextRef;
+	const deadFill = (viewDead.candidates as Array<{ ref: string; actions: string[] }>)[0]!;
+	const failTurn = parseEnvelope(await actCmd.execute("t9", {
+		contextRef: ctxDead,
+		action: { kind: "fill", ref: deadFill.ref, value: "should-fail" },
+	}, undefined, undefined, { operationOwnerId: "owner-dead" }));
+	assert.equal(failTurn.schema, AGENT_TURN_SCHEMA);
+	const failOutcome = failTurn.outcome as { status: string; ok: boolean; classification: string; completionSource?: string };
+	assert.notEqual(failOutcome.status, "completed");
+	assert.equal(failOutcome.ok, false);
+	assert.notEqual(failOutcome.classification, "success");
+	assert.notEqual(failOutcome.completionSource, "semantic-fill-applied");
 
 	setAgentObserveRunnerForTests(undefined);
 	resetAgentContextServiceForTests();
