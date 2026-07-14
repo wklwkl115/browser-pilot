@@ -17,7 +17,7 @@ import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageS
 import { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
 import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "../protocol/consentTypes.js";
 import type { CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot, CommandTemporalProfileSample, CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
-import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
+import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo, ExecuteOptions } from "./types.js";
 import type { SessionOperationBeginInput } from "../../kernels/session/operationRegistry.js";
 import type { BrowserOperationEvent, BrowserOperationOutcome } from "../../kernels/session/browserOperation.js";
 
@@ -305,23 +305,23 @@ export class BrowserBridgeServer implements ConsentPort {
 		return selected.info;
 	}
 
-	async switchTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
+	async switchTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.switchTab(tabId, timeoutMs, options);
 	}
 
-	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string; incognito?: boolean } = {}): Promise<BrowserBridgeExecutionResult> {
+	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string; incognito?: boolean; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.createTab(url, active, timeoutMs, options);
 	}
 
-	async closeTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
+	async closeTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.closeTab(tabId, timeoutMs, options);
 	}
 
-	async executeJavaScript(script: string, options = {}): Promise<BrowserBridgeExecutionResult> {
+	async executeJavaScript(script: string, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.executeJavaScript(script, options);
 	}
 
-	async sendCommand(command: import("../../types/nativeProtocol.js").BridgeCommand, options = {}): Promise<BrowserBridgeExecutionResult> {
+	async sendCommand(command: import("../../types/nativeProtocol.js").BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.sendCommand(command, options);
 	}
 

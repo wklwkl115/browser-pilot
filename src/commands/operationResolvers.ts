@@ -14,6 +14,7 @@ export type BrowserOperationResolverInput = {
 	action?: string;
 	mode?: "javascript" | "program";
 	physicalProgram?: boolean;
+	postcondition?: boolean;
 	result?: unknown;
 	events: BrowserOperationEvent[];
 };
@@ -83,6 +84,10 @@ export function summarizeBrowserOperationDispatch(input: BrowserOperationResolve
 }
 
 export function resolveBrowserOperationDispatchTerminal(input: BrowserOperationResolverInput): BrowserOperationDispatchTerminal | undefined {
+	return scriptPostconditionTerminal(input) ?? programDispatchTerminal(input);
+}
+
+function programDispatchTerminal(input: BrowserOperationResolverInput): BrowserOperationDispatchTerminal | undefined {
 	if (input.commandName !== "browser_execute" || input.mode !== "program") return undefined;
 	const result = programResult(input.result);
 	if (!result) return undefined;
@@ -111,6 +116,19 @@ export function resolveBrowserOperationDispatchTerminal(input: BrowserOperationR
 		};
 	}
 	return undefined;
+}
+
+function scriptPostconditionTerminal(input: BrowserOperationResolverInput): BrowserOperationDispatchTerminal | undefined {
+	if (input.commandName !== "browser_execute" || input.mode !== "javascript" || !input.postcondition) return undefined;
+	const verification = isRecord(input.result) && isRecord(input.result.businessVerification) ? input.result.businessVerification : undefined;
+	if (!verification || verification.passed === true) return undefined;
+	return {
+		status: "ambiguous",
+		diagnostics: [{
+			code: "BUSINESS_POSTCONDITION_FAILED",
+			message: "The script action was dispatched, but its declared business postcondition did not pass. Observe current page state before any further mutation.",
+		}],
+	};
 }
 
 function findFileEvidence(value: unknown): Record<string, unknown> | undefined {
@@ -156,6 +174,10 @@ function nativeCompletion(command: string, result: unknown): BrowserOperationCom
 }
 
 function executeCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
+	return input.mode === "javascript" && input.postcondition ? scriptPostconditionCompletion(input.result) : mechanicalExecuteCompletion(input);
+}
+
+function mechanicalExecuteCompletion(input: BrowserOperationResolverInput): BrowserOperationCompletion | undefined {
 	const navigation = [...input.events].reverse().find((event) => event.type === "navigation_completed" || (event.type === "navigation" && (event.data?.phase === "complete" || event.data?.phase === "Page.lifecycleEvent" && event.data?.name === "load")));
 	const download = [...input.events].reverse().find((event) => event.type === "download_completed");
 	if (download) return { source: "download-completed", evidence: { event: download.data } };
@@ -174,6 +196,13 @@ function executeCompletion(input: BrowserOperationResolverInput): BrowserOperati
 	}
 	const result = scriptResult(input.result);
 	return result !== undefined ? { source: "script-resolved", evidence: { result } } : undefined;
+}
+
+function scriptPostconditionCompletion(result: unknown): BrowserOperationCompletion | undefined {
+	const verification = isRecord(result) && isRecord(result.businessVerification) ? result.businessVerification : undefined;
+	return verification?.passed === true
+		? { source: "script-postcondition-verified", evidence: { verification: { passed: true, result: verification.result }, result: scriptResult(result) } }
+		: undefined;
 }
 
 function tabCreateCompletion(result: unknown): BrowserOperationCompletion | undefined {

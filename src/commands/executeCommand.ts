@@ -3,6 +3,7 @@ import { prepareExecuteStdlib } from "../browser-command-runtime/executeStdlib.j
 import { executeProgram, type ProgramContext } from "../browser-command-runtime/programEngine.js";
 import { validateProgram } from "../browser-command-runtime/programDispatcher.js";
 import { BrowserBridgeError } from "../utils/errors.js";
+import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
 import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 import { withBrowserOperation } from "./browserOperation.js";
@@ -17,6 +18,7 @@ const PROGRAM_MAX_FRAMES = 60;
 type ExecuteParams = {
 	script?: unknown;
 	program?: unknown;
+	postcondition?: unknown;
 	intentId?: unknown;
 	browserSessionId?: unknown;
 	tabId?: number | string;
@@ -26,7 +28,7 @@ type ExecuteParams = {
 };
 
 type PreparedExecute =
-	| { mode: "javascript"; script: string }
+	| { mode: "javascript"; script: string; postcondition?: string }
 	| { mode: "program"; program: unknown[]; physical: boolean };
 
 function detectCommandLikeScript(script: string): boolean {
@@ -48,7 +50,9 @@ function prepareExecute(params: ExecuteParams): PreparedExecute {
 	}
 	if (!script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script or program", { commandName: "browser_execute" });
 	if (detectCommandLikeScript(script)) throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { commandName: "browser_execute", recovery: { useTool: "browser_command" } });
-	return { mode: "javascript", script };
+	const postcondition = typeof params.postcondition === "string" && params.postcondition.trim() ? params.postcondition.trim() : undefined;
+	if (typeof params.intentId === "string" && !postcondition) throw new BrowserBridgeError("INVALID_RULE", "browser_execute script mutations with intentId require a business postcondition", { commandName: "browser_execute", field: "postcondition" });
+	return { mode: "javascript", script, postcondition };
 }
 
 export function validateExecuteArguments(args: Record<string, unknown>): ValidationIssue[] {
@@ -67,18 +71,102 @@ export function validateExecuteArguments(args: Record<string, unknown>): Validat
 		const validation = validateProgram(program);
 		if (!validation.ok) return [{ code: "EXECUTE_PROGRAM_INVALID", path: validation.step === undefined ? "/program" : `/program/${validation.step}`, message: validation.error }];
 	}
+	if (hasProgram && args.postcondition !== undefined) return [{ code: "EXECUTE_POSTCONDITION_REQUIRES_SCRIPT", path: "/postcondition", message: "browser_execute postcondition is only valid with script" }];
 	if (hasScript && detectCommandLikeScript(args.script as string)) return [{ code: "EXECUTE_COMMAND_SHAPED_SCRIPT", path: "/script", message: "browser_execute only accepts JavaScript; use browser_command for bridge commands" }];
+	if (hasScript && typeof args.intentId === "string" && (typeof args.postcondition !== "string" || !args.postcondition.trim())) return [{ code: "EXECUTE_INTENT_REQUIRES_POSTCONDITION", path: "/postcondition", message: "browser_execute script mutations with intentId require a business postcondition" }];
 	return [];
 }
+
+function postconditionScript(source: string, timeoutMs: number): string {
+	return `
+const __bpStartedAt = Date.now();
+const __bpTimeoutMs = ${Math.max(0, Math.floor(timeoutMs))};
+const __bpPassed = (value) => value === true || (value && typeof value === 'object' && value.verified === true);
+const __bpRun = async () => await (${source});
+const __bpResult = await new Promise((resolve) => {
+  let observer;
+  let timer;
+  let settled = false;
+  let checking = false;
+  let rerun = false;
+  let attempts = 0;
+  let value;
+  let error;
+  const finish = (verified) => {
+    if (settled) return;
+    settled = true;
+    if (observer) observer.disconnect();
+    if (timer) clearTimeout(timer);
+    resolve({ verified, value, attempts, elapsedMs: Date.now() - __bpStartedAt, ...(error ? { error } : {}) });
+  };
+  const check = async () => {
+    if (settled) return;
+    if (checking) { rerun = true; return; }
+    checking = true;
+    do {
+      rerun = false;
+      attempts += 1;
+      try {
+        value = await __bpRun();
+        error = undefined;
+        if (__bpPassed(value)) { finish(true); break; }
+      } catch (caught) {
+        error = String(caught && caught.message ? caught.message : caught).slice(0, 500);
+      }
+    } while (rerun && !settled);
+    checking = false;
+  };
+  if (typeof MutationObserver === 'function' && document && document.documentElement) {
+    observer = new MutationObserver(() => { void check(); });
+    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+  }
+  timer = setTimeout(() => finish(false), __bpTimeoutMs);
+  void check();
+});
+return __bpResult;`;
+}
+
+function postconditionPassed(value: unknown): boolean {
+	return value === true || (isRecord(value) && value.verified === true);
+}
+
+type ScriptPostconditionResult = BrowserBridgeExecutionResult & {
+	businessVerification: { passed: boolean; result: unknown };
+};
 
 async function executePrepared(
 	prepared: PreparedExecute,
 	server: Awaited<ReturnType<CommandRegistrarContext["ensureStarted"]>>,
-	options: { browserSessionId?: string; rawTarget?: string | number; tabId?: number; timeoutMs: number; signal?: AbortSignal },
+	options: { browserSessionId?: string; rawTarget?: string | number; tabId?: number; timeoutMs: number; signal: AbortSignal; deadlineAt: number },
 ) {
 	if (prepared.mode === "javascript") {
 		const script = prepareExecuteStdlib(prepared.script).script;
-		return await server.executeJavaScript(script, { browserSessionId: options.browserSessionId, tabId: options.rawTarget, timeoutMs: options.timeoutMs });
+		const action = await server.executeJavaScript(script, { browserSessionId: options.browserSessionId, tabId: options.rawTarget, timeoutMs: options.timeoutMs, signal: options.signal });
+		if (!prepared.postcondition) return action;
+		const remainingMs = Math.max(0, options.deadlineAt - Date.now());
+		const verificationWindowMs = Math.max(0, remainingMs - Math.min(250, Math.floor(remainingMs / 4)));
+		try {
+			const verificationScript = prepareExecuteStdlib(postconditionScript(prepared.postcondition, verificationWindowMs), { enabled: true }).script;
+			const verification = await server.executeJavaScript(verificationScript, {
+				browserSessionId: options.browserSessionId,
+				tabId: options.rawTarget,
+				timeoutMs: Math.max(100, remainingMs),
+				accessMode: "read",
+				signal: options.signal,
+			});
+			return {
+				...action,
+				acknowledged: action.acknowledged || verification.acknowledged,
+				businessVerification: { passed: postconditionPassed(verification.data), result: verification.data },
+			} as ScriptPostconditionResult;
+		} catch (error) {
+			throw new BrowserBridgeError(options.signal.aborted ? "BRIDGE_TIMEOUT" : "BROWSER_EXECUTION_ERROR", "Business postcondition could not be proven after the script action was dispatched", {
+				acked: action.acknowledged,
+				dispatchStarted: true,
+				postcondition: true,
+				cause: error instanceof Error ? { name: error.name, message: error.message } : String(error),
+			});
+		}
 	}
 	const context: ProgramContext = {
 		server,
@@ -89,7 +177,7 @@ async function executePrepared(
 		contextVars: new Map(),
 		lastEvalResult: undefined,
 		evalTimeoutMs: options.timeoutMs,
-		signal: options.signal ?? new AbortController().signal,
+		signal: options.signal,
 	};
 	return await executeProgram(prepared.program, context);
 }
@@ -106,11 +194,13 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 			"The call remains open until completed, effect_observed, no_effect, stalled, target_lost, failed, ambiguous, or deadline. effect_observed is browser evidence, not proof of business success; no_effect and stalled are not success.",
 			"Follow continuation before another mutation. Large resolved values stay in saved.path and are addressed by artifact_hints; inspect them instead of replaying the execute call.",
 			"For non-idempotent mutations, supply a stable intentId and keep both it and the script/program payload unchanged across recovery attempts. A physical program can complete only through navigation/download evidence or the sole final eval frame with verify:true whose value is true or {verified:true}; the fully expanded sequence is revalidated. Within the current daemon process, the same completed intent+payload is reused without dispatch, while uncertain replay or payload conflict is blocked.",
+			"A scripted mutation with intentId must include postcondition, a read-only JavaScript predicate. Browser Pilot observes DOM mutations and reports completed only when that predicate returns true or {verified:true}; a false, lost, or timed-out proof is ambiguous and must not be replayed blindly.",
 		],
 		parameters: strictCommandParameters({
 			script: Type.Optional(Type.String({ description: "JavaScript to execute. A non-undefined resolved value is mechanical completed/script-resolved evidence." })),
 			program: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), { description: "Trusted CDP input/eval frames. Physical mutations should end with an explicit eval frame verify:true; it passes only on true or {verified:true}." })),
-			intentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", description: "Stable daemon-process idempotency intent for a non-idempotent mutation. Reuse it only with the identical script/program payload; completed results are reused and uncertain/conflicting repeats are not dispatched." })),
+			postcondition: Type.Optional(Type.String({ minLength: 1, description: "Read-only JavaScript predicate expression for script business success. It passes only on true or {verified:true}; required when script uses intentId." })),
+			intentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", description: "Stable daemon-process idempotency intent for a non-idempotent mutation. Reuse it only with the identical script/program/postcondition payload; completed results are reused and uncertain/conflicting repeats are not dispatched." })),
 			...sharedTabScopedToolParams(),
 		}),
 		validateArguments: validateExecuteArguments,
@@ -128,16 +218,18 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					commandName: "browser_execute",
 					command: prepared.mode === "program" ? "program" : "javascript",
 					mode: prepared.mode,
+					postcondition: prepared.mode === "javascript" && prepared.postcondition !== undefined,
 					physicalProgram: prepared.mode === "program" ? prepared.physical : false,
 					intentId: typeof params.intentId === "string" ? params.intentId : undefined,
-					intentPayload: prepared.mode === "program" ? { mode: prepared.mode, program: prepared.program } : { mode: prepared.mode, script: prepared.script },
+					intentPayload: prepared.mode === "program" ? { mode: prepared.mode, program: prepared.program } : { mode: prepared.mode, script: prepared.script, postcondition: prepared.postcondition },
 					browserSessionId,
 					tabId,
 					targetRef: typeof rawTarget === "string" ? rawTarget : undefined,
 					timeoutMs,
 					ctx,
 					onUpdate,
-				}, () => executePrepared(prepared, server, { browserSessionId, rawTarget: rawTarget as string | number | undefined, tabId, timeoutMs, signal }));
+					signal,
+				}, ({ signal: operationSignal, deadlineAt }) => executePrepared(prepared, server, { browserSessionId, rawTarget: rawTarget as string | number | undefined, tabId, timeoutMs, signal: operationSignal, deadlineAt }));
 				return await browserOperationCommandResult(outcome, {
 					budgetName: "browser_execute",
 					maxChars,

@@ -165,7 +165,7 @@ async function startFixtureServer() {
 	};
 }
 
-async function daemonJson(daemon, pathname, init = {}) {
+async function daemonJson(daemon, pathname, init = {}, timeoutMs = 10_000) {
 	const response = await fetch(`http://${daemon.controlHost}:${daemon.controlPort}${pathname}`, {
 		...init,
 		headers: {
@@ -173,7 +173,7 @@ async function daemonJson(daemon, pathname, init = {}) {
 			...(init.body ? { "content-type": "application/json" } : {}),
 			...init.headers,
 		},
-		signal: AbortSignal.timeout(10_000),
+		signal: AbortSignal.timeout(timeoutMs),
 	});
 	const value = await response.json();
 	if (!response.ok) throw new Error(`${pathname} returned HTTP ${response.status}: ${JSON.stringify(value)}`);
@@ -200,11 +200,11 @@ function resultEnvelope(result, label) {
 	try { return JSON.parse(resultText(result)); } catch { throw new Error(`${label} did not return JSON: ${resultText(result)}`); }
 }
 
-async function invoke(daemon, tool, params) {
+async function invoke(daemon, tool, params, transportTimeoutMs = 10_000) {
 	const result = await daemonJson(daemon, "/invoke", {
 		method: "POST",
 		body: JSON.stringify({ tool, params, cwd: root, cli: { command: tool } }),
-	});
+	}, transportTimeoutMs);
 	if (result.ok !== true || result.terminate === true) throw new Error(`${tool} failed: ${resultText(result) || JSON.stringify(result)}`);
 	return result;
 }
@@ -376,6 +376,31 @@ try {
 	if ((noEffectOutcome.ok ? 0 : 1) !== 1) throw new Error(`browser_execute no-effect did not map to a non-zero CLI outcome: ${JSON.stringify(noEffectOutcome)}`);
 	const noEffectObservation = JSON.parse(resultText(await invoke(daemon, "browser_observe", { tabId, maxChars: 20_000 })));
 	if (noEffectObservation?.schema !== "browser-page-observation/v3") throw new Error(`no-effect recovery did not perform the required canonical observation: ${JSON.stringify(noEffectObservation)}`);
+	const businessIntentId = `script-business-${process.pid}-${Date.now()}`;
+	const businessVerified = operationOutcome(await invoke(daemon, "browser_execute", {
+		tabId,
+		intentId: businessIntentId,
+		script: "setTimeout(()=>{document.body.dataset.businessState='liked'},75);({actionDispatched:true})",
+		postcondition: "document.body.dataset.businessState === 'liked'",
+	}), "browser_execute scripted business postcondition", "completed");
+	if (businessVerified.completion?.source !== "script-postcondition-verified" || businessVerified.completionVerified !== true) throw new Error(`script business postcondition was not the completion proof: ${JSON.stringify(businessVerified)}`);
+
+	let delayedProgramTimedOut = false;
+	try {
+		await invoke(daemon, "browser_execute", {
+			tabId,
+			program: [
+				{ eval: "document.body.dataset.lateProgramMutation='should-not-run';true", delay: 1_500 },
+			],
+		}, 500);
+	} catch (error) {
+		delayedProgramTimedOut = error?.name === "TimeoutError";
+		if (!delayedProgramTimedOut) throw error;
+	}
+	if (!delayedProgramTimedOut) throw new Error("program cancellation smoke did not hit the caller transport deadline");
+	await new Promise((resolve) => setTimeout(resolve, 1_200));
+	const delayedProgramProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "document.body.dataset.lateProgramMutation || 'not-run'" }), "browser_execute delayed program cancellation proof", "completed");
+	if (delayedProgramProof.completion?.evidence?.result !== "not-run") throw new Error(`timed-out program dispatched a later mutation frame in the background: ${JSON.stringify(delayedProgramProof)}`);
 	const physicalIntentId = `physical-toggle-${process.pid}-${Date.now()}`;
 	const physicalProgram = [
 		{ eval: "(()=>{const r=document.querySelector('#smoke-toggle').getBoundingClientRect();return{point:{x:r.left+r.width/2,y:r.top+r.height/2}}})()", as: "toggleTarget" },
@@ -643,7 +668,7 @@ try {
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-nonzero", "physical-program-verified-idempotent", "physical-program-uncertain-replay-blocked", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "provider-budget-telemetry", "extension-reconnect-page-epoch", "operation-completion-event-wakeup", "bfcache-back-forward-lineage", "frontier-artifact-targeted-read", "prerender-tabs-onReplaced", "target-close-new-target", "daemon-replacement-targetref-stable"],
+		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-nonzero", "script-business-postcondition", "program-deadline-cancels-later-frames", "physical-program-verified-idempotent", "physical-program-uncertain-replay-blocked", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "provider-budget-telemetry", "extension-reconnect-page-epoch", "operation-completion-event-wakeup", "bfcache-back-forward-lineage", "frontier-artifact-targeted-read", "prerender-tabs-onReplaced", "target-close-new-target", "daemon-replacement-targetref-stable"],
 		operationCompletionEventMs: completionEventElapsedMs,
 		connectionMetrics: reconnected.health?.connectionMetrics,
 	}, null, 2));

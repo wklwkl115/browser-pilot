@@ -41,6 +41,33 @@ test("request timeout rejects and removes the pending snapshot entry", async () 
 	assert.equal(pr.snapshot().length, 0);
 });
 
+test("request cancellation preserves whether browser dispatch was acknowledged", async () => {
+	const pr = newPending();
+	const ws = fakeSocket();
+	const beforeSend = new AbortController();
+	beforeSend.abort();
+	await assert.rejects(pr.send(ws, "never-send", { tabId: 7, timeoutMs: 5_000, signal: beforeSend.signal }), (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+		assert.equal(error.code, "BRIDGE_TIMEOUT");
+		assert.equal(error.details?.dispatchStarted, false);
+		assert.equal(error.details?.acked, false);
+		return true;
+	});
+	assert.equal(ws.sent.length, 0);
+
+	const inFlight = new AbortController();
+	const promise = pr.send(ws, "in-flight", { tabId: 7, timeoutMs: 5_000, signal: inFlight.signal });
+	const id = lastId(ws);
+	pr.ack(id);
+	inFlight.abort();
+	await assert.rejects(promise, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+		assert.equal(error.code, "BRIDGE_TIMEOUT");
+		assert.equal(error.details?.dispatchStarted, true);
+		assert.equal(error.details?.acked, true);
+		return true;
+	});
+	assert.equal(pr.snapshot().length, 0);
+});
+
 test("rejectAllStopped clears every pending request with a bridge stopped error", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();

@@ -4,6 +4,7 @@ import { SessionOperationRegistry } from "../../src/kernels/session/operationReg
 import { resolveBrowserOperationCompletion, resolveBrowserOperationDispatchTerminal } from "../../src/commands/operationResolvers.ts";
 import { classifyBrowserOperationLiveness, nextBrowserOperationLivenessBoundary } from "../../src/kernels/session/browserOperationState.ts";
 import { BrowserBridgeServer } from "../../src/bridge/server/BrowserBridgeServer.ts";
+import { BrowserCommandQueueRegistry } from "../../src/bridge/server/BrowserCommandQueueRegistry.ts";
 import { readFile } from "node:fs/promises";
 import {
 	BROWSER_OPERATION_SCHEMA,
@@ -132,6 +133,27 @@ test("operation waiter abort removes its timer and listener", async () => {
 	controller.abort();
 	await assert.rejects(waiting, { name: "AbortError" });
 	await server.stop();
+});
+
+test("aborted queued browser writes reject promptly and never dispatch later", async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let releaseFirst!: () => void;
+	const first = queues.enqueue("session-1", 7, async () => await new Promise<void>((resolve) => { releaseFirst = resolve; }));
+	let secondDispatches = 0;
+	const controller = new AbortController();
+	const second = queues.enqueue("session-1", 7, async () => { secondDispatches += 1; }, { signal: controller.signal });
+	controller.abort();
+	await assert.rejects(second, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+		assert.equal(error.code, "BRIDGE_TIMEOUT");
+		assert.equal(error.details?.dispatchStarted, false);
+		return true;
+	});
+	assert.equal(queues.depth("session-1", 7), 1);
+	releaseFirst();
+	await first;
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(secondDispatches, 0);
+	assert.equal(queues.depth("session-1", 7), 0);
 });
 
 test("operation settlement source contains no fixed-interval registry polling", async () => {

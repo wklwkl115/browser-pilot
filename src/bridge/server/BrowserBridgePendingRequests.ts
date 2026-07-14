@@ -38,10 +38,21 @@ export class BrowserBridgePendingRequests {
 		return Array.from(this.pending.values()).map((item) => ({ id: item.id, tabId: item.tabId, createdAt: item.createdAt, acked: item.acked, target: item.target }));
 	}
 
-	send(socket: WebSocket, code: unknown, options: { tabId?: number; timeoutMs?: number; target?: BrowserBridgeTargetInfo } = {}): Promise<BrowserBridgeExecutionResult> {
+	send(socket: WebSocket, code: unknown, options: { tabId?: number; timeoutMs?: number; target?: BrowserBridgeTargetInfo; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 		const id = randomUUID();
 		const timeoutMs = Math.max(100, Math.floor(options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
+		if (options.signal?.aborted) {
+			return Promise.reject(new BrowserBridgeError("BRIDGE_TIMEOUT", "Browser command was cancelled before bridge dispatch", {
+				id,
+				tabId: options.tabId,
+				acked: false,
+				dispatchStarted: false,
+				aborted: true,
+				target: this.resolvedTarget(options.target),
+			}));
+		}
 		return new Promise<BrowserBridgeExecutionResult>((resolve, reject) => {
+			let dispatched = false;
 			const pending: PendingRequest = {
 				id,
 				tabId: options.tabId,
@@ -51,14 +62,33 @@ export class BrowserBridgePendingRequests {
 				createdAt: Date.now(),
 				acked: false,
 				target: options.target,
+				signal: options.signal,
 				timer: undefined as unknown as NodeJS.Timeout,
 				resolve,
 				reject,
 			};
 			this.pending.set(id, pending);
 			this.armTimeout(pending);
+			pending.abortListener = () => {
+				const cancelled = this.take(id);
+				if (!cancelled) return;
+				cancelled.reject(new BrowserBridgeError("BRIDGE_TIMEOUT", dispatched ? "Browser command was cancelled after bridge dispatch" : "Browser command was cancelled before bridge dispatch", {
+					id,
+					tabId: options.tabId,
+					acked: cancelled.acked,
+					dispatchStarted: dispatched,
+					aborted: true,
+					target: this.resolvedTarget(options.target),
+				}));
+			};
+			options.signal?.addEventListener("abort", pending.abortListener, { once: true });
+			if (options.signal?.aborted) {
+				pending.abortListener();
+				return;
+			}
 			try {
 				socket.send(JSON.stringify(this.buildPayload(pending)));
+				dispatched = true;
 			} catch (error) {
 				this.clearTimers(pending);
 				this.pending.delete(id);
@@ -80,6 +110,7 @@ export class BrowserBridgePendingRequests {
 		const debugCodePreview = typeof pending.code === "string" ? pending.code.slice(0, 120) : JSON.stringify(pending.code).slice(0, 120);
 		clearTimeout(pending.timer);
 		pending.timer = setTimeout(() => {
+			this.clearTimers(pending);
 			this.pending.delete(pending.id);
 			const state = pending.acked ? "ACK received, script may still be running" : "no ACK, message may not have been delivered";
 			pending.reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${pending.timeoutMs}ms (${state})`, {
@@ -96,6 +127,7 @@ export class BrowserBridgePendingRequests {
 
 	private clearTimers(pending: PendingRequest): void {
 		clearTimeout(pending.timer);
+		if (pending.signal && pending.abortListener) pending.signal.removeEventListener("abort", pending.abortListener);
 		if (pending.graceTimer) {
 			clearTimeout(pending.graceTimer);
 			pending.graceTimer = undefined;

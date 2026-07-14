@@ -112,6 +112,7 @@ try {
 	if (tarballBytes > ceilings.compressed || pack.unpackedSize > ceilings.unpacked || files.length > ceilings.files) throw new Error(`tarball ceiling exceeded: ${JSON.stringify({ tarballBytes, unpackedSize: pack.unpackedSize, fileCount: files.length, ceilings })}`);
 	for (const file of files) assertAllowedFile(file.path);
 	const packagePaths = new Set(files.map((file) => normalizedPackagePath(file.path)));
+	if ([...packagePaths].some((file) => /^bridge\/browser_pilot_bridge\/dist\/.*\.js\.map$/i.test(file))) throw new Error("development-only extension sourcemap leaked into package");
 	for (const required of [
 		"dist/src/apps/cli/bin.js", "dist/index.js", "dist/index.d.ts",
 		"bridge/browser_pilot_bridge/manifest.json", "bridge/browser_pilot_bridge/dist/build-manifest.json", "bridge/browser_pilot_bridge/dist/service-worker.js",

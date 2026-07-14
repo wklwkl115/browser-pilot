@@ -232,6 +232,41 @@ test("daemon invoke wraps command throws as terminating success envelope", async
 	assert.equal(res.json.terminate, true);
 });
 
+test("daemon aborts an active invocation when the control client disconnects", async () => {
+	isolateAuthStore();
+	let markStarted!: () => void;
+	let markAborted!: () => void;
+	const started = new Promise<void>((resolve) => { markStarted = resolve; });
+	const aborted = new Promise<void>((resolve) => { markAborted = resolve; });
+	const slow: CommandDefinition = {
+		name: "browser_slow",
+		parameters: strictCommandParameters({}),
+		async execute(_id, _params, signal) {
+			assert.ok(signal);
+			markStarted();
+			await new Promise<void>((resolve) => signal.addEventListener("abort", () => { markAborted(); resolve(); }, { once: true }));
+			return { content: [{ type: "text", text: "aborted" }] };
+		},
+	};
+	const handle = await startDaemon({ writeLock: false, startBridgeEagerly: false, commandDefinitions: [slow] });
+	try {
+		const req = http.request({
+			host: handle.controlHost,
+			port: handle.controlPort,
+			path: "/invoke",
+			method: "POST",
+			headers: { "x-browser-pilot-daemon-token": handle.token, "content-type": "application/json" },
+		});
+		req.on("error", () => undefined);
+		req.end(JSON.stringify({ tool: "browser_slow", params: {} }));
+		await started;
+		req.destroy();
+		await Promise.race([aborted, new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("invoke signal was not aborted")), 1_000))]);
+	} finally {
+		await handle.close();
+	}
+});
+
 test("daemon auth store sweeps expired pending pairings before pairing summaries", () => {
 	isolateAuthStore();
 	const { pairingId } = authStore.mintPending("expired-agent");

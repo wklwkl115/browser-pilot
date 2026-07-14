@@ -11,7 +11,7 @@ import {
 	type BrowserOperationTarget,
 } from "../kernels/session/browserOperation.js";
 import type { SessionMutationReplayGuard } from "../kernels/session/operationRegistry.js";
-import { errorToPlain, errorWasAcknowledged } from "../utils/errors.js";
+import { BrowserBridgeError, errorToPlain, errorWasAcknowledged } from "../utils/errors.js";
 import { isRecord } from "../utils/records.js";
 import type { CommandOnUpdate, CommandResultContext } from "./commandRuntime.js";
 import { resolveBrowserOperationCompletion, resolveBrowserOperationDispatchTerminal, summarizeBrowserOperationDispatch, type BrowserOperationResolverInput } from "./operationResolvers.js";
@@ -28,6 +28,13 @@ type BrowserOperationOptions = Omit<BrowserOperationResolverInput, "result" | "e
 	timeoutMs: number;
 	ctx?: CommandResultContext;
 	onUpdate?: CommandOnUpdate;
+	signal?: AbortSignal;
+};
+
+export type BrowserOperationDispatchContext = {
+	signal: AbortSignal;
+	operationId: string;
+	deadlineAt: number;
 };
 
 function resolveTarget(options: BrowserOperationOptions): BrowserOperationTarget {
@@ -48,12 +55,25 @@ function resolveTarget(options: BrowserOperationOptions): BrowserOperationTarget
 }
 
 function statusForError(error: unknown): BrowserOperationStatus {
+	if (error instanceof Error && error.name === "AbortError") return "deadline";
 	const plain = errorToPlain(error);
 	const code = String(plain.code || "");
 	if (/AMBIGUOUS/.test(code)) return "ambiguous";
 	if (/TAB_NOT_FOUND|NO_TAB|TARGET|FRAME_DETACHED|DISCONNECTED/.test(code)) return "target_lost";
 	if (/TIMEOUT|DEADLINE/.test(code)) return "deadline";
 	return "failed";
+}
+
+function dispatchStartedForError(error: unknown, fallback: boolean): boolean {
+	const plain = errorToPlain(error);
+	const details = isRecord(plain.details) ? plain.details : {};
+	return typeof details.dispatchStarted === "boolean" ? details.dispatchStarted : fallback;
+}
+
+function errorHasDispatchEvidence(error: unknown): boolean {
+	const plain = errorToPlain(error);
+	const details = isRecord(plain.details) ? plain.details : {};
+	return typeof details.dispatchStarted === "boolean" || typeof details.acked === "boolean" || errorWasAcknowledged(error);
 }
 
 function summarizeSignals(events: BrowserOperationEvent[]): BrowserOperationSignals {
@@ -97,6 +117,11 @@ function completedTarget(initial: BrowserOperationTarget, result: unknown): Brow
 	};
 }
 
+function browserDispatchStarted(options: BrowserOperationOptions, result: unknown): boolean {
+	if (options.commandName !== "browser_execute" || options.mode !== "program" || !isRecord(result) || !Array.isArray(result.frames)) return true;
+	return result.frames.some((frame) => isRecord(frame) && String(frame.kind || "") !== "wait");
+}
+
 async function armExtension(options: BrowserOperationOptions, operation: CommandActiveOperationInfo, target: BrowserOperationTarget): Promise<BrowserBridgeExecutionResult> {
 	return await options.server.sendCommand({
 		cmd: "operation.begin",
@@ -110,6 +135,7 @@ async function armExtension(options: BrowserOperationOptions, operation: Command
 		timeoutMs: Math.min(5_000, options.timeoutMs),
 		accessMode: "read",
 		internal: true,
+		signal: options.signal,
 	});
 }
 
@@ -188,8 +214,24 @@ function livenessBoundary(events: BrowserOperationEvent[], operation: CommandAct
 	});
 }
 
-function waitForBoundary(timeoutMs: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, Math.max(0, timeoutMs)));
+function waitForBoundary(timeoutMs: number, signal?: AbortSignal): Promise<void> {
+	if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException("Operation wait aborted", "AbortError"));
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(finish, Math.max(0, timeoutMs));
+		const onAbort = () => {
+			cleanup();
+			reject(signal?.reason ?? new DOMException("Operation wait aborted", "AbortError"));
+		};
+		const cleanup = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+		};
+		function finish() {
+			cleanup();
+			resolve();
+		}
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
 }
 
 async function settleStatus(options: BrowserOperationOptions, operationId: string, result: unknown, dispatchFinishedAt: number, deadlineAt: number): Promise<OperationSettlement> {
@@ -210,12 +252,12 @@ async function settleStatus(options: BrowserOperationOptions, operationId: strin
 		const boundary = livenessBoundary(events, operation, dispatchFinishedAt, deadlineAt, now);
 		const timeoutMs = Math.max(0, boundary - now);
 		if (options.server.waitForOperationChange && operation) {
-			await options.server.waitForOperationChange(operationId, operation.revision, timeoutMs);
+			await options.server.waitForOperationChange(operationId, operation.revision, timeoutMs, options.signal);
 		} else {
 			// Non-production test ports may omit the waiter. Waiting once for the
 			// exact pure boundary preserves event-driven production semantics and
 			// never polls the registry.
-			await waitForBoundary(timeoutMs);
+			await waitForBoundary(timeoutMs, options.signal);
 		}
 	}
 }
@@ -314,6 +356,7 @@ function completedOperationOutcome(
 	const signals = summarizeSignals(settled.events);
 	const dispatchSummary = summarizeBrowserOperationDispatch({ ...options, result, events: settled.events });
 	const diagnostics = [...(settled.diagnostics ?? []), ...(dispatchSummary ? [dispatchSummary] : [])];
+	const dispatchStarted = browserDispatchStarted(options, result);
 	return redactSensitiveValue({
 		schema: BROWSER_OPERATION_SCHEMA,
 		operationId: operation.operationId,
@@ -321,7 +364,7 @@ function completedOperationOutcome(
 		status: settled.status,
 		...classifyBrowserOperationStatus(settled.status),
 		target: completedTarget(target, result),
-		dispatch: { acknowledged, started: true, finished: true, startedAt, finishedAt: dispatchFinishedAt },
+		dispatch: { acknowledged, started: dispatchStarted, finished: dispatchStarted, startedAt, finishedAt: dispatchFinishedAt },
 		signals,
 		...(settled.completion ? { completion: settled.completion } : {}),
 		...(signals.mutationCount ? { pageEffect: { changed: settled.events.filter((event) => event.type === "mutation").slice(-20).map((event) => event.data) } } : {}),
@@ -358,36 +401,49 @@ function failedOperationOutcome(
 	}) as BrowserOperationOutcome;
 }
 
-async function dispatchBrowserOperation<T>(options: BrowserOperationOptions, dispatch: () => Promise<T>, target: BrowserOperationTarget, operation: CommandActiveOperationInfo): Promise<BrowserOperationOutcome> {
+async function dispatchBrowserOperation<T>(options: BrowserOperationOptions, dispatch: (context: BrowserOperationDispatchContext) => Promise<T>, target: BrowserOperationTarget, operation: CommandActiveOperationInfo): Promise<BrowserOperationOutcome> {
 	const lateEffects = options.server.surfaceLateEffects?.({ ownerId: options.ctx?.operationOwnerId, browserSessionId: target.browserSessionId, excludeOperationId: operation.operationId }) ?? [];
 	const startedAt = Date.now();
 	const deadlineAt = startedAt + options.timeoutMs;
+	const controller = new AbortController();
+	const abortFromCaller = () => controller.abort(options.signal?.reason ?? new BrowserBridgeError("BRIDGE_TIMEOUT", "Browser operation was cancelled by its caller", { aborted: true }));
+	const deadlineError = new BrowserBridgeError("BRIDGE_TIMEOUT", `Browser operation exceeded its ${options.timeoutMs}ms hard deadline`, { timeoutMs: options.timeoutMs, aborted: true });
+	const deadlineTimer = setTimeout(() => controller.abort(deadlineError), Math.max(0, options.timeoutMs));
+	if (options.timeoutMs <= 0) controller.abort(deadlineError);
+	if (options.signal?.aborted) abortFromCaller();
+	else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
+	const activeOptions = { ...options, signal: controller.signal };
 	let acknowledged = false;
 	let dispatchStarted = false;
 	try {
-		const armed = await armExtension(options, operation, target);
+		const armed = await armExtension(activeOptions, operation, target);
 		if (!armed.acknowledged || !isRecord(armed.data) || armed.data.armed !== true) throw new Error("operation observers were not armed before dispatch");
 		options.server.updateOperation(operation.operationId, { phase: "dispatching", progress: 20 });
 		dispatchStarted = true;
-		const result = await dispatch();
+		const result = await dispatch({ signal: controller.signal, operationId: operation.operationId, deadlineAt });
 		const dispatchFinishedAt = Date.now();
 		acknowledged = dispatchEvidence(result).acknowledged;
 		options.server.updateOperation(operation.operationId, { phase: "resolving", progress: 75, details: { acknowledged } });
-		const settled = await settleStatus(options, operation.operationId, result, dispatchFinishedAt, deadlineAt);
+		const settled = await settleStatus(activeOptions, operation.operationId, result, dispatchFinishedAt, deadlineAt);
 		const publicOutcome = completedOperationOutcome(options, target, operation, result, settled, lateEffects, acknowledged, startedAt, dispatchFinishedAt);
 		await finishExtension(options, operation.operationId, target);
 		options.server.finishOperation(operation.operationId, publicOutcome);
 		return publicOutcome;
 	} catch (error) {
 		acknowledged = acknowledged || errorWasAcknowledged(error);
-		const publicOutcome = failedOperationOutcome(options, target, operation, error, lateEffects, acknowledged, dispatchStarted, startedAt);
+		const terminalError = errorHasDispatchEvidence(error) ? error : controller.signal.aborted && controller.signal.reason ? controller.signal.reason : error;
+		acknowledged = acknowledged || errorWasAcknowledged(terminalError);
+		const publicOutcome = failedOperationOutcome(options, target, operation, terminalError, lateEffects, acknowledged, dispatchStartedForError(terminalError, dispatchStarted), startedAt);
 		await finishExtension(options, operation.operationId, target);
 		options.server.finishOperation(operation.operationId, publicOutcome);
 		return publicOutcome;
+	} finally {
+		clearTimeout(deadlineTimer);
+		options.signal?.removeEventListener("abort", abortFromCaller);
 	}
 }
 
-export async function withBrowserOperation<T>(options: BrowserOperationOptions, dispatch: () => Promise<T>): Promise<BrowserOperationOutcome> {
+export async function withBrowserOperation<T>(options: BrowserOperationOptions, dispatch: (context: BrowserOperationDispatchContext) => Promise<T>): Promise<BrowserOperationOutcome> {
 	const target = resolveTarget(options);
 	const guard = mutationReplayGuard(options, target);
 	const reusedOutcome = reusedIntentOutcome(options, guard);

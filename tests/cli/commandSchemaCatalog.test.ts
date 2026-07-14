@@ -63,6 +63,18 @@ test("command catalog characterization: public browser tool names are stable, un
 	for (const name of names) assert.match(name, /^browser_[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*$/);
 });
 
+test("browser_execute exposes an explicit business postcondition and requires it for scripted intents", () => {
+	const execute = command("browser_execute");
+	const properties = schemaProperties(execute.parameters);
+	assert.ok(properties.postcondition);
+	assert.deepEqual(execute.validateArguments?.({ script: "like()", intentId: "like-note-42" }), [{
+		code: "EXECUTE_INTENT_REQUIRES_POSTCONDITION",
+		path: "/postcondition",
+		message: "browser_execute script mutations with intentId require a business postcondition",
+	}]);
+	assert.deepEqual(execute.validateArguments?.({ script: "like()", intentId: "like-note-42", postcondition: "isLiked()" }), []);
+});
+
 test("command catalog characterization: CLI subcommands are derived one-to-one from browser tool names", () => {
 	const cliCommands = buildCliCommands();
 	assert.equal(cliCommands.length, collectCommandDefs().length);
@@ -206,7 +218,7 @@ test("command schema characterization: key commands expose expected top-level pa
 		"targetRef",
 		"url",
 	].sort());
-	assert.deepEqual(Object.keys(schemaProperties(command("browser_execute").parameters)).sort(), ["intentId", "program", "script", "tabId", "targetRef"].sort());
+	assert.deepEqual(Object.keys(schemaProperties(command("browser_execute").parameters)).sort(), ["intentId", "postcondition", "program", "script", "tabId", "targetRef"].sort());
 });
 
 test("command schema characterization: browser_observe metadata presents canonical no-mode ABML observation", () => {

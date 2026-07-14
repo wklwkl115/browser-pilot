@@ -83,6 +83,7 @@ export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName" | "t
 	req: http.IncomingMessage;
 	send: JsonSender;
 	body: Record<string, unknown>;
+	signal?: AbortSignal;
 };
 
 type PreparedInvoke = {
@@ -259,7 +260,7 @@ function prepareInvoke(body: Record<string, unknown>, toolByName: Map<string, Co
 	return { tool, cwd, cli, def, args: validation.args };
 }
 
-async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean, operationOwnerId = "local-cli"): Promise<Record<string, unknown>> {
+async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean, operationOwnerId = "local-cli", signal?: AbortSignal): Promise<Record<string, unknown>> {
 	const ctx: MiddlewareContext = {
 		method: "invoke",
 		commandName: invocation.tool,
@@ -268,7 +269,7 @@ async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean, 
 		...(usageEnabled && invocation.cli ? { cli: invocation.cli } : {}),
 	};
 	try {
-		const result = await invocation.def.execute(`cli-${invocation.tool}-${Date.now()}`, invocation.args, undefined, undefined, { cwd: invocation.cwd, hasUI: false, operationOwnerId, ...(invocation.cli ? { omitTransportDetails: true } : {}) });
+		const result = await invocation.def.execute(`cli-${invocation.tool}-${Date.now()}`, invocation.args, signal, undefined, { cwd: invocation.cwd, hasUI: false, operationOwnerId, ...(invocation.cli ? { omitTransportDetails: true } : {}) });
 		if (usageEnabled) ctx.resultBytes = JSON.stringify(result.content).length;
 		emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok");
 		const terminate = result.terminate === true;
@@ -280,12 +281,29 @@ async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean, 
 	}
 }
 
-export async function handleInvokeRoute({ req, send, body, toolByName, tenantLease, usageEnabled }: InvokePipelineContext): Promise<void> {
+export async function handleInvokeRoute({ req, send, body, toolByName, tenantLease, usageEnabled, signal }: InvokePipelineContext): Promise<void> {
 	const prepared = prepareInvoke(body, toolByName);
 	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
 	const auth = authorizeInvoke(req, tenantLease);
 	if (!auth.ok) return send(auth.status, auth.body);
-	return send(200, await executeInvoke(prepared, usageEnabled, auth.ownerId));
+	return send(200, await executeInvoke(prepared, usageEnabled, auth.ownerId, signal));
+}
+
+function invocationAbortController(req: http.IncomingMessage, res: http.ServerResponse): { signal: AbortSignal; cleanup: () => void } {
+	const controller = new AbortController();
+	const abort = () => {
+		if (!res.writableEnded) controller.abort();
+	};
+	req.once("aborted", abort);
+	res.once("close", abort);
+	if (req.aborted || res.destroyed) abort();
+	return {
+		signal: controller.signal,
+		cleanup: () => {
+			req.off("aborted", abort);
+			res.off("close", abort);
+		},
+	};
 }
 
 async function handleConnectRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {
@@ -388,6 +406,7 @@ function scheduleShutdown(context: DaemonControlContext): void {
 
 async function handleControlRequest(context: DaemonControlContext, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
 	const send: JsonSender = (status, obj) => {
+		if (res.destroyed || res.writableEnded) return;
 		const body = JSON.stringify(obj);
 		res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
 		res.end(body);
@@ -407,7 +426,15 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 				return await handleConnectRoute(context, req, send);
 			case "POST /invoke":
 				if (context.draining) return send(503, { ok: false, code: "DAEMON_DRAINING", error: "daemon is draining for shutdown" });
-				return await handleInvokeRoute({ req, send, body: await readBody(req), toolByName: context.toolByName, tenantLease: context.tenantLease, usageEnabled: context.usageEnabled });
+				{
+					const body = await readBody(req);
+					const invocation = invocationAbortController(req, res);
+					try {
+						return await handleInvokeRoute({ req, send, body, toolByName: context.toolByName, tenantLease: context.tenantLease, usageEnabled: context.usageEnabled, signal: invocation.signal });
+					} finally {
+						invocation.cleanup();
+					}
+				}
 			case "POST /pair/start":
 				return await handlePairStartRoute(context, req, send);
 			case "POST /pair/wait":

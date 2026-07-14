@@ -155,6 +155,7 @@ export type ExecuteOptions = {
 	timeoutMs?: number;
 	accessMode?: "read" | "write";
 	internal?: boolean;
+	signal?: AbortSignal;
 };
 
 export type PendingRequest = {
@@ -171,6 +172,8 @@ export type PendingRequest = {
 	draining?: boolean;
 	/** Grace-window timer that fails the request if no reconnect reclaims it. */
 	graceTimer?: NodeJS.Timeout;
+	signal?: AbortSignal;
+	abortListener?: () => void;
 	createdAt: number;
 	acked: boolean;
 	ackAt?: number;

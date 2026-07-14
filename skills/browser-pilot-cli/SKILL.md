@@ -60,12 +60,14 @@ Treat `commands --json`, live help, schema, validate, generated contracts, and c
 
 4. Act with `execute` or the native `command` escape hatch.
 
+   Use `browser-pilot execute --target-ref <targetRef> --script "document.title" --json` for JavaScript or `execute --program @program.json` for trusted CDP mouse/key/text/program frames. Supply exactly one input. For a non-idempotent script mutation, also supply a stable `--intent-id` and a read-only `--postcondition` predicate in the same call, and keep the full payload unchanged across every recovery attempt:
+
    ```text
    # browser-pilot-executable
-   browser-pilot execute --target-ref <targetRef> --script "document.title" --json
+   browser-pilot execute --target-ref <targetRef> --script "document.querySelector('[data-like]').click()" --postcondition "document.querySelector('[data-like]').getAttribute('aria-pressed') === 'true'" --intent-id like-note-42 --json
    ```
 
-   Use `execute --script` for JavaScript or `execute --program @program.json` for trusted CDP mouse/key/text/program frames. Supply exactly one input. For a non-idempotent mutation, also supply a stable `--intent-id` and keep it unchanged across every recovery attempt. Use `command --command '<inline-json>'` only when the normal command surface cannot express a required native operation; pass inline JSON only.
+   Scripted intents without `postcondition` are rejected. The predicate is evaluated immediately and on DOM mutations, passes only on `true` or `{"verified":true}`, and produces `completed/script-postcondition-verified`. A false, lost, or timed-out predicate is ambiguous. Use `command --command '<inline-json>'` only when the normal command surface cannot express a required native operation; pass inline JSON only.
 
    A physical program that does not navigate or download should finish with exactly one explicit postcondition frame:
 
@@ -79,7 +81,7 @@ Treat `commands --json`, live help, schema, validate, generated contracts, and c
 
    Require the same state-changing call to return `browser-operation/v2`. Treat only `status:"completed"` with `classification:"success"`, `completionVerified:true`, and `ok:true` as success. Treat `effect_observed`, `ambiguous`, `target_lost`, and `deadline` as inconclusive; treat `no_effect`, `stalled`, and `failed` as failures.
 
-   Read `dispatch`, `completion.source`, `signals`, `diagnostics`, `continuation`, `saved`, and `artifact_hints`. Never equate acknowledgement or a visible effect with verified completion. Do not blindly replay an acknowledged mutation; follow `observe`, `reacquire_target`, `inspect_diagnostics`, `verify_command_state`, or `inspect_artifact` guidance according to the returned continuation. Browser Pilot serializes writes on the same owner/session/stable target. After an acknowledged but unverified mutation, later `execute` or native-command writes remain blocked until a fresh canonical `observe` begins after settlement and verifies the same page identity; reusing the same `intentId` remains blocked even after observation. Mint a new intent only after read-only evidence proves the prior intent did not take effect.
+   Read `dispatch`, `completion.source`, `signals`, `diagnostics`, `continuation`, `saved`, and `artifact_hints`. Never equate acknowledgement or a visible effect with verified completion. `script-resolved` proves only that JavaScript resolved; it is not business proof for an undeclared mutation. Require `script-postcondition-verified` for scripted business mutations and `program-verified` for non-navigation physical mutations. Do not blindly replay an acknowledged mutation; follow `observe`, `reacquire_target`, `inspect_diagnostics`, `verify_command_state`, or `inspect_artifact` guidance according to the returned continuation. Browser Pilot serializes writes on the same owner/session/stable target. After an acknowledged but unverified mutation, later `execute` or native-command writes remain blocked until a fresh canonical `observe` begins after settlement and verifies the same page identity; reusing the same `intentId` remains blocked even after observation. Mint a new intent only after read-only evidence proves the prior intent did not take effect.
 
 6. Expand large evidence progressively.
 
@@ -136,6 +138,7 @@ Follow `frontier.items[].read` and `artifact_hints.jsonPaths` exactly. Substitut
 ## Recover Deliberately
 
 - For bridge or extension unavailability, run `connect --wait`, then inspect `status` or `doctor`.
+- A CLI/control-client timeout aborts daemon work, removes a still-queued write before dispatch, and stops later program frames. If the browser already acknowledged the action, treat the retained operation as inconclusive; cancellation cannot prove that an in-flight page action had no effect.
 - For invalid arguments, query live help/schema and run offline `validate` before retrying.
 - For a stale target, run `tabs list`, select a current `targetRef`, and observe again.
 - For `ARTIFACT_SAVE_FAILED`, trust the settled browser status while treating omitted large evidence as unavailable; do not replay the mutation to recreate evidence.

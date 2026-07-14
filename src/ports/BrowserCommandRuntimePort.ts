@@ -111,14 +111,14 @@ export interface BrowserCommandTargetPort {
 }
 
 export interface BrowserCommandDispatchPort extends BrowserCommandTargetPort {
-	sendCommand(command: BrowserRuntimeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean }): Promise<BrowserBridgeExecutionResult>;
-	executeJavaScript(script: string, options?: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number }): Promise<BrowserBridgeExecutionResult>;
+	sendCommand(command: BrowserRuntimeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	executeJavaScript(script: string, options?: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number; accessMode?: "read" | "write"; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
 }
 
 export interface BrowserCommandTabControlPort {
-	switchTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string }): Promise<BrowserBridgeExecutionResult>;
-	createTab(url: string, active?: boolean, timeoutMs?: number, options?: { browserSessionId?: string; incognito?: boolean }): Promise<BrowserBridgeExecutionResult>;
-	closeTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string }): Promise<BrowserBridgeExecutionResult>;
+	switchTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	createTab(url: string, active?: boolean, timeoutMs?: number, options?: { browserSessionId?: string; incognito?: boolean; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	closeTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
 }
 
 export interface BrowserCommandSessionPort {

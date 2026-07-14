@@ -689,6 +689,22 @@ test("browser command runtime program adapter covers success, failure, timeout, 
 	assert.deepEqual(timeout.aborted, { reason: "timeout", atStep: 0 });
 	assert.deepEqual(timeout.frames, []);
 
+	const duringDelay = new AbortController();
+	let delayedDispatches = 0;
+	const delayed = executeProgram([{ text: "must not dispatch", delay: 5_000 }], createProgramContext({
+		async executeJavaScript() {
+			return { id: "url", acknowledged: true, data: "https://example.test/" };
+		},
+		async sendCommand() {
+			delayedDispatches += 1;
+			return { id: "input", acknowledged: true, data: {} };
+		},
+	}, duringDelay.signal));
+	setTimeout(() => duringDelay.abort(), 10);
+	const delayedResult = await delayed;
+	assert.deepEqual(delayedResult.aborted, { reason: "timeout", atStep: 0 });
+	assert.equal(delayedDispatches, 0);
+
 	const malformed = await executeProgram([{ eval: "({not:'array'})", expand: true }], createProgramContext({
 		async executeJavaScript(script: string) {
 			return { id: "exec", acknowledged: true, data: script === "location.href" ? "https://example.test/" : { not: "array" } } as BrowserBridgeExecutionResult;

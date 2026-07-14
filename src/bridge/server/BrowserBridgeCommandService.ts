@@ -48,6 +48,37 @@ function commandName(code: unknown): string | undefined {
 	return typeof record?.cmd === "string" ? record.cmd : undefined;
 }
 
+function commandAbortError(message: string, dispatchStarted = false): BrowserBridgeError {
+	return new BrowserBridgeError("BRIDGE_TIMEOUT", message, { acked: false, dispatchStarted, aborted: true });
+}
+
+async function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined, message: string): Promise<T> {
+	if (!signal) return await promise;
+	if (signal.aborted) throw commandAbortError(message);
+	return await new Promise<T>((resolve, reject) => {
+		let settled = false;
+		const cleanup = () => signal.removeEventListener("abort", onAbort);
+		const onAbort = () => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			reject(commandAbortError(message));
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+		void promise.then((value) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			resolve(value);
+		}, (error) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			reject(error);
+		});
+	});
+}
+
 function mergeDiagnostics(result: BrowserBridgeExecutionResult, diagnostics: Record<string, unknown>): BrowserBridgeExecutionResult {
 	return {
 		...result,
@@ -91,14 +122,14 @@ export class BrowserBridgeCommandService {
 		return this.deps.getTabs();
 	}
 
-	async switchTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
+	async switchTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 		const browserSession = this.browserSession(options.browserSessionId);
 		const target = this.requireTargetRef(tabId, options.browserSessionId);
 		const id = this.requireTargetTabId(target, tabId);
 		await this.deps.leases.acquireUiLock(browserSession.id, "browser_tabs.switch");
 		try {
 			const previousDefaultTabId = this.deps.tabs.previousDefaultTabId(options.browserSessionId);
-			const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId, browserSessionId: options.browserSessionId });
+			const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId, browserSessionId: options.browserSessionId, signal: options.signal });
 			const failure = bridgeResultFailure(result.data);
 			if (failure) throw new BrowserBridgeError("BROWSER_COMMAND_FAILED", failure.message, { cmd: "tabs", method: "switch", tabId: id, ...failure.details });
 			this.deps.tabs.selectTab(id, options.browserSessionId);
@@ -111,21 +142,21 @@ export class BrowserBridgeCommandService {
 		}
 	}
 
-	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string; incognito?: boolean } = {}): Promise<BrowserBridgeExecutionResult> {
-		return await this.sendCommand({ cmd: "tabs", method: "create", url, active, ...(options.incognito ? { incognito: true } : {}) }, { timeoutMs, browserSessionId: options.browserSessionId });
+	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string; incognito?: boolean; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
+		return await this.sendCommand({ cmd: "tabs", method: "create", url, active, ...(options.incognito ? { incognito: true } : {}) }, { timeoutMs, browserSessionId: options.browserSessionId, signal: options.signal });
 	}
 
-	async closeTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
+	async closeTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 		const target = this.requireTargetRef(tabId, options.browserSessionId);
 		const id = this.requireTargetTabId(target, tabId);
-		const result = await this.sendCommand({ cmd: "tabs", method: "close", targetTabId: id }, { timeoutMs, tabId, browserSessionId: options.browserSessionId });
+		const result = await this.sendCommand({ cmd: "tabs", method: "close", targetTabId: id }, { timeoutMs, tabId, browserSessionId: options.browserSessionId, signal: options.signal });
 		this.deps.tabs.markTabDisconnected(id, options.browserSessionId);
 		return result;
 	}
 
 	async executeJavaScript(script: string, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
 		const target = this.requireExecutionTarget(options.targetRef ?? options.tabId, options.browserSessionId);
-		return this.sendPayload(script, { browserSessionId: options.browserSessionId, tabId: target.tabId, timeoutMs: options.timeoutMs, target, accessMode: options.accessMode ?? "write" });
+		return this.sendPayload(script, { browserSessionId: options.browserSessionId, tabId: target.tabId, timeoutMs: options.timeoutMs, target, accessMode: options.accessMode ?? "write", signal: options.signal });
 	}
 
 	/**
@@ -136,7 +167,7 @@ export class BrowserBridgeCommandService {
 	 * tab-list / native command flows through). Never throws — on timeout the call
 	 * continues to the normal recovery-bearing error.
 	 */
-	private async ensureExtensionReady(browserSessionId?: string): Promise<void> {
+	private async ensureExtensionReady(browserSessionId?: string, signal?: AbortSignal): Promise<void> {
 		this.lastConnectionWaitMs = 0;
 		if (!this.deps.isRunning()) return;
 		if (this.deps.snapshot({ browserSessionId }).extensionConnected) return;
@@ -145,13 +176,13 @@ export class BrowserBridgeCommandService {
 		const now = Date.now();
 		if (now < this.extensionUnavailableUntil) return;
 		const startedAt = Date.now();
-		const ready = await this.deps.waitForExtensionReady(browserSessionId, waitMs);
+		const ready = await abortable(this.deps.waitForExtensionReady(browserSessionId, waitMs), signal, "Browser command was cancelled while waiting for the extension");
 		this.lastConnectionWaitMs = Date.now() - startedAt;
 		this.extensionUnavailableUntil = ready ? 0 : Date.now() + EXTENSION_WAIT_NEGATIVE_CACHE_MS;
 	}
 
 	async sendCommand(command: BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
-		await this.ensureExtensionReady(options.browserSessionId);
+		await this.ensureExtensionReady(options.browserSessionId, options.signal);
 		const optionRef = options.targetRef ?? options.tabId;
 		const hasOptionTabId = optionRef !== undefined;
 		const hasCommandTabId = command.tabId !== undefined;
@@ -173,7 +204,7 @@ export class BrowserBridgeCommandService {
 		}
 		if (validation.spec.tabScoped && tabId === undefined) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { cmd: validation.command.cmd, tabs: this.deps.getTabs() });
 		const plan = this.commandExecutionPlan(validation.command, target, options.accessMode);
-		const result = await this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId: plan.tabId, timeoutMs: options.timeoutMs, target: plan.target, accessMode: plan.accessMode });
+		const result = await this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId: plan.tabId, timeoutMs: options.timeoutMs, target: plan.target, accessMode: plan.accessMode, signal: options.signal });
 		if (this.isCreateTabCommand(validation.canonicalCmd, validation.command)) {
 			return await this.withCreatedTabTarget(result, options);
 		}
@@ -238,6 +269,7 @@ export class BrowserBridgeCommandService {
 
 	private sendPayload(code: unknown, options: SendPayloadOptions = {}): Promise<BrowserBridgeExecutionResult> {
 		if (!this.deps.isRunning()) throw new BrowserBridgeError("BRIDGE_NOT_RUNNING", "Browser bridge server is not running", { port: this.deps.getPort() });
+		if (options.signal?.aborted) throw commandAbortError("Browser command was cancelled before bridge dispatch");
 		const tabId = toTabId(options.tabId);
 		const target = options.target ?? this.deps.tabs.targetInfo(tabId !== undefined ? "explicit" : "none", tabId, this.browserSession(options.browserSessionId));
 		const recordResult = (promise: Promise<BrowserBridgeExecutionResult>) => promise.then((result) => {
@@ -269,7 +301,7 @@ export class BrowserBridgeCommandService {
 					const queuedCode = queuedTabId !== tabId && queuedCodeRecord ? { ...queuedCodeRecord, tabId: queuedTabId } : code;
 					const result = await this.deps.leases.withAutoTabLease(browserSession.id, queuedTab, async () => {
 						this.deps.leases.touchTabLease(browserSession.id, queuedTab);
-						return await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, timeoutMs: options.timeoutMs, target: queuedTarget });
+						return await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, timeoutMs: options.timeoutMs, target: queuedTarget, signal: options.signal });
 					});
 					const completedAt = Date.now();
 					const queueDelayMs = Math.max(0, startedAt - queuedAt);
@@ -288,13 +320,13 @@ export class BrowserBridgeCommandService {
 							elapsedMs: Math.max(0, completedAt - queuedAt),
 						},
 					});
-				}));
+				}, { signal: options.signal }));
 			}
 			this.deps.leases.touchTabLease(browserSession.id, tab);
-			return recordResult(this.deps.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target }));
+			return recordResult(this.deps.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
 		}
 		const socket = this.socketForBrowserSessionCommand(options.browserSessionId);
-		return recordResult(this.deps.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target }));
+		return recordResult(this.deps.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
 	}
 
 	private socketForBrowserSessionCommand(browserSessionId?: string): WebSocket {

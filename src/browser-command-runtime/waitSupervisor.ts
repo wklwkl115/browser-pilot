@@ -463,7 +463,7 @@ async function runLeasedWait(server: BrowserCommandRuntimePort, command: BridgeC
 	throw finalWaitError(state, "browser wait timed out");
 }
 
-export async function executeBrowserWaitWithSupervisor(server: BrowserCommandRuntimePort, commandInput: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number } = {}): Promise<BrowserBridgeExecutionResult> {
+export async function executeBrowserWaitWithSupervisor(server: BrowserCommandRuntimePort, commandInput: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 	const command = rerouteLoadStateNetworkIdle(commandInput);
 	const totalTimeoutMs = commandTimeoutMs(command, waitTimeoutMs(options.timeoutMs, DEFAULT_WAIT_TIMEOUT_MS, true));
 	if (totalTimeoutMs === 0 && (command.cmd === "wait.navigateAndWait" || SUPERVISED_WAIT_COMMANDS.has(command.cmd))) return runLeasedWait(server, command, options, 0);

@@ -37,7 +37,7 @@ export class BrowserCommandQueueRegistry {
 		return this.maxDepth;
 	}
 
-	enqueue<T>(browserSessionId: string, tabId: number, run: () => Promise<T>): Promise<T> & { queuePressure?: BrowserCommandQueuePressure } {
+	enqueue<T>(browserSessionId: string, tabId: number, run: () => Promise<T>, options: { signal?: AbortSignal } = {}): Promise<T> & { queuePressure?: BrowserCommandQueuePressure } {
 		const key = this.resolveKey(this.key(browserSessionId, tabId));
 		const currentDepth = this.depths.get(key) || 0;
 		if (currentDepth >= this.maxDepth) {
@@ -46,18 +46,67 @@ export class BrowserCommandQueueRegistry {
 		const newDepth = currentDepth + 1;
 		this.depths.set(key, newDepth);
 		const previous = this.queues.get(key) || Promise.resolve();
-		const next = previous.catch(() => undefined).then(run).finally(() => {
+		let started = false;
+		let settled = false;
+		let depthReleased = false;
+		let resolveResult!: (value: T) => void;
+		let rejectResult!: (error: unknown) => void;
+		const resultPromise = new Promise<T>((resolve, reject) => {
+			resolveResult = resolve;
+			rejectResult = reject;
+		});
+		const releaseDepth = () => {
+			if (depthReleased) return;
+			depthReleased = true;
 			const depth = Math.max(0, (this.depths.get(key) || 1) - 1);
 			if (depth === 0) {
 				this.depths.delete(key);
 				this.displayKeys.delete(key);
 				for (const [alias, target] of Array.from(this.aliases.entries())) if (target === key) this.aliases.delete(alias);
 			} else this.depths.set(key, depth);
+		};
+		const abortBeforeDispatch = () => {
+			if (settled || started) return;
+			settled = true;
+			releaseDepth();
+			rejectResult(new BrowserBridgeError("BRIDGE_TIMEOUT", "Browser command was cancelled while waiting in the tab queue", {
+				browserSessionId,
+				tabId,
+				acked: false,
+				dispatchStarted: false,
+				aborted: true,
+			}));
+		};
+		options.signal?.addEventListener("abort", abortBeforeDispatch, { once: true });
+		if (options.signal?.aborted) abortBeforeDispatch();
+		const next = previous.catch(() => undefined).then(async () => {
+			if (options.signal?.aborted) {
+				abortBeforeDispatch();
+				return undefined as T;
+			}
+			started = true;
+			try {
+				const value = await run();
+				if (!settled) {
+					settled = true;
+					resolveResult(value);
+				}
+				return value;
+			} catch (error) {
+				if (!settled) {
+					settled = true;
+					rejectResult(error);
+				}
+				throw error;
+			}
+		}).finally(() => {
+			options.signal?.removeEventListener("abort", abortBeforeDispatch);
+			releaseDepth();
 			if (this.queues.get(key) === stored) this.queues.delete(key);
 		});
 		const stored = next.catch(() => undefined);
 		this.queues.set(key, stored);
-		const result: Promise<T> & { queuePressure?: BrowserCommandQueuePressure } = next;
+		const result: Promise<T> & { queuePressure?: BrowserCommandQueuePressure } = resultPromise;
 		if (newDepth >= WARNING_DEPTH_RATIO * this.maxDepth) {
 			result.queuePressure = { depth: newDepth, maxDepth: this.maxDepth, warningThreshold: true };
 		}

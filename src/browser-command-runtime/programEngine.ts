@@ -94,8 +94,18 @@ function failedFrame(step: number, kind: string, startedAt: number, error: unkno
 	};
 }
 
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	if (signal?.aborted) return Promise.resolve();
+	return new Promise((resolve) => {
+		const timer = setTimeout(finish, Math.max(0, ms));
+		const onAbort = () => finish();
+		function finish() {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
 }
 
 function isBrowserPilotRef(value: unknown): boolean {
@@ -248,7 +258,7 @@ async function resolveStaleRef(uri: string, ctx: ProgramContext): Promise<boolea
 					const bnid = window.__browserPilotTempNodeId;
 					return {box:rect,backendNodeId:typeof bnid==='number'?bnid:undefined};
 				})()`,
-				{ browserSessionId: ctx.browserSessionId, tabId: ctx.tabId, timeoutMs: 1000 },
+				{ browserSessionId: ctx.browserSessionId, tabId: ctx.tabId, timeoutMs: 1000, signal: ctx.signal },
 			);
 			const data = extractBridgeData(result);
 			if (data && typeof data === "object") {
@@ -307,6 +317,7 @@ async function executeEvalFrame(
 			browserSessionId: ctx.browserSessionId,
 			tabId: ctx.tabId as number | string | undefined,
 			timeoutMs: ctx.evalTimeoutMs ?? FRAME_TIMEOUT_MS,
+			signal: ctx.signal,
 		});
 
 		const evalResult = result.data;
@@ -336,7 +347,7 @@ async function executeEvalFrame(
 							};
 						} catch(e) { return null; }
 					})()`,
-					{ browserSessionId: ctx.browserSessionId, tabId: ctx.tabId as number | string | undefined, timeoutMs: 500 },
+					{ browserSessionId: ctx.browserSessionId, tabId: ctx.tabId as number | string | undefined, timeoutMs: 500, signal: ctx.signal },
 				);
 				const regData = extractBridgeData(regResult);
 				const regBox = isRecord(regData.box) ? regData.box : undefined;
@@ -465,6 +476,7 @@ async function executeMouseFrame(
 			tabId: ctx.tabId,
 			timeoutMs: FRAME_TIMEOUT_MS,
 			accessMode: "write",
+			signal: ctx.signal,
 		});
 
 		const data = extractBridgeData(result);
@@ -513,6 +525,7 @@ async function executeKeyFrame(
 			tabId: ctx.tabId,
 			timeoutMs: FRAME_TIMEOUT_MS,
 			accessMode: "write",
+			signal: ctx.signal,
 		});
 
 		const data = extractBridgeData(result);
@@ -549,6 +562,7 @@ async function executeTextFrame(
 			tabId: ctx.tabId,
 			timeoutMs: FRAME_TIMEOUT_MS,
 			accessMode: "write",
+			signal: ctx.signal,
 		});
 
 		const data = extractBridgeData(result);
@@ -582,6 +596,7 @@ async function executeWaitFrame(
 			browserSessionId: ctx.browserSessionId,
 			tabId: ctx.tabId as number | string | undefined,
 			timeoutMs: Math.min(ms * 2 + 1000, 5000),
+			signal: ctx.signal,
 		});
 
 		return { step, kind: "wait", ok: true, acknowledged: result.acknowledged, durationMs: Date.now() - startedAt, result: result.data };
@@ -630,6 +645,7 @@ async function getCurrentUrl(ctx: ProgramContext): Promise<string | undefined> {
 			browserSessionId: ctx.browserSessionId,
 			tabId: ctx.tabId as number | string | undefined,
 			timeoutMs: 500,
+			signal: ctx.signal,
 		});
 		return typeof result.data === "string" ? result.data : undefined;
 	} catch {
@@ -660,6 +676,9 @@ export async function executeProgram(
 	// Expand phase
 	const expanded: Array<{ element: Record<string, unknown>; discriminator: string; modifiers: Record<string, unknown> }> = [];
 	for (let i = 0; i < program.length; i++) {
+		if (combinedSignal.aborted) {
+			return programResult(frames, ctx.lastEvalResult, { aborted: { reason: "timeout", atStep: i }, refCheckResults: refCheck.results });
+		}
 		const dispatched = dispatchProgramElement(program[i], i);
 		if (!dispatched.ok) {
 			return programResult(frames, undefined, { aborted: { reason: dispatched.error, atStep: i }, refCheckResults: refCheck.results });
@@ -669,7 +688,7 @@ export async function executeProgram(
 			const evalResult = await executeEvalFrame(dispatched.element, ctx, i);
 			frames.push(evalResult);
 			if (!evalResult.ok) {
-				return programResult(frames, undefined, { aborted: { reason: evalResult.error ?? "expand eval failed", atStep: i }, refCheckResults: refCheck.results });
+				return programResult(frames, undefined, { aborted: { reason: combinedSignal.aborted ? "timeout" : evalResult.error ?? "expand eval failed", atStep: i }, refCheckResults: refCheck.results });
 			}
 			if (!Array.isArray(evalResult.result)) {
 				return programResult(frames, undefined, { aborted: { reason: `Step ${i}: expand=true but eval result is not an array`, atStep: i }, refCheckResults: refCheck.results });
@@ -722,7 +741,7 @@ export async function executeProgram(
 			const delayMs = Number(modifiers.delay);
 			if (delayMs > 0) {
 				// Wait but respect abort signal
-				await sleep(delayMs);
+				await sleep(delayMs, combinedSignal);
 				if (combinedSignal.aborted) {
 					return programResult(frames, ctx.lastEvalResult, { aborted: { reason: "timeout", atStep: i }, refCheckResults: refCheck.results });
 				}
@@ -733,7 +752,7 @@ export async function executeProgram(
 		frames.push(frameResult);
 
 		if (!frameResult.ok) {
-			return programResult(frames, ctx.lastEvalResult, { aborted: { reason: frameResult.error ?? "frame failed", atStep: i }, refCheckResults: refCheck.results });
+			return programResult(frames, ctx.lastEvalResult, { aborted: { reason: combinedSignal.aborted ? "timeout" : frameResult.error ?? "frame failed", atStep: i }, refCheckResults: refCheck.results });
 		}
 
 		if (discriminator === "eval") {

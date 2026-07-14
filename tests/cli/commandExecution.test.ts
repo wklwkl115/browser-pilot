@@ -215,11 +215,18 @@ test("commands execution: browser_tabs common and advanced actions preserve runt
 	assert.equal(create.status, "completed");
 	assert.equal((create.target as Record<string, unknown>).tabId, 8);
 	assert.equal((create.completion as Record<string, unknown>).source, "tab-create");
-	assert.deepEqual(runtime.calls.find((call) => call.name === "createTab")?.args, ["https://example.test/new", false, 5_000, { browserSessionId: "session-1", incognito: true }]);
+	const createArgs = runtime.calls.find((call) => call.name === "createTab")?.args;
+	assert.deepEqual(createArgs?.slice(0, 3), ["https://example.test/new", false, 5_000]);
+	assert.deepEqual({ ...(createArgs?.[3] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", incognito: true, signal: undefined });
+	assert.ok((createArgs?.[3] as { signal?: unknown }).signal instanceof AbortSignal);
 	await command.execute("tool-2", { action: "switch", targetRef: "tab-7", browserSessionId: "session-1" });
 	await command.execute("tool-3", { action: "close", tabId: 7, browserSessionId: "session-1" });
-	assert.deepEqual(runtime.calls.find((call) => call.name === "switchTab")?.args, ["tab-7", 5_000, { browserSessionId: "session-1" }]);
-	assert.deepEqual(runtime.calls.find((call) => call.name === "closeTab")?.args, [7, 5_000, { browserSessionId: "session-1" }]);
+	for (const [name, prefix] of [["switchTab", ["tab-7", 5_000]], ["closeTab", [7, 5_000]]] as const) {
+		const args = runtime.calls.find((call) => call.name === name)?.args;
+		assert.deepEqual(args?.slice(0, 2), prefix);
+		assert.equal((args?.[2] as Record<string, unknown>).browserSessionId, "session-1");
+		assert.ok((args?.[2] as { signal?: unknown }).signal instanceof AbortSignal);
+	}
 
 	for (const params of [
 		{ action: "listSessions" },
@@ -340,8 +347,10 @@ test("commands execution: browser_execute summarizes successful JavaScript resul
 	const operationBegin = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as { cmd?: string }).cmd === "operation.begin");
 	const operationFinish = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as { cmd?: string }).cmd === "operation.finish");
 	assert.equal(execute?.args[0], "return 42");
-	assert.deepEqual(execute?.args[1], { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000 });
-	assert.deepEqual(operationBegin?.args[1], { browserSessionId: "session-1", targetRef: "tab-7", timeoutMs: 5_000, accessMode: "read", internal: true });
+	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000, signal: undefined });
+	assert.ok((execute?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
+	assert.deepEqual({ ...(operationBegin?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", targetRef: "tab-7", timeoutMs: 5_000, accessMode: "read", internal: true, signal: undefined });
+	assert.ok((operationBegin?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
 	assert.deepEqual(operationFinish?.args[0], { cmd: "operation.finish", operationId: "op-1", tabId: 7, targetRef: "tab-7" });
 	assert.deepEqual(operationFinish?.args[1], { browserSessionId: "session-1", targetRef: "tab-7", timeoutMs: 5_000, accessMode: "read", internal: true });
 	assert.equal(envelope.schema, "browser-operation/v2");
@@ -349,6 +358,53 @@ test("commands execution: browser_execute summarizes successful JavaScript resul
 	assert.equal((envelope.completion as Record<string, unknown>).source, "script-resolved");
 	assert.deepEqual(((envelope.completion as Record<string, unknown>).evidence as Record<string, unknown>).result, { answer: 42, script: "return 42" });
 	assert.equal(envelope.operationId, "op-1");
+});
+
+test("commands execution: scripted mutation completes only after its business postcondition passes", async () => {
+	let dispatches = 0;
+	const runtime = createRuntime({
+		async executeJavaScript(script) {
+			dispatches += 1;
+			if (dispatches === 2) new Function(`return async () => {\n${script}\n}`);
+			return dispatches === 1
+				? { id: "exec-action", acknowledged: true, tabId: 7, data: { clicked: true } } as BrowserBridgeExecutionResult
+				: { id: "exec-postcondition", acknowledged: true, tabId: 7, data: { verified: true, value: { liked: true }, attempts: 2 } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const outcome = parseResult(await command.execute("tool-business-success", {
+		script: "document.querySelector('[data-like]').click()",
+		postcondition: "document.querySelector('[data-like]').getAttribute('aria-pressed') === 'true'",
+		intentId: "like-note-42",
+		targetRef: "tab-7",
+	}));
+	assert.equal(dispatches, 2);
+	assert.equal(outcome.status, "completed");
+	assert.equal((outcome.completion as Record<string, unknown>).source, "script-postcondition-verified");
+	assert.equal((((outcome.completion as Record<string, unknown>).evidence as Record<string, unknown>).verification as Record<string, unknown>).passed, true);
+});
+
+test("commands execution: failed business postcondition is ambiguous and cannot report script success", async () => {
+	let dispatches = 0;
+	const runtime = createRuntime({
+		async executeJavaScript() {
+			dispatches += 1;
+			return dispatches === 1
+				? { id: "exec-action", acknowledged: true, tabId: 7, data: { clicked: true } } as BrowserBridgeExecutionResult
+				: { id: "exec-postcondition", acknowledged: true, tabId: 7, data: { verified: false, value: false, attempts: 3 } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const outcome = parseResult(await command.execute("tool-business-failure", {
+		script: "document.querySelector('[data-like]').click()",
+		postcondition: "document.querySelector('[data-like]').getAttribute('aria-pressed') === 'true'",
+		intentId: "like-note-43",
+		targetRef: "tab-7",
+	}));
+	assert.equal(dispatches, 2);
+	assert.equal(outcome.status, "ambiguous");
+	assert.equal(outcome.completion, undefined);
+	assert.match(JSON.stringify(outcome.diagnostics), /BUSINESS_POSTCONDITION_FAILED/);
 });
 
 test("commands execution: undefined JavaScript with no browser events returns no_effect after the fixed liveness window", async () => {
@@ -614,6 +670,35 @@ test("commands execution: browser_execute program path preserves operation and f
 	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), true);
 });
 
+test("commands execution: deadline before the first mutating program frame stays undispatched and leaves the intent reusable", async () => {
+	const registry = new (await import("../../src/kernels/session/operationRegistry.ts")).SessionOperationRegistry();
+	let mutationDispatches = 0;
+	const runtime = createRuntime({
+		beginOperation(operation) { return registry.begin(operation); },
+		updateOperation(operationId, patch) { return registry.update(operationId, patch); },
+		finishOperation(operationId, outcome) { return registry.finish(operationId, outcome); },
+		getOperation(operationId) { return registry.get(operationId); },
+		mutationReplayGuard(input) { return registry.mutationReplayGuard(input); },
+		async sendCommand(command) {
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
+		},
+		async executeJavaScript(script) {
+			if (script.includes("lateProgramMutation")) mutationDispatches += 1;
+			return { id: "url", acknowledged: true, data: "https://example.test/" } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const params = { targetRef: "tab-7", intentId: "delayed-intent", timeoutMs: 25, program: [{ eval: "globalThis.lateProgramMutation=true", delay: 500 }] };
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		const outcome = parseResult(await command.execute(`tool-delayed-${attempt}`, params, undefined, undefined, { operationOwnerId: "agent-a" }));
+		assert.equal(outcome.status, "deadline");
+		assert.equal((outcome.dispatch as Record<string, unknown>).started, false);
+		assert.doesNotMatch(JSON.stringify(outcome.diagnostics), /MUTATION_REPLAY_BLOCKED/);
+	}
+	assert.equal(mutationDispatches, 0);
+});
+
 test("commands execution: acknowledged physical program completes only through an explicit final verifier", async () => {
 	const runtime = createRuntime({
 		async executeJavaScript(script) {
@@ -727,14 +812,15 @@ test("commands execution: one intent cannot be reused with a different mutation 
 			return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
 		},
 		async executeJavaScript(script) {
+			if (script.includes("__bpStartedAt")) return { id: "verify", acknowledged: true, data: { verified: true } } as BrowserBridgeExecutionResult;
 			scriptDispatches += 1;
 			return { id: `exec-${scriptDispatches}`, acknowledged: true, data: { script } } as BrowserBridgeExecutionResult;
 		},
 	});
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
-	const first = parseResult(await command.execute("tool-intent-first", { targetRef: "tab-7", intentId: "comment-note-42", script: "'first comment'" }, undefined, undefined, { operationOwnerId: "agent-a" }));
+	const first = parseResult(await command.execute("tool-intent-first", { targetRef: "tab-7", intentId: "comment-note-42", script: "'first comment'", postcondition: "true" }, undefined, undefined, { operationOwnerId: "agent-a" }));
 	assert.equal(first.status, "completed");
-	const conflict = parseResult(await command.execute("tool-intent-conflict", { targetRef: "tab-7", intentId: "comment-note-42", script: "'different comment'" }, undefined, undefined, { operationOwnerId: "agent-a" }));
+	const conflict = parseResult(await command.execute("tool-intent-conflict", { targetRef: "tab-7", intentId: "comment-note-42", script: "'different comment'", postcondition: "true" }, undefined, undefined, { operationOwnerId: "agent-a" }));
 	assert.equal(conflict.status, "ambiguous");
 	assert.match(JSON.stringify(conflict.diagnostics), /intent_conflict/);
 	assert.equal(scriptDispatches, 1);

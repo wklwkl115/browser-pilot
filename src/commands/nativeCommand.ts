@@ -22,7 +22,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 			command: Type.Object({}, { additionalProperties: true, description: "Validated native bridge command object." }),
 			...sharedTabScopedToolParams(),
 		}),
-		async execute(_toolCallId, params, _signal, onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			return await runCommandHandler(async () => {
 				if (!params.command || typeof params.command !== "object" || Array.isArray(params.command)) throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", { commandName: "browser_command" });
 				const command = validateParams(BridgeCommandSchema, params.command);
@@ -35,7 +35,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 				const tabId = resolveLocalTargetTabId(server, rawTarget, browserSessionId);
 				const commandName = String(command.cmd || "");
 				if (!isNativeWriteCommand(command)) {
-					const result = await server.sendCommand(command, { browserSessionId, tabId: rawTarget as string | number | undefined, timeoutMs, accessMode: "read" });
+					const result = await server.sendCommand(command, { browserSessionId, tabId: rawTarget as string | number | undefined, timeoutMs, accessMode: "read", signal });
 					return jsonResult(result, { mode: "command", command: commandName }, maxChars);
 				}
 				if (!hasBrowserOperationResolver(command)) throw new BrowserBridgeError("INVALID_RULE", `No operation completion resolver is registered for native write command ${commandName}`, { commandName });
@@ -50,7 +50,8 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 					timeoutMs,
 					ctx,
 					onUpdate,
-				}, () => server.sendCommand(command, { browserSessionId, tabId: rawTarget as string | number | undefined, timeoutMs, accessMode: "write" }));
+					signal,
+				}, ({ signal: operationSignal }) => server.sendCommand(command, { browserSessionId, tabId: rawTarget as string | number | undefined, timeoutMs, accessMode: "write", signal: operationSignal }));
 				return await browserOperationCommandResult(outcome, {
 					budgetName: "browser_command",
 					maxChars,

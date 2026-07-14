@@ -148,7 +148,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 				incognito: Type.Optional(Type.Boolean({ description: "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint." })),
 		}),
 		validateArguments: validateTabsArguments,
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			return await runCommandHandler(async () => {
 				const action = String(params.action || "").trim().toLowerCase();
 				const timeoutMs = commandTimeoutMs(params.timeoutMs, 5_000);
@@ -181,10 +181,11 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 						timeoutMs,
 						ctx,
 						onUpdate: _onUpdate,
-					}, async () => {
-						if (action === "switch") return await server.switchTab(tabRef!, timeoutMs, browserSession);
-						if (action === "create") return await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { ...browserSession, incognito: params.incognito === true });
-						return await server.closeTab(tabRef!, timeoutMs, browserSession);
+						signal,
+					}, async ({ signal: operationSignal }) => {
+						if (action === "switch") return await server.switchTab(tabRef!, timeoutMs, { ...browserSession, signal: operationSignal });
+						if (action === "create") return await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { ...browserSession, incognito: params.incognito === true, signal: operationSignal });
+						return await server.closeTab(tabRef!, timeoutMs, { ...browserSession, signal: operationSignal });
 					});
 					return await browserOperationCommandResult(outcome, {
 						budgetName: "browser_tabs",

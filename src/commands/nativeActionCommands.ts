@@ -32,7 +32,7 @@ type ActionToolConfig = {
 	commandForAction: (action: string) => string;
 	timeoutForCommand?: (commandName: string) => number;
 	allowZeroTimeout?: boolean;
-	commandExecutor?: (server: Awaited<ReturnType<CommandRegistrarContext["ensureStarted"]>>, command: BridgeCommand, options: { browserSessionId?: string; tabId?: string | number; timeoutMs: number }) => Promise<BrowserBridgeExecutionResult>;
+	commandExecutor?: (server: Awaited<ReturnType<CommandRegistrarContext["ensureStarted"]>>, command: BridgeCommand, options: { browserSessionId?: string; tabId?: string | number; timeoutMs: number; signal?: AbortSignal }) => Promise<BrowserBridgeExecutionResult>;
 	artifactPrefix: string;
 	budgetName: ToolResultBudgetName;
 	defaultDetailLevel?: DetailLevel;
@@ -180,7 +180,7 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 		actionMetadata: config.actionMetadata,
 		parameters: strictCommandParameters(parameterProperties),
 		validateArguments: (args) => nativeActionValidation(config, args),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			return await runCommandHandler(async () => {
 				const actionIssues = nativeActionValidation(config, params as Record<string, unknown>);
 				if (actionIssues.length) throw new Error(actionIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; "));
@@ -197,22 +197,23 @@ function defineNativeActionCommand({ commands, ensureStarted }: CommandRegistrar
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 				const trackedTabId = resolveLocalTargetTabId(server, tabId, browserSessionId);
 				const resolvedTabId = tabId as string | number | undefined;
-				const dispatch = async () => {
+				const dispatch = async (dispatchContext?: { signal: AbortSignal }) => {
+					const dispatchSignal = dispatchContext?.signal ?? signal;
 					let dispatched: BrowserBridgeExecutionResult;
 					if (captureReload) {
-						dispatched = await server.sendCommand({ cmd: "batch", commands: networkCaptureReloadCommands(body, resolvedTabId, timeoutMs) }, { browserSessionId, tabId: resolvedTabId, timeoutMs, accessMode: "write" });
+						dispatched = await server.sendCommand({ cmd: "batch", commands: networkCaptureReloadCommands(body, resolvedTabId, timeoutMs) }, { browserSessionId, tabId: resolvedTabId, timeoutMs, accessMode: "write", signal: dispatchSignal });
 						assertBridgeBatchSucceeded(dispatched, "network.captureReload");
 					} else {
 						dispatched = config.commandExecutor
-							? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs })
-							: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs });
+							? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs, signal: dispatchSignal })
+							: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs, signal: dispatchSignal });
 					}
 					recordKnownRecorderState(server, config, params.action, dispatched, browserSessionId, trackedTabId);
 					return dispatched;
 				};
 				const writeCommand = captureReload || isNativeWriteCommand(command);
 				if (writeCommand) {
-					const outcome = await withBrowserOperation({ server, commandName: config.name, command: commandName, action: String(params.action || ""), browserSessionId, tabId: trackedTabId, targetRef: typeof params.targetRef === "string" ? params.targetRef : undefined, timeoutMs, ctx, onUpdate: _onUpdate }, dispatch);
+					const outcome = await withBrowserOperation({ server, commandName: config.name, command: commandName, action: String(params.action || ""), browserSessionId, tabId: trackedTabId, targetRef: typeof params.targetRef === "string" ? params.targetRef : undefined, timeoutMs, ctx, onUpdate: _onUpdate, signal }, dispatch);
 					return await browserOperationCommandResult(outcome, {
 						budgetName: config.budgetName,
 						maxChars,
