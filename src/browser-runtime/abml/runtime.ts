@@ -37,6 +37,9 @@ export type BrowserAbmlRuntimeOptions = {
 	tabId?: number | string;
 	timeoutMs?: number;
 	maxChars?: number;
+	/** Internal low-latency profile used only for fenced post-action settlement. */
+	captureProfile?: "canonical" | "settlement";
+	signal?: AbortSignal;
 };
 
 const DEFAULT_ACTION_TIMEOUT_MS = 5_000;
@@ -505,6 +508,24 @@ function structureAxFusionDiagnostics(fusion: { diagnostics: AxFusionDiagnostics
 	};
 }
 
+async function settlementPartialAxDiagnostics(server: AbmlBrowserRuntimeServer, descriptor: RefDescriptor | undefined, options: { browserSessionId?: string; tabId: number; timeoutMs: number }, settlementCapture: boolean) {
+	if (settlementCapture) return undefined;
+	return await readLocalPartialAxDiagnostics(server, descriptor, options).catch(() => undefined);
+}
+
+async function settlementAxRead(server: AbmlBrowserRuntimeServer, options: Parameters<typeof readAxEntities>[1], settlementCapture: boolean): Promise<AxReadResult> {
+	if (settlementCapture) return { entities: [], anchors: [] };
+	return await readAxEntities(server, options).catch((): AxReadResult => ({ entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, cacheHit: false, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } }));
+}
+
+async function settlementListenerHints(server: AbmlBrowserRuntimeServer, entities: Entity[], options: { browserSessionId?: string; tabId: number; timeoutMs: number }, settlementCapture: boolean) {
+	if (!settlementCapture) return await annotateListenerHints(server, entities, options);
+	return {
+		entities,
+		stats: { candidateCount: 0, probedCount: 0, nodeWithListenersCount: 0, listenerCount: 0, truncated: false, failureCount: 0, elapsedMs: 0, maxCandidates: 0, maxListenersPerNode: 0 },
+	};
+}
+
 async function resolveBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions) {
 		if (input.plane === "network" || input.plane === "event") return await readStreamPlane(server, input, options, input.plane);
 		if (input.plane && input.plane !== "structure") throw { code: "BACKEND_UNAVAILABLE", message: `ABML read plane is not implemented yet: ${input.plane}`, details: { plane: input.plane } };
@@ -519,12 +540,14 @@ async function resolveBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions, descriptor: RefDescriptor | undefined, target: { browserSessionId?: string; tabId: number }) {
 		const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
 		const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
+		const settlementCapture = options.captureProfile === "settlement";
 		const descriptorUrl = descriptor?.documentEpoch?.url;
 		const rawData = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			timeoutMs,
 			name: "abml_read_scan",
+			signal: options.signal,
 		})).data;
 		const bundle = validatePageWorldScanBundle(rawData);
 		if (!bundle.ok) throw new BrowserBridgeError("SCAN_BUNDLE_INVALID", "ABML structure read received an invalid browser-page-scan/v1 bundle", { issues: bundle.issues.slice(0, 20) });
@@ -547,12 +570,12 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 			observationId: snapshot.snapshotId,
 			capturedAt: snapshot.capturedAt,
 		};
-		const partialAxDiagnostics = await readLocalPartialAxDiagnostics(server, descriptor, {
+		const partialAxDiagnostics = await settlementPartialAxDiagnostics(server, descriptor, {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			timeoutMs,
-		}).catch(() => undefined);
-		const axRead = await readAxEntities(server, {
+		}, settlementCapture);
+		const axRead = await settlementAxRead(server, {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			observationId: snapshot.snapshotId,
@@ -560,7 +583,7 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 			capturedAt: snapshot.capturedAt,
 			timeoutMs,
 			cacheKey: input.axCacheKey,
-		}).catch((): AxReadResult => ({ entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, cacheHit: false, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } }));
+		}, settlementCapture);
 		const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries ?? [], {
 			scanCapturedAt: snapshot.capturedAt,
 			scanCapturedAtIso: new Date(snapshot.capturedAt).toISOString(),
@@ -583,11 +606,11 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 			observationId: snapshot.snapshotId,
 			capturedAt: snapshot.capturedAt,
 		});
-		const listenerProbe = await annotateListenerHints(server, mergedEntities, {
+		const listenerProbe = await settlementListenerHints(server, mergedEntities, {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			timeoutMs,
-		});
+		}, settlementCapture);
 		const entitiesWithListenerHints = listenerProbe.entities;
 		const relations = materializeStructureRelations(entitiesWithListenerHints, axRead, descriptor);
 		return {
@@ -604,6 +627,7 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 				...(relations.relationGraph?.edgeCount ? { relationGraph: relations.relationGraph } : {}),
 				backendNodeIdBootstrap: bootstrapped.stats,
 				listenerOracle: listenerProbe.stats,
+				captureProfile: settlementCapture ? "settlement" : "canonical",
 				axDiagnostics: axRead.diagnostics,
 				...(partialAxDiagnostics ? { partialAx: partialAxDiagnostics } : {}),
 				axFusion: structureAxFusionDiagnostics(fusion, entities.length, axRead.entities.length),

@@ -42,6 +42,14 @@ export const BROWSER_OPERATION_OUTCOME_CONTRACT = {
 	code?: BrowserOperationCode;
 }>;
 
+/** Behavioral identity for additive semantic/business settlement fields. */
+export const BROWSER_OPERATION_SEMANTIC_CONTRACT = {
+	provider: "abml",
+	stability: ["stable", "changing", "unknown"],
+	businessStatus: ["verified", "failed", "inconclusive"],
+	dispatchSettledAt: "terminal-cas",
+} as const;
+
 export type BrowserOperationOutcomeFields = {
 	classification: BrowserOperationClassification;
 	completionVerified: boolean;
@@ -110,7 +118,12 @@ export type BrowserOperationSignals = {
 
 export type BrowserOperationEvent = {
 	operationId: string;
+	/** Monotonic daemon-ledger order. */
 	sequence: number;
+	/** Exact operation revision created when this event entered the daemon ledger. */
+	ledgerRevision: number;
+	/** Exact producer order reported by the extension, when available. */
+	sourceSequence?: number;
 	type: string;
 	timestamp: number;
 	targetRef?: string;
@@ -129,6 +142,33 @@ export type BrowserOperationLateEffect = {
 	event: BrowserOperationEvent;
 };
 
+export type BrowserOperationSemanticWindow = {
+	startedAt: number;
+	endedAt: number;
+	attempts: number;
+	startSourceSequence: number;
+	endSourceSequence: number;
+	changeSeq: number;
+	pageEpoch: string;
+	entityCount: number;
+};
+
+export type BrowserOperationSemanticEvidence = {
+	provider: "abml";
+	stability: ActionOutcomeStability;
+	baseline?: BrowserOperationSemanticWindow;
+	capture?: BrowserOperationSemanticWindow;
+	effect?: ActionSemanticEffect;
+	verification?: VerificationResult;
+	diagnostics?: Array<Record<string, unknown>>;
+};
+
+export type BrowserOperationBusinessResult = {
+	status: "verified" | "failed" | "inconclusive";
+	source: string;
+	reason: string;
+};
+
 export type BrowserOperationOutcome = {
 	schema: typeof BROWSER_OPERATION_SCHEMA;
 	operationId: string;
@@ -145,12 +185,16 @@ export type BrowserOperationOutcome = {
 		finished: boolean;
 		startedAt: number;
 		finishedAt?: number;
+		/** Browser transaction settlement commit time; distinct from dispatch resolution. */
+		settledAt?: number;
 	};
 	signals: BrowserOperationSignals;
 	completion?: {
 		source: string;
 		evidence: Record<string, unknown>;
 	};
+	semantic?: BrowserOperationSemanticEvidence;
+	business?: BrowserOperationBusinessResult;
 	pageEffect?: {
 		appeared?: unknown[];
 		disappeared?: unknown[];
@@ -165,3 +209,5 @@ export type BrowserOperationOutcome = {
 export type BrowserOperationResultV2 = BrowserOperationOutcome & {
 	continuation: unknown;
 };
+import type { ActionOutcomeStability, ActionSemanticEffect } from "../abml/actionOutcome.js";
+import type { VerificationResult } from "../abml/types.js";

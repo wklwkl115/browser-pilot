@@ -25,6 +25,8 @@ export interface ProgramContext {
 	tabId: number | undefined;
 	browserSessionId: string | undefined;
 	targetRef: string | undefined;
+	operationId?: string;
+	operationGeneration?: number;
 	refRegistry: Record<string, unknown>;
 	contextVars: Map<string, unknown>;
 	lastEvalResult: unknown;
@@ -316,6 +318,8 @@ async function executeEvalFrame(
 		const result = await ctx.server.executeJavaScript(fullScript, {
 			browserSessionId: ctx.browserSessionId,
 			tabId: ctx.tabId as number | string | undefined,
+			operationId: ctx.operationId,
+			operationGeneration: ctx.operationGeneration,
 			timeoutMs: ctx.evalTimeoutMs ?? FRAME_TIMEOUT_MS,
 			signal: ctx.signal,
 		});
@@ -474,6 +478,8 @@ async function executeMouseFrame(
 		const result = await ctx.server.sendCommand(bridgeCmd as Parameters<BrowserCommandRuntimePort["sendCommand"]>[0], {
 			browserSessionId: ctx.browserSessionId,
 			tabId: ctx.tabId,
+			operationId: ctx.operationId,
+			operationGeneration: ctx.operationGeneration,
 			timeoutMs: FRAME_TIMEOUT_MS,
 			accessMode: "write",
 			signal: ctx.signal,
@@ -523,6 +529,8 @@ async function executeKeyFrame(
 		const result = await ctx.server.sendCommand(bridgeCmd as Parameters<BrowserCommandRuntimePort["sendCommand"]>[0], {
 			browserSessionId: ctx.browserSessionId,
 			tabId: ctx.tabId,
+			operationId: ctx.operationId,
+			operationGeneration: ctx.operationGeneration,
 			timeoutMs: FRAME_TIMEOUT_MS,
 			accessMode: "write",
 			signal: ctx.signal,
@@ -560,6 +568,8 @@ async function executeTextFrame(
 		const result = await ctx.server.sendCommand(bridgeCmd as Parameters<BrowserCommandRuntimePort["sendCommand"]>[0], {
 			browserSessionId: ctx.browserSessionId,
 			tabId: ctx.tabId,
+			operationId: ctx.operationId,
+			operationGeneration: ctx.operationGeneration,
 			timeoutMs: FRAME_TIMEOUT_MS,
 			accessMode: "write",
 			signal: ctx.signal,

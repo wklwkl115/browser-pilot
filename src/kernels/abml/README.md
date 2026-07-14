@@ -43,6 +43,7 @@ The modules below make up the kernel's public surface — consumers import them 
 | --- | --- |
 | `types.ts` | Foundational types — locators, refs, actionability, errors, captures. |
 | `entity.ts` | `Entity` / `EntityState` / `EntityStructure` model + builders. |
+| `actionOutcome.ts` | Bounded post-action semantic effects and stable expectation verification over entity diffs. |
 | `ax.ts` | **DOM↔AX merge** — box-IoU/role/name scoring, AX-authoritative state/structure fusion. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |

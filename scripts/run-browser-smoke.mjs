@@ -367,13 +367,15 @@ try {
 	if (!resultText(tabs).includes("Browser Pilot Smoke")) throw new Error(`browser_tabs did not expose the fixture tab: ${resultText(tabs)}`);
 	const executed = await invoke(daemon, "browser_execute", {
 		tabId,
+		readOnly: true,
 		script: "(async()=>{const api=await(await fetch('/api/execute')).json();return{title:document.title,marker:document.querySelector('#smoke-marker')?.textContent,api:api.ok}})()",
 	});
-	operationOutcome(executed, "browser_execute", "completed");
+	const executedOutcome = operationOutcome(executed, "browser_execute", "completed");
 	if (!resultText(executed).includes("Browser Pilot Smoke")) throw new Error(`browser_execute did not return fixture evidence: ${resultText(executed)}`);
-	const noEffect = await invoke(daemon, "browser_execute", { tabId, script: "void 0" });
-	const noEffectOutcome = operationOutcome(noEffect, "browser_execute no-effect", "no_effect");
-	if ((noEffectOutcome.ok ? 0 : 1) !== 1) throw new Error(`browser_execute no-effect did not map to a non-zero CLI outcome: ${JSON.stringify(noEffectOutcome)}`);
+	if (executedOutcome.completion?.source !== "script-resolved" || executedOutcome.business?.status !== "inconclusive" || executedOutcome.semantic?.stability !== "stable") throw new Error(`browser_execute query did not separate mechanical completion from business/semantic evidence: ${JSON.stringify(executedOutcome)}`);
+	const noEffect = await invoke(daemon, "browser_execute", { tabId, script: "void 0" }, 25_000);
+	const noEffectOutcome = operationOutcome(noEffect, "browser_execute no-effect", "deadline");
+	if ((noEffectOutcome.ok ? 0 : 1) !== 1 || noEffectOutcome.business?.status !== "inconclusive" || noEffectOutcome.semantic?.stability !== "stable") throw new Error(`browser_execute no-effect did not remain semantically inconclusive through its deadline: ${JSON.stringify(noEffectOutcome)}`);
 	const noEffectObservation = JSON.parse(resultText(await invoke(daemon, "browser_observe", { tabId, maxChars: 20_000 })));
 	if (noEffectObservation?.schema !== "browser-page-observation/v3") throw new Error(`no-effect recovery did not perform the required canonical observation: ${JSON.stringify(noEffectObservation)}`);
 	const businessIntentId = `script-business-${process.pid}-${Date.now()}`;
@@ -399,7 +401,7 @@ try {
 	}
 	if (!delayedProgramTimedOut) throw new Error("program cancellation smoke did not hit the caller transport deadline");
 	await new Promise((resolve) => setTimeout(resolve, 1_200));
-	const delayedProgramProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "document.body.dataset.lateProgramMutation || 'not-run'" }), "browser_execute delayed program cancellation proof", "completed");
+	const delayedProgramProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, readOnly: true, script: "document.body.dataset.lateProgramMutation || 'not-run'" }), "browser_execute delayed program cancellation proof", "completed");
 	if (delayedProgramProof.completion?.evidence?.result !== "not-run") throw new Error(`timed-out program dispatched a later mutation frame in the background: ${JSON.stringify(delayedProgramProof)}`);
 	const physicalIntentId = `physical-toggle-${process.pid}-${Date.now()}`;
 	const physicalProgram = [
@@ -412,10 +414,15 @@ try {
 	if (physical.completion?.source !== "program-verified" || physical.dispatch?.acknowledged !== true) throw new Error(`physical program did not preserve verified acknowledgement: ${JSON.stringify(physical)}`);
 	const reused = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: physicalIntentId, program: physicalProgram }), "browser_execute repeated physical intent", "completed");
 	if (!JSON.stringify(reused.diagnostics || []).includes("INTENT_RESULT_REUSED")) throw new Error(`repeated physical intent was not reused safely: ${JSON.stringify(reused)}`);
-	const toggleProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "({pressed:document.querySelector('#smoke-toggle').getAttribute('aria-pressed'),count:Number(document.querySelector('#smoke-toggle').dataset.toggleCount)})" }), "browser_execute physical toggle proof", "completed");
+	const toggleProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, readOnly: true, script: "({pressed:document.querySelector('#smoke-toggle').getAttribute('aria-pressed'),count:Number(document.querySelector('#smoke-toggle').dataset.toggleCount)})" }), "browser_execute physical toggle proof", "completed");
 	const toggleResult = toggleProof.completion?.evidence?.result;
 	if (toggleResult?.pressed !== "true" || toggleResult?.count !== 1) throw new Error(`repeated intent toggled the control twice: ${JSON.stringify(toggleProof)}`);
-	operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "(()=>{const el=document.querySelector('#smoke-toggle');el.setAttribute('aria-pressed','false');el.dataset.toggleCount='0';return true})()" }), "browser_execute reset physical toggle", "completed");
+	operationOutcome(await invoke(daemon, "browser_execute", {
+		tabId,
+		intentId: `physical-reset-${process.pid}-${Date.now()}`,
+		script: "(()=>{const el=document.querySelector('#smoke-toggle');el.setAttribute('aria-pressed','false');el.dataset.toggleCount='0';return true})()",
+		postcondition: "document.querySelector('#smoke-toggle').getAttribute('aria-pressed') === 'false' && document.querySelector('#smoke-toggle').dataset.toggleCount === '0'",
+	}), "browser_execute reset physical toggle", "completed");
 	const uncertainIntentId = `physical-uncertain-${process.pid}-${Date.now()}`;
 	const uncertainProgram = [
 		{ eval: "(()=>{const r=document.querySelector('#smoke-toggle').getBoundingClientRect();return{point:{x:r.left+r.width/2,y:r.top+r.height/2}}})()", as: "toggleTarget" },
@@ -431,14 +438,14 @@ try {
 	if (uncertainObservation?.schema !== "browser-page-observation/v3") throw new Error(`uncertain recovery did not complete canonical observation: ${JSON.stringify(uncertainObservation)}`);
 	const blockedAfterObserve = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: uncertainIntentId, program: uncertainProgram }), "browser_execute blocked uncertain replay after observe", "ambiguous");
 	if (!JSON.stringify(blockedAfterObserve.diagnostics || []).includes("intent_replay")) throw new Error(`observation incorrectly released the same uncertain intent: ${JSON.stringify(blockedAfterObserve)}`);
-	const uncertainProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "({pressed:document.querySelector('#smoke-toggle').getAttribute('aria-pressed'),count:Number(document.querySelector('#smoke-toggle').dataset.toggleCount)})" }), "browser_execute uncertain toggle proof", "completed");
+	const uncertainProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, readOnly: true, script: "({pressed:document.querySelector('#smoke-toggle').getAttribute('aria-pressed'),count:Number(document.querySelector('#smoke-toggle').dataset.toggleCount)})" }), "browser_execute uncertain toggle proof", "completed");
 	if (uncertainProof.completion?.evidence?.result?.pressed !== "true" || uncertainProof.completion?.evidence?.result?.count !== 1) throw new Error(`uncertain intent replay changed the control more than once: ${JSON.stringify(uncertainProof)}`);
 	const created = operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}secondary`, active: true }), "browser_tabs create", "completed");
 	const createdTabId = Number(created.target?.tabId);
 	const originalTargetRef = tab?.targetRef || tab?.tabHandle || tabId;
 	if (!Number.isInteger(createdTabId) || createdTabId <= 0 || !created.target?.targetRef) throw new Error(`created tab was not ready/routable: ${JSON.stringify(created)}`);
 	operationOutcome(await invoke(daemon, "browser_tabs", { action: "switch", targetRef: originalTargetRef }), "browser_tabs switch", "completed");
-	operationOutcome(await invoke(daemon, "browser_execute", { targetRef: originalTargetRef, script: "document.title" }), "browser_execute after switch", "completed");
+	operationOutcome(await invoke(daemon, "browser_execute", { targetRef: originalTargetRef, readOnly: true, script: "document.title" }), "browser_execute after switch", "completed");
 	operationOutcome(await invoke(daemon, "browser_tabs", { action: "close", targetRef: created.target.targetRef }), "browser_tabs close", "completed");
 	const observedResult = await invoke(daemon, "browser_observe", { tabId, maxNodes: 200 });
 	const observed = resultEnvelope(observedResult, "browser_observe full");
@@ -466,6 +473,7 @@ try {
 	});
 	await invoke(daemon, "browser_execute", {
 		tabId,
+		readOnly: true,
 		script: "(async()=>{console.info('browser-pilot-hook-smoke');await fetch('/api/hook-smoke');return true})()",
 	});
 	const hookEvents = await invoke(daemon, "browser_hook", {
@@ -483,7 +491,13 @@ try {
 	const sameDocumentBaselineId = reconnectBaseline.snapshot?.snapshotId;
 	const sameDocumentPageEpoch = reconnectBaseline.snapshot?.pageEpoch;
 	if (typeof sameDocumentBaselineId !== "string" || typeof sameDocumentPageEpoch !== "string") throw new Error(`browser_observe did not expose page identity: ${JSON.stringify(reconnectBaseline.snapshot)}`);
-	operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "history.pushState({browserPilotSmoke:true},'',`/spa?smoke=${Date.now()}`);document.body.dataset.browserPilotSmokeDelta=String(Date.now());true" }), "browser_execute same-document SPA mutation", "completed");
+	const spaMutationToken = `${Date.now()}`;
+	operationOutcome(await invoke(daemon, "browser_execute", {
+		tabId,
+		intentId: `spa-mutation-${process.pid}-${spaMutationToken}`,
+		script: `history.pushState({browserPilotSmoke:true},'',${JSON.stringify(`/spa?smoke=${spaMutationToken}`)});document.body.dataset.browserPilotSmokeDelta=${JSON.stringify(spaMutationToken)};true`,
+		postcondition: `location.pathname === '/spa' && document.body.dataset.browserPilotSmokeDelta === ${JSON.stringify(spaMutationToken)}`,
+	}), "browser_execute same-document SPA mutation", "completed");
 	await waitForStatus(daemon, (value) => Array.isArray(value.tabs) && value.tabs.some((item) => Number(item?.tabId ?? item?.id) === tabId && String(item?.url || "").includes("/spa?smoke=")), "SPA history tab sync");
 	const deltaObservation = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, baselineSnapshotId: sameDocumentBaselineId, maxNodes: 200 }), "browser_observe same-document delta");
 	if (deltaObservation.snapshot?.pageEpoch !== sameDocumentPageEpoch) throw new Error(`same-document SPA mutation changed page epoch: ${JSON.stringify(deltaObservation.snapshot)}`);
@@ -491,7 +505,12 @@ try {
 	const baselineSnapshotId = deltaObservation.snapshot?.snapshotId;
 	const baselinePageEpoch = deltaObservation.snapshot?.pageEpoch;
 	if (typeof baselineSnapshotId !== "string" || typeof baselinePageEpoch !== "string") throw new Error(`delta observation did not expose page identity: ${JSON.stringify(deltaObservation.snapshot)}`);
-	operationOutcome(await invoke(daemon, "browser_execute", { tabId, script: "document.querySelector('main')?.append(Object.assign(document.createElement('p'),{textContent:'provider telemetry mutation'}));true" }), "browser_execute provider telemetry mutation", "completed");
+	operationOutcome(await invoke(daemon, "browser_execute", {
+		tabId,
+		intentId: `provider-mutation-${process.pid}-${Date.now()}`,
+		script: "document.querySelector('main')?.append(Object.assign(document.createElement('p'),{textContent:'provider telemetry mutation'}));true",
+		postcondition: "Array.from(document.querySelectorAll('main p')).some((node) => node.textContent === 'provider telemetry mutation')",
+	}), "browser_execute provider telemetry mutation", "completed");
 	const providerObservation = resultEnvelope(await invoke(daemon, "browser_observe", {
 		tabId,
 		baselineSnapshotId,
@@ -578,7 +597,7 @@ try {
 	if (restoredBTab?.pageEpoch !== bfcacheBEpoch || restoredBTab?.documentId !== bfcacheBDocumentId) {
 		throw new Error(`real BFCache forward did not reuse proven B lineage: ${JSON.stringify(restoredBTab)}`);
 	}
-	const bfcacheProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId: lineageTabId, script: "({persisted:globalThis.__browserPilotBFCacheRestored===true,navigationType:performance.getEntriesByType('navigation')[0]?.type})" }), "browser_execute BFCache proof", "completed");
+	const bfcacheProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId: lineageTabId, readOnly: true, script: "({persisted:globalThis.__browserPilotBFCacheRestored===true,navigationType:performance.getEntriesByType('navigation')[0]?.type})" }), "browser_execute BFCache proof", "completed");
 	const bfcacheProofValue = bfcacheProof.completion?.evidence?.result;
 	if (bfcacheProofValue?.persisted !== true) throw new Error(`real BFCache pageshow.persisted proof was missing: ${JSON.stringify(bfcacheProofValue)}`);
 	const bfcacheObservation = resultEnvelope(await invoke(daemon, "browser_observe", { tabId: lineageTabId, fresh: true, maxNodes: 200 }), "browser_observe after BFCache lineage");
@@ -631,7 +650,7 @@ try {
 	const prerenderTargetTabId = Number(prerenderTargetTab?.tabId ?? prerenderTargetTab?.id);
 	const prerenderTargetRef = prerenderTargetTab?.targetRef;
 	if (!Number.isInteger(prerenderTargetTabId) || prerenderTargetTabId <= 0 || typeof prerenderTargetRef !== "string") throw new Error(`prerender activation did not replace the target generation: ${JSON.stringify(prerenderTargetTab)}`);
-	const prerenderProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId: prerenderTargetTabId, script: "({wasPrerendered:globalThis.__browserPilotWasPrerendered===true,prerendering:document.prerendering===true,activationStart:Number(performance.getEntriesByType('navigation')[0]?.activationStart||0),title:document.title})" }), "browser_execute prerender proof", "completed");
+	const prerenderProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId: prerenderTargetTabId, readOnly: true, script: "({wasPrerendered:globalThis.__browserPilotWasPrerendered===true,prerendering:document.prerendering===true,activationStart:Number(performance.getEntriesByType('navigation')[0]?.activationStart||0),title:document.title})" }), "browser_execute prerender proof", "completed");
 	const prerenderProofValue = prerenderProof.completion?.evidence?.result;
 	if (prerenderProofValue?.wasPrerendered !== true || prerenderProofValue?.prerendering !== false || !(prerenderProofValue?.activationStart > 0)) {
 		throw new Error(`target was not activated from a real prerender: ${JSON.stringify(prerenderProofValue)}`);
@@ -668,7 +687,7 @@ try {
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-nonzero", "script-business-postcondition", "program-deadline-cancels-later-frames", "physical-program-verified-idempotent", "physical-program-uncertain-replay-blocked", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "provider-budget-telemetry", "extension-reconnect-page-epoch", "operation-completion-event-wakeup", "bfcache-back-forward-lineage", "frontier-artifact-targeted-read", "prerender-tabs-onReplaced", "target-close-new-target", "daemon-replacement-targetref-stable"],
+		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-semantic-deadline", "script-business-postcondition", "program-deadline-cancels-later-frames", "physical-program-verified-idempotent", "physical-program-uncertain-replay-blocked", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "provider-budget-telemetry", "extension-reconnect-page-epoch", "operation-completion-event-wakeup", "bfcache-back-forward-lineage", "frontier-artifact-targeted-read", "prerender-tabs-onReplaced", "target-close-new-target", "daemon-replacement-targetref-stable"],
 		operationCompletionEventMs: completionEventElapsedMs,
 		connectionMetrics: reconnected.health?.connectionMetrics,
 	}, null, 2));

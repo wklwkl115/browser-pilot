@@ -10,7 +10,7 @@ function runtimeExceptionMessage(data: Record<string, unknown>): string | undefi
 	return typeof exception?.description === "string" ? exception.description : typeof details.text === "string" ? details.text : "Runtime.evaluate failed";
 }
 
-export async function evaluatePageScriptDirect(server: Pick<BrowserCommandRuntimePort, "sendCommand">, script: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number; name: string }): Promise<BrowserBridgeExecutionResult> {
+export async function evaluatePageScriptDirect(server: Pick<BrowserCommandRuntimePort, "sendCommand">, script: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number; name: string; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult> {
 	const result = await server.sendCommand({
 		cmd: "persistent_cdp",
 		action: "send",
@@ -20,7 +20,7 @@ export async function evaluatePageScriptDirect(server: Pick<BrowserCommandRuntim
 		precompile: true,
 		timeoutMs: options.timeoutMs,
 		params: { expression: script, awaitPromise: true, returnByValue: true },
-	}, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs });
+	}, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs, signal: options.signal });
 	const data = result.data && typeof result.data === "object" ? result.data as Record<string, unknown> : {};
 	const exceptionMessage = runtimeExceptionMessage(data);
 	if (exceptionMessage) throw new BrowserBridgeError("BROWSER_EXECUTION_ERROR", exceptionMessage, { command: options.name, exceptionDetails: data.exceptionDetails });

@@ -81,6 +81,19 @@ test("effect_observed cannot be promoted to success by generic error-shape heuri
 	assert.equal(parsed.code, "OPERATION_EFFECT_UNVERIFIED");
 });
 
+test("human browser-operation output exposes semantic settlement separately from business proof", () => {
+	const env = {
+		...operation("effect_observed"),
+		dispatch: { acknowledged: true, started: true, finished: true, settledAt: 3 },
+		business: { status: "inconclusive", source: "abml", reason: "semantic_effect_without_expectation" },
+		semantic: { provider: "abml", stability: "stable", effect: { summary: { hasSemanticEffect: true } } },
+	};
+	const human = captureWrites(process.stdout, () => render(env, "human"));
+	assert.match(human.output, /dispatch: acknowledged · settled/);
+	assert.match(human.output, /business: inconclusive · abml · semantic_effect_without_expectation/);
+	assert.match(human.output, /semantic: abml · stable · effect observed/);
+});
+
 test("unknown operation schemas are not treated as browser-operation/v2", () => {
 	const env = { schema: "browser-operation/v999", status: "effect_observed", continuation: null };
 	assert.deepEqual(classifyBrowserOperationEnvelope(env), { kind: "not_operation" });

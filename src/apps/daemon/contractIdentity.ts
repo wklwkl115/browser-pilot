@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { contractActionMetadata } from "../../commands/publicActionCatalog.js";
-import { BROWSER_OPERATION_OUTCOME_CONTRACT, BROWSER_OPERATION_SCHEMA } from "../../kernels/session/browserOperation.js";
+import { BROWSER_OPERATION_OUTCOME_CONTRACT, BROWSER_OPERATION_SCHEMA, BROWSER_OPERATION_SEMANTIC_CONTRACT } from "../../kernels/session/browserOperation.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { getNativeCommandProtocolSchema } from "../../types/nativeProtocol.js";
 import { COMMAND_CONTRACT_VERSION, DAEMON_PROTOCOL_VERSION, packageVersion } from "./packageInfo.js";
@@ -144,6 +144,7 @@ export type CommandContractPayload = {
 	operationResult: {
 		schema: typeof BROWSER_OPERATION_SCHEMA;
 		outcomes: typeof BROWSER_OPERATION_OUTCOME_CONTRACT;
+		semantic: typeof BROWSER_OPERATION_SEMANTIC_CONTRACT;
 	};
 	daemonProtocolVersion: number;
 	nativeProtocolHash: string;
@@ -169,7 +170,7 @@ export function commandContractPayload(definitions: readonly CommandDefinition[]
 	return {
 		commands,
 		actions: contractActionMetadata(definitions),
-		operationResult: { schema: BROWSER_OPERATION_SCHEMA, outcomes: BROWSER_OPERATION_OUTCOME_CONTRACT },
+		operationResult: { schema: BROWSER_OPERATION_SCHEMA, outcomes: BROWSER_OPERATION_OUTCOME_CONTRACT, semantic: BROWSER_OPERATION_SEMANTIC_CONTRACT },
 		daemonProtocolVersion: DAEMON_PROTOCOL_VERSION,
 		nativeProtocolHash,
 		publicSchemaHashes: {

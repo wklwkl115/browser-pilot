@@ -37,7 +37,7 @@ type BrowserBridgeClientMessageServiceDeps = {
 	leases: BrowserBridgeLeaseRegistryPort;
 	queues: BrowserCommandQueueRegistry;
 	consent: BrowserBridgeConsentCoordinator;
-	recordOperationEvent: (operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "timestamp"> & { sequence?: number; timestamp?: number }) => SessionActiveOperationInfo | undefined;
+	recordOperationEvent: (operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "ledgerRevision" | "timestamp"> & { sequence?: number; sourceSequence?: number; timestamp?: number }) => SessionActiveOperationInfo | undefined;
 	migratePerceptionLedger?: (fromTabId: number, toTabId: number, browserSessionIds?: string[]) => void;
 	clearRecorderStateForReplacement?: (fromTabId: number, toTabId: number, browserSessionIds?: string[]) => void;
 	logLeaseCleanup?: (details: { reason: "disconnect"; releasedLeases: unknown[]; releasedUiLocks: unknown[]; disconnectedTabSessionIds: string[]; affectedBrowserSessionIds: string[] }) => void;
@@ -117,6 +117,7 @@ export class BrowserBridgeClientMessageService {
 			this.deps.recordOperationEvent(operationId, {
 				type: typeof event.type === "string" ? event.type : "unknown",
 				sequence: typeof event.sequence === "number" ? event.sequence : undefined,
+				sourceSequence: typeof event.sequence === "number" ? event.sequence : undefined,
 				timestamp: typeof event.timestamp === "number" ? event.timestamp : undefined,
 				targetRef: typeof event.targetRef === "string" ? event.targetRef : undefined,
 				tabId: typeof event.tabId === "number" ? event.tabId : undefined,

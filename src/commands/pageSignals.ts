@@ -30,6 +30,7 @@ export type PageSignalOptions = {
 	tabId?: number;
 	timeoutMs: number;
 	drainDirty?: boolean;
+	signal?: AbortSignal;
 };
 
 function normalizeDirtyFingerprint(value: unknown): PageFingerprint["dirty"] | undefined {
@@ -73,7 +74,7 @@ export function normalizePageFingerprint(value: unknown): PageFingerprint | unde
 export async function readPageFingerprint(server: BrowserCommandRuntimePort, options: PageSignalOptions): Promise<PageFingerprint | undefined> {
 	if (!options.tabId) return undefined;
 	try {
-		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs, ...(options.drainDirty === true ? { drainDirty: true } : {}) }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: Math.min(options.timeoutMs, 2_000), internal: true });
+		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs, ...(options.drainDirty === true ? { drainDirty: true } : {}) }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: Math.min(options.timeoutMs, 2_000), internal: true, signal: options.signal });
 		return normalizePageFingerprint(result.data);
 	} catch {
 		return undefined;

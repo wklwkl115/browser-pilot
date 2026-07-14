@@ -24,6 +24,8 @@ export type SessionActiveOperationInfo = {
 	intentHash?: string;
 	intentPayloadHash?: string;
 	sequence: number;
+	/** Highest exact extension sequence observed for this operation. */
+	sourceSequence?: number;
 	lastProgressAt: number;
 	generation?: number;
 	events: BrowserOperationEvent[];
@@ -41,8 +43,10 @@ export type SessionActiveOperationInfo = {
 };
 
 export type SessionOperationBeginInput = Omit<SessionActiveOperationInfo,
-	"operationId" | "startedAt" | "updatedAt" | "state" | "revision" | "sequence" | "lastProgressAt" | "events" | "lateEffects" | "ownerHash" | "intentHash" | "intentPayloadHash" | "verificationRequired" | "verifiedAt"
+	"operationId" | "startedAt" | "updatedAt" | "state" | "revision" | "sequence" | "sourceSequence" | "lastProgressAt" | "events" | "lateEffects" | "ownerHash" | "intentHash" | "intentPayloadHash" | "verificationRequired" | "verifiedAt"
 > & { operationId?: string; ownerId?: string; intentId?: string; intentPayload?: unknown };
+
+type SessionOperationEventInput = Omit<BrowserOperationEvent, "operationId" | "sequence" | "ledgerRevision" | "timestamp"> & { sequence?: number; sourceSequence?: number; timestamp?: number };
 
 export type SessionMutationReplayGuard = {
 	kind: "intent_replay" | "intent_conflict" | "mutation_in_progress" | "observation_required" | "ledger_capacity";
@@ -234,25 +238,24 @@ export class SessionOperationRegistry {
 		return this.copy(next);
 	}
 
-	recordEvent(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "timestamp"> & { sequence?: number; timestamp?: number }): SessionActiveOperationInfo | undefined {
+	/** Compare-and-set terminal commit used by semantic capture fences. */
+	finishIfRevision(operationId: string, expectedRevision: number, outcome?: BrowserOperationOutcome): SessionActiveOperationInfo | undefined {
+		this.pruneStale();
+		const current = this.operations.get(operationId);
+		if (!current || current.state === "terminal" || current.revision !== expectedRevision) return undefined;
+		return this.finish(operationId, outcome);
+	}
+
+	recordEvent(operationId: string, event: SessionOperationEventInput): SessionActiveOperationInfo | undefined {
 		this.pruneStale();
 		const current = this.operations.get(operationId);
 		if (!current) return undefined;
 		const now = this.now();
 		if (current.state === "terminal" && (current.passiveUntil === undefined || now > current.passiveUntil)) return this.copy(current);
-		const sequence = Math.max(current.sequence + 1, Math.floor(event.sequence ?? 0));
-		const item: BrowserOperationEvent = {
-			operationId,
-			sequence,
-			type: String(event.type || "unknown"),
-			timestamp: Math.floor(event.timestamp ?? now),
-			...(event.targetRef ? { targetRef: event.targetRef } : {}),
-			...(event.tabId !== undefined ? { tabId: event.tabId } : {}),
-			...(event.generation !== undefined ? { generation: event.generation } : {}),
-			...(event.progress !== undefined ? { progress: event.progress } : {}),
-			...(event.data ? { data: this.compactData(event.data) } : {}),
-			...(current.state === "terminal" ? { late: true } : {}),
-		};
+		const reportedSourceSequence = Math.floor(event.sourceSequence ?? 0);
+		const sourceSequence = reportedSourceSequence > 0 ? reportedSourceSequence : undefined;
+		const sequence = current.sequence + 1;
+		const item = this.operationEvent(operationId, current, event, sequence, sourceSequence, now);
 		const events = [...current.events, item].slice(-this.maxEvents);
 		const lateEffects = current.state === "terminal"
 			? [...current.lateEffects, { type: "late_effect" as const, operationId, commandName: current.commandName, terminalStatus: current.terminalStatus ?? "failed", event: item }].slice(-this.maxEvents)
@@ -261,6 +264,7 @@ export class SessionOperationRegistry {
 			...current,
 			revision: current.revision + 1,
 			sequence,
+			...(sourceSequence !== undefined ? { sourceSequence: Math.max(current.sourceSequence ?? 0, sourceSequence) } : {}),
 			events,
 			lateEffects,
 			lastProgressAt: current.state === "active" && event.progress !== false ? now : current.lastProgressAt,
@@ -397,6 +401,23 @@ export class SessionOperationRegistry {
 			.sort((a, b) => Number(a.state === "active") - Number(b.state === "active") || a.updatedAt - b.updatedAt || a.startedAt - b.startedAt || a.operationId.localeCompare(b.operationId))
 			.slice(0, overflow);
 		for (const operation of oldest) this.operations.delete(operation.operationId);
+	}
+
+	private operationEvent(operationId: string, current: SessionActiveOperationInfo, event: SessionOperationEventInput, sequence: number, sourceSequence: number | undefined, now: number): BrowserOperationEvent {
+		return {
+			operationId,
+			sequence,
+			ledgerRevision: current.revision + 1,
+			...(sourceSequence !== undefined ? { sourceSequence } : {}),
+			type: String(event.type || "unknown"),
+			timestamp: Math.floor(event.timestamp ?? now),
+			...(event.targetRef ? { targetRef: event.targetRef } : {}),
+			...(event.tabId !== undefined ? { tabId: event.tabId } : {}),
+			...(event.generation !== undefined ? { generation: event.generation } : {}),
+			...(event.progress !== undefined ? { progress: event.progress } : {}),
+			...(event.data ? { data: this.compactData(event.data) } : {}),
+			...(current.state === "terminal" ? { late: true } : {}),
+		};
 	}
 
 	private compactData(value: Record<string, unknown>): Record<string, unknown> {

@@ -52,6 +52,20 @@ function commandAbortError(message: string, dispatchStarted = false): BrowserBri
 	return new BrowserBridgeError("BRIDGE_TIMEOUT", message, { acked: false, dispatchStarted, aborted: true });
 }
 
+function assertOperationTargetGeneration(options: SendPayloadOptions, target: BrowserBridgeTargetInfo): void {
+	if (options.operationGeneration === undefined || target.generation === options.operationGeneration) return;
+	throw new BrowserBridgeError("TAB_NOT_FOUND", "The browser target changed before the operation action could be dispatched", {
+		operationId: options.operationId,
+		tabId: target.tabId,
+		targetRef: target.targetRef,
+		expectedGeneration: options.operationGeneration,
+		actualGeneration: target.generation,
+		reason: "target_generation_changed",
+		dispatchStarted: false,
+		acked: false,
+	});
+}
+
 async function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined, message: string): Promise<T> {
 	if (!signal) return await promise;
 	if (signal.aborted) throw commandAbortError(message);
@@ -156,7 +170,7 @@ export class BrowserBridgeCommandService {
 
 	async executeJavaScript(script: string, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
 		const target = this.requireExecutionTarget(options.targetRef ?? options.tabId, options.browserSessionId);
-		return this.sendPayload(script, { browserSessionId: options.browserSessionId, tabId: target.tabId, timeoutMs: options.timeoutMs, target, accessMode: options.accessMode ?? "write", signal: options.signal });
+		return this.sendPayload(script, { browserSessionId: options.browserSessionId, tabId: target.tabId, operationId: options.operationId, operationGeneration: options.operationGeneration, timeoutMs: options.timeoutMs, target, accessMode: options.accessMode ?? "write", signal: options.signal });
 	}
 
 	/**
@@ -214,7 +228,7 @@ export class BrowserBridgeCommandService {
 		}
 		if (validation.spec.tabScoped && tabId === undefined) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { cmd: validation.command.cmd, tabs: this.deps.getTabs() });
 		const plan = this.commandExecutionPlan(validation.command, target, options.accessMode);
-		const result = await this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId: plan.tabId, timeoutMs: options.timeoutMs, target: plan.target, accessMode: plan.accessMode, signal: options.signal });
+		const result = await this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId: plan.tabId, operationId: options.operationId, operationGeneration: options.operationGeneration, timeoutMs: options.timeoutMs, target: plan.target, accessMode: plan.accessMode, signal: options.signal });
 		if (this.isCreateTabCommand(validation.canonicalCmd, validation.command)) {
 			return await this.withCreatedTabTarget(result, options);
 		}
@@ -293,7 +307,8 @@ export class BrowserBridgeCommandService {
 				this.assertWriteInvariants(browserSession.id, tab, target);
 				const queuedAt = Date.now();
 				const queueDepthAtEnqueue = this.deps.queues.depth(browserSession.id, tabId);
-				return recordResult(this.deps.queues.enqueue(browserSession.id, tabId, async () => {
+				const dispatchWrite = async () => {
+					if (options.signal?.aborted) throw commandAbortError("Browser command was cancelled before bridge dispatch");
 					const startedAt = Date.now();
 					const queueDepthAtStart = this.deps.queues.depth(browserSession.id, tabId);
 					const resolvedQueuedTarget = this.deps.tabs.resolveTargetRef(target.targetRef ?? target.tabHandle ?? target.tabId, browserSession.id, target.source);
@@ -303,15 +318,16 @@ export class BrowserBridgeCommandService {
 						...(target.replacedFrom !== undefined ? { replacedFrom: target.replacedFrom } : {}),
 						...(target.replacedByTabId !== undefined ? { replacedByTabId: target.replacedByTabId } : {}),
 						...(target.replacementHops !== undefined ? { replacementHops: target.replacementHops } : {}),
-					} : target;
-					const queuedTabId = queuedTarget.tabId ?? tabId;
+						} : target;
+						assertOperationTargetGeneration(options, queuedTarget);
+						const queuedTabId = queuedTarget.tabId ?? tabId;
 					const queuedTab = this.requireLiveTabSession(queuedTabId, browserSession.id, queuedTarget);
 					this.assertWriteInvariants(browserSession.id, queuedTab, queuedTarget);
 					const queuedCodeRecord = recordValue(code);
 					const queuedCode = queuedTabId !== tabId && queuedCodeRecord ? { ...queuedCodeRecord, tabId: queuedTabId } : code;
 					const result = await this.deps.leases.withAutoTabLease(browserSession.id, queuedTab, async () => {
 						this.deps.leases.touchTabLease(browserSession.id, queuedTab);
-						return await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, timeoutMs: options.timeoutMs, target: queuedTarget, signal: options.signal });
+						return await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, operationId: options.operationId, operationGeneration: options.operationGeneration, timeoutMs: options.timeoutMs, target: queuedTarget, signal: options.signal });
 					});
 					const completedAt = Date.now();
 					const queueDelayMs = Math.max(0, startedAt - queuedAt);
@@ -330,13 +346,15 @@ export class BrowserBridgeCommandService {
 							elapsedMs: Math.max(0, completedAt - queuedAt),
 						},
 					});
-				}, { signal: options.signal }));
+				};
+				if (this.deps.queues.ownsCurrentTransaction(browserSession.id, tabId)) return recordResult(dispatchWrite());
+				return recordResult(this.deps.queues.enqueue(browserSession.id, tabId, dispatchWrite, { signal: options.signal }));
 			}
 			this.deps.leases.touchTabLease(browserSession.id, tab);
-			return recordResult(this.deps.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
+			return recordResult(this.deps.pendingRequests.send(tab.client, code, { tabId, operationId: options.operationId, operationGeneration: options.operationGeneration, timeoutMs: options.timeoutMs, target, signal: options.signal }));
 		}
 		const socket = this.socketForBrowserSessionCommand(options.browserSessionId);
-		return recordResult(this.deps.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
+		return recordResult(this.deps.pendingRequests.send(socket, code, { tabId, operationId: options.operationId, operationGeneration: options.operationGeneration, timeoutMs: options.timeoutMs, target, signal: options.signal }));
 	}
 
 	private socketForBrowserSessionCommand(browserSessionId?: string): WebSocket {

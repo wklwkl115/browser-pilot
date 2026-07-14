@@ -121,7 +121,7 @@ test("real browser smoke gate owns live MV3 acceptance and runs in Windows CI", 
 	assert.match(smoke, /browser_execute/);
 	assert.match(smoke, /browser_observe/);
 	assert.match(smoke, /browser-operation\/v2/);
-	assert.match(smoke, /no_effect/);
+	assert.match(smoke, /no-effect-semantic-deadline/);
 	assert.match(smoke, /completionVerified/);
 	assert.match(smoke, /captureReload/);
 	assert.match(smoke, /browser_hook/);
@@ -171,7 +171,7 @@ test("verify owns an exact complexity ratchet", () => {
 	const complexity = text(complexityScriptPath);
 	const validation = text(validationScriptPath);
 	const pkg = JSON.parse(text(packagePath)) as { scripts?: Record<string, string> };
-	assert.match(complexity, /expectedComplexFunctions\s*=\s*80/);
+	assert.match(complexity, /expectedComplexFunctions\s*=\s*79/);
 	assert.match(complexity, /expectedLongFunctions\s*=\s*0/);
 	assert.match(complexity, /assertExactBudget/);
 	assert.match(validation, /scripts\/audit-complexity\.mjs/);

@@ -152,6 +152,8 @@ export type ExecuteOptions = {
 	browserSessionId?: string;
 	tabId?: number | string;
 	targetRef?: string;
+	operationId?: string;
+	operationGeneration?: number;
 	timeoutMs?: number;
 	accessMode?: "read" | "write";
 	internal?: boolean;
@@ -161,6 +163,8 @@ export type ExecuteOptions = {
 export type PendingRequest = {
 	id: string;
 	tabId?: number;
+	operationId?: string;
+	operationGeneration?: number;
 	client: WebSocket;
 	/** Original command payload, retained so the request can be redelivered to a reconnected socket. */
 	code: unknown;

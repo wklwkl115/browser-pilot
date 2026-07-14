@@ -38,6 +38,14 @@ const chromeStub = {
 			return executeResult;
 		},
 	},
+	alarms: {
+		onAlarm: { addListener() {} },
+		create() {},
+		async clear() { return true; },
+	},
+	declarativeNetRequest: {
+		async updateSessionRules() {},
+	},
 	debugger: { onDetach: { addListener() {} }, onEvent: { addListener() {} } },
 };
 
@@ -76,14 +84,20 @@ function messages(value: ReturnType<typeof socket>): Array<Record<string, unknow
 	return value.sent.map((payload) => JSON.parse(payload) as Record<string, unknown>);
 }
 
-test("exec dispatch acknowledges missing tabs and handles navigation shortcuts", async () => {
+test("exec dispatch rejects missing tabs before ACK and handles navigation shortcuts", async () => {
 	resetState();
 	const missing = socket();
 	await handleWsExec({ id: "missing", code: "1 + 1" }, missing);
-	assert.deepEqual(messages(missing), [
-		{ type: "ack", id: "missing" },
-		{ type: "error", id: "missing", error: "No tabId provided" },
-	]);
+	assert.deepEqual(messages(missing), [{
+		type: "error",
+		id: "missing",
+		error: {
+			name: "InvalidRule",
+			code: "INVALID_RULE",
+			message: "No tabId provided",
+			details: { dispatchStarted: false, acked: false },
+		},
+	}]);
 
 	const navigate = socket();
 	await handleWsExec({ id: "navigate", tabId: 7, code: "location.href = '/next'" }, navigate);

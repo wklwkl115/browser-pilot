@@ -68,6 +68,31 @@ test("request cancellation preserves whether browser dispatch was acknowledged",
 	assert.equal(pr.snapshot().length, 0);
 });
 
+test("extension-side dispatch prevention is lifted into the bridge error evidence", async () => {
+	const pr = newPending();
+	const ws = fakeSocket();
+	const promise = pr.send(ws, "blocked-action", { tabId: 7, operationId: "operation-blocked", timeoutMs: 5_000 });
+	const id = lastId(ws);
+	pr.rejectBrowserError(id, {
+		code: "INVALID_RULE",
+		message: "dispatch marker failed",
+		details: { dispatchStarted: false, acked: false },
+	}, undefined);
+	await assert.rejects(promise, (error: Error & { details?: Record<string, unknown> }) => {
+		assert.equal(error.details?.dispatchStarted, false);
+		assert.equal(error.details?.acked, false);
+		return true;
+	});
+
+	const barePromise = pr.send(ws, "pre-ack-validation-error", { tabId: 7, timeoutMs: 5_000 });
+	pr.rejectBrowserError(lastId(ws), "invalid command", undefined);
+	await assert.rejects(barePromise, (error: Error & { details?: Record<string, unknown> }) => {
+		assert.equal(error.details?.dispatchStarted, false);
+		assert.equal(error.details?.acked, false);
+		return true;
+	});
+});
+
 test("rejectAllStopped clears every pending request with a bridge stopped error", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();
@@ -159,7 +184,9 @@ test("durable reconnect redelivers the request to the new socket and settles on 
 	const ws = fakeSocket();
 	const newWs = fakeSocket();
 
-	const promise = pr.send(ws, "click", { tabId: 7, timeoutMs: 5_000 });
+	const promise = pr.send(ws, "click", { tabId: 7, operationId: "operation-click-7", operationGeneration: 3, timeoutMs: 5_000 });
+	assert.equal(ws.sent[0]?.operationId, "operation-click-7");
+	assert.equal(ws.sent[0]?.operationGeneration, 3);
 	const id = lastId(ws);
 	pr.drainClient(ws, "inst-X", 1_000);
 
@@ -170,6 +197,8 @@ test("durable reconnect redelivers the request to the new socket and settles on 
 	assert.equal(redelivered.redelivered, true);
 	assert.equal(redelivered.priorAck, false);
 	assert.equal(redelivered.code, "click");
+	assert.equal(redelivered.operationId, "operation-click-7");
+	assert.equal(redelivered.operationGeneration, 3);
 
 	pr.resolve(id, { clicked: true }, []);
 	const result = await promise;

@@ -12,7 +12,7 @@ export const COMMAND_SUMMARIES: CliCommandSummary[] = [
 	{ subcommand: "crawl", name: "browser_crawl", description: "Collect scoped Web metadata through bounded fingerprint probing or recursive crawl for links, forms, known files, JS endpoints, OpenAPI/GraphQL, source maps, service workers, and response evidence." },
 	{ subcommand: "download", name: "browser_download", description: "Trigger or wait for a browser download and return the completed local file path from Chrome downloads." },
 	{ subcommand: "evidence", name: "browser_evidence", description: "Aggregate native browser evidence from hook, network recorder, and performance entries." },
-	{ subcommand: "execute", name: "browser_execute", description: "Execute JavaScript in a connected real browser tab." },
+	{ subcommand: "execute", name: "browser_execute", description: "Execute JavaScript or trusted input with ABML-backed semantic settlement." },
 	{ subcommand: "frame", name: "browser_frame", description: "Native frame commands: list frames, evaluate in a frame, add/remove new-document scripts." },
 	{ subcommand: "fuzz", name: "browser_fuzz", description: "Run bounded path, vhost, or parameter fuzzing against explicit scoped HTTP targets with baseline filtering, clustering, response deltas, and evidence artifacts." },
 	{ subcommand: "hook", name: "browser_hook", description: "Native browser event hook commands: listTargets, installTargets, install, collect, status, clear, pause, resume, uninstall, evaluate, event listener, performance entries." },

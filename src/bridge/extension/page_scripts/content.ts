@@ -31,6 +31,19 @@ let browserPilotDirtySinceSeq = 1;
 let browserPilotDirtyOverflow = false;
 const browserPilotDirtyRoots = new Set<string>();
 
+type BrowserPilotOperationDeliveryMessage = Record<string, unknown> | (() => Record<string, unknown>);
+type BrowserPilotContentOperationState = {
+  observer: MutationObserver;
+  mutationCount: number;
+  deliveryFailures: number;
+  delivery: Promise<void>;
+  enqueue: (message: BrowserPilotOperationDeliveryMessage, trackFailure?: boolean) => Promise<unknown>;
+  cleanupInteractions: () => void;
+  expiryTimer?: ReturnType<typeof setTimeout>;
+};
+
+const browserPilotContentOperations = new Map<string, BrowserPilotContentOperationState>();
+
 function browserPilotCssEscape(value: string): string {
   try {
     const css = (globalThis as unknown as { CSS?: { escape?: (input: string) => string } }).CSS;
@@ -83,6 +96,32 @@ function bumpBrowserPilotFingerprint(mutations: MutationRecord[] = []): void {
   }
 }
 
+function bumpBrowserPilotInteractionFingerprint(event: Event): void {
+  const priorSeq = browserPilotChangeSeq;
+  browserPilotChangeSeq += 1;
+  browserPilotLastChangedAt = Date.now();
+  if (!browserPilotDirtyRoots.size && !browserPilotDirtyOverflow) browserPilotDirtySinceSeq = priorSeq;
+  recordBrowserPilotDirtyRoot(event.target instanceof Element ? event.target : document.documentElement);
+}
+
+let browserPilotViewportBumpScheduled = false;
+function scheduleBrowserPilotViewportFingerprint(event: Event): void {
+  if (browserPilotViewportBumpScheduled) return;
+  browserPilotViewportBumpScheduled = true;
+  requestAnimationFrame(() => {
+    browserPilotViewportBumpScheduled = false;
+    bumpBrowserPilotInteractionFingerprint(event);
+  });
+}
+
+function installBrowserPilotInteractionFingerprinting(): void {
+  for (const type of ["input", "change", "focusin", "focusout"]) {
+    document.addEventListener(type, bumpBrowserPilotInteractionFingerprint, { capture: true, passive: true });
+  }
+  document.addEventListener("scroll", scheduleBrowserPilotViewportFingerprint, { capture: true, passive: true });
+  window.addEventListener("resize", scheduleBrowserPilotViewportFingerprint, { passive: true });
+}
+
 function countVisibleElements(elements: Element[]): number {
   let count = 0;
   for (const element of elements) {
@@ -127,6 +166,124 @@ function installBrowserPilotFingerprintResponder(): void {
   });
 }
 
+function removeBrowserPilotContentOperation(operationId: string): boolean {
+  const state = browserPilotContentOperations.get(operationId);
+  if (!state) return false;
+  state.observer.disconnect();
+  state.cleanupInteractions();
+  if (state.expiryTimer) clearTimeout(state.expiryTimer);
+  browserPilotContentOperations.delete(operationId);
+  return true;
+}
+
+function beginBrowserPilotContentOperation(operationId: string, ttlMs: number): Record<string, unknown> {
+  removeBrowserPilotContentOperation(operationId);
+  let delivery = Promise.resolve();
+  let deliveryFailures = 0;
+  const enqueue = (message: BrowserPilotOperationDeliveryMessage, trackFailure = true): Promise<unknown> => {
+    const send = () => chrome.runtime.sendMessage(typeof message === "function" ? message() : message);
+    const response = delivery.then(send, send);
+    const tracked = trackFailure ? response.then((value) => {
+      const result = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+      if (result.ok !== true) deliveryFailures += 1;
+      return value;
+    }, (error) => {
+      deliveryFailures += 1;
+      throw error;
+    }) : response;
+    delivery = tracked.then(() => undefined, () => undefined);
+    return tracked;
+  };
+  let mutationCount = 0;
+  const deliver = (batchCount: number, signalType?: string) => {
+    mutationCount += batchCount;
+    void enqueue({ type: "browser-pilot-operation-dom-event", operationId, mutationCount, batchCount, ...(signalType ? { signalType } : {}) }).catch(() => undefined);
+  };
+  const observer = new MutationObserver((records) => deliver(records.length));
+  const interaction = (event: Event) => deliver(1, event.type);
+  let viewportScheduled = false;
+  const viewport = (event: Event) => {
+    if (viewportScheduled) return;
+    viewportScheduled = true;
+    interaction(event);
+    queueMicrotask(() => { viewportScheduled = false; });
+  };
+  for (const type of ["input", "change", "focusin", "focusout"]) document.addEventListener(type, interaction, { capture: true, passive: true });
+  document.addEventListener("scroll", viewport, { capture: true, passive: true });
+  globalThis.addEventListener("resize", viewport, { passive: true });
+  const cleanupInteractions = () => {
+    for (const type of ["input", "change", "focusin", "focusout"]) document.removeEventListener(type, interaction, { capture: true });
+    document.removeEventListener("scroll", viewport, { capture: true });
+    globalThis.removeEventListener("resize", viewport);
+  };
+  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+  const state: BrowserPilotContentOperationState = {
+    observer,
+    get mutationCount() { return mutationCount; },
+    set mutationCount(value) { mutationCount = value; },
+    get deliveryFailures() { return deliveryFailures; },
+    set deliveryFailures(value) { deliveryFailures = value; },
+    get delivery() { return delivery; },
+    set delivery(value) { delivery = value; },
+    enqueue,
+    cleanupInteractions,
+  };
+  browserPilotContentOperations.set(operationId, state);
+  state.expiryTimer = setTimeout(() => {
+    if (browserPilotContentOperations.get(operationId) === state) removeBrowserPilotContentOperation(operationId);
+  }, Math.max(1, Math.floor(ttlMs)));
+  return { ok: true, operationId, observerArmed: true };
+}
+
+async function checkpointBrowserPilotContentOperation(operationId: string, fenceId: string, eventType: "checkpoint" | "dispatch"): Promise<Record<string, unknown>> {
+  const state = browserPilotContentOperations.get(operationId);
+  if (!state) return { ok: false, operationId, observerFound: false, deliveryFailures: 0, deliveryReliable: false };
+  const records = state.observer.takeRecords();
+  if (records.length > 0) {
+    state.mutationCount += records.length;
+    void state.enqueue({ type: "browser-pilot-operation-dom-event", operationId, mutationCount: state.mutationCount, batchCount: records.length }).catch(() => undefined);
+  }
+  const response = await state.enqueue(() => ({
+    type: "browser-pilot-operation-checkpoint-event",
+    operationId,
+    fenceId,
+    eventType,
+    deliveryFailures: state.deliveryFailures,
+  }), false);
+  const result = response && typeof response === "object" && !Array.isArray(response) ? response as Record<string, unknown> : {};
+  return {
+    mutationCount: state.mutationCount,
+    batchCount: records.length,
+    observerFound: result.ok === true,
+    deliveryFailures: Number(result.deliveryFailures),
+    deliveryReliable: result.deliveryReliable === true,
+    fenceId,
+    checkedAt: Number(result.checkedAt),
+    sourceSequence: Number(result.sourceSequence),
+  };
+}
+
+async function handleBrowserPilotContentOperationMessage(record: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const command = String(record.cmd || "");
+  const operationId = typeof record.operationId === "string" ? record.operationId.trim() : "";
+  if (!operationId) return { ok: false, error: "operationId is required" };
+  if (command === "browserPilot.operation.begin") return beginBrowserPilotContentOperation(operationId, Number(record.ttlMs));
+  if (command === "browserPilot.operation.remove") return { ok: true, operationId, removed: removeBrowserPilotContentOperation(operationId) };
+  if (command !== "browserPilot.operation.checkpoint") return { ok: false, operationId, error: "unknown operation content command" };
+  const fenceId = typeof record.fenceId === "string" ? record.fenceId.trim() : "";
+  if (!fenceId) return { ok: false, operationId, error: "fenceId is required" };
+  return await checkpointBrowserPilotContentOperation(operationId, fenceId, record.eventType === "dispatch" ? "dispatch" : "checkpoint");
+}
+
+function installBrowserPilotOperationResponder(): void {
+  chrome.runtime.onMessage?.addListener((message, _sender, sendResponse) => {
+    const record = message && typeof message === "object" ? message as Record<string, unknown> : {};
+    if (!String(record.cmd || "").startsWith("browserPilot.operation.")) return false;
+    void handleBrowserPilotContentOperationMessage(record).then(sendResponse, (error) => sendResponse({ ok: false, error: String(error instanceof Error ? error.message : error).slice(0, 500) }));
+    return true;
+  });
+}
+
 function reportBrowserPilotPrerenderActivation(): void {
 	if ((globalThis as unknown as { top?: unknown }).top !== (globalThis as unknown)) return;
 	const report = (activationStart?: number) => {
@@ -166,6 +323,8 @@ function scrubLegacyBridgeNode(root: ParentNode): void {
   if (document.documentElement) scrubLegacyBridgeNode(document.documentElement);
 
   installBrowserPilotFingerprintResponder();
+  installBrowserPilotOperationResponder();
+  installBrowserPilotInteractionFingerprinting();
 
   new MutationObserver((mutations) => {
     bumpBrowserPilotFingerprint(mutations);

@@ -77,6 +77,7 @@ const PREFIX_HANDLERS: Array<readonly [string, RuntimeHandler]> = [
 const NETWORK_COMMANDS = new Set(["network.start", "network.stop", "network.status", "network.clear", "network.list", "network.get", "network.body", "network.exportHar", "network.wait"]);
 const EXACT_HANDLERS = new Map<string, RuntimeHandler>([
   ["operation.begin", (command, _tabId, message) => handleBrowserPilotOperationCommand(command, message)],
+  ["operation.checkpoint", (command, _tabId, message) => handleBrowserPilotOperationCommand(command, message)],
   ["operation.finish", (command, _tabId, message) => handleBrowserPilotOperationCommand(command, message)],
   ["operation.cancel", (command, _tabId, message) => handleBrowserPilotOperationCommand(command, message)],
   ["wait.navigate", (_command, tabId, message) => navigateBrowserPilot(tabId, message)],

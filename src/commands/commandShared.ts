@@ -2,6 +2,7 @@ import { Type, type TSchema } from "typebox";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { isRecord } from "../utils/records.js";
 import type { BrowserCommandSink } from "./commandDefinition.js";
+import type { SemanticExecutionProviderFactory } from "./semanticExecution.js";
 export { asPositiveInt } from "../utils/params.js";
 
 // Parameter classes separate agent strategy choices (intent) from zero-strategy plumbing
@@ -23,6 +24,7 @@ export type EnsureStarted = () => Promise<BrowserCommandRuntimePort>;
 export type CommandRegistrarContext = {
 	commands: BrowserCommandSink;
 	ensureStarted: EnsureStarted;
+	semanticExecution?: SemanticExecutionProviderFactory;
 };
 
 export type CommandRegistrar = (context: CommandRegistrarContext) => void;

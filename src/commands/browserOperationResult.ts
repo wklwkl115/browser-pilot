@@ -131,6 +131,7 @@ function compactLateEffects(outcome: BrowserOperationOutcome): BrowserOperationO
 		event: {
 			operationId: item.event.operationId,
 			sequence: item.event.sequence,
+			ledgerRevision: item.event.ledgerRevision,
 			type: item.event.type,
 			timestamp: item.event.timestamp,
 			...(item.event.targetRef ? { targetRef: item.event.targetRef } : {}),
@@ -152,6 +153,35 @@ function compactPageEffect(outcome: BrowserOperationOutcome): BrowserOperationOu
 	};
 }
 
+function compactSemantic(outcome: BrowserOperationOutcome): BrowserOperationOutcome["semantic"] {
+	const semantic = outcome.semantic;
+	if (!semantic) return undefined;
+	const observedReason = semantic.verification?.observed && typeof semantic.verification.observed.reason === "string"
+		? semantic.verification.observed.reason
+		: undefined;
+	return {
+		provider: semantic.provider,
+		stability: semantic.stability,
+		...(semantic.baseline ? { baseline: semantic.baseline } : {}),
+		...(semantic.capture ? { capture: semantic.capture } : {}),
+		...(semantic.effect ? { effect: {
+			summary: semantic.effect.summary,
+			feedback: { count: semantic.effect.feedback.count, items: [] },
+			changed: { count: semantic.effect.changed.count, items: [] },
+			appeared: { count: semantic.effect.appeared.count, items: [] },
+			disappeared: { count: semantic.effect.disappeared.count, items: [] },
+		} } : {}),
+		...(semantic.verification ? { verification: {
+			status: semantic.verification.status,
+			verb: semantic.verification.verb,
+			observed: observedReason ? { reason: observedReason } : {},
+			evidence: [],
+			elapsedMs: semantic.verification.elapsedMs,
+		} } : {}),
+		...(semantic.diagnostics?.length ? { diagnostics: compactDiagnostics(semantic.diagnostics) as Array<Record<string, unknown>> } : {}),
+	};
+}
+
 function compactOutcome(outcome: BrowserOperationOutcome): { value: Record<string, unknown>; omitted: string[] } {
 	const omitted: string[] = [];
 	let completion = outcome.completion;
@@ -160,6 +190,8 @@ function compactOutcome(outcome: BrowserOperationOutcome): { value: Record<strin
 		omitted.push("completion.evidence.result");
 	}
 	if (outcome.pageEffect) omitted.push("pageEffect");
+	if (outcome.semantic?.effect) omitted.push("semantic.effect");
+	if (outcome.semantic?.verification?.evidence.length) omitted.push("semantic.verification.evidence");
 	if (outcome.lateEffects?.length) omitted.push("lateEffects[].event.data");
 	if (outcome.diagnostics?.length) omitted.push("diagnostics[].details");
 	return {
@@ -167,6 +199,7 @@ function compactOutcome(outcome: BrowserOperationOutcome): { value: Record<strin
 			...outcome,
 			...(completion ? { completion } : {}),
 			...(outcome.pageEffect ? { pageEffect: compactPageEffect(outcome) } : {}),
+			...(outcome.semantic ? { semantic: compactSemantic(outcome) } : {}),
 			...(outcome.lateEffects?.length ? { lateEffects: compactLateEffects(outcome) } : {}),
 			...(outcome.diagnostics?.length ? { diagnostics: compactDiagnostics(outcome.diagnostics) } : {}),
 		},
@@ -185,6 +218,8 @@ function artifactHints(outcome: BrowserOperationOutcome, saved: Record<string, u
 	if (outcome.completion) add("completionEvidence", "completion evidence", "completion.evidence", "operation-completion", !hasCompletionResult);
 	if (outcome.completion && hasSerializableResult(outcome.completion.evidence)) add("completionResult", "resolved result", "completion.evidence.result", "execute-result");
 	if (outcome.pageEffect) add("pageEffect", "page effect", "pageEffect", "operation-effect");
+	if (outcome.business) add("business", "business settlement", "business", "operation-business", false);
+	if (outcome.semantic) add("semantic", "ABML semantic settlement", "semantic", "operation-semantic");
 	if (outcome.lateEffects?.length) add("lateEffects", "late effects", "lateEffects", "operation-late-effects");
 	if (outcome.diagnostics?.length) add("diagnostics", "operation diagnostics", "diagnostics", "operation-diagnostics");
 	return { kind: "BrowserOperation", schemaVersion: 2, jsonPaths, preferredReads, saved: compactSavedDescriptor(saved) };
@@ -222,6 +257,7 @@ function minimalSignals(outcome: BrowserOperationOutcome): BrowserOperationOutco
 function minimalOmittedPaths(outcome: BrowserOperationOutcome, base: string[], artifactAvailable: boolean): string[] {
 	const omitted = new Set(base);
 	if (outcome.pageEffect) omitted.add("pageEffect");
+	if (outcome.semantic) omitted.add("semantic");
 	if (outcome.lateEffects?.length) omitted.add("lateEffects");
 	if (outcome.diagnostics?.length) omitted.add("diagnostics");
 	if (outcome.target.url !== undefined) omitted.add("target.url");
@@ -254,9 +290,18 @@ function minimalOperationCore(outcome: BrowserOperationOutcome, artifactAvailabl
 			finished: outcome.dispatch.finished,
 			startedAt: outcome.dispatch.startedAt,
 			...(outcome.dispatch.finishedAt !== undefined ? { finishedAt: outcome.dispatch.finishedAt } : {}),
+			...(outcome.dispatch.settledAt !== undefined ? { settledAt: outcome.dispatch.settledAt } : {}),
 		},
 		signals: minimalSignals(outcome),
 		...(outcome.completion ? { completion: minimalCompletion(outcome, artifactAvailable) } : {}),
+		...(outcome.business ? { business: outcome.business } : {}),
+		...(outcome.semantic ? { semantic: {
+			provider: outcome.semantic.provider,
+			stability: outcome.semantic.stability,
+			...(outcome.semantic.capture ? { capture: { attempts: outcome.semantic.capture.attempts } } : {}),
+			...(outcome.semantic.effect ? { effect: { summary: outcome.semantic.effect.summary } } : {}),
+			...(outcome.semantic.verification ? { verification: { status: outcome.semantic.verification.status } } : {}),
+		} } : {}),
 	};
 }
 
@@ -272,9 +317,9 @@ function minimalOperationResponse(input: {
 	const keysByContinuation: Record<OperationContinuation["next"], string[]> = {
 		inspect_artifact: ["completionResult", "completionEvidence"],
 		inspect_diagnostics: ["diagnostics"],
-		observe: ["pageEffect", "signals"],
+		observe: ["semantic", "business", "pageEffect", "signals"],
 		reacquire_target: ["signals", "lateEffects"],
-		verify_command_state: ["signals", "diagnostics", "completionEvidence"],
+		verify_command_state: ["business", "signals", "diagnostics", "completionEvidence"],
 	};
 	const preferredKey = [
 		...(input.continuation ? keysByContinuation[input.continuation.next] : []),

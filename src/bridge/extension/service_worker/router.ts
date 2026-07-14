@@ -5,7 +5,7 @@ import { enableCspBypassForTab } from "./bridge_info";
 import { dispatchBrowserPilotBridgeCommand, validateBrowserPilotBridgeProtocolMessage } from "./core_commands";
 import { handleWsExec } from "./exec";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeMessageSender } from "./types";
-import { handleBrowserPilotOperationDomEvent } from "./operation_coordinator";
+import { handleBrowserPilotOperationCheckpointEvent, handleBrowserPilotOperationDomEvent, invalidateBrowserPilotOperationTarget, markBrowserPilotOperationDispatch } from "./operation_coordinator";
 import { bindBrowserPilotOperationEventSocket, releaseBrowserPilotOperationEventSocket } from "./operation_event_transport";
 import { recordBrowserPilotPrerenderActivation } from "./tab_sync";
 
@@ -33,9 +33,15 @@ function handleBrowserPilotRuntimeEventMessage(msgType: string, msg: JsonRecord,
 		sendResponse({ ok: handleBrowserPilotOperationDomEvent(msg) });
 		return true;
 	}
+	if (msgType === "browser-pilot-operation-checkpoint-event") {
+		sendResponse(handleBrowserPilotOperationCheckpointEvent(msg));
+		return true;
+	}
 	if (msgType === "browser-pilot-prerender-activated") {
 		const tabId = Number(sender.tab?.id ?? 0);
-		sendResponse({ ok: recordBrowserPilotPrerenderActivation(tabId), tabId });
+		const activated = recordBrowserPilotPrerenderActivation(tabId);
+		if (activated) invalidateBrowserPilotOperationTarget(tabId, "prerender_activated");
+		sendResponse({ ok: activated, tabId });
 		return true;
 	}
 	return false;
@@ -101,63 +107,107 @@ function sendBrowserPilotBridgeWsCommandResult(socket: BrowserPilotBridgeWebSock
 
 /** @param {BrowserPilotBridgeWebSocketLike} socket @param {string | number} id @param {string} error @param {JsonRecord=} details */
 function sendBrowserPilotBridgeWsInputError(socket: BrowserPilotBridgeWebSocketLike, id: string | number, error: string, details: JsonRecord = {}) {
-  socket.send(JSON.stringify({ type: 'error', id, error, details: details || {} }));
+  socket.send(JSON.stringify({ type: 'error', id, error, details: { ...(details || {}), dispatchStarted: false, acked: false } }));
+}
+
+type RoutedBrowserPilotBridgeWsEnvelope = BrowserPilotBridgeWsEnvelope & { id: string | number; code: unknown };
+
+function handleBrowserPilotBridgeWsControlEnvelope(data: BrowserPilotBridgeWsEnvelope): boolean {
+	if (data.type === "consent-request") {
+		const pending = data as JsonRecord;
+		cachedConsentPending = pending;
+		void getStorageLocal()?.set({ browser_pilot_consent_pending: pending });
+		void chrome.runtime.sendMessage({ type: "browser-pilot-consent-pending", pending }).catch(() => { /* no popup open */ });
+		return true;
+	}
+	if (data.type !== "paired-agents") return false;
+	const agents = Array.isArray(data.agents) ? data.agents as JsonRecord[] : [];
+	cachedPairedAgents = agents;
+	void getStorageLocal()?.set({ browser_pilot_paired_agents: agents });
+	void chrome.runtime.sendMessage({ type: "browser-pilot-consent-agents", agents }).catch(() => { /* no popup open */ });
+	return true;
+}
+
+function isRoutedBrowserPilotBridgeWsEnvelope(data: BrowserPilotBridgeWsEnvelope): data is RoutedBrowserPilotBridgeWsEnvelope {
+	return data.id !== undefined && data.id !== null && data.code !== undefined && data.code !== null;
+}
+
+function parseBrowserPilotBridgeWsCode(rawCode: unknown): unknown {
+	if (typeof rawCode !== "string") return rawCode;
+	try {
+		const parsed: unknown = JSON.parse(rawCode);
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && typeof (parsed as JsonRecord).cmd === "string") return parsed;
+	} catch (_error) {
+		/* best-effort command envelope parse */
+	}
+	return rawCode;
+}
+
+async function browserPilotDispatchMarkerFailure(data: RoutedBrowserPilotBridgeWsEnvelope, msg: BrowserPilotBridgeCommand, socket: BrowserPilotBridgeWebSocketLike): Promise<BrowserPilotBridgeResponse | undefined> {
+	const operationId = typeof data.operationId === "string" ? data.operationId.trim() : "";
+	if (!operationId || String(msg.cmd || "").startsWith("operation.") || msg.tabId === undefined) return undefined;
+	const rawGeneration = Number(data.operationGeneration);
+	const marker = await markBrowserPilotOperationDispatch(operationId, {
+		tabId: Number.isInteger(Number(msg.tabId)) ? Number(msg.tabId) : undefined,
+		operationGeneration: Number.isInteger(rawGeneration) ? rawGeneration : undefined,
+		socket,
+	});
+	if (marker.ok) return undefined;
+	return {
+		ok: false,
+		error_code: marker.error_code || "INVALID_RULE",
+		error: marker.error || "operation dispatch marker failed",
+		details: { operationId, dispatchStarted: false, acked: false, ...(marker.details || {}) },
+	};
+}
+
+function bindBrowserPilotOperationSocket(msg: BrowserPilotBridgeCommand, res: BrowserPilotBridgeResponse, socket: BrowserPilotBridgeWebSocketLike): void {
+	const operationId = typeof msg.operationId === "string" ? msg.operationId : "";
+	if (msg.cmd !== "operation.begin" || !operationId) return;
+	if (res.ok) bindBrowserPilotOperationEventSocket(operationId, socket);
+	else releaseBrowserPilotOperationEventSocket(operationId);
+}
+
+async function dispatchValidatedBrowserPilotBridgeWsCommand(data: RoutedBrowserPilotBridgeWsEnvelope, msg: BrowserPilotBridgeCommand, socket: BrowserPilotBridgeWebSocketLike): Promise<void> {
+	// From this point an ACK means the exact operation/action boundary is established and the
+	// validated handler is about to run, rather than merely that the envelope was received.
+	socket.send(JSON.stringify({ type: "ack", id: data.id }));
+	enableCspBypassForTab(msg.tabId);
+	const res = await dispatchBrowserPilotBridgeCommand(msg, {});
+	bindBrowserPilotOperationSocket(msg, res, socket);
+	sendBrowserPilotBridgeWsCommandResult(socket, data.id, msg, res);
+}
+
+async function handleBrowserPilotBridgeWsCommand(data: RoutedBrowserPilotBridgeWsEnvelope, code: object, socket: BrowserPilotBridgeWebSocketLike): Promise<void> {
+	const codeObj = code as JsonRecord & { cmd?: unknown; tabId?: unknown };
+	if (typeof codeObj.cmd !== "string" || !codeObj.cmd.trim()) {
+		sendBrowserPilotBridgeWsInputError(socket, data.id, 'Message object must contain a non-empty "cmd" field', { codeType: "object" });
+		return;
+	}
+	const candidate = (codeObj.tabId === undefined && data.tabId !== undefined ? { ...codeObj, tabId: data.tabId } : codeObj) as BrowserPilotBridgeCommand;
+	const validation = validateBrowserPilotBridgeProtocolMessage(candidate);
+	if (!validation.ok) {
+		sendBrowserPilotBridgeWsCommandResult(socket, data.id, candidate, bridgeError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, validation.error, { ...(validation.details || {}), dispatchStarted: false, acked: false }));
+		return;
+	}
+	const msg = validation.command;
+	const markerFailure = await browserPilotDispatchMarkerFailure(data, msg, socket);
+	if (markerFailure) {
+		sendBrowserPilotBridgeWsCommandResult(socket, data.id, msg, markerFailure);
+		return;
+	}
+	await dispatchValidatedBrowserPilotBridgeWsCommand(data, msg, socket);
 }
 
 /** @param {BrowserPilotBridgeWsEnvelope} data @param {BrowserPilotBridgeWebSocketLike} socket */
 async function handleBrowserPilotBridgeWsMessage(data: BrowserPilotBridgeWsEnvelope, socket: BrowserPilotBridgeWebSocketLike) {
   // Intercept daemon→ext consent/pairing envelopes BEFORE the id/code guard — these carry
   // `type` but no `id` or `code`, so they must be handled here first.
-  if (data.type === "consent-request") {
-    const pending = data as JsonRecord;
-    cachedConsentPending = pending;
-    void getStorageLocal()?.set({ browser_pilot_consent_pending: pending });
-    void chrome.runtime.sendMessage({ type: "browser-pilot-consent-pending", pending }).catch(() => { /* no popup open */ });
-    return;
-  }
-  if (data.type === "paired-agents") {
-    const agents = Array.isArray(data.agents) ? data.agents as JsonRecord[] : [];
-    cachedPairedAgents = agents;
-    void getStorageLocal()?.set({ browser_pilot_paired_agents: agents });
-    void chrome.runtime.sendMessage({ type: "browser-pilot-consent-agents", agents }).catch(() => { /* no popup open */ });
-    return;
-  }
-  if (data.id === undefined || data.id === null || data.code === undefined || data.code === null) return;
-  let code: unknown = data.code;
-  if (typeof code === 'string') {
-    try {
-      const p: unknown = JSON.parse(code);
-      if (p && typeof p === 'object' && !Array.isArray(p) && typeof (p as JsonRecord).cmd === 'string') code = p;
-    } catch (_error) {
-      /* best-effort command envelope parse */
-    }
-  }
-  if (typeof code === 'object' && code !== null) {
-    const codeObj = code as JsonRecord & { cmd?: unknown; tabId?: unknown };
-    if (typeof codeObj.cmd !== 'string' || !codeObj.cmd.trim()) {
-      sendBrowserPilotBridgeWsInputError(socket, data.id, 'Message object must contain a non-empty "cmd" field', { codeType: 'object' });
-      return;
-    }
-		const msg = (codeObj.tabId === undefined && data.tabId !== undefined ? { ...codeObj, tabId: data.tabId } : codeObj) as BrowserPilotBridgeCommand;
-    enableCspBypassForTab(msg.tabId);
-    // Acknowledge receipt before running the (possibly slow) native command handler, mirroring
-    // the exec path's early ack. Without this, a slow native command (e.g. screenshot grinding
-    // through debugger attempts) times out as "no ACK, message may not have been delivered" —
-    // a misleading diagnostic, since the message WAS delivered; the handler is just slow.
-		socket.send(JSON.stringify({ type: 'ack', id: data.id }));
-		const res = await handleBrowserPilotBridgeMessage(msg, {});
-		const operationId = typeof msg.operationId === "string" ? msg.operationId : "";
-		if (msg.cmd === "operation.begin" && operationId) {
-			if (res.ok) bindBrowserPilotOperationEventSocket(operationId, socket);
-			else releaseBrowserPilotOperationEventSocket(operationId);
-		}
-		sendBrowserPilotBridgeWsCommandResult(socket, data.id, msg, res);
-  } else if (typeof code === 'string') {
-    enableCspBypassForTab(data.tabId);
-    await handleWsExec(data as BrowserPilotBridgeWsEnvelope & { id: string | number; code: string }, socket);
-  } else {
-    sendBrowserPilotBridgeWsInputError(socket, data.id, 'Unsupported message code type: ' + typeof code, { codeType: typeof code });
-  }
+	if (handleBrowserPilotBridgeWsControlEnvelope(data) || !isRoutedBrowserPilotBridgeWsEnvelope(data)) return;
+	const code = parseBrowserPilotBridgeWsCode(data.code);
+	if (typeof code === "object" && code !== null) return await handleBrowserPilotBridgeWsCommand(data, code, socket);
+	if (typeof code === "string") return await handleWsExec({ ...data, code }, socket);
+	sendBrowserPilotBridgeWsInputError(socket, data.id, `Unsupported message code type: ${typeof code}`, { codeType: typeof code });
 }
 export { installBrowserPilotBridgeRouter, handleBrowserPilotBridgeMessage, sendBrowserPilotBridgeWsCommandResult, sendBrowserPilotBridgeWsInputError, handleBrowserPilotBridgeWsMessage, setTransportSocketGetter };
 // ESM module metadata

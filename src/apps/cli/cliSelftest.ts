@@ -90,7 +90,12 @@ async function createSelftestTab(steps: Array<Record<string, unknown>>): Promise
 }
 
 async function executeSelftest(tabId: number, steps: Array<Record<string, unknown>>): Promise<void> {
-	const exec = await invokeTool("browser_execute", { tabId, script: "document.title='Browser Pilot Selftest';document.body.textContent='browser-pilot selftest ok';({title:document.title,text:document.body.textContent})" }, process.cwd());
+	const exec = await invokeTool("browser_execute", {
+		tabId,
+		intentId: `browser-pilot-selftest-${process.pid}-${Date.now()}`,
+		script: "document.title='Browser Pilot Selftest';document.body.textContent='browser-pilot selftest ok';({title:document.title,text:document.body.textContent})",
+		postcondition: "document.title === 'Browser Pilot Selftest' && document.body.textContent === 'browser-pilot selftest ok'",
+	}, process.cwd());
 	const execText = requireSelftestToolOk("execute", exec);
 	const execOutcome = parseSelftestJson(execText, "execute") as { schema?: string; status?: string; completionVerified?: boolean };
 	const ok = execOutcome.schema === "browser-operation/v2" && execOutcome.status === "completed" && execOutcome.completionVerified === true && execText.includes("browser-pilot selftest ok");

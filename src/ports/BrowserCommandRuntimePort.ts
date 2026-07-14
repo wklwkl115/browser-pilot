@@ -99,6 +99,12 @@ export type CommandTemporalProfileSampleInput = {
 	diagnostics?: Record<string, unknown>;
 };
 
+export type BrowserCommandTargetTransactionInput = {
+	browserSessionId?: string;
+	tabId: number;
+	signal?: AbortSignal;
+};
+
 export interface BrowserCommandSnapshotPort {
 	snapshot(options?: { browserSessionId?: string }): BrowserCommandRuntimeSnapshot;
 	getTabs(options?: { includeDisconnected?: boolean }): BrowserTabLike[];
@@ -111,8 +117,9 @@ export interface BrowserCommandTargetPort {
 }
 
 export interface BrowserCommandDispatchPort extends BrowserCommandTargetPort {
-	sendCommand(command: BrowserRuntimeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
-	executeJavaScript(script: string, options?: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number; accessMode?: "read" | "write"; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	sendCommand(command: BrowserRuntimeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; operationId?: string; operationGeneration?: number; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	executeJavaScript(script: string, options?: { browserSessionId?: string; tabId?: number | string; operationId?: string; operationGeneration?: number; timeoutMs?: number; accessMode?: "read" | "write"; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	withTargetTransaction?<T>(input: BrowserCommandTargetTransactionInput, run: () => Promise<T>): Promise<T>;
 }
 
 export interface BrowserCommandTabControlPort {
@@ -150,9 +157,10 @@ export interface BrowserCommandOperationPort {
 	beginOperation(operation: SessionOperationBeginInput): CommandActiveOperationInfo;
 	updateOperation(operationId: string, patch: Partial<Omit<CommandActiveOperationInfo, "operationId" | "startedAt">>): CommandActiveOperationInfo | undefined;
 	finishOperation(operationId: string, outcome?: BrowserOperationOutcome): CommandActiveOperationInfo | undefined;
+	finishOperationIfRevision?(operationId: string, expectedRevision: number, outcome?: BrowserOperationOutcome): CommandActiveOperationInfo | undefined;
 	getOperation?(operationId: string): CommandActiveOperationInfo | undefined;
 	waitForOperationChange?(operationId: string, afterRevision: number, timeoutMs: number, signal?: AbortSignal): Promise<CommandActiveOperationInfo | undefined>;
-	recordOperationEvent?(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "timestamp"> & { sequence?: number; timestamp?: number }): CommandActiveOperationInfo | undefined;
+	recordOperationEvent?(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "ledgerRevision" | "timestamp"> & { sequence?: number; sourceSequence?: number; timestamp?: number }): CommandActiveOperationInfo | undefined;
 	surfaceLateEffects?(input: { ownerId?: string; browserSessionId?: string; excludeOperationId?: string }): BrowserOperationLateEffect[];
 	mutationReplayGuard?(input: SessionMutationGuardInput): SessionMutationReplayGuard | undefined;
 	markMutationObserved?(input: Omit<SessionMutationGuardInput, "intentId">): number;

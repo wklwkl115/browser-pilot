@@ -28,7 +28,7 @@ import { startDaemon } from "../../src/apps/daemon/server.ts";
 import { collectCommandDefs } from "../../src/apps/cli/registry.ts";
 import type { CommandDefinition } from "../../src/commands/commandManifestIndex.ts";
 import { strictCommandParameters } from "../../src/commands/commandShared.ts";
-import { BROWSER_OPERATION_OUTCOME_CONTRACT, BROWSER_OPERATION_SCHEMA } from "../../src/kernels/session/browserOperation.ts";
+import { BROWSER_OPERATION_OUTCOME_CONTRACT, BROWSER_OPERATION_SCHEMA, BROWSER_OPERATION_SEMANTIC_CONTRACT } from "../../src/kernels/session/browserOperation.ts";
 
 function definition(parameters: unknown, description = "display prose"): CommandDefinition {
 	return {
@@ -67,7 +67,7 @@ test("source execution starts the source daemon even when stale dist output exis
 
 test("contract payload includes canonical actions, operation-v2 outcomes, and native protocol hash", () => {
 	const payload = commandContractPayload(collectCommandDefs());
-	assert.deepEqual(payload.operationResult, { schema: BROWSER_OPERATION_SCHEMA, outcomes: BROWSER_OPERATION_OUTCOME_CONTRACT });
+	assert.deepEqual(payload.operationResult, { schema: BROWSER_OPERATION_SCHEMA, outcomes: BROWSER_OPERATION_OUTCOME_CONTRACT, semantic: BROWSER_OPERATION_SEMANTIC_CONTRACT });
 	assert.match(payload.nativeProtocolHash, /^[a-f0-9]{64}$/);
 	assert.ok(payload.actions.some((action) => action.commandName === "browser_network" && action.action === "captureReload" && action.cliAction === "capture-reload"));
 	assert.equal(payload.actions.some((action) => action.commandName === "browser_network" && action.action === "wait"), false);
@@ -88,7 +88,7 @@ test("every declared contract component participates in the outer hash", () => {
 	type CommandContractPayloadClone = {
 		commands: Array<{ name: string; parameters: unknown; cliSubcommands: Array<{ token: string; parameter: string; value: string }> }>;
 		actions: Array<Record<string, unknown>>;
-		operationResult: { schema: string; outcomes: Record<string, Outcome> };
+		operationResult: { schema: string; outcomes: Record<string, Outcome>; semantic: Record<string, unknown> };
 		daemonProtocolVersion: number;
 		nativeProtocolHash: string;
 	};

@@ -63,16 +63,28 @@ test("command catalog characterization: public browser tool names are stable, un
 	for (const name of names) assert.match(name, /^browser_[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*$/);
 });
 
-test("browser_execute exposes an explicit business postcondition and requires it for scripted intents", () => {
+test("browser_execute distinguishes declared queries from business-verified mutations", () => {
 	const execute = command("browser_execute");
 	const properties = schemaProperties(execute.parameters);
 	assert.ok(properties.postcondition);
+	assert.ok(properties.readOnly);
 	assert.deepEqual(execute.validateArguments?.({ script: "like()", intentId: "like-note-42" }), [{
 		code: "EXECUTE_INTENT_REQUIRES_POSTCONDITION",
 		path: "/postcondition",
 		message: "browser_execute script mutations with intentId require a business postcondition",
 	}]);
 	assert.deepEqual(execute.validateArguments?.({ script: "like()", intentId: "like-note-42", postcondition: "isLiked()" }), []);
+	assert.deepEqual(execute.validateArguments?.({ script: "document.title", readOnly: true }), []);
+	assert.deepEqual(execute.validateArguments?.({ script: "like()", readOnly: true, intentId: "like-note-42" }), [{
+		code: "EXECUTE_READ_ONLY_CONFLICT",
+		path: "/readOnly",
+		message: "browser_execute readOnly cannot be combined with postcondition or intentId",
+	}]);
+	assert.deepEqual(execute.validateArguments?.({ program: [{ mouse: "press", x: 10, y: 10 }], readOnly: true }), [{
+		code: "EXECUTE_READ_ONLY_PHYSICAL_PROGRAM",
+		path: "/readOnly",
+		message: "browser_execute readOnly cannot be used with physical input frames",
+	}]);
 });
 
 test("command catalog characterization: CLI subcommands are derived one-to-one from browser tool names", () => {
@@ -218,7 +230,7 @@ test("command schema characterization: key commands expose expected top-level pa
 		"targetRef",
 		"url",
 	].sort());
-	assert.deepEqual(Object.keys(schemaProperties(command("browser_execute").parameters)).sort(), ["intentId", "postcondition", "program", "script", "tabId", "targetRef"].sort());
+	assert.deepEqual(Object.keys(schemaProperties(command("browser_execute").parameters)).sort(), ["intentId", "postcondition", "program", "readOnly", "script", "tabId", "targetRef"].sort());
 });
 
 test("command schema characterization: browser_observe metadata presents canonical no-mode ABML observation", () => {

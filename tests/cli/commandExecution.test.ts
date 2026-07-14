@@ -18,6 +18,7 @@ import {
 	classifyBrowserOperationStatus,
 	type BrowserOperationStatus,
 } from "../../src/kernels/session/browserOperation.ts";
+import { SessionOperationRegistry } from "../../src/kernels/session/operationRegistry.ts";
 import { publicCreateTabResult } from "../../src/commands/tabsProjection.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
@@ -306,6 +307,23 @@ test("commands execution: browser_command read commands return immediately", asy
 	assert.equal(result.details?.mode, "command");
 });
 
+test("commands execution: non-page native writes do not require a page dispatch marker", async () => {
+	const runtime = createRuntime({
+		async sendCommand(command, options) {
+			runtime.calls.push({ name: "sendCommand", args: [command, options] });
+			if (command.cmd === "operation.begin") return { id: "op-arm", acknowledged: true, data: { armed: true } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "operation.finish") return { id: "op-finish", acknowledged: true, data: { finished: true } } as BrowserBridgeExecutionResult;
+			return { id: "tabs-create", acknowledged: true, data: { tabId: 8, targetRef: "tab-8", url: "https://example.test/" } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const outcome = parseResult(await command.execute("tool-native-create", { command: { cmd: "tabs", method: "create", url: "https://example.test/" } }));
+	const dispatch = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as Record<string, unknown>)?.cmd === "tabs");
+	assert.equal((dispatch?.args[1] as Record<string, unknown>).operationId, undefined);
+	assert.equal((dispatch?.args[1] as Record<string, unknown>).operationGeneration, undefined);
+	assert.equal(outcome.status, "completed");
+});
+
 test("commands execution: browser_command write failures return failed operation outcomes", async () => {
 	const runtime = createRuntime({
 		async sendCommand(command) {
@@ -338,6 +356,53 @@ test("commands execution: acknowledged transport loss preserves at-most-once dis
 	assert.deepEqual((outcome.continuation as Record<string, unknown>).replay, "do_not_retry");
 });
 
+test("commands execution: raw CDP writes enter the ABML semantic settlement path", async () => {
+	const registry = new SessionOperationRegistry();
+	const runtime = createRuntime({
+		beginOperation: (value) => registry.begin(value),
+		updateOperation: (operationId, patch) => registry.update(operationId, patch),
+		getOperation: (operationId) => registry.get(operationId),
+		finishOperation: (operationId, value) => registry.finish(operationId, value),
+		finishOperationIfRevision: (operationId, revision, value) => registry.finishIfRevision(operationId, revision, value),
+	});
+	let semanticVerb = "";
+	const commands = new CommandManifestIndex();
+	defineNativeCommand({
+		commands,
+		ensureStarted: async () => runtime,
+		semanticExecution: ({ action }) => {
+			semanticVerb = action.verb;
+			return {
+				async prepare() {},
+				async beforeDispatch() {},
+				actionEventBoundary: () => undefined,
+				async settle({ operationId }) {
+					return {
+						expectedRevision: registry.get(operationId)!.revision,
+						semantic: {
+							provider: "abml" as const,
+							stability: "stable" as const,
+							effect: {
+								summary: { hasSemanticEffect: true, targetChanged: false, feedback: 0, changed: 1, appeared: 0, disappeared: 0 },
+								feedback: { count: 0, items: [] },
+								changed: { count: 1, items: [{ ref: "bp-ref://control/target", name: "Changed" }] },
+								appeared: { count: 0, items: [] },
+								disappeared: { count: 0, items: [] },
+							},
+						},
+					};
+				},
+			};
+		},
+	});
+	const command = commands.getCommands()[0]!;
+	const outcome = parseResult(await command.execute("tool-cdp-semantic", { command: { cmd: "cdp", method: "Input.dispatchMouseEvent", params: { type: "mousePressed", x: 10, y: 10, button: "left", clickCount: 1 } }, targetRef: "tab-7" }));
+	assert.equal(semanticVerb, "native-cdp");
+	assert.equal(outcome.status, "effect_observed");
+	assert.equal((outcome.business as Record<string, unknown>).status, "inconclusive");
+	assert.equal((outcome.semantic as Record<string, unknown>).provider, "abml");
+});
+
 test("commands execution: browser_execute summarizes successful JavaScript result and runtime target context", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
@@ -347,12 +412,13 @@ test("commands execution: browser_execute summarizes successful JavaScript resul
 	const operationBegin = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as { cmd?: string }).cmd === "operation.begin");
 	const operationFinish = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as { cmd?: string }).cmd === "operation.finish");
 	assert.equal(execute?.args[0], "return 42");
-	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000, signal: undefined });
+	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: undefined, tabId: "tab-7", operationId: "op-1", operationGeneration: undefined, timeoutMs: 15000, signal: undefined });
 	assert.ok((execute?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
 	assert.deepEqual({ ...(operationBegin?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", targetRef: "tab-7", timeoutMs: 5_000, accessMode: "read", internal: true, signal: undefined });
 	assert.ok((operationBegin?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
-	assert.deepEqual(operationFinish?.args[0], { cmd: "operation.finish", operationId: "op-1", tabId: 7, targetRef: "tab-7" });
-	assert.deepEqual(operationFinish?.args[1], { browserSessionId: "session-1", targetRef: "tab-7", timeoutMs: 5_000, accessMode: "read", internal: true });
+	assert.deepEqual(operationFinish?.args[0], { cmd: "operation.finish", operationId: "op-1" });
+	assert.deepEqual({ ...(operationFinish?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", timeoutMs: 3_000, accessMode: "read", internal: true, signal: undefined });
+	assert.ok((operationFinish?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
 	assert.equal(envelope.schema, "browser-operation/v2");
 	assert.equal(envelope.status, "completed");
 	assert.equal((envelope.completion as Record<string, unknown>).source, "script-resolved");
@@ -365,7 +431,10 @@ test("commands execution: scripted mutation completes only after its business po
 	const runtime = createRuntime({
 		async executeJavaScript(script) {
 			dispatches += 1;
-			if (dispatches === 2) new Function(`return async () => {\n${script}\n}`);
+			if (dispatches === 2) {
+				new Function(`return async () => {\n${script}\n}`);
+				assert.match(script, /input.*change.*focusin.*focusout.*scroll/s);
+			}
 			return dispatches === 1
 				? { id: "exec-action", acknowledged: true, tabId: 7, data: { clicked: true } } as BrowserBridgeExecutionResult
 				: { id: "exec-postcondition", acknowledged: true, tabId: 7, data: { verified: true, value: { liked: true }, attempts: 2 } } as BrowserBridgeExecutionResult;
@@ -436,7 +505,7 @@ test("commands execution: a mutation event without command-specific completion e
 				sequence: 1,
 				revision: 2,
 				lastProgressAt: Date.now(),
-				events: [{ operationId, sequence: 1, type: "mutation", timestamp: Date.now(), progress: true, data: { mutationCount: 2 } }],
+				events: [{ operationId, sequence: 1, ledgerRevision: 2, type: "mutation", timestamp: Date.now(), progress: true, data: { mutationCount: 2 } }],
 				lateEffects: [],
 				startedAt: Date.now(),
 				updatedAt: Date.now(),

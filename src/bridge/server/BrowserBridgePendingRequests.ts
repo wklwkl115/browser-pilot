@@ -38,7 +38,7 @@ export class BrowserBridgePendingRequests {
 		return Array.from(this.pending.values()).map((item) => ({ id: item.id, tabId: item.tabId, createdAt: item.createdAt, acked: item.acked, target: item.target }));
 	}
 
-	send(socket: WebSocket, code: unknown, options: { tabId?: number; timeoutMs?: number; target?: BrowserBridgeTargetInfo; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
+	send(socket: WebSocket, code: unknown, options: { tabId?: number; operationId?: string; operationGeneration?: number; timeoutMs?: number; target?: BrowserBridgeTargetInfo; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 		const id = randomUUID();
 		const timeoutMs = Math.max(100, Math.floor(options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
 		if (options.signal?.aborted) {
@@ -56,6 +56,8 @@ export class BrowserBridgePendingRequests {
 			const pending: PendingRequest = {
 				id,
 				tabId: options.tabId,
+				operationId: options.operationId,
+				operationGeneration: options.operationGeneration,
 				client: socket,
 				code,
 				timeoutMs,
@@ -101,6 +103,8 @@ export class BrowserBridgePendingRequests {
 	private buildPayload(pending: PendingRequest, extra?: Record<string, unknown>): Record<string, unknown> {
 		const payload: Record<string, unknown> = { id: pending.id, code: pending.code, timeoutMs: pending.timeoutMs };
 		if (pending.tabId !== undefined) payload.tabId = pending.tabId;
+		if (pending.operationId) payload.operationId = pending.operationId;
+		if (pending.operationGeneration !== undefined) payload.operationGeneration = pending.operationGeneration;
 		return extra ? { ...payload, ...extra } : payload;
 	}
 
@@ -167,8 +171,25 @@ export class BrowserBridgePendingRequests {
 		// SELECTOR_NOT_FOUND) instead of flattening every bridge error to BROWSER_EXECUTION_ERROR —
 		// keeps recovery hints routable. Falls back to BROWSER_EXECUTION_ERROR when no code is present.
 		const codeFrom = (value: unknown): unknown => (value && typeof value === "object" ? (value as { error_code?: unknown; code?: unknown }).error_code ?? (value as { code?: unknown }).code : undefined);
+		const detailsFrom = (value: unknown): Record<string, unknown> | undefined => {
+			if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+			const details = (value as { details?: unknown }).details;
+			return details && typeof details === "object" && !Array.isArray(details) ? details as Record<string, unknown> : undefined;
+		};
 		const code = normalizeNativeErrorCode(codeFrom(result) ?? codeFrom(error), "BROWSER_EXECUTION_ERROR");
-		pending.reject(new BrowserBridgeError(code, normalizeErrorMessage(error), { id, tabId: pending.tabId, error, result, target: this.resolvedTarget(pending.target), diagnostics: { ...(diagnostics || {}), latency } }));
+		const dispatchDetails = detailsFrom(error) ?? detailsFrom(result);
+		const acked = typeof dispatchDetails?.acked === "boolean" ? dispatchDetails.acked : pending.acked;
+		const dispatchStarted = typeof dispatchDetails?.dispatchStarted === "boolean" ? dispatchDetails.dispatchStarted : pending.acked;
+		pending.reject(new BrowserBridgeError(code, normalizeErrorMessage(error), {
+			id,
+			tabId: pending.tabId,
+			error,
+			result,
+			dispatchStarted,
+			acked,
+			target: this.resolvedTarget(pending.target),
+			diagnostics: { ...(diagnostics || {}), latency },
+		}));
 	}
 
 	/**

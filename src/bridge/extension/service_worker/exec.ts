@@ -2,6 +2,8 @@
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { markBrowserPilotOperationDispatch } from "./operation_coordinator";
+import { enableCspBypassForTab } from "./bridge_info";
 import type { JsonRecord, BrowserPilotChromeTab, BrowserPilotWebSocketLike } from "./types";
 
 const NEW_TAB_OBSERVE_WAIT_MS = 50;
@@ -152,7 +154,7 @@ function normalizeExecNavigationUrl(rawUrl: unknown): string {
   return raw;
 }
 
-type ExecRequest = JsonRecord & { id?: string | number; tabId?: number; code?: unknown; timeoutMs?: number; timeout_ms?: number };
+type ExecRequest = JsonRecord & { id?: string | number; operationId?: string; operationGeneration?: number; tabId?: number; code?: unknown; timeoutMs?: number; timeout_ms?: number };
 type ExecDiagnostics = { mayOpenNewTab: boolean; newTabObservationWaitTriggered: boolean; newTabObservationWaitMs: number; totalMs?: number };
 
 function execError(error: unknown): { name: string; message: string } {
@@ -292,13 +294,50 @@ function sendExecOutcome(data: ExecRequest, socket: BrowserPilotWebSocketLike, r
 }
 
 async function handleWsExec(data: ExecRequest, socket: BrowserPilotWebSocketLike): Promise<void> {
-  const tabId = data.tabId;
-  sendExecMessage(socket, { type:'ack', id:data.id });
+	const tabId = data.tabId;
   if (!tabId) {
-    sendExecMessage(socket, { type:'error', id:data.id, error:'No tabId provided' });
-    return;
-  }
-  const codeText = String(data.code || '').trim();
+		sendExecMessage(socket, {
+			type: "error",
+			id: data.id,
+			error: {
+				name: "InvalidRule",
+				code: "INVALID_RULE",
+				message: "No tabId provided",
+				details: { dispatchStarted: false, acked: false },
+			},
+		});
+		return;
+	}
+	const codeText = String(data.code || '').trim();
+	if (!codeText) {
+		sendExecMessage(socket, { type: "error", id: data.id, error: { name: "InvalidRule", code: "INVALID_RULE", message: "No JavaScript code provided", details: { dispatchStarted: false, acked: false } } });
+		return;
+	}
+	const operationId = typeof data.operationId === "string" ? data.operationId.trim() : "";
+	if (operationId) {
+		const operationGeneration = Number(data.operationGeneration);
+		const marker = await markBrowserPilotOperationDispatch(operationId, {
+			tabId,
+			operationGeneration: Number.isInteger(operationGeneration) ? operationGeneration : undefined,
+			socket,
+		});
+		if (!marker.ok) {
+			sendExecMessage(socket, {
+				type: "error",
+				id: data.id,
+				error: {
+					name: "OperationDispatchMarkerError",
+					code: marker.error_code || "INVALID_RULE",
+					message: typeof marker.error === "string" ? marker.error : "operation dispatch marker failed",
+					details: { operationId, dispatchStarted: false, acked: false, ...(marker.details || {}) },
+				},
+			});
+			return;
+		}
+	}
+	// ACK now means validation and the exact semantic action boundary both succeeded.
+	sendExecMessage(socket, { type:'ack', id:data.id });
+	enableCspBypassForTab(tabId);
   if (await handleExecShortcut(data, codeText, socket)) return;
   const newTabIds = new Set<number>();
   const onCreated = (tab: BrowserPilotChromeTab) => { if (tab.id !== undefined) newTabIds.add(tab.id); };

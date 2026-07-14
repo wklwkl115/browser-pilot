@@ -56,30 +56,55 @@ function operationDispatchLine(value: unknown): string | undefined {
 	if (value.acknowledged === true) acknowledged = "acknowledged";
 	else if (value.acknowledged === false) acknowledged = "not acknowledged";
 	let lifecycle: string | undefined;
-	if (value.finished === true) lifecycle = "finished";
+	if (typeof value.settledAt === "number") lifecycle = "settled";
+	else if (value.finished === true) lifecycle = "finished";
 	else if (value.started === true) lifecycle = "started";
 	return `dispatch: ${acknowledged}${lifecycle ? ` · ${lifecycle}` : ""}`;
+}
+
+function operationOutcomeLine(env: Record<string, unknown>): string | undefined {
+	if (typeof env.classification !== "string") return undefined;
+	const verified = env.completionVerified === true ? "completion verified" : "completion unverified";
+	return `outcome: ${env.classification} · ${verified}${typeof env.code === "string" ? ` · ${env.code}` : ""}`;
+}
+
+function operationBusinessLine(value: unknown): string | undefined {
+	if (!isRecord(value) || typeof value.status !== "string") return undefined;
+	const source = typeof value.source === "string" ? ` · ${value.source}` : "";
+	const reason = typeof value.reason === "string" ? ` · ${value.reason}` : "";
+	return `business: ${value.status}${source}${reason}`;
+}
+
+function operationSemanticLine(value: unknown): string | undefined {
+	if (!isRecord(value) || typeof value.provider !== "string") return undefined;
+	const stability = typeof value.stability === "string" ? ` · ${value.stability}` : "";
+	const summary = isRecord(value.effect) && isRecord(value.effect.summary) ? value.effect.summary : undefined;
+	const effect = typeof summary?.hasSemanticEffect === "boolean" ? ` · effect ${summary.hasSemanticEffect ? "observed" : "not observed"}` : "";
+	return `semantic: ${value.provider}${stability}${effect}`;
+}
+
+function operationContinuationLine(value: unknown): string | undefined {
+	if (!isRecord(value)) return undefined;
+	const next = typeof value.next === "string" ? value.next : "unspecified";
+	const replay = typeof value.replay === "string" ? ` · replay ${value.replay}` : "";
+	const reason = typeof value.reason === "string" ? ` · ${value.reason}` : "";
+	return `continuation: ${next}${replay}${reason}`;
 }
 
 function operationHumanLines(env: Record<string, unknown>): string[] {
 	const commandName = typeof env.commandName === "string" ? env.commandName : "browser operation";
 	const status = typeof env.status === "string" ? env.status : "unknown";
-	const lines = [`${bold(commandName)} · ${status}`];
-	if (typeof env.classification === "string") {
-		const verified = env.completionVerified === true ? "completion verified" : "completion unverified";
-		lines.push(`outcome: ${env.classification} · ${verified}${typeof env.code === "string" ? ` · ${env.code}` : ""}`);
-	}
-	if (typeof env.operationId === "string") lines.push(`operation: ${env.operationId}`);
-	const dispatch = operationDispatchLine(env.dispatch);
-	if (dispatch) lines.push(dispatch);
-	if (isRecord(env.completion) && typeof env.completion.source === "string") lines.push(`completion: ${env.completion.source}`);
-	if (isRecord(env.continuation)) {
-		const next = typeof env.continuation.next === "string" ? env.continuation.next : "unspecified";
-		const replay = typeof env.continuation.replay === "string" ? ` · replay ${env.continuation.replay}` : "";
-		const reason = typeof env.continuation.reason === "string" ? ` · ${env.continuation.reason}` : "";
-		lines.push(`continuation: ${next}${replay}${reason}`);
-	}
-	return lines;
+	const completion = isRecord(env.completion) && typeof env.completion.source === "string" ? `completion: ${env.completion.source}` : undefined;
+	return [
+		`${bold(commandName)} · ${status}`,
+		operationOutcomeLine(env),
+		typeof env.operationId === "string" ? `operation: ${env.operationId}` : undefined,
+		operationDispatchLine(env.dispatch),
+		completion,
+		operationBusinessLine(env.business),
+		operationSemanticLine(env.semantic),
+		operationContinuationLine(env.continuation),
+	].filter((line): line is string => line !== undefined);
 }
 
 function renderHumanOk(text: string, exitCode: number = EXIT.ok): number {

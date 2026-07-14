@@ -81,6 +81,7 @@ const schema = {
     ],
     "operation": [
       "operation.begin",
+      "operation.checkpoint",
       "operation.finish",
       "operation.cancel"
     ],
@@ -209,6 +210,16 @@ const schema = {
       "required": [
         "operationId"
       ]
+    },
+    "operation.checkpoint": {
+      "domain": "operation",
+      "tabScoped": false,
+      "accessMode": "read",
+      "internal": true,
+      "required": [
+        "operationId"
+      ],
+      "notes": "Internal source fence. Pending MutationObserver records are drained before the checkpoint event is emitted."
     },
     "operation.cancel": {
       "domain": "operation",

@@ -4,6 +4,7 @@ import { SessionOperationRegistry } from "../../src/kernels/session/operationReg
 import { resolveBrowserOperationCompletion, resolveBrowserOperationDispatchTerminal } from "../../src/commands/operationResolvers.ts";
 import { classifyBrowserOperationLiveness, nextBrowserOperationLivenessBoundary } from "../../src/kernels/session/browserOperationState.ts";
 import { BrowserBridgeServer } from "../../src/bridge/server/BrowserBridgeServer.ts";
+import { BrowserBridgeCommandService } from "../../src/bridge/server/BrowserBridgeCommandService.ts";
 import { BrowserCommandQueueRegistry } from "../../src/bridge/server/BrowserCommandQueueRegistry.ts";
 import { readFile } from "node:fs/promises";
 import {
@@ -23,6 +24,70 @@ function outcome(operationId: string, status: BrowserOperationOutcome["status"] 
 		dispatch: { acknowledged: true, started: true, finished: true, startedAt: 1, finishedAt: 2 },
 		signals: {},
 	};
+}
+
+function writeCommandService(queues: BrowserCommandQueueRegistry, onDispatch: () => void, currentGeneration: () => number = () => 1): BrowserBridgeCommandService {
+	const client = {};
+	const browserSession = { id: "session-1", selectionVersion: 0, createdAt: 1, lastSeenAt: 1 };
+	const target = {
+		browserSessionId: browserSession.id,
+		tabId: 7,
+		tabHandle: "tabh_browser_logical",
+		targetRef: "tabh_browser_logical_g1",
+		generation: 1,
+		source: "explicit",
+		implicit: false,
+		selectionVersionAtDispatch: 0,
+	};
+	const tab = {
+		id: "tab-session-1",
+		browserId: "browser-1",
+		tabId: 7,
+		logicalTabId: "logical",
+		tabHandle: target.tabHandle,
+		generation: 1,
+		url: "https://example.test/",
+		title: "Example",
+		type: "ext_ws",
+		connectedAt: 1,
+		client,
+	};
+	return new BrowserBridgeCommandService({
+		clients: { hasEverConnected: () => true, info: () => undefined, requireExtensionClient: () => client },
+		browserSessions: {
+			require: () => browserSession,
+			selectedSession: () => browserSession,
+			selectedOpenClient: () => client,
+			selectedInfo: () => undefined,
+		},
+		queues,
+		leases: {
+			peekTabLease: () => undefined,
+			describeTabLease: () => undefined,
+			touchTabLease: () => undefined,
+			withAutoTabLease: async (_browserSessionId: string, _tab: unknown, run: () => Promise<unknown>) => await run(),
+		},
+		tabs: {
+			resolveTargetRef: () => ({ ...target, generation: currentGeneration() }),
+			liveSessionForTarget: () => ({ ...tab, generation: currentGeneration() }),
+			liveSessionForTabId: () => ({ ...tab, generation: currentGeneration() }),
+			replacementResolution: (tabId: number) => ({ tabId, replacementHops: 0 }),
+			latestTabId: () => 7,
+		},
+		pendingRequests: {
+			send: async () => {
+				onDispatch();
+				return { id: "request-1", acknowledged: true, tabId: 7 };
+			},
+		},
+		runtimeRecoveryArtifacts: { recordCommandResult: () => undefined },
+		isRunning: () => true,
+		getPort: () => 18_765,
+		getTabs: () => [],
+		listBrowserSessions: () => [],
+		snapshot: () => ({ extensionConnected: true, extension: { extensionStale: false } }),
+		waitForExtensionReady: async () => true,
+	} as never);
 }
 
 test("operation liveness thresholds classify no-effect, stalled, download stalled, and deadline without producing completed", () => {
@@ -154,6 +219,217 @@ test("aborted queued browser writes reject promptly and never dispatch later", a
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(secondDispatches, 0);
 	assert.equal(queues.depth("session-1", 7), 0);
+});
+
+test("target transactions are reentrant for nested queue and write dispatch", { timeout: 2_000 }, async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let dispatches = 0;
+	const service = writeCommandService(queues, () => { dispatches += 1; });
+	const controller = new AbortController();
+	const abortTimer = setTimeout(() => controller.abort(), 1_000);
+	try {
+		await queues.withTransaction("session-1", 7, async () => {
+			assert.equal(queues.ownsCurrentTransaction("session-1", 7), true);
+			await queues.withTransaction("session-1", 7, async () => {
+				assert.equal(queues.ownsCurrentTransaction("session-1", 7), true);
+			});
+			const result = await service.executeJavaScript("return true", { browserSessionId: "session-1", tabId: 7, signal: controller.signal });
+			assert.equal(result.acknowledged, true);
+		});
+	} finally {
+		clearTimeout(abortTimer);
+	}
+	assert.equal(dispatches, 1);
+	assert.equal(queues.ownsCurrentTransaction("session-1", 7), false);
+});
+
+test("a queued operation action fails closed when its target generation changes before dispatch", { timeout: 2_000 }, async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let generation = 1;
+	let dispatches = 0;
+	const service = writeCommandService(queues, () => { dispatches += 1; }, () => generation);
+	let releaseBlocker!: () => void;
+	let markBlockerStarted!: () => void;
+	const blockerStarted = new Promise<void>((resolve) => { markBlockerStarted = resolve; });
+	const blocker = queues.enqueue("session-1", 7, async () => {
+		markBlockerStarted();
+		await new Promise<void>((resolve) => { releaseBlocker = resolve; });
+	});
+	await blockerStarted;
+	const action = service.executeJavaScript("document.body.dataset.changed = 'yes'", {
+		browserSessionId: "session-1",
+		tabId: 7,
+		operationId: "operation-generation-race",
+		operationGeneration: 1,
+	});
+	generation = 2;
+	releaseBlocker();
+	await blocker;
+	await assert.rejects(action, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+		assert.equal(error.code, "TAB_NOT_FOUND");
+		assert.equal(error.details?.reason, "target_generation_changed");
+		assert.equal(error.details?.dispatchStarted, false);
+		assert.equal(error.details?.acked, false);
+		return true;
+	});
+	assert.equal(dispatches, 0);
+});
+
+test("escaped async transaction context becomes inactive before a later write", { timeout: 2_000 }, async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let dispatches = 0;
+	const service = writeCommandService(queues, () => { dispatches += 1; });
+	let releaseEscaped!: () => void;
+	let escapedOwnedTransaction: boolean | undefined;
+	let escapedWrite!: Promise<void>;
+	await queues.withTransaction("session-1", 7, async () => {
+		escapedWrite = (async () => {
+			await new Promise<void>((resolve) => { releaseEscaped = resolve; });
+			escapedOwnedTransaction = queues.ownsCurrentTransaction("session-1", 7);
+			await service.executeJavaScript("return true", { browserSessionId: "session-1", tabId: 7 });
+		})();
+	});
+
+	let releaseBlocker!: () => void;
+	let markBlockerStarted!: () => void;
+	const blockerStarted = new Promise<void>((resolve) => { markBlockerStarted = resolve; });
+	const blocker = queues.withTransaction("session-1", 7, async () => {
+		markBlockerStarted();
+		await new Promise<void>((resolve) => { releaseBlocker = resolve; });
+	});
+	await blockerStarted;
+	releaseEscaped();
+	await new Promise((resolve) => setImmediate(resolve));
+	const dispatchesWhileBlocked = dispatches;
+	releaseBlocker();
+	await Promise.all([blocker, escapedWrite]);
+	assert.equal(escapedOwnedTransaction, false);
+	assert.equal(dispatchesWhileBlocked, 0);
+	assert.equal(dispatches, 1);
+});
+
+test("an active target transaction fails closed before acquiring a different target", async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let crossTargetRuns = 0;
+	await queues.withTransaction("session-1", 7, async () => {
+		await assert.rejects(
+			queues.withTransaction("session-1", 8, async () => { crossTargetRuns += 1; }),
+			(error: Error & { code?: string; details?: Record<string, unknown> }) => {
+				assert.equal(error.code, "TAB_LEASE_CONFLICT");
+				assert.equal(error.details?.dispatchStarted, false);
+				return true;
+			},
+		);
+		assert.equal(queues.ownsCurrentTransaction("session-1", 7), true);
+	});
+	assert.equal(crossTargetRuns, 0);
+	assert.equal(queues.depth("session-1", 8), 0);
+});
+
+test("a direct queue enqueue cannot bypass an active transaction onto another target", async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let dispatched = false;
+	await queues.withTransaction("session-1", 7, async () => {
+		await assert.rejects(async () => await queues.enqueue("session-1", 8, async () => { dispatched = true; }), (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+			assert.equal(error.code, "TAB_LEASE_CONFLICT");
+			assert.equal(error.details?.invariant, "single_target_transaction");
+			assert.equal(error.details?.dispatchStarted, false);
+			return true;
+		});
+	});
+	assert.equal(dispatched, false);
+	assert.equal(queues.depth("session-1", 8), 0);
+});
+
+test("same-target transactions wait until the active transaction releases", { timeout: 2_000 }, async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let releaseFirst!: () => void;
+	let markFirstStarted!: () => void;
+	const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+	const first = queues.withTransaction("session-1", 7, async () => {
+		markFirstStarted();
+		await new Promise<void>((resolve) => { releaseFirst = resolve; });
+	});
+	await firstStarted;
+	let secondStarted = false;
+	const second = queues.withTransaction("session-1", 7, async () => { secondStarted = true; });
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(secondStarted, false);
+	releaseFirst();
+	await Promise.all([first, second]);
+	assert.equal(secondStarted, true);
+});
+
+test("different-target transactions execute concurrently", { timeout: 2_000 }, async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let releaseFirst!: () => void;
+	let markFirstStarted!: () => void;
+	const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+	const first = queues.withTransaction("session-1", 7, async () => {
+		markFirstStarted();
+		await new Promise<void>((resolve) => { releaseFirst = resolve; });
+	});
+	await firstStarted;
+	let secondStarted = false;
+	await queues.withTransaction("session-1", 8, async () => { secondStarted = true; });
+	assert.equal(secondStarted, true);
+	releaseFirst();
+	await first;
+});
+
+test("cancelled queued target transactions never dispatch", { timeout: 2_000 }, async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let releaseFirst!: () => void;
+	let markFirstStarted!: () => void;
+	const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+	const first = queues.withTransaction("session-1", 7, async () => {
+		markFirstStarted();
+		await new Promise<void>((resolve) => { releaseFirst = resolve; });
+	});
+	await firstStarted;
+	let secondDispatches = 0;
+	const controller = new AbortController();
+	const second = queues.withTransaction("session-1", 7, async () => { secondDispatches += 1; }, { signal: controller.signal });
+	controller.abort();
+	await assert.rejects(second, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+		assert.equal(error.code, "BRIDGE_TIMEOUT");
+		assert.equal(error.details?.dispatchStarted, false);
+		return true;
+	});
+	releaseFirst();
+	await first;
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(secondDispatches, 0);
+});
+
+test("target transaction ownership follows a replacement queue alias", { timeout: 2_000 }, async () => {
+	const queues = new BrowserCommandQueueRegistry();
+	let allowReplacementCheck!: () => void;
+	let releaseFirst!: () => void;
+	let markFirstStarted!: () => void;
+	let markReplacementChecked!: () => void;
+	const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+	const replacementChecked = new Promise<void>((resolve) => { markReplacementChecked = resolve; });
+	const first = queues.withTransaction("session-1", 7, async () => {
+		markFirstStarted();
+		await new Promise<void>((resolve) => { allowReplacementCheck = resolve; });
+		assert.equal(queues.ownsCurrentTransaction("session-1", 7), true);
+		assert.equal(queues.ownsCurrentTransaction("session-1", 8), true);
+		await queues.withTransaction("session-1", 8, async () => undefined);
+		markReplacementChecked();
+		await new Promise<void>((resolve) => { releaseFirst = resolve; });
+	});
+	await firstStarted;
+	assert.equal(queues.migrateTabQueue("session-1", 7, 8)?.tabId, 8);
+	allowReplacementCheck();
+	await replacementChecked;
+	let secondStarted = false;
+	const second = queues.withTransaction("session-1", 8, async () => { secondStarted = true; });
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(secondStarted, false);
+	releaseFirst();
+	await Promise.all([first, second]);
+	assert.equal(secondStarted, true);
 });
 
 test("operation settlement source contains no fixed-interval registry polling", async () => {

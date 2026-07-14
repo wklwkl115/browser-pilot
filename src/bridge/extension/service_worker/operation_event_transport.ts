@@ -15,9 +15,19 @@ export function releaseBrowserPilotOperationEventSocket(operationId: string): vo
 	operationSockets.delete(operationId);
 }
 
-export function emitBrowserPilotOperationEvent(operationId: string, event: JsonRecord): void {
+export function isBrowserPilotOperationEventSocket(operationId: string, socket: BrowserPilotBridgeWebSocketLike): boolean {
 	const bound = operationSockets.get(operationId);
-	const socket = bound?.readyState === 1 ? bound : getSocket?.();
-	if (!socket || socket.readyState !== 1) return;
-	socket.send(JSON.stringify({ type: "operation_event", operationId, event }));
+	return bound === socket && bound.readyState === 1;
+}
+
+export function emitBrowserPilotOperationEvent(operationId: string, event: JsonRecord): boolean {
+	const bound = operationSockets.get(operationId);
+	const socket = bound ?? getSocket?.();
+	if (!socket || socket.readyState !== 1) return false;
+	try {
+		socket.send(JSON.stringify({ type: "operation_event", operationId, event }));
+		return true;
+	} catch {
+		return false;
+	}
 }

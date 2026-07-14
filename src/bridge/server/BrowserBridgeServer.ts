@@ -16,7 +16,7 @@ import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
 import { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
 import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "../protocol/consentTypes.js";
-import type { CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot, CommandTemporalProfileSample, CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
+import type { BrowserCommandTargetTransactionInput, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot, CommandTemporalProfileSample, CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
 import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo, ExecuteOptions } from "./types.js";
 import type { SessionOperationBeginInput } from "../../kernels/session/operationRegistry.js";
 import type { BrowserOperationEvent, BrowserOperationOutcome } from "../../kernels/session/browserOperation.js";
@@ -334,6 +334,11 @@ export class BrowserBridgeServer implements ConsentPort {
 		return await this.commandService.sendCommand(command, options);
 	}
 
+	async withTargetTransaction<T>(input: BrowserCommandTargetTransactionInput, run: () => Promise<T>): Promise<T> {
+		const browserSession = this.browserSession(input.browserSessionId);
+		return await this.queues.withTransaction(browserSession.id, input.tabId, run, { signal: input.signal });
+	}
+
 	resolveTargetTabId(value: unknown, browserSessionId?: string): number {
 		const target = this.tabs.resolveTargetRef(value, browserSessionId, "explicit");
 		if (target?.tabId !== undefined) return target.tabId;
@@ -358,6 +363,12 @@ export class BrowserBridgeServer implements ConsentPort {
 		return next;
 	}
 
+	finishOperationIfRevision(operationId: string, expectedRevision: number, outcome?: BrowserOperationOutcome): BrowserActiveOperationInfo | undefined {
+		const next = this.state.operations.finishIfRevision(operationId, expectedRevision, outcome);
+		if (next) this.releaseOperationWaiters(operationId);
+		return next;
+	}
+
 	mutationReplayGuard(input: import("../../kernels/session/operationRegistry.js").SessionMutationGuardInput) {
 		return this.state.operations.mutationReplayGuard(input);
 	}
@@ -370,7 +381,7 @@ export class BrowserBridgeServer implements ConsentPort {
 		return this.state.operations.get(operationId);
 	}
 
-	recordOperationEvent(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "timestamp"> & { sequence?: number; timestamp?: number }): BrowserActiveOperationInfo | undefined {
+	recordOperationEvent(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "ledgerRevision" | "timestamp"> & { sequence?: number; sourceSequence?: number; timestamp?: number }): BrowserActiveOperationInfo | undefined {
 		const next = this.state.operations.recordEvent(operationId, event);
 		if (next) this.releaseOperationWaiters(operationId);
 		return next;
