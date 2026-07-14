@@ -132,6 +132,24 @@ test("same-extension reconnect adopts identity and migrates secondary session se
 	assert.equal(secondary.latestSessionId, adopted.id);
 });
 
+test("extension-owned tab identity changes invalidate the old handle immediately on reconnect", () => {
+	const { clients, browserSessions, router } = setup();
+	const previous = connect(clients);
+	browserSessions.selectClient(browserSessions.defaultSession(), previous);
+	router.updateTabs([{ id: 7, tabIdentity: "11111111111111111111111111111111", url: "https://reload.test/", active: true }], previous);
+	const oldHandle = router.defaultTabHandle();
+	assert.ok(oldHandle);
+
+	const reloaded = connect(clients);
+	browserSessions.selectClient(browserSessions.defaultSession(), reloaded);
+	router.updateTabs([{ id: 7, tabIdentity: "22222222222222222222222222222222", url: "https://reload.test/", active: true }], reloaded);
+
+	const current = router.getTabs()[0];
+	assert.equal(current?.logicalTabId, "22222222222222222222222222222222");
+	assert.notEqual(current?.tabHandle, oldHandle);
+	assert.throws(() => router.resolveTargetRef(oldHandle), (error: Error & { code?: string }) => error.code === "TAB_NOT_FOUND");
+});
+
 test("extension-owned tab identity preserves targetRef across daemon replacement", () => {
 	const tabIdentity = "f4e722c76fbb4f4583915245b4880abc";
 	const first = setup();

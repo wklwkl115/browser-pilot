@@ -162,27 +162,37 @@ export class BrowserBridgeCommandService {
 	/**
 	 * Give a not-yet-connected extension a bounded grace to dial in before a command
 	 * proceeds (and likely fails with the now-actionable NO_BROWSER_EXTENSION). Only
-	 * waits when the bridge is up but no extension is connected for the session, so
+	 * waits when the bridge is up but no current extension is selected for the session, so
 	 * steady-state traffic pays nothing. Reused by sendCommand (the path every
-	 * tab-list / native command flows through). Never throws — on timeout the call
-	 * continues to the normal recovery-bearing error.
+	 * tab-list / native command flows through). A self-reload command may deliberately
+	 * use a stale extension; other commands fail rather than execute against old code.
 	 */
-	private async ensureExtensionReady(browserSessionId?: string, signal?: AbortSignal): Promise<void> {
+	private async ensureExtensionReady(browserSessionId?: string, signal?: AbortSignal, allowStale = false): Promise<void> {
 		this.lastConnectionWaitMs = 0;
 		if (!this.deps.isRunning()) return;
-		if (this.deps.snapshot({ browserSessionId }).extensionConnected) return;
+		const initial = this.deps.snapshot({ browserSessionId });
+		if (initial.extensionConnected && (allowStale || initial.extension?.extensionStale !== true)) return;
 		const waitMs = extensionWaitMs();
-		if (waitMs <= 0) return;
-		const now = Date.now();
-		if (now < this.extensionUnavailableUntil) return;
-		const startedAt = Date.now();
-		const ready = await abortable(this.deps.waitForExtensionReady(browserSessionId, waitMs), signal, "Browser command was cancelled while waiting for the extension");
-		this.lastConnectionWaitMs = Date.now() - startedAt;
-		this.extensionUnavailableUntil = ready ? 0 : Date.now() + EXTENSION_WAIT_NEGATIVE_CACHE_MS;
+		let ready = false;
+		if (waitMs > 0 && Date.now() >= this.extensionUnavailableUntil) {
+			const startedAt = Date.now();
+			ready = await abortable(this.deps.waitForExtensionReady(browserSessionId, waitMs), signal, "Browser command was cancelled while waiting for the extension");
+			this.lastConnectionWaitMs = Date.now() - startedAt;
+			this.extensionUnavailableUntil = ready ? 0 : Date.now() + EXTENSION_WAIT_NEGATIVE_CACHE_MS;
+		}
+		const current = this.deps.snapshot({ browserSessionId });
+		if (!ready && current.extensionConnected && current.extension?.extensionStale === true) {
+			throw new BrowserBridgeError("EXTENSION_CONTRACT_MISMATCH", "Connected Browser Pilot extension build is stale", {
+				expectedBuild: current.extension.expectedBuild,
+				reportedBuild: current.extension.reportedBuild,
+				recovery: { command: "browser-pilot command --command '{\"cmd\":\"management\",\"method\":\"reload\"}' --json" },
+			});
+		}
 	}
 
 	async sendCommand(command: BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
-		await this.ensureExtensionReady(options.browserSessionId, options.signal);
+		const allowStale = command.cmd === "management" && String(command.method || "").toLowerCase() === "reload";
+		await this.ensureExtensionReady(options.browserSessionId, options.signal, allowStale);
 		const optionRef = options.targetRef ?? options.tabId;
 		const hasOptionTabId = optionRef !== undefined;
 		const hasCommandTabId = command.tabId !== undefined;

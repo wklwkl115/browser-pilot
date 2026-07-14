@@ -16,6 +16,10 @@ test("ready when an extension is connected and handshaken", () => {
 	assert.equal(deriveBridgeReadiness({ running: true, extensionConnected: true, connectedClients: 1 }), "ready");
 });
 
+test("a connected stale extension is not ready", () => {
+	assert.equal(deriveBridgeReadiness({ running: true, extensionConnected: true, extensionStale: true }), "extension-stale");
+});
+
 test("connecting when a socket is open but ext_ready has not arrived", () => {
 	assert.equal(deriveBridgeReadiness({ running: true, extensionConnected: false, connectedClients: 1 }), "connecting");
 });

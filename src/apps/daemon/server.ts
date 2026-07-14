@@ -204,6 +204,7 @@ function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, con
 	const readiness = deriveBridgeReadiness({
 		running: server.running,
 		extensionConnected: snapshot?.extensionConnected === true,
+		extensionStale: snapshot?.extension?.extensionStale === true,
 		connectedClients: typeof snapshot?.connectedClients === "number" ? snapshot.connectedClients : undefined,
 		lastDisconnectAt: typeof snapshot?.lastDisconnectAt === "number" ? snapshot.lastDisconnectAt : undefined,
 		now,

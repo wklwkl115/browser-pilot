@@ -7,14 +7,14 @@ import { firstPositional, jsonMode, renderLocalJson, renderMode } from "./cliBas
 
 function connectSpecs(): FlagSpec[] {
 	return [
-		{ name: "wait", flag: "--wait", kind: "boolean", required: false, description: "Wait until the browser extension is connected." },
+		{ name: "wait", flag: "--wait", kind: "boolean", required: false, description: "Wait until the current browser extension build is connected." },
 		{ name: "timeoutMs", flag: "--timeout-ms", kind: "number", required: false, description: "Maximum readiness wait in milliseconds." },
 		{ name: "tabs", flag: "--tabs", kind: "boolean", required: false, description: "Include full tabs[] instead of the default compact tabCount/activeTab fields." },
 	];
 }
 
 function connectHelp(): string {
-	return "browser-pilot connect --wait --timeout-ms <ms> --json\n\nFlags:\n  --wait                         Wait until extensionConnected is true.\n  --timeout-ms <number>          Bound readiness wait. Default 30000. For a fully\n                                 cold extension (browser just started), pass a\n                                 value above 60000 so the 1-minute wake alarm lands.\n  --tabs                         Include full tabs[]. Default is compact tabCount/activeTab.\n  --json | --text | --help\n";
+	return "browser-pilot connect --wait --timeout-ms <ms> --json\n\nFlags:\n  --wait                         Wait until the connected extension build is current.\n                                 A stale loaded build fails with reload recovery.\n  --timeout-ms <number>          Bound readiness wait. Default 30000. For a fully\n                                 cold extension (browser just started), pass a\n                                 value above 60000 so the 1-minute wake alarm lands.\n  --tabs                         Include full tabs[]. Default is compact tabCount/activeTab.\n  --json | --text | --help\n";
 }
 
 function parseConnectArgs(argv: string[]) {

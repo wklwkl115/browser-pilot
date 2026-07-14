@@ -169,6 +169,8 @@ npx browser-pilot --help
 npx browser-pilot schema observe --json
 ```
 
+`connect --wait` requires both a connected extension and the expected unpacked extension build. If several browser instances share the bridge, a stale peer cannot complete readiness or displace an already selected current build. When no current instance arrives before the deadline, `CLI_EXTENSION_STALE` includes an exact self-reload recovery command; after that full extension reload, run `tabs list` again before reusing a handle.
+
 Core tools include tabs, observe, execute, command, screenshot, network, hook,
 evidence, frame, artifact, download, and upload. Security tools include crawl, fuzz,
 sqli, template, cookie-analyze, http-replay, and callback-oast. Use
@@ -228,8 +230,9 @@ Delta and render-cache reuse require the same `browserSessionId + tabId + target
 Stable `browserId` values derive from the extension instance, while extension-owned
 `tabHandle`/`targetRef` identities live in `chrome.storage.session` and transfer through
 `tabs.onReplaced`. They survive daemon replacement, MV3 service-worker restarts, and
-extension reconnects within the current browser runtime. Closing the tab or restarting
-the browser runtime intentionally invalidates the handle and requires a fresh `tabs list`.
+socket reconnects within the current browser runtime. Closing the tab, fully reloading the
+extension, or restarting the browser runtime intentionally invalidates the handle and
+requires a fresh `tabs list`. A stale loaded extension is never considered ready.
 
 CLI offline validation and daemon invocation share the same strict validation pipeline. Unknown, internal, removed, and action-incompatible parameters are rejected before normalization; cross-field rules include execute's exactly-one `script`/`program` input, program-only verifier boundary, and required `postcondition` for scripted intents. No invalid parameter is silently stripped.
 

@@ -270,7 +270,8 @@ export class BrowserTabSessionRouter {
 			previousClient: prior.client,
 		} : undefined;
 		const reconnect = !existing && !replacement ? sameIdReconnect ?? this.findReconnectIdentity(tabId, context.bridge?.extensionId, tab, context.now) : undefined;
-		const identity = replacement ?? existing ?? reconnect ?? this.newIdentity(context.bridge?.extensionInstanceId ?? context.browserId, this.normalizeTabIdentity(tab.tabIdentity));
+		const retainedIdentity = replacement ?? existing ?? reconnect;
+		const identity = this.identityForTabSync(context.bridge?.extensionInstanceId ?? context.browserId, tab.tabIdentity, retainedIdentity);
 		this.pendingReplacementIdentities.delete(id);
 		this.sessions.set(id, this.syncedTabSession(tab, tabId, id, identity, existing, replacement, reconnect, context));
 		return { id, active: tab.active === true, reconnect };
@@ -520,6 +521,12 @@ export class BrowserTabSessionRouter {
 			tabHandle: `tabh_${browserPart}_${logicalTabId}_g1`,
 			generation: 1,
 		};
+	}
+
+	private identityForTabSync(browserId: string, rawTabIdentity: unknown, retained?: TabIdentity): TabIdentity {
+		const tabIdentity = this.normalizeTabIdentity(rawTabIdentity);
+		if (!tabIdentity) return retained ?? this.newIdentity(browserId);
+		return retained?.logicalTabId === tabIdentity ? retained : this.newIdentity(browserId, tabIdentity);
 	}
 
 	private normalizeTabIdentity(value: unknown): string | undefined {

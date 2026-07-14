@@ -5,7 +5,7 @@ import { buildCommandFlagSpecs, commandGroupCounts } from "./commandMetadata.js"
 import { naturalSubcommandForToken } from "./naturalRouting.js";
 import { daemonContractReport, findDaemon, isDaemonReadyForReuse, lockfilePath } from "../daemon/daemonControl.js";
 import { daemonVersion, packageVersion } from "../daemon/packageInfo.js";
-import { staleLockfileDiagnostic } from "./connection.js";
+import { connectionReadiness, connectionRecoveryCommands, extensionBuildCheck, staleLockfileDiagnostic } from "./connection.js";
 import { pad } from "./help.js";
 import { firstPositional, jsonMode, loadCliCommands, renderLocalJson, renderMode } from "./cliBasics.js";
 import { splitLeadingGlobalFlags } from "./cliBasics.js";
@@ -90,18 +90,30 @@ function validateSubcommandPosition(argv: string[]): { token?: string; rest: str
 
 export async function runDoctorCommand(argv: string[]): Promise<number> {
 	const mode = jsonMode(argv);
-	const parsed = parseArgs([{ name: "check", flag: "--check", kind: "boolean", required: false, description: "Exit 1 when the local and daemon command contracts do not match." }], argv);
+	const parsed = parseArgs([{ name: "check", flag: "--check", kind: "boolean", required: false, description: "Exit 1 when the daemon contract or connected extension build is not current." }], argv);
 	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
 	if (parsed.value.globals.help) {
-		process.stdout.write("browser-pilot doctor [--check] --json\n\nInspect local, daemon, bridge, extension, and command-contract state.\n");
+		process.stdout.write("browser-pilot doctor [--check] --json\n\nInspect local, daemon, bridge, extension, and command-contract state. --check also requires the connected extension build to be current.\n");
 		return EXIT.ok;
 	}
 	const found = await findDaemon({ tabs: true });
 	const commands = await loadCliCommands();
 	const groups = commandGroupCounts(commands);
 	const contract = daemonContractReport(found);
+	const extension = extensionBuildCheck(found?.status);
+	const connection = connectionReadiness(found?.status);
+	const check = {
+		ok: contract.check.ok && extension.ok,
+		code: contract.check.ok ? extension.code : contract.check.code,
+		readiness: connection.readiness,
+		daemonContract: contract.check,
+		extensionBuild: extension,
+	};
 	const report = {
 		command: "doctor",
+		ready: check.ok,
+		readiness: connection.readiness,
+		checks: check,
 		version: packageVersion(),
 		cwd: process.cwd(),
 		commandCount: commands.length,
@@ -111,15 +123,15 @@ export async function runDoctorCommand(argv: string[]): Promise<number> {
 		daemon: doctorDaemon(found),
 		activeTab: doctorActiveTab(found?.status.tabs, found?.status.activeTab),
 		artifactRoot: path.join(process.cwd(), ".browser-pilot", "artifacts"),
-		recovery: { commands: doctorRecoveryCommands() },
+		recovery: { commands: doctorRecoveryCommands(connection.extensionStale) },
 	};
-	const failed = parsed.value.params.check === true && !contract.check.ok;
+	const failed = parsed.value.params.check === true && !check.ok;
 	if (mode === "json") {
 		if (!failed) return renderLocalJson({ ...report, ...(parsed.value.params.check === true ? { checked: true } : {}) });
-		writeJsonEnvelope({ ...report, checked: true, ok: false, exitCode: EXIT.toolError, code: contract.check.code } as unknown as Parameters<typeof writeJsonEnvelope>[0]);
+		writeJsonEnvelope({ ...report, checked: true, ok: false, exitCode: EXIT.toolError, code: check.code } as unknown as Parameters<typeof writeJsonEnvelope>[0]);
 		return EXIT.toolError;
 	}
-	process.stdout.write(`browser-pilot ${report.version}\ndaemon: ${report.daemon.running ? "running" : "not running"}\nextension: ${found?.status.extensionConnected === true ? "connected" : "not connected"}\n`);
+	process.stdout.write(`browser-pilot ${report.version}\ndaemon: ${report.daemon.running ? "running" : "not running"}\nextension: ${connection.extensionStale ? "stale" : found?.status.extensionConnected === true ? "connected" : "not connected"}\n`);
 	process.stdout.write(`contract: ${contract.check.ok ? "match" : "mismatch"}\n`);
 	return failed ? EXIT.toolError : EXIT.ok;
 }
@@ -151,10 +163,9 @@ function doctorActiveTab(tabs: unknown, activeTab: unknown): unknown {
 	return activeTab ?? activeTabs.find((tab) => typeof tab === "object" && tab && (tab as { active?: unknown }).active === true) ?? activeTabs[0] ?? null;
 }
 
-function doctorRecoveryCommands(): Array<Record<string, unknown>> {
+function doctorRecoveryCommands(extensionStale = false): Array<Record<string, unknown>> {
 	return [
-		{ command: "browser-pilot daemon status --json", argv: ["browser-pilot", "daemon", "status", "--json"], purpose: "inspect daemon and bridge state" },
-		{ command: "browser-pilot connect --wait --timeout-ms 15000 --json", argv: ["browser-pilot", "connect", "--wait", "--timeout-ms", "15000", "--json"], purpose: "start/reuse daemon and wait for browser extension readiness" },
+		...connectionRecoveryCommands(15_000, { extensionStale }),
 		{ command: "browser-pilot tabs --action list --json", argv: ["browser-pilot", "tabs", "--action", "list", "--json"], purpose: "verify extension connectivity and list tabs" },
 		{ command: "browser-pilot selftest --confirm --json", argv: ["browser-pilot", "selftest", "--confirm", "--json"], purpose: "run bounded live CLI smoke" },
 	];

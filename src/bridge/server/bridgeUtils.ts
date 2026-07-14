@@ -39,7 +39,7 @@ export function isAllowedBridgeOrigin(origin: string | undefined): boolean {
 	}
 }
 
-export type BridgeReadiness = "bridge-down" | "bridge-up" | "connecting" | "degraded" | "ready";
+export type BridgeReadiness = "bridge-down" | "bridge-up" | "connecting" | "degraded" | "extension-stale" | "ready";
 
 /**
  * Derive a coarse, honest connection-readiness state from bridge snapshot fields,
@@ -48,6 +48,7 @@ export type BridgeReadiness = "bridge-down" | "bridge-up" | "connecting" | "degr
  *
  * - bridge-down: the bridge server is not listening yet.
  * - ready:       an extension is connected and has completed the ext_ready handshake.
+ * - extension-stale: the connected extension does not match the unpacked build.
  * - connecting:  a client socket is open but ext_ready has not arrived yet.
  * - degraded:    no client, but one disconnected within the reconnect window — an
  *                idle/restarting MV3 worker is expected to re-dial shortly.
@@ -56,12 +57,14 @@ export type BridgeReadiness = "bridge-down" | "bridge-up" | "connecting" | "degr
 export function deriveBridgeReadiness(input: {
 	running: boolean;
 	extensionConnected: boolean;
+	extensionStale?: boolean;
 	connectedClients?: number;
 	lastDisconnectAt?: number;
 	now?: number;
 	reconnectWindowMs?: number;
 }): BridgeReadiness {
 	if (!input.running) return "bridge-down";
+	if (input.extensionConnected && input.extensionStale) return "extension-stale";
 	if (input.extensionConnected) return "ready";
 	if ((input.connectedClients ?? 0) > 0) return "connecting";
 	const now = input.now ?? Date.now();

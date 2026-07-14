@@ -137,17 +137,20 @@ export class BrowserBridgeClientMessageService {
 		if (type === "ext_ready" || type === "tabs_update") {
 			const defaultSession = this.deps.browserSessions.defaultSession();
 			const selectedClient = this.deps.browserSessions.selectedOpenClient(defaultSession);
-			const selectedInstanceId = selectedClient ? this.deps.clients.info(selectedClient)?.extensionInstanceId : undefined;
+			const selectedInfo = selectedClient ? this.deps.clients.info(selectedClient) : undefined;
+			const selectedInstanceId = selectedInfo?.extensionInstanceId;
 			const priorInfo = this.deps.clients.info(ws);
 			const previousInstanceId = priorInfo?.extensionInstanceId;
 			const previousWorkerBootId = priorInfo?.workerBootId;
 			this.deps.clients.updateClientInfo(ws, message.bridge || message.extension);
-			const incomingInstanceId = this.deps.clients.info(ws)?.extensionInstanceId;
+			const incomingInfo = this.deps.clients.info(ws);
+			const incomingInstanceId = incomingInfo?.extensionInstanceId;
 			const replacesSelectedInstance = type === "ext_ready"
 				&& selectedClient !== undefined
 				&& selectedInstanceId !== undefined
 				&& selectedInstanceId === incomingInstanceId;
-			if (!selectedClient || selectedClient === ws || replacesSelectedInstance) this.deps.browserSessions.selectClient(defaultSession, ws);
+			const upgradesStaleSelection = type === "ext_ready" && selectedInfo?.extensionStale === true && incomingInfo?.extensionStale === false;
+			if (!selectedClient || selectedClient === ws || replacesSelectedInstance || upgradesStaleSelection) this.deps.browserSessions.selectClient(defaultSession, ws);
 			if (type === "ext_ready") {
 				// Classify against peers BEFORE collapsing, then enforce one live socket per
 				// extension instance. Idempotent: a repeat ext_ready on the same socket finds

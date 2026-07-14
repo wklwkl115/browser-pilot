@@ -259,28 +259,37 @@ export class BrowserBridgeServer implements ConsentPort {
 	}
 
 	/**
-	 * Resolve true once an extension is connected for the session, or false after
-	 * timeoutMs. Unlike waitForExtensionReconnect this never throws and accepts any
-	 * connection (cold-start grace, not reconnect): callers use it to let an idle
-	 * MV3 service worker dial in before a command fails with NO_BROWSER_EXTENSION.
+	 * Resolve true once a current extension build is selected for the session, or
+	 * false after timeoutMs. A stale peer may wake the event-driven waiter but cannot
+	 * complete it; this lets another browser instance with the current build dial in.
 	 */
 	async waitForExtensionReady(browserSessionId: string | undefined, timeoutMs: number): Promise<boolean> {
 		const waitMs = Math.max(0, Math.floor(timeoutMs));
-		if (this.snapshot({ browserSessionId }).extensionConnected) return true;
-		if (waitMs <= 0) return false;
-		await new Promise<void>((resolve) => {
-			let settled = false;
-			const finish = () => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timer);
-				this.extensionReadyWaiters.delete(finish);
-				resolve();
-			};
-			const timer = setTimeout(finish, waitMs);
-			this.extensionReadyWaiters.add(finish);
-		});
-		return this.snapshot({ browserSessionId }).extensionConnected;
+		const deadlineAt = Date.now() + waitMs;
+		const isReady = () => {
+			const snapshot = this.snapshot({ browserSessionId });
+			return snapshot.extensionConnected && snapshot.extension?.extensionStale !== true;
+		};
+		while (!isReady()) {
+			const remainingMs = deadlineAt - Date.now();
+			if (remainingMs <= 0) return false;
+			await new Promise<void>((resolve) => {
+				let settled = false;
+				const finish = () => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timer);
+					this.extensionReadyWaiters.delete(finish);
+					resolve();
+				};
+				const timer = setTimeout(finish, remainingMs);
+				this.extensionReadyWaiters.add(finish);
+				// Close the read-before-subscribe race if a current peer became selected
+				// between the loop check and waiter registration.
+				if (isReady()) finish();
+			});
+		}
+		return true;
 	}
 
 	async waitForExtensionReconnect(previousClientId: string | undefined, timeoutMs = 10_000): Promise<BrowserBridgeSnapshot> {

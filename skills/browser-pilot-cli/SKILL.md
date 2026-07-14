@@ -31,7 +31,7 @@ Treat `commands --json`, live help, schema, validate, generated contracts, and c
 
 1. Check installation and readiness.
 
-   Run `browser-pilot --help`, then `browser-pilot connect --wait --json`. On failure, inspect `browser-pilot status --json` and `browser-pilot doctor --json`. Reuse the managed daemon instead of starting parallel instances.
+   Run `browser-pilot --help`, then `browser-pilot connect --wait --json`. Readiness requires the expected loaded extension build, not only a matching daemon contract; a stale peer from another browser cannot complete readiness while a current instance is still dialing in. If it returns `CLI_EXTENSION_STALE`, execute its exact `management.reload` recovery command, reconnect, and run a fresh `tabs list`; a full extension reload invalidates old handles. On other failures, inspect `browser-pilot status --json` and `browser-pilot doctor --json`. Reuse the managed daemon instead of starting parallel instances.
 
 2. List tabs and pin the target.
 
@@ -47,7 +47,7 @@ Treat `commands --json`, live help, schema, validate, generated contracts, and c
    browser-pilot tabs create --url https://example.com --json
    ```
 
-   Preserve the returned `targetRef` and pass it to later tab-scoped calls. It remains stable across daemon/extension reconnects and proven tab replacement while the same browser runtime and logical tab survive. Prefer it over numeric `tabId`; omit both only when intentionally using the selected active tab. A closed tab or restarted browser runtime requires a fresh `tabs list`.
+   Preserve the returned `targetRef` and pass it to later tab-scoped calls. It remains stable across daemon replacement, MV3 service-worker/socket reconnects, and proven tab replacement while the same browser runtime and logical tab survive. Prefer it over numeric `tabId`; omit both only when intentionally using the selected active tab. A closed tab, full extension reload, or restarted browser runtime requires a fresh `tabs list`.
 
 3. Observe current state without a redundant mode.
 
@@ -137,7 +137,7 @@ Follow `frontier.items[].read` and `artifact_hints.jsonPaths` exactly. Substitut
 
 ## Recover Deliberately
 
-- For bridge or extension unavailability, run `connect --wait`, then inspect `status` or `doctor`.
+- For bridge or extension unavailability, run `connect --wait`, then inspect `status` or `doctor`. Do not proceed when readiness is `extension-stale`; follow its reload recovery and reacquire tabs first.
 - A CLI/control-client timeout aborts daemon work, removes a still-queued write before dispatch, and stops later program frames. If the browser already acknowledged the action, treat the retained operation as inconclusive; cancellation cannot prove that an in-flight page action had no effect.
 - For invalid arguments, query live help/schema and run offline `validate` before retrying.
 - For a stale target, run `tabs list`, select a current `targetRef`, and observe again.

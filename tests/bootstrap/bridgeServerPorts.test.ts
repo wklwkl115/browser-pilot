@@ -5,6 +5,7 @@ import { WebSocket } from "ws";
 import { BrowserBridgeServer } from "../../src/bridge/server/BrowserBridgeServer.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import { CONSENT_MESSAGE_TYPES } from "../../src/bridge/protocol/consentTypes.ts";
+import { readExpectedExtensionBuild } from "../../src/bridge/server/extensionBuild.ts";
 
 function bridgeUrl(server: BrowserBridgeServer): string {
 	return `ws://${server.host}:${server.port}`;
@@ -62,7 +63,7 @@ async function reserveConsecutivePorts(host = "127.0.0.1"): Promise<{ blocker: P
 async function connectExtension(
 	server: BrowserBridgeServer,
 	tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }],
-	identity: { extensionId?: string; extensionInstanceId?: string; workerBootId?: string } = {},
+	identity: { extensionId?: string; extensionInstanceId?: string; workerBootId?: string; buildId?: string } = {},
 ): Promise<WebSocket> {
 	const ws = new WebSocket(bridgeUrl(server));
 	await new Promise<void>((resolve, reject) => {
@@ -75,6 +76,7 @@ async function connectExtension(
 			id: identity.extensionId ?? "bridge-1",
 			extensionInstanceId: identity.extensionInstanceId ?? "instance-1",
 			workerBootId: identity.workerBootId ?? "worker-1",
+			build: { buildId: identity.buildId ?? readExpectedExtensionBuild().buildId },
 			durableRequests: true,
 		},
 		extension: { id: identity.extensionId ?? "extension-1" },
@@ -88,6 +90,24 @@ async function connectExtension(
 	}
 	return ws;
 }
+
+test("current extension readiness waits past a stale peer and promotes the current build", async () => {
+	await withServer(async (server) => {
+		const stale = await connectExtension(server, [{ id: 7, url: "https://stale.test/", active: true }], { extensionInstanceId: "stale-instance", buildId: "stale-build" });
+		assert.equal(server.snapshot().extension?.extensionStale, true);
+		let settled = false;
+		const ready = server.waitForExtensionReady(undefined, 1_000).then((value) => { settled = true; return value; });
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(settled, false);
+
+		const current = await connectExtension(server, [{ id: 9, url: "https://current.test/", active: true }], { extensionInstanceId: "current-instance" });
+		assert.equal(await ready, true);
+		assert.equal(server.snapshot().extension?.extensionInstanceId, "current-instance");
+		assert.equal(server.snapshot().extension?.extensionStale, false);
+		stale.close();
+		current.close();
+	});
+});
 
 async function waitForCommand(messages: Array<Record<string, unknown>>): Promise<Record<string, unknown>> {
 	const deadlineAt = Date.now() + 1_000;

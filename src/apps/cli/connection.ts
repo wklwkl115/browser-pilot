@@ -11,12 +11,20 @@ function recoveryCommand(command: string, argv: string[], purpose: string): Reco
 	return { command, argv, purpose };
 }
 
-export function connectionRecoveryCommands(timeoutMs = 30_000): RecoveryCommand[] {
-	return [
+export function connectionRecoveryCommands(timeoutMs = 30_000, options: { extensionStale?: boolean } = {}): RecoveryCommand[] {
+	const standard = [
 		recoveryCommand("browser-pilot status --json", ["browser-pilot", "status", "--json"], "inspect current connection state without starting anything"),
 		recoveryCommand("browser-pilot connect --wait --timeout-ms " + timeoutMs + " --json", ["browser-pilot", "connect", "--wait", "--timeout-ms", String(timeoutMs), "--json"], "start/reuse the daemon and wait for the browser extension"),
 		recoveryCommand("browser-pilot doctor --json", ["browser-pilot", "doctor", "--json"], "inspect daemon, bridge, extension, and active tab diagnostics"),
 		recoveryCommand("browser-pilot daemon status --json", ["browser-pilot", "daemon", "status", "--json"], "inspect low-level daemon state"),
+	];
+	if (!options.extensionStale) return standard;
+	return [
+		recoveryCommand("browser-pilot command --command '{\"cmd\":\"management\",\"method\":\"reload\"}' --json", ["browser-pilot", "command", "--command", '{"cmd":"management","method":"reload"}', "--json"], "reload the connected unpacked extension so it adopts the expected build"),
+		standard[1]!,
+		standard[2]!,
+		standard[0]!,
+		standard[3]!,
 	];
 }
 
@@ -100,6 +108,35 @@ function tabCountFrom(status: DaemonStatus | undefined): number {
 	return Array.isArray(status?.tabs) ? status.tabs.length : 0;
 }
 
+export function connectionReadiness(status: DaemonStatus | undefined): { ready: boolean; readiness: string; extensionStale: boolean } {
+	if (!status) return { ready: false, readiness: "no-daemon", extensionStale: false };
+	const extension = status?.extension && typeof status.extension === "object" ? status.extension : {};
+	const extensionStale = extension.extensionStale === true || status?.readiness === "extension-stale";
+	const connected = status?.extensionConnected === true;
+	return {
+		ready: status?.running === true && connected && !extensionStale,
+		readiness: extensionStale && connected
+			? "extension-stale"
+			: typeof status?.readiness === "string" ? status.readiness : connected ? "ready" : "bridge-up",
+		extensionStale,
+	};
+}
+
+export function extensionBuildCheck(status: DaemonStatus | undefined): Record<string, unknown> & { ok: boolean; code: string } {
+	const extension = status?.extension && typeof status.extension === "object" ? status.extension : {};
+	if (status?.extensionConnected !== true) return { ok: false, code: "CLI_EXTENSION_NOT_CONNECTED", reason: "not-connected" };
+	if (connectionReadiness(status).extensionStale) {
+		return {
+			ok: false,
+			code: "CLI_EXTENSION_STALE",
+			reason: "build-mismatch",
+			expectedBuild: extension.expectedBuild,
+			reportedBuild: extension.reportedBuild,
+		};
+	}
+	return { ok: true, code: "EXTENSION_BUILD_MATCH", reason: "match", expectedBuild: extension.expectedBuild, reportedBuild: extension.reportedBuild };
+}
+
 /**
  * Best-effort fetch of the current lease status from the daemon.
  * Returns a lease block or null; never throws (errors are silently swallowed
@@ -134,12 +171,11 @@ export async function connectionStatus(cwd = process.cwd(), timeoutMs = 15_000, 
 	const found = await findDaemon({ tabs: opts.tabs });
 	const staleLockfile = found ? null : staleLockfileDiagnostic();
 	const contract = daemonContractReport(found);
-	const ready = Boolean(found && isDaemonReadyForReuse(found) && found.status.running === true && found.status.extensionConnected === true);
+	const connection = connectionReadiness(found?.status);
+	const ready = Boolean(found && isDaemonReadyForReuse(found) && connection.ready);
 	// Best-effort lease status — omitted (not null) when unavailable
 	const leaseStatus = found ? await fetchLeaseStatus(found.info) : null;
-	const readiness = found
-		? (typeof found.status.readiness === "string" ? found.status.readiness : (found.status.extensionConnected === true ? "ready" : "bridge-up"))
-		: "no-daemon";
+	const readiness = found ? connection.readiness : "no-daemon";
 	return {
 		command: "status",
 		ready,
@@ -163,12 +199,13 @@ export async function connectionStatus(cwd = process.cwd(), timeoutMs = 15_000, 
 		health: found?.status.health ?? {},
 		...(leaseStatus !== null ? { lease: leaseStatus } : {}),
 		artifactRoot: path.join(cwd, ".browser-pilot", "artifacts"),
-		recovery: { commands: connectionRecoveryCommands(timeoutMs) },
+		recovery: { commands: connectionRecoveryCommands(timeoutMs, { extensionStale: connection.extensionStale }) },
 	};
 }
 
 function connectFailureEnvelope(message: string, details: Record<string, unknown>, timeoutMs: number, code = "CLI_EXTENSION_NOT_CONNECTED"): Record<string, unknown> {
 	const isBridgeStartFailure = code === "CLI_BRIDGE_START_FAILED";
+	const isExtensionStale = code === "CLI_EXTENSION_STALE";
 	return {
 		ok: false,
 		exitCode: EXIT.unavailable,
@@ -179,8 +216,12 @@ function connectFailureEnvelope(message: string, details: Record<string, unknown
 		taxonomy: { domain: "cli", category: isBridgeStartFailure ? "bridge" : "connection", retryable: true, source: "cli" },
 		...details,
 		recovery: {
-			hint: isBridgeStartFailure ? "Inspect daemon and bridge startup diagnostics before waiting for the browser extension." : "Ensure the Browser Pilot extension is installed, enabled, and connected to the reported bridge port.",
-			commands: connectionRecoveryCommands(timeoutMs),
+			hint: isBridgeStartFailure
+				? "Inspect daemon and bridge startup diagnostics before waiting for the browser extension."
+				: isExtensionStale
+					? "Reload the connected unpacked extension, then reconnect before trusting tab identities or targetRef handles."
+					: "Ensure the Browser Pilot extension is installed, enabled, and connected to the reported bridge port.",
+			commands: connectionRecoveryCommands(timeoutMs, { extensionStale: isExtensionStale }),
 		},
 	};
 }
@@ -221,8 +262,8 @@ export async function connectBrowser(opts: { wait: boolean; timeoutMs: number; c
 	}
 	const json = response.json ?? {};
 	const status = json.status as DaemonStatus | undefined;
-	const ready = status?.running === true && status.extensionConnected === true;
-	const readiness = typeof status?.readiness === "string" ? status.readiness : (ready ? "ready" : "bridge-up");
+	const connection = connectionReadiness(status);
+	const { ready, readiness } = connection;
 	const common = {
 		command: "connect",
 		ready,
@@ -246,9 +287,11 @@ export async function connectBrowser(opts: { wait: boolean; timeoutMs: number; c
 		};
 	}
 	if (opts.wait && !ready) {
+		const extension = status?.extension && typeof status.extension === "object" ? status.extension : {};
+		const staleMessage = `Connected Browser Pilot extension build is stale (reported ${String(extension.reportedBuild ?? "unknown")}, expected ${String(extension.expectedBuild ?? "unknown")})`;
 		return {
 			exitCode: EXIT.unavailable,
-			envelope: connectFailureEnvelope("Browser extension did not connect before timeout", common, opts.timeoutMs),
+			envelope: connectFailureEnvelope(connection.extensionStale ? staleMessage : "Browser extension did not connect before timeout", common, opts.timeoutMs, connection.extensionStale ? "CLI_EXTENSION_STALE" : "CLI_EXTENSION_NOT_CONNECTED"),
 		};
 	}
 	return {
@@ -257,7 +300,7 @@ export async function connectBrowser(opts: { wait: boolean; timeoutMs: number; c
 			ok: true,
 			exitCode: EXIT.ok,
 			...common,
-			recovery: { commands: ready ? [] : connectionRecoveryCommands(opts.timeoutMs) },
+			recovery: { commands: ready ? [] : connectionRecoveryCommands(opts.timeoutMs, { extensionStale: connection.extensionStale }) },
 		},
 	};
 }
