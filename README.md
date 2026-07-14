@@ -182,7 +182,7 @@ return { title: document.title, headings };
 '@ | npx browser-pilot execute --script - --json
 ```
 
-Machine discovery uses the compact command contract v3. `browser-pilot commands --json` returns one root artifact rule plus 19 canonical command entries, action schema references, and bounded command-owned subcommand references; it does not repeat flags, schemas, routing prose, or legacy aliases per command. `browser-pilot schema <command> <kebab-subcommand> --json` expands the route-specific schema: action routes include the raw action `const`, shared target/session/output fields, and the only allowed nested `params`, while routes such as `tabs list` and `artifact inspect` narrow an existing top-level parameter. Help, offline validation, daemon validation, execution routing, and contract identity all derive from the same command metadata.
+Machine discovery uses the compact command contract v3. `browser-pilot commands --json` returns one root artifact rule plus 19 canonical command entries, action schema references, and bounded command-owned subcommand references; it does not repeat flags, schemas, routing prose, or legacy aliases per command. `browser-pilot schema <command> <kebab-subcommand> --json` expands the route-specific schema: action routes include the raw action `const`, shared target/session/output fields, and the only allowed nested `params`, while routes such as `tabs list` / `tabs create` and `artifact inspect` narrow an existing top-level parameter. Help, offline validation, daemon validation, execution routing, and contract identity all derive from the same command metadata.
 
 ## Typical Workflow
 
@@ -218,8 +218,11 @@ Delta and render-cache reuse require the same `browserSessionId + tabId + target
 
 ### Living Tab Sessions
 
-Stable `tabHandle`/`targetRef` identifiers survive tab replacements, MV3 service worker
-restarts, and extension reconnects. Your agent doesn't lose track of tabs.
+Stable `browserId` values derive from the extension instance, while extension-owned
+`tabHandle`/`targetRef` identities live in `chrome.storage.session` and transfer through
+`tabs.onReplaced`. They survive daemon replacement, MV3 service-worker restarts, and
+extension reconnects within the current browser runtime. Closing the tab or restarting
+the browser runtime intentionally invalidates the handle and requires a fresh `tabs list`.
 
 CLI offline validation and daemon invocation share the same strict validation pipeline. Unknown, internal, removed, and action-incompatible parameters are rejected before normalization; cross-field rules such as execute's exactly-one `script`/`program` input are returned as a complete structured issue list. No invalid parameter is silently stripped.
 

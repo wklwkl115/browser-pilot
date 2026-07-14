@@ -40,7 +40,14 @@ Treat `commands --json`, live help, schema, validate, generated contracts, and c
    browser-pilot tabs list --json
    ```
 
-   Preserve the returned `targetRef` and pass it to later tab-scoped calls. Prefer it over numeric `tabId`; omit both only when intentionally using the selected active tab.
+   Create a tab through the matching canonical route when needed:
+
+   ```text
+   # browser-pilot-executable
+   browser-pilot tabs create --url https://example.com --json
+   ```
+
+   Preserve the returned `targetRef` and pass it to later tab-scoped calls. It remains stable across daemon/extension reconnects and proven tab replacement while the same browser runtime and logical tab survive. Prefer it over numeric `tabId`; omit both only when intentionally using the selected active tab. A closed tab or restarted browser runtime requires a fresh `tabs list`.
 
 3. Observe current state without a redundant mode.
 

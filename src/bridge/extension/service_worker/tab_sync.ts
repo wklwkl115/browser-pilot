@@ -9,6 +9,7 @@ import { cleanupBrowserPilotPageListenersForTab } from "./wait.js";
 import { cancelWaitsForTab, cleanupTabWaits } from "./wait_coordinator.js";
 import { cleanupWsSessionsForTab } from "./ws.js";
 import { browserPilotPageIdentityFields, forgetBrowserPilotPageIdentity, recordBrowserPilotDocumentCommit, recordBrowserPilotSameDocumentUpdate, replaceBrowserPilotPageIdentity } from "./page_identity";
+import { browserPilotTabIdentityFields, forgetBrowserPilotTabIdentity, replaceBrowserPilotTabIdentity } from "./tab_identity";
 import type { BrowserPilotBridgeWebSocketLike, BrowserPilotTabSyncTransport, BrowserPilotChromeTab, JsonRecord } from "./types.js";
 
 // tab_sync.js - tab list synchronization and tab lifecycle hooks.
@@ -62,10 +63,11 @@ async function sendTabsUpdate() {
   if (!openSockets.length) return;
   pruneReplacementRing();
   const tabs = (await chrome.tabs.query({}) as BrowserPilotChromeTab[]).filter((t: BrowserPilotChromeTab) => isScriptable(t.url || '') && !/streamlit/i.test(t.title || ''));
+  const tabsWithIdentity = await Promise.all(tabs.map(async (t: BrowserPilotChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, openerTabId: t.openerTabId, incognito: t.incognito === true, ...browserPilotPageIdentityFields(t), ...await browserPilotTabIdentityFields(t) })));
   const payload = JSON.stringify({
     type: 'tabs_update',
     bridge: browserPilotBridgeInfo(),
-    tabs: tabs.map((t: BrowserPilotChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, openerTabId: t.openerTabId, incognito: t.incognito === true, ...browserPilotPageIdentityFields(t) })),
+    tabs: tabsWithIdentity,
     ...(replacementRing.length ? { replaced: replacementRing.slice() } : {}),
     ...(lastActivation ? { activation: lastActivation } : {})
   });
@@ -139,13 +141,17 @@ function installBrowserPilotTabSync(deps: BrowserPilotTabSyncTransport | undefin
       safeSendTabsUpdate('tabs.onUpdated');
     }
   });
-  chrome.tabs.onRemoved.addListener((tabId: number) => { forgetBrowserPilotPageIdentity(tabId); cleanupBrowserPilotTab(tabId, 'tab_removed'); safeSendTabsUpdate('tabs.onRemoved'); });
+  chrome.tabs.onRemoved.addListener((tabId: number) => {
+    forgetBrowserPilotPageIdentity(tabId);
+    cleanupBrowserPilotTab(tabId, 'tab_removed');
+    runTabSyncTask('tabs.onRemoved.identity', async () => { await forgetBrowserPilotTabIdentity(tabId); await sendTabsUpdate(); });
+  });
   chrome.tabs.onCreated.addListener(() => { safeProbeAndConnectWS('tabs.onCreated.probe'); safeSendTabsUpdate('tabs.onCreated'); });
   chrome.tabs.onReplaced?.addListener((addedTabId: number, removedTabId: number) => {
     recordReplacement(removedTabId, addedTabId);
     replaceBrowserPilotPageIdentity(removedTabId, addedTabId);
-    safeSendTabsUpdate('tabs.onReplaced');
     cleanupBrowserPilotTab(removedTabId, 'tab_replaced');
+    runTabSyncTask('tabs.onReplaced.identity', async () => { await replaceBrowserPilotTabIdentity(removedTabId, addedTabId); await sendTabsUpdate(); });
   });
   chrome.tabs.onActivated?.addListener((activeInfo: { tabId: number; windowId: number }) => {
     recordActivation(activeInfo.tabId, activeInfo.windowId);

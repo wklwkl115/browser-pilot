@@ -30,6 +30,15 @@ test("classifyConnect labels the first handshake cold, later ones reconnect", ()
 	assert.equal(registry.classifyConnect(c, "Y", "boot-9"), "reconnect");
 });
 
+test("extension instance identity produces a stable browser id across daemon registries", () => {
+	const first = new BrowserBridgeClientRegistry(18765);
+	const firstSocket = connect(first, "stable-instance", "boot-1");
+	const second = new BrowserBridgeClientRegistry(18765);
+	const secondSocket = connect(second, "stable-instance", "boot-2");
+	assert.equal(first.info(firstSocket)?.id, second.info(secondSocket)?.id);
+	assert.match(String(first.info(firstSocket)?.id), /^browser_[a-f0-9]{16}$/);
+});
+
 test("classifyConnect distinguishes duplicate (same boot) from sw-restart (new boot)", () => {
 	const registry = new BrowserBridgeClientRegistry(18765);
 	connect(registry, "X", "boot-1"); // peer A stays open

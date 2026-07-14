@@ -350,7 +350,7 @@ await import("./build-bridge.mjs");
 const { startDaemon } = await import("../src/apps/daemon/server.ts");
 const profileDir = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-smoke-"));
 const fixture = await startFixtureServer();
-const daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true });
+let daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true });
 let browser;
 try {
 	if (!daemon.bridgePort) throw new Error("daemon did not start the browser bridge");
@@ -626,12 +626,24 @@ try {
 	if (finalObservation.schema !== "browser-page-observation/v3" || finalObservation.snapshot?.tabId !== finalTabId || typeof finalObservation.snapshot?.pageEpoch !== "string") {
 		throw new Error(`new target was not independently observable after closing the prior target: ${JSON.stringify(finalObservation)}`);
 	}
+	const stableBrowserId = tabForUrl(await daemonJson(daemon, "/status?tabs=1"), `${fixture.url}final-target`)?.browserId;
+	if (typeof stableBrowserId !== "string" || !stableBrowserId) throw new Error("final target did not expose a stable browserId before daemon replacement");
+	await daemon.close();
+	daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true });
+	const replacementStatus = await waitForStatus(daemon, (value) => {
+		const candidate = tabForUrl(value, `${fixture.url}final-target`);
+		return candidate?.targetRef === finalTargetRef && candidate?.browserId === stableBrowserId;
+	}, "daemon replacement target identity");
+	const replacementObservation = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef: finalTargetRef, fresh: true, maxNodes: 200 }), "browser_observe with pre-replacement targetRef");
+	if (replacementObservation.schema !== "browser-page-observation/v3" || replacementObservation.snapshot?.tabId !== finalTabId) {
+		throw new Error(`pre-replacement targetRef did not resolve after daemon replacement: ${JSON.stringify({ tab: tabForUrl(replacementStatus, `${fixture.url}final-target`), observation: replacementObservation })}`);
+	}
 	console.log(JSON.stringify({
 		ok: true,
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-nonzero", "physical-program-verified-idempotent", "physical-program-uncertain-replay-blocked", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "provider-budget-telemetry", "extension-reconnect-page-epoch", "operation-completion-event-wakeup", "bfcache-back-forward-lineage", "frontier-artifact-targeted-read", "prerender-tabs-onReplaced", "target-close-new-target"],
+		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-nonzero", "physical-program-verified-idempotent", "physical-program-uncertain-replay-blocked", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "provider-budget-telemetry", "extension-reconnect-page-epoch", "operation-completion-event-wakeup", "bfcache-back-forward-lineage", "frontier-artifact-targeted-read", "prerender-tabs-onReplaced", "target-close-new-target", "daemon-replacement-targetref-stable"],
 		operationCompletionEventMs: completionEventElapsedMs,
 		connectionMetrics: reconnected.health?.connectionMetrics,
 	}, null, 2));

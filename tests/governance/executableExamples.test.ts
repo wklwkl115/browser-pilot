@@ -68,6 +68,7 @@ test("marked public documentation examples pass the real offline CLI parser and 
 			assert.equal(result.ok, true, `${relative}: ${command}: ${result.ok ? "" : result.error}`);
 			if (relative === "skills/browser-pilot-cli/SKILL.md") {
 				if (subcommand === "tabs" && argv[0] === "list") skillRoutes.add("tabs list");
+				if (subcommand === "tabs" && argv[0] === "create") skillRoutes.add("tabs create");
 				if (subcommand === "observe" && argv.includes("--target-ref")) skillRoutes.add("observe --target-ref");
 				if (subcommand === "execute" && argv.includes("--script")) skillRoutes.add("execute --script");
 				if (subcommand === "network" && argv[0] === "capture-reload") skillRoutes.add("network capture-reload");
@@ -88,6 +89,7 @@ test("marked public documentation examples pass the real offline CLI parser and 
 		"execute --script",
 		"network capture-reload",
 		"observe --target-ref",
+		"tabs create",
 		"tabs list",
 	]);
 	assert.ok(total >= 10, `expected a representative executable example set, got ${total}`);

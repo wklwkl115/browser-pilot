@@ -347,6 +347,7 @@ test("CLI skill keeps concise expert routing and command-owned canonical example
 	assert.deepEqual(frontmatter[1]!.split(/\r?\n/).map((line) => line.match(/^([a-z][a-z-]*):/)?.[1]).filter(Boolean), ["name", "description"]);
 	assert.match(skill, /commands --json[\s\S]{0,240}(?:help|schema|validate)[\s\S]{0,240}(?:authoritative|authority)/i);
 	assert.match(skill, /browser-pilot tabs list --json/);
+	assert.match(skill, /browser-pilot tabs create --url/);
 	for (const mode of ["inspect", "paths", "json"]) assert.match(skill, new RegExp(`browser-pilot artifact ${mode}\\b`));
 	assert.doesNotMatch(skill, /browser-pilot tabs --action list/);
 	assert.doesNotMatch(skill, /browser-pilot artifact[^\n]*--mode (?:inspect|paths|json)/);

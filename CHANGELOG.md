@@ -16,7 +16,8 @@ All notable changes to this project will be documented in this file.
 - Persistent CDP now coalesces concurrent attaches per tab, arms independent operation domains concurrently, lazily enables domains, caches background focus-emulation setup per live session, and keeps execute fallback sessions warm instead of attaching and detaching for every background/CSP execution.
 - CDP precompilation now evaluates one-off scripts directly and compiles only scripts seen again. Hot-script tracking and compiled-script indexes are bounded, reducing the first-call round trips and preventing temporary JavaScript from growing an unbounded in-memory cache.
 - Daemon/bridge shutdown now closes lingering loopback keep-alive connections, terminates live extension sockets, waits for both WebSocket and HTTP listeners to close, and gives the foreground daemon a bounded terminal-exit fallback, so CLI or offscreen reconnects cannot hold a draining stale daemon past the managed replacement deadline.
-- Command-owned CLI routing now exposes canonical `tabs list` and `artifact inspect` / `artifact paths` / `artifact json` subcommands. Help, catalog references, route-specific schema, offline validation, invocation parsing, and the contract hash derive from the same route metadata.
+- Command-owned CLI routing now exposes canonical `tabs list` / `tabs snapshot` / `tabs switch` / `tabs create` / `tabs close` and `artifact inspect` / `artifact paths` / `artifact json` subcommands. Help, catalog references, route-specific schema, offline validation, invocation parsing, and the contract hash derive from the same route metadata.
+- Browser identities now derive from stable extension-instance ids, while extension-owned tab identities persist in `chrome.storage.session` and transfer across `tabs.onReplaced`, keeping `targetRef` stable through daemon replacement and extension reconnect within the current browser runtime.
 
 ## [0.4.0] - 2026-07-12
 

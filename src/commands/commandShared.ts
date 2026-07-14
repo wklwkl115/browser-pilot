@@ -34,9 +34,9 @@ export function objectParam(value: unknown): Record<string, unknown> {
 export const NativeStringList = Type.Array(Type.String());
 export const NativeCommandParamsSchema = Type.Object({}, { additionalProperties: true });
 
-export const TAB_SCOPED_TOOL_GUIDELINE = "For automation, call browser_tabs list to get a stable tabHandle/targetRef, or reuse browser_tabs create id/targetRef directly. Omit targetRef/tabId to use the selected active tab; pass an explicit target mainly to disambiguate several open tabs. Numeric tabId remains accepted for compatibility and auto-follows unambiguous Chrome replacement chains.";
-export const TAB_ID_DESCRIPTION = "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.";
-export const TARGET_REF_DESCRIPTION = "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.";
+export const TAB_SCOPED_TOOL_GUIDELINE = "For automation, call browser_tabs list to get a browser-runtime-stable tabHandle/targetRef, or reuse browser_tabs create id/targetRef directly. Omit targetRef/tabId to use the selected active tab; pass an explicit target mainly to disambiguate several open tabs. Numeric tabId remains accepted for compatibility and auto-follows unambiguous Chrome replacement chains.";
+export const TAB_ID_DESCRIPTION = "Compatibility target: numeric tabId or browser-runtime-stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.";
+export const TARGET_REF_DESCRIPTION = "Stable target reference from browser_tabs list/create (tabHandle). It survives daemon/extension reconnect and unambiguous in-place replacement within the current browser runtime; reacquire after the tab or browser runtime is gone.";
 
 function enumLiteralSchemas<const TValue extends readonly [string, string, ...string[]]>(values: TValue): [TSchema, TSchema, ...TSchema[]] {
 	return values.map((value) => Type.Literal(value)) as unknown as [TSchema, TSchema, ...TSchema[]];

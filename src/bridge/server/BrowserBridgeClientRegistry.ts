@@ -1,10 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { noBrowserExtensionError } from "../errors.js";
 import { BrowserBridgeError } from "../../utils/errors.js";
 import { CLOSED_STATES, isOpen } from "./bridgeUtils.js";
 import { compareExtensionBuild, readExpectedExtensionBuild, type ExpectedExtensionBuild } from "./extensionBuild.js";
 import type { BridgeConnectionMetrics, BrowserBridgeClientInfo } from "./types.js";
+
+function stableBrowserId(extensionInstanceId: string): string {
+	return `browser_${createHash("sha256").update(extensionInstanceId).digest("hex").slice(0, 16)}`;
+}
+
+function updateExtensionInstanceIdentity(current: BrowserBridgeClientInfo, value: unknown): void {
+	if (typeof value !== "string" || !value) return;
+	current.extensionInstanceId = value;
+	current.id = stableBrowserId(value);
+}
 
 export class BrowserBridgeClientRegistry {
 	private readonly clients = new Set<WebSocket>();
@@ -142,7 +152,7 @@ export class BrowserBridgeClientRegistry {
 		if (typeof raw.workerBootId === "string") current.workerBootId = raw.workerBootId;
 		if (typeof raw.workerStartedAt === "number" && Number.isFinite(raw.workerStartedAt)) current.workerStartedAt = raw.workerStartedAt;
 		if (typeof raw.captureContractVersion === "number" && Number.isInteger(raw.captureContractVersion)) current.captureContractVersion = raw.captureContractVersion;
-		if (typeof raw.extensionInstanceId === "string") current.extensionInstanceId = raw.extensionInstanceId;
+		updateExtensionInstanceIdentity(current, raw.extensionInstanceId);
 	}
 
 	/**

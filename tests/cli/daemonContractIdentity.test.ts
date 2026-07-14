@@ -72,7 +72,7 @@ test("contract payload includes canonical actions, operation-v2 outcomes, and na
 	assert.ok(payload.actions.some((action) => action.commandName === "browser_network" && action.action === "captureReload" && action.cliAction === "capture-reload"));
 	assert.equal(payload.actions.some((action) => action.commandName === "browser_network" && action.action === "wait"), false);
 	assert.ok(payload.commands.some((command) => command.name === "browser_execute"));
-	assert.ok(payload.commands.some((command) => command.name === "browser_tabs" && command.cliSubcommands.some((route) => route.token === "list" && route.parameter === "action" && route.value === "list")));
+	assert.ok(payload.commands.some((command) => command.name === "browser_tabs" && ["list", "snapshot", "switch", "create", "close"].every((token) => command.cliSubcommands.some((route) => route.token === token && route.parameter === "action" && route.value === token))));
 	assert.ok(payload.commands.some((command) => command.name === "browser_artifact" && ["inspect", "paths", "json"].every((token) => command.cliSubcommands.some((route) => route.token === token && route.parameter === "mode" && route.value === token))));
 });
 

@@ -125,8 +125,27 @@ test("same-extension reconnect adopts identity and migrates secondary session se
 	assert.equal(adopted.tabHandle, previousTab.tabHandle);
 	assert.equal(adopted.generation, previousTab.generation);
 	assert.notEqual(adopted.pageEpoch, previousTab.pageEpoch);
-	assert.equal(router.sessions.get(previousTab.id)?.disconnectedAt !== undefined, true);
+	assert.equal(router.sessions.get(previousTab.id)?.client, reconnected);
+	assert.equal(router.sessions.get(previousTab.id)?.disconnectedAt, undefined);
 	assert.equal(secondary.selectedClient, reconnected);
 	assert.equal(secondary.defaultSessionId, adopted.id);
 	assert.equal(secondary.latestSessionId, adopted.id);
+});
+
+test("extension-owned tab identity preserves targetRef across daemon replacement", () => {
+	const tabIdentity = "f4e722c76fbb4f4583915245b4880abc";
+	const first = setup();
+	const firstSocket = connect(first.clients, "extension-1");
+	first.browserSessions.selectClient(first.browserSessions.defaultSession(), firstSocket);
+	first.router.updateTabs([{ id: 7, tabIdentity, url: "https://stable.test/", active: true }], firstSocket);
+	const originalHandle = first.router.defaultTabHandle();
+	assert.ok(originalHandle);
+
+	const replacement = setup();
+	const replacementSocket = connect(replacement.clients, "extension-1");
+	replacement.browserSessions.selectClient(replacement.browserSessions.defaultSession(), replacementSocket);
+	replacement.router.updateTabs([{ id: 9, tabIdentity, url: "https://stable.test/after", active: true }], replacementSocket);
+
+	assert.equal(replacement.router.defaultTabHandle(), originalHandle);
+	assert.equal(replacement.router.resolveTargetRef(originalHandle)?.tabId, 9);
 });

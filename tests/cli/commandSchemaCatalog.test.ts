@@ -109,12 +109,14 @@ test("command-owned natural routes map canonical tokens to existing top-level pa
 	const artifact = buildCliCommands().find((item) => item.name === "browser_artifact");
 	assert.ok(tabs);
 	assert.ok(artifact);
-	assert.deepEqual(naturalSubcommandForToken(tabs, "list"), {
-		token: "list",
-		parameter: "action",
-		value: "list",
-		owner: "command",
-	});
+	for (const action of ["list", "snapshot", "switch", "create", "close"]) {
+		assert.deepEqual(naturalSubcommandForToken(tabs, action), {
+			token: action,
+			parameter: "action",
+			value: action,
+			owner: "command",
+		});
+	}
 	for (const mode of ["inspect", "paths", "json"]) {
 		assert.deepEqual(naturalSubcommandForToken(artifact, mode), {
 			token: mode,

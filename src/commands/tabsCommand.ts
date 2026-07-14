@@ -134,7 +134,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 			"Prefer the returned id/targetRef/tabHandle for later tab-scoped browser_* calls; numeric tabId remains compatibility input.",
 			"Everyday tab control is list/switch/create/close/snapshot; the session & lease actions (selectBrowser/listSessions/createSession/selectSession/closeSession/attachTab/detachTab/leaseTab/releaseTab) are advanced multi-agent isolation/coordination — skip them unless you are managing browser sessions or tab leases.",
 		],
-		cliSubcommands: [{ token: "list", parameter: "action", value: "list" }],
+		cliSubcommands: ["list", "snapshot", "switch", "create", "close"].map((action) => ({ token: action, parameter: "action", value: action })),
 		parameters: strictCommandParameters({
 			action: Type.String({ description: "Common: list, snapshot, switch, create, close. Advanced (session & lease lifecycle): selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
 			...sharedTabScopedToolParams({ tabIdDescription: "Compatibility target for switch/close: numeric tabId or tabHandle string.", targetRefDescription: "Preferred stable tabHandle for switch/close/attach/detach/lease/release." }),

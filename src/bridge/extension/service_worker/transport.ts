@@ -7,6 +7,7 @@ import { runStartupRecovery } from "./state_store";
 import { installBrowserPilotTabSync } from "./tab_sync";
 import { setBrowserPilotOperationEventSocketGetter } from "./operation_event_transport";
 import { browserPilotPageIdentityFields } from "./page_identity";
+import { browserPilotTabIdentityFields } from "./tab_identity";
 import type { JsonRecord, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeAlarm, BrowserPilotChromeTab } from "./types";
 
 type OffscreenMessage = JsonRecord & { type?: string; port?: number; data?: unknown; resetDelay?: boolean };
@@ -213,11 +214,12 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
   try { await validateCspBypassRule(); } catch (_e) { /* best-effort */ }
   const extensionInstanceId = await getExtensionInstanceId();
   const tabs = (await chrome.tabs.query({}) as BrowserPilotChromeTab[]).filter((tab: BrowserPilotChromeTab) => isScriptable(tab.url));
+  const tabsWithIdentity = await Promise.all(tabs.map(async (tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId, ...browserPilotPageIdentityFields(tab), ...await browserPilotTabIdentityFields(tab) })));
   socket.send(JSON.stringify({
     type: "ext_ready",
     consentCapable: true,
     bridge: { ...browserPilotBridgeInfo(), bridgePort: port, primaryPort, ...(extensionInstanceId ? { extensionInstanceId } : {}) },
-    tabs: tabs.map((tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId, ...browserPilotPageIdentityFields(tab) })),
+    tabs: tabsWithIdentity,
   }));
 }
 

@@ -379,6 +379,7 @@ test("schema command marks --command as inline-only", () => {
 test("canonical tabs and artifact subcommands share schema and offline validation", () => {
 	const cases = [
 		{ command: "tabs", subcommand: "list", params: {}, parameter: "action", value: "list" },
+		{ command: "tabs", subcommand: "create", params: { url: "about:blank" }, parameter: "action", value: "create" },
 		{ command: "artifact", subcommand: "inspect", params: { path: "artifact.json" }, parameter: "mode", value: "inspect" },
 		{ command: "artifact", subcommand: "paths", params: { path: "artifact.json" }, parameter: "mode", value: "paths" },
 		{ command: "artifact", subcommand: "json", params: { path: "artifact.json", jsonPath: "data" }, parameter: "mode", value: "json" },

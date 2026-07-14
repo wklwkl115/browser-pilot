@@ -258,10 +258,19 @@ export class BrowserTabSessionRouter {
 		const tabId = toTabId(tab.id ?? tab.tabId);
 		if (!tabId) return undefined;
 		const id = this.sessionIdForTab(context.ws, tabId);
-		const existing = this.sessions.get(id);
+		const prior = this.sessions.get(id);
+		const existing = prior?.client === context.ws ? prior : undefined;
 		const replacement = this.pendingReplacementIdentities.get(id);
-		const reconnect = !existing && !replacement ? this.findReconnectIdentity(tabId, context.bridge?.extensionId, tab, context.now) : undefined;
-		const identity = replacement ?? existing ?? reconnect ?? this.newIdentity(context.browserId);
+		const sameIdReconnect: ReconnectIdentity | undefined = prior && prior.client !== context.ws ? {
+			logicalTabId: prior.logicalTabId,
+			tabHandle: prior.tabHandle,
+			generation: prior.generation,
+			openerTabId: prior.openerTabId,
+			previousSessionId: prior.id,
+			previousClient: prior.client,
+		} : undefined;
+		const reconnect = !existing && !replacement ? sameIdReconnect ?? this.findReconnectIdentity(tabId, context.bridge?.extensionId, tab, context.now) : undefined;
+		const identity = replacement ?? existing ?? reconnect ?? this.newIdentity(context.bridge?.extensionInstanceId ?? context.browserId, this.normalizeTabIdentity(tab.tabIdentity));
 		this.pendingReplacementIdentities.delete(id);
 		this.sessions.set(id, this.syncedTabSession(tab, tabId, id, identity, existing, replacement, reconnect, context));
 		return { id, active: tab.active === true, reconnect };
@@ -291,9 +300,11 @@ export class BrowserTabSessionRouter {
 	}
 
 	private migrateReconnect(reconnect: ReconnectIdentity | undefined, id: string, context: TabSyncContext): void {
-		if (!reconnect || reconnect.previousSessionId === id) return;
-		const previous = this.sessions.get(reconnect.previousSessionId);
-		if (previous && !previous.disconnectedAt) previous.disconnectedAt = context.now;
+		if (!reconnect) return;
+		if (reconnect.previousSessionId !== id) {
+			const previous = this.sessions.get(reconnect.previousSessionId);
+			if (previous && !previous.disconnectedAt) previous.disconnectedAt = context.now;
+		}
 		for (const browserSession of this.browserSessions.list()) {
 			if (browserSession.selectedClient === reconnect.previousClient) this.browserSessions.selectClient(browserSession, context.ws);
 			if (browserSession.defaultSessionId === reconnect.previousSessionId) this.setDefaultSessionId(browserSession, id);
@@ -501,14 +512,20 @@ export class BrowserTabSessionRouter {
 		return this.sessions.get(sessionId)?.tabHandle;
 	}
 
-	private newIdentity(browserId: string): Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation"> {
-		const logicalTabId = randomUUID().replace(/-/g, "").slice(0, 16);
+	private newIdentity(browserId: string, tabIdentity?: string): Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation"> {
+		const logicalTabId = tabIdentity ?? randomUUID().replace(/-/g, "").slice(0, 16);
 		const browserPart = String(browserId || "browser").replace(/[^a-zA-Z0-9]+/g, "").slice(0, 24) || "browser";
 		return {
 			logicalTabId,
 			tabHandle: `tabh_${browserPart}_${logicalTabId}_g1`,
 			generation: 1,
 		};
+	}
+
+	private normalizeTabIdentity(value: unknown): string | undefined {
+		if (typeof value !== "string") return undefined;
+		const normalized = value.replace(/-/g, "").trim().toLowerCase();
+		return /^[a-f0-9]{32}$/.test(normalized) ? normalized : undefined;
 	}
 
 	/**

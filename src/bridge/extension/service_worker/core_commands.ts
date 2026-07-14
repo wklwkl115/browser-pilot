@@ -5,6 +5,7 @@ import { isScriptable, browserPilotBridgeInfo } from "./bridge_info";
 import { handleBrowserPilotNativeCommand, isBrowserPilotNativeCommand } from "./runtime.js";
 import { BROWSER_PILOT_ERROR_CODES, bridgeError, normalizeBridgeResponse, normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
 import { browserPilotPageIdentityForTab } from "./page_identity";
+import { browserPilotTabIdentityFields } from "./tab_identity";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeSender, BrowserPilotChromeCookie, BrowserPilotNativeProtocolRuntime } from "./types";
 
 // core_commands.js - non-native bridge commands: tabs, cookies, management, content settings, batch, CDP.
@@ -128,7 +129,7 @@ async function handleTabsCommand(msg: BrowserPilotBridgeCommand): Promise<Browse
   try {
     if (!msg.method || msg.method === 'list') {
       const tabs = (await chrome.tabs.query({})).filter(t => isScriptable(t.url));
-      const data = tabs.map(t => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, openerTabId: t.openerTabId, incognito: t.incognito === true }));
+      const data = await Promise.all(tabs.map(async t => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, openerTabId: t.openerTabId, incognito: t.incognito === true, ...await browserPilotTabIdentityFields(t) })));
       return { ok: true, data };
     }
     if (msg.method === 'switch') {
@@ -158,13 +159,13 @@ async function handleTabsCommand(msg: BrowserPilotBridgeCommand): Promise<Browse
         if (!incognitoTab || incognitoTab.id === undefined) return bridgeError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'Incognito window was created but no tab was returned', { cmd: msg.cmd, method: msg.method });
         const ready = await waitForCreatedTabReady(incognitoTab.id, Math.max(100, Number(msg.timeoutMs ?? msg.timeout_ms ?? 5000)));
         if (ready.ok === false) return ready;
-        return { ok: true, data: { id: incognitoTab.id, tabId: incognitoTab.id, url: incognitoTab.url || normalized.url, title: incognitoTab.title || '', windowId: incognitoTab.windowId, openerTabId: incognitoTab.openerTabId, incognito: true, ...coreRecord(ready.data) } };
+        return { ok: true, data: { id: incognitoTab.id, tabId: incognitoTab.id, url: incognitoTab.url || normalized.url, title: incognitoTab.title || '', windowId: incognitoTab.windowId, openerTabId: incognitoTab.openerTabId, incognito: true, ...await browserPilotTabIdentityFields(incognitoTab), ...coreRecord(ready.data) } };
       }
       const tab = await chrome.tabs.create({ url: normalized.url, active: msg.active !== false });
       if (tab.id === undefined) return bridgeError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'Created tab did not return a tab id', { cmd: msg.cmd, method: msg.method });
       const ready = await waitForCreatedTabReady(tab.id, Math.max(100, Number(msg.timeoutMs ?? msg.timeout_ms ?? 5000)));
       if (ready.ok === false) return ready;
-      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || '', windowId: tab.windowId, openerTabId: tab.openerTabId, incognito: tab.incognito === true, ...coreRecord(ready.data) } };
+      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || '', windowId: tab.windowId, openerTabId: tab.openerTabId, incognito: tab.incognito === true, ...await browserPilotTabIdentityFields(tab), ...coreRecord(ready.data) } };
     }
     if (msg.method === 'close') {
       const rawTarget = msg.targetTabId ?? msg.closeTabId ?? msg.tabId;

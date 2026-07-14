@@ -66,12 +66,13 @@ const chromeStub = {
 			async set() {},
 			async remove() {},
 		},
-		session: {
+		 session: {
 			async get(key?: unknown) {
 				if (typeof key === "string") return { [key]: sessionStorage[key] };
 				return { ...sessionStorage };
 			},
 			async set(value: Record<string, unknown>) { Object.assign(sessionStorage, value); },
+			async remove(key: string | string[]) { for (const item of Array.isArray(key) ? key : [key]) delete sessionStorage[item]; },
 		},
 	},
 	alarms: {
@@ -154,6 +155,7 @@ const frameCommands = await import("../../src/bridge/extension/service_worker/fr
 const operationTransport = await import("../../src/bridge/extension/service_worker/operation_event_transport.ts");
 const tabSync = await import("../../src/bridge/extension/service_worker/tab_sync.ts");
 const pageIdentity = await import("../../src/bridge/extension/service_worker/page_identity.ts");
+const tabIdentity = await import("../../src/bridge/extension/service_worker/tab_identity.ts");
 
 function resetCdpFixtures(): void {
 	cdpCommands.browserPilotPersistentCdpBridge.sessions.clear();
@@ -428,6 +430,19 @@ test("hook/session cleanup preserves page identity while actual tab removal forg
 	const replaced = pageIdentity.ensureBrowserPilotPageIdentity(77, "https://example.test/");
 	assert.notEqual(replaced?.pageEpoch, initial?.pageEpoch);
 	resetCdpFixtures();
+});
+
+test("extension tab identity persists and transfers across tab replacement", async () => {
+	delete sessionStorage.browserPilotTabIdentitiesV1;
+	tabIdentity.resetBrowserPilotTabIdentitiesForTest();
+	const original = await tabIdentity.ensureBrowserPilotTabIdentity(77);
+	assert.equal(await tabIdentity.ensureBrowserPilotTabIdentity(77), original);
+	await tabIdentity.replaceBrowserPilotTabIdentity(77, 88);
+	assert.equal(await tabIdentity.ensureBrowserPilotTabIdentity(88), original);
+	const recycled = await tabIdentity.ensureBrowserPilotTabIdentity(77);
+	assert.notEqual(recycled, original);
+	await tabIdentity.forgetBrowserPilotTabIdentity(88);
+	assert.notEqual(await tabIdentity.ensureBrowserPilotTabIdentity(88), original);
 });
 
 test("persistent CDP evaluates one-off scripts directly, then compiles hot scripts and falls back from stale cache entries", async () => {
