@@ -1,10 +1,10 @@
 // ABML causal plane with passive network deltas and initiator-enhanced attribution.
 //
-// Given the network records captured since a baseline observation, produce a budget-immune
+// Given the network records captured since a baseline observation, produce a complete
 // "what fired since baseline" summary for the observe envelope. It reports requests observed in
 // the window and attributes them to a control when an action context is present. CDP initiator
 // metadata (type/url, NOT full call-stack parsing) filters structural noise and elevates
-// confidence when the initiator confirms a script-triggered request. URLs are redacted + truncated;
+// confidence when the initiator confirms a script-triggered request. URLs are redacted;
 // no bodies. Pure core: zero browser/Node deps.
 import type { Entity, EntityRelation } from "./entity.js";
 import { isRecord } from "../../utils/records.js";
@@ -29,47 +29,26 @@ export type CausalEvent = {
 	ref: string; // bp-ref://event/<seq|id>
 	type: string; // console | domSink | storage | error | ...
 	at?: number;
-	summary?: string; // redacted + truncated; never a raw payload
+	summary?: string; // redacted; never a raw payload
 	selector?: string; // the event's target element, when it names one
 };
 
-// Budget-immune envelope block. `unavailable` is emitted when no network recorder is active for
+// `unavailable` is emitted when no network recorder is active for
 // the tab; the agent opts in via `browser_command network.start`. The optional `events` field carries
 // hook events since baseline alongside the network `requests`.
 export type CausalSummary =
 	| { sinceSeq: number; requests: CausalRequest[]; requestCount?: number; events?: CausalEvent[]; eventCount?: number }
 	| { unavailable: string };
 
-export const MAX_CAUSAL_REQUESTS = 12;
-export const MAX_CAUSAL_EVENTS = 12;
-
-// The TRUE number of requests fired since the baseline. `requests` is capped at MAX_CAUSAL_REQUESTS,
-// so `requests.length` UNDERCOUNTS the delta whenever it was truncated — `requestCount` carries the
-// real total in that case. Any "N requests fired" surfacing (e.g. the scan nextActions hint) must use
-// this, not `requests.length`, or it under-reports large SPA navigation deltas.
 export function causalRequestsFiredCount(causal: CausalSummary): number {
 	if (!("requests" in causal)) return 0;
 	return typeof causal.requestCount === "number" ? causal.requestCount : causal.requests.length;
 }
 
-// The agent-facing "what fired since baseline" hint line. Reports the TRUE fired count and, when the
-// inline `requests` preview is capped below that total, says where the rest live (`browser_command network.list`)
-// — so the agent isn't left wondering whether the unseen requests are pageable (they are not; the
-// causal block is a bounded preview, the recorder holds the full set).
 export function causalFiredHint(causal: CausalSummary): string | undefined {
 	if (!("requests" in causal) || !causal.requests.length) return undefined;
 	const fired = causalRequestsFiredCount(causal);
-	const shown = causal.requests.length;
-	const more = fired > shown ? ` (first ${shown} shown inline; full set via browser_command network.list)` : "";
-	return `${fired} request(s) fired since baseline → read envelope.causal.requests${more} (action→request attribution)`;
-}
-const MAX_URL_CHARS = 200;
-const MAX_EVENT_SUMMARY_CHARS = 200;
-
-// Redact sensitive substrings then clamp to a max length (shared by URL + event-summary shaping).
-function redactClamp(text: string, max: number): string {
-	const red = redactSensitiveText(text);
-	return red.length > max ? `${red.slice(0, max)}…` : red;
+	return `${fired} request(s) fired since baseline → read envelope.causal.requests and its frontier resource when folded (action→request attribution)`;
 }
 
 function str(value: unknown): string | undefined {
@@ -89,7 +68,7 @@ function num(value: unknown): number | undefined {
 }
 
 function redactUrl(url: string): string {
-	return redactClamp(url, MAX_URL_CHARS);
+	return redactSensitiveText(url);
 }
 
 function deltaRecordsSinceSeq(records: Array<Record<string, unknown>>, sinceSeq: number): Array<{ record: Record<string, unknown>; seq: number }> {
@@ -136,17 +115,16 @@ export function buildCausalRequest(record: Record<string, unknown>): CausalReque
 // sinceSeq); a defensive seq filter is applied here so the pure function is self-contained.
 export function buildCausalSummary(records: Array<Record<string, unknown>>, sinceSeq: number): CausalSummary {
 	const delta = deltaRecordsSinceSeq(records, sinceSeq);
-	const requests = delta.slice(0, MAX_CAUSAL_REQUESTS).map(({ record }) => buildCausalRequest(record));
+	const requests = delta.map(({ record }) => buildCausalRequest(record));
 	return {
 		sinceSeq,
 		requests,
-		...(delta.length > requests.length ? { requestCount: delta.length } : {}),
 	};
 }
 
 // Event (non-network) causal entries.
 
-// A short, redacted summary for a hook event: prefer a named text field (message/summary/preview/…),
+// A redacted summary for a hook event: prefer a named text field (message/summary/preview/…),
 // never dump the raw payload object. Falls back to undefined so the entry stays compact.
 function eventSummary(data: unknown): string | undefined {
 	if (typeof data === "string") return data;
@@ -183,19 +161,17 @@ export function buildCausalEvent(record: Record<string, unknown>, fallbackIndex?
 		ref: mintRef("event", refIdComponent(id, "event")),
 		type,
 		...(at !== undefined ? { at } : {}),
-		...(summary ? { summary: redactClamp(summary, MAX_EVENT_SUMMARY_CHARS) } : {}),
+		...(summary ? { summary: redactSensitiveText(summary) } : {}),
 		...(selector ? { selector } : {}),
 	};
 }
 
-// Build the event-delta (hook events captured since the baseline seq). Mirrors buildCausalSummary:
-// defensive seq>sinceSeq window, sorted ascending, capped at MAX_CAUSAL_EVENTS with the true count.
+// Build the event-delta (hook events captured since the baseline seq). Mirrors buildCausalSummary.
 export function buildCausalEvents(records: Array<Record<string, unknown>>, sinceSeq: number): { events: CausalEvent[]; eventCount?: number } {
 	const delta = deltaRecordsSinceSeq(records, sinceSeq);
-	const events = delta.slice(0, MAX_CAUSAL_EVENTS).map(({ record }, index) => buildCausalEvent(record, index));
+	const events = delta.map(({ record }, index) => buildCausalEvent(record, index));
 	return {
 		events,
-		...(delta.length > events.length ? { eventCount: delta.length } : {}),
 	};
 }
 
@@ -219,10 +195,6 @@ export function latestSeq(records: Array<Record<string, unknown>>): number | und
 
 // Attribution to a control using the timing window.
 
-// Cap on `triggered` edges attached to one control — keeps a heavy delta from evicting the
-// control's relations under the per-entity cap. The full list always stays in causal.requests.
-export const MAX_TRIGGERED_RELATIONS = 8;
-
 // Build `triggered` (control → network request) relations from the causal delta. Passive requests
 // (parser/preload initiated) are excluded — they are structural, not action-caused. When
 // hasActionRef is true AND the request has initiatorType "script", confidence is elevated to
@@ -231,7 +203,6 @@ export function buildTriggeredRelations(causal: CausalSummary, options?: { hasAc
 	if (!("requests" in causal)) return [];
 	return causal.requests
 		.filter((r) => !r.passive)
-		.slice(0, MAX_TRIGGERED_RELATIONS)
 		.map((request) => {
 			const initiatorConfirmed = request.initiatorType === "script" && options?.hasActionRef;
 			return {

@@ -10,7 +10,6 @@ import {
 	type IndexedEntity,
 	type TemplateGroup,
 } from "./grouping.js";
-import { MAX_TEMPLATES } from "./templating.js";
 
 export type SemanticRefAnchorConfidence = "high" | "low";
 export type SemanticRefAnchorReason = "unique-name" | "duplicate-name" | "missing-name";
@@ -44,8 +43,7 @@ export type SemanticRefAnchorSummary = {
 
 function groupEntities(entities: Entity[]): TemplateGroup[] {
 	return suppressNestedNonControlGroups(rawGroupEntities(entities))
-		.sort((a, b) => b.members.length - a.members.length)
-		.slice(0, MAX_TEMPLATES);
+		.sort((a, b) => b.members.length - a.members.length);
 }
 
 function nameCounts(group: TemplateGroup): Map<string, number> {

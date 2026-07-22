@@ -2,7 +2,7 @@
 // merged entity list, relation summary, and optional temporal diff. No per-site or
 // per-type branches — every detector matches against the universal ARIA structure (roles,
 // landmarks, relation counts). The result rides the envelope top-level alongside
-// gist/outline/relations, budget-immune.
+// gist/outline/relations as stable observation facts.
 //
 // Each intent is ANCHORED: beyond the bare label it carries `evidence` refs (the entity the
 // agent should act on — submitRef/gridRef/dialogRef/…) and a short `reason` (the signal +
@@ -49,8 +49,7 @@ export type DetectedIntent = {
 	// only — never embeds user-entered text.
 	reason?: string;
 	// Actionable anchors for the pattern — the ref(s) the agent should act on, so it doesn't
-	// re-scan entities to locate the target. Ref arrays are capped (MAX_EVIDENCE_REFS) with a
-	// sibling count. Omitted entirely when no ref resolves (best-effort; never blocks detection).
+	// re-scan entities to locate the target. Omitted when no ref resolves.
 	evidence?: Record<string, unknown>;
 };
 
@@ -60,8 +59,6 @@ export type InferenceSummary = {
 	intents: DetectedIntent[];
 };
 
-// Per-array evidence ref cap — keeps the envelope compact + deterministic (like relations.highlights).
-const MAX_EVIDENCE_REFS = 6;
 type InferenceFeature = {
 	entity: Entity;
 	roleLower: string;
@@ -165,15 +162,9 @@ function landmarkRef(view: InferenceView, landmark: string): string | undefined 
 	return view.features.find((feature) => feature.entity.structure?.landmark === landmark)?.entity.ref;
 }
 
-// Cap a ref list to MAX_EVIDENCE_REFS and emit it under `key`, with a sibling `<base>Count`
-// when truncated (key "tabRefs" → count "tabCount"). Returns {} when the list is empty so
-// the caller can spread it into evidence and naturally omit absent anchors.
-function capRefs(all: string[], key: string): Record<string, unknown> {
+function evidenceRefs(all: string[], key: string): Record<string, unknown> {
 	if (!all.length) return {};
-	const unique = uniqueRefs(all);
-	const refs = unique.slice(0, MAX_EVIDENCE_REFS);
-	const countKey = `${key.replace(/Refs$/, "")}Count`;
-	return { [key]: refs, ...(unique.length > refs.length ? { [countKey]: unique.length } : {}) };
+	return { [key]: uniqueRefs(all) };
 }
 
 function collectEvidenceRefs(value: unknown, refs: string[]): void {
@@ -186,10 +177,10 @@ export function inferenceEvidenceRefs(summary: InferenceSummary | undefined): st
 	return uniqueRefs(refs);
 }
 
-export function entitiesForInferenceEvidence(entities: Entity[], summary: InferenceSummary | undefined, cap = MAX_EVIDENCE_REFS * 4): Entity[] {
-	const refs = new Set(inferenceEvidenceRefs(summary).slice(0, cap));
+export function entitiesForInferenceEvidence(entities: Entity[], summary: InferenceSummary | undefined): Entity[] {
+	const refs = new Set(inferenceEvidenceRefs(summary));
 	if (!refs.size) return [];
-	return entities.filter((entity) => refs.has(entity.ref)).slice(0, cap);
+	return entities.filter((entity) => refs.has(entity.ref));
 }
 
 // Construct a DetectedIntent, dropping an empty evidence object so absent anchors don't
@@ -269,7 +260,7 @@ function filterControls(view: InferenceView): InferenceFeature[] {
 function detectFilterPanel(view: InferenceView): DetectedIntent | undefined {
 	const controls = filterControls(view);
 	if (controls.length >= 3) {
-		return mk("filter-panel", "high", `${controls.length} filter controls`, { ...capRefs(controls.map((feature) => feature.entity.ref), "controlRefs"), inputCount: controls.length });
+		return mk("filter-panel", "high", `${controls.length} filter controls`, { ...evidenceRefs(controls.map((feature) => feature.entity.ref), "controlRefs"), inputCount: controls.length });
 	}
 	if (!hasLandmark(view, "search")) return undefined;
 	const editableInputs = view.features.filter((feature) => feature.editableControl && isPerceptible(feature));
@@ -284,7 +275,7 @@ function detectSingleChoice(view: InferenceView): DetectedIntent | undefined {
 	const groupRef = firstRefByRole(view, "radiogroup");
 	if (groupRef) return mk("single-choice", "high", "radiogroup role", { groupRef });
 	const radios = allRefsByRole(view, "radio");
-	if (radios.length >= 2) return mk("single-choice", "medium", `${radios.length} ungrouped radios`, capRefs(radios, "optionRefs"));
+	if (radios.length >= 2) return mk("single-choice", "medium", `${radios.length} ungrouped radios`, evidenceRefs(radios, "optionRefs"));
 	return undefined;
 }
 
@@ -307,9 +298,9 @@ function detectMultiChoice(view: InferenceView): DetectedIntent | undefined {
 	}
 	const dominant = Array.from(groups.values()).filter((g) => g.refs.length >= 3).sort((a, b) => b.refs.length - a.refs.length)[0];
 	if (dominant) {
-		return mk("multi-choice", "high", `${dominant.refs.length} grouped checkboxes`, { ...capRefs(dominant.refs, "optionRefs"), ...(dominant.name ? { groupName: dominant.name } : {}) });
+		return mk("multi-choice", "high", `${dominant.refs.length} grouped checkboxes`, { ...evidenceRefs(dominant.refs, "optionRefs"), ...(dominant.name ? { groupName: dominant.name } : {}) });
 	}
-	return mk("multi-choice", "medium", `${checkboxes.length} scattered checkboxes`, capRefs(checkboxes.map((feature) => feature.entity.ref), "optionRefs"));
+	return mk("multi-choice", "medium", `${checkboxes.length} scattered checkboxes`, evidenceRefs(checkboxes.map((feature) => feature.entity.ref), "optionRefs"));
 }
 
 // expandable: expandedTarget >= 2 filters the single-nav-toggle case found in live validation
@@ -321,7 +312,7 @@ function detectExpandable(view: InferenceView, relSummary: RelationSummary): Det
 	const triggerRefs = refsWithRelation(view, "expandedTarget", (feature) => isPerceptible(feature) || feature.entity.state.expanded !== undefined);
 	const count = Math.max(triggerRefs.length, relSummary.summary.expandedTarget ?? 0);
 	if (triggerRefs.length < EXPANDABLE_THRESHOLD) return undefined;
-	return mk("expandable", "high", `${count} expand triggers`, capRefs(triggerRefs, "triggerRefs"));
+	return mk("expandable", "high", `${count} expand triggers`, evidenceRefs(triggerRefs, "triggerRefs"));
 }
 
 // data-grid: grid/treegrid role (ARIA interactive grid) or tableCells >= 50 (large table).
@@ -361,8 +352,8 @@ function detectDialog(view: InferenceView): DetectedIntent | undefined {
 function detectTabbedInterface(view: InferenceView): DetectedIntent | undefined {
 	const tablist = view.features.find((feature) => roleOf(feature) === "tablist" && isPerceptible(feature))?.entity;
 	const tabRefs = uniqueRefs(view.features.filter((feature) => roleOf(feature) === "tab" && isPerceptible(feature)).map((feature) => feature.entity.ref));
-	if (tablist) return mk("tabbed-interface", "high", `visible tablist with ${tabRefs.length} tabs`, { tablistRef: tablist.ref, ...capRefs(tabRefs, "tabRefs") });
-	if (tabRefs.length >= 2) return mk("tabbed-interface", "medium", `${tabRefs.length} visible ungrouped tabs`, capRefs(tabRefs, "tabRefs"));
+	if (tablist) return mk("tabbed-interface", "high", `visible tablist with ${tabRefs.length} tabs`, { tablistRef: tablist.ref, ...evidenceRefs(tabRefs, "tabRefs") });
+	if (tabRefs.length >= 2) return mk("tabbed-interface", "medium", `${tabRefs.length} visible ungrouped tabs`, evidenceRefs(tabRefs, "tabRefs"));
 	return undefined;
 }
 

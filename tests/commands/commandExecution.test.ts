@@ -6,6 +6,7 @@ import test from "node:test";
 import { CommandManifestIndex, type CommandDefinition } from "../../src/commands/commandManifestIndex.ts";
 import { defineExecuteCommand } from "../../src/commands/executeCommand.ts";
 import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
+import { jsonResult } from "../../src/utils/toolResult.ts";
 import { defineScreenshotCommand } from "../../src/commands/screenshotCommand.ts";
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
 import { publicCreateTabResult } from "../../src/commands/tabsProjection.ts";
@@ -142,7 +143,7 @@ test("commands execution: browser_tabs list returns compact transport envelope f
 	assert.equal(body.tabCount, 1);
 	assert.deepEqual(body.bridge, { browserSessionId: "session-1", host: "127.0.0.1", port: 18765, running: true, connectedClients: 1, extensionConnected: true, defaultTabId: 7, defaultTabHandle: "tab-7", selectionVersion: 3 });
 	assert.deepEqual(body.tabs, [{ id: "tab-7", tabId: 7, tabHandle: "tab-7", targetRef: "tab-7", url: "https://example.test/", title: "Example", active: true }]);
-	assert.deepEqual(result.details, { truncated: false, originalLength: result.content[0]?.text.length });
+	assert.deepEqual(result.details, {});
 	assert.equal(runtime.calls.some((call) => call.name === "refreshTabs"), true);
 });
 
@@ -236,6 +237,23 @@ test("commands execution: browser_command read commands return immediately", asy
 	assert.deepEqual(send?.args[0], { cmd: "network.list", limit: 20 });
 	assert.equal(envelope.id, "cmd-1");
 	assert.equal(result.details?.mode, "command");
+});
+
+test("commands execution: browser_command preserves large JSON results", async () => {
+	const payload = "x".repeat(60_000);
+	const runtime = createRuntime({
+		async sendCommand() {
+			return { id: "large", acknowledged: true, data: { payload } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const result = parseResult(await command.execute("tool-large", { command: { cmd: "network.list", limit: 20 } }));
+	assert.equal(((result.data as Record<string, unknown>).payload as string).length, payload.length);
+});
+
+test("tool results preserve complete metadata", () => {
+	const diagnosticText = "x".repeat(60_000);
+	assert.equal(jsonResult({}, { diagnosticText }).details?.diagnosticText, diagnosticText);
 });
 
 test("commands execution: browser_command writes return the raw bridge result", async () => {

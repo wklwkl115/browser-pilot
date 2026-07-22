@@ -1,5 +1,5 @@
 import type { Entity } from "../../kernels/abml/entity.js";
-import type { CommandPerceptionLedgerFactState, CommandPerceptionLedgerFrame } from "../../ports/BrowserCommandRuntimePort.js";
+import type { CommandPerceptionLedgerFactState } from "../../ports/BrowserCommandRuntimePort.js";
 
 function entityVersionStamp(entity: Entity): string {
 	return JSON.stringify({
@@ -24,19 +24,8 @@ function entityStableStamp(entity: Entity): string {
 	});
 }
 
-export function factsFromObservedEntities(entities: Entity[], granularity: CommandPerceptionLedgerFactState["lastShownGranularity"] = "compact"): Record<string, CommandPerceptionLedgerFactState> {
+export function factsFromObservedEntities(entities: Entity[]): Record<string, CommandPerceptionLedgerFactState> {
 	const facts: Record<string, CommandPerceptionLedgerFactState> = {};
-	for (const entity of entities) facts[entity.ref] = { versionStamp: entityVersionStamp(entity), stableStamp: entityStableStamp(entity), lastShownGranularity: granularity };
+	for (const entity of entities) facts[entity.ref] = { versionStamp: entityVersionStamp(entity), stableStamp: entityStableStamp(entity) };
 	return facts;
-}
-
-export function stableRefsFromCommandFrames(current: CommandPerceptionLedgerFrame, prior: CommandPerceptionLedgerFrame | undefined): Set<string> {
-	const out = new Set<string>();
-	if (!prior) return out;
-	for (const [ref, state] of Object.entries(current.facts)) {
-		const previous = prior.facts[ref];
-		if (!previous) continue;
-		if ((state.stableStamp ?? state.versionStamp) === (previous.stableStamp ?? previous.versionStamp)) out.add(ref);
-	}
-	return out;
 }

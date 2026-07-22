@@ -10,7 +10,7 @@ import type { PageReanchorReason } from "../session/pageIdentity.js";
 export const PAGE_OBSERVATION_SCHEMA_V3 = "browser-page-observation/v3" as const;
 
 export type ObservationFrontierState = "folded" | "viewport-window" | "virtualized" | "paginated" | "lazy" | "unavailable";
-export type ObservationFrontierKind = "template-instances" | "collection-window" | "content";
+export type ObservationFrontierKind = "template-instances" | "collection-window" | "content" | "details";
 
 export interface ObservationFrontierItem {
 	ref: string;
@@ -138,7 +138,7 @@ const FRONTIER_ITEM_SCHEMA = {
 	type: "object",
 	properties: {
 		ref: { type: "string", minLength: 1 },
-		kind: { enum: ["template-instances", "collection-window", "content"] },
+			kind: { enum: ["template-instances", "collection-window", "content", "details"] },
 		state: { enum: ["folded", "viewport-window", "virtualized", "paginated", "lazy", "unavailable"] },
 		label: { type: "string", minLength: 1 },
 		observed: { type: "integer", minimum: 0 },
@@ -231,7 +231,7 @@ function validFrontier(value: unknown): value is ObservationFrontier {
 	if (!isRecord(value) || !exactKeys(value, new Set(["items"])) || !Array.isArray(value.items)) return false;
 	return value.items.every((raw) => {
 		if (!isRecord(raw) || !exactKeys(raw, FRONTIER_KEYS)) return false;
-		if (typeof raw.ref !== "string" || !["template-instances", "collection-window", "content"].includes(String(raw.kind))) return false;
+			if (typeof raw.ref !== "string" || !["template-instances", "collection-window", "content", "details"].includes(String(raw.kind))) return false;
 		if (!["folded", "viewport-window", "virtualized", "paginated", "lazy", "unavailable"].includes(String(raw.state))) return false;
 		return typeof raw.resourceUri === "string" && raw.resourceUri.length > 0
 			|| typeof raw.unavailableReason === "string" && raw.unavailableReason.length > 0

@@ -12,7 +12,7 @@ import {
 	structureScopeKey,
 	type TemplateGroup,
 } from "./grouping.js";
-import { buildTemplate, MAX_TEMPLATES, templateRank, type StructureTemplate, type TemplateVaryField } from "./templating.js";
+import { buildTemplate, templateRank, type StructureTemplate, type TemplateVaryField } from "./templating.js";
 import type { TreeDiff, TreeDiffChangedBucket, TreeDiffInstanceBucket, TreeTemplateDiff } from "./treeDiff.js";
 
 export type SnapshotProjectionDelta = {
@@ -79,7 +79,6 @@ function cloneInstanceBucket(bucket: TreeDiffInstanceBucket): TreeDiffInstanceBu
 	return {
 		count: bucket.count,
 		instances: bucket.instances.map((item) => ({ ...item })),
-		...(bucket.truncated ? { truncated: true } : {}),
 	};
 }
 
@@ -87,7 +86,6 @@ function cloneChangedBucket(bucket: TreeDiffChangedBucket): TreeDiffChangedBucke
 	return {
 		count: bucket.count,
 		instances: bucket.instances.map((item) => ({ ...item, fields: item.fields.map((field) => ({ ...field })) })),
-		...(bucket.truncated ? { truncated: true } : {}),
 	};
 }
 
@@ -156,13 +154,11 @@ export function buildSnapshotProjection(entities: Entity[], options: SnapshotPro
 		if (!delta) continue;
 		templates.push(deltaOnlyTemplate(diff, delta));
 	}
-	const capped = templates
-		.sort((a, b) => templateRank(a) - templateRank(b) || Math.max(b.count, b.delta?.beforeCount ?? 0) - Math.max(a.count, a.delta?.beforeCount ?? 0))
-		.slice(0, MAX_TEMPLATES);
+	const sorted = templates.sort((a, b) => templateRank(a) - templateRank(b) || Math.max(b.count, b.delta?.beforeCount ?? 0) - Math.max(a.count, a.delta?.beforeCount ?? 0));
 	const summary: SnapshotProjectionSummary = {
-		templateCount: capped.length,
-		instanceCount: capped.reduce((sum, item) => sum + item.count, 0),
-		projectedInstanceRefCount: capped.reduce((sum, item) => sum + item.instanceRefCount, 0),
+		templateCount: sorted.length,
+		instanceCount: sorted.reduce((sum, item) => sum + item.count, 0),
+		projectedInstanceRefCount: sorted.reduce((sum, item) => sum + item.instanceRefCount, 0),
 		...(typeof options.treeDiff?.summary.changedTemplateCount === "number" ? { changedTemplateCount: options.treeDiff.summary.changedTemplateCount } : {}),
 		...(typeof options.treeDiff?.summary.appeared === "number" ? { appeared: options.treeDiff.summary.appeared } : {}),
 		...(typeof options.treeDiff?.summary.disappeared === "number" ? { disappeared: options.treeDiff.summary.disappeared } : {}),
@@ -171,5 +167,5 @@ export function buildSnapshotProjection(entities: Entity[], options: SnapshotPro
 		...(options.treeDiff?.summary.partialBaseline ? { partialBaseline: true } : {}),
 		...(options.treeDiff?.summary.unavailable ? { unavailable: options.treeDiff.summary.unavailable } : {}),
 	};
-	return { summary, templates: capped };
+	return { summary, templates: sorted };
 }

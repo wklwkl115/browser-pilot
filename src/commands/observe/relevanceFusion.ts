@@ -6,10 +6,6 @@ import type { ObserveToolParams } from "./common.js";
 import { computeObserveRelevanceMap } from "./relevanceScoring.js";
 import type { ObserveRelevanceInput, ObserveRelevanceResult, ObserveRelevanceTerm } from "./relevanceTypes.js";
 
-export function relevanceEnabled(): boolean {
-	return process.env.BROWSER_PILOT_RELEVANCE !== "0";
-}
-
 export function observeIntent(params: ObserveToolParams): string | undefined {
 	return typeof params.intent === "string" && params.intent.trim() ? params.intent.trim() : undefined;
 }
@@ -64,7 +60,6 @@ function entityRelevanceInputs(entities: Entity[]): ObserveRelevanceInput[] {
 }
 
 export function buildObserveRelevance(server: BrowserCommandRuntimePort, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>): ObserveRelevanceResult | undefined {
-	if (!relevanceEnabled()) return undefined;
 	const trace = typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(browserSessionId) : undefined;
 	const terms = [
 		...traceTerms(trace),

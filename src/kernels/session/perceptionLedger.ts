@@ -7,7 +7,6 @@ export type PerceptionObjectiveKey = PerceptionLedgerKey;
 export type PerceptionLedgerFactState = {
 	versionStamp: string;
 	stableStamp?: string;
-	lastShownGranularity: "full" | "compact" | "line" | "ref";
 };
 
 export type PerceptionLedgerFrame = {
@@ -32,10 +31,6 @@ export type PerceptionLedgerFrame = {
 	renderCache?: {
 		paramsSignature: string;
 		renderedAt: number;
-	};
-	allocation?: {
-		budgetUsedRatio: number;
-		omittedCount: number;
 	};
 	objective?: {
 		key: PerceptionObjectiveKey;

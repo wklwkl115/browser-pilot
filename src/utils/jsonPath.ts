@@ -37,10 +37,6 @@ function parseJsonPathInternal(jsonPath: string | undefined): { tokens: JsonPath
 	return { tokens, invalid: false };
 }
 
-export function parseJsonPath(jsonPath: string | undefined): JsonPathToken[] {
-	return parseJsonPathInternal(jsonPath).tokens;
-}
-
 export function getJsonPath(value: unknown, jsonPath: string | undefined): { exists: boolean; value: unknown } {
 	let current = value;
 	const parsed = parseJsonPathInternal(jsonPath);
@@ -51,10 +47,4 @@ export function getJsonPath(value: unknown, jsonPath: string | undefined): { exi
 		current = (current as Record<string | number, unknown>)[token];
 	}
 	return { exists: true, value: current };
-}
-
-export function hasJsonPathValue(value: unknown, jsonPath: string | undefined): boolean {
-	if (!jsonPath) return false;
-	const selected = getJsonPath(value, jsonPath);
-	return selected.exists && selected.value !== undefined;
 }

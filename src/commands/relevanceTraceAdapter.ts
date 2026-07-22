@@ -9,12 +9,10 @@ export function withRelevanceTraceTap(delegate: BrowserCommandSink, server: Brow
 			delegate.define({
 				...definition,
 				async execute(toolCallId, params, signal, onUpdate, ctx) {
-					if (process.env.BROWSER_PILOT_RELEVANCE !== "0") {
-						const terms = extractToolRelevanceTerms(definition.name, params);
-						if (terms.length) {
-							const browserSessionId = isRecord(params) && typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-							server.recordPerceptionTraceTerms?.(browserSessionId, terms);
-						}
+					const terms = extractToolRelevanceTerms(definition.name, params);
+					if (terms.length) {
+						const browserSessionId = isRecord(params) && typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
+						server.recordPerceptionTraceTerms?.(browserSessionId, terms);
 					}
 					return await definition.execute(toolCallId, params, signal, onUpdate, ctx);
 				},

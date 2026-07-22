@@ -1,16 +1,5 @@
 import { isBrowserPilotRef } from "./core.js";
 
-const REF_TEXT_PATTERN = /\bbp-ref:\/\/[^\s)]+/g;
-
-export function extractRefsFromText(text: string): string[] {
-	const refs: string[] = [];
-	for (const match of text.matchAll(REF_TEXT_PATTERN)) {
-		const ref = match[0];
-		if (isBrowserPilotRef(ref)) refs.push(ref);
-	}
-	return refs;
-}
-
 export function collectRefs(value: unknown): string[] {
 	const refs: string[] = [];
 	const walk = (item: unknown): void => {

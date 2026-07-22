@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { CollectionSummary, CompactCollection, ObservationFrontierItem, PageObservationContent, PageObservationV3 } from "../../kernels/abml/pageObservation.js";
 import type { SnapshotProjection, SnapshotProjectionTemplate } from "../../kernels/abml/snapshotProjection.js";
+import type { TreeDiffChangedBucket, TreeDiffInstanceBucket, TreeTemplateDiff } from "../../kernels/abml/treeDiff.js";
+
+const ROOT_SAMPLE_SIZE = 3;
 
 export const OBSERVATION_RESOURCE_URI_PREFIX = "browser-pilot://observation/";
 export const OBSERVATION_RESOURCES_DETAIL_KEY = "browser-pilot/internal-observation-resources";
@@ -57,8 +60,35 @@ function descriptor(observation: PageObservationV3, path: string, input: Omit<Ob
 	};
 }
 
+function compactInstanceBucket(bucket: TreeDiffInstanceBucket): TreeDiffInstanceBucket {
+	return { count: bucket.count, instances: bucket.instances.slice(0, ROOT_SAMPLE_SIZE) };
+}
+
+function compactChangedBucket(bucket: TreeDiffChangedBucket): TreeDiffChangedBucket {
+	return { count: bucket.count, instances: bucket.instances.slice(0, ROOT_SAMPLE_SIZE) };
+}
+
+function compactTreeTemplate(template: TreeTemplateDiff): TreeTemplateDiff {
+	return {
+		...template,
+		appeared: compactInstanceBucket(template.appeared),
+		disappeared: compactInstanceBucket(template.disappeared),
+		changed: compactChangedBucket(template.changed),
+	};
+}
+
+function treeDiffDetailCount(templates: TreeTemplateDiff[]): number {
+	return templates.reduce((count, template) => count + 1 + template.appeared.instances.length + template.disappeared.instances.length + template.changed.instances.length, 0);
+}
+
 function compactTemplate(template: SnapshotProjectionTemplate): SnapshotProjectionTemplate {
-	return { ...template, instanceRefs: template.instanceRefs.slice(0, 3), ...(template.sample ? { sample: { ...template.sample } } : {}) };
+	const delta = template.delta ? {
+		...template.delta,
+		appeared: compactInstanceBucket(template.delta.appeared),
+		disappeared: compactInstanceBucket(template.delta.disappeared),
+		changed: compactChangedBucket(template.delta.changed),
+	} : undefined;
+	return { ...template, instanceRefs: template.instanceRefs.slice(0, ROOT_SAMPLE_SIZE), ...(template.sample ? { sample: { ...template.sample } } : {}), ...(delta ? { delta } : {}) };
 }
 
 function projectTemplates(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): SnapshotProjection | undefined {
@@ -77,10 +107,50 @@ function projectTemplates(observation: PageObservationV3, path: string, resource
 	return { summary: projection.summary, templates };
 }
 
+function addDetailsResource(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[], input: { ref: string; label: string; jsonPath: "treeDiff" | "causal" | "relations"; observed: number; total: number }): void {
+	const resource = descriptor(observation, path, { name: input.label, ref: input.ref, kind: "details", label: input.label, jsonPath: input.jsonPath });
+	resources.push(resource);
+	items.push({ ref: input.ref, kind: "details", state: "folded", label: input.label, observed: input.observed, total: input.total, resourceUri: resource.uri });
+}
+
+function projectTreeDiff(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): PageObservationV3["treeDiff"] {
+	const treeDiff = observation.treeDiff;
+	if (!treeDiff) return undefined;
+	const shown = treeDiff.templates.slice(0, ROOT_SAMPLE_SIZE).map(compactTreeTemplate);
+	const folded = treeDiff.templates.length > shown.length || treeDiff.templates.some((template) => template.appeared.instances.length > ROOT_SAMPLE_SIZE || template.disappeared.instances.length > ROOT_SAMPLE_SIZE || template.changed.instances.length > ROOT_SAMPLE_SIZE);
+	if (folded) addDetailsResource(observation, path, resources, items, { ref: "frontier:details:tree-diff", label: "Complete tree diff", jsonPath: "treeDiff", observed: treeDiffDetailCount(shown), total: treeDiffDetailCount(treeDiff.templates) });
+	return { summary: treeDiff.summary, templates: shown };
+}
+
+function projectCausal(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): PageObservationV3["causal"] {
+	const causal = observation.causal;
+	if (!causal || !("requests" in causal)) return causal;
+	const requests = causal.requests.slice(0, ROOT_SAMPLE_SIZE);
+	const events = causal.events?.slice(0, ROOT_SAMPLE_SIZE);
+	const total = causal.requests.length + (causal.events?.length ?? 0);
+	const observed = requests.length + (events?.length ?? 0);
+	if (total > observed) addDetailsResource(observation, path, resources, items, { ref: "frontier:details:causal", label: "Complete causal activity", jsonPath: "causal", observed, total });
+	return {
+		sinceSeq: causal.sinceSeq,
+		requests,
+		...(causal.requests.length > requests.length ? { requestCount: causal.requests.length } : {}),
+		...(events?.length ? { events } : {}),
+		...(causal.events && causal.events.length > (events?.length ?? 0) ? { eventCount: causal.events.length } : {}),
+	};
+}
+
+function projectRelations(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): PageObservationV3["relations"] {
+	const relations = observation.relations;
+	if (!relations) return undefined;
+	const highlights = relations.highlights.slice(0, ROOT_SAMPLE_SIZE);
+	if (relations.highlights.length > highlights.length) addDetailsResource(observation, path, resources, items, { ref: "frontier:details:relations", label: "Complete relation highlights", jsonPath: "relations", observed: highlights.length, total: relations.highlights.length });
+	return { summary: relations.summary, highlights, ...(relations.highlights.length > highlights.length ? { highlightCount: relations.highlights.length } : {}) };
+}
+
 function projectCollections(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): CompactCollection[] | undefined {
 	if (!observation.collections?.length) return undefined;
 	return observation.collections.map((collection: CollectionSummary, index) => {
-		const needsResource = collection.completeness !== "complete" || collection.itemRefs.length > 3 || Boolean(collection.evidence?.length) || Boolean(collection.dataSources?.length);
+		const needsResource = collection.completeness !== "complete" || collection.itemRefs.length > ROOT_SAMPLE_SIZE || Boolean(collection.evidence?.length) || Boolean(collection.dataSources?.length);
 		const ref = collection.frontierRef ?? `frontier:collection:${collection.collectionId ?? index}`;
 		if (needsResource) {
 			const label = collection.name || `Collection ${index + 1}`;
@@ -96,7 +166,7 @@ function projectCollections(observation: PageObservationV3, path: string, resour
 			...(collection.total !== undefined ? { total: collection.total } : {}),
 			completeness: collection.completeness,
 			confidence: collection.confidence,
-			itemRefs: collection.itemRefs.slice(0, 3),
+			itemRefs: collection.itemRefs.slice(0, ROOT_SAMPLE_SIZE),
 			...(needsResource ? { frontierRef: ref } : {}),
 		};
 	});
@@ -116,13 +186,19 @@ export function projectObservationResources(observation: PageObservationV3, path
 	if (observation.content?.complete === false) items.push({ ref: "frontier:content:unavailable", kind: "content", state: "unavailable", label: "Uncaptured page content", unavailableReason: "capture reached the internal safety ceiling" });
 	const snapshotProjection = projectTemplates(observation, path, resources, items);
 	const collections = projectCollections(observation, path, resources, items);
-	const { content: _content, snapshotProjection: _snapshotProjection, collections: _collections, ...base } = observation;
+	const treeDiff = projectTreeDiff(observation, path, resources, items);
+	const causal = projectCausal(observation, path, resources, items);
+	const relations = projectRelations(observation, path, resources, items);
+	const { content: _content, snapshotProjection: _snapshotProjection, collections: _collections, treeDiff: _treeDiff, causal: _causal, relations: _relations, ...base } = observation;
 	return {
 		observation: {
 			...base,
 			...(sections[0] ? { content: { text: sections[0].text, ...(observation.content?.headings?.length ? { headings: observation.content.headings } : {}), complete: observation.content?.complete !== false && sections.length <= 1 } } : {}),
-			...(snapshotProjection ? { snapshotProjection } : {}),
-			...(collections ? { collections } : {}),
+				...(snapshotProjection ? { snapshotProjection } : {}),
+				...(collections ? { collections } : {}),
+				...(treeDiff ? { treeDiff } : {}),
+				...(causal ? { causal } : {}),
+				...(relations ? { relations } : {}),
 			frontier: { items },
 		},
 		resources,

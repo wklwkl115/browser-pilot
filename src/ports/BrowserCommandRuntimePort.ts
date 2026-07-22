@@ -1,35 +1,17 @@
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
 import type { SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/leaseRegistry.js";
 import type { SessionObservationSnapshotInfo } from "../kernels/session/observationSnapshotRegistry.js";
-import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionObjectiveKey, PerceptionTraceSnapshot, PerceptionTraceTerm } from "../kernels/session/perceptionLedger.js";
-import type { TemporalConfidence, TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../kernels/temporal/types.js";
+import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../kernels/session/perceptionLedger.js";
+import type { TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../kernels/temporal/types.js";
 
 export type CommandPerceptionLedgerKey = PerceptionLedgerKey;
-export type CommandPerceptionObjectiveKey = PerceptionObjectiveKey;
 export type CommandPerceptionLedgerFactState = PerceptionLedgerFactState;
 export type CommandPerceptionLedgerFrame = PerceptionLedgerFrame;
-export type CommandPerceptionTraceTerm = PerceptionTraceTerm;
 export type CommandPerceptionTraceSnapshot = PerceptionTraceSnapshot;
 
 export type CommandTemporalVerdictStatus = TemporalVerdictStatus;
-export type CommandTemporalConfidence = TemporalConfidence;
 export type CommandTemporalReason = TemporalReason;
 export type CommandTemporalFrontierNext = TemporalFrontierNext;
-
-export type CommandTemporalVerdict = {
-	status: CommandTemporalVerdictStatus;
-	confidence: CommandTemporalConfidence;
-	reasons: CommandTemporalReason[];
-};
-
-export type CommandTemporalDecision = {
-	verdict: CommandTemporalVerdict;
-	frontier: {
-		next: CommandTemporalFrontierNext;
-		handle?: string;
-	};
-	source?: string;
-};
 
 export type CommandTemporalProfileSample = {
 	operationId?: string;

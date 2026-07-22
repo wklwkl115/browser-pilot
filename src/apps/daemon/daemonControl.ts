@@ -226,10 +226,6 @@ export function isDaemonReadyForReuse(found: FoundDaemon): boolean {
 	return daemonContractReport(found).check.ok;
 }
 
-export function isDaemonContractCurrent(info: Pick<DaemonInfo, "version" | "contractIdentity">): boolean {
-	return compareDaemonContractIdentity(localDaemonContractIdentity(), info.contractIdentity ?? null).ok;
-}
-
 export class DaemonReplacementError extends Error {
 	readonly code = "DAEMON_REPLACEMENT_FAILED" as const;
 

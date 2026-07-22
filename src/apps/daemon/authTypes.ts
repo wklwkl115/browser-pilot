@@ -50,13 +50,9 @@ export const AUTH_ERROR_CODES = {
   pairingNotFound: "PAIRING_NOT_FOUND",
 } as const;
 
-// ---- HTTP response shapes shared with MCP ----
-export interface RevokeResponse { ok: true; revoked: string; }
-
 export interface PairingSummary {
   pairingId: string;
   label: string;
   status: AgentStatus;
   lastSeenAt: string | null;
 }
-export interface PairingsResponse { ok: true; agents: PairingSummary[]; }

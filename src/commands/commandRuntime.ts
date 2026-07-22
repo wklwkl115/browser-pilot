@@ -4,41 +4,19 @@ import { BrowserBridgeError, errorToPlain } from "../utils/errors.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import { normalizeTabId } from "../utils/params.js";
 import { isRecord } from "../utils/records.js";
-import { errorResult, jsonResult, type BrowserTextCommandResult } from "../utils/toolResult.js";
+import { errorResult, type BrowserTextCommandResult } from "../utils/toolResult.js";
 import { stableJson } from "../utils/json.js";
-import { fitInlineJsonToBudgetMeasured } from "../kernels/evidence/distill/fit.js";
 import { classifyRefScope } from "../kernels/refs/refPolicy.js";
 import { pageReanchorReason } from "../kernels/session/pageIdentity.js";
 import type { ExecutionRefTarget } from "../browser-command-runtime/executionRef.js";
 import { pageIdentityFromUnknown } from "./observe/pageIdentity.js";
-import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
-import { simpleJsonResult } from "./resultMiddleware.js";
 import { asPositiveInt, optionalTargetRef } from "./commandShared.js";
 import type { BrowserCommandDefinition, BrowserCommandSink } from "./commandDefinition.js";
-
-// Mandatory-read pair with resultMiddleware.ts: this file normalizes params/operation/errors,
-// while resultMiddleware.ts shapes the returned envelope, budgets, redaction, and artifacts.
 
 /** Hard ceiling for any command timeout to prevent unbounded hangs. */
 const MAX_COMMAND_TIMEOUT_MS = 300_000;
 
 export type CommandResultContext = { cwd?: string; omitTransportDetails?: boolean } | undefined;
-
-export type StandardToolParams = {
-	browserSessionId?: string;
-	targetRef?: string;
-	outputPath?: string;
-	timeoutMs?: number;
-	maxChars?: number;
-};
-
-type JsonCommandResultOptions = {
-	commandName: ToolResultBudgetName | string;
-	budgetName?: ToolResultBudgetName;
-	fallbackName: string;
-	details?: Record<string, unknown>;
-	maxChars?: number;
-};
 
 export type CommandOnUpdate = ((result: BrowserTextCommandResult) => void | Promise<void>) | undefined;
 
@@ -78,14 +56,6 @@ export function sharedTabScopedToolParams(targetRefDescription?: string) {
 	return { targetRef: optionalTargetRef(targetRefDescription) };
 }
 
-export function commandMaxChars(params: Pick<StandardToolParams, "maxChars">, budgetName: ToolResultBudgetName): number {
-	return asPositiveInt(params.maxChars, defaultResultBudget(budgetName));
-}
-
-export function commandPositiveInt(value: unknown, fallback: number): number {
-	return asPositiveInt(value, fallback);
-}
-
 export function commandTimeoutMs(value: unknown, fallback: number, options: { allowZero?: boolean } = {}): number {
 	const n = Number(value);
 	if (options.allowZero && Number.isFinite(n) && n === 0) return 0;
@@ -97,7 +67,7 @@ export function artifactFallbackName(prefix: string, extension = "json"): string
 	return `${prefix}-${Date.now()}.${extension}`;
 }
 
-export function targetTabId(params: Pick<StandardToolParams, "targetRef">, body?: Record<string, unknown>): unknown {
+export function targetTabId(params: { targetRef?: string }, body?: Record<string, unknown>): unknown {
 	return params.targetRef ?? body?.targetRef ?? body?.tabHandle ?? body?.tabId;
 }
 
@@ -194,26 +164,6 @@ export function bridgeNestedErrorResult(error: unknown, options: { command?: str
 		}
 	}
 	return errorResult(error);
-}
-
-export function inlineJsonCommandResult(value: unknown, details: Record<string, unknown>, params: Pick<StandardToolParams, "maxChars">, budgetName: ToolResultBudgetName): BrowserTextCommandResult {
-	const maxChars = commandMaxChars(params, budgetName);
-	const fitted = fitInlineJsonToBudgetMeasured(value, maxChars);
-	// Floor the serialize budget at the fitted size: a structurally-minimal value (e.g. a single
-	// large item) must still emit as VALID JSON rather than be text-truncated mid-token.
-	const serializeBudget = Math.max(maxChars, fitted.length);
-	return jsonResult(fitted.value, details, serializeBudget);
-}
-
-export async function jsonCommandResult(value: unknown, params: Pick<StandardToolParams, "outputPath" | "maxChars">, ctx: CommandResultContext, options: JsonCommandResultOptions): Promise<BrowserTextCommandResult> {
-	const budgetName = options.budgetName ?? options.commandName as ToolResultBudgetName;
-	return await simpleJsonResult(value, {
-		maxChars: options.maxChars ?? commandMaxChars(params, budgetName),
-		ctx,
-		outputPath: params.outputPath,
-		fallbackName: options.fallbackName,
-		details: options.details,
-	});
 }
 
 function compactOperationForEnvelope(operation: TrackedOperationInfo): Record<string, unknown> {

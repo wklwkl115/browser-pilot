@@ -3,9 +3,11 @@ import { prepareExecuteStdlib } from "../browser-command-runtime/executeStdlib.j
 import { MAX_EXECUTION_REFS } from "../browser-command-runtime/executionRef.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
+import { redactSensitiveValue } from "../utils/redaction.js";
 import { isRecord } from "../utils/records.js";
+import { jsonResult } from "../utils/toolResult.js";
 import { withBrowserOperation } from "./browserOperation.js";
-import { artifactFallbackName, defineBrowserCommand, jsonCommandResult, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
+import { defineBrowserCommand, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import type { ValidationIssue } from "./commandDefinition.js";
@@ -76,7 +78,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 			...sharedTabScopedToolParams(),
 		}),
 		validateArguments: validateExecuteArguments,
-		async execute(_toolCallId, params: ExecuteParams, signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params: ExecuteParams, signal) {
 			return await runCommandHandler(async () => {
 				const input = prepareExecute(params);
 				const prepared = prepareExecuteStdlib(input.script, { refs: input.refs });
@@ -91,11 +93,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					timeoutMs,
 					signal,
 				}, ({ signal: operationSignal }) => executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal }));
-				return await jsonCommandResult(result, {}, ctx, {
-					commandName: "browser_execute",
-					fallbackName: artifactFallbackName("execute-result"),
-					details: { mode: "javascript", refsBound: Object.keys(input.refs).length },
-				});
+				return jsonResult(redactSensitiveValue(result), { mode: "javascript", refsBound: Object.keys(input.refs).length });
 			});
 		},
 	});

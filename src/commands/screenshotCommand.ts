@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { resolveArtifactPath, saveDataUrl } from "../artifacts/artifactFiles.js";
-import { defineBrowserCommand, inlineJsonCommandResult, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
+import { jsonResult } from "../utils/toolResult.js";
+import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 
@@ -49,7 +50,7 @@ export function defineScreenshotCommand({ commands, ensureStarted }: CommandRegi
 						if (dims && data.height === undefined) data.height = dims.height;
 					}
 				}
-				return inlineJsonCommandResult({ ...result, data, saved }, { command: commandName, saved }, params, "browser_screenshot");
+				return jsonResult({ ...result, data, saved }, { command: commandName, saved });
 			});
 		},
 	});

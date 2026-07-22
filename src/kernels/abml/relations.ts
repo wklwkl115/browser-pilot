@@ -1,7 +1,7 @@
 // ABML relationship graph (pure core). Turns relation *anchors* (typed edges keyed by
 // pre-ref backend/AX node ids, extracted from the AX tree by the runtime layer) into typed
-// EntityRelation edges on entities (keyed by materialized bp-ref:// targets), plus a compact,
-// budget-immune relation summary for the envelope top-level.
+// EntityRelation edges on entities (keyed by materialized bp-ref:// targets), plus a relation
+// summary for the envelope top-level.
 //
 // The two-pass split keeps unstable backend ids out of public output: the runtime extracts
 // anchors and mints refs (DOM↔AX merge), then this pure module materializes anchors→refs and
@@ -48,14 +48,6 @@ const TYPE_ORDER: RelationType[] = [
 	"coveredBy",
 ];
 
-// Per-entity relation cap protects the envelope from pathological fan-out (a listbox owning
-// 50 options). The top-level relations.summary is the guaranteed survivor; full relations
-// remain reachable through the entity ref / artifact. Cap is deterministic (TYPE_ORDER then
-// targetRef) and documented so consumers can rely on it.
-const MAX_RELATIONS_PER_ENTITY = 8;
-// Highlights are a capped, deterministic sample of the strongest edges for the envelope.
-const MAX_HIGHLIGHTS = 8;
-const MAX_PAINT_ORDER_OCCLUSION_ANCHORS = 40;
 const PAINT_ORDER_BUCKET_SIZE = 256;
 const MIN_OCCLUSION_OVERLAP_AREA = 9;
 const MIN_OCCLUSION_OVERLAP_RATIO = 0.02;
@@ -101,11 +93,6 @@ function dedupeRelations(relations: EntityRelation[]): EntityRelation[] {
 		out.push(relation);
 	}
 	return out;
-}
-
-function capRelations(relations: EntityRelation[]): EntityRelation[] {
-	if (relations.length <= MAX_RELATIONS_PER_ENTITY) return sortRelations(relations);
-	return sortRelations(relations).slice(0, MAX_RELATIONS_PER_ENTITY);
 }
 
 function sortRelations(relations: EntityRelation[]): EntityRelation[] {
@@ -186,7 +173,7 @@ function bucketKeys(rect: PaintOrderEntry["bounds"]): string[] {
 }
 
 // DOMSnapshot paint order is the lower-level occlusion spine: layout entries carry
-// backendNodeId + bounds + paintOrder in one sample. Convert that into capped relation anchors
+// backendNodeId + bounds + paintOrder in one sample. Convert that into relation anchors
 // without building an O(n²) matrix. Each lower painted entity keeps only the nearest higher painted
 // overlapping candidate; full paint-order entries remain artifact-side diagnostics.
 export function derivePaintOrderRelationAnchors(entities: Entity[], entries: PaintOrderEntry[]): RelationAnchor[] {
@@ -254,7 +241,6 @@ export function derivePaintOrderRelationAnchors(entities: Entity[], entries: Pai
 		};
 		anchors.push({ sourceKey: lower.key, type: "coveredBy", targetKey: best.item.key, source: "geometry", confidence: "medium", evidence });
 		anchors.push({ sourceKey: best.item.key, type: "occludes", targetKey: lower.key, source: "geometry", confidence: "medium", evidence });
-		if (anchors.length >= MAX_PAINT_ORDER_OCCLUSION_ANCHORS) break;
 	}
 	return anchors;
 }
@@ -272,16 +258,14 @@ export type RelationGraph = {
 	bySource: Record<string, string[]>;
 	byTarget: Record<string, string[]>;
 	byType: Record<string, string[]>;
-	entityRelationCap: number;
-	entityRelationTruncated?: Record<string, number>;
 };
 
 // Attach additional relations (e.g. `triggered` edges, whose targets are network refs rather
 // than entities, so they bypass the anchor→ref materialize pass) to a single entity, reusing the
-// same dedupe + deterministic cap as materializeRelations. Returns a new entity; input untouched.
+// same dedupe + deterministic ordering as materializeRelations. Returns a new entity; input untouched.
 export function addEntityRelations(entity: Entity, added: EntityRelation[]): Entity {
 	if (!added.length) return entity;
-	return { ...entity, relations: capRelations(dedupeRelations([...(entity.relations ?? []), ...added])) };
+	return { ...entity, relations: sortRelations(dedupeRelations([...(entity.relations ?? []), ...added])) };
 }
 export type RelationSummary = { summary: Record<string, number>; highlights: RelationHighlight[]; highlightCount?: number };
 
@@ -337,10 +321,6 @@ function relationGraphFromEdges(input: Array<Omit<RelationGraphEdge, "id">>): Re
 		(byTarget[edge.targetRef] ||= []).push(edge.id);
 		(byType[edge.type] ||= []).push(edge.id);
 	}
-	const entityRelationTruncated: Record<string, number> = {};
-	for (const [sourceRef, ids] of Object.entries(bySource)) {
-		if (ids.length > MAX_RELATIONS_PER_ENTITY) entityRelationTruncated[sourceRef] = ids.length - MAX_RELATIONS_PER_ENTITY;
-	}
 	return {
 		schemaVersion: 1,
 		edgeCount: edges.length,
@@ -348,8 +328,6 @@ function relationGraphFromEdges(input: Array<Omit<RelationGraphEdge, "id">>): Re
 		bySource,
 		byTarget,
 		byType,
-		entityRelationCap: MAX_RELATIONS_PER_ENTITY,
-		...(Object.keys(entityRelationTruncated).length ? { entityRelationTruncated } : {}),
 	};
 }
 
@@ -398,7 +376,7 @@ function entitiesWithGraphRelations(entities: Entity[], graph: RelationGraph): E
 				...(edge.evidence ? { evidence: edge.evidence } : {}),
 			});
 		}
-		if (relations.length) relationsBySource.set(sourceRef, capRelations(relations));
+		if (relations.length) relationsBySource.set(sourceRef, sortRelations(relations));
 	}
 	return entities.map((entity) => {
 		const relations = relationsBySource.get(entity.ref);
@@ -438,8 +416,9 @@ const TABLE_STRUCTURAL_TYPES = new Set<RelationType>(["cellOf", "rowOf", "column
 // (controls/owns/expandedTarget/currentIn/labelledBy/describedBy/occludes/coveredBy) plus
 // `tableCells` (distinct table cells, the structural summary). Table-hierarchy per-type counts
 // (cellOf/rowOf/columnOf/headerFor) are omitted — they're noisy on documentation pages and
-// redundant with tableCells. Always present when abmlIntegrated; budget-immune.
-// `highlights` is a deterministic, capped sample of semantic (non-table-structural) edges.
+// redundant with tableCells. Always present when abmlIntegrated.
+// `highlights` is the deterministic semantic (non-table-structural) edge list. The observation
+// projection folds it and exposes the complete saved value as a resource when needed.
 export function buildRelationSummary(entities: Entity[]): RelationSummary {
 	const summary: Record<string, number> = {};
 	const tableCellRefs = new Set<string>();
@@ -467,6 +446,5 @@ export function buildRelationSummary(entities: Entity[]): RelationSummary {
 		seen.add(key);
 		return true;
 	});
-	const cappedHighlights = dedupedHighlights.slice(0, MAX_HIGHLIGHTS);
-	return { summary, highlights: cappedHighlights, ...(dedupedHighlights.length > cappedHighlights.length ? { highlightCount: dedupedHighlights.length } : {}) };
+	return { summary, highlights: dedupedHighlights };
 }

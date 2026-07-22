@@ -1,23 +1,9 @@
 import { Type, type TSchema } from "typebox";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
-import { isRecord } from "../utils/records.js";
 import type { BrowserCommandSink } from "./commandDefinition.js";
 export { asPositiveInt } from "../utils/params.js";
 
-// Parameter classes separate agent strategy choices (intent) from zero-strategy plumbing
-// (mechanical). The classification lives on the schema as the single source of truth;
-// Tool docs derive the decide/plumbing split from it. Absence of the keyword means intent.
-export const PARAM_CLASS_KEYWORD = "x-bp-class";
-export type ParamClass = "intent" | "mechanical";
-/** Spread into a TypeBox param's options to mark it mechanical routing. Emitted only by shared plumbing builders. */
-export const MECHANICAL_PARAM = { [PARAM_CLASS_KEYWORD]: "mechanical" } as const;
-/** Read a parameter's class off its resolved JSON-schema property. Defaults to intent. */
-export function paramClassOf(propertySchema: unknown): ParamClass {
-	return isRecord(propertySchema) && (propertySchema as Record<string, unknown>)[PARAM_CLASS_KEYWORD] === "mechanical" ? "mechanical" : "intent";
-}
-
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
-export const DEFAULT_OBSERVATION_TIMEOUT_MS = 35_000;
 
 export type EnsureStarted = () => Promise<BrowserCommandRuntimePort>;
 export type CommandRegistrarContext = {
@@ -27,31 +13,11 @@ export type CommandRegistrarContext = {
 
 export type CommandRegistrar = (context: CommandRegistrarContext) => void;
 
-export function objectParam(value: unknown): Record<string, unknown> {
-	return isRecord(value) ? { ...value } : {};
-}
-
-export const NativeStringList = Type.Array(Type.String());
-export const NativeCommandParamsSchema = Type.Object({}, { additionalProperties: true });
-
 export const TAB_SCOPED_TOOL_GUIDELINE = "Use targetRef from browser_tabs list/create to disambiguate several open tabs; omit it to use the selected active tab.";
 export const TARGET_REF_DESCRIPTION = "Stable target reference from browser_tabs list/create (tabHandle). It survives daemon/extension reconnect and unambiguous in-place replacement within the current browser runtime; reacquire after the tab or browser runtime is gone.";
 
-function enumLiteralSchemas<const TValue extends readonly [string, string, ...string[]]>(values: TValue): [TSchema, TSchema, ...TSchema[]] {
-	return values.map((value) => Type.Literal(value)) as unknown as [TSchema, TSchema, ...TSchema[]];
-}
-
 export function strictCommandParameters<T extends Record<string, TSchema>>(properties: T) {
 	return Type.Object(properties, { additionalProperties: false });
-}
-
-export function enumParam<const TValue extends readonly [string, string, ...string[]]>(values: TValue, description: string) {
-	return Type.Optional(Type.Union(enumLiteralSchemas(values), { description }));
-}
-
-export function enumOrEnumArrayParam<const TValue extends readonly [string, string, ...string[]]>(values: TValue, description: string) {
-	const valueUnion = Type.Union(enumLiteralSchemas(values));
-	return Type.Optional(Type.Union([valueUnion, Type.Array(valueUnion)], { description }));
 }
 
 export function optionalTargetRef(description = TARGET_REF_DESCRIPTION) {

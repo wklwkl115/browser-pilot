@@ -19,6 +19,7 @@ test("canonical PageObservation returns its first semantic region and opaque MCP
 		snapshot: { snapshotId: "snapshot-1", sourceMode: "scan", capturedAt: 1, ttlMs: 300_000 },
 		abmlIntegrated: true,
 		diagnostics: {},
+		causal: { sinceSeq: 0, requests: Array.from({ length: 4 }, (_, index) => ({ ref: `bp-ref://network/${index}`, url: `https://example.test/${index}` })) },
 	});
 	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-"));
 	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
@@ -33,7 +34,10 @@ test("canonical PageObservation returns its first semantic region and opaque MCP
 	assert.equal((inline.content as { text?: string }).text, "Introduction");
 	assert.equal((inline.content as { complete?: boolean }).complete, false);
 	assert.equal((artifact.content as { text?: string }).text, "Introduction Install dependencies Verify the build");
-	assert.equal(resources.length, 2);
+	assert.equal(((inline.causal as { requests: unknown[] }).requests).length, 3);
+	assert.equal(((artifact.causal as { requests: unknown[] }).requests).length, 4);
+	assert.equal(resources.length, 3);
+	assert.equal(resources.some((resource) => resource.kind === "details" && resource.jsonPath === "causal"), true);
 	assert.ok(resources.every((resource) => resource.uri.startsWith("browser-pilot://observation/") && resource.path === path.resolve(outputPath)));
 	assert.equal("saved" in inline, false);
 	assert.equal("limits" in inline, false);

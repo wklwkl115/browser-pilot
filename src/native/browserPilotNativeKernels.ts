@@ -21,10 +21,6 @@ function nativeKernelsDebugEnabled(): boolean {
 	return process.env.BROWSER_PILOT_NATIVE_KERNELS_DEBUG === "1";
 }
 
-function nativeKernelsDisabled(): boolean {
-	return process.env.BROWSER_PILOT_NATIVE_KERNELS === "0" || process.env.BROWSER_PILOT_NATIVE_KERNELS_DISABLE === "1";
-}
-
 function debugNativeKernels(message: string, error?: unknown): void {
 	if (!nativeKernelsDebugEnabled()) return;
 	const suffix = error instanceof Error ? `: ${error.message}` : error ? `: ${String(error)}` : "";
@@ -59,7 +55,6 @@ function resolveNativeKernelBinary(): string | null {
 }
 
 function invokeNativeKernel<T>(command: NativeKernelCommand, payload: unknown): T | undefined {
-	if (nativeKernelsDisabled()) return undefined;
 	const binaryPath = resolveNativeKernelBinary();
 	if (!binaryPath) return undefined;
 	try {

@@ -4,10 +4,7 @@ use std::io::{self, Read};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-const MAX_TREE_DIFF_INSTANCES: usize = 20;
-const MAX_TREE_DIFF_CHANGED_FIELDS: usize = 8;
 const MAX_TREE_DIFF_SUMMARY_NAMES: usize = 6;
-const MAX_TEMPLATES: usize = 12;
 const MIN_TEMPLATE_INSTANCES: usize = 4;
 
 fn main() {
@@ -470,8 +467,6 @@ struct TreeDiffInstanceChange {
 	fields: Vec<TreeDiffFieldChange>,
 	field_count: usize,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	fields_truncated: Option<bool>,
-	#[serde(skip_serializing_if = "Option::is_none")]
 	name: Option<String>,
 }
 
@@ -480,8 +475,6 @@ struct TreeDiffInstanceChange {
 struct TreeDiffInstanceBucket {
 	count: usize,
 	instances: Vec<TreeDiffInstance>,
-	#[serde(skip_serializing_if = "Option::is_none")]
-	truncated: Option<bool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -489,8 +482,6 @@ struct TreeDiffInstanceBucket {
 struct TreeDiffChangedBucket {
 	count: usize,
 	instances: Vec<TreeDiffInstanceChange>,
-	#[serde(skip_serializing_if = "Option::is_none")]
-	truncated: Option<bool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -583,16 +574,14 @@ fn instance_summary(instance: &MatchedInstance) -> TreeDiffInstance {
 fn bucket(items: &[MatchedInstance]) -> TreeDiffInstanceBucket {
 	TreeDiffInstanceBucket {
 		count: items.len(),
-		instances: items.iter().take(MAX_TREE_DIFF_INSTANCES).map(instance_summary).collect(),
-		truncated: (items.len() > MAX_TREE_DIFF_INSTANCES).then_some(true),
+		instances: items.iter().map(instance_summary).collect(),
 	}
 }
 
 fn changed_bucket(items: &[TreeDiffInstanceChange]) -> TreeDiffChangedBucket {
 	TreeDiffChangedBucket {
 		count: items.len(),
-		instances: items.iter().take(MAX_TREE_DIFF_INSTANCES).cloned().collect(),
-		truncated: (items.len() > MAX_TREE_DIFF_INSTANCES).then_some(true),
+		instances: items.to_vec(),
 	}
 }
 
@@ -607,7 +596,7 @@ fn field_changes(before: &Entity, after: &Entity) -> (Vec<TreeDiffFieldChange>, 
 		out.push(TreeDiffFieldChange { field: field.to_string(), before: before_value, after: after_value });
 	}
 	let field_count = out.len();
-	(out.into_iter().take(MAX_TREE_DIFF_CHANGED_FIELDS).collect(), field_count)
+	(out, field_count)
 }
 
 fn reordered(before: &[MatchedInstance], after: &[MatchedInstance]) -> Option<TreeDiffReordered> {
@@ -650,7 +639,6 @@ fn build_template_diff(before_group: Option<&TemplateGroup>, after_group: Option
 			confidence: item.confidence.clone(),
 			fields,
 			field_count,
-			fields_truncated: (field_count > MAX_TREE_DIFF_CHANGED_FIELDS).then_some(true),
 			name: item.name.clone(),
 		});
 	}
@@ -710,7 +698,6 @@ fn build_tree_diff(input: &AbmlTreeDiffInput) -> TreeDiff {
 	templates.sort_by(|a, b| {
 		template_diff_signal_score(b).cmp(&template_diff_signal_score(a)).then_with(|| std::cmp::max(b.before_count, b.after_count).cmp(&std::cmp::max(a.before_count, a.after_count)))
 	});
-	templates.truncate(MAX_TEMPLATES);
 	let mut summary = TreeDiffSummary {
 		template_count: before_by_key.len() + after_by_key.keys().filter(|key| !before_by_key.contains_key(*key)).count(),
 		changed_template_count: 0,

@@ -13,10 +13,8 @@ import {
 	type IndexedEntity,
 	type TemplateGroup,
 } from "./grouping.js";
-import { MAX_TEMPLATES, templateFieldValue, type TemplateVaryField } from "./templating.js";
+import { templateFieldValue, type TemplateVaryField } from "./templating.js";
 
-export const MAX_TREE_DIFF_INSTANCES = 20;
-export const MAX_TREE_DIFF_CHANGED_FIELDS = 8;
 // A real-agent eval showed agents adopt treeDiff but stop at the summary counts and don't drill into
 // templates[].*.instances[].name to answer "WHICH item changed" → they fall back to JS. Surface a flat
 // sample of the changed-item names at the summary level (and in the scan hint) so the answer is one read away.
@@ -49,20 +47,17 @@ export type TreeDiffInstanceChange = {
 	confidence: TreeDiffConfidence;
 	fields: TreeDiffFieldChange[];
 	fieldCount: number;
-	fieldsTruncated?: boolean;
 	name?: string;
 };
 
 export type TreeDiffInstanceBucket = {
 	count: number;
 	instances: TreeDiffInstance[];
-	truncated?: boolean;
 };
 
 export type TreeDiffChangedBucket = {
 	count: number;
 	instances: TreeDiffInstanceChange[];
-	truncated?: boolean;
 };
 
 export type TreeTemplateDiff = {
@@ -86,7 +81,7 @@ export type TreeDiffSummary = {
 	disappeared: number;
 	changed: number;
 	reordered: number;
-	// Flat, capped names of the actually-changed items (pulled up from templates[].*.instances[].name)
+	// Flat sample names of the actually-changed items (pulled up from templates[].*.instances[].name)
 	// so an agent can answer "which item appeared/left/changed" from the summary without drilling.
 	sample?: { appeared?: string[]; disappeared?: string[]; changed?: string[] };
 	partialBaseline?: boolean;
@@ -158,11 +153,11 @@ function matchedInstances(group: TemplateGroup, counts: Map<string, { before: nu
 }
 
 function bucket<T>(items: T[], shape: (item: T) => TreeDiffInstance): TreeDiffInstanceBucket {
-	return { count: items.length, instances: items.slice(0, MAX_TREE_DIFF_INSTANCES).map(shape), ...(items.length > MAX_TREE_DIFF_INSTANCES ? { truncated: true } : {}) };
+	return { count: items.length, instances: items.map(shape) };
 }
 
 function changedBucket(items: TreeDiffInstanceChange[]): TreeDiffChangedBucket {
-	return { count: items.length, instances: items.slice(0, MAX_TREE_DIFF_INSTANCES), ...(items.length > MAX_TREE_DIFF_INSTANCES ? { truncated: true } : {}) };
+	return { count: items.length, instances: items };
 }
 
 function fieldChanges(before: Entity, after: Entity): { fields: TreeDiffFieldChange[]; fieldCount: number } {
@@ -173,7 +168,7 @@ function fieldChanges(before: Entity, after: Entity): { fields: TreeDiffFieldCha
 		if (beforeValue === afterValue) continue;
 		out.push({ field, ...(beforeValue !== undefined ? { before: beforeValue } : {}), ...(afterValue !== undefined ? { after: afterValue } : {}) });
 	}
-	return { fields: out.slice(0, MAX_TREE_DIFF_CHANGED_FIELDS), fieldCount: out.length };
+	return { fields: out, fieldCount: out.length };
 }
 
 function reordered(before: MatchedInstance[], after: MatchedInstance[]): TreeTemplateDiff["reordered"] | undefined {
@@ -210,7 +205,6 @@ function buildTemplateDiff(beforeGroup: TemplateGroup | undefined, afterGroup: T
 			confidence: item.confidence,
 			fields,
 			fieldCount,
-			...(fieldCount > fields.length ? { fieldsTruncated: true } : {}),
 			...(displayEntityText(item.entity.name) ? { name: displayEntityText(item.entity.name) } : {}),
 		});
 	}
@@ -246,8 +240,7 @@ export function buildTreeDiff(beforeEntities: Entity[], afterEntities: Entity[],
 	const templates = Array.from(allKeys)
 		.map((key) => buildTemplateDiff(beforeByKey.get(key), afterByKey.get(key), counts))
 		.filter((item): item is TreeTemplateDiff => !!item)
-		.sort((a, b) => templateDiffSignalScore(b) - templateDiffSignalScore(a) || Math.max(b.beforeCount, b.afterCount) - Math.max(a.beforeCount, a.afterCount))
-		.slice(0, MAX_TEMPLATES);
+		.sort((a, b) => templateDiffSignalScore(b) - templateDiffSignalScore(a) || Math.max(b.beforeCount, b.afterCount) - Math.max(a.beforeCount, a.afterCount));
 	const summary = templates.reduce<TreeDiffSummary>((acc, item) => ({
 		templateCount: acc.templateCount,
 		changedTemplateCount: acc.changedTemplateCount + 1,

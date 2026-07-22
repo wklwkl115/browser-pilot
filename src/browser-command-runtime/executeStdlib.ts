@@ -31,14 +31,12 @@ function buildRefRegistry(refUris: string[]): { registry: Record<string, unknown
 	return { registry, targetRefs };
 }
 
-export function prepareExecuteStdlib(script: string, options: { enabled?: boolean; refs?: Record<string, string> } = {}): PreparedExecuteScript {
-	const enabled = options.enabled ?? process.env.BROWSER_PILOT_STDLIB !== "0";
+export function prepareExecuteStdlib(script: string, options: { refs?: Record<string, string> } = {}): PreparedExecuteScript {
 	const bindings = options.refs ?? {};
 	const bindingCount = Object.keys(bindings).length;
 	const refUris = Array.from(new Set(Object.values(bindings)));
 	if (bindingCount > MAX_EXECUTION_REFS) throw new BrowserBridgeError("INVALID_RULE", `browser_execute accepts at most ${MAX_EXECUTION_REFS} refs`, { refCount: bindingCount });
-	if (!enabled && refUris.length) throw new BrowserBridgeError("INVALID_RULE", "Browser refs require the Browser Pilot execution runtime", { refs: refUris });
-	if (!enabled || (!refUris.length && !/\bbrowserPilot\s*\./.test(script))) return { script, targetRefs: [] };
+	if (!refUris.length && !/\bbrowserPilot\s*\./.test(script)) return { script, targetRefs: [] };
 	const registry = buildRefRegistry(refUris);
 	return {
 		script: `${stdlibPrelude(registry.registry, bindings)}\n${script}`,

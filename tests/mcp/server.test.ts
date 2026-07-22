@@ -125,19 +125,24 @@ test("MCP resources expose a compact native index, per-command schemas, and proj
 			summary: {}, entities: [], content: "Introduction Details", headings: ["Details"], url: "https://example.test/",
 			activeTabId: 1, snapshot: { snapshotId: "snapshot-resource", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 60_000 },
 			abmlIntegrated: true, diagnostics: {},
+			causal: { sinceSeq: 0, requests: Array.from({ length: 4 }, (_, index) => ({ ref: `bp-ref://network/${index}`, url: `https://example.test/${index}` })) },
 		});
 		const observed = await pageObservationResult({ observation, artifactPath: observationPath, fallbackName: "observation.json" });
 		const links = registerMcpObservationResources(observed.details, root);
-		assert.equal(links.length, 1);
-		const descriptor = (observed.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[])[0]!;
+		assert.equal(links.length, 2);
+		const descriptors = observed.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
+		const descriptor = descriptors.find((item) => item.kind === "content")!;
 		assert.equal(registerMcpObservationResources({ [OBSERVATION_RESOURCES_DETAIL_KEY]: [{ ...descriptor, uri: "browser-pilot://observation/00000000-0000-0000-0000-000000000000" }] }, root).length, 0);
 		assert.equal(registerMcpObservationResources({ [OBSERVATION_RESOURCES_DETAIL_KEY]: [{ ...descriptor, expiresAt: Date.now() - 1 }] }, root).length, 0);
-		const link = links[0];
+		const link = links.find((item) => item.type === "resource_link" && item.uri === descriptor.uri);
 		assert.equal(link?.type, "resource_link");
 		if (!link || link.type !== "resource_link") throw new Error("observation resource link missing");
 		const expanded = await readMcpResource(link.uri, root);
 		assert.match(resourceText(expanded), /Details/);
 		assert.equal(resourceText(expanded).includes(observationPath), false);
+		const causal = descriptors.find((item) => item.kind === "details")!;
+		const expandedCausal = await readMcpResource(causal.uri, root);
+		assert.equal(((JSON.parse(resourceText(expandedCausal)) as { value: { requests: unknown[] } }).value.requests).length, 4);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

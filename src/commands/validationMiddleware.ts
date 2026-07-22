@@ -30,11 +30,3 @@ export function validateParams<T>(
 	}
 	return result.data;
 }
-
-export function validateOptionalParams<T>(
-	schema: ValidationSchema<T>,
-	params: unknown,
-): T | undefined {
-	if (params === null || params === undefined || params === "") return undefined;
-	return validateParams(schema, params);
-}

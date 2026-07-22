@@ -131,6 +131,7 @@ function validObservationResourceTarget(descriptor: ObservationResourceDescripto
 	if (descriptor.contentSection !== undefined || typeof descriptor.jsonPath !== "string") return false;
 	if (descriptor.kind === "template-instances") return /^snapshotProjection\.templates\[\d+\]\.instanceRefs$/.test(descriptor.jsonPath);
 	if (descriptor.kind === "collection-window") return /^collections\[\d+\]$/.test(descriptor.jsonPath);
+	if (descriptor.kind === "details") return /^(treeDiff|causal|relations)$/.test(descriptor.jsonPath);
 	return false;
 }
 
@@ -148,12 +149,12 @@ export function registerMcpObservationResources(details: Record<string, unknown>
 		const token = typeof descriptor.uri === "string" ? observationResourceToken(descriptor.uri) : undefined;
 		const target = typeof descriptor.path === "string" ? path.resolve(descriptor.path) : "";
 		const relative = target ? path.relative(root, target) : "";
-		if (!token || !relative || relative.startsWith("..") || path.isAbsolute(relative)
-			|| descriptor.mimeType !== "application/json" || typeof descriptor.name !== "string" || !descriptor.name.trim()
-			|| typeof descriptor.snapshotId !== "string" || !descriptor.snapshotId.trim() || typeof descriptor.ref !== "string" || !descriptor.ref.trim()
-			|| descriptor.label !== undefined && typeof descriptor.label !== "string"
-			|| !["template-instances", "collection-window", "content"].includes(descriptor.kind)
-			|| !Number.isFinite(descriptor.expiresAt) || descriptor.expiresAt <= now || !validObservationResourceTarget(descriptor)) continue;
+			if (!token || !relative || relative.startsWith("..") || path.isAbsolute(relative)
+				|| descriptor.mimeType !== "application/json" || typeof descriptor.name !== "string" || !descriptor.name.trim()
+				|| typeof descriptor.snapshotId !== "string" || !descriptor.snapshotId.trim() || typeof descriptor.ref !== "string" || !descriptor.ref.trim()
+				|| descriptor.label !== undefined && typeof descriptor.label !== "string"
+				|| !["template-instances", "collection-window", "content", "details"].includes(descriptor.kind)
+				|| !Number.isFinite(descriptor.expiresAt) || descriptor.expiresAt <= now || !validObservationResourceTarget(descriptor)) continue;
 		observationResources.set(token, { ...descriptor, projectRoot: resolvedProjectRoot });
 		links.push({ type: "resource_link", uri: descriptor.uri, name: descriptor.name, mimeType: "application/json" });
 	}

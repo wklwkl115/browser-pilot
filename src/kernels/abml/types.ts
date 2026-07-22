@@ -1,12 +1,7 @@
-import type { RefDescriptor as SharedRefDescriptor, RefDocumentEpoch, RefGeometry as SharedRefGeometry, RefKind as SharedRefKind, RefLocator, RefOwner as SharedRefOwner, RefPolicy as SharedRefPolicy, RefSemanticState, RefSnapshotBinding } from "../refs/types.js";
+import type { RefDescriptor as SharedRefDescriptor, RefGeometry as SharedRefGeometry, RefKind as SharedRefKind, RefLocator } from "../refs/types.js";
 
 export type Locator = RefLocator;
 export type RefKind = SharedRefKind;
-export type RefOwner = SharedRefOwner;
-export type RefPolicy = SharedRefPolicy;
-export type SnapshotBinding = RefSnapshotBinding;
-export type DocumentEpoch = RefDocumentEpoch;
-export type SemanticState = RefSemanticState;
 export type RefGeometry = SharedRefGeometry;
 export type RefDescriptor = SharedRefDescriptor;
 

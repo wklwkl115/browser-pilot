@@ -12,6 +12,7 @@ import { firstSafeSemanticText, isItemLikePreview, safeContainerLabelText, sanit
 import { buildSnapshotProjection } from "../../src/kernels/abml/snapshotProjection.ts";
 import { buildIdentityGraph, identityGraphSummary } from "../../src/kernels/abml/identityGraph.ts";
 import { buildEventEntity, buildNetworkEntryEntity, createCaptureRef } from "../../src/kernels/abml/stream.ts";
+import { buildCausalEvents, buildCausalSummary, buildTriggeredRelations } from "../../src/kernels/abml/causal.ts";
 import { classifyStaleness, classifyStateLoss, classifyTimeout, diagnoseWaitTimeout } from "../../src/kernels/temporal/classify.ts";
 import { classifyDeadlinePressure } from "../../src/kernels/temporal/budget.ts";
 import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity } from "../../src/kernels/temporal/estimate.ts";
@@ -410,6 +411,17 @@ test("ABML stream helpers normalize capture, network, and event boundary inputs"
 	assert.equal(event.descriptor.semantic?.value, "innerHTML assigned");
 });
 
+test("ABML causal projection preserves complete redacted deltas", () => {
+	const records = Array.from({ length: 15 }, (_, index) => ({ seq: index + 1, requestId: `request-${index}`, request: { method: "GET", url: `https://example.test/${"x".repeat(300)}?index=${index}` }, initiator: { type: "script" } }));
+	const causal = buildCausalSummary(records, 0);
+	assert.equal("requests" in causal && causal.requests.length, 15);
+	assert.ok("requests" in causal && causal.requests[0]!.url!.length > 200);
+	assert.equal(buildTriggeredRelations(causal).length, 15);
+	const events = buildCausalEvents(records.map((record) => ({ ...record, type: "console", data: { message: "x".repeat(300) } })), 0);
+	assert.equal(events.events.length, 15);
+	assert.equal(events.events[0]!.summary?.length, 300);
+});
+
 test("ABML semantic text rejects unsafe names and item-like previews for container labels", () => {
 	const pricingCard = "Kimi K2 Turbo model billing per 1M tokens input $0.60 output $2.50 cache write $0.15 cache read $0.05 context 128k";
 	assert.equal(isItemLikePreview(pricingCard), true);
@@ -460,11 +472,11 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 		},
 	});
 	assert.equal(projection.summary.templateCount, 2);
-	assert.equal(projection.summary.projectedInstanceRefCount, 20);
+	assert.equal(projection.summary.projectedInstanceRefCount, 25);
 	assert.equal(projection.summary.partialBaseline, true);
 	const projectedRows = projection.templates.find((template) => template.container === "grid" && template.containerName === "Orders" && template.count === 25)!;
 	assert.equal(projectedRows.count, 25);
-	assert.equal(projectedRows.instanceRefCount, 20);
+	assert.equal(projectedRows.instanceRefCount, 25);
 	const deltaOnly = projection.templates.find((template) => template.deltaOnly)!;
 	assert.equal(deltaOnly.delta?.appeared.count, 2);
 	assert.equal(deltaOnly.delta?.changed.instances[0]?.fields[0]?.field, "name");
@@ -473,7 +485,7 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	assert.equal(collections[0]!.kind, "table");
 	assert.equal(collections[0]!.completeness, "virtualized");
 	assert.equal(collections[0]!.declaredTotal, 100);
-	assert.equal(collections[0]!.itemRefs.length, 20);
+	assert.equal(collections[0]!.itemRefs.length, 25);
 	assert.equal(collections[0]!.pageSize, 10);
 	assert.equal(collections[0]!.scrollDirection, "vertical");
 	assert.equal(collections[0]!.completeness, "virtualized");
@@ -852,7 +864,7 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 	assert.equal(unsafeMerge.diagnostics.degraded, true);
 });
 
-test("ABML relations materialize fallbacks, paint-order occlusion, graph dedupe, caps, and summaries", () => {
+test("ABML relations materialize fallbacks, paint-order occlusion, graph dedupe, and summaries", () => {
 	const source = entity("bp-ref://control/source", { locators: [{ by: "backendNodeId", value: 1, targetId: "target-a" }], hints: { targetId: "target-a", selector: "#source", backendNodeId: 1, currentContainerKeys: ["b:404", "s:#nav"], controlsSelectors: ["#panel"], occluderSelector: "#overlay" }, state: { ...entity("x").state, current: "page", occluded: true } });
 	const panel = entity("bp-ref://region/panel", { kind: "region", role: "region", hints: { selector: "#panel" } });
 	const nav = entity("bp-ref://region/nav", { kind: "region", role: "navigation", hints: { selector: "#nav" } });
@@ -884,7 +896,7 @@ test("ABML relations materialize fallbacks, paint-order occlusion, graph dedupe,
 		{ type: "controls", targetRef: "bp-ref://target/a", source: "dom", confidence: "low", evidence: { dom: true } },
 		...Array.from({ length: 10 }, (_, index) => ({ type: "labelledBy" as const, targetRef: `bp-ref://label/${index}`, source: "ax" as const, confidence: "high" as const })),
 	]);
-	assert.equal(relationRich.relations?.length, 8);
+	assert.equal(relationRich.relations?.length, 12);
 	assert.deepEqual(relationRich.relations?.[0], { type: "controls", targetRef: "bp-ref://target/a", source: "ax", confidence: "high", evidence: { ax: true } });
 	const summary = buildRelationSummary([relationRich, entity("bp-ref://cell/1", { relations: [{ type: "cellOf", targetRef: "bp-ref://table/1", source: "ax", confidence: "high" }] })]);
 	assert.equal(summary.summary.controls, 1);
@@ -920,11 +932,11 @@ test("ABML inference detects anchored intents, dedupes evidence refs, and handle
 	};
 	const summary = buildInferenceSummary(entities, baseSummary, diff);
 	assert.deepEqual(summary.intents.map((intent) => intent.intent), ["login", "filter-panel", "single-choice", "multi-choice", "expandable", "data-grid", "navigation", "dialog", "tabbed-interface", "alert-region", "form-dependency"]);
-	assert.equal(summary.intents.find((intent) => intent.intent === "filter-panel")?.evidence?.controlCount, 7);
+	assert.equal((summary.intents.find((intent) => intent.intent === "filter-panel")?.evidence?.controlRefs as string[]).length, 7);
 	assert.equal(summary.intents.find((intent) => intent.intent === "alert-region")?.evidence?.fresh, "appeared");
 	assert.equal(summary.intents.find((intent) => intent.intent === "form-dependency")?.evidence?.focusSignal, "focusedRef");
 	assert.equal(inferenceEvidenceRefs(summary).includes("bp-ref://button/submit"), true);
-	assert.equal(entitiesForInferenceEvidence(entities, summary, 3).length, 3);
+	assert.ok(entitiesForInferenceEvidence(entities, summary).length > 3);
 	const weakLogin = buildInferenceSummary([entity("bp-ref://password/only", { role: "textbox", state: { ...entity("x").state, editable: true }, hints: { inputKind: "password" } }), entity("bp-ref://oauth", { role: "button", name: "Forgot password" })], { summary: {}, highlights: [] });
 	assert.equal(weakLogin.intents[0]?.confidence, "medium");
 	assert.equal(weakLogin.intents[0]?.evidence, undefined);

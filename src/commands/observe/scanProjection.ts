@@ -8,8 +8,6 @@ import { PAGE_OBSERVATION_SCHEMA_V3, type CollectionSummary, type CompactActiona
 import type { CollectionModel } from "../../kernels/abml/collections.js";
 import type { SnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 
-export type ObserveCausalBlock = { causal?: CausalSummary };
-
 type PageObservationInput = {
 	summary: Record<string, unknown>;
 	entities: Entity[];

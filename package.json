@@ -54,7 +54,6 @@
     "prepack": "npm run build && node scripts/build-native.mjs --quiet && node scripts/build-bridge.mjs --quiet"
   },
   "dependencies": {
-    "dom-accessibility-api": "^0.7.1",
     "typebox": "^1.0.55",
     "ws": "^8.21.0"
   },

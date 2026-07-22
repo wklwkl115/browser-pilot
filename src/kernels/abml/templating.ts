@@ -1,9 +1,8 @@
 // ABML mechanism arm — M1 structure templating (pure core).
 //
-// Large pages are flat + full: a 200-row table or a 50-card feed re-emits N near-identical entities
-// at O(N) tokens even though they are one repeated shape. This selector folds repeated SIBLING
-// entities into one template + N compact instances + handles: "20 of these, each differing in
-// {name}", with every instance still reachable by `read(ref)`.
+// Large pages are flat + full: a 200-row table or a 50-card feed re-emits N near-identical entities.
+// This selector groups repeated siblings while preserving every instance ref. Model-facing folding
+// happens later at the observation resource boundary.
 //
 // Grouping is ARIA-grounded ONLY (the generality rule — works identically on native HTML / Vue /
 // React / Web Components): members share an AX container (`hints.containerRole` + `containerName`,
@@ -11,11 +10,6 @@
 // No tag/class/selector-prefix matching (that overfits a framework's DOM). Pure: zero browser/Node deps.
 import type { Entity, EntityKind } from "./entity.js";
 import { isPureTextLeaf, templateGroupDescriptorForEntity } from "./grouping.js";
-
-// Handles are lossless but capped — the true size is always `count`; beyond the cap the model pages
-// via the listed refs / a fresh observe.
-export const MAX_TEMPLATE_INSTANCE_REFS = 20;
-export const MAX_TEMPLATES = 12;
 
 // Per-instance fields whose variation we track. A field that DIFFERS across instances is listed in
 // `varies` (the model must read it per instance); a field uniform across all is stated once in
@@ -32,7 +26,7 @@ export type StructureTemplate = {
 	setSize?: number; // declared aria-setsize, if any (may exceed count when virtualized)
 	varies: TemplateVaryField[]; // fields that differ instance-to-instance
 	constant: Record<string, unknown>; // fields identical across all (role/kind always; uniform-truthy state)
-	instanceRefs: string[]; // member refs (capped at MAX_TEMPLATE_INSTANCE_REFS; true size = count)
+	instanceRefs: string[];
 	sample?: { ref: string; name?: string; value?: string }; // one representative instance
 };
 
@@ -79,7 +73,7 @@ export function buildTemplate(members: Entity[]): StructureTemplate {
 		...(typeof setSize === "number" ? { setSize } : {}),
 		varies,
 		constant,
-		instanceRefs: members.slice(0, MAX_TEMPLATE_INSTANCE_REFS).map((member) => member.ref),
+		instanceRefs: members.map((member) => member.ref),
 		sample,
 	};
 }
