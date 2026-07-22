@@ -4,9 +4,9 @@ import type { TreeDiff } from "../../kernels/abml/treeDiff.js";
 import type { CausalSummary } from "../../kernels/abml/causal.js";
 import { causalFiredHint } from "../../kernels/abml/causal.js";
 import { isRecord } from "../../utils/params.js";
-import { PAGE_OBSERVATION_SCHEMA_V3, type CollectionSummary, type CompactActionable, type CompactCollection, type ObservationFrontier, type ObservationFrontierItem, type ObservationSnapshot, type PageObservationV3, type PageTarget, type ProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
+import { PAGE_OBSERVATION_SCHEMA_V3, type CollectionSummary, type CompactActionable, type ObservationSnapshot, type PageObservationV3, type PageTarget, type ProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
 import type { CollectionModel } from "../../kernels/abml/collections.js";
-import type { SnapshotProjection, SnapshotProjectionTemplate } from "../../kernels/abml/snapshotProjection.js";
+import type { SnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 
 export type ObserveCausalBlock = { causal?: CausalSummary };
 
@@ -14,23 +14,21 @@ type PageObservationInput = {
 	summary: Record<string, unknown>;
 	entities: Entity[];
 	content: string;
+	headings?: string[];
+	contentComplete?: boolean;
 	url?: string;
 	activeTabId?: unknown;
 	snapshot: Record<string, unknown>;
 	diff?: EntityDiff & { summary?: unknown };
 	treeDiff?: TreeDiff;
 	causal?: CausalSummary;
-	artifactPath?: string;
 	abmlIntegrated: boolean;
 	providerFailures?: ProviderFailureReason[];
 	diagnostics: Record<string, unknown>;
-	budgetChars?: number;
 	providerExecution?: ProviderExecutionReport;
 };
 
-export type PageObservationBuild = { inline: PageObservationV3; artifact: PageObservationV3 };
-
-type ArtifactHintRead = { label: string; jsonPath: string; kind?: string };
+export type PageObservationBuild = PageObservationV3;
 
 type ProviderFailureReason = {
 	provider: string;
@@ -38,20 +36,6 @@ type ProviderFailureReason = {
 	message?: string;
 	details?: Record<string, unknown>;
 };
-
-function addArtifactHint(summary: Record<string, unknown>, key: string, read: ArtifactHintRead, position: "front" | "back" = "back"): void {
-	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints as Record<string, unknown> : undefined;
-	if (!hints) return;
-	const jsonPaths = isRecord(hints.jsonPaths) ? { ...hints.jsonPaths } : {};
-	jsonPaths[key] = read.jsonPath;
-	const preferredReads = Array.isArray(hints.preferredReads) ? [...hints.preferredReads] : [];
-	if (!preferredReads.some((item) => isRecord(item) && item.jsonPath === read.jsonPath)) {
-		if (position === "front") preferredReads.unshift(read);
-		else preferredReads.push(read);
-	}
-	hints.jsonPaths = jsonPaths;
-	hints.preferredReads = preferredReads;
-}
 
 function compactActionables(entities: Entity[], focus: Record<string, unknown>): CompactActionable[] {
 	const primaryRefs = Array.isArray(focus.primary_entities)
@@ -65,52 +49,10 @@ function compactActionables(entities: Entity[], focus: Record<string, unknown>):
 	});
 }
 
-function compactTemplate(template: SnapshotProjectionTemplate): SnapshotProjectionTemplate {
-	return { ...template, instanceRefs: template.instanceRefs.slice(0, 3), sample: template.sample ? { ...template.sample } : undefined };
-}
-
-function templateFrontier(projection: SnapshotProjection | undefined): { projection?: SnapshotProjection; items: ObservationFrontierItem[] } {
-	if (!projection) return { items: [] };
-	const items: ObservationFrontierItem[] = [];
-	const templates = projection.templates.map((template, index) => {
-		const compact = compactTemplate(template);
-		if (template.instanceRefCount > compact.instanceRefs.length) {
-			items.push({
-				ref: `frontier:template:${template.templateKey}`,
-				kind: "template-instances",
-				state: "folded",
-				observed: compact.instanceRefs.length,
-				total: template.instanceRefCount,
-				read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: `snapshotProjection.templates[${index}].instanceRefs` },
-			});
-		}
-		return compact;
-	});
-	return { projection: { summary: projection.summary, templates }, items };
-}
-
-function collectionState(value: string): ObservationFrontierItem["state"] {
-	if (value === "virtualized" || value === "paginated" || value === "lazy" || value === "viewport-window" || value === "folded") return value;
-	return "folded";
-}
-
-function collectionProjection(collections: CollectionModel[]): { inline: CompactCollection[]; artifact: CollectionSummary[]; items: ObservationFrontierItem[] } {
-	const items: ObservationFrontierItem[] = [];
-	const projected = collections.map((collection, index): { inline: CompactCollection; artifact: CollectionSummary } => {
+function collectionSummaries(collections: CollectionModel[]): CollectionSummary[] {
+	return collections.map((collection) => {
 		const frontierNeeded = collection.completeness !== "complete" || collection.itemRefs.length > 3 || collection.evidence.length > 0 || Boolean(collection.dataSources?.length);
-		const frontierRef = frontierNeeded ? `frontier:collection:${collection.collectionId}` : undefined;
-		if (frontierRef) {
-			items.push({
-				ref: frontierRef,
-				kind: "collection-window",
-				state: collectionState(collection.completeness),
-				observed: collection.observedCount,
-				total: collection.declaredTotal ?? collection.estimatedTotal,
-				...(collection.paginationControl?.ref ? { controlRef: collection.paginationControl.ref } : {}),
-				read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: `collections[${index}]` },
-			});
-		}
-		const base = {
+		return {
 			ref: collection.containerRef ?? `collection:${collection.collectionId}`,
 			kind: collection.kind,
 			...(collection.containerName ? { name: collection.containerName } : {}),
@@ -118,30 +60,22 @@ function collectionProjection(collections: CollectionModel[]): { inline: Compact
 			...(typeof collection.declaredTotal === "number" || typeof collection.estimatedTotal === "number" ? { total: collection.declaredTotal ?? collection.estimatedTotal } : {}),
 			completeness: collection.completeness,
 			confidence: collection.confidence,
-			...(frontierRef ? { frontierRef } : {}),
-		};
-		return {
-			inline: { ...base, itemRefs: collection.itemRefs.slice(0, 3) },
-			artifact: {
-				...base,
-				itemRefs: [...collection.itemRefs],
-				collectionId: collection.collectionId,
-				itemRefCount: collection.itemRefCount,
-				...(typeof collection.hiddenCount === "number" ? { hiddenCount: collection.hiddenCount } : {}),
-				...(collection.containerRole ? { containerRole: collection.containerRole } : {}),
-				...(collection.containerNameContext ? { containerNameContext: collection.containerNameContext } : {}),
-				...(collection.containerNameSource ? { containerNameSource: collection.containerNameSource } : {}),
-				...(collection.itemRole ? { itemRole: collection.itemRole } : {}),
-				...(collection.continuation ? { continuation: collection.continuation } : {}),
-				...(typeof collection.pageSize === "number" ? { pageSize: collection.pageSize } : {}),
-				...(collection.paginationControl ? { paginationControl: collection.paginationControl } : {}),
-				...(collection.scrollDirection ? { scrollDirection: collection.scrollDirection } : {}),
-				...(collection.dataSources?.length ? { dataSources: collection.dataSources } : {}),
-				...(collection.evidence.length ? { evidence: collection.evidence } : {}),
-			},
+			itemRefs: [...collection.itemRefs],
+			...(frontierNeeded ? { frontierRef: `frontier:collection:${collection.collectionId}` } : {}),
+			collectionId: collection.collectionId,
+			itemRefCount: collection.itemRefCount,
+			...(typeof collection.hiddenCount === "number" ? { hiddenCount: collection.hiddenCount } : {}),
+			...(collection.containerRole ? { containerRole: collection.containerRole } : {}),
+			...(collection.containerNameContext ? { containerNameContext: collection.containerNameContext } : {}),
+			...(collection.containerNameSource ? { containerNameSource: collection.containerNameSource } : {}),
+			...(collection.itemRole ? { itemRole: collection.itemRole } : {}),
+			...(typeof collection.pageSize === "number" ? { pageSize: collection.pageSize } : {}),
+			...(collection.paginationControl ? { paginationControl: collection.paginationControl } : {}),
+			...(collection.scrollDirection ? { scrollDirection: collection.scrollDirection } : {}),
+			...(collection.dataSources?.length ? { dataSources: collection.dataSources } : {}),
+			...(collection.evidence.length ? { evidence: collection.evidence.map((item) => ({ source: item.source, summary: item.summary, ...(item.ref ? { ref: item.ref } : {}) })) } : {}),
 		};
 	});
-	return { inline: projected.map((item) => item.inline), artifact: projected.map((item) => item.artifact), items };
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -195,12 +129,6 @@ function reanchorReason(value: unknown): PageObservationV3["reanchorReason"] {
 		: undefined;
 }
 
-function compactDiagnostics(diagnostics: Record<string, unknown>): Record<string, unknown> | undefined {
-	const output: Record<string, unknown> = {};
-	for (const key of ["baseline", "providerFailures", "warnings", "fromCache", "cache"] as const) if (diagnostics[key] !== undefined) output[key] = diagnostics[key];
-	return Object.keys(output).length ? output : undefined;
-}
-
 export function buildPageObservation(input: PageObservationInput): PageObservationBuild {
 	const focus = isRecord(input.summary.focus) ? input.summary.focus as Record<string, unknown> : {};
 	const gist = isRecord(focus.gist) ? focus.gist : undefined;
@@ -212,89 +140,42 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 	};
 	const fullSnapshotProjection = isRecord(input.summary.snapshotProjection) ? input.summary.snapshotProjection as unknown as SnapshotProjection : undefined;
 	const fullCollections = Array.isArray(input.summary.collections) ? input.summary.collections as CollectionModel[] : [];
-	const templates = templateFrontier(fullSnapshotProjection);
-	const collections = collectionProjection(fullCollections);
-	const contentFrontier: ObservationFrontierItem = {
-		ref: "frontier:content",
-		kind: "content",
-		state: "folded",
-		observed: 0,
-		total: input.content.length,
-		read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: "diagnostics.content" },
-	};
-	const diagnosticsFrontier: ObservationFrontierItem = {
-		ref: "frontier:diagnostics",
-		kind: "diagnostics",
-		state: "folded",
-		read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: "diagnostics" },
-	};
-	const frontier: ObservationFrontier = { items: [...templates.items, ...collections.items, contentFrontier, diagnosticsFrontier] };
 	const snapshot = observationSnapshot(input.snapshot);
 	const target = pageTarget(snapshot, input.url, input.activeTabId);
-	const common: Omit<PageObservationV3, "snapshotProjection" | "collections" | "diagnostics" | "limits"> = {
+	const reason = reanchorReason(input.summary.reanchorReason);
+	const actionables = compactActionables(input.entities, focus);
+	return {
 		schema: PAGE_OBSERVATION_SCHEMA_V3,
 		tool: "browser_observe",
 		model: "PageObservation",
 		canonical: true,
 		target,
 		snapshot,
-		...(reanchorReason(input.summary.reanchorReason) ? { reanchorReason: reanchorReason(input.summary.reanchorReason) } : {}),
+		content: { text: input.content, ...(input.headings?.length ? { headings: input.headings } : {}), complete: input.contentComplete !== false },
+		...(reason ? { reanchorReason: reason } : {}),
 		...(input.summary.delta === "session" ? { delta: "session" as const } : {}),
 		...(typeof input.summary.baselineSnapshotId === "string" ? { baselineSnapshotId: input.summary.baselineSnapshotId } : {}),
 		...(gist ? { gist } : {}),
 		...(outline ? { outline: outline.filter(isRecord) as Array<Record<string, unknown>> } : {}),
 		...(input.entities.length ? { entities: input.entities } : {}),
-		...(compactActionables(input.entities, focus).length ? { actionables: compactActionables(input.entities, focus) } : {}),
+		...(actionables.length ? { actionables } : {}),
 		...(isRecord(focus.relations) ? { relations: focus.relations as PageObservationV3["relations"] } : {}),
 		...(isRecord(input.summary.identity) ? { identity: input.summary.identity } : {}),
 		...(isRecord(input.summary.inference) ? { inference: input.summary.inference as PageObservationV3["inference"] } : {}),
 		...(input.diff ? { diff: input.diff } : {}),
 		...(input.treeDiff ? { treeDiff: input.treeDiff } : {}),
 		...(input.causal ? { causal: input.causal } : {}),
+		...(fullSnapshotProjection ? { snapshotProjection: fullSnapshotProjection } : {}),
+		...(fullCollections.length ? { collections: collectionSummaries(fullCollections) } : {}),
 		providers: providerReport,
-		frontier,
+		frontier: { items: [] },
+		diagnostics: {
+			...input.diagnostics,
+			abmlIntegrated: input.abmlIntegrated,
+			...(input.providerFailures?.length ? { providerFailures: input.providerFailures } : {}),
+		},
 		...(Array.isArray(input.summary.nextActions) ? { nextActions: input.summary.nextActions.filter((item): item is string => typeof item === "string") } : {}),
 	};
-	const fullDiagnostics = {
-		...input.diagnostics,
-		content: { text: input.content },
-		abmlIntegrated: input.abmlIntegrated,
-			...(input.providerFailures?.length ? { providerFailures: input.providerFailures } : {}),
-	};
-	const budgetChars = Math.max(1, Math.floor(input.budgetChars ?? 20_000));
-	const zeroCost = { chars: 0, bytes: 0, estimatedTokens: 0 };
-	const artifact: PageObservationV3 = {
-		...common,
-		...(fullSnapshotProjection ? { snapshotProjection: fullSnapshotProjection } : {}),
-		...(collections.artifact.length ? { collections: collections.artifact } : {}),
-		diagnostics: fullDiagnostics,
-		limits: { budgetChars, cost: zeroCost },
-	};
-	const inline: PageObservationV3 = {
-		...common,
-		...(templates.projection ? { snapshotProjection: templates.projection } : {}),
-		...(collections.inline.length ? { collections: collections.inline } : {}),
-		...(compactDiagnostics(fullDiagnostics) ? { diagnostics: compactDiagnostics(fullDiagnostics) } : {}),
-		limits: { budgetChars, cost: zeroCost },
-	};
-	return { inline, artifact };
-}
-
-export function attachAbmlArtifactHints(summary: Record<string, unknown>): void {
-	if (Array.isArray(summary.collections) && summary.collections.length) {
-		addArtifactHint(summary, "collections", { label: "collection completeness + continuation", jsonPath: "envelope.collections", kind: "abml-collections" }, "front");
-	}
-	if (isRecord(summary.snapshotProjection)) {
-		addArtifactHint(summary, "snapshotProjection", { label: "living snapshot projection", jsonPath: "envelope.snapshotProjection", kind: "abml-structure" });
-	}
-	const focus = isRecord(summary.focus) ? summary.focus : undefined;
-	if (isRecord(focus?.relations)) {
-		addArtifactHint(summary, "relations", { label: "relationship graph summary", jsonPath: "envelope.relations", kind: "abml-relations" });
-		addArtifactHint(summary, "relationGraph", { label: "full ABML relation graph", jsonPath: "envelope.relationGraph", kind: "abml-relations" });
-	}
-	if (isRecord(summary.identity)) {
-		addArtifactHint(summary, "identityGraph", { label: "identity lattice graph", jsonPath: "envelope.identityGraph", kind: "abml-identity" });
-	}
 }
 
 export function buildScanNextActionHints(input: {
@@ -323,48 +204,6 @@ export function buildScanNextActionHints(input: {
 		hints.push(`treeDiff: +${s.appeared}/-${s.disappeared}/~${s.changed} templates${eg ? ` (${eg})` : ""}; expand treeDiff.templates only if the summary sample is insufficient`);
 	}
 	return hints;
-}
-
-export function buildObserveArtifactProjection(input: {
-	summaryRecord: Record<string, unknown>;
-	summary: Record<string, unknown>;
-	envelopeEntities: Entity[];
-	envelopeDiff?: EntityDiff & { summary?: unknown };
-	abmlTreeDiff?: TreeDiff;
-	artifactRelevance?: Record<string, unknown>;
-	causalBlock: ObserveCausalBlock;
-}) {
-	const artifactSnapshotProjection = isRecord(input.summaryRecord.snapshotProjection) ? input.summaryRecord.snapshotProjection : undefined;
-	const artifactCollections = Array.isArray(input.summaryRecord.collections) ? input.summaryRecord.collections.filter(isRecord) as Array<Record<string, unknown>> : undefined;
-	const artifactIdentityGraph = isRecord(input.summaryRecord._identityGraph) ? input.summaryRecord._identityGraph : undefined;
-	const artifactRelationGraph = isRecord(input.summaryRecord._relationGraph) ? input.summaryRecord._relationGraph : undefined;
-	delete input.summaryRecord._identityGraph;
-	delete input.summaryRecord._relationGraph;
-	const artifactFocus = isRecord(input.summaryRecord.focus) ? input.summaryRecord.focus as Record<string, unknown> : undefined;
-	const artifactRelations = isRecord(artifactFocus?.relations) ? artifactFocus!.relations : undefined;
-	const artifactEnvelopeMirror = {
-		tool: "browser_observe",
-			command: "scan",
-		summary: input.summary,
-		...(input.envelopeEntities.length ? { entities: input.envelopeEntities.slice(0, 12) } : {}),
-		...(input.envelopeDiff ? { diff: input.envelopeDiff } : {}),
-		...(input.abmlTreeDiff ? { treeDiff: input.abmlTreeDiff } : {}),
-		...(artifactRelations ? { relations: artifactRelations } : {}),
-		...(artifactRelationGraph ? { relationGraph: artifactRelationGraph } : {}),
-		...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}),
-		...(artifactCollections?.length ? { collections: artifactCollections } : {}),
-		...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}),
-		...(input.artifactRelevance ? { relevance: input.artifactRelevance } : {}),
-		...input.causalBlock,
-	};
-	return {
-		artifactSnapshotProjection,
-		artifactCollections,
-		artifactIdentityGraph,
-		artifactRelationGraph,
-		artifactRelations,
-		artifactEnvelopeMirror,
-	};
 }
 
 export function buildObserveAbmlDetails(input: {

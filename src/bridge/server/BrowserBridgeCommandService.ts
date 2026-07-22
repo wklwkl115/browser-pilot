@@ -207,7 +207,7 @@ export class BrowserBridgeCommandService {
 		const target = explicitTarget ?? this.optionalExecutionTarget(command, options.browserSessionId);
 		const tabId = target?.tabId;
 		const payload: BridgeCommand = tabId !== undefined ? { ...command, tabId } : command;
-		const validation = validateBridgeCommand(payload, { allowMissingTabId: tabId === undefined });
+		const validation = validateBridgeCommand(payload, { allowMissingTabId: tabId === undefined, allowResolvedTarget: true });
 		if (!validation.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", validation.error, validation.details);
 		if (validation.spec.internal === true && options.internal !== true) {
 			throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", "Bridge command is internal-only", { cmd: validation.command.cmd });

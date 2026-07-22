@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { defineArtifactCommand } from "../../src/commands/artifactCommand.ts";
 import { CommandManifestIndex, type CommandDefinition } from "../../src/commands/commandManifestIndex.ts";
 import { defineExecuteCommand } from "../../src/commands/executeCommand.ts";
 import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
@@ -267,6 +266,15 @@ test("commands execution: browser_command rejects commands outside the public na
 	assert.equal(runtime.calls.some((call) => call.name === "sendCommand"), false);
 });
 
+test("commands execution: browser_command rejects command-specific schema errors before startup", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const body = parseResult(await command.execute("tool-invalid-native", { command: { cmd: "network.list", typo: true } }));
+	assert.equal(body.code, "INVALID_BROWSER_COMMAND");
+	assert.match(String(body.message), /unknown parameter "typo"/);
+	assert.equal(runtime.calls.length, 0);
+});
+
 test("dedicated screenshot and browser_command dispatch their native commands", async () => {
 	const directory = await mkdtemp(path.join(tmpdir(), "browser-pilot-owned-tools-"));
 	const runtime = createRuntime({
@@ -394,7 +402,7 @@ test("commands execution: input.ref expands its private native target and routes
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const ref = registerOwnedRef();
-	await command.execute("tool-input-ref", { command: { cmd: "input.ref", action: "click", ref, target: { backendNodeId: 999 } } });
+	await command.execute("tool-input-ref", { command: { cmd: "input.ref", action: "click", ref } });
 	const send = runtime.calls.find((call) => call.name === "sendCommand");
 	const native = send?.args[0] as Record<string, unknown>;
 	const target = native.target as Record<string, unknown>;
@@ -403,49 +411,4 @@ test("commands execution: input.ref expands its private native target and routes
 	assert.equal(target.backendNodeId, 41);
 	assert.equal(target.targetId, "target-1");
 	assert.deepEqual({ ...(send?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", tabId: 7, timeoutMs: 15000, accessMode: "write", signal: undefined });
-});
-
-test("commands execution: browser_artifact reads JSON path and returns bounded inline result", async () => {
-	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-command-artifact-"));
-	const artifacts = path.join(dir, ".browser-pilot", "artifacts");
-	await mkdir(artifacts, { recursive: true });
-	const artifactPath = path.join(artifacts, "result.json");
-	await writeFile(artifactPath, JSON.stringify({ data: { items: [{ id: 1 }, { id: 2 }], token: "secret" } }), "utf8");
-	const command = defineCommand((context) => defineArtifactCommand(context), createRuntime());
-	const result = await command.execute("tool-1", { path: artifactPath, jsonPath: "data.items[1]" }, undefined, undefined, { cwd: dir });
-	const body = parseResult(result);
-	assert.equal(body.mode, "json");
-	assert.equal(body.jsonPath, "data.items[1]");
-	assert.deepEqual(body.value, { id: 2 });
-	assert.equal(result.details?.mode, "json");
-	assert.equal(result.details?.path, artifactPath);
-});
-
-test("commands execution: browser_artifact inspect lists existing hinted paths without raw payload", async () => {
-	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-command-artifact-inspect-"));
-	const artifacts = path.join(dir, ".browser-pilot", "artifacts");
-	await mkdir(artifacts, { recursive: true });
-	const artifactPath = path.join(artifacts, "observe.json");
-	await writeFile(artifactPath, JSON.stringify({
-		data: { items: [{ id: 1, secret: "large raw body" }] },
-		envelope: {
-			summary: { type: "bridgeResult", requestCount: 1 },
-			artifact_hints: {
-				kind: "PageObservation",
-				schemaVersion: 1,
-				jsonPaths: { items: "data.items", missing: "data.missing" },
-				preferredReads: [{ label: "items", jsonPath: "data.items", kind: "primary-items" }, { label: "missing", jsonPath: "data.missing" }],
-				saved: { path: artifactPath, bytes: 123 },
-			},
-		},
-	}), "utf8");
-	const command = defineCommand((context) => defineArtifactCommand(context), createRuntime());
-	const result = await command.execute("tool-1", { path: artifactPath, mode: "inspect" }, undefined, undefined, { cwd: dir });
-	const body = parseResult(result);
-	assert.equal(body.mode, "inspect");
-	assert.equal(body.kind, "PageObservation");
-	assert.equal((body.jsonPaths as Record<string, unknown>).items, "data.items");
-	assert.equal((body.jsonPaths as Record<string, unknown>).missing, undefined);
-	assert.equal((body.preferredReads as Array<Record<string, unknown>>).some((read) => read.jsonPath === "data.missing"), false);
-	assert.equal(JSON.stringify(body).includes("large raw body"), false);
 });

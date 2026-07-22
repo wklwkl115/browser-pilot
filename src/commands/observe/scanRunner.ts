@@ -2,7 +2,7 @@ import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntim
 import { BrowserBridgeError, compactError } from "../../utils/errors.js";
 import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
-import { artifactFallbackName, bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, commandMaxChars, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
+import { artifactFallbackName, bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
 import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, type ObserveToolParams } from "./common.js";
 import { runObserveProviders } from "./scanProviders.js";
@@ -39,10 +39,6 @@ function providerFailureFromAbmlRead(abmlRead: unknown): ObservationProviderFail
 	return providerFailure("abml-read", code, message, details);
 }
 
-function hasArtifactPath(path: unknown): path is string {
-	return typeof path === "string" && path.trim().length > 0;
-}
-
 function publicPageFingerprint(fingerprint: import("../pageSignals.js").PageFingerprint | undefined) {
 	if (!fingerprint) return undefined;
 	const { pageEpoch: _pageEpoch, documentId: _documentId, ...publicFingerprint } = fingerprint;
@@ -57,33 +53,24 @@ async function prepareObservationRequest(
 ) {
 	const providerFailures: ObservationProviderFailure[] = [];
 	const startedAt = Date.now();
-	let tabsRefreshDegraded = false;
 	const tabs = await server.refreshTabs(5_000, { browserSessionId: params.browserSessionId }).catch((error: unknown) => {
-		tabsRefreshDegraded = true;
 		providerFailures.push(providerFailureFromError("tabs-refresh", error, "TABS_REFRESH_FAILED"));
 		return server.getTabs();
 	});
 	timings.tabRefreshMs = elapsedMs(startedAt);
-	const maxChars = commandMaxChars(params, "browser_observe");
 	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 	const rawTargetRef = targetTabId(params);
 	const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
 	const fallbackName = artifactFallbackName("observe-scan");
-	const outputPath = params.outputPath ?? resolveArtifactPath(ctx, undefined, fallbackName);
-	const artifactAvailable = hasArtifactPath(outputPath);
-	if (!artifactAvailable) providerFailures.push(providerFailure("artifact", "ARTIFACT_UNAVAILABLE", "PageObservation artifact path is unavailable"));
+	const outputPath = resolveArtifactPath(ctx, undefined, fallbackName);
 	return {
 		tabs,
-		tabsRefreshDegraded,
 		providerFailures,
-		maxChars,
 		browserSessionId,
 		rawTargetRef,
 		tabId,
 		fallbackName,
 		outputPath,
-		artifactAvailable,
-		resultParams: { ...params, outputPath },
 	};
 }
 
@@ -99,21 +86,18 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	}
 	const observeTimings: ObserveTimingMetrics = {};
 	const request = await prepareObservationRequest(server, params, ctx, observeTimings);
-	const { tabs, tabsRefreshDegraded, providerFailures, maxChars, browserSessionId, rawTargetRef, tabId, fallbackName, outputPath, artifactAvailable, resultParams } = request;
+	const { tabs, providerFailures, browserSessionId, rawTargetRef, tabId, fallbackName, outputPath } = request;
 	const session = await prepareScanSession({
 		server,
 		params,
-		tabs,
 		tabId,
-		maxChars,
-		resultParams,
 		outputPath,
 		browserSessionId,
 		onUpdate,
 		timings: observeTimings,
 	});
 	if (session.cacheHit) return session.result;
-		const { timeoutMs, effectiveTabId, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, paramsSignature, pageFingerprint, pageIdentity, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
+	const { timeoutMs, effectiveTabId, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, paramsSignature, pageFingerprint, pageIdentity, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
 	const capture = await executeScanCapture({
 		server,
 		params,
@@ -136,7 +120,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const data = observation.result.data;
 	const scanPageFingerprint = publicPageFingerprint(fusedPageFingerprint);
 	const effectivePageFingerprint = fusedPageFingerprint ?? pageFingerprint;
-	const content = data.content.tree ?? data.content.text;
+	const content = data.content.text;
 	const scanMeta = { schema: data.schema, page: data.page, stats: data.stats };
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const providers = await runObserveProviders({
@@ -149,15 +133,13 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		timings: observeTimings,
 	});
 	const { causal, recorderState, hookState } = providers;
-	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, outputPath, data.page.url, recorderState.lastSeq, hookState.lastSeq, capture.pageIdentity);
+	const snapshotMeta = currentObserveSnapshotMeta(server, params, outputPath, data.page.url, recorderState.lastSeq, hookState.lastSeq, capture.pageIdentity);
 	const renderStartedAt = Date.now();
 	const abmlProviderFailure = providerFailureFromAbmlRead(observation.abmlRead);
 	if (abmlProviderFailure) providerFailures.push(abmlProviderFailure);
 	const { assembly } = prepareScanAssembly({
 		server,
 		params,
-		tabs,
-		maxChars,
 		tabId: effectiveTabId,
 		data,
 		bridge,
@@ -169,16 +151,10 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	});
 	return await finalizeScanObservation({
 		server,
-		params,
-		resultParams,
 		ctx,
 		tabs,
-		tabId: effectiveTabId,
-		maxChars,
 		fallbackName,
 		outputPath,
-		artifactAvailable,
-		tabsRefreshDegraded,
 		data,
 		content,
 		scanMeta,
@@ -194,9 +170,9 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		providers,
 		capture,
 		assembly,
-			scanPageFingerprint,
-			effectivePageFingerprint,
-			paramsSignature,
+		scanPageFingerprint,
+		effectivePageFingerprint,
+		paramsSignature,
 		renderStartedAt,
 	});
 }

@@ -137,7 +137,12 @@
     "bridge_wake": {
       "domain": "core",
       "tabScoped": false,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "url": { "type": "string" } },
+        "additionalProperties": false
+      }
     },
     "content.fingerprint": {
       "domain": "core",
@@ -193,6 +198,7 @@
         "disable",
         "enable"
       ],
+      "methodRequired": true,
       "methodSpecs": {
         "reload": {
           "accessMode": "write"
@@ -209,12 +215,26 @@
           ],
           "accessMode": "write"
         }
+      },
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "method": { "enum": ["list", "reload", "disable", "enable"] },
+          "extId": { "type": "string" }
+        },
+        "required": ["method"],
+        "additionalProperties": false
       }
     },
     "cookies": {
       "domain": "core",
       "tabScoped": false,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "url": { "type": "string" } },
+        "additionalProperties": false
+      }
     },
     "cdp": {
       "domain": "core",
@@ -222,12 +242,70 @@
       "accessMode": "write",
       "required": [
         "method"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "method": { "type": "string", "minLength": 1 },
+          "params": { "type": "object" },
+          "name": { "type": "string" },
+          "persistent": { "type": "boolean" }
+        },
+        "required": ["method"],
+        "additionalProperties": false
+      }
     },
     "persistent_cdp": {
       "domain": "core",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "required": ["action"],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "action": { "enum": ["attach", "attachTarget", "send", "detachTarget", "detach", "targets", "frameTree", "evaluateInFrame", "addNewDocumentScript", "removeNewDocumentScript", "releaseIdle"] },
+          "name": { "type": "string" },
+          "protocolVersion": { "type": "string" },
+          "bringToFront": { "type": "boolean" },
+          "persistent": { "type": "boolean" },
+          "detachOnError": { "type": "boolean" },
+          "targetId": { "type": "string" },
+          "cdpMethod": { "type": "string" },
+          "params": { "type": "object" },
+          "frame": {},
+          "frameId": {},
+          "expression": { "type": "string" },
+          "worldName": { "type": "string" },
+          "grantUniversalAccess": { "type": "boolean" },
+          "awaitPromise": { "type": "boolean" },
+          "returnByValue": { "type": "boolean" },
+          "userGesture": { "type": "boolean" },
+          "includeCommandLineAPI": { "type": "boolean" },
+          "runImmediately": { "type": "boolean" },
+          "precompile": { "type": "boolean" },
+          "scriptHash": { "type": "string" },
+          "focusEmulation": { "type": "boolean" },
+          "requiredDomains": { "type": "array", "items": { "type": "string" } },
+          "source": { "type": "string" },
+          "identifier": { "type": "string" },
+          "maxIdleMs": { "type": "number" }
+        },
+        "required": ["action"],
+        "oneOf": [
+          { "properties": { "action": { "const": "attach" } }, "required": ["action"] },
+          { "properties": { "action": { "const": "attachTarget" } }, "required": ["action", "targetId"] },
+          { "properties": { "action": { "const": "send" } }, "required": ["action", "cdpMethod"] },
+          { "properties": { "action": { "const": "detachTarget" } }, "required": ["action"] },
+          { "properties": { "action": { "const": "detach" } }, "required": ["action"] },
+          { "properties": { "action": { "const": "targets" } }, "required": ["action"] },
+          { "properties": { "action": { "const": "frameTree" } }, "required": ["action"] },
+          { "properties": { "action": { "const": "evaluateInFrame" } }, "required": ["action", "expression"] },
+          { "properties": { "action": { "const": "addNewDocumentScript" } }, "required": ["action", "source"] },
+          { "properties": { "action": { "const": "removeNewDocumentScript" } }, "required": ["action", "identifier"] },
+          { "properties": { "action": { "const": "releaseIdle" } }, "required": ["action"] }
+        ],
+        "additionalProperties": false
+      }
     },
     "input.pointer": {
       "domain": "input",
@@ -237,7 +315,25 @@
         "gesture",
         "x",
         "y"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "gesture": { "enum": ["press", "drag", "wheel", "hover", "moveonly", "pressonly", "releaseonly"] },
+          "x": { "type": "number" },
+          "y": { "type": "number" },
+          "button": { "enum": ["left", "middle", "right", "back", "forward", "none"] },
+          "count": { "type": "number" },
+          "modifiers": { "anyOf": [{ "type": "number" }, { "type": "array", "items": { "type": "string" } }, { "type": "object" }] },
+          "deltaX": { "type": "number" },
+          "deltaY": { "type": "number" },
+          "toX": { "type": "number" },
+          "toY": { "type": "number" },
+          "path": { "type": "array", "items": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"], "additionalProperties": false } }
+        },
+        "required": ["gesture", "x", "y"],
+        "additionalProperties": false
+      }
     },
     "input.keys": {
       "domain": "input",
@@ -250,7 +346,29 @@
         [
           "keys"
         ]
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "keys": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string", "minLength": 1 },
+                "type": { "enum": ["keyDown", "keyUp"] },
+                "modifiers": { "anyOf": [{ "type": "number" }, { "type": "array", "items": { "type": "string" } }, { "type": "object" }] }
+              },
+              "required": ["key"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "anyOf": [{ "required": ["text"] }, { "required": ["keys"] }],
+        "additionalProperties": false
+      }
     },
     "input.touch": {
       "domain": "input",
@@ -260,7 +378,20 @@
         "gesture",
         "x",
         "y"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "gesture": { "enum": ["tap", "swipe"] },
+          "x": { "type": "number" },
+          "y": { "type": "number" },
+          "toX": { "type": "number" },
+          "toY": { "type": "number" },
+          "path": { "type": "array", "items": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"], "additionalProperties": false } }
+        },
+        "required": ["gesture", "x", "y"],
+        "additionalProperties": false
+      }
     },
     "input.ref": {
       "domain": "input",
@@ -270,7 +401,16 @@
         "action",
         "ref"
       ],
-      "notes": "Pass an observed bp-ref URI in ref. The daemon resolves ownership and expands the private CDP target before dispatch."
+      "notes": "Pass an observed bp-ref URI in ref. The daemon resolves ownership and expands the private CDP target before dispatch.",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "action": { "enum": ["click"] },
+          "ref": { "type": "string", "pattern": "^bp-ref://" }
+        },
+        "required": ["action", "ref"],
+        "additionalProperties": false
+      }
     },
     "batch": {
       "domain": "core",
@@ -283,7 +423,16 @@
     "contentSettings": {
       "domain": "core",
       "tabScoped": false,
-      "accessMode": "read"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string" },
+          "setting": { "type": "string" },
+          "pattern": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
     },
     "wait.navigate": {
       "domain": "wait",
@@ -475,28 +624,62 @@
     "network.wait": {
       "domain": "network",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "condition": { "enum": ["request", "response", "body", "finished", "failed", "websocket", "sse", "idle", "count"] },
+          "waitId": { "type": "string" },
+          "idleMs": { "type": "number" },
+          "count": { "type": "number" },
+          "requestId": { "type": "string" },
+          "url": { "type": "string" },
+          "urlContains": { "type": "string" },
+          "urlPattern": { "type": "string" },
+          "method": { "type": "string" },
+          "type": { "type": "string" },
+          "mime": { "type": "string" },
+          "status": { "type": "number" },
+          "includeUrls": { "type": "array", "items": { "type": "string" } },
+          "excludeUrls": { "type": "array", "items": { "type": "string" } },
+          "bodyContains": { "type": "string" },
+          "wsFrame": {},
+          "sseEvent": {}
+        },
+        "additionalProperties": false
+      }
     },
     "intercept.install": {
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "write",
-      "notes": "optional stages/requestStages may restrict Fetch.enable patterns to request and/or response interception for bounded fixtures"
+      "notes": "Optional stages restrict Fetch.enable patterns to request and/or response interception.",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "stages": { "type": "array", "items": { "enum": ["request", "response"] }, "minItems": 1 },
+          "maxTranscript": { "type": "number" }
+        },
+        "additionalProperties": false
+      }
     },
     "intercept.uninstall": {
       "domain": "intercept",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "intercept.status": {
       "domain": "intercept",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "intercept.listRules": {
       "domain": "intercept",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "intercept.addRule": {
       "domain": "intercept",
@@ -504,7 +687,42 @@
       "accessMode": "write",
       "required": [
         "action"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "action": { "enum": ["continue", "fail", "fulfill", "replaceScript"] },
+          "ruleId": { "type": "string" },
+          "matcher": {
+            "type": "object",
+            "properties": {
+              "urlContains": { "type": "string" },
+              "method": { "type": "string" },
+              "resourceType": { "type": "string" },
+              "stage": { "enum": ["request", "response"] }
+            },
+            "additionalProperties": false
+          },
+          "patch": {
+            "type": "object",
+            "properties": {
+              "url": { "type": "string" },
+              "method": { "type": "string" },
+              "headers": { "anyOf": [{ "type": "object" }, { "type": "array", "items": { "type": "object" } }] },
+              "interceptResponse": { "type": "boolean" },
+              "body": {},
+              "bodyBase64": { "type": "string" },
+              "responseCode": { "type": "number" },
+              "responsePhrase": { "type": "string" },
+              "responseHeaders": { "anyOf": [{ "type": "object" }, { "type": "array", "items": { "type": "object" } }] },
+              "errorReason": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
     },
     "intercept.removeRule": {
       "domain": "intercept",
@@ -512,12 +730,23 @@
       "accessMode": "write",
       "required": [
         "ruleId"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "ruleId": { "type": "string", "minLength": 1 } },
+        "required": ["ruleId"],
+        "additionalProperties": false
+      }
     },
     "intercept.collect": {
       "domain": "intercept",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "afterSeq": { "type": "number" }, "limit": { "type": "number" } },
+        "additionalProperties": false
+      }
     },
     "intercept.pause": {
       "domain": "intercept",
@@ -525,7 +754,13 @@
       "accessMode": "write",
       "required": [
         "params"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "params": { "type": "object" }, "autoApply": { "type": "boolean" } },
+        "required": ["params"],
+        "additionalProperties": false
+      }
     },
     "intercept.continue": {
       "domain": "intercept",
@@ -534,7 +769,27 @@
       "required": [
         "requestId"
       ],
-      "notes": "patch may mutate url, method, headers, postData/body before send; body strings are UTF-8 base64-encoded for CDP Fetch.continueRequest.postData"
+      "notes": "patch may mutate url, method, headers, or body before send; body strings are UTF-8 base64-encoded for CDP Fetch.continueRequest.postData.",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "minLength": 1 },
+          "patch": {
+            "type": "object",
+            "properties": {
+              "url": { "type": "string" },
+              "method": { "type": "string" },
+              "headers": { "anyOf": [{ "type": "object" }, { "type": "array", "items": { "type": "object" } }] },
+              "interceptResponse": { "type": "boolean" },
+              "body": {},
+              "bodyBase64": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["requestId"],
+        "additionalProperties": false
+      }
     },
     "intercept.fail": {
       "domain": "intercept",
@@ -542,7 +797,13 @@
       "accessMode": "write",
       "required": [
         "requestId"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "requestId": { "type": "string", "minLength": 1 }, "errorReason": { "type": "string" } },
+        "required": ["requestId"],
+        "additionalProperties": false
+      }
     },
     "intercept.fulfill": {
       "domain": "intercept",
@@ -550,7 +811,20 @@
       "accessMode": "write",
       "required": [
         "requestId"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "minLength": 1 },
+          "responseCode": { "type": "number" },
+          "responsePhrase": { "type": "string" },
+          "responseHeaders": { "anyOf": [{ "type": "object" }, { "type": "array", "items": { "type": "object" } }] },
+          "body": {},
+          "bodyBase64": { "type": "string" }
+        },
+        "required": ["requestId"],
+        "additionalProperties": false
+      }
     },
     "hook.list_sessions": {
       "domain": "hook",
@@ -749,7 +1023,17 @@
     "html.get": {
       "domain": "html",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "selector": { "type": "string" },
+          "mode": { "enum": ["outer", "inner", "text"] },
+          "maxBytes": { "type": "number", "minimum": 0 },
+          "maxChars": { "type": "number", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
     },
     "screenshot.capture": {
       "domain": "screenshot",
@@ -759,7 +1043,21 @@
     "evidence.collect": {
       "domain": "evidence",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "eventTypes": { "type": "array", "items": { "type": "string" } },
+          "limit": { "type": "number" },
+          "includeHook": { "type": "boolean" },
+          "includeNetwork": { "type": "boolean" },
+          "includePerformance": { "type": "boolean" },
+          "networkSessionId": { "type": "string" },
+          "entryType": { "type": "string" },
+          "nameContains": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
     },
     "ws.open": {
       "domain": "ws",
@@ -767,25 +1065,36 @@
       "accessMode": "write",
       "required": [
         "url"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "minLength": 1 },
+          "protocols": { "type": "array", "items": { "type": "string" } },
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+          "maxTranscript": { "type": "number" }
+        },
+        "required": ["url"],
+        "additionalProperties": false
+      }
     },
     "ws.status": {
       "domain": "ws",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "ws.send": {
       "domain": "ws",
       "tabScoped": true,
       "accessMode": "write",
-      "requiredAny": [
-        [
-          "text"
-        ],
-        [
-          "message"
-        ]
-      ]
+      "required": ["text"],
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"],
+        "additionalProperties": false
+      }
     },
     "ws.replay": {
       "domain": "ws",
@@ -793,22 +1102,59 @@
       "accessMode": "write",
       "required": [
         "steps"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": { "type": "string" },
+                "contains": { "type": "string" },
+                "regex": { "type": "string" },
+                "timeoutMs": { "type": "number" }
+              },
+              "required": ["text"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["steps"],
+        "additionalProperties": false
+      }
     },
     "ws.wait": {
       "domain": "ws",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "afterSeq": { "type": "number" }, "contains": { "type": "string" }, "regex": { "type": "string" } },
+        "additionalProperties": false
+      }
     },
     "ws.collect": {
       "domain": "ws",
       "tabScoped": true,
-      "accessMode": "read"
+      "accessMode": "read",
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "afterSeq": { "type": "number" }, "limit": { "type": "number" } },
+        "additionalProperties": false
+      }
     },
     "ws.close": {
       "domain": "ws",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "code": { "type": "number" }, "reason": { "type": "string" } },
+        "additionalProperties": false
+      }
     },
     "transfer.download": {
       "domain": "transfer",
@@ -822,7 +1168,25 @@
         [
           "url"
         ]
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "selector": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "minLength": 1 },
+          "mode": { "enum": ["click", "media", "url"] },
+          "index": { "type": "number" },
+          "filename": { "type": "string" },
+          "conflictAction": { "enum": ["uniquify", "overwrite", "prompt"] },
+          "saveAs": { "type": "boolean" },
+          "expectMime": { "type": "string" }
+        },
+        "oneOf": [
+          { "properties": { "mode": { "enum": ["click", "media"] } }, "required": ["selector"], "not": { "required": ["url"] } },
+          { "properties": { "mode": { "enum": ["url"] } }, "required": ["url"], "not": { "required": ["selector"] } }
+        ],
+        "additionalProperties": false
+      }
     },
     "transfer.upload": {
       "domain": "transfer",
@@ -832,7 +1196,17 @@
       "required": [
         "selector",
         "files"
-      ]
+      ],
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "selector": { "type": "string", "minLength": 1 },
+          "files": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "index": { "type": "number" }
+        },
+        "required": ["selector", "files"],
+        "additionalProperties": false
+      }
     },
     "hook.list_targets": {
       "domain": "hook",

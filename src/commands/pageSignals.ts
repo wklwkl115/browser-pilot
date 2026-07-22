@@ -118,7 +118,7 @@ export async function readHookRecorderSeq(server: BrowserCommandRuntimePort, opt
 
 export async function queryHookDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<RecorderDelta> {
 	if (!options.tabId) return { active: false, items: [] };
-	const res = await server.sendCommand({ cmd: "hook.collect", since_seq: options.sinceSeq, limit: 200 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
+	const res = await server.sendCommand({ cmd: "hook.collect", sinceSeq: options.sinceSeq, limit: 200 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
 	const data = isRecord(res.data) ? res.data : {};
 	const lastSeq = typeof data.lastSeq === "number" ? data.lastSeq : typeof data.last_seq === "number" ? data.last_seq : undefined;
 	return {

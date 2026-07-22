@@ -476,7 +476,7 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	assert.equal(collections[0]!.itemRefs.length, 20);
 	assert.equal(collections[0]!.pageSize, 10);
 	assert.equal(collections[0]!.scrollDirection, "vertical");
-	assert.equal(collections[0]!.continuation?.kind, "virtual-window");
+	assert.equal(collections[0]!.completeness, "virtualized");
 });
 
 test("ABML collections absorb malformed scan evidence and pagination edges", () => {

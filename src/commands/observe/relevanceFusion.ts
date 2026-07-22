@@ -63,12 +63,7 @@ function entityRelevanceInputs(entities: Entity[]): ObserveRelevanceInput[] {
 	});
 }
 
-export type ObserveRelevance = {
-	result: ObserveRelevanceResult;
-	artifact: Record<string, unknown>;
-};
-
-export function buildObserveRelevance(server: BrowserCommandRuntimePort, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>): ObserveRelevance | undefined {
+export function buildObserveRelevance(server: BrowserCommandRuntimePort, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>): ObserveRelevanceResult | undefined {
 	if (!relevanceEnabled()) return undefined;
 	const trace = typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(browserSessionId) : undefined;
 	const terms = [
@@ -79,15 +74,5 @@ export function buildObserveRelevance(server: BrowserCommandRuntimePort, params:
 	];
 	if (!terms.length) return undefined;
 	const result = computeObserveRelevanceMap(entityRelevanceInputs(entities), terms);
-	if (result.boosted <= 0) return undefined;
-	const boostedRefs = Array.from(result.byRef.entries()).filter(([, match]) => match.score > 0).sort((a, b) => b[1].score - a[1].score).slice(0, 20).map(([ref, match]) => ({ ref, score: match.score, sources: match.sources }));
-	return {
-		result,
-		artifact: {
-			boosted: result.boosted,
-			signals: result.signals,
-			boostedRefs,
-			...(process.env.BROWSER_PILOT_RELEVANCE_DEBUG === "1" ? { debugTerms: terms.map((term) => ({ kind: term.kind, source: term.source, age: term.age })).slice(0, 32) } : {}),
-		},
-	};
+	return result.boosted > 0 ? result : undefined;
 }

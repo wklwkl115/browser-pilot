@@ -7,7 +7,6 @@ export type ToolRelevanceTapSpec = {
 
 export const TOOL_RELEVANCE_TAPS: Record<string, ToolRelevanceTapSpec> = {
 	browser_execute: { params: { script: "scriptLiterals" } },
-	browser_artifact: { params: { jsonPath: "jsonPath", query: "query", path: "scalar" } },
 	browser_observe: { params: { actionRef: "ref", intent: "scalar" } },
 };
 

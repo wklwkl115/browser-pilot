@@ -4,7 +4,8 @@ import { browserCommandDefinitions } from "../../src/commands/commandDefinitions
 import { validateBrowserCommandArguments } from "../../src/commands/commandValidation.ts";
 import { selectDiffBaselineSnapshot, validateObserveArguments } from "../../src/commands/observeCommand.ts";
 import { validateCommandArgs } from "../../src/validation/commandArgs.ts";
-import { validateBridgeCommand } from "../../src/types/nativeProtocol.ts";
+import { getNativeCommandProtocolSchema, validateBridgeCommand } from "../../src/types/nativeProtocol.ts";
+import { publicNativeCommandNames } from "../../src/commands/nativeCommandAccess.ts";
 
 function command(name: string) {
 	const definition = browserCommandDefinitions().find((item) => item.name === name);
@@ -12,7 +13,7 @@ function command(name: string) {
 	return definition;
 }
 
-test("public schemas reject unknown tool inputs without enumerating native commands", () => {
+test("public schemas reject unknown tool inputs and enumerate canonical native commands", () => {
 	const execute = command("browser_execute");
 	assert.deepEqual(execute.validateArguments?.({ script: "document.title", readOnly: true }), []);
 	assert.deepEqual(execute.validateArguments?.({}), [{ code: "EXECUTE_SCRIPT_REQUIRED", path: "/script", message: "browser_execute requires script" }]);
@@ -22,16 +23,41 @@ test("public schemas reject unknown tool inputs without enumerating native comma
 	const invalid = validateCommandArgs(command("browser_command").parameters, { command: { cmd: "tabs" }, typo: true });
 	assert.equal(invalid.ok, false);
 	if (!invalid.ok) assert.match(invalid.error, /unknown parameter "typo"/);
-	assert.equal(validateCommandArgs(command("browser_command").parameters, { command: { cmd: "batch", commands: [] } }).ok, true);
+	const native = command("browser_command").parameters as { properties: { command: { properties: { cmd: { enum: string[] } } } } };
+	assert.deepEqual(native.properties.command.properties.cmd.enum, publicNativeCommandNames());
+	assert.equal(validateCommandArgs(command("browser_command").parameters, { command: { cmd: "batch", commands: [] } }).ok, false);
 });
 
 test("input.ref public protocol requires an opaque ref instead of a private target", () => {
-	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", ref: "bp-ref://control/1", target: {} }, { allowMissingTabId: true }).ok, true);
+	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", ref: "bp-ref://control/1" }, { allowMissingTabId: true }).ok, true);
+	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", ref: "bp-ref://control/1", target: {} }, { allowMissingTabId: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", ref: "bp-ref://control/1", target: {} }, { allowMissingTabId: true, allowResolvedTarget: true }).ok, true);
 	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", target: {} }, { allowMissingTabId: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "network.list", target: {} }, { allowMissingTabId: true, allowResolvedTarget: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "network.list", tabId: "7" }, { allowMissingTabId: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "network.list", timeoutMs: 1.5 }, { allowMissingTabId: true }).ok, false);
+});
+
+test("every public native command has one closed canonical parameter schema", () => {
+	const protocol = getNativeCommandProtocolSchema();
+	const names = publicNativeCommandNames();
+	assert.equal(names.includes("hook.clear"), false);
+	assert.equal(new Set(names).size, names.length);
+	for (const name of names) {
+		const params = protocol.commands[name]?.paramsSchema as { additionalProperties?: unknown } | undefined;
+		assert.ok(params, `${name} should publish paramsSchema`);
+		assert.equal(params.additionalProperties, false, `${name} paramsSchema should reject unknown fields`);
+	}
+	assert.equal(validateBridgeCommand({ cmd: "network.list", typo: true }, { allowMissingTabId: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "transfer.download", url: "https://example.test/file", mode: "click" }, { allowMissingTabId: true }).ok, false);
 });
 
 test("browser_observe rejects contradictory freshness inputs", () => {
 	assert.deepEqual(validateObserveArguments({ fresh: true, diff: true }), [{ code: "OBSERVE_FRESH_DIFF_CONFLICT", path: "/fresh", message: "browser_observe fresh:true cannot be combined with diff:true" }]);
+	const properties = (command("browser_observe").parameters as { properties: Record<string, unknown> }).properties;
+	for (const removed of ["maxChars", "outputPath", "timeoutMs", "maxNodes", "includeIframes", "baselinePath"]) assert.equal(removed in properties, false);
+	assert.equal(validateBrowserCommandArguments(command("browser_observe"), { maxChars: 1000 }).ok, false);
+	assert.equal(browserCommandDefinitions().some((definition) => definition.name === "browser_artifact"), false);
 });
 
 test("browser_tabs rejects removed session actions at the public validation boundary", () => {

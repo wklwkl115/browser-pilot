@@ -6,7 +6,6 @@ import { factsFromObservedEntities } from "./perceptionLedgerProjection.js";
 import { elapsedMs, finalizedObserveTimings, type ObserveTimingMetrics } from "./timings.js";
 import { buildObserveAbmlDetails, buildPageObservation, buildScanNextActionHints } from "./scanProjection.js";
 import type { BaselineResolution } from "./baseline.js";
-import type { ObserveToolParams } from "./common.js";
 import type { executeScanCapture } from "./scanCapture.js";
 import type { assembleScanSummary } from "./scanAssembly.js";
 import type { runObserveProviders } from "./scanProviders.js";
@@ -41,16 +40,10 @@ function buildBaselineDiagnostics(options: FinalizeScanObservationOptions) {
 
 type FinalizeScanObservationOptions = {
 	server: BrowserCommandRuntimePort;
-	params: ObserveToolParams;
-	resultParams: ObserveToolParams;
 	ctx: CommandResultContext;
 	tabs: unknown[];
-	tabId: number | undefined;
-	maxChars: number;
 	fallbackName: string;
 	outputPath: string | undefined;
-	artifactAvailable: boolean;
-	tabsRefreshDegraded: boolean;
 	data: PageWorldScanBundleV1;
 	content: string;
 	scanMeta: Record<string, unknown> | undefined;
@@ -76,15 +69,12 @@ function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summar
 	const { timings, data, providerFailures } = options;
 	const { observation } = options.capture;
 	const baseline = buildBaselineDiagnostics(options);
-	const summaryFocus = isRecord(summary.focus) ? summary.focus : undefined;
-	const truncation = isRecord(summaryFocus?.actionablesTruncation) ? summaryFocus.actionablesTruncation : undefined;
 	const summaryWarnings = Array.isArray(summary.warnings) ? summary.warnings.filter((warning): warning is string => typeof warning === "string") : [];
 	const warnings = [...baseline.warnings, ...summaryWarnings];
 	return {
 		observeTimings: finalizedObserveTimings(timings, data, observation.abmlRead),
 		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axFusion) ? { axFusion: observation.abmlRead.data.axFusion } : {}),
 		...(baseline.diagnostics ? { baseline: baseline.diagnostics } : {}),
-		...(truncation?.actionablesTruncated === true ? { actionablesTruncated: true, actionablesScanned: truncation.actionablesScanned, actionablesReturned: truncation.actionablesReturned } : {}),
 		...(providerFailures.length ? { providerFailures } : {}),
 		...(warnings.length ? { warnings } : {}),
 	};
@@ -95,24 +85,24 @@ function buildCanonicalPageObservation(
 	summary: Record<string, unknown>,
 	diagnostics: ReturnType<typeof buildObserveDiagnostics>,
 ): PageObservation {
-	const { content, data, bridge, snapshotMeta, artifactAvailable, outputPath, providerFailures } = options;
+	const { content, data, bridge, snapshotMeta, providerFailures } = options;
 	const { envelopeEntities, attributedEntities, envelopeDiff, treeDiff } = options.assembly;
 	const { causal } = options.providers;
 	return buildPageObservation({
 		summary,
 		entities: envelopeEntities,
 		content,
+		headings: data.content.headings,
+		contentComplete: data.stats.truncated !== true,
 		url: data.page.url,
 		activeTabId: bridge.defaultTabId,
 		snapshot: snapshotMeta,
 		diff: envelopeDiff,
 		treeDiff,
 		causal,
-		artifactPath: artifactAvailable ? outputPath : undefined,
 		abmlIntegrated: attributedEntities !== null,
 		providerFailures,
 		diagnostics,
-		budgetChars: options.maxChars,
 		providerExecution: options.providers.report,
 	});
 }
@@ -150,19 +140,18 @@ function buildLedgerProjection(options: FinalizeScanObservationOptions) {
 	return { frame };
 }
 
-function recordLedgerProjection(options: FinalizeScanObservationOptions, frame: CommandPerceptionLedgerFrame | undefined, allocation: CommandPerceptionLedgerFrame["allocation"] | undefined) {
+function recordLedgerProjection(options: FinalizeScanObservationOptions, frame: CommandPerceptionLedgerFrame | undefined) {
 	const { server, effectivePageFingerprint, paramsSignature, snapshotMeta } = options;
 	if (!frame || typeof server.recordPerceptionLedgerFrame !== "function") return;
 	server.recordPerceptionLedgerFrame({
 		...frame,
 		...(effectivePageFingerprint ? { pageFingerprint: effectivePageFingerprint } : {}),
 		renderCache: { paramsSignature, renderedAt: snapshotMeta.capturedAt },
-		...(allocation ? { allocation } : {}),
 	});
 }
 
 export async function finalizeScanObservation(options: FinalizeScanObservationOptions) {
-	const { ctx, maxChars, fallbackName, outputPath, snapshotMeta } = options;
+	const { ctx, fallbackName, outputPath, snapshotMeta } = options;
 	const { summary, treeDiff } = options.assembly;
 	const { causal } = options.providers;
 
@@ -174,21 +163,13 @@ export async function finalizeScanObservation(options: FinalizeScanObservationOp
 	const diagnostics = buildObserveDiagnostics(options, summary);
 	const pageObservation = buildCanonicalPageObservation(options, summary, diagnostics);
 	const details = buildResultDetails(options, diagnostics);
-	let allocation: CommandPerceptionLedgerFrame["allocation"] | undefined;
-	if (options.reanchorReason) {
-		pageObservation.inline.reanchorReason = options.reanchorReason;
-		pageObservation.artifact.reanchorReason = options.reanchorReason;
-	}
 	const result = await pageObservationResult({
-		inline: pageObservation.inline,
-		artifact: pageObservation.artifact,
-		maxChars,
-		outputPath,
+		observation: pageObservation,
+		artifactPath: outputPath,
 		fallbackName,
 		ctx,
 		details,
-		onAllocation: (value) => { allocation = value; },
 	});
-	recordLedgerProjection(options, ledger.frame, allocation);
+	recordLedgerProjection(options, ledger.frame);
 	return result;
 }

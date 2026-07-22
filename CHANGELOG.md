@@ -13,11 +13,15 @@ All notable changes to this project will be documented in this file.
 - Removed the public `browser_network`, `browser_hook`, `browser_frame`, and `browser_evidence` wrappers. Native operations now have one public entry point: `browser_command`.
 - Removed `browser_execute` Program DSL. `browser_execute` now accepts JavaScript only; trusted input uses native commands through `browser_command`.
 - Removed all explicit `browser_observe` modes, navigation, Readability, axe diagnostics, and provider telemetry. `browser_observe` now has one canonical `PageObservation` result.
-- Replaced generic result distillation with direct JSON, mandatory model-facing redaction, and artifact fallback when output exceeds its budget.
-- Removed compatibility-only public surfaces: top-level `tabId` targeting, `includeBridgePerTab`, the `browser-result://` resource store, and obsolete negative contract tests. Public targeting now uses `targetRef`; artifacts use `saved.path`; ABML references use `bp-ref://`.
+- Removed `browser_observe.maxChars`, output-path controls, budget fitting, silent field omission, and public artifact paths. Observation content is delivered directly; additional semantic regions are immutable MCP resources.
+- Removed the public `browser_artifact` tool and its path/mode/query/offset reader stack. Internal artifacts remain private snapshot and binary-resource storage.
+- Replaced generic result distillation with direct JSON and mandatory model-facing redaction.
+- Removed compatibility-only public surfaces: top-level `tabId` targeting, `includeBridgePerTab`, the `browser-result://` resource store, and obsolete negative contract tests. Public targeting now uses `targetRef`; ABML references use `bp-ref://`.
 
 ### Changed
 
+- Closed every public `browser_command` command schema, enforced the shared protocol before browser startup and extension dispatch, published canonical command names only, and split native discovery into a compact index plus per-command detail resources.
+- Observation frontiers now expose opaque `browser-pilot://observation/<token>` resources instead of artifact paths and JSON read instructions.
 - Restricted the WebSocket bridge to the extension ID derived from the packaged manifest key and removed the ineffective service-worker keepalive port.
 - Daemon invocation cancellation now propagates from a disconnected control client through per-tab queues and bridge pending requests. A canceled queued write is never dispatched later.
 - Persistent CDP now coalesces concurrent attaches per tab, enables independent domains concurrently and lazily, caches background focus-emulation setup per live session, and keeps execute fallback sessions warm instead of attaching and detaching for every background/CSP execution.

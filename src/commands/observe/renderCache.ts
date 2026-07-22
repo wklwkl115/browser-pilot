@@ -2,6 +2,7 @@ import type { CommandPerceptionLedgerFrame } from "../../ports/BrowserCommandRun
 import type { PageFingerprint } from "../pageSignals.js";
 import type { ObserveToolParams } from "./common.js";
 import { isPageObservationV3, type PageObservationV3 } from "../../kernels/abml/pageObservation.js";
+import { observeIntent, relevanceEnabled } from "./relevanceFusion.js";
 
 type RenderCache = NonNullable<CommandPerceptionLedgerFrame["renderCache"]>;
 
@@ -28,33 +29,15 @@ function observeSessionDeltaCacheMarker(params: ObserveToolParams): string {
 	return sessionDeltaEnabled(params) ? "on" : "off";
 }
 
-function relevanceEnabled(): boolean {
-	return process.env.BROWSER_PILOT_RELEVANCE !== "0";
-}
-
-function observeIntent(params: ObserveToolParams): string | undefined {
-	return typeof params.intent === "string" && params.intent.trim() ? params.intent.trim() : undefined;
-}
-
 function observeRelevanceCacheMarker(): string {
 	return relevanceEnabled() ? "on" : "off";
 }
 
-function observeRelevanceDebugCacheMarker(): string {
-	return process.env.BROWSER_PILOT_RELEVANCE_DEBUG === "1" ? "on" : "off";
-}
-
-export function observeRenderParamsSignature(params: ObserveToolParams, maxChars: number, captureMaxChars: number): string {
-	const maxNodes = Number(params.maxNodes);
+export function observeRenderParamsSignature(params: ObserveToolParams): string {
 	return JSON.stringify({
-		maxChars,
-		captureMaxChars,
 		sessionDelta: observeSessionDeltaCacheMarker(params),
 		standingPerception: observeStandingPerceptionCacheMarker(),
 		relevance: observeRelevanceCacheMarker(),
-		relevanceDebug: observeRelevanceDebugCacheMarker(),
-		includeIframes: params.includeIframes !== false,
-		...(Number.isFinite(maxNodes) ? { maxNodes } : {}),
 		...(observeIntent(params) ? { intent: observeIntent(params) } : {}),
 		...(typeof params.actionRef === "string" && params.actionRef ? { actionRef: params.actionRef } : {}),
 	});

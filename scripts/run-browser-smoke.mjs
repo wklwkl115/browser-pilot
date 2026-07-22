@@ -257,13 +257,12 @@ try {
 		if (!/api\/smoke/.test(resultText(network))) throw new Error(`browser_command network.list did not return capture evidence: ${resultText(network)}`);
 		await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.stop" } });
 
-		const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, maxNodes: 200 }), "browser_observe");
-	if (observed.schema !== "browser-page-observation/v3" || typeof observed.saved?.path !== "string") {
-			throw new Error(`browser_observe did not return canonical PageObservation: ${JSON.stringify(observed)}`);
-	}
-			const artifact = await invoke(daemon, "browser_artifact", { mode: "json", path: observed.saved.path, jsonPath: "entities" });
-			if (!resultText(artifact).includes("Browser Pilot Smoke")) throw new Error(`browser_artifact did not read observation entities: ${resultText(artifact)}`);
-			const entities = resultEnvelope(artifact, "browser_artifact entities").value;
+			const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef }), "browser_observe");
+		if (observed.schema !== "browser-page-observation/v3" || typeof observed.content?.text !== "string") {
+				throw new Error(`browser_observe did not return canonical PageObservation: ${JSON.stringify(observed)}`);
+		}
+				if (!observed.content.text.includes("Browser Pilot Smoke")) throw new Error(`browser_observe did not return page content: ${JSON.stringify(observed.content)}`);
+				const entities = observed.entities;
 			const actionRef = Array.isArray(entities)
 				? entities.find((entity) => entity?.name === "Run smoke")?.ref
 				: entities?.projection === "folded-v1" && Array.isArray(entities.items)
@@ -293,7 +292,7 @@ try {
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute", "tab-create-close", "browser-command-network", "canonical-observe", "artifact-read", "ref-execute", "ref-input", "ref-semantic-mismatch-rejected", "ref-occlusion-rejected", "stale-ref-rejected"],
+			checks: ["extension-handshake", "tabs", "execute", "tab-create-close", "browser-command-network", "canonical-observe", "direct-observe-content", "ref-execute", "ref-input", "ref-semantic-mismatch-rejected", "ref-occlusion-rejected", "stale-ref-rejected"],
 	}, null, 2));
 } finally {
 	await stopBrowser(browser?.child, browser?.profileDir);

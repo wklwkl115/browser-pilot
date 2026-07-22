@@ -12,7 +12,7 @@ export function nativeCommandOwner(command: BridgeCommand): string | undefined {
 
 export function publicNativeCommandNames(): string[] {
 	const schema = getNativeCommandProtocolSchema();
-	return Object.keys(schema.commands).filter((cmd) => isPublicNativeCommand({ cmd }));
+	return Object.keys(schema.commands).filter((cmd) => canonicalBridgeCommand(cmd, schema) === cmd && isPublicNativeCommand({ cmd }));
 }
 
 export function isPublicNativeCommand(command: BridgeCommand): boolean {

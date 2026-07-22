@@ -62,22 +62,19 @@ async function readScanFingerprint(options: {
 export async function prepareScanSession(options: {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
-	tabs: unknown[];
 	tabId: number | undefined;
-	maxChars: number;
-	resultParams: ObserveToolParams;
 	outputPath: string | undefined;
 	browserSessionId: string | undefined;
 	onUpdate?: CommandOnUpdate;
 	timings: ObserveTimingMetrics;
 }) {
-	const { server, params, tabId, maxChars, resultParams, outputPath, browserSessionId, onUpdate, timings } = options;
-	const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
-	const captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 100_000);
-	const scanScript = buildScanScript({ textOnly: false, maxChars: captureMaxChars, maxNodes: params.maxNodes, includeIframes: params.includeIframes });
+	const { server, params, tabId, outputPath, browserSessionId, onUpdate, timings } = options;
+	const timeoutMs = commandTimeoutMs(undefined, DEFAULT_TOOL_TIMEOUT_MS);
+	const captureMaxChars = 500_000;
+	const scanScript = buildScanScript({ textOnly: false, maxChars: captureMaxChars });
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const effectiveTabId = tabId ?? bridge.defaultTabId;
-	const paramsSignature = observeRenderParamsSignature(params, maxChars, captureMaxChars);
+	const paramsSignature = observeRenderParamsSignature(params);
 	const pageFingerprint = await readScanFingerprint({ server, params, effectiveTabId, timeoutMs, timings });
 	const pageIdentity = currentPageIdentity(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId }, pageFingerprint);
 	const plannedLedgerKey = perceptionLedgerKey(pageIdentity);
@@ -87,14 +84,12 @@ export async function prepareScanSession(options: {
 	const cachedResult = await tryRenderCacheHit({
 		server,
 		params,
-		maxChars,
 		paramsSignature,
 		pageFingerprint,
 		ledgerFrame,
 		plannedLedgerKey,
 		effectiveTabId,
 		timeoutMs,
-		resultParams,
 		outputPath,
 		browserSessionId,
 		onUpdate,

@@ -26,13 +26,13 @@ must remove that viewport/action burden from the public cognition path.
 
 Treat scroll, click, pagination, virtual-list probing, and lazy loading as evidence/state/data-source
 problems before treating them as public verbs. The kernel should model entities, relations,
-collections, completeness, continuation handles, data-source provenance, and state transitions; any
+collections, completeness, data-source provenance, and state transitions; any
 physical input or page JS needed to discover or verify them belongs in runtime mechanics with visible
 diagnostics, not in a wider agent-facing ABML surface.
 
 Viewport facts are coverage/evidence metadata, not the boundary of page understanding. If a page
 requires a manual "go there, then look again" loop, first ask whether ABML can expose the missing
-collection, completeness, continuation, or source structure so the agent does not have to perform
+collection, completeness, resource-backed region, or source structure so the agent does not have to perform
 that loop.
 
 ## Layout
@@ -52,7 +52,7 @@ The modules below make up the kernel's public surface — consumers import them 
 | `treeDiff.ts` | Template-level living diff over repeated structures; O(change) projection without ref-mint changes. |
 | `semanticRefAnchor.ts` | Semantic ref-anchor candidate derivation for repeated structures. |
 | `snapshotProjection.ts` | M2c living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
-| `collections.ts` | Collection completeness and read-only continuation evidence for long/virtualized/lazy/paginated structures. |
+| `collections.ts` | Collection completeness evidence for long, virtualized, lazy, and paginated structures. |
 | `actionabilityModel.ts` | Actionability blocker diagnostics and failure-reason shaping. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping. |
 | `verbs/router.ts` | Verb input/result/runtime types shared by pure decisions and browser runtime. |

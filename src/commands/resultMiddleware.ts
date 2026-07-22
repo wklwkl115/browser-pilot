@@ -1,10 +1,11 @@
 import { stableJson } from "../utils/json.js";
-import { containsSensitiveEvidence } from "../artifacts/artifactPrivacy.js";
+import { containsSensitiveEvidence, redactSensitiveValue } from "../artifacts/artifactPrivacy.js";
 import { saveTextArtifact } from "../artifacts/artifactFiles.js";
 import { redactForModel } from "./resultRedaction.js";
-import { renderWithExactCost } from "../kernels/evidence/cost.js";
-import type { ObservationFrontierItem, PageObservationV3 } from "../kernels/abml/pageObservation.js";
+import type { PageObservationV3 } from "../kernels/abml/pageObservation.js";
 import type { BrowserTextCommandResult } from "../utils/toolResult.js";
+import { OBSERVATION_RESOURCES_DETAIL_KEY, projectObservationResources } from "./observe/observationResources.js";
+import { createCodedError } from "../utils/codedError.js";
 
 type ArtifactContext = { cwd?: string } | undefined;
 
@@ -35,58 +36,27 @@ export async function simpleJsonResult(value: unknown, options: {
 }
 
 export type PageObservationResultOptions = {
-	inline: PageObservationV3;
-	artifact: PageObservationV3;
-	maxChars: number;
-	outputPath?: string;
+	observation: PageObservationV3;
+	artifactPath?: string;
 	fallbackName: string;
 	ctx?: ArtifactContext;
 	details?: Record<string, unknown>;
-	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 };
 
-function observationWithExactCost(observation: PageObservationV3): { value: PageObservationV3; rendered: string } {
-	return renderWithExactCost(observation, (current, cost) => ({ ...current, limits: { ...current.limits, cost } }));
-}
-
-function overflowFrontierItem(field: string): ObservationFrontierItem {
-	return {
-		ref: `frontier:inline:${field}`,
-		kind: field === "snapshotProjection" ? "template-instances" : field === "collections" ? "collection-window" : "diagnostics",
-		state: "truncated",
-		read: { tool: "browser_artifact", mode: "json", pathRef: "saved.path", jsonPath: field },
-	};
-}
-
-function fitPageObservationInline(observation: PageObservationV3, maxChars: number) {
-	let current = { ...observation, limits: { ...observation.limits, budgetChars: maxChars } };
-	let exact = observationWithExactCost(current);
-	let omittedCount = 0;
-	for (const field of ["artifact_hints", "diagnostics", "treeDiff", "causal", "diff", "inference", "identity", "relations", "snapshotProjection", "collections", "entities", "outline", "nextActions", "gist"] as const) {
-		if (exact.rendered.length <= maxChars || current[field] === undefined) continue;
-		const { [field]: _omitted, ...rest } = current;
-		const item = overflowFrontierItem(field);
-		current = {
-			...rest,
-			frontier: { items: [...current.frontier.items.filter((existing) => existing.read?.jsonPath !== field), item] },
-			limits: { ...current.limits, truncated: true },
-		} as PageObservationV3;
-		omittedCount += 1;
-		exact = observationWithExactCost(current);
-	}
-	if (exact.rendered.length > maxChars) throw new Error(`PageObservation cannot fit maxChars=${maxChars}; minimum rendered size is ${exact.rendered.length}`);
-	return { observation: exact.value, rendered: exact.rendered, omittedCount };
-}
+const MAX_OBSERVATION_RESULT_BYTES = 24 * 1024 * 1024;
 
 export async function pageObservationResult(options: PageObservationResultOptions): Promise<BrowserTextCommandResult> {
-	const artifactText = observationWithExactCost(options.artifact).rendered;
-	const saved = await saveTextArtifact(options.ctx, options.outputPath, options.fallbackName, artifactText);
-	const savedDescriptor = compactSaved(saved);
-	const modelSafe = redactForModel({ ...options.inline, saved: savedDescriptor }, saved, options.artifact) as PageObservationV3;
-	const fitted = fitPageObservationInline(modelSafe, Math.max(1, Math.floor(options.maxChars)));
-	options.onAllocation?.({ budgetUsedRatio: Math.min(1, fitted.rendered.length / Math.max(1, options.maxChars)), omittedCount: fitted.omittedCount });
+	const artifactText = stableJson(options.observation);
+	const saved = await saveTextArtifact(options.ctx, options.artifactPath, options.fallbackName, artifactText);
+	const projected = projectObservationResources(options.observation, saved.path);
+	const modelSafe = redactSensitiveValue(projected.observation) as PageObservationV3;
+	const rendered = stableJson(modelSafe);
+	const bytes = Buffer.byteLength(rendered, "utf8");
+	if (bytes > MAX_OBSERVATION_RESULT_BYTES) {
+		throw createCodedError({ name: "ObservationResultError", code: "OBSERVATION_TOO_LARGE", message: "PageObservation exceeds the MCP transport safety limit", details: { bytes, maxBytes: MAX_OBSERVATION_RESULT_BYTES } });
+	}
 	return {
-		content: [{ type: "text", text: fitted.rendered }],
-		details: { ...(options.details ?? {}), saved: savedDescriptor },
+		content: [{ type: "text", text: rendered }],
+		details: { ...(options.details ?? {}), [OBSERVATION_RESOURCES_DETAIL_KEY]: projected.resources },
 	};
 }

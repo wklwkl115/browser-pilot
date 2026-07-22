@@ -323,7 +323,7 @@ function validateBrowserPilotBridgeProtocolMessage(msg: BrowserPilotBridgeComman
   if (!protocol || typeof protocol.validateCommand !== 'function') {
     return { ok: false, error: 'Browser Pilot protocol schema is not loaded', details: { cmd: msg && msg.cmd } };
   }
-  return protocol.validateCommand(msg, { allowMissingTabId: true });
+  return protocol.validateCommand(msg, { allowMissingTabId: true, allowResolvedTarget: true });
 }
 
 const BROWSER_PILOT_CORE_COMMAND_HANDLERS: Record<string, BrowserPilotCoreCommandHandler> = {

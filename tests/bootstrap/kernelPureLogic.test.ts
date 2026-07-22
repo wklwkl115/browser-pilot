@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mintRef, parseRef, isBrowserPilotRef, normalizeRef } from "../../src/kernels/refs/core.ts";
-import { projectJsonValue } from "../../src/kernels/evidence/distill/projection.ts";
 import { computeRelevanceMap } from "../../src/kernels/evidence/distill/relevance.ts";
 
 test("refs kernel parses scoped refs and rejects malformed boundary values", () => {
@@ -18,29 +17,6 @@ test("refs kernel parses scoped refs and rejects malformed boundary values", () 
 	assert.throws(() => parseRef("control/login"), /must start/);
 	assert.throws(() => normalizeRef({ scheme: "bp-ref", kind: "control", id: "bad id" }), /Invalid Browser Pilot ref id/);
 	assert.throws(() => normalizeRef({ scheme: "bp-ref", kind: "control", id: "ok", scope: "  " }), /scope cannot be empty/);
-});
-
-test("evidence projection folds array records and handles empty, malformed, offset, and budget edges", () => {
-	const rows = Array.from({ length: 6 }, (_, index) => ({
-		kind: "request",
-		status: index % 2 === 0 ? 200 : 500,
-		url: `/api/items/${index}`,
-		bodyBytes: 100 + index,
-		rare: index === 4 ? "spike" : "normal",
-	}));
-	const projected = projectJsonValue(rows, { offset: 1, limit: 3, jsonPath: "$.requests", maxChars: 1_200 });
-	assert.ok(projected);
-	assert.equal(projected.count, 6);
-	assert.equal(projected.offset, 1);
-	assert.equal(projected.limit, 3);
-	assert.equal(projected.nextOffset, 4);
-	assert.deepEqual(projected.template.constants, { kind: "request", rare: "normal" });
-	assert.deepEqual(projected.template.ranges?.bodyBytes, { min: 101, max: 103 });
-	assert.equal(projected.items[0]!.i, 1);
-	assert.equal(projected.frontier.dropped.nextOffset, 4);
-	assert.equal(projectJsonValue([], { limit: 2 }), undefined);
-	assert.equal(projectJsonValue([{ ok: true }, "bad"], { limit: 2 }), undefined);
-	assert.equal(projectJsonValue(rows, { offset: 999, limit: 2 }), undefined);
 });
 
 test("evidence relevance scores low, high, propagated, aged, and CJK signal edges", () => {

@@ -99,8 +99,6 @@ export function mergeRecoveries(primary: ErrorRecovery | undefined, secondary: E
 
 export function recoveryForNormalized(code: string, details: Record<string, unknown>, taxonomy: RecoveryTaxonomyLike): ErrorRecovery | undefined {
 	const selector = typeof details.selector === "string" ? redactSensitiveText(details.selector) : undefined;
-	const path = typeof details.path === "string" ? redactSensitiveText(details.path) : undefined;
-	const query = typeof details.query === "string" ? redactSensitiveText(details.query) : undefined;
 	const actions = uniqueRecoveryActions([
 		...abmlRecoveryActions(code, details),
 		...websocketRecoveryActions(code),
@@ -109,12 +107,7 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 		["SELECTOR_NOT_FOUND", "INVALID_SELECTOR", "ELEMENT_NOT_FOUND"].includes(code) ? "browser_observe to refresh the page model; use browser_command html.get for exact DOM evidence" : undefined,
 		selector ? `verify selector=${selector} against the current DOM` : undefined,
 		["BODY_UNAVAILABLE", "REQUEST_NOT_FOUND", "NETWORK_RECORDER_NOT_STARTED"].includes(code) ? "use browser_command network.list or network.body with a fresh recorder session" : undefined,
-		["NO_SESSION", "NOT_INSTALLED"].includes(code) ? "set the target tab and use browser_command hook.installTargets before collecting hook events" : undefined,
-		["ARTIFACT_NOT_FOUND", "ARTIFACT_PATH_REQUIRED", "ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT", "ARTIFACT_TOO_LARGE", "ARTIFACT_SEARCH_QUERY_REQUIRED", "ARTIFACT_SEARCH_REGEX_INVALID", "ARTIFACT_SEARCH_REGEX_UNSAFE", "ARTIFACT_QUERY_REQUIRES_SEARCH_MODE", "ARTIFACT_JSON_INVALID"].includes(code) ? "browser_artifact mode=search|json|text with an explicit artifact path and bounded limits" : undefined,
-		code === "ARTIFACT_QUERY_REQUIRES_SEARCH_MODE" ? "use browser_artifact mode=search with query, or remove query from json/text reads" : undefined,
-		code === "ARTIFACT_JSON_INVALID" ? "use browser_artifact mode=text|search for non-JSON artifacts, or choose a valid JSON artifact path" : undefined,
-		path ? `browser_artifact path=${path}` : undefined,
-		query && (code.startsWith("ARTIFACT_SEARCH_") || code === "ARTIFACT_QUERY_REQUIRES_SEARCH_MODE") ? `retry browser_artifact search with query=${query}` : undefined,
+		["NO_SESSION", "NOT_INSTALLED"].includes(code) ? "set the target tab and use browser_command hook.install_targets before collecting hook events" : undefined,
 		["INVALID_TIMEOUT", "TIMEOUT", "BRIDGE_TIMEOUT", "NAVIGATION_TIMEOUT", "NETWORK_IDLE_TIMEOUT", "SELECTOR_TIMEOUT"].includes(code) ? "retry with a fresh targetRef and a command-specific timeoutMs when supported" : undefined,
 		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=list to target an unleased tab, or retry after the lease's remainingMs elapses" : undefined,
 		code === "INVALID_BROWSER_COMMAND" ? "use browser_command with a validated command object" : undefined,

@@ -8,7 +8,10 @@ import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParame
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { validateParams } from "./validationMiddleware.js";
 import { BridgeCommandSchema, type ValidatedBridgeCommand } from "../validation/schemas.js";
-import { isNativeWriteCommand, isPublicNativeCommand, nativeCommandOwner } from "./nativeCommandAccess.js";
+import { validateBridgeCommand } from "../types/nativeProtocol.js";
+import { isNativeWriteCommand, isPublicNativeCommand, nativeCommandOwner, publicNativeCommandNames } from "./nativeCommandAccess.js";
+
+const nativeCommandNames = publicNativeCommandNames();
 
 function prepareNativeRef(command: ValidatedBridgeCommand): { command: ValidatedBridgeCommand; refs: ExecutionRefTarget[] } {
 	if (command.cmd !== "input.ref") return { command, refs: [] };
@@ -25,7 +28,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 	defineBrowserCommand(commands, {
 		name: "browser_command",
 		label: "Browser Command",
-		description: "Send a validated native bridge command. Read browser-pilot://native-commands for command-specific fields.",
+		description: "Send a validated native bridge command. Read browser-pilot://native-command/<cmd> for command-specific fields.",
 		promptSnippet: "Use the native escape hatch only when a public command cannot express the operation.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
@@ -34,7 +37,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 		],
 		parameters: strictCommandParameters({
 			command: Type.Object({
-				cmd: Type.String({ minLength: 1, description: "Native command name from browser-pilot://native-commands." }),
+				cmd: Type.String({ enum: nativeCommandNames, description: "Canonical native command name from browser-pilot://native-commands." }),
 			}, { additionalProperties: true, description: "Validated native bridge command object." }),
 			...sharedTabScopedToolParams(),
 		}),
@@ -45,7 +48,9 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 				const owner = nativeCommandOwner(validated);
 				if (owner) throw new BrowserBridgeError("INVALID_RULE", `${String(validated.cmd)} must be invoked through ${owner}`, { commandName: "browser_command", useTool: owner });
 				if (!isPublicNativeCommand(validated)) throw new BrowserBridgeError("INVALID_RULE", `${String(validated.cmd)} is not a public native command`, { commandName: "browser_command", catalog: "browser-pilot://native-commands" });
-				const prepared = prepareNativeRef(validated);
+				const protocol = validateBridgeCommand(validated, { allowMissingTabId: true });
+				if (!protocol.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", protocol.error, protocol.details);
+				const prepared = prepareNativeRef(protocol.command as ValidatedBridgeCommand);
 				const command = prepared.command;
 				const server = await ensureStarted();
 				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;

@@ -9,6 +9,10 @@ import { getNativeCommandProtocolSchema } from "../../types/nativeProtocol.js";
 import { packageVersion } from "../daemon/packageInfo.js";
 import { invokeDaemonTool } from "./client.js";
 import { runMcpPairing } from "./auth.js";
+import { getJsonPath } from "../../utils/jsonPath.js";
+import { redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
+import { isPageObservationV3 } from "../../kernels/abml/pageObservation.js";
+import { OBSERVATION_RESOURCE_SCHEMA, OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
 
 type JsonRpcId = string | number | null;
 type JsonRpcMessage = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown; result?: unknown; error?: unknown };
@@ -22,8 +26,11 @@ const LATEST_PROTOCOL_VERSION = "2025-11-25";
 const PROTOCOL_VERSIONS = new Set([LATEST_PROTOCOL_VERSION]);
 const PAIR_TOOL_NAME = "browser_pair";
 const NATIVE_COMMANDS_URI = "browser-pilot://native-commands";
+const NATIVE_COMMAND_URI_PREFIX = "browser-pilot://native-command/";
 const definitions = browserCommandDefinitions();
 const byName = new Map(definitions.map((definition) => [definition.name, definition]));
+const observationResources = new Map<string, ObservationResourceDescriptor & { projectRoot: string }>();
+const OBSERVATION_RESOURCE_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const pairingTool: McpTool = {
 	name: PAIR_TOOL_NAME,
 	description: "Pair this MCP agent with the connected Browser Pilot extension.",
@@ -48,7 +55,6 @@ function toolDescription(definition: CommandDefinition): string | undefined {
 
 function toolAnnotations(name: string): Record<string, boolean> | undefined {
 	if (name === "browser_observe") return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
-	if (name === "browser_artifact") return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 	return undefined;
 }
 
@@ -108,6 +114,58 @@ function resourceLink(details: Record<string, unknown> | undefined, projectRoot:
 	return { type: "resource_link", uri, name: path.basename(filePath), mimeType: typeof saved.mime === "string" ? saved.mime : mimeTypeFor(filePath) };
 }
 
+function observationResourceToken(uri: string): string | undefined {
+	if (!uri.startsWith(OBSERVATION_RESOURCE_URI_PREFIX)) return undefined;
+	const token = uri.slice(OBSERVATION_RESOURCE_URI_PREFIX.length);
+	return OBSERVATION_RESOURCE_TOKEN.test(token) ? token : undefined;
+}
+
+function pruneObservationResources(now = Date.now()): void {
+	for (const [token, descriptor] of observationResources) {
+		if (descriptor.expiresAt <= now) observationResources.delete(token);
+	}
+}
+
+function validObservationResourceTarget(descriptor: ObservationResourceDescriptor): boolean {
+	if (descriptor.kind === "content") return Number.isInteger(descriptor.contentSection) && Number(descriptor.contentSection) >= 0 && descriptor.jsonPath === undefined;
+	if (descriptor.contentSection !== undefined || typeof descriptor.jsonPath !== "string") return false;
+	if (descriptor.kind === "template-instances") return /^snapshotProjection\.templates\[\d+\]\.instanceRefs$/.test(descriptor.jsonPath);
+	if (descriptor.kind === "collection-window") return /^collections\[\d+\]$/.test(descriptor.jsonPath);
+	return false;
+}
+
+export function registerMcpObservationResources(details: Record<string, unknown> | undefined, projectRoot: string): McpContent[] {
+	const now = Date.now();
+	pruneObservationResources(now);
+	const raw = details?.[OBSERVATION_RESOURCES_DETAIL_KEY];
+	if (!Array.isArray(raw)) return [];
+	const resolvedProjectRoot = path.resolve(projectRoot);
+	const root = path.resolve(resolvedProjectRoot, ".browser-pilot", "artifacts");
+	const links: McpContent[] = [];
+	for (const item of raw) {
+		if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+		const descriptor = item as ObservationResourceDescriptor;
+		const token = typeof descriptor.uri === "string" ? observationResourceToken(descriptor.uri) : undefined;
+		const target = typeof descriptor.path === "string" ? path.resolve(descriptor.path) : "";
+		const relative = target ? path.relative(root, target) : "";
+		if (!token || !relative || relative.startsWith("..") || path.isAbsolute(relative)
+			|| descriptor.mimeType !== "application/json" || typeof descriptor.name !== "string" || !descriptor.name.trim()
+			|| typeof descriptor.snapshotId !== "string" || !descriptor.snapshotId.trim() || typeof descriptor.ref !== "string" || !descriptor.ref.trim()
+			|| descriptor.label !== undefined && typeof descriptor.label !== "string"
+			|| !["template-instances", "collection-window", "content"].includes(descriptor.kind)
+			|| !Number.isFinite(descriptor.expiresAt) || descriptor.expiresAt <= now || !validObservationResourceTarget(descriptor)) continue;
+		observationResources.set(token, { ...descriptor, projectRoot: resolvedProjectRoot });
+		links.push({ type: "resource_link", uri: descriptor.uri, name: descriptor.name, mimeType: "application/json" });
+	}
+	return links;
+}
+
+function publicResultDetails(details: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+	if (!details) return undefined;
+	const { [OBSERVATION_RESOURCES_DETAIL_KEY]: _resources, ...publicDetails } = details;
+	return Object.keys(publicDetails).length ? publicDetails : undefined;
+}
+
 function jsonToolResult(value: Record<string, unknown>): McpToolResult {
 	return { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value };
 }
@@ -123,12 +181,14 @@ export async function callMcpTool(name: string, args: Record<string, unknown>, s
 	if (!byName.has(name)) return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
 	try {
 		const result = await invokeDaemonTool(name, args, projectRoot, signal, clientName);
-		const link = resourceLink(result.details, projectRoot);
+		const resourceLinks = registerMcpObservationResources(result.details, projectRoot);
+		const details = publicResultDetails(result.details);
+		const link = resourceLink(details, projectRoot);
 		return {
-			content: [...result.content, ...(link ? [link] : [])],
+			content: [...result.content, ...resourceLinks, ...(link ? [link] : [])],
 			...(recordJsonText(result.content) ? { structuredContent: recordJsonText(result.content) } : {}),
 			isError: result.isError === true || result.terminate === true,
-			...(result.details ? { _meta: { "browser-pilot/details": result.details } } : {}),
+			...(details ? { _meta: { "browser-pilot/details": details } } : {}),
 		};
 	} catch (error) {
 		return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -158,10 +218,17 @@ function error(id: JsonRpcId, code: number, message: string): void {
 export function mcpResources() {
 	return [{
 		uri: NATIVE_COMMANDS_URI,
-		name: "Browser Pilot native command catalog",
-		description: "Command names, fields, access modes, and validation rules accepted by browser_command.",
+		name: "Browser Pilot native command index",
+		description: "Canonical command names, domains, access modes, and routing requirements accepted by browser_command.",
 		mimeType: "application/json",
 	}];
+}
+
+export function mcpResourceTemplates() {
+	return [
+		{ uriTemplate: `${NATIVE_COMMAND_URI_PREFIX}{command}`, name: "Browser Pilot native command", description: "The exact fields and validation rules for one canonical browser_command command." },
+		{ uriTemplate: `${OBSERVATION_RESOURCE_URI_PREFIX}{token}`, name: "Browser Pilot observation region", description: "An immutable semantic region returned by browser_observe." },
+	];
 }
 
 function safeArtifactPath(uri: string, projectRoot: string): string | undefined {
@@ -181,11 +248,50 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 		const schema = getNativeCommandProtocolSchema();
 		const publicNames = new Set(publicNativeCommandNames());
 		const publicSchema = {
-			...schema,
+			name: schema.name,
+			version: schema.version,
+			envelope: schema.envelope,
 			domains: Object.fromEntries(Object.entries(schema.domains).map(([domain, commands]) => [domain, commands.filter((command) => publicNames.has(command))]).filter(([, commands]) => commands.length)),
-			commands: Object.fromEntries(Object.entries(schema.commands).filter(([command]) => publicNames.has(command))),
+			commands: Object.fromEntries([...publicNames].map((command) => {
+				const { paramsSchema: _paramsSchema, ...summary } = schema.commands[command]!;
+				return [command, summary];
+			})),
 		};
 		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(publicSchema) }] };
+	}
+	if (uri.startsWith(NATIVE_COMMAND_URI_PREFIX)) {
+		const command = decodeURIComponent(uri.slice(NATIVE_COMMAND_URI_PREFIX.length));
+		const schema = getNativeCommandProtocolSchema();
+		if (!publicNativeCommandNames().includes(command)) throw new Error(`Unknown native command resource: ${command}`);
+		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify({ name: schema.name, version: schema.version, envelope: schema.envelope, command, specification: schema.commands[command] }) }] };
+	}
+	const observationToken = observationResourceToken(uri);
+	if (observationToken) {
+		const descriptor = observationResources.get(observationToken);
+		const now = Date.now();
+		pruneObservationResources(now);
+		if (!descriptor || descriptor.projectRoot !== path.resolve(projectRoot)) throw new Error(`Unknown observation resource: ${uri}`);
+		if (descriptor.expiresAt <= now) throw new Error(`Observation resource expired: ${uri}`);
+		const root = await realpath(path.resolve(projectRoot, ".browser-pilot", "artifacts"));
+		const target = await realpath(descriptor.path);
+		const relative = path.relative(root, target);
+		if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Observation resource is outside the project artifact root");
+		const observation = JSON.parse(await readFile(target, "utf8")) as unknown;
+		if (!isPageObservationV3(observation) || observation.snapshot.snapshotId !== descriptor.snapshotId) throw new Error("Observation resource snapshot mismatch");
+		let value: unknown;
+		if (descriptor.contentSection !== undefined) {
+			const section = observation.content ? semanticContentSections(observation.content)[descriptor.contentSection] : undefined;
+			if (!section) throw new Error("Observation content region is unavailable");
+			value = { label: section.label, text: section.text };
+		} else if (descriptor.jsonPath) {
+			const selected = getJsonPath(observation, descriptor.jsonPath);
+			if (!selected.exists) throw new Error(`Observation resource path is unavailable: ${descriptor.ref}`);
+			value = selected.value;
+		} else {
+			throw new Error("Observation resource target is invalid");
+		}
+		const payload = redactSensitiveValue({ schema: OBSERVATION_RESOURCE_SCHEMA, snapshotId: descriptor.snapshotId, ref: descriptor.ref, kind: descriptor.kind, ...(descriptor.label ? { label: descriptor.label } : {}), value });
+		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(payload) }] };
 	}
 	const requested = safeArtifactPath(uri, projectRoot);
 	if (!requested) throw new Error(`Unknown or invalid resource URI: ${uri}`);
@@ -264,18 +370,18 @@ async function handleRequest(message: JsonRpcMessage, active: Map<JsonRpcId, Abo
 	if (method === "initialize") {
 		if (state.initialized) return error(id, -32600, "Server already initialized");
 		const requested = typeof params.protocolVersion === "string" ? params.protocolVersion : "";
-			const capabilities = params.capabilities;
-			const clientInfo = params.clientInfo;
-			if (!requested || !capabilities || typeof capabilities !== "object" || Array.isArray(capabilities) || typeof record(clientInfo).name !== "string") return error(id, -32602, "Invalid initialize parameters");
-			result(id, {
-				protocolVersion: PROTOCOL_VERSIONS.has(requested) ? requested : LATEST_PROTOCOL_VERSION,
-				capabilities: { tools: {}, resources: {} },
-				serverInfo: { name: "browser-pilot", version: packageVersion() },
-			});
-			state.initialized = true;
-			state.clientName = record(clientInfo).name as string;
-			state.supportsRoots = !!record(capabilities).roots;
-			return;
+		const capabilities = params.capabilities;
+		const clientInfo = params.clientInfo;
+		if (!requested || !capabilities || typeof capabilities !== "object" || Array.isArray(capabilities) || typeof record(clientInfo).name !== "string") return error(id, -32602, "Invalid initialize parameters");
+		result(id, {
+			protocolVersion: PROTOCOL_VERSIONS.has(requested) ? requested : LATEST_PROTOCOL_VERSION,
+			capabilities: { tools: {}, resources: {} },
+			serverInfo: { name: "browser-pilot", version: packageVersion() },
+		});
+		state.initialized = true;
+		state.clientName = record(clientInfo).name as string;
+		state.supportsRoots = !!record(capabilities).roots;
+		return;
 	}
 	if (!state.initialized) return error(id, -32002, "Server not initialized");
 	if (state.rootRefresh) {
@@ -285,7 +391,7 @@ async function handleRequest(message: JsonRpcMessage, active: Map<JsonRpcId, Abo
 	if (method === "ping") return result(id, {});
 	if (method === "tools/list") return result(id, { tools: mcpTools() });
 	if (method === "resources/list") return result(id, { resources: mcpResources() });
-	if (method === "resources/templates/list") return result(id, { resourceTemplates: [{ uriTemplate: "browser-pilot://artifact/{path}", name: "Browser Pilot artifact", description: "A file produced under the current project .browser-pilot/artifacts directory." }] });
+	if (method === "resources/templates/list") return result(id, { resourceTemplates: mcpResourceTemplates() });
 	if (method === "resources/read") {
 		const uri = typeof params.uri === "string" ? params.uri : "";
 		if (!uri) return error(id, -32602, "resources/read requires uri");
@@ -309,9 +415,9 @@ async function handleRequest(message: JsonRpcMessage, active: Map<JsonRpcId, Abo
 		heartbeat = setInterval(() => send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, progress: ++progress, message: `${name} is running` } }), 1_000);
 		heartbeat.unref?.();
 	}
-		active.set(id, controller);
-		try {
-			result(id, await callMcpTool(name, args, controller.signal, state.projectRoot, state.clientName));
+	active.set(id, controller);
+	try {
+		result(id, await callMcpTool(name, args, controller.signal, state.projectRoot, state.clientName));
 	} finally {
 		if (heartbeat) clearInterval(heartbeat);
 		active.delete(id);
@@ -331,7 +437,7 @@ export async function runMcpServer(): Promise<void> {
 			error(null, -32700, "Parse error");
 			return;
 		}
-			void handleRequest(message, active, pending, state).catch((cause) => {
+		void handleRequest(message, active, pending, state).catch((cause) => {
 			const id = requestId(message.id);
 			if (id !== undefined) error(id, -32603, cause instanceof Error ? cause.message : String(cause));
 		});

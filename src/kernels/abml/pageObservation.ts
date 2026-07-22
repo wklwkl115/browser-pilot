@@ -1,4 +1,3 @@
-import type { CostVector } from "../evidence/cost.js";
 import type { Entity } from "./entity.js";
 import type { EntityDiff } from "./diff.js";
 import type { CausalSummary } from "./causal.js";
@@ -10,26 +9,18 @@ import type { PageReanchorReason } from "../session/pageIdentity.js";
 
 export const PAGE_OBSERVATION_SCHEMA_V3 = "browser-page-observation/v3" as const;
 
-export type ObservationFrontierState = "folded" | "viewport-window" | "virtualized" | "paginated" | "lazy" | "truncated" | "unavailable";
-export type ObservationFrontierKind = "template-instances" | "collection-window" | "content" | "diagnostics";
-
-export interface ObservationFrontierRead {
-	tool: "browser_artifact";
-	mode: "json";
-	pathRef: "saved.path";
-	jsonPath: string;
-	offset?: number;
-	limit?: number;
-}
+export type ObservationFrontierState = "folded" | "viewport-window" | "virtualized" | "paginated" | "lazy" | "unavailable";
+export type ObservationFrontierKind = "template-instances" | "collection-window" | "content";
 
 export interface ObservationFrontierItem {
 	ref: string;
 	kind: ObservationFrontierKind;
 	state: ObservationFrontierState;
+	label?: string;
 	observed?: number;
 	total?: number;
 	controlRef?: string;
-	read?: ObservationFrontierRead;
+	resourceUri?: string;
 	unavailableReason?: string;
 }
 
@@ -43,7 +34,6 @@ export interface ProviderExecutionItem {
 	reservedMs?: number;
 	actualMs?: number;
 	bridgeRoundTrips?: number;
-	cost?: CostVector;
 }
 export type ProviderExecutionReport = Record<string, ProviderExecutionItem>;
 
@@ -66,6 +56,12 @@ export interface CompactCollection {
 	frontierRef?: string;
 }
 
+export interface PageObservationContent {
+	text: string;
+	headings?: string[];
+	complete: boolean;
+}
+
 /** Saved artifacts use the same v3 root while retaining collection evidence. */
 export interface CollectionSummary extends CompactCollection {
 	collectionId?: string;
@@ -75,7 +71,6 @@ export interface CollectionSummary extends CompactCollection {
 	containerNameContext?: string;
 	containerNameSource?: string;
 	itemRole?: string;
-	continuation?: Record<string, unknown>;
 	pageSize?: number;
 	paginationControl?: Record<string, unknown>;
 	scrollDirection?: string;
@@ -108,14 +103,6 @@ export interface ObservationSnapshot {
 	hookSeq?: number;
 	invalidatedReason?: string;
 	expired?: boolean;
-	saved?: { path?: string };
-}
-
-export interface SavedObservationArtifact {
-	path: string;
-	chars: number;
-	bytes: number;
-	privacy?: Record<string, unknown>;
 }
 
 export interface PageObservationV3 {
@@ -128,6 +115,7 @@ export interface PageObservationV3 {
 	reanchorReason?: PageReanchorReason;
 	delta?: "session";
 	baselineSnapshotId?: string;
+	content?: PageObservationContent;
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
 	entities?: Entity[];
@@ -143,47 +131,20 @@ export interface PageObservationV3 {
 	providers: ProviderExecutionReport;
 	frontier: ObservationFrontier;
 	diagnostics?: Record<string, unknown>;
-	limits: { budgetChars: number; cost: CostVector; truncated?: boolean };
-	saved?: SavedObservationArtifact;
-	artifact_hints?: Record<string, unknown>;
 	nextActions?: string[];
 }
-
-const COST_VECTOR_SCHEMA = {
-	type: "object",
-	properties: {
-		chars: { type: "integer", minimum: 0 },
-		bytes: { type: "integer", minimum: 0 },
-		estimatedTokens: { type: "integer", minimum: 0 },
-	},
-	required: ["chars", "bytes", "estimatedTokens"],
-	additionalProperties: false,
-} as const;
-
-const FRONTIER_READ_SCHEMA = {
-	type: "object",
-	properties: {
-		tool: { const: "browser_artifact" },
-		mode: { const: "json" },
-		pathRef: { const: "saved.path" },
-		jsonPath: { type: "string", minLength: 1 },
-		offset: { type: "integer", minimum: 0 },
-		limit: { type: "integer", minimum: 1 },
-	},
-	required: ["tool", "mode", "pathRef", "jsonPath"],
-	additionalProperties: false,
-} as const;
 
 const FRONTIER_ITEM_SCHEMA = {
 	type: "object",
 	properties: {
 		ref: { type: "string", minLength: 1 },
-		kind: { enum: ["template-instances", "collection-window", "content", "diagnostics"] },
-		state: { enum: ["folded", "viewport-window", "virtualized", "paginated", "lazy", "truncated", "unavailable"] },
+		kind: { enum: ["template-instances", "collection-window", "content"] },
+		state: { enum: ["folded", "viewport-window", "virtualized", "paginated", "lazy", "unavailable"] },
+		label: { type: "string", minLength: 1 },
 		observed: { type: "integer", minimum: 0 },
 		total: { type: "integer", minimum: 0 },
 		controlRef: { type: "string", minLength: 1 },
-		read: FRONTIER_READ_SCHEMA,
+		resourceUri: { type: "string", minLength: 1 },
 		unavailableReason: { type: "string", minLength: 1 },
 	},
 	required: ["ref", "kind", "state"],
@@ -199,7 +160,6 @@ const PROVIDER_ITEM_SCHEMA = {
 		reservedMs: { type: "number", minimum: 0 },
 		actualMs: { type: "number", minimum: 0 },
 		bridgeRoundTrips: { type: "integer", minimum: 0 },
-		cost: COST_VECTOR_SCHEMA,
 	},
 	required: ["planned", "status"],
 	additionalProperties: false,
@@ -212,7 +172,7 @@ const COLLECTION_SCHEMA = {
 		observed: { type: "integer", minimum: 0 }, total: { type: "integer", minimum: 0 }, completeness: { type: "string" }, confidence: { type: "string" },
 		itemRefs: { type: "array", items: { type: "string" } }, frontierRef: { type: "string" }, collectionId: { type: "string" }, itemRefCount: { type: "integer", minimum: 0 }, hiddenCount: { type: "integer", minimum: 0 },
 		containerRole: { type: "string" }, containerNameContext: { type: "string" }, containerNameSource: { type: "string" }, itemRole: { type: "string" },
-		continuation: { type: "object" }, pageSize: { type: "integer", minimum: 0 }, paginationControl: { type: "object" }, scrollDirection: { type: "string" },
+		pageSize: { type: "integer", minimum: 0 }, paginationControl: { type: "object" }, scrollDirection: { type: "string" },
 		dataSources: { type: "array", items: { type: "object" } }, evidence: { type: "array", items: { type: "object" } },
 	},
 	required: ["ref", "kind", "observed", "completeness", "confidence", "itemRefs"],
@@ -232,46 +192,30 @@ export const PAGE_OBSERVATION_V3_JSON_SCHEMA = {
 		snapshot: {
 			type: "object",
 			properties: {
-				snapshotId: { type: "string" }, browserSessionId: { type: "string" }, tabId: { type: "integer" }, url: { type: "string" }, targetGeneration: { type: "integer" }, pageEpoch: { type: "string" }, documentId: { type: "string" }, frameScope: { type: "string" }, selectionVersion: { type: "integer" }, sourceMode: { type: "string" }, capturedAt: { type: "number" }, ttlMs: { type: "number" }, networkSeq: { type: "integer" }, hookSeq: { type: "integer" }, invalidatedReason: { type: "string" }, expired: { type: "boolean" }, saved: { type: "object", properties: { path: { type: "string" } }, additionalProperties: false },
+				snapshotId: { type: "string" }, browserSessionId: { type: "string" }, tabId: { type: "integer" }, url: { type: "string" }, targetGeneration: { type: "integer" }, pageEpoch: { type: "string" }, documentId: { type: "string" }, frameScope: { type: "string" }, selectionVersion: { type: "integer" }, sourceMode: { type: "string" }, capturedAt: { type: "number" }, ttlMs: { type: "number" }, networkSeq: { type: "integer" }, hookSeq: { type: "integer" }, invalidatedReason: { type: "string" }, expired: { type: "boolean" },
 			},
 			required: ["snapshotId", "sourceMode", "capturedAt", "ttlMs"],
 			additionalProperties: false,
 		},
 		reanchorReason: { enum: ["document_changed", "target_replaced", "session_changed", "identity_unproven", "baseline_missing"] }, delta: { const: "session" }, baselineSnapshotId: { type: "string" },
+		content: { type: "object", properties: { text: { type: "string" }, headings: { type: "array", items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
 		gist: { type: "object" }, outline: { type: "array", items: { type: "object" } }, entities: { type: "array", items: { type: "object" } },
 		actionables: { type: "array", items: { type: "object", properties: { ref: { type: "string" }, kind: { type: "string" }, name: { type: "string" }, state: { type: "object" } }, required: ["ref", "kind"], additionalProperties: false } },
 		relations: { type: "object" }, identity: { type: "object" }, inference: { type: "object" }, diff: { type: "object" }, causal: { type: "object" }, treeDiff: { type: "object" }, snapshotProjection: { type: "object" }, collections: { type: "array", items: COLLECTION_SCHEMA },
 		providers: { type: "object", additionalProperties: PROVIDER_ITEM_SCHEMA },
 		frontier: { type: "object", properties: { items: { type: "array", items: FRONTIER_ITEM_SCHEMA } }, required: ["items"], additionalProperties: false },
 		diagnostics: { type: "object" },
-		limits: { type: "object", properties: { budgetChars: { type: "integer", minimum: 1 }, cost: COST_VECTOR_SCHEMA, truncated: { type: "boolean" } }, required: ["budgetChars", "cost"], additionalProperties: false },
-		saved: { type: "object", properties: { path: { type: "string" }, chars: { type: "integer", minimum: 0 }, bytes: { type: "integer", minimum: 0 }, privacy: { type: "object" } }, required: ["path", "chars", "bytes"], additionalProperties: false },
-		artifact_hints: {
-			type: "object",
-			properties: {
-				jsonPaths: { type: "object", additionalProperties: { type: "string" } },
-				preferredReads: {
-					type: "array",
-					items: { type: "object", properties: { label: { type: "string" }, jsonPath: { type: "string" }, kind: { type: "string" } }, required: ["label", "jsonPath", "kind"], additionalProperties: false },
-				},
-			},
-			additionalProperties: false,
-		},
 		nextActions: { type: "array", items: { type: "string" } },
 	},
-	required: ["schema", "tool", "model", "canonical", "target", "snapshot", "providers", "frontier", "limits"],
+	required: ["schema", "tool", "model", "canonical", "target", "snapshot", "providers", "frontier"],
 	additionalProperties: false,
 } as const;
 
 const PAGE_OBSERVATION_ROOT_KEYS = new Set(Object.keys(PAGE_OBSERVATION_V3_JSON_SCHEMA.properties));
-const COST_KEYS = new Set(["chars", "bytes", "estimatedTokens"]);
 const TARGET_KEYS = new Set(["browserSessionId", "tabId", "targetGeneration", "pageEpoch", "url"]);
-const SNAPSHOT_KEYS = new Set(["snapshotId", "browserSessionId", "tabId", "url", "targetGeneration", "pageEpoch", "documentId", "frameScope", "selectionVersion", "sourceMode", "capturedAt", "ttlMs", "networkSeq", "hookSeq", "invalidatedReason", "expired", "saved"]);
-const PROVIDER_KEYS = new Set(["planned", "status", "reason", "reservedMs", "actualMs", "bridgeRoundTrips", "cost"]);
-const FRONTIER_KEYS = new Set(["ref", "kind", "state", "observed", "total", "controlRef", "read", "unavailableReason"]);
-const FRONTIER_READ_KEYS = new Set(["tool", "mode", "pathRef", "jsonPath", "offset", "limit"]);
-const LIMIT_KEYS = new Set(["budgetChars", "cost", "truncated"]);
-const SAVED_KEYS = new Set(["path", "chars", "bytes", "privacy"]);
+const SNAPSHOT_KEYS = new Set(["snapshotId", "browserSessionId", "tabId", "url", "targetGeneration", "pageEpoch", "documentId", "frameScope", "selectionVersion", "sourceMode", "capturedAt", "ttlMs", "networkSeq", "hookSeq", "invalidatedReason", "expired"]);
+const PROVIDER_KEYS = new Set(["planned", "status", "reason", "reservedMs", "actualMs", "bridgeRoundTrips"]);
+const FRONTIER_KEYS = new Set(["ref", "kind", "state", "label", "observed", "total", "controlRef", "resourceUri", "unavailableReason"]);
 const ACTIONABLE_KEYS = new Set(["ref", "kind", "name", "state"]);
 const COLLECTION_KEYS = new Set(Object.keys(COLLECTION_SCHEMA.properties));
 
@@ -283,22 +227,15 @@ function exactKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>)
 	return Object.keys(value).every((key) => allowed.has(key));
 }
 
-function validCost(value: unknown): value is CostVector {
-	return isRecord(value)
-		&& exactKeys(value, COST_KEYS)
-		&& [value.chars, value.bytes, value.estimatedTokens].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0);
-}
-
 function validFrontier(value: unknown): value is ObservationFrontier {
 	if (!isRecord(value) || !exactKeys(value, new Set(["items"])) || !Array.isArray(value.items)) return false;
 	return value.items.every((raw) => {
 		if (!isRecord(raw) || !exactKeys(raw, FRONTIER_KEYS)) return false;
-		if (typeof raw.ref !== "string" || !["template-instances", "collection-window", "content", "diagnostics"].includes(String(raw.kind))) return false;
-		if (!["folded", "viewport-window", "virtualized", "paginated", "lazy", "truncated", "unavailable"].includes(String(raw.state))) return false;
-		if (raw.read === undefined) return typeof raw.unavailableReason === "string" && raw.unavailableReason.length > 0;
-		return isRecord(raw.read)
-			&& exactKeys(raw.read, FRONTIER_READ_KEYS)
-			&& raw.read.tool === "browser_artifact" && raw.read.mode === "json" && raw.read.pathRef === "saved.path" && typeof raw.read.jsonPath === "string" && raw.read.jsonPath.length > 0;
+		if (typeof raw.ref !== "string" || !["template-instances", "collection-window", "content"].includes(String(raw.kind))) return false;
+		if (!["folded", "viewport-window", "virtualized", "paginated", "lazy", "unavailable"].includes(String(raw.state))) return false;
+		return typeof raw.resourceUri === "string" && raw.resourceUri.length > 0
+			|| typeof raw.unavailableReason === "string" && raw.unavailableReason.length > 0
+			|| typeof raw.controlRef === "string" && raw.controlRef.length > 0;
 	});
 }
 
@@ -324,7 +261,7 @@ function validSnapshot(value: unknown): value is ObservationSnapshot {
 	if (![value.tabId, value.targetGeneration, value.selectionVersion, value.networkSeq, value.hookSeq].every(validOptionalInteger)) return false;
 	if (![value.browserSessionId, value.url, value.pageEpoch, value.documentId, value.frameScope, value.invalidatedReason].every(validOptionalString)) return false;
 	if (value.expired !== undefined && typeof value.expired !== "boolean") return false;
-	return value.saved === undefined || isRecord(value.saved) && exactKeys(value.saved, new Set(["path"])) && validOptionalString(value.saved.path);
+	return true;
 }
 
 function validProvider(value: unknown): value is ProviderExecutionItem {
@@ -333,20 +270,7 @@ function validProvider(value: unknown): value is ProviderExecutionItem {
 	if (!validOptionalString(value.reason)) return false;
 	if (![value.reservedMs, value.actualMs].every((item) => item === undefined || typeof item === "number" && Number.isFinite(item) && item >= 0)) return false;
 	if (value.bridgeRoundTrips !== undefined && (!Number.isInteger(value.bridgeRoundTrips) || Number(value.bridgeRoundTrips) < 0)) return false;
-	return value.cost === undefined || validCost(value.cost);
-}
-
-function validLimits(value: unknown): value is PageObservationV3["limits"] {
-	return isRecord(value) && exactKeys(value, LIMIT_KEYS)
-		&& typeof value.budgetChars === "number" && Number.isInteger(value.budgetChars) && value.budgetChars >= 1
-		&& validCost(value.cost) && (value.truncated === undefined || typeof value.truncated === "boolean");
-}
-
-function validSaved(value: unknown): value is SavedObservationArtifact {
-	return isRecord(value) && exactKeys(value, SAVED_KEYS) && typeof value.path === "string"
-		&& typeof value.chars === "number" && Number.isInteger(value.chars) && value.chars >= 0
-		&& typeof value.bytes === "number" && Number.isInteger(value.bytes) && value.bytes >= 0
-		&& (value.privacy === undefined || isRecord(value.privacy));
+	return true;
 }
 
 function validActionables(value: unknown): boolean {
@@ -363,9 +287,9 @@ function validCollections(value: unknown): boolean {
 export function isPageObservationV3(value: unknown): value is PageObservationV3 {
 	if (!isRecord(value) || !exactKeys(value, PAGE_OBSERVATION_ROOT_KEYS)) return false;
 	if (value.schema !== PAGE_OBSERVATION_SCHEMA_V3 || value.tool !== "browser_observe" || value.model !== "PageObservation" || value.canonical !== true) return false;
-	if (!validTarget(value.target) || !validSnapshot(value.snapshot) || !isRecord(value.providers) || !validFrontier(value.frontier) || !validLimits(value.limits)) return false;
+	if (!validTarget(value.target) || !validSnapshot(value.snapshot) || !isRecord(value.providers) || !validFrontier(value.frontier)) return false;
 	if (!Object.values(value.providers).every(validProvider) || !validActionables(value.actionables) || !validCollections(value.collections)) return false;
-	if (value.saved !== undefined && !validSaved(value.saved)) return false;
+	if (value.content !== undefined && (!isRecord(value.content) || typeof value.content.text !== "string" || typeof value.content.complete !== "boolean" || value.content.headings !== undefined && (!Array.isArray(value.content.headings) || !value.content.headings.every((item) => typeof item === "string")))) return false;
 	if (value.nextActions !== undefined && (!Array.isArray(value.nextActions) || !value.nextActions.every((item) => typeof item === "string"))) return false;
 	return true;
 }

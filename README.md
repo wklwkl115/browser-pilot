@@ -2,7 +2,7 @@
 
 Browser Pilot lets AI agents control real Chrome or Edge tabs through MCP, a local Node daemon, and a Manifest V3 extension.
 
-It provides structured page observation, JavaScript and trusted input execution, tab and frame control, network capture, hooks, screenshots, uploads, downloads, evidence, and bounded artifact reads.
+It provides structured page observation, JavaScript and trusted input execution, tab and frame control, network capture, hooks, screenshots, uploads, downloads, and evidence resources.
 
 ## Requirements
 
@@ -34,11 +34,12 @@ For a source checkout, build once and point the MCP client at `dist/src/apps/mcp
 1. Call `browser_tabs` with `action: "list"` and keep the returned `targetRef`.
 2. Call `browser_observe` for the structured page model.
 3. Use `browser_execute` for page JavaScript or `browser_command` for native browser operations.
-4. Read large saved results incrementally with `browser_artifact`.
+4. Read additional semantic page regions from the MCP resources returned by `browser_observe` only when the task needs them.
 
 ## Tools
 
 The MCP `tools/list` response is the public syntax authority. Browser tools come from `src/commands/commandCatalog.ts`; `browser_pair` provides the local pairing flow.
+`browser_command` publishes canonical command names in its schema. Read `browser-pilot://native-command/<cmd>` for the closed fields and validation rules of one command; `browser-pilot://native-commands` is the compact routing index.
 
 ## Architecture
 

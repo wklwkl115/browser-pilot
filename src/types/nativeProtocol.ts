@@ -1,4 +1,5 @@
 import schemaJson from "../bridge/protocol/native-command.schema.json" with { type: "json" };
+import { validateCommandArgs } from "../validation/commandArgs.js";
 
 export type BridgeCommand = {
 	cmd: string;
@@ -67,22 +68,37 @@ function missingRequired(command: Record<string, unknown>, required: string[] | 
 	return (required || []).filter((field) => !hasValue(command[field]));
 }
 
+const COMMAND_ENVELOPE_FIELDS = new Set(["cmd", "tabId", "timeoutMs", "sessionId"]);
+
+function commandPayload(command: Record<string, unknown>, allowResolvedTarget: boolean): Record<string, unknown> {
+	return Object.fromEntries(Object.entries(command).filter(([key]) => !COMMAND_ENVELOPE_FIELDS.has(key) && !(allowResolvedTarget && key === "target")));
+}
+
+function validateCommandEnvelope(command: Record<string, unknown>): string | undefined {
+	if (command.tabId !== undefined && (!Number.isInteger(command.tabId) || Number(command.tabId) <= 0)) return "tabId must be a positive integer";
+	if (command.sessionId !== undefined && typeof command.sessionId !== "string") return "sessionId must be a string";
+	if (command.timeoutMs !== undefined && (!Number.isInteger(command.timeoutMs) || Number(command.timeoutMs) < 0)) return "timeoutMs must be a non-negative integer";
+	return undefined;
+}
+
 export function requiredAnySatisfied(command: Record<string, unknown>, groups: string[][] | undefined): boolean {
 	if (!groups?.length) return true;
 	return groups.some((group) => Array.isArray(group) && group.every((field) => hasValue(command[field])));
 }
 
-export function validateBridgeCommand(command: unknown, options: { allowMissingTabId?: boolean } = {}): BridgeCommandValidation {
+export function validateBridgeCommand(command: unknown, options: { allowMissingTabId?: boolean; allowResolvedTarget?: boolean } = {}): BridgeCommandValidation {
 	const currentSchema = getNativeCommandProtocolSchema();
 	if (!isRecord(command)) return { ok: false, error: "Bridge command must be an object", details: { commandType: typeof command } };
 	if (typeof command.cmd !== "string" || !command.cmd.trim()) return { ok: false, error: "Bridge command requires string cmd", details: { cmd: command.cmd } };
 
 	const cmd = command.cmd.trim();
 	const canonicalCmd = canonicalBridgeCommand(cmd, currentSchema);
-	const spec = currentSchema.commands[cmd] || currentSchema.commands[canonicalCmd];
+	const spec = currentSchema.commands[canonicalCmd] || currentSchema.commands[cmd];
 	if (!spec) return { ok: false, error: `Unknown bridge command: ${cmd}`, details: { cmd } };
 
 	const checked: BridgeCommand = { ...command, cmd } as BridgeCommand;
+	const envelopeError = validateCommandEnvelope(checked);
+	if (envelopeError) return { ok: false, error: `${cmd} ${envelopeError}`, details: { cmd } };
 	const methods = Array.isArray(spec.methods) ? spec.methods : [];
 	let methodSpec: Pick<CommandSpec, "required" | "requiredAny"> | undefined;
 	if (methods.length) {
@@ -100,6 +116,15 @@ export function validateBridgeCommand(command: unknown, options: { allowMissingT
 
 	const requiredAny = [...(spec.requiredAny || []), ...(methodSpec?.requiredAny || [])];
 	if (!requiredAnySatisfied(checked, requiredAny)) return { ok: false, error: `${cmd} requires one of field groups`, details: { cmd, requiredAny } };
+	if (canonicalCmd === "persistent_cdp" && checked.action === "detachTarget" && !hasValue(checked.targetId) && !hasValue(checked.sessionId)) {
+		return { ok: false, error: `${cmd} detachTarget requires targetId or sessionId`, details: { cmd, action: checked.action } };
+	}
+
+	if (spec.paramsSchema) {
+		const allowResolvedTarget = options.allowResolvedTarget === true && canonicalCmd === "input.ref";
+		const params = validateCommandArgs(spec.paramsSchema, commandPayload(checked, allowResolvedTarget));
+		if (!params.ok) return { ok: false, error: `${cmd}: ${params.error}`, details: { cmd, issues: params.issues } };
+	}
 
 	if (spec.tabScoped && !options.allowMissingTabId && toTabId(checked.tabId) === undefined) return { ok: false, error: `${cmd} requires tabId`, details: { cmd, tabId: checked.tabId } };
 	return { ok: true, command: checked, spec, canonicalCmd };

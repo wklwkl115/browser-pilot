@@ -117,7 +117,6 @@ export function errorTaxonomyForCode(code: string): ErrorTaxonomy {
 			source: "schema",
 		};
 	}
-	if (code.startsWith("ARTIFACT_")) return { domain: "artifact", category: "tool.artifact", retryable: false, summary: "browser_artifact local evidence reader failure.", source: "heuristic" };
 	if (code === "INVALID_TIMEOUT") return { domain: "tool", category: "tool.validation", retryable: false, summary: "Tool timeout parameter is invalid.", source: "heuristic" };
 	if (code.includes("CDP") || ["NO_TAB_ID", "SESSION_LIMIT", "ATTACH_FAILED", "DETACH_FAILED", "SEND_FAILED", "FRAME_EVAL_FAILED", "NO_METHOD", "FRAME_NOT_FOUND", "NO_SOURCE", "NO_IDENTIFIER", "SCRIPT_NOT_FOUND", "UNKNOWN_ACTION"].includes(code)) {
 		return { domain: "cdp", category: "runtime.cdp", retryable: /TIMEOUT|FAILED|DETACH|ATTACH|SEND/.test(code), summary: "Persistent CDP bridge failure.", source: "heuristic" };

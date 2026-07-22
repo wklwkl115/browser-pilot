@@ -71,8 +71,8 @@ async function readScanAbml(
 	effectiveBaseline: BaselineResolution | undefined,
 	fusedPageFingerprint: PageFingerprint | undefined,
 ) {
-	const { browserSessionId, tabId, timeoutMs, captureMaxChars, params, pageFingerprint, timings } = options;
-	const canReuseScanForAbml = params.includeIframes !== false && params.maxNodes === undefined;
+	const { browserSessionId, tabId, timeoutMs, captureMaxChars, pageFingerprint, timings } = options;
+	const canReuseScanForAbml = true;
 	timings.abmlPrefetchedScan = canReuseScanForAbml;
 	const cacheFingerprint = pageFingerprint ?? fusedPageFingerprint;
 	const abmlStartedAt = Date.now();

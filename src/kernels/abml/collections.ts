@@ -1,13 +1,11 @@
-// ABML collection completeness + continuation kernel (pure core).
+// ABML collection completeness kernel (pure core).
 //
 // This module classifies repeated page structures as collections and reports whether the observed
-// window is complete. It is perception-only: continuation handles are read-only evidence handles,
-// not executable routes, and the classifier never asks the browser to scroll/click.
+// window is complete. It is perception-only and never asks the browser to scroll/click.
 import type { Entity, EntityKind } from "./entity.js";
 import type { SnapshotProjection, SnapshotProjectionTemplate } from "./snapshotProjection.js";
 import type { StructureTemplate } from "./templating.js";
 import type { TreeDiff } from "./treeDiff.js";
-import { mintRef } from "../refs/core.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
 import type { ScanActionable, ScanGrowthProbe, ScanListHint, ScanRow } from "./pageWorldScan.js";
 
@@ -24,26 +22,10 @@ export type CollectionCompleteness =
 	| "lazy"
 	| "unknown";
 
-export type CollectionContinuationKind =
-	| "read-ref"
-	| "artifact-window"
-	| "virtual-window"
-	| "pagination-edge"
-	| "expandable-edge"
-	| "data-source"
-	| "unknown";
-
 export type CollectionKind = "list" | "table" | "grid" | "feed" | "menu" | "tree" | "region";
 export type CollectionConfidence = "high" | "medium" | "low";
-export type CollectionDataSource = "aria" | "dom" | "network" | "artifact" | "runtime-probe";
+export type CollectionDataSource = "aria" | "dom" | "network" | "snapshot" | "runtime-probe";
 export type CollectionEvidenceSource = "templates" | "itemEntities" | "listHints" | "rows" | "relations" | "causal" | "growthProbe";
-
-export type CollectionContinuation = {
-	kind: CollectionContinuationKind;
-	handle: string;
-	confidence: CollectionConfidence;
-	evidenceRefs: string[];
-};
 
 export type PaginationControlKind = "next" | "previous" | "load-more" | "show-more" | "other";
 
@@ -74,8 +56,6 @@ export type CollectionModel = {
 
 	completeness: CollectionCompleteness;
 	confidence: CollectionConfidence;
-
-	continuation?: CollectionContinuation;
 
 	pageSize?: number;
 	paginationControl?: PaginationControl;
@@ -128,7 +108,6 @@ type DraftCollection = {
 	sourceRank: number;
 	preferredCompleteness?: CollectionCompleteness;
 	preferredConfidence?: CollectionConfidence;
-	preferredContinuationKind?: CollectionContinuationKind;
 	dataSources: NonNullable<CollectionModel["dataSources"]>;
 	evidence: CollectionModel["evidence"];
 };
@@ -312,7 +291,6 @@ function addDraft(map: Map<string, DraftCollection>, key: string, draft: DraftCo
 		sourceRank: Math.min(existing.sourceRank, draft.sourceRank),
 		preferredCompleteness: existing.preferredCompleteness ?? draft.preferredCompleteness,
 		preferredConfidence: existing.preferredConfidence ?? draft.preferredConfidence,
-		preferredContinuationKind: existing.preferredContinuationKind ?? draft.preferredContinuationKind,
 		dataSources,
 		evidence,
 	});
@@ -332,7 +310,7 @@ function templateDraft(template: StructureTemplate, sourceRank: number): DraftCo
 		itemRefCount: observedCount,
 		declaredTotal: template.setSize,
 		sourceRank,
-		...(folded ? { preferredCompleteness: "folded", preferredConfidence: "medium", preferredContinuationKind: "artifact-window" } : {}),
+		...(folded ? { preferredCompleteness: "folded", preferredConfidence: "medium" } : {}),
 		dataSources: [{
 			source: "aria",
 			summary: template.setSize !== undefined ? `template count ${observedCount} with declared total ${template.setSize}` : `template count ${observedCount}`,
@@ -360,9 +338,9 @@ function snapshotDraft(template: SnapshotProjectionTemplate): DraftCollection {
 		itemRefCount: observedCount,
 		declaredTotal: template.setSize,
 		sourceRank: 0,
-		...(folded ? { preferredCompleteness: "folded", preferredConfidence: "medium", preferredContinuationKind: "artifact-window" } : {}),
+		...(folded ? { preferredCompleteness: "folded", preferredConfidence: "medium" } : {}),
 		dataSources: [{
-			source: "artifact",
+			source: "snapshot",
 			summary: template.setSize !== undefined ? `snapshot projection count ${observedCount} with declared total ${template.setSize}` : `snapshot projection count ${observedCount}`,
 			confidence: "medium",
 		}],
@@ -442,7 +420,7 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 			estimatedTotal: hiddenCount > 0 ? observedCount + hiddenCount : undefined,
 			hiddenCount: hiddenCount || undefined,
 			sourceRank: 1,
-			...(skeletonCount > 0 ? { preferredCompleteness: "lazy", preferredConfidence: "medium", preferredContinuationKind: "virtual-window" } : {}),
+			...(skeletonCount > 0 ? { preferredCompleteness: "lazy", preferredConfidence: "medium" } : {}),
 			dataSources,
 			evidence,
 		});
@@ -497,7 +475,6 @@ function listHintDraft(hint: ListHintInput, index: number): DraftCollection {
 		sourceRank: 3,
 		preferredCompleteness: hiddenCount > 0 ? "lazy" : "viewport-window",
 		preferredConfidence: hiddenCount > 0 ? "medium" : "low",
-		preferredContinuationKind: hiddenCount > 0 ? "virtual-window" : "unknown",
 		dataSources: [{
 			source: "dom",
 			summary: hiddenCount > 0 ? `scan list hint observed ${observedCount} plus ${hiddenCount} hidden` : `scan list hint observed ${observedCount}`,
@@ -527,7 +504,7 @@ function classifyPaginationControlKind(text: string): PaginationControlKind {
 	return "other";
 }
 
-function paginationEdge(actionables: ActionableInput[] | undefined): { kind: CollectionContinuationKind; confidence: CollectionConfidence; summary: string; jsonPath?: string; control: PaginationControl } | undefined {
+function paginationEdge(actionables: ActionableInput[] | undefined): { completeness: "paginated" | "lazy"; confidence: CollectionConfidence; summary: string; jsonPath?: string; control: PaginationControl } | undefined {
 	for (const [index, actionable] of (actionables ?? []).entries()) {
 		if (actionable.disabled === true || actionable.hidden === true) continue;
 		const text = actionableText(actionable);
@@ -537,7 +514,7 @@ function paginationEdge(actionables: ActionableInput[] | undefined): { kind: Col
 			const ref = stringValue(actionable.ref);
 			const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
 			return {
-				kind: isPagination ? "pagination-edge" : "expandable-edge",
+					completeness: isPagination ? "paginated" : "lazy",
 				confidence: "medium",
 				summary: isPagination ? "visible next/page control" : "visible load/show more control",
 				jsonPath: `data.structure.actionables[${index}]`,
@@ -572,12 +549,11 @@ function growthProbeEvidence(probe: GrowthProbeInput | undefined): { confidence:
 	return { confidence: countGrew || windowShifted ? "high" : "medium", summary: parts.join(", ") || "growth probe increased collection window" };
 }
 
-function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>): { completeness: CollectionCompleteness; confidence: CollectionConfidence; continuationKind?: CollectionContinuationKind; reason: string } {
+function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>): { completeness: CollectionCompleteness; confidence: CollectionConfidence; reason: string } {
 	if (growth) {
 		return {
 			completeness: "virtualized",
 			confidence: growth.confidence,
-			continuationKind: "virtual-window",
 			reason: `generic growth probe changed the observed window (${growth.summary})`,
 		};
 	}
@@ -586,8 +562,7 @@ function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof p
 			return {
 				completeness: "virtualized",
 				confidence: "high",
-				continuationKind: "virtual-window",
-				reason: `observed ${draft.observedCount} of declared total ${draft.declaredTotal}`,
+					reason: `observed ${draft.observedCount} of declared total ${draft.declaredTotal}`,
 			};
 		}
 	}
@@ -595,8 +570,7 @@ function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof p
 		return {
 			completeness: "folded",
 			confidence: draft.preferredConfidence ?? "medium",
-			continuationKind: draft.preferredContinuationKind ?? "artifact-window",
-			reason: "collection has more item refs than the inline cap",
+				reason: "collection has more item refs than the inline cap",
 		};
 	}
 	if (draft.declaredTotal !== undefined && draft.declaredTotal > 0) {
@@ -608,53 +582,38 @@ function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof p
 		return {
 			completeness: draft.preferredCompleteness ?? "lazy",
 			confidence: draft.preferredConfidence ?? "medium",
-			continuationKind: draft.preferredContinuationKind ?? "virtual-window",
-			reason: `scan evidence reports ${draft.hiddenCount} hidden items`,
+				reason: `scan evidence reports ${draft.hiddenCount} hidden items`,
 		};
 	}
 	if (draft.preferredCompleteness === "lazy") {
 		return {
 			completeness: "lazy",
 			confidence: draft.preferredConfidence ?? "medium",
-			continuationKind: draft.preferredContinuationKind ?? "virtual-window",
-			reason: "rendered loading placeholders indicate lazy hydration",
+				reason: "rendered loading placeholders indicate lazy hydration",
 		};
 	}
 	if (edge) {
 		return {
-			completeness: edge.kind === "pagination-edge" ? "paginated" : "lazy",
-			confidence: edge.confidence,
-			continuationKind: edge.kind,
-			reason: edge.summary,
+				completeness: edge.completeness,
+				confidence: edge.confidence,
+				reason: edge.summary,
 		};
 	}
 	if (draft.preferredCompleteness === "viewport-window") {
 		return {
 			completeness: "viewport-window",
 			confidence: draft.preferredConfidence ?? "low",
-			continuationKind: draft.preferredContinuationKind,
-			reason: "visible list hint has no declared total or terminal boundary",
+				reason: "visible list hint has no declared total or terminal boundary",
 		};
 	}
 	if (draft.observedCount > 0 && roleLooksLikeCollectionContainer(draft.containerRole)) {
 		return {
 			completeness: "viewport-window",
 			confidence: "low",
-			continuationKind: "unknown",
-			reason: "collection-like container observed without total or boundary proof",
+				reason: "collection-like container observed without total or boundary proof",
 		};
 	}
 	return { completeness: "unknown", confidence: "low", reason: "not enough collection evidence" };
-}
-
-function continuationFor(collectionId: string, kind: CollectionContinuationKind | undefined, confidence: CollectionConfidence, evidenceRefs: string[]): CollectionContinuation | undefined {
-	if (!kind) return undefined;
-	return {
-		kind,
-		handle: mintRef("collection", collectionId),
-		confidence,
-		evidenceRefs: uniq(evidenceRefs).slice(0, 8),
-	};
 }
 
 function inferPageSize(draft: DraftCollection, probe: GrowthProbeInput | undefined): number | undefined {
@@ -722,9 +681,7 @@ function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType
 	if (paginationControl !== undefined) model.paginationControl = paginationControl;
 	if (scrollDirection !== undefined) model.scrollDirection = scrollDirection;
 
-	const evidenceRefs = model.evidence.map((item) => item.ref ?? item.jsonPath).filter((item): item is string => !!item);
-	const continuation = continuationFor(collectionId, classified.continuationKind, classified.confidence, evidenceRefs);
-	return continuation ? { ...model, continuation } : model;
+	return model;
 }
 
 function ambiguousContainerNames(drafts: DraftCollection[]): Set<string> {

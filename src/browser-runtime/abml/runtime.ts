@@ -5,7 +5,7 @@ import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation
 import { buildScanScript } from "../../scan/buildScanScript.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";
-import { scanEntitiesForEnvelope, summarizeScanData } from "../../scan/summary.js";
+import { scanEntitiesForEnvelope } from "../../scan/summary.js";
 import { normalizeTabId } from "../../utils/params.js";
 import { resolveRefUriDetailed, registerRefDescriptor, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import type { Entity } from "../../kernels/abml/entity.js";
@@ -413,7 +413,7 @@ async function readStreamStatus(server: AbmlBrowserRuntimeServer, plane: StreamP
 
 async function readStreamRecords(server: AbmlBrowserRuntimeServer, plane: StreamPlane, sinceSeq: number, target: { browserSessionId?: string; tabId: number }, timeoutMs: number): Promise<Array<Record<string, unknown>>> {
 	try {
-		const command = plane === "network" ? { cmd: "network.list", sinceSeq, limit: STREAM_NETWORK_LIMIT } : { cmd: "hook.collect", since_seq: sinceSeq, limit: STREAM_EVENT_LIMIT };
+		const command = plane === "network" ? { cmd: "network.list", sinceSeq, limit: STREAM_NETWORK_LIMIT } : { cmd: "hook.collect", sinceSeq, limit: STREAM_EVENT_LIMIT };
 		const listRes = await server.sendCommand(command, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
 		const listData = isRecord(listRes.data) ? listRes.data : {};
 		const records = plane === "network" ? listData.items : listData.events;
@@ -538,122 +538,116 @@ async function settlementListenerHints(server: AbmlBrowserRuntimeServer, entitie
 }
 
 async function resolveBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions) {
-		if (input.plane === "network" || input.plane === "event") return await readStreamPlane(server, input, options, input.plane);
-		if (input.plane && input.plane !== "structure") throw { code: "BACKEND_UNAVAILABLE", message: `ABML read plane is not implemented yet: ${input.plane}`, details: { plane: input.plane } };
-		const descriptor = resolveOptionalRefDescriptor(input.ref);
-		const target = currentTarget(server, options, descriptor);
-		if (!target.tabId) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available for ABML read", { browserSessionId: target.browserSessionId });
-		const special = await readSpecialStructureRef(server, input, options, descriptor, { ...target, tabId: target.tabId });
-		if (special) return special;
-		return await readStandardStructurePlane(server, input, options, descriptor, { ...target, tabId: target.tabId });
-	}
+	if (input.plane === "network" || input.plane === "event") return await readStreamPlane(server, input, options, input.plane);
+	if (input.plane && input.plane !== "structure") throw { code: "BACKEND_UNAVAILABLE", message: `ABML read plane is not implemented yet: ${input.plane}`, details: { plane: input.plane } };
+	const descriptor = resolveOptionalRefDescriptor(input.ref);
+	const target = currentTarget(server, options, descriptor);
+	if (!target.tabId) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available for ABML read", { browserSessionId: target.browserSessionId });
+	const special = await readSpecialStructureRef(server, input, options, descriptor, { ...target, tabId: target.tabId });
+	if (special) return special;
+	return await readStandardStructurePlane(server, input, options, descriptor, { ...target, tabId: target.tabId });
+}
 
 async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions, descriptor: RefDescriptor | undefined, target: { browserSessionId?: string; tabId: number }) {
-		const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
-		const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
-		const settlementCapture = options.captureProfile === "settlement";
-		const descriptorUrl = descriptor?.documentEpoch?.url;
-		const rawData = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
-			browserSessionId: target.browserSessionId,
-			tabId: target.tabId,
-			timeoutMs,
-			name: "abml_read_scan",
-			signal: options.signal,
-		})).data;
-		const bundle = validatePageWorldScanBundle(rawData);
-		if (!bundle.ok) throw new BrowserBridgeError("SCAN_BUNDLE_INVALID", "ABML structure read received an invalid browser-page-scan/v1 bundle", { issues: bundle.issues.slice(0, 20) });
-			const data = bundle.value;
-			const url = data.page.url || descriptorUrl;
-			const bridge = server.snapshot({ browserSessionId: target.browserSessionId });
-			const { targetGeneration, pageEpoch } = tabPageIdentity(bridge.tabs, target.tabId);
-			const snapshot = server.createObservationSnapshot({
-				browserSessionId: bridge.browserSessionId,
-				tabId: target.tabId,
-				url,
-				targetGeneration,
-				pageEpoch,
-			frameScope: "tab",
-			selectionVersion: bridge.selectionVersion,
-			sourceMode: "scan",
-			capturedAt: Date.now(),
-		});
-			const entityContext = {
-				browserSessionId: bridge.browserSessionId,
-				tabId: target.tabId,
-				targetGeneration,
-				pageEpoch,
-			url,
+	const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
+	const settlementCapture = options.captureProfile === "settlement";
+	const descriptorUrl = descriptor?.documentEpoch?.url;
+	const rawData = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
+		browserSessionId: target.browserSessionId,
+		tabId: target.tabId,
+		timeoutMs,
+		name: "abml_read_scan",
+		signal: options.signal,
+	})).data;
+	const bundle = validatePageWorldScanBundle(rawData);
+	if (!bundle.ok) throw new BrowserBridgeError("SCAN_BUNDLE_INVALID", "ABML structure read received an invalid browser-page-scan/v1 bundle", { issues: bundle.issues.slice(0, 20) });
+	const data = bundle.value;
+	const url = data.page.url || descriptorUrl;
+	const bridge = server.snapshot({ browserSessionId: target.browserSessionId });
+	const { targetGeneration, pageEpoch } = tabPageIdentity(bridge.tabs, target.tabId);
+	const snapshot = server.createObservationSnapshot({
+		browserSessionId: bridge.browserSessionId,
+		tabId: target.tabId,
+		url,
+		targetGeneration,
+		pageEpoch,
+		frameScope: "tab",
+		selectionVersion: bridge.selectionVersion,
+		sourceMode: "scan",
+		capturedAt: Date.now(),
+	});
+	const entityContext = {
+		browserSessionId: bridge.browserSessionId,
+		tabId: target.tabId,
+		targetGeneration,
+		pageEpoch,
+		url,
+		observationId: snapshot.snapshotId,
+		capturedAt: snapshot.capturedAt,
+	};
+	const partialAxDiagnostics = await settlementPartialAxDiagnostics(server, descriptor, {
+		browserSessionId: target.browserSessionId,
+		tabId: target.tabId,
+		timeoutMs,
+	}, settlementCapture);
+	const axRead = await settlementAxRead(server, {
+		browserSessionId: target.browserSessionId,
+		tabId: target.tabId,
+		targetGeneration,
+		pageEpoch,
+		observationId: snapshot.snapshotId,
+		url,
+		capturedAt: snapshot.capturedAt,
+		timeoutMs,
+		cacheKey: input.axCacheKey,
+	}, settlementCapture);
+	const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries ?? [], {
+		scanCapturedAt: snapshot.capturedAt,
+		scanCapturedAtIso: new Date(snapshot.capturedAt).toISOString(),
+		snapshotStartedAt: axRead.diagnostics?.snapshotStartedAt,
+		snapshotEndedAt: axRead.diagnostics?.snapshotEndedAt,
+	});
+	const summaryData = registerScanEntityRefs(bootstrapped.data, entityContext);
+	const entities = scanEntitiesForEnvelope(summaryData, { entityContext });
+	const fusion = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : undefined;
+	const mergedEntitiesRaw = fusion ? fusion.entities : entities;
+	const mergedEntities = remintSemanticTemplateRefs(mergedEntitiesRaw, {
+		browserSessionId: bridge.browserSessionId,
+		tabId: target.tabId,
+		targetGeneration,
+		pageEpoch,
+		url,
+		observationId: snapshot.snapshotId,
+		capturedAt: snapshot.capturedAt,
+	});
+	const listenerProbe = await settlementListenerHints(server, mergedEntities, {
+		browserSessionId: target.browserSessionId,
+		tabId: target.tabId,
+		timeoutMs,
+	}, settlementCapture);
+	const entitiesWithListenerHints = listenerProbe.entities;
+	const relations = materializeStructureRelations(entitiesWithListenerHints, axRead, descriptor);
+	return {
+		entities: relations.entities,
+		data: {
+			snapshotId: snapshot.snapshotId,
 			observationId: snapshot.snapshotId,
-			capturedAt: snapshot.capturedAt,
-		};
-		const partialAxDiagnostics = await settlementPartialAxDiagnostics(server, descriptor, {
-			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
-			timeoutMs,
-		}, settlementCapture);
-			const axRead = await settlementAxRead(server, {
-				browserSessionId: target.browserSessionId,
-				tabId: target.tabId,
-				targetGeneration,
-				pageEpoch,
-			observationId: snapshot.snapshotId,
-			url,
-			capturedAt: snapshot.capturedAt,
-			timeoutMs,
-			cacheKey: input.axCacheKey,
-		}, settlementCapture);
-		const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries ?? [], {
-			scanCapturedAt: snapshot.capturedAt,
-			scanCapturedAtIso: new Date(snapshot.capturedAt).toISOString(),
-			snapshotStartedAt: axRead.diagnostics?.snapshotStartedAt,
-			snapshotEndedAt: axRead.diagnostics?.snapshotEndedAt,
-		});
-		const summaryData = registerScanEntityRefs(bootstrapped.data, entityContext);
-		const summary = summarizeScanData(summaryData, bridge.tabs ?? [], {
-			maxChars,
-			entityContext,
-		});
-		const entities = scanEntitiesForEnvelope(summaryData, { entityContext });
-		const fusion = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : undefined;
-		const mergedEntitiesRaw = fusion ? fusion.entities : entities;
-			const mergedEntities = remintSemanticTemplateRefs(mergedEntitiesRaw, {
-				browserSessionId: bridge.browserSessionId,
-				tabId: target.tabId,
-				targetGeneration,
-				pageEpoch,
-			url,
-			observationId: snapshot.snapshotId,
-			capturedAt: snapshot.capturedAt,
-		});
-		const listenerProbe = await settlementListenerHints(server, mergedEntities, {
-			browserSessionId: target.browserSessionId,
-			tabId: target.tabId,
-			timeoutMs,
-		}, settlementCapture);
-		const entitiesWithListenerHints = listenerProbe.entities;
-		const relations = materializeStructureRelations(entitiesWithListenerHints, axRead, descriptor);
-		return {
-			entities: relations.entities,
-			data: {
-				summary,
-				snapshotId: snapshot.snapshotId,
-				observationId: snapshot.snapshotId,
-				tabId: target.tabId,
-				url: data.page.url,
-				axEntityCount: axRead.entities.length,
-				mergedEntityCount: mergedEntities.length,
-				relationCount: relations.relationCount,
-				...(relations.relationGraph?.edgeCount ? { relationGraph: relations.relationGraph } : {}),
-				backendNodeIdBootstrap: bootstrapped.stats,
-				listenerOracle: listenerProbe.stats,
-				captureProfile: settlementCapture ? "settlement" : "canonical",
-				axDiagnostics: axRead.diagnostics,
-				...(partialAxDiagnostics ? { partialAx: partialAxDiagnostics } : {}),
-				axFusion: structureAxFusionDiagnostics(fusion, entities.length, axRead.entities.length),
-				...(relations.paintOrderEvidence ? { paintOrderEvidence: relations.paintOrderEvidence } : {}),
-			},
-		};
-	}
+			url: data.page.url,
+			axEntityCount: axRead.entities.length,
+			mergedEntityCount: mergedEntities.length,
+			relationCount: relations.relationCount,
+			...(relations.relationGraph?.edgeCount ? { relationGraph: relations.relationGraph } : {}),
+			backendNodeIdBootstrap: bootstrapped.stats,
+			listenerOracle: listenerProbe.stats,
+			captureProfile: settlementCapture ? "settlement" : "canonical",
+			axDiagnostics: axRead.diagnostics,
+			...(partialAxDiagnostics ? { partialAx: partialAxDiagnostics } : {}),
+			axFusion: structureAxFusionDiagnostics(fusion, entities.length, axRead.entities.length),
+			...(relations.paintOrderEvidence ? { paintOrderEvidence: relations.paintOrderEvidence } : {}),
+		},
+	};
+}
 
 async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions = {}): Promise<AbmlVerbResult> {
 	return await runAbmlRead(input, async () => await resolveBrowserAbmlRead(server, input, options));

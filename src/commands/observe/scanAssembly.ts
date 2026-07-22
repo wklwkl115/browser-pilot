@@ -1,5 +1,5 @@
 import type { BrowserCommandRuntimePort, CommandPerceptionLedgerFrame } from "../../ports/BrowserCommandRuntimePort.js";
-import type { Entity, ScanEntityContext } from "../../kernels/abml/entity.js";
+import type { Entity } from "../../kernels/abml/entity.js";
 import { summarizeEntityDiff, type EntityDiff } from "../../kernels/abml/diff.js";
 import { addEntityRelations, buildRelationGraph, buildRelationSummary } from "../../kernels/abml/relations.js";
 import { buildInferenceSummary, entitiesForInferenceEvidence } from "../../kernels/abml/inference.js";
@@ -10,17 +10,17 @@ import { buildCollectionModels } from "../../kernels/abml/collections.js";
 import { buildIdentityGraph, identityGraphSummary } from "../../kernels/abml/identityGraph.js";
 import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
 import { buildNativeTreeDiff } from "../../native/browserPilotNativeKernels.js";
-import { buildScanEntities, scanEntitiesFromGroups, summarizeScanData, type ScanSummaryOptions } from "../../scan/summary.js";
+import { buildScanEntities, scanEntitiesFromGroups } from "../../scan/summary.js";
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";
 import { isRecord } from "../../utils/params.js";
 import { buildEntityOutline, buildPageGist, sortEntitiesBySalience } from "./entityViews.js";
 import { entityRefs, mergeEntitiesByRef, type BaselineResolution } from "./baseline.js";
-import { buildObserveRelevance, type ObserveRelevance } from "./relevanceFusion.js";
+import { buildObserveRelevance } from "./relevanceFusion.js";
 import type { ObserveToolParams } from "./common.js";
 import type { executeScanCapture } from "./scanCapture.js";
 import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
 
-type BuiltScanEntities = NonNullable<ScanSummaryOptions["scanEntities"]>;
+type BuiltScanEntities = ReturnType<typeof buildScanEntities>;
 type CaptureObservation = Awaited<ReturnType<typeof executeScanCapture>>["observation"];
 
 function abmlAssemblyInputs(observation: CaptureObservation, ledgerFrame: CommandPerceptionLedgerFrame | undefined, baseline: BaselineResolution | undefined) {
@@ -69,15 +69,9 @@ function registerIntentAnchors(server: BrowserCommandRuntimePort, entities: Enti
 type ScanAssemblyOptions = {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
-	tabs: unknown[];
-	maxChars: number;
 	summaryData: PageWorldScanBundleV1;
-	scanEntityContext: ScanEntityContext;
-	summaryScanEntities: BuiltScanEntities | undefined;
+	scanEntityGroups: BuiltScanEntities;
 	browserSessionId: string | undefined;
-	tabId: number | undefined;
-	selectionVersion: number;
-	pageUrl: string | undefined;
 	abmlEntities: Entity[] | null;
 	abmlDiff: EntityDiff | undefined;
 	baseline: BaselineResolution | undefined;
@@ -90,48 +84,29 @@ type ScanAssemblyOptions = {
 type EnvelopeDiff = EntityDiff & { summary?: ReturnType<typeof summarizeEntityDiff> };
 type CausalBlock = { causal?: CausalSummary };
 
-function buildBaseSummary(options: ScanAssemblyOptions, relevance: ObserveRelevance | undefined): Record<string, unknown> {
-	const { tabs, maxChars, summaryData, scanEntityContext, summaryScanEntities, browserSessionId, tabId, selectionVersion } = options;
-	return {
-		...summarizeScanData(summaryData, tabs, {
-			maxChars,
-			entityContext: scanEntityContext,
-			scanEntities: summaryScanEntities,
-			relevance: relevance?.result,
-		}),
-		mode: "scan",
-		sourceMode: "scan",
-		model: "PageObservation",
-		canonical: true,
-		browserSessionId,
-		tabId,
-		selectionVersion,
-		selectionVersionAtDispatch: selectionVersion,
-		selectionVersionAtResolve: selectionVersion,
-	};
+function buildBaseSummary(summaryData: PageWorldScanBundleV1): Record<string, unknown> {
+	return summaryData.stats.truncated ? { warnings: ["page capture reached the internal safety ceiling"] } : {};
 }
 
-function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[], envelopeDiff: EnvelopeDiff | undefined, treeDiff: TreeDiff | undefined, causalBlock: CausalBlock): { summary: Record<string, unknown>; artifactRelevance: Record<string, unknown> | undefined } {
-	const { server, params, browserSessionId, pageUrl, abmlDiff, summaryData, causal, runtimeRelationGraph, snapshotCapturedAt, ledgerDeltaFields } = options;
+function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[], envelopeDiff: EnvelopeDiff | undefined, treeDiff: TreeDiff | undefined, causalBlock: CausalBlock): { summary: Record<string, unknown> } {
+	const { server, params, browserSessionId, abmlDiff, summaryData, causal, runtimeRelationGraph, snapshotCapturedAt, ledgerDeltaFields } = options;
+	const pageUrl = summaryData.page.url;
 	const relations = buildRelationSummary(entities);
 	const inference = buildInferenceSummary(entities, relations, abmlDiff);
 	const relevance = buildObserveRelevance(server, params, browserSessionId, pageUrl, entities, inference);
-	const baseSummary = buildBaseSummary(options, relevance);
 	const snapshotProjection = buildSnapshotProjection(entities, { treeDiff });
 	const collections = buildCollectionModels({ entities, treeDiff, snapshotProjection, scanEvidence: scanCollectionEvidence(summaryData) });
 	const intentRegistry = registerIntentAnchors(server, entities, pageUrl, snapshotCapturedAt);
 	const identityGraph = buildIdentityGraph(entities, causal, intentRegistry);
 	const relationGraph = runtimeRelationGraph || buildRelationGraph(entities);
-	const baseFocus = isRecord(baseSummary.focus) ? baseSummary.focus : {};
 	const referencedEntities = mergeEntitiesByRef(entitiesForInferenceEvidence(entities, inference)).slice(0, 12);
-	const primaryEntities = sortEntitiesBySalience(entities.filter((entity) => entity.kind !== "region"), relevance?.result).slice(0, 10);
+	const primaryEntities = sortEntitiesBySalience(entities.filter((entity) => entity.kind !== "region"), relevance).slice(0, 10);
 	const listEntities = entities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5);
 	const visualRegions = entities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4);
 	const identity = identityGraphSummary(identityGraph);
 	return {
-		artifactRelevance: relevance?.artifact,
 		summary: {
-			...baseSummary,
+			...buildBaseSummary(summaryData),
 			...ledgerDeltaFields,
 			abmlIntegrated: true,
 			...(envelopeDiff ? { diff: envelopeDiff } : {}),
@@ -145,7 +120,6 @@ function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[]
 			_identityGraph: identityGraph,
 			...(isRecord(relationGraph) && Number(relationGraph.edgeCount || 0) > 0 ? { _relationGraph: relationGraph } : {}),
 			focus: {
-				...baseFocus,
 				entityShape: "refs-v1",
 				gist: buildPageGist(entities),
 				primary_entities: entityRefs(primaryEntities),
@@ -159,15 +133,17 @@ function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[]
 	};
 }
 
-function buildFallbackSummary(options: ScanAssemblyOptions, entities: Entity[], causalBlock: CausalBlock): { summary: Record<string, unknown>; artifactRelevance: Record<string, unknown> | undefined } {
-	const { server, params, browserSessionId, pageUrl, ledgerDeltaFields } = options;
+function buildFallbackSummary(options: ScanAssemblyOptions, entities: Entity[], causalBlock: CausalBlock): { summary: Record<string, unknown> } {
+	const { server, params, browserSessionId, summaryData, ledgerDeltaFields } = options;
+	const pageUrl = summaryData.page.url;
 	const relevance = buildObserveRelevance(server, params, browserSessionId, pageUrl, entities);
-	return { artifactRelevance: relevance?.artifact, summary: { ...buildBaseSummary(options, relevance), ...ledgerDeltaFields, abmlIntegrated: false, ...causalBlock } };
+	const primaryEntities = sortEntitiesBySalience(entities.filter((entity) => entity.kind !== "region"), relevance).slice(0, 10);
+	return { summary: { ...buildBaseSummary(summaryData), ...ledgerDeltaFields, abmlIntegrated: false, ...causalBlock, focus: { gist: buildPageGist(entities), outline: buildEntityOutline(entities), primary_entities: entityRefs(primaryEntities) } } };
 }
 
 export function assembleScanSummary(options: ScanAssemblyOptions) {
-	const { params, summaryScanEntities, abmlEntities, abmlDiff, baseline, causal } = options;
-	const scanEnvelopeEntities = summaryScanEntities ? scanEntitiesFromGroups(summaryScanEntities) : [];
+	const { params, scanEntityGroups, abmlEntities, abmlDiff, baseline, causal } = options;
+	const scanEnvelopeEntities = scanEntitiesFromGroups(scanEntityGroups);
 	const diffSummary = abmlDiff ? summarizeEntityDiff(abmlDiff, baseline?.entities, abmlEntities ?? []) : undefined;
 	const envelopeDiff = abmlDiff ? { ...abmlDiff, ...(diffSummary ? { summary: diffSummary } : {}) } : undefined;
 	const treeDiff = abmlEntities && baseline
@@ -179,15 +155,12 @@ export function assembleScanSummary(options: ScanAssemblyOptions) {
 	const projection = attributedEntities
 		? buildIntegratedSummary(options, attributedEntities, envelopeDiff, treeDiff, causalBlock)
 		: buildFallbackSummary(options, scanEnvelopeEntities, causalBlock);
-	const { summary, artifactRelevance } = projection;
-	return { summary, envelopeEntities: attributedEntities ?? scanEnvelopeEntities, attributedEntities, envelopeDiff, treeDiff, artifactRelevance, causalBlock };
+	return { summary: projection.summary, envelopeEntities: attributedEntities ?? scanEnvelopeEntities, attributedEntities, envelopeDiff, treeDiff };
 }
 
 export function prepareScanAssembly(options: {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
-	tabs: unknown[];
-	maxChars: number;
 	tabId: number | undefined;
 	data: PageWorldScanBundleV1;
 	bridge: ReturnType<BrowserCommandRuntimePort["snapshot"]>;
@@ -197,7 +170,7 @@ export function prepareScanAssembly(options: {
 	causal: CausalSummary | undefined;
 	ledgerFrame: CommandPerceptionLedgerFrame | undefined;
 }) {
-	const { server, params, tabs, maxChars, tabId, data, bridge, snapshotMeta, observation, baseline, causal, ledgerFrame } = options;
+	const { server, params, tabId, data, bridge, snapshotMeta, observation, baseline, causal, ledgerFrame } = options;
 	const pageUrl = data.page.url;
 	const scanEntityContext = {
 		browserSessionId: bridge.browserSessionId,
@@ -209,21 +182,15 @@ export function prepareScanAssembly(options: {
 		capturedAt: snapshotMeta.capturedAt,
 	};
 	const summaryData = registerScanEntityRefs(data, scanEntityContext);
-	const summaryScanEntities = buildScanEntities(summaryData, { entityContext: scanEntityContext });
+	const scanEntityGroups = buildScanEntities(summaryData, { entityContext: scanEntityContext });
 	const { abmlEntities, abmlDiff, ledgerDeltaFields, runtimeRelationGraph } = abmlAssemblyInputs(observation, ledgerFrame, baseline);
 	return {
 		assembly: assembleScanSummary({
 			server,
 			params,
-			tabs,
-			maxChars,
 			summaryData,
-			scanEntityContext,
-			summaryScanEntities,
+			scanEntityGroups,
 			browserSessionId: bridge.browserSessionId,
-			tabId,
-			selectionVersion: bridge.selectionVersion,
-			pageUrl,
 			abmlEntities,
 			abmlDiff,
 			baseline,

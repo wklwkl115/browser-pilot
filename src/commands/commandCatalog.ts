@@ -1,4 +1,3 @@
-import { defineArtifactCommand } from "./artifactCommand.js";
 import { defineNativeCommand } from "./nativeCommand.js";
 import { defineExecuteCommand } from "./executeCommand.js";
 import { defineObserveCommand } from "./observeCommand.js";
@@ -12,7 +11,6 @@ const CORE_BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = [
 	defineExecuteCommand,
 	defineObserveCommand,
 	defineScreenshotCommand,
-	defineArtifactCommand,
 ];
 
 export const BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = CORE_BROWSER_COMMAND_REGISTRARS;
