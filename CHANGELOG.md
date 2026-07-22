@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Breaking
 
+- Removed runtime-control fields and lifecycle/discovery commands from the public native surface: `tabId`, `sessionId`, `timeoutMs`, `bridge_wake`, `persistent_cdp`, `hook.list_sessions`, `hook.list_targets`, and `hook.install_targets`. `hook.install` now requires and publishes its target ids directly. Raw CDP remains available as `cdp { method, params }`; Browser Pilot owns targeting, attach/recovery, and cleanup.
+- Removed `browser_observe.browserSessionId` and `browser_pair.timeoutMs`; browser selection and pairing deadlines are runtime-owned.
 - Replaced the per-command CLI with a persistent stdio MCP server. `browser-pilot-mcp` is now the Agent entrypoint, and the daemon starts through its own private executable.
 - Removed dormant durable request redelivery. Reconnects now report `not-delivered` or `inflight-unknown` instead of risking duplicate browser writes.
 - Removed the Web Security product line: `browser_crawl`, `browser_fuzz`, `browser_sqli`, `browser_template`, `browser_callback_oast`, `browser_cookie_analyze`, and `browser_http_replay` no longer exist.
@@ -20,6 +22,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- `browser_execute` and tab-scoped `browser_command` writes now pin the selected target before dispatch and return bounded best-effort page-effect feedback from the same target transaction. Read-only execution remains zero-overhead, and unavailable page signals are reported as `changed:null` instead of false certainty.
 - Closed every public `browser_command` command schema, enforced the shared protocol before browser startup and extension dispatch, published canonical command names only, and split native discovery into a compact index plus per-command detail resources.
 - Observation frontiers now expose opaque `browser-pilot://observation/<token>` resources instead of artifact paths and JSON read instructions.
 - Restricted the WebSocket bridge to the extension ID derived from the packaged manifest key and removed the ineffective service-worker keepalive port.

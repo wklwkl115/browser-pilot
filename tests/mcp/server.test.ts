@@ -31,11 +31,13 @@ test("MCP publishes the command catalog as tools", () => {
 		"browser_pair",
 	]);
 	assert.ok(tools.every((tool) => tool.inputSchema.type === "object"));
+	const pair = tools.find((tool) => tool.name === "browser_pair")!;
+	assert.deepEqual(Object.keys(pair.inputSchema.properties as Record<string, unknown>), ["action", "label", "pairingId"]);
 	const tabs = tools.find((tool) => tool.name === "browser_tabs")!;
 	const tabProperties = tabs.inputSchema.properties as Record<string, Record<string, unknown>>;
 	assert.deepEqual(tabProperties.action.enum, ["list", "switch", "create", "close", "selectBrowser"]);
 	assert.equal("browserSessionId" in tabProperties, false);
-	assert.match(tabs.description ?? "", /Start automation with browser_tabs list/);
+	assert.match(tabs.description ?? "", /Omit browser_tabs when the selected active tab is already the intended target/);
 	const native = tools.find((tool) => tool.name === "browser_command")!;
 	const nativeProperties = native.inputSchema.properties as Record<string, Record<string, unknown>>;
 	const commandProperties = nativeProperties.command.properties as Record<string, Record<string, unknown>>;
@@ -75,6 +77,9 @@ test("MCP pairing rejects invalid actions without starting the daemon", async ()
 	const result = await callMcpTool("browser_pair", { action: "invalid" });
 	assert.equal(result.isError, true);
 	assert.match(firstText(result), /action must be start or wait/);
+	const mechanical = await callMcpTool("browser_pair", { action: "wait", pairingId: "pair-1", timeoutMs: 1 });
+	assert.equal(mechanical.isError, true);
+	assert.match(firstText(mechanical), /unknown parameter: timeoutMs/);
 });
 
 test("MCP uses the configured project root", () => {
@@ -100,16 +105,23 @@ test("MCP resources expose a compact native index, per-command schemas, and proj
 	assert.match(resourceText(native), /"network\.list"/);
 	const nativeResource = JSON.parse(resourceText(native)) as { commands: Record<string, { paramsSchema?: object }> };
 	const nativeCommands = nativeResource.commands;
+	assert.equal(Object.hasOwn(nativeResource, "envelope"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "tabs"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "batch"), false);
+	assert.equal(Object.hasOwn(nativeCommands, "persistent_cdp"), false);
+	assert.equal(Object.hasOwn(nativeCommands, "hook.list_sessions"), false);
+	assert.equal(Object.hasOwn(nativeCommands, "hook.list_targets"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "hook.clear"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "transfer.download"), true);
 	assert.ok(Object.values(nativeCommands).every((spec) => !spec.paramsSchema));
 	assert.ok(mcpResourceTemplates().some((template) => template.uriTemplate === "browser-pilot://native-command/{command}"));
 	assert.ok(mcpResourceTemplates().some((template) => template.uriTemplate === "browser-pilot://observation/{token}"));
 	const command = await readMcpResource("browser-pilot://native-command/network.list");
-	assert.ok((JSON.parse(resourceText(command)) as { specification: { paramsSchema?: object } }).specification.paramsSchema);
+	const commandResource = JSON.parse(resourceText(command)) as { envelope?: unknown; specification: { paramsSchema?: object } };
+	assert.equal(commandResource.envelope, undefined);
+	assert.ok(commandResource.specification.paramsSchema);
 	await assert.rejects(() => readMcpResource("browser-pilot://native-command/hook.clear"), /unknown native command resource/i);
+	await assert.rejects(() => readMcpResource("browser-pilot://native-command/persistent_cdp"), /unknown native command resource/i);
 
 	const root = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-mcp-"));
 	try {

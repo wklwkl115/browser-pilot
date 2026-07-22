@@ -7,7 +7,8 @@ import { redactSensitiveValue } from "../utils/redaction.js";
 import { isRecord } from "../utils/records.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { withBrowserOperation } from "./browserOperation.js";
-import { defineBrowserCommand, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
+import { withCommandEffect } from "./commandEffect.js";
+import { defineBrowserCommand, pinTabExecutionTarget, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import type { ValidationIssue } from "./commandDefinition.js";
@@ -60,12 +61,13 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 	defineBrowserCommand(commands, {
 		name: "browser_execute",
 		label: "Browser Execute",
-		description: "Execute JavaScript in the selected or ref-owning tab, with bp-ref bindings resolved by Browser Pilot.",
-		promptSnippet: "Execute JavaScript; bind observed elements through refs instead of copying selectors or native target fields.",
+		description: "Execute JavaScript in the selected or ref-owning tab. Browser Pilot resolves bp-ref bindings, serializes writes, handles CSP/CDP fallback, and returns compact page-effect feedback.",
+		promptSnippet: "Execute JavaScript directly; omit targetRef for the selected tab and bind observed elements through refs when available.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
 			"Pass observed bp-ref URIs through refs; each entry is available as browserPilot.refs.<name>, and its owner selects the tab automatically. Use browser_command input.ref for trusted native input.",
-			"Use readOnly:true for queries; mutating calls are serialized per target and bounded by the execution deadline.",
+			"The page runtime exposes browserPilot.refs, resolve(ref), box(ref), setValue(target,value), and settled(quietMs?,timeoutMs?).",
+			"Use readOnly:true for queries. Writes are serialized per target and return effect with observed, changed, settled, page deltas, and new-tab count; changed:null means page signals were unavailable.",
 		],
 		parameters: strictCommandParameters({
 			script: Type.String({ description: "JavaScript to execute." }),
@@ -85,15 +87,21 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 				const server = await ensureStarted();
 				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
 				const rawTarget = targetTabId(params as { targetRef?: string });
-				const target = resolveRefExecutionTarget(server, prepared.targetRefs, { rawTarget });
-				const result = await withBrowserOperation({
+				const target = pinTabExecutionTarget(server, resolveRefExecutionTarget(server, prepared.targetRefs, { rawTarget }));
+				const outcome = await withBrowserOperation({
 					server,
 					browserSessionId: target.browserSessionId,
 					tabId: target.tabId,
 					timeoutMs,
 					signal,
-				}, ({ signal: operationSignal }) => executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal }));
-				return jsonResult(redactSensitiveValue(result), { mode: "javascript", refsBound: Object.keys(input.refs).length });
+				}, async ({ signal: operationSignal, deadlineAt }) => {
+					const dispatch = () => executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal });
+					return input.readOnly
+						? { result: await dispatch() }
+						: await withCommandEffect(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, deadlineAt, signal: operationSignal }, dispatch);
+				});
+				const value = "effect" in outcome ? { ...outcome.result, effect: outcome.effect } : outcome.result;
+				return jsonResult(redactSensitiveValue(value), { mode: "javascript", refsBound: Object.keys(input.refs).length });
 			});
 		},
 	});

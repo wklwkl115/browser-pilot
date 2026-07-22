@@ -11,7 +11,7 @@ const chromeStub = {
 };
 
 const dispatches: Array<{ command: string; args: JsonRecord }> = [];
-const pageResponses = new Map<string, JsonRecord>();
+const pageResponses = new Map<string, JsonRecord | JsonRecord[]>();
 const cdpBridge = {
 		async send(_tabId: number, method: string, params: JsonRecord) {
 			assert.equal(method, "Runtime.evaluate");
@@ -21,7 +21,8 @@ const cdpBridge = {
 			const command = JSON.parse(match[1]!) as string;
 			const args = JSON.parse(match[2]!) as JsonRecord;
 			dispatches.push({ command, args });
-			const value = pageResponses.get(command) ?? { ok: true, data: { command } };
+			const configured = pageResponses.get(command);
+			const value = Array.isArray(configured) ? configured.shift() ?? { ok: true, data: { command } } : configured ?? { ok: true, data: { command } };
 			return { ok: true, data: { result: { result: { value } } } };
 		},
 };
@@ -91,6 +92,23 @@ test("hook install_targets expands explicit targets and records reusable session
 	const invalid = await hook.handleBrowserPilotHookCommand("hook.install_targets", 7, { targets: ["all"] });
 	assert.equal(invalid.error_code, "INVALID_RULE");
 	assert.match(String(invalid.error), /Unsupported hook target ids: all/);
+});
+
+test("hook install owns its stable session and reconfiguration lifecycle", async () => {
+	dispatches.splice(0);
+	pageResponses.set("hook.status", { ok: true, data: { state: "INSTALLED" } });
+	pageResponses.set("hook.install", [
+		{ ok: false, error_code: "ALREADY_INSTALLED", error: "different configuration" },
+		{ ok: true, data: { session_id: "default", state: "INSTALLED", dispatcher_version: "1.0" } },
+	]);
+	const installed = await hook.handleBrowserPilotHookCommand("hook.install", 7, { targets: ["console", "websocket"] });
+	assert.equal(installed.ok, true);
+	assert.equal((installed.data as JsonRecord).reconfigured, true);
+	assert.equal((installed.data as JsonRecord).history_lost, true);
+	assert.deepEqual(dispatches.filter((entry) => entry.command === "hook.install").map((entry) => entry.args), [
+		{ session_id: "default", targets: { console: true, websocket: true }, force: false },
+		{ session_id: "default", targets: { console: true, websocket: true }, force: true },
+	]);
 });
 
 test("hook uninstall rejects mismatched sessions and cleans matching local state", async () => {

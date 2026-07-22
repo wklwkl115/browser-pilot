@@ -13,6 +13,24 @@ function command(name: string) {
 	return definition;
 }
 
+function deepKeys(value: unknown): string[] {
+	return value && typeof value === "object"
+		? Object.entries(value).flatMap(([key, nested]) => [key, ...deepKeys(nested)])
+		: [];
+}
+
+test("public tool surface remains five general tools without new mechanical inputs", () => {
+	const definitions = browserCommandDefinitions();
+	assert.deepEqual(definitions.map((definition) => definition.name), ["browser_tabs", "browser_command", "browser_execute", "browser_observe", "browser_screenshot"]);
+	assert.deepEqual(Object.keys((command("browser_execute").parameters as { properties: Record<string, unknown> }).properties), ["script", "refs", "readOnly", "targetRef"]);
+	assert.deepEqual(Object.keys((command("browser_command").parameters as { properties: Record<string, unknown> }).properties), ["command", "targetRef"]);
+	const forbiddenFields = new Set(["browserSessionId", "tabId", "sessionId", "timeoutMs", "targetId"]);
+	for (const definition of definitions) {
+		assert.deepEqual(deepKeys(definition.parameters).filter((field) => forbiddenFields.has(field)), [], `${definition.name} should not expose runtime control fields`);
+	}
+	assert.doesNotMatch(command("browser_tabs").promptGuidelines?.join(" ") ?? "", /start automation with browser_tabs list/i);
+});
+
 test("public schemas reject unknown tool inputs and enumerate canonical native commands", () => {
 	const execute = command("browser_execute");
 	assert.deepEqual(execute.validateArguments?.({ script: "document.title", readOnly: true }), []);
@@ -41,13 +59,20 @@ test("input.ref public protocol requires an opaque ref instead of a private targ
 test("every public native command has one closed canonical parameter schema", () => {
 	const protocol = getNativeCommandProtocolSchema();
 	const names = publicNativeCommandNames();
+	for (const internal of ["bridge_wake", "persistent_cdp", "hook.list_sessions", "hook.list_targets", "hook.install_targets"]) assert.equal(names.includes(internal), false);
 	assert.equal(names.includes("hook.clear"), false);
 	assert.equal(new Set(names).size, names.length);
+	const forbiddenFields = new Set(["browserSessionId", "tabId", "sessionId", "timeoutMs", "waitId", "networkSessionId", "targetId", "name", "persistent", "detachOnError", "protocolVersion", "bringToFront", "maxIdleMs"]);
 	for (const name of names) {
-		const params = protocol.commands[name]?.paramsSchema as { additionalProperties?: unknown } | undefined;
+		const params = protocol.commands[name]?.paramsSchema as { additionalProperties?: unknown; properties?: Record<string, unknown> } | undefined;
 		assert.ok(params, `${name} should publish paramsSchema`);
 		assert.equal(params.additionalProperties, false, `${name} paramsSchema should reject unknown fields`);
+		assert.deepEqual(deepKeys(params).filter((field) => forbiddenFields.has(field)), [], `${name} should not expose runtime control fields`);
 	}
+	assert.deepEqual(Object.keys((protocol.commands.cdp.paramsSchema as { properties: Record<string, unknown> }).properties), ["method", "params"]);
+	assert.equal(validateBridgeCommand({ cmd: "hook.install" }, { allowMissingTabId: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "hook.install", targets: [] }, { allowMissingTabId: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "hook.install", targets: ["console"] }, { allowMissingTabId: true }).ok, true);
 	assert.equal(validateBridgeCommand({ cmd: "network.list", typo: true }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "transfer.download", url: "https://example.test/file", mode: "click" }, { allowMissingTabId: true }).ok, false);
 });

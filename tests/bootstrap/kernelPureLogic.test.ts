@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mintRef, parseRef, isBrowserPilotRef, normalizeRef } from "../../src/kernels/refs/core.ts";
 import { computeRelevanceMap } from "../../src/kernels/evidence/distill/relevance.ts";
+import { recoveryForNormalized } from "../../src/kernels/evidence/distill/recovery.ts";
 
 test("refs kernel parses scoped refs and rejects malformed boundary values", () => {
 	const scoped = mintRef("control", "login/button:1", { scope: "https://example.test/app path" });
@@ -44,4 +45,13 @@ test("evidence relevance scores low, high, propagated, aged, and CJK signal edge
 	assert.deepEqual(profile.sources, ["E"]);
 	assert.deepEqual(relevance.signals, ["A", "C", "E"]);
 	assert.equal(relevance.scoreFields({ name: "totally unrelated" }), 0);
+});
+
+test("public recovery guidance keeps runtime lifecycle controls internal", () => {
+	const recovery = [
+		recoveryForNormalized("TIMEOUT", {}, { retryable: true }),
+		recoveryForNormalized("WEBSOCKET_WAIT_TIMEOUT", {}, { retryable: true }),
+		recoveryForNormalized("AMBIGUOUS_TAB_ID", {}, { retryable: true }),
+	];
+	assert.doesNotMatch(JSON.stringify(recovery), /timeoutMs|sessionId|tabHandle/);
 });

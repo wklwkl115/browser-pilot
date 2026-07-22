@@ -87,7 +87,7 @@ function expandBrowserPilotHookTargets(input: unknown): { targets: JsonRecord; e
 
 function hookInstallArgsFromMessage(msg: BrowserPilotBridgeCommand, targetOverride?: JsonRecord): JsonRecord {
   return {
-    session_id: msg.session_id || msg.sessionId,
+    session_id: msg.session_id || msg.sessionId || 'default',
     targets: targetOverride || msg.targets,
     options: msg.options,
     buffer_size: msg.bufferSize === undefined && msg.buffer_size === undefined ? undefined : Number(msg.bufferSize ?? msg.buffer_size),
@@ -147,11 +147,11 @@ function listHookTargets(): BrowserPilotBridgeResponse {
 }
 
 function resolveHookInstallTargets(cmd: string, msg: BrowserPilotBridgeCommand): HookInstallTargets {
-  if (cmd !== 'hook.install_targets') return {};
+  if (cmd !== 'hook.install_targets' && !Array.isArray(msg.targets)) return {};
   const expanded = expandBrowserPilotHookTargets(msg.targets || msg.hookTargets || msg.targetIds);
   const supported = listBrowserPilotHookTargets().map((item) => item.id);
   if (expanded.rejected.length) return { error:browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unsupported hook target ids: ' + expanded.rejected.join(', '), { rejected:expanded.rejected, supported }) };
-  if (!expanded.expanded.length) return { error:browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'hook.install_targets requires at least one explicit hook target id', { supported }) };
+  if (!expanded.expanded.length) return { error:browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'hook.install requires at least one explicit hook target id', { supported }) };
   return { targetOverride:expanded.targets, expandedTargets:expanded.expanded, rejectedTargets:expanded.rejected };
 }
 
@@ -164,12 +164,12 @@ function installedHookSession(data: JsonRecord, args: JsonRecord, msg: BrowserPi
   };
 }
 
-async function recordSuccessfulHookInstall(cmd: string, tabId: number, msg: BrowserPilotBridgeCommand, response: BrowserPilotBridgeResponse, beforeStatus: BrowserPilotBridgeResponse | null, args: JsonRecord, targets: HookInstallTargets): Promise<void> {
+async function recordSuccessfulHookInstall(tabId: number, msg: BrowserPilotBridgeCommand, response: BrowserPilotBridgeResponse, beforeStatus: BrowserPilotBridgeResponse | null, args: JsonRecord, targets: HookInstallTargets): Promise<void> {
   const data = hookResponseData(response);
   data.reused = data.idempotent === true || data.already_installed === true;
   data.preinstall_status = beforeStatus?.ok ? 'installed' : beforeStatus?.error_code ? String(beforeStatus.error_code) : 'unknown';
-  data.history_lost = false;
-  if (cmd === 'hook.install_targets') {
+  data.history_lost = data.reconfigured === true;
+  if (targets.expandedTargets) {
     data.expanded_targets = targets.expandedTargets || [];
     data.rejected_targets = targets.rejectedTargets || [];
     data.target_boundary = 'static-explicit-targets';
@@ -188,11 +188,12 @@ async function installHook(cmd: string, tabId: number, msg: BrowserPilotBridgeCo
   if (!injected.ok) return injected;
   const args = hookInstallArgsFromMessage(msg, targets.targetOverride);
   const beforeStatus = await callPageBrowserPilot(tabId, 'hook.status', browserPilotHookSessionArgs(msg), { timeoutMs:msg.timeoutMs ?? msg.timeout_ms }).catch(() => null);
-  const response = await callPageBrowserPilot(tabId, 'hook.install', args);
+  let response = await callPageBrowserPilot(tabId, 'hook.install', args);
   if (!response.ok && response.error_code === BROWSER_PILOT_ERROR_CODES.ALREADY_INSTALLED) {
-    response.details = { ...(response.details || {}), recovery:{ force:true, uninstallFirst:true, message:'Hook dispatcher is already installed with a different session or fingerprint; retry with force:true or uninstall the current hook session first.' } };
+    response = await callPageBrowserPilot(tabId, 'hook.install', { ...args, force:true });
+    if (response.ok && response.data && typeof response.data === 'object') (response.data as JsonRecord).reconfigured = true;
   }
-  if (response.ok) await recordSuccessfulHookInstall(cmd, tabId, msg, response, beforeStatus, args, targets);
+  if (response.ok) await recordSuccessfulHookInstall(tabId, msg, response, beforeStatus, args, targets);
   return response;
 }
 

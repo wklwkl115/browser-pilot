@@ -30,6 +30,8 @@ export function resolvePairingToken(projectRoot = process.cwd(), clientName = ""
 }
 
 export async function runMcpPairing(args: Record<string, unknown>, signal?: AbortSignal, projectRoot = process.cwd(), clientName = ""): Promise<Record<string, unknown>> {
+	const unknown = Object.keys(args).find((key) => !["action", "label", "pairingId"].includes(key));
+	if (unknown) throw new Error(`browser_pair unknown parameter: ${unknown}`);
 	const action = args.action;
 	if (action !== "start" && action !== "wait") throw new Error("browser_pair action must be start or wait");
 	if (action === "start") {
@@ -41,11 +43,8 @@ export async function runMcpPairing(args: Record<string, unknown>, signal?: Abor
 	}
 	const pairingId = typeof args.pairingId === "string" ? args.pairingId.trim() : "";
 	if (!pairingId) throw new Error("browser_pair wait requires pairingId");
-	const rawTimeoutMs = Number(args.timeoutMs ?? PAIR_WAIT_DEFAULT_MS);
-	if (!Number.isFinite(rawTimeoutMs) || rawTimeoutMs < 0) throw new Error("browser_pair timeoutMs must be a non-negative number");
-	const timeoutMs = Math.min(PAIR_WAIT_DEFAULT_MS, Math.floor(rawTimeoutMs));
 	const daemon = await ensureDaemon();
-	const response = await controlRequest(daemon, "POST", "/pair/wait", { pairingId }, timeoutMs + 5_000, { signal });
+	const response = await controlRequest(daemon, "POST", "/pair/wait", { pairingId }, PAIR_WAIT_DEFAULT_MS + 5_000, { signal });
 	if (response.status !== 200 || response.json?.ok !== true || typeof response.json.token !== "string") throw new Error(String(response.json?.code || response.json?.error || `pair wait failed (HTTP ${response.status})`));
 	const tokenPath = agentTokenPath(projectRoot, clientName);
 	await atomicWriteText(tokenPath, `${JSON.stringify({ token: response.json.token, pairingId }, null, 2)}\n`);

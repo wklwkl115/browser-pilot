@@ -141,7 +141,7 @@ async function sendRuntimeCdp(server: AbmlBrowserRuntimeServer, options: { brows
 		params: options.params || {},
 		persistent: true,
 		timeoutMs: options.timeoutMs,
-	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
+	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, internal: true });
 	assertBridgeCommandSucceeded(result, `persistent_cdp:${options.cdpMethod}`);
 	const data = isRecord(result.data) ? result.data : {};
 	return isRecord(data.result) ? data.result : data;
@@ -432,7 +432,7 @@ async function readStreamPlane(server: AbmlBrowserRuntimeServer, input: AbmlRead
 	if (!status.active) {
 		const reason = plane === "network"
 			? "network recorder not active; use browser_command network.start"
-			: "hook session not armed; use browser_command hook.installTargets";
+			: "hook recorder not active; use browser_command hook.install";
 		return { entities: [], data: { plane, mode: "stream", unavailable: reason, recorderActive: false } };
 	}
 
@@ -467,7 +467,7 @@ async function readStreamPlane(server: AbmlBrowserRuntimeServer, input: AbmlRead
 	};
 }
 
-async function readSpecialStructureRef(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions, descriptor: RefDescriptor | undefined, target: { browserSessionId?: string; tabId: number }): Promise<{ entities?: Entity[]; data?: Record<string, unknown> } | undefined> {
+async function readSpecialStructureRef(server: AbmlBrowserRuntimeServer, options: BrowserAbmlRuntimeOptions, descriptor: RefDescriptor | undefined, target: { browserSessionId?: string; tabId: number }): Promise<{ entities?: Entity[]; data?: Record<string, unknown> } | undefined> {
 	if (!descriptor) return undefined;
 	const access = accessForLiveVerb(descriptor, target, true);
 	if (!access.ok) throw access.error;
@@ -477,7 +477,7 @@ async function readSpecialStructureRef(server: AbmlBrowserRuntimeServer, input: 
 		return { entities: [inspected.entity], data: { ...inspected.data, source: "vision-floor", observationId: descriptor.observationId } };
 	}
 	if (descriptor.kind !== "frame") return undefined;
-	const frameRead = await readFrameEntities(server, { ...target, observationId: descriptor.observationId, capturedAt: descriptor.createdAt, depth: input.depth });
+	const frameRead = await readFrameEntities(server, { ...target, observationId: descriptor.observationId, capturedAt: descriptor.createdAt });
 	const frameId = frameLocatorFromRef(descriptor);
 	const entities = frameId ? frameRead.entities.filter((entity) => entity.hints?.frameId === frameId || entity.value === frameId) : frameRead.entities;
 	return { entities, data: { frameTree: frameRead.frameTree, frameCount: frameRead.frames.length, frameId, source: "frame.list", observationId: descriptor.observationId, tabId: target.tabId } };
@@ -537,7 +537,7 @@ async function resolveBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 	const descriptor = resolveOptionalRefDescriptor(input.ref);
 	const target = currentTarget(server, options, descriptor);
 	if (!target.tabId) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available for ABML read", { browserSessionId: target.browserSessionId });
-	const special = await readSpecialStructureRef(server, input, options, descriptor, { ...target, tabId: target.tabId });
+	const special = await readSpecialStructureRef(server, options, descriptor, { ...target, tabId: target.tabId });
 	if (special) return special;
 	return await readStandardStructurePlane(server, input, options, descriptor, { ...target, tabId: target.tabId });
 }
@@ -701,7 +701,6 @@ async function executeBrowserAbmlFrame(server: AbmlBrowserRuntimeServer, input: 
 		tabId: target.tabId,
 		observationId,
 		capturedAt: descriptor?.createdAt,
-		depth: input.depth,
 	});
 	const frameId = descriptor ? (frameIdFromRef(descriptor) || frameLocatorFromRef(descriptor)) : undefined;
 	if (frameId) {

@@ -77,8 +77,8 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 		description: "List, switch, create, close, or select the browser that owns a tab.",
 		promptSnippet: "Control connected browser tabs and select among connected browser instances.",
 		promptGuidelines: [
-			"Start automation with browser_tabs list unless browser_tabs create just returned id/targetRef; use switch only when you intentionally change the browser active tab.",
-			"Reuse the returned id/targetRef/tabHandle for later tab-scoped browser_* calls.",
+			"Omit browser_tabs when the selected active tab is already the intended target; use list only to inspect or disambiguate tabs, and switch only to intentionally change the browser active tab.",
+			"Reuse the returned targetRef for later tab-scoped browser_* calls.",
 			"Use selectBrowser only when multiple connected browser instances make tab ownership ambiguous.",
 		],
 		parameters: strictCommandParameters({

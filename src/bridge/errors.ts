@@ -17,6 +17,11 @@ function compactTabForError(tab: Record<string, unknown>): Record<string, unknow
 	return out;
 }
 
+function targetRefForTab(tab: Record<string, unknown>): string | undefined {
+	const value = tab.targetRef ?? tab.tabHandle;
+	return typeof value === "string" && value ? value : undefined;
+}
+
 function compactUrlForError(value: string): string {
 	const base = value.split(/[?#]/, 1)[0] || value;
 	try {
@@ -41,15 +46,17 @@ export function tabNotFoundError(args: {
 	replacementHops?: number;
 	replacementChainAge?: number;
 }): BrowserBridgeError {
-	const liveTabIds = args.tabs.map((tab) => tab.tabId).filter((id): id is number => typeof id === "number");
+	const liveTargetRefs = args.tabs.map(targetRefForTab).filter((value): value is string => value !== undefined);
+	const suggestedTabId = args.replacedByTabId ?? args.latestTabId;
+	const suggestedTargetRef = suggestedTabId === undefined ? undefined : targetRefForTab(args.tabs.find((tab) => tab.tabId === suggestedTabId) ?? {});
 	const chainDiagnostic = args.replacementChainFailure === "max_hops_exceeded"
-		? `tab replacement chain exceeded maximum depth (3 hops) — use targetRef/tabHandle instead of numeric tabId`
+		? "tab replacement chain exceeded maximum depth (3 hops) — select a current targetRef"
 		: args.replacementChainFailure === "ttl_expired"
 			? `tab replacement record expired (>5min) — re-query tabs with browser_tabs list`
 			: undefined;
-	const baseHint = liveTabIds.length
-		? `tabId ${args.tabId} is not connected. Use a stable tabHandle/targetRef from browser_tabs list, omit tabId to target the active tab${args.replacedByTabId ? `, or retry with replacement tabId ${args.replacedByTabId}` : args.latestTabId ? `, or use the current tab id ${args.latestTabId}` : ""}. Live tab ids: ${liveTabIds.join(", ")}.`
-		: "No browser tabs are currently connected. Open or attach one with browser_tabs first.";
+	const baseHint = args.tabs.length
+		? "The selected tab is not connected. Use a current targetRef from browser_tabs list, or omit targetRef to use the selected active tab."
+		: "No browser tabs are currently connected. Open a tab or use browser_tabs create.";
 	const hint = chainDiagnostic ? `${chainDiagnostic}. ${baseHint}` : baseHint;
 	return new BrowserBridgeError("TAB_NOT_FOUND", "Target browser tab is not connected", {
 		tabId: args.tabId,
@@ -63,8 +70,8 @@ export function tabNotFoundError(args: {
 		recovery: {
 			retryable: true,
 			hint,
-			...(args.replacedByTabId ? { suggestedTabId: args.replacedByTabId } : args.latestTabId ? { suggestedTabId: args.latestTabId } : {}),
-			liveTabIds,
+			...(suggestedTargetRef ? { suggestedTargetRef } : {}),
+			liveTargetRefs,
 		},
 	});
 }
@@ -75,28 +82,28 @@ export function targetHandleNotFoundError(args: {
 	tabs: Array<{ tabHandle?: string; tabId?: number } & Record<string, unknown>>;
 }): BrowserBridgeError {
 	const compactTabs = args.tabs.map((tab) => compactTabForError(tab));
-	const liveTabHandles = args.tabs.map((tab) => tab.tabHandle).filter((handle): handle is string => typeof handle === "string");
-	const suggestedTargetRef = liveTabHandles.length === 1 ? liveTabHandles[0] : undefined;
-	return new BrowserBridgeError("TAB_NOT_FOUND", "Target tab handle is not connected", {
-		tabHandle: args.tabHandle,
+	const liveTargetRefs = args.tabs.map(targetRefForTab).filter((value): value is string => value !== undefined);
+	const suggestedTargetRef = liveTargetRefs.length === 1 ? liveTargetRefs[0] : undefined;
+	return new BrowserBridgeError("TAB_NOT_FOUND", "Target reference is not connected", {
+		targetRef: args.tabHandle,
 		browserSessionId: args.browserSessionId,
 		tabs: compactTabs,
 		recovery: {
 			retryable: true,
 			hint: suggestedTargetRef
 				? `The stable target reference is no longer connected. Retry with targetRef ${suggestedTargetRef} if it matches the intended live tab; otherwise list tabs to choose explicitly.`
-				: "The stable target reference is no longer connected. Possible causes: (1) the tab was closed or navigated away; (2) the extension service worker reconnected after going idle and the handle could not be rebound (this happens when the extensionId changed or multiple matching sessions were ambiguous). Re-list tabs to obtain the current handle and retry.",
+				: "The stable target reference is no longer connected. Re-list tabs and choose a current targetRef.",
 			nextActions: suggestedTargetRef
 				? [
 					`retry with targetRef ${suggestedTargetRef}`,
 					"browser_tabs action=list if multiple tabs are possible or the suggested target is not intended",
-					"omit targetRef/tabId to use the selected active tab",
+					"omit targetRef to use the selected active tab",
 				]
 				: [
 					"browser_tabs action=list",
-					"retry with targetRef set to a live tabHandle, or omit targetRef/tabId to use the selected active tab",
+					"retry with a current targetRef, or omit targetRef to use the selected active tab",
 				],
-			liveTabHandles,
+			liveTargetRefs,
 			...(suggestedTargetRef ? { suggestedTargetRef } : {}),
 		},
 	});

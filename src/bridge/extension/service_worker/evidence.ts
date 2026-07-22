@@ -31,7 +31,6 @@ async function handleBrowserPilotEvidenceCommand(cmd: string, tabId: number, msg
   const includeHook = msg.includeHook !== false && msg.hook !== false;
   const includeNetwork = msg.includeNetwork !== false && msg.network !== false;
   const includePerformance = msg.includePerformance !== false && msg.performance !== false;
-  const networkSessionId = msg.networkSessionId || msg.sessionId || msg.session_id || 'default';
   const out: JsonRecord & { sources: Record<string, unknown> } = {
     tabId: Number(tabId),
     collected_at: new Date().toISOString(),
@@ -43,8 +42,8 @@ async function handleBrowserPilotEvidenceCommand(cmd: string, tabId: number, msg
     out.sources.hook_events = await safeBrowserPilotEvidence('hook.collect', () => callPageBrowserPilot(tabId, 'hook.collect', { event_types: eventTypes, limit, timeout_ms }, evaluateOptions));
   }
   if (includeNetwork) {
-    out.sources.network_status = await safeBrowserPilotEvidence('network.status', async () => await handleNetworkRecorderCommand(tabId, 'network.status', { sessionId: networkSessionId }) as BrowserPilotBridgeResponse);
-    out.sources.network_entries = await safeBrowserPilotEvidence('network.list', async () => await handleNetworkRecorderCommand(tabId, 'network.list', { sessionId: networkSessionId, limit, includeDetails: true }) as BrowserPilotBridgeResponse);
+    out.sources.network_status = await safeBrowserPilotEvidence('network.status', async () => await handleNetworkRecorderCommand(tabId, 'network.status', {}) as BrowserPilotBridgeResponse);
+    out.sources.network_entries = await safeBrowserPilotEvidence('network.list', async () => await handleNetworkRecorderCommand(tabId, 'network.list', { limit, includeDetails: true }) as BrowserPilotBridgeResponse);
   }
   if (includePerformance) {
     const entryType = msg.entryType ?? msg.entry_type;

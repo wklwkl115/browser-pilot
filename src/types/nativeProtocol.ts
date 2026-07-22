@@ -65,6 +65,7 @@ function missingRequired(command: Record<string, unknown>, required: string[] | 
 }
 
 const COMMAND_ENVELOPE_FIELDS = new Set(["cmd", "tabId", "timeoutMs", "sessionId"]);
+const PUBLIC_INTERNAL_CONTROL_FIELDS = ["browserSessionId", "tabId", "sessionId", "timeoutMs"] as const;
 
 function commandPayload(command: Record<string, unknown>, allowResolvedTarget: boolean): Record<string, unknown> {
 	return Object.fromEntries(Object.entries(command).filter(([key]) => !COMMAND_ENVELOPE_FIELDS.has(key) && !(allowResolvedTarget && key === "target")));
@@ -82,7 +83,7 @@ export function requiredAnySatisfied(command: Record<string, unknown>, groups: s
 	return groups.some((group) => Array.isArray(group) && group.every((field) => hasValue(command[field])));
 }
 
-export function validateBridgeCommand(command: unknown, options: { allowMissingTabId?: boolean; allowResolvedTarget?: boolean } = {}): BridgeCommandValidation {
+export function validateBridgeCommand(command: unknown, options: { allowMissingTabId?: boolean; allowResolvedTarget?: boolean; publicCall?: boolean } = {}): BridgeCommandValidation {
 	const currentSchema = getNativeCommandProtocolSchema();
 	if (!isRecord(command)) return { ok: false, error: "Bridge command must be an object", details: { commandType: typeof command } };
 	if (typeof command.cmd !== "string" || !command.cmd.trim()) return { ok: false, error: "Bridge command requires string cmd", details: { cmd: command.cmd } };
@@ -91,6 +92,10 @@ export function validateBridgeCommand(command: unknown, options: { allowMissingT
 	const canonicalCmd = canonicalBridgeCommand(cmd, currentSchema);
 	const spec = currentSchema.commands[canonicalCmd] || currentSchema.commands[cmd];
 	if (!spec) return { ok: false, error: `Unknown bridge command: ${cmd}`, details: { cmd } };
+	if (options.publicCall) {
+		const field = PUBLIC_INTERNAL_CONTROL_FIELDS.find((key) => command[key] !== undefined);
+		if (field) return { ok: false, error: `${cmd}: ${field} is runtime-managed; use the tool-level targetRef only when tab disambiguation is required`, details: { cmd, field } };
+	}
 
 	const checked: BridgeCommand = { ...command, cmd } as BridgeCommand;
 	const envelopeError = validateCommandEnvelope(checked);

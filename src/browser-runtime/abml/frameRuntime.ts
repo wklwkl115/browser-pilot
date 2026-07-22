@@ -20,11 +20,10 @@ export type FrameEntityRuntimeOptions = {
 	tabId: number;
 	observationId: string;
 	capturedAt?: number;
-	depth?: number;
 };
 
 export async function readFrameEntities(server: AbmlFrameRuntimeServer, options: FrameEntityRuntimeOptions): Promise<{ entities: Entity[]; frames: Array<Record<string, unknown>>; frameTree?: Record<string, unknown> }> {
-	const result = await server.sendCommand({ cmd: "frame.list", tabId: options.tabId, options: options.depth !== undefined ? { depth: options.depth } : undefined, timeoutMs: 10_000 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: 10_000 });
+	const result = await server.sendCommand({ cmd: "frame.list", tabId: options.tabId, timeoutMs: 10_000 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: 10_000 });
 	assertBridgeCommandSucceeded(result, "frame.list");
 	const data = recordValue(result.data) || {};
 	const frames = Array.isArray(data.frames) ? data.frames.filter((item): item is Record<string, unknown> => !!recordValue(item)) : [];

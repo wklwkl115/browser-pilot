@@ -45,12 +45,11 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 			"Use browser_observe only for page understanding. It returns canonical page content directly and exposes additional semantic regions as MCP resources.",
 		],
 		parameters: strictCommandParameters({
-			browserSessionId: Type.Optional(Type.String({ description: "Browser automation session id" })),
 			baseline: Type.Optional(Type.Union([Type.Array(Type.Object({}, { additionalProperties: true })), Type.Object({}, { additionalProperties: true })], { description: "Prior PageObservation or entity list used for diffing" })),
 			baselineSnapshotId: Type.Optional(Type.String({ description: "Snapshot id of a prior PageObservation" })),
 			actionRef: Type.Optional(Type.String({ description: "Ref of the action that caused the observed delta" })),
 			intent: Type.Optional(Type.String({ description: "Optional relevance hint" })),
-			fresh: Type.Optional(Type.Boolean({ description: "Ignore the session baseline and force a fresh observation" })),
+			fresh: Type.Optional(Type.Boolean({ description: "Ignore the cached baseline and force a fresh observation" })),
 			diff: Type.Optional(Type.Boolean({ description: "Diff against the latest observation for this tab" })),
 			...sharedTabScopedToolParams(),
 		}),

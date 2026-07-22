@@ -31,7 +31,7 @@ export async function sendPersistentCdp(server: AbmlAxRuntimeServer, options: { 
 		params: options.params || {},
 		persistent: true,
 		timeoutMs: options.timeoutMs,
-	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
+	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, internal: true });
 	assertBridgeCommandSucceeded(result, `persistent_cdp:${options.cdpMethod}`);
 	return result;
 }

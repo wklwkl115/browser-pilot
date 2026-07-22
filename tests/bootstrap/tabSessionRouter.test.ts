@@ -147,7 +147,11 @@ test("extension-owned tab identity changes invalidate the old handle immediately
 	const current = router.getTabs()[0];
 	assert.equal(current?.logicalTabId, "22222222222222222222222222222222");
 	assert.notEqual(current?.tabHandle, oldHandle);
-	assert.throws(() => router.resolveTargetRef(oldHandle), (error: Error & { code?: string }) => error.code === "TAB_NOT_FOUND");
+	assert.throws(() => router.resolveTargetRef(oldHandle), (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+		assert.equal(error.code, "TAB_NOT_FOUND");
+		assert.doesNotMatch(JSON.stringify(error.details?.recovery), /tabId|tabHandle|sessionId/);
+		return true;
+	});
 });
 
 test("extension-owned tab identity preserves targetRef across daemon replacement", () => {

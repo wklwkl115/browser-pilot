@@ -236,6 +236,16 @@ test("commands execution: browser_command writes return the raw bridge result", 
 	assert.equal(outcome.id, "network-start");
 	assert.equal(outcome.acknowledged, true);
 	assert.equal((outcome.data as Record<string, unknown>).active, true);
+	assert.deepEqual({ ...(outcome.effect as Record<string, unknown>), elapsedMs: 0 }, { observed: false, changed: null, settled: false, elapsedMs: 0 });
+});
+
+test("commands execution: browser-wide writes skip irrelevant page-effect sampling", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const outcome = parseResult(await command.execute("tool-management-write", { command: { cmd: "management", method: "reload" } }));
+	assert.equal(outcome.effect, undefined);
+	assert.equal(runtime.calls.filter((call) => call.name === "sendCommand").length, 1);
+	assert.equal((runtime.calls.find((call) => call.name === "sendCommand")?.args[0] as Record<string, unknown>).cmd, "management");
 });
 
 test("commands execution: browser_command rejects commands outside the public native catalog", async () => {
@@ -250,6 +260,41 @@ test("commands execution: browser_command rejects commands outside the public na
 	assert.equal(internal.code, "INVALID_RULE");
 	assert.match(String(internal.message), /not a public native command/);
 	assert.equal(runtime.calls.some((call) => call.name === "sendCommand"), false);
+});
+
+test("commands execution: browser_command rejects runtime-managed control fields and lifecycle commands", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	for (const input of [
+		{ cmd: "cdp", method: "Page.reload", browserSessionId: "internal" },
+		{ cmd: "cdp", method: "Page.reload", tabId: 7 },
+		{ cmd: "cdp", method: "Page.reload", sessionId: "internal" },
+		{ cmd: "cdp", method: "Page.reload", timeoutMs: 1_000 },
+	] as Array<Record<string, unknown>>) {
+		const body = parseResult(await command.execute("tool-runtime-control", { command: input }));
+		assert.equal(body.code, "INVALID_BROWSER_COMMAND");
+		assert.match(String(body.message), /runtime-managed/);
+	}
+	for (const input of [
+		{ cmd: "bridge_wake" },
+		{ cmd: "persistent_cdp", action: "send", cdpMethod: "Page.reload" },
+		{ cmd: "hook.list_sessions" },
+		{ cmd: "hook.list_targets" },
+		{ cmd: "hook.install_targets", targets: ["console"] },
+	] as Array<Record<string, unknown>>) {
+		const body = parseResult(await command.execute("tool-internal-lifecycle", { command: input }));
+		assert.equal(body.code, "INVALID_RULE");
+		assert.match(String(body.message), /not a public native command/);
+	}
+	assert.equal(runtime.calls.length, 0);
+});
+
+test("commands execution: raw CDP dispatch contains only the requested browser primitive", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	await command.execute("tool-cdp", { command: { cmd: "cdp", method: "Page.reload", params: { ignoreCache: true } } });
+	const send = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as Record<string, unknown>).cmd === "cdp");
+	assert.deepEqual(send?.args[0], { cmd: "cdp", method: "Page.reload", params: { ignoreCache: true } });
 });
 
 test("commands execution: browser_command rejects command-specific schema errors before startup", async () => {
@@ -281,7 +326,9 @@ test("dedicated screenshot and browser_command dispatch their native commands", 
 	await command.execute("download", { targetRef: "tab-7", command: { cmd: "transfer.download", url: "https://example.test/file.txt" } });
 	await command.execute("upload", { targetRef: "tab-7", command: { cmd: "transfer.upload", selector: "input[type=file]", files: ["D:\\fixtures\\upload.txt"] } });
 
-	assert.deepEqual(runtime.calls.filter((call) => call.name === "sendCommand").map((call) => (call.args[0] as Record<string, unknown>).cmd), ["screenshot.capture", "transfer.download", "transfer.upload"]);
+	assert.deepEqual(runtime.calls
+		.filter((call) => call.name === "sendCommand" && (call.args[0] as Record<string, unknown>).cmd !== "content.fingerprint")
+		.map((call) => (call.args[0] as Record<string, unknown>).cmd), ["screenshot.capture", "transfer.download", "transfer.upload"]);
 });
 
 test("commands execution: browser_command write failures return the error", async () => {
@@ -304,11 +351,44 @@ test("commands execution: browser_execute summarizes successful JavaScript resul
 	const envelope = parseResult(result);
 	const execute = runtime.calls.find((call) => call.name === "executeJavaScript");
 	assert.equal(execute?.args[0], "return 42");
-	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000, accessMode: "write", signal: undefined });
+	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", tabId: "tab-7", timeoutMs: 15000, accessMode: "write", signal: undefined });
 	assert.ok((execute?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
 	assert.equal(envelope.id, "exec-1");
 	assert.equal(envelope.acknowledged, true);
 	assert.deepEqual(envelope.data, { answer: 42, script: "return 42" });
+	assert.deepEqual({ ...(envelope.effect as Record<string, unknown>), elapsedMs: 0 }, { observed: false, changed: null, settled: false, elapsedMs: 0 });
+});
+
+test("commands execution: browser_execute keeps effect sampling inside the pinned target transaction", async () => {
+	const order: string[] = [];
+	const fingerprints = [
+		{ changeSeq: 1, pageEpoch: "page-1", documentId: "document-1", url: "https://example.test/", readyState: "complete", visibleCount: 10, interactiveCount: 2 },
+		{ changeSeq: 2, pageEpoch: "page-1", documentId: "document-1", url: "https://example.test/", readyState: "complete", visibleCount: 11, interactiveCount: 2 },
+		{ changeSeq: 2, pageEpoch: "page-1", documentId: "document-1", url: "https://example.test/", readyState: "complete", visibleCount: 11, interactiveCount: 2 },
+	];
+	let fingerprintReads = 0;
+	const runtime = createRuntime({
+		async withTargetTransaction(input, run) {
+			order.push(`lock:${input.tabId}`);
+			const result = await run();
+			order.push(`unlock:${input.tabId}`);
+			return result;
+		},
+		async sendCommand() {
+			order.push(`fingerprint:${fingerprintReads += 1}`);
+			return { id: "fingerprint", acknowledged: true, data: fingerprints.shift() } as BrowserBridgeExecutionResult;
+		},
+		async executeJavaScript(script, options) {
+			order.push("dispatch");
+			return { id: "exec-effect", acknowledged: true, tabId: 7, target: { tabId: 7 }, data: { script, target: options?.tabId } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const envelope = parseResult(await command.execute("tool-effect", { script: "document.body.dataset.ready = '1'" }));
+	assert.deepEqual(order, ["lock:7", "fingerprint:1", "dispatch", "fingerprint:2", "fingerprint:3", "unlock:7"]);
+	assert.deepEqual((envelope.data as Record<string, unknown>).target, 7);
+	assert.equal((envelope.effect as Record<string, unknown>).changed, true);
+	assert.equal((envelope.effect as Record<string, unknown>).settled, true);
 });
 
 test("commands execution: browser_execute rejects command-shaped scripts with recovery metadata", async () => {
@@ -337,8 +417,10 @@ test("commands execution: ref URIs inside JavaScript stay ordinary data", async 
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const script = "return 'bp-ref://control/not-a-binding'";
-	await command.execute("tool-ref-literal", { script, targetRef: "tab-7", readOnly: true });
+	const result = parseResult(await command.execute("tool-ref-literal", { script, targetRef: "tab-7", readOnly: true }));
 	assert.equal(runtime.calls.find((call) => call.name === "executeJavaScript")?.args[0], script);
+	assert.equal(result.effect, undefined);
+	assert.equal(runtime.calls.some((call) => (call.args[0] as Record<string, unknown>)?.cmd === "content.fingerprint"), false);
 });
 
 test("commands execution: ref ownership, freshness, and action policy fail before JavaScript dispatch", async () => {
@@ -389,7 +471,7 @@ test("commands execution: input.ref expands its private native target and routes
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const ref = registerOwnedRef();
 	await command.execute("tool-input-ref", { command: { cmd: "input.ref", action: "click", ref } });
-	const send = runtime.calls.find((call) => call.name === "sendCommand");
+	const send = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as Record<string, unknown>).cmd === "input.ref");
 	const native = send?.args[0] as Record<string, unknown>;
 	const target = native.target as Record<string, unknown>;
 	assert.equal(native.ref, ref);

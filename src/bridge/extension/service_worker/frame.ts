@@ -6,16 +6,12 @@ import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse 
 type FrameCdpMethod = "frameTree" | "evaluateInFrame" | "addNewDocumentScript" | "removeNewDocumentScript";
 type FrameHandler = (cmd: string, tabId: number, msg: BrowserPilotBridgeCommand) => Promise<BrowserPilotBridgeResponse>;
 
-function frameOptions(msg: BrowserPilotBridgeCommand): JsonRecord {
-	return msg.options && typeof msg.options === "object" ? { ...msg.options as JsonRecord } : {};
-}
-
 function frameError(message: string, details: JsonRecord = {}): BrowserPilotBridgeResponse {
 	return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, message, details);
 }
 
 function newDocumentOptions(msg: BrowserPilotBridgeCommand): JsonRecord {
-	const options: JsonRecord = { ...frameOptions(msg), persistent: true, name: "new_document" };
+	const options: JsonRecord = { persistent: true, name: "new_document" };
 	if (msg.timeoutMs !== undefined || msg.timeout_ms !== undefined) options.timeoutMs = msg.timeoutMs ?? msg.timeout_ms;
 	return options;
 }
@@ -33,13 +29,13 @@ async function callFrameCdp(
 }
 
 const frameHandlers: Record<string, FrameHandler> = {
-	"frame.list": (cmd, tabId, msg) => callFrameCdp(cmd, "frameTree", [tabId, frameOptions(msg)], (data) => {
+	"frame.list": (cmd, tabId) => callFrameCdp(cmd, "frameTree", [tabId, {}], (data) => {
 		const frames = Array.isArray(data.frames) ? data.frames : [];
 		return { tabId, frameTree: data.frameTree || null, frames, count: frames.length };
 	}),
 	"frame.evaluate": (cmd, tabId, msg) => {
 		if (!msg.frameId) return Promise.resolve(frameError("frame.evaluate requires frameId"));
-		const options: JsonRecord = { ...frameOptions(msg), frameId: String(msg.frameId), awaitPromise: msg.awaitPromise !== false };
+		const options: JsonRecord = { frameId: String(msg.frameId), awaitPromise: msg.awaitPromise !== false };
 		if (msg.grantUniversalAccess !== undefined) options.grantUniversalAccess = Boolean(msg.grantUniversalAccess);
 		if (msg.returnByValue !== undefined) options.returnByValue = msg.returnByValue !== false;
 		if (msg.userGesture !== undefined) options.userGesture = Boolean(msg.userGesture);

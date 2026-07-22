@@ -30,3 +30,9 @@ export function isNativeWriteCommand(command: BridgeCommand): boolean {
 	const method = String(command.method || command.action || spec.defaultMethod || "").toLowerCase();
 	return (spec.methodSpecs?.[method]?.accessMode ?? spec.accessMode) === "write";
 }
+
+export function isNativeTabScopedCommand(command: BridgeCommand): boolean {
+	const schema = getNativeCommandProtocolSchema();
+	const canonical = canonicalBridgeCommand(String(command.cmd || ""), schema);
+	return schema.commands[canonical]?.tabScoped === true;
+}

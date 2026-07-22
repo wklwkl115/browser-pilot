@@ -1,6 +1,6 @@
 {
   "name": "browser-pilot-native-commands",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "transport": "Browser Pilot Bridge WebSocket command envelope",
   "envelope": {
     "type": "object",
@@ -138,6 +138,8 @@
       "domain": "core",
       "tabScoped": false,
       "accessMode": "read",
+      "internal": true,
+      "notes": "Internal extension wake probe; browser_command callers never manage bridge readiness.",
       "paramsSchema": {
         "type": "object",
         "properties": { "url": { "type": "string" } },
@@ -247,9 +249,7 @@
         "type": "object",
         "properties": {
           "method": { "type": "string", "minLength": 1 },
-          "params": { "type": "object" },
-          "name": { "type": "string" },
-          "persistent": { "type": "boolean" }
+          "params": { "type": "object" }
         },
         "required": ["method"],
         "additionalProperties": false
@@ -259,6 +259,8 @@
       "domain": "core",
       "tabScoped": true,
       "accessMode": "write",
+      "internal": true,
+      "notes": "Internal CDP session lifecycle used by cdp, frame, input, capture, and execute runtimes.",
       "required": ["action"],
       "paramsSchema": {
         "type": "object",
@@ -529,8 +531,7 @@
           "methods": { "type": "array", "items": { "type": "string" } },
           "statuses": { "type": "array", "items": { "type": "number" } },
           "clear": { "type": "boolean" },
-          "storeHeaders": { "type": "boolean" },
-          "reconfigure": { "type": "boolean" }
+          "storeHeaders": { "type": "boolean" }
         },
         "additionalProperties": false
       }
@@ -543,9 +544,7 @@
         "type": "object",
         "properties": {
           "keepBuffer": { "type": "boolean" },
-          "clear": { "type": "boolean" },
-          "reason": { "type": "string" },
-          "remove": { "type": "boolean" }
+          "clear": { "type": "boolean" }
         },
         "additionalProperties": false
       }
@@ -629,7 +628,6 @@
         "type": "object",
         "properties": {
           "condition": { "enum": ["request", "response", "body", "finished", "failed", "websocket", "sse", "idle", "count"] },
-          "waitId": { "type": "string" },
           "idleMs": { "type": "number" },
           "count": { "type": "number" },
           "requestId": { "type": "string" },
@@ -830,6 +828,8 @@
       "domain": "hook",
       "tabScoped": false,
       "accessMode": "read",
+      "internal": true,
+      "notes": "Internal hook recovery inventory; public hook commands use the selected tab's runtime automatically.",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "hook.install": {
@@ -839,10 +839,10 @@
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "targets": { "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "object" }] },
-          "options": { "type": "object" }, "bufferSize": { "type": "number" }, "force": { "type": "boolean" },
-          "expectedVersion": { "type": "string" }, "installFingerprint": { "type": "string" }
+          "targets": { "anyOf": [{ "type": "array", "minItems": 1, "items": { "enum": ["console", "error", "networkApi", "websocket", "storage", "crypto", "dom", "domSinks", "cookies"] } }, { "type": "object", "minProperties": 1 }] },
+          "options": { "type": "object" }, "bufferSize": { "type": "number" }
         },
+        "required": ["targets"],
         "additionalProperties": false
       }
     },
@@ -968,7 +968,7 @@
       "domain": "frame",
       "tabScoped": true,
       "accessMode": "read",
-      "paramsSchema": { "type": "object", "properties": { "options": { "type": "object" } }, "additionalProperties": false }
+      "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "frame.evaluate": {
       "domain": "frame",
@@ -983,7 +983,7 @@
         "properties": {
           "frameId": { "type": "string" }, "expression": { "type": "string" }, "awaitPromise": { "type": "boolean" },
           "grantUniversalAccess": { "type": "boolean" }, "returnByValue": { "type": "boolean" }, "userGesture": { "type": "boolean" },
-          "worldName": { "type": "string" }, "options": { "type": "object" }
+          "worldName": { "type": "string" }
         },
         "required": ["frameId", "expression"], "additionalProperties": false
       }
@@ -997,7 +997,7 @@
       ],
       "paramsSchema": {
         "type": "object",
-        "properties": { "source": { "type": "string" }, "runImmediately": { "type": "boolean" }, "worldName": { "type": "string" }, "includeCommandLineAPI": { "type": "boolean" }, "options": { "type": "object" } },
+        "properties": { "source": { "type": "string" }, "runImmediately": { "type": "boolean" }, "worldName": { "type": "string" }, "includeCommandLineAPI": { "type": "boolean" } },
         "required": ["source"], "additionalProperties": false
       }
     },
@@ -1009,7 +1009,7 @@
         "identifier"
       ],
       "paramsSchema": {
-        "type": "object", "properties": { "identifier": { "type": "string" }, "options": { "type": "object" } },
+        "type": "object", "properties": { "identifier": { "type": "string" } },
         "required": ["identifier"], "additionalProperties": false
       }
     },
@@ -1052,7 +1052,6 @@
           "includeHook": { "type": "boolean" },
           "includeNetwork": { "type": "boolean" },
           "includePerformance": { "type": "boolean" },
-          "networkSessionId": { "type": "string" },
           "entryType": { "type": "string" },
           "nameContains": { "type": "string" }
         },
@@ -1114,8 +1113,7 @@
               "properties": {
                 "text": { "type": "string" },
                 "contains": { "type": "string" },
-                "regex": { "type": "string" },
-                "timeoutMs": { "type": "number" }
+                "regex": { "type": "string" }
               },
               "required": ["text"],
               "additionalProperties": false
@@ -1160,7 +1158,7 @@
       "domain": "transfer",
       "tabScoped": true,
       "accessMode": "write",
-      "notes": "Download through Chrome. Use selector with mode click or media, or url with mode url; optional fields: index, filename, conflictAction, saveAs, timeoutMs, expectMime.",
+      "notes": "Download through Chrome. Use selector with mode click or media, or url with mode url; optional fields: index, filename, conflictAction, saveAs, expectMime.",
       "requiredAny": [
         [
           "selector"
@@ -1192,7 +1190,7 @@
       "domain": "transfer",
       "tabScoped": true,
       "accessMode": "write",
-      "notes": "Upload local files through a page file chooser. Required fields: selector and files; optional fields: index and timeoutMs.",
+      "notes": "Upload local files through a page file chooser. Required fields: selector and files; optional field: index.",
       "required": [
         "selector",
         "files"
@@ -1212,12 +1210,16 @@
       "domain": "hook",
       "tabScoped": false,
       "accessMode": "read",
+      "internal": true,
+      "notes": "Internal hook catalog; public hook.install publishes canonical target ids in its schema.",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "hook.install_targets": {
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "write",
+      "internal": true,
+      "notes": "Internal compatibility command; public hook.install accepts the same target id array.",
       "required": [
         "targets"
       ],
@@ -1606,7 +1608,7 @@
     "TAB_ID_REQUIRED": {
       "category": "tool.tabs",
       "retryable": false,
-      "summary": "browser_tabs switch/close requires tabId."
+      "summary": "browser_tabs switch/close requires targetRef."
     },
     "TAB_NOT_FOUND": {
       "category": "driver.tab",

@@ -41,7 +41,6 @@ const pairingTool: McpTool = {
 			action: { type: "string", enum: ["start", "wait"] },
 			label: { type: "string", description: "Agent label for action=start." },
 			pairingId: { type: "string", description: "Pairing ID returned by action=start, required for action=wait." },
-			timeoutMs: { type: "number", minimum: 0, maximum: 120_000 },
 		},
 		required: ["action"],
 	},
@@ -251,7 +250,6 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 		const publicSchema = {
 			name: schema.name,
 			version: schema.version,
-			envelope: schema.envelope,
 			domains: Object.fromEntries(Object.entries(schema.domains).map(([domain, commands]) => [domain, commands.filter((command) => publicNames.has(command))]).filter(([, commands]) => commands.length)),
 			commands: Object.fromEntries([...publicNames].map((command) => {
 				const { paramsSchema: _paramsSchema, ...summary } = schema.commands[command]!;
@@ -264,7 +262,7 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 		const command = decodeURIComponent(uri.slice(NATIVE_COMMAND_URI_PREFIX.length));
 		const schema = getNativeCommandProtocolSchema();
 		if (!publicNativeCommandNames().includes(command)) throw new Error(`Unknown native command resource: ${command}`);
-		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify({ name: schema.name, version: schema.version, envelope: schema.envelope, command, specification: schema.commands[command] }) }] };
+		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify({ name: schema.name, version: schema.version, command, specification: schema.commands[command] }) }] };
 	}
 	const observationToken = observationResourceToken(uri);
 	if (observationToken) {

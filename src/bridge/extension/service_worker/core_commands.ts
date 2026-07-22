@@ -307,10 +307,10 @@ async function handleCDP(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBri
   const cdp = browserPilotPersistentCdp();
   if (!cdp?.send) return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'persistent CDP helper is not loaded', { cmd: msg.cmd, method: msg.method, tabId });
   const params = context.resolveParams ? context.resolveParams(msg.params) : coreRecord(msg.params);
-  const resp = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, String(msg.method || ''), params, { name: String(msg.name || 'default'), persistent: msg.persistent === true, timeoutMs: msg.timeoutMs || msg.timeout_ms }));
+  const resp = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, String(msg.method || ''), params, { name: 'default', persistent: false, timeoutMs: msg.timeoutMs || msg.timeout_ms }));
   const data = coreRecord(resp.data);
   if (resp && resp.ok !== false) return { ok: true, data: data.result !== undefined ? data.result : (resp.result || resp.data) };
-  return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, resp?.error || resp?.message || 'persistent CDP send failed', { cmd: msg.cmd, method: msg.method, tabId, persistent: resp });
+  return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, resp?.error || resp?.message || 'CDP send failed', { cmd: msg.cmd, method: msg.method, tabId });
 }
 
 async function handlePersistentCDP(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender): Promise<BrowserPilotBridgeResponse> {

@@ -137,6 +137,19 @@ export function resolveRefExecutionTarget(
 	return { browserSessionId: effectiveBrowserSessionId, rawTarget: options.rawTarget === undefined ? tabId : options.rawTarget as string | number, tabId };
 }
 
+export function pinTabExecutionTarget(
+	server: Pick<BrowserCommandRuntimePort, "snapshot">,
+	target: { browserSessionId?: string; rawTarget?: string | number; tabId?: number },
+): { browserSessionId?: string; rawTarget?: string | number; tabId?: number } {
+	const snapshot = server.snapshot({ browserSessionId: target.browserSessionId });
+	const tabId = target.tabId ?? snapshot.defaultTabId ?? snapshot.latestTabId;
+	return {
+		browserSessionId: target.browserSessionId ?? snapshot.browserSessionId,
+		rawTarget: target.rawTarget ?? tabId,
+		tabId,
+	};
+}
+
 export async function runCommandHandler(handler: () => Promise<BrowserTextCommandResult>, onError: (error: unknown) => BrowserTextCommandResult | Promise<BrowserTextCommandResult> = errorResult): Promise<BrowserTextCommandResult> {
 	try {
 		return await handler();

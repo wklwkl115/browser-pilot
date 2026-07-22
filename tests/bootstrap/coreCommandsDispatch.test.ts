@@ -256,6 +256,10 @@ test("core command batch cdp preserves result parameter substitution", async () 
 			{ expression: "location.href" },
 			{ argument: "location.href" },
 		]);
+		assert.deepEqual(calls.map((call) => call.options), [
+			{ name: "default", persistent: false, timeoutMs: undefined },
+			{ name: "default", persistent: false, timeoutMs: undefined },
+		]);
 		assert.deepEqual(result.results, [
 			{ ok: true, data: { echoed: { expression: "location.href" }, method: "Runtime.evaluate" } },
 			{ ok: true, data: { echoed: { argument: "location.href" }, method: "Runtime.callFunctionOn" } },

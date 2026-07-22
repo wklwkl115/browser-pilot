@@ -20,7 +20,7 @@ export async function evaluatePageScriptDirect(server: Pick<BrowserCommandRuntim
 		precompile: true,
 		timeoutMs: options.timeoutMs,
 		params: { expression: script, awaitPromise: true, returnByValue: true },
-	}, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs, signal: options.signal });
+	}, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs, internal: true, signal: options.signal });
 	const data = result.data && typeof result.data === "object" ? result.data as Record<string, unknown> : {};
 	const exceptionMessage = runtimeExceptionMessage(data);
 	if (exceptionMessage) throw new BrowserBridgeError("BROWSER_EXECUTION_ERROR", exceptionMessage, { command: options.name, exceptionDetails: data.exceptionDetails });

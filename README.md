@@ -31,15 +31,17 @@ For a source checkout, build once and point the MCP client at `dist/src/apps/mcp
 
 ## Core Workflow
 
-1. Call `browser_tabs` with `action: "list"` and keep the returned `targetRef`.
-2. Call `browser_observe` for the structured page model.
-3. Use `browser_execute` for page JavaScript or `browser_command` for native browser operations.
+1. Omit `targetRef` to use the selected active tab; call `browser_tabs` only to create, switch, close, or disambiguate tabs.
+2. Call `browser_observe` when the task needs a structured page model. Its `bp-ref` values route later actions back to their owning tab.
+3. Use `browser_execute` for page JavaScript or `browser_command` for native browser operations. Mutating calls return compact `effect` feedback, so a settled expected effect needs no mechanical follow-up wait.
 4. Read additional semantic page regions from the MCP resources returned by `browser_observe` only when the task needs them.
 
 ## Tools
 
 The MCP `tools/list` response is the public syntax authority. Browser tools come from `src/commands/commandCatalog.ts`; `browser_pair` provides the local pairing flow.
-`browser_command` publishes canonical command names in its schema. Read `browser-pilot://native-command/<cmd>` for the closed fields and validation rules of one command; `browser-pilot://native-commands` is the compact routing index.
+`browser_command` publishes canonical command names in its schema. Read `browser-pilot://native-command/<cmd>` for the closed business fields of one command; `browser-pilot://native-commands` is the compact routing index. Targeting stays at the tool-level `targetRef`; runtime `browserSessionId`, `tabId`, `sessionId`, timeout, attach, and cleanup controls are not public inputs. Raw CDP is `command: { cmd: "cdp", method: "Domain.method", params: {...} }`.
+
+`browser_execute` keeps JavaScript as the general page language. Its injected `browserPilot` namespace provides `refs`, `resolve(ref)`, `box(ref)`, `setValue(target, value)`, and `settled(quietMs?, timeoutMs?)`; writes are target-serialized and automatically use the extension/CDP fallback path.
 
 ## Architecture
 
