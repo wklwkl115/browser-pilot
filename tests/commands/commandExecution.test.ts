@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -138,7 +138,7 @@ function registerOwnedRef(options: { tabId?: number; browserSessionId?: string; 
 test("commands execution: browser_tabs list returns compact transport envelope from runtime port", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
-	const result = await command.execute("tool-1", { action: "list", maxChars: 20_000 }, undefined, undefined, { omitTransportDetails: true });
+	const result = await command.execute("tool-1", { action: "list" }, undefined, undefined, { omitTransportDetails: true });
 	const body = parseResult(result);
 	assert.equal(body.tabCount, 1);
 	assert.deepEqual(body.bridge, { browserSessionId: "session-1", host: "127.0.0.1", port: 18765, running: true, connectedClients: 1, extensionConnected: true, defaultTabId: 7, defaultTabHandle: "tab-7", selectionVersion: 3 });
@@ -160,69 +160,26 @@ test("commands execution: browser_tabs runtime failure returns the bridge error"
 	assert.match(String(body.message), /tab vanished/);
 });
 
-test("commands execution: stale browser_tabs snapshot recovery uses ordinary no-mode observe", async () => {
-	const runtime = createRuntime({
-		getObservationSnapshot() {
-			return { snapshotId: "stale-snap", sourceMode: "scan", capturedAt: 1, ttlMs: 1_000, expired: true, invalidatedReason: "ttl", saved: { path: ".browser-pilot/artifacts/observe.json" } };
-		},
-	});
-	const command = defineCommand((context) => defineTabsCommand(context), runtime);
-	const result = await command.execute("tool-1", { action: "snapshot", snapshotId: "stale-snap" });
-	const body = parseResult(result);
-	const details = result.details?.error as Record<string, unknown>;
-	const nextActions = ((details.details as Record<string, unknown>).recovery as Record<string, unknown>).nextActions as string[];
-		assert.equal(body.code, "INVALID_RULE");
-		assert.deepEqual(nextActions, [
-			"call browser_tabs with action=snapshot, allowExpired=true, and snapshotId=<snapshotId>",
-			"call browser_artifact with mode=inspect and path=<saved.path>",
-			"browser_observe",
-		]);
-	const allowed = parseResult(await command.execute("tool-1", { action: "snapshot", snapshotId: "stale-snap", allowExpired: true }));
-	assert.equal((allowed.snapshot as Record<string, unknown>).snapshotId, "stale-snap");
-	const inventory = parseResult(await command.execute("tool-1", { action: "snapshot" }));
-	assert.equal((inventory.bridge as Record<string, unknown>).defaultTabHandle, "tab-7");
-	assert.deepEqual(inventory.observationSnapshots, []);
-});
-
-test("commands execution: browser_tabs common and advanced actions preserve runtime dispatch", async () => {
+test("commands execution: browser_tabs actions preserve runtime dispatch", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
-	const create = parseResult(await command.execute("tool-1", { action: "create", url: "https://example.test/new", active: false, incognito: true, browserSessionId: "session-1" }));
-		assert.equal(create.id, "create-1");
-		assert.equal(create.acknowledged, true);
-		assert.equal((create.target as Record<string, unknown>).tabId, 8);
+	const create = parseResult(await command.execute("tool-1", { action: "create", url: "https://example.test/new", active: false, incognito: true }));
+	assert.equal(create.id, "create-1");
+	assert.equal(create.acknowledged, true);
+	assert.equal((create.target as Record<string, unknown>).tabId, 8);
 	const createArgs = runtime.calls.find((call) => call.name === "createTab")?.args;
 	assert.deepEqual(createArgs?.slice(0, 3), ["https://example.test/new", false, 5_000]);
-	assert.deepEqual({ ...(createArgs?.[3] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", incognito: true, signal: undefined });
+	assert.deepEqual({ ...(createArgs?.[3] as Record<string, unknown>), signal: undefined }, { incognito: true, signal: undefined });
 	assert.ok((createArgs?.[3] as { signal?: unknown }).signal instanceof AbortSignal);
-	await command.execute("tool-2", { action: "switch", targetRef: "tab-7", browserSessionId: "session-1" });
-	await command.execute("tool-3", { action: "close", targetRef: "tab-7", browserSessionId: "session-1" });
+	await command.execute("tool-2", { action: "switch", targetRef: "tab-7" });
+	await command.execute("tool-3", { action: "close", targetRef: "tab-7" });
 	for (const [name, prefix] of [["switchTab", ["tab-7", 5_000]], ["closeTab", ["tab-7", 5_000]]] as const) {
 		const args = runtime.calls.find((call) => call.name === name)?.args;
 		assert.deepEqual(args?.slice(0, 2), prefix);
-		assert.equal((args?.[2] as Record<string, unknown>).browserSessionId, "session-1");
 		assert.ok((args?.[2] as { signal?: unknown }).signal instanceof AbortSignal);
 	}
-
-	for (const params of [
-		{ action: "listSessions" },
-		{ action: "createSession", name: "isolated" },
-		{ action: "selectSession", browserSessionId: "session-1" },
-		{ action: "closeSession", browserSessionId: "session-1" },
-		{ action: "attachTab", targetRef: "tab-7", browserSessionId: "session-1", browserId: "browser-1" },
-		{ action: "detachTab", targetRef: "tab-7", browserSessionId: "session-1" },
-		{ action: "leaseTab", targetRef: "tab-7", browserSessionId: "session-1" },
-		{ action: "releaseTab", targetRef: "tab-7", browserSessionId: "session-1" },
-		{ action: "selectBrowser", browserId: "browser-1", browserSessionId: "session-1" },
-	]) {
-		const body = parseResult(await command.execute("tool-advanced", params));
-		assert.equal(body.code, undefined, String(params.action));
-	}
-	assert.deepEqual(runtime.calls.find((call) => call.name === "attachTabToBrowserSession")?.args, ["tab-7", { browserSessionId: "session-1", browserId: "browser-1" }]);
-	const projectedLease = parseResult(await command.execute("tool-lease", { action: "leaseTab", targetRef: "tab-7" })).lease as Record<string, unknown>;
-	assert.equal(projectedLease.id, "lease-secret");
-	assert.equal("browserSessionId" in projectedLease, false);
-	assert.equal("tabSessionId" in projectedLease, false);
+	const selected = parseResult(await command.execute("tool-browser", { action: "selectBrowser", browserId: "browser-1" }));
+	assert.deepEqual(selected.selected, { browserId: "browser-1" });
 });
 
 test("commands execution: browser_tabs rejects invalid targets, URLs, and actions before dispatch", async () => {
@@ -232,6 +189,7 @@ test("commands execution: browser_tabs rejects invalid targets, URLs, and action
 		[{ action: "close" }, "TAB_ID_REQUIRED"],
 		[{ action: "create", url: "/relative" }, "INVALID_TAB_URL"],
 		[{ action: "create", url: "javascript:alert(1)" }, "INVALID_TAB_URL"],
+		[{ action: "listSessions" }, "INVALID_RULE"],
 		[{ action: "unknown" }, "INVALID_RULE"],
 	] as Array<[Record<string, unknown>, string]>) {
 		assert.equal(parseResult(await command.execute("tool-invalid", params)).code, code);
@@ -273,7 +231,7 @@ test("tabs create projection keeps stable identity precedence and strips nested 
 test("commands execution: browser_command read commands return immediately", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
-	const result = await command.execute("tool-1", { command: { cmd: "network.list", limit: 20 }, maxChars: 20_000 }, undefined, undefined, { cwd: "project" });
+	const result = await command.execute("tool-1", { command: { cmd: "network.list", limit: 20 } }, undefined, undefined, { cwd: "project" });
 	const envelope = parseResult(result);
 	const send = runtime.calls.find((call) => (call.args[0] as Record<string, unknown>)?.cmd === "network.list");
 	assert.deepEqual(send?.args[0], { cmd: "network.list", limit: 20 });
@@ -290,12 +248,12 @@ test("commands execution: browser_command writes return the raw bridge result", 
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const outcome = parseResult(await command.execute("tool-native-write", { command: { cmd: "network.start" } }));
-		assert.equal(outcome.id, "network-start");
-		assert.equal(outcome.acknowledged, true);
-		assert.equal((outcome.data as Record<string, unknown>).active, true);
-	});
+	assert.equal(outcome.id, "network-start");
+	assert.equal(outcome.acknowledged, true);
+	assert.equal((outcome.data as Record<string, unknown>).active, true);
+});
 
-test("commands execution: browser_command rejects commands owned by dedicated tools", async () => {
+test("commands execution: browser_command rejects commands outside the public native catalog", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	for (const [cmd, owner] of [["tabs", "browser_tabs"], ["screenshot.capture", "browser_screenshot"]]) {
@@ -303,12 +261,14 @@ test("commands execution: browser_command rejects commands owned by dedicated to
 		assert.equal(body.code, "INVALID_RULE");
 		assert.match(String(body.message), new RegExp(String(owner)));
 	}
+	const internal = parseResult(await command.execute("tool-internal", { command: { cmd: "batch", commands: [] } }));
+	assert.equal(internal.code, "INVALID_RULE");
+	assert.match(String(internal.message), /not a public native command/);
 	assert.equal(runtime.calls.some((call) => call.name === "sendCommand"), false);
 });
 
 test("dedicated screenshot and browser_command dispatch their native commands", async () => {
 	const directory = await mkdtemp(path.join(tmpdir(), "browser-pilot-owned-tools-"));
-	const screenshotPath = path.join(directory, "screenshot.png");
 	const runtime = createRuntime({
 		async sendCommand(command, options) {
 			runtime.calls.push({ name: "sendCommand", args: [command, options] });
@@ -320,8 +280,8 @@ test("dedicated screenshot and browser_command dispatch their native commands", 
 	});
 
 	const screenshot = defineCommand((context) => defineScreenshotCommand(context), runtime);
-	const screenshotResult = parseResult(await screenshot.execute("screenshot", { targetRef: "tab-7", outputPath: screenshotPath }, undefined, undefined, { cwd: directory }));
-	assert.equal((screenshotResult.saved as Record<string, unknown>).path, screenshotPath);
+	const screenshotResult = parseResult(await screenshot.execute("screenshot", { targetRef: "tab-7" }, undefined, undefined, { cwd: directory }));
+	assert.match(String((screenshotResult.saved as Record<string, unknown>).path), /screenshot-\d+\.png$/);
 
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	await command.execute("download", { targetRef: "tab-7", command: { cmd: "transfer.download", url: "https://example.test/file.txt" } });
@@ -339,23 +299,23 @@ test("commands execution: browser_command write failures return the error", asyn
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const result = await command.execute("tool-1", { command: { cmd: "cdp", method: "Page.reload" }, targetRef: "tab-7" });
 	const body = parseResult(result);
-		assert.equal(body.code, "INTERNAL_ERROR");
-		assert.match(String(body.message), /bridge send failed/);
-	});
+	assert.equal(body.code, "INTERNAL_ERROR");
+	assert.match(String(body.message), /bridge send failed/);
+});
 
 test("commands execution: browser_execute summarizes successful JavaScript result and runtime target context", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
-	const result = await command.execute("tool-1", { script: "return 42", targetRef: "tab-7", maxChars: 20_000 });
+	const result = await command.execute("tool-1", { script: "return 42", targetRef: "tab-7" });
 	const envelope = parseResult(result);
 	const execute = runtime.calls.find((call) => call.name === "executeJavaScript");
-		assert.equal(execute?.args[0], "return 42");
-		assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000, accessMode: "write", signal: undefined });
-		assert.ok((execute?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
-		assert.equal(envelope.id, "exec-1");
-		assert.equal(envelope.acknowledged, true);
-		assert.deepEqual(envelope.data, { answer: 42, script: "return 42" });
-	});
+	assert.equal(execute?.args[0], "return 42");
+	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000, accessMode: "write", signal: undefined });
+	assert.ok((execute?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
+	assert.equal(envelope.id, "exec-1");
+	assert.equal(envelope.acknowledged, true);
+	assert.deepEqual(envelope.data, { answer: 42, script: "return 42" });
+});
 
 test("commands execution: browser_execute rejects command-shaped scripts with recovery metadata", async () => {
 	const runtime = createRuntime();
@@ -391,9 +351,9 @@ test("commands execution: ref ownership, freshness, and action policy fail befor
 	for (const [params, code] of [
 		[{ script: "return browserPilot.refs.target", refs: { target: registerOwnedRef({ tabId: 8 }) }, targetRef: "tab-7" }, "REF_SCOPE_VIOLATION"],
 		[{ script: "return [browserPilot.refs.first, browserPilot.refs.second]", refs: { first: registerOwnedRef(), second: registerOwnedRef({ tabId: 8 }) } }, "REF_SCOPE_VIOLATION"],
-			[{ script: "return browserPilot.refs.target", refs: { target: registerOwnedRef({ liveActionsAllowed: false }) } }, "INVALID_RULE"],
-			[{ script: "return browserPilot.refs.target", refs: { target: registerOwnedRef({ createdAt: 1, ttlMs: 1 }) } }, "REF_STALE"],
-			[{ script: "return 1", refs: Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`r${index}`, "bp-ref://control/overflow"])) }, "INVALID_RULE"],
+		[{ script: "return browserPilot.refs.target", refs: { target: registerOwnedRef({ liveActionsAllowed: false }) } }, "INVALID_RULE"],
+		[{ script: "return browserPilot.refs.target", refs: { target: registerOwnedRef({ createdAt: 1, ttlMs: 1 }) } }, "REF_STALE"],
+		[{ script: "return 1", refs: Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`r${index}`, "bp-ref://control/overflow"])) }, "INVALID_RULE"],
 	] as Array<[Record<string, unknown>, string]>) {
 		const runtime = createRuntime();
 		const command = defineCommand((context) => defineExecuteCommand(context), runtime);
@@ -447,10 +407,12 @@ test("commands execution: input.ref expands its private native target and routes
 
 test("commands execution: browser_artifact reads JSON path and returns bounded inline result", async () => {
 	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-command-artifact-"));
-	const artifactPath = path.join(dir, "result.json");
+	const artifacts = path.join(dir, ".browser-pilot", "artifacts");
+	await mkdir(artifacts, { recursive: true });
+	const artifactPath = path.join(artifacts, "result.json");
 	await writeFile(artifactPath, JSON.stringify({ data: { items: [{ id: 1 }, { id: 2 }], token: "secret" } }), "utf8");
 	const command = defineCommand((context) => defineArtifactCommand(context), createRuntime());
-	const result = await command.execute("tool-1", { path: artifactPath, jsonPath: "data.items[1]", maxChars: 20_000 });
+	const result = await command.execute("tool-1", { path: artifactPath, jsonPath: "data.items[1]" }, undefined, undefined, { cwd: dir });
 	const body = parseResult(result);
 	assert.equal(body.mode, "json");
 	assert.equal(body.jsonPath, "data.items[1]");
@@ -461,7 +423,9 @@ test("commands execution: browser_artifact reads JSON path and returns bounded i
 
 test("commands execution: browser_artifact inspect lists existing hinted paths without raw payload", async () => {
 	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-command-artifact-inspect-"));
-	const artifactPath = path.join(dir, "observe.json");
+	const artifacts = path.join(dir, ".browser-pilot", "artifacts");
+	await mkdir(artifacts, { recursive: true });
+	const artifactPath = path.join(artifacts, "observe.json");
 	await writeFile(artifactPath, JSON.stringify({
 		data: { items: [{ id: 1, secret: "large raw body" }] },
 		envelope: {
@@ -476,7 +440,7 @@ test("commands execution: browser_artifact inspect lists existing hinted paths w
 		},
 	}), "utf8");
 	const command = defineCommand((context) => defineArtifactCommand(context), createRuntime());
-	const result = await command.execute("tool-1", { path: artifactPath, mode: "inspect", maxChars: 20_000 });
+	const result = await command.execute("tool-1", { path: artifactPath, mode: "inspect" }, undefined, undefined, { cwd: dir });
 	const body = parseResult(result);
 	assert.equal(body.mode, "inspect");
 	assert.equal(body.kind, "PageObservation");

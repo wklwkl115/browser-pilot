@@ -113,7 +113,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		timings: observeTimings,
 	});
 	if (session.cacheHit) return session.result;
-	const { timeoutMs, effectiveTabId, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, detailLevel, paramsSignature, pageFingerprint, pageIdentity, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
+		const { timeoutMs, effectiveTabId, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, paramsSignature, pageFingerprint, pageIdentity, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
 	const capture = await executeScanCapture({
 		server,
 		params,
@@ -194,10 +194,9 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		providers,
 		capture,
 		assembly,
-		scanPageFingerprint,
-		effectivePageFingerprint,
-		detailLevel,
-		paramsSignature,
+			scanPageFingerprint,
+			effectivePageFingerprint,
+			paramsSignature,
 		renderStartedAt,
 	});
 }

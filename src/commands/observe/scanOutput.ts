@@ -68,7 +68,6 @@ type FinalizeScanObservationOptions = {
 	assembly: AssemblyResult;
 	scanPageFingerprint: PageFingerprint | undefined;
 	effectivePageFingerprint: PageFingerprint | undefined;
-	detailLevel: string;
 	paramsSignature: string;
 	renderStartedAt: number;
 };
@@ -97,7 +96,7 @@ function buildCanonicalPageObservation(
 	diagnostics: ReturnType<typeof buildObserveDiagnostics>,
 ): PageObservation {
 	const { content, data, bridge, snapshotMeta, artifactAvailable, outputPath, providerFailures } = options;
-		const { envelopeEntities, attributedEntities, envelopeDiff, treeDiff } = options.assembly;
+	const { envelopeEntities, attributedEntities, envelopeDiff, treeDiff } = options.assembly;
 	const { causal } = options.providers;
 	return buildPageObservation({
 		summary,
@@ -152,12 +151,12 @@ function buildLedgerProjection(options: FinalizeScanObservationOptions) {
 }
 
 function recordLedgerProjection(options: FinalizeScanObservationOptions, frame: CommandPerceptionLedgerFrame | undefined, allocation: CommandPerceptionLedgerFrame["allocation"] | undefined) {
-	const { server, effectivePageFingerprint, detailLevel, maxChars, paramsSignature, snapshotMeta } = options;
+	const { server, effectivePageFingerprint, paramsSignature, snapshotMeta } = options;
 	if (!frame || typeof server.recordPerceptionLedgerFrame !== "function") return;
 	server.recordPerceptionLedgerFrame({
 		...frame,
 		...(effectivePageFingerprint ? { pageFingerprint: effectivePageFingerprint } : {}),
-		renderCache: { mode: "scan", detailLevel, maxChars, paramsSignature, renderedAt: snapshotMeta.capturedAt },
+		renderCache: { paramsSignature, renderedAt: snapshotMeta.capturedAt },
 		...(allocation ? { allocation } : {}),
 	});
 }

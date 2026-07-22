@@ -29,17 +29,14 @@ test("MCP publishes the command catalog as tools", () => {
 	assert.ok(tools.every((tool) => tool.inputSchema.type === "object"));
 	const tabs = tools.find((tool) => tool.name === "browser_tabs")!;
 	const tabProperties = tabs.inputSchema.properties as Record<string, Record<string, unknown>>;
-	assert.ok((tabProperties.action.enum as string[]).includes("selectSession"));
-	assert.ok("browserSessionId" in tabProperties);
+	assert.deepEqual(tabProperties.action.enum, ["list", "switch", "create", "close", "selectBrowser"]);
+	assert.equal("browserSessionId" in tabProperties, false);
 	assert.match(tabs.description ?? "", /Start automation with browser_tabs list/);
 	const native = tools.find((tool) => tool.name === "browser_command")!;
 	const nativeProperties = native.inputSchema.properties as Record<string, Record<string, unknown>>;
 	const commandProperties = nativeProperties.command.properties as Record<string, Record<string, unknown>>;
-		assert.ok((commandProperties.cmd.enum as string[]).includes("network.list"));
-		assert.ok((commandProperties.cmd.enum as string[]).includes("transfer.download"));
-		assert.ok((commandProperties.cmd.enum as string[]).includes("transfer.upload"));
-		assert.equal((commandProperties.cmd.enum as string[]).includes("tabs"), false);
-		assert.equal((commandProperties.cmd.enum as string[]).includes("batch"), false);
+	assert.equal(commandProperties.cmd.enum, undefined);
+	assert.equal(commandProperties.cmd.type, "string");
 });
 
 test("MCP pairing tokens are client/project-scoped and pinned for the process", async () => {
@@ -98,7 +95,10 @@ test("MCP resources expose the native catalog and project-scoped artifacts", asy
 	assert.equal(mcpResources()[0]?.uri, "browser-pilot://native-commands");
 	const native = await readMcpResource("browser-pilot://native-commands");
 	assert.match(resourceText(native), /"network\.list"/);
-	assert.equal(Object.hasOwn((JSON.parse(resourceText(native)) as { commands: object }).commands, "tabs"), false);
+	const nativeCommands = (JSON.parse(resourceText(native)) as { commands: object }).commands;
+	assert.equal(Object.hasOwn(nativeCommands, "tabs"), false);
+	assert.equal(Object.hasOwn(nativeCommands, "batch"), false);
+	assert.equal(Object.hasOwn(nativeCommands, "transfer.download"), true);
 
 	const root = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-mcp-"));
 	try {

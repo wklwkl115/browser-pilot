@@ -610,7 +610,6 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		});
 		const summaryData = registerScanEntityRefs(bootstrapped.data, entityContext);
 		const summary = summarizeScanData(summaryData, bridge.tabs ?? [], {
-			detailLevel: "summary",
 			maxChars,
 			entityContext,
 		});

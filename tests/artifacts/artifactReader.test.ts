@@ -69,33 +69,6 @@ test("pick keeps one aligned entry per requested path", async () => {
 	assert.equal(value["data.missing"].notFound, true);
 });
 
-test("multi-artifact search keeps per-match file paths", async () => {
-	const { cwd, root } = makeArtifactRoot();
-	writeFileSync(path.join(root, "a.txt"), "needle-a\n", "utf8");
-	writeFileSync(path.join(root, "b.txt"), "needle-b\n", "utf8");
-	const result = expectMode(await readBrowserArtifact({ mode: "search", root: ".browser-pilot/artifacts", glob: "*.txt", query: "needle" }, { cwd }), "search");
-	assert.equal(result.matches, 2);
-	assert.ok(result.snippets.every((snippet) => typeof snippet.path === "string" && snippet.path.endsWith(".txt")));
-});
-
-test("sample mode keeps the current head-only window when sections collapse", async () => {
-	const { cwd, root } = makeArtifactRoot();
-	writeFileSync(path.join(root, "sample.txt"), "zero\none\ntwo\nthree\n", "utf8");
-	const result = expectMode(await readBrowserArtifact({ path: ".browser-pilot/artifacts/sample.txt", mode: "sample", offset: 5, limit: 8 }, { cwd }), "sample");
-	assert.equal((result.summary.sample as Record<string, unknown>).returnedSections, 1);
-	assert.equal(result.snippets[0]?.section, "head");
-	assert.match(result.snippets[0]?.text ?? "", /^1: zero/m);
-});
-
-test("non-search multi-artifact params keep their coded rejection", async () => {
-	const { cwd, root } = makeArtifactRoot();
-	writeFileSync(path.join(root, "sample.txt"), "alpha\n", "utf8");
-	await assert.rejects(
-		readBrowserArtifact({ path: ".browser-pilot/artifacts/sample.txt", mode: "text", glob: "*.txt" }, { cwd }),
-		(error: unknown) => error instanceof ArtifactReaderError && error.code === "ARTIFACT_MULTI_SEARCH_MODE_INVALID",
-	);
-});
-
 test("invalid regex search keeps the current coded error", async () => {
 	const { cwd, root } = makeArtifactRoot();
 	writeFileSync(path.join(root, "sample.txt"), "alpha\nneedle here\nomega\n", "utf8");
@@ -117,27 +90,12 @@ test("missing jsonPath reports nearest-path metadata", async () => {
 
 test("single-line search windows preserve truncation metadata", async () => {
 	const { cwd, root } = makeArtifactRoot();
-	writeFileSync(path.join(root, "long.txt"), `prefix ${"x".repeat(500)} suffix\n`, "utf8");
-	const result = expectMode(await readBrowserArtifact({ path: ".browser-pilot/artifacts/long.txt", mode: "search", query: "xxx", maxChars: 20 }, { cwd }), "search");
+	writeFileSync(path.join(root, "long.txt"), `${"x".repeat(500)}needle${"y".repeat(9_000)}\n`, "utf8");
+	const result = expectMode(await readBrowserArtifact({ path: ".browser-pilot/artifacts/long.txt", mode: "search", query: "needle", contextChars: 80 }, { cwd }), "search");
 	assert.equal(result.snippets[0]?.truncated, true);
 	assert.equal(result.snippets[0]?.truncatedBefore, true);
 	assert.equal(result.snippets[0]?.truncatedAfter, true);
-	assert.match(result.snippets[0]?.text ?? "", /1: xxx/);
-});
-
-test("single-line sample windows preserve truncation metadata", async () => {
-	const { cwd, root } = makeArtifactRoot();
-	writeFileSync(path.join(root, "long.txt"), `${"a".repeat(120)}${"b".repeat(120)}${"c".repeat(120)}\n`, "utf8");
-	const result = expectMode(await readBrowserArtifact({ path: ".browser-pilot/artifacts/long.txt", mode: "sample", contextChars: 80, maxChars: 500 }, { cwd }), "sample");
-	assert.equal((result.summary.sample as Record<string, unknown>).singleLineWindows, true);
-	assert.equal(result.snippets.length, 3);
-	assert.deepEqual(result.snippets.map((snippet) => snippet.section), ["head", "middle", "tail"]);
-	assert.equal(result.snippets[0]?.truncatedBefore, false);
-	assert.equal(result.snippets[0]?.truncatedAfter, true);
-	assert.equal(result.snippets[1]?.truncatedBefore, true);
-	assert.equal(result.snippets[1]?.truncatedAfter, true);
-	assert.equal(result.snippets[2]?.truncatedBefore, true);
-	assert.equal(result.snippets[2]?.truncatedAfter, false);
+	assert.match(result.snippets[0]?.text ?? "", /1: .*needle/);
 });
 
 test("missing artifact reads keep coded not-found recovery metadata", async () => {
@@ -160,14 +118,16 @@ test("invalid json artifacts keep coded metadata without leaking content", async
 	);
 });
 
-test("absolute artifact reads are explicit while relative paths stay scoped to cwd", async () => {
+test("absolute and relative artifact reads stay scoped to cwd", async () => {
 	const first = makeArtifactRoot();
 	const second = makeArtifactRoot();
-	const absolutePath = path.join(first.root, "shared.txt");
-	writeFileSync(absolutePath, "first cwd artifact\n", "utf8");
-	writeFileSync(path.join(second.root, "shared.txt"), "second cwd artifact\n", "utf8");
+	const outsidePath = path.join(first.root, "shared.txt");
+	const insidePath = path.join(second.root, "shared.txt");
+	writeFileSync(outsidePath, "first cwd artifact\n", "utf8");
+	writeFileSync(insidePath, "second cwd artifact\n", "utf8");
 	const relative = expectMode(await readBrowserArtifact({ path: ".browser-pilot/artifacts/shared.txt" }, { cwd: second.cwd }), "text");
 	assert.match(relative.snippets[0]?.text ?? "", /second cwd/);
-	const absolute = expectMode(await readBrowserArtifact({ path: absolutePath }, { cwd: second.cwd }), "text");
-	assert.match(absolute.snippets[0]?.text ?? "", /first cwd/);
+	const absolute = expectMode(await readBrowserArtifact({ path: insidePath }, { cwd: second.cwd }), "text");
+	assert.match(absolute.snippets[0]?.text ?? "", /second cwd/);
+	await assert.rejects(readBrowserArtifact({ path: outsidePath }, { cwd: second.cwd }), (error: unknown) => error instanceof ArtifactReaderError && error.code === "ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT");
 });

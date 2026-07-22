@@ -10,7 +10,6 @@ export const MIN_CONTENT_TIMEOUT_MS = 100;
 export type ObserveToolParams = {
 	browserSessionId?: string;
 	targetRef?: string;
-	detailLevel?: string;
 	outputPath?: string;
 	timeoutMs?: number;
 	maxChars?: number;

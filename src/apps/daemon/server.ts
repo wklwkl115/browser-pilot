@@ -28,7 +28,6 @@ import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.
 import { daemonVersion } from "./packageInfo.js";
 import { createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
 import * as authStore from "./authStore.js";
-import { TenantLeaseRegistry } from "./tenantLease.js";
 import {
 	AUTH_ERROR_CODES,
 	PAIRING_TOKEN_HEADER,
@@ -70,7 +69,7 @@ export interface StartDaemonOptions {
 
 type JsonSender = (status: number, obj: Record<string, unknown>) => void;
 
-export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName" | "tenantLease" | "usageEnabled"> & {
+export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName" | "usageEnabled"> & {
 	req: http.IncomingMessage;
 	send: JsonSender;
 	body: Record<string, unknown>;
@@ -91,7 +90,6 @@ type PairingAuthorization =
 type DaemonControlContext = {
 	token: string;
 	bridgeServer: BrowserBridgeServer;
-	tenantLease: TenantLeaseRegistry;
 	ensureStarted: EnsureStarted;
 	toolByName: Map<string, CommandDefinition>;
 	toolCount: number;
@@ -224,12 +222,10 @@ function authorizePairing(req: http.IncomingMessage): PairingAuthorization {
 	return { ok: true, record: rec };
 }
 
-function authorizeInvoke(req: http.IncomingMessage, tenantLease: TenantLeaseRegistry): { ok: true; ownerId: string } | { ok: false; status: number; body: Record<string, unknown> } {
+function authorizeInvoke(req: http.IncomingMessage): { ok: true; ownerId: string } | { ok: false; status: number; body: Record<string, unknown> } {
 	if (process.env[ENV_REQUIRE_PAIRING] !== "1" && !authStore.hasActiveAgents()) return { ok: true, ownerId: "local-mcp" };
 	const auth = authorizePairing(req);
 	if (!auth.ok) return auth;
-	const held = tenantLease.ensureHeld(auth.record.pairingId, auth.record.label);
-	if (!held.ok) return { ok: false, status: 409, body: { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: held.heldBy } };
 	authStore.touch(auth.record.pairingId);
 	return { ok: true, ownerId: auth.record.pairingId };
 }
@@ -271,10 +267,10 @@ async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean, 
 	}
 }
 
-export async function handleInvokeRoute({ req, send, body, toolByName, tenantLease, usageEnabled, signal }: InvokePipelineContext): Promise<void> {
+export async function handleInvokeRoute({ req, send, body, toolByName, usageEnabled, signal }: InvokePipelineContext): Promise<void> {
 	const prepared = prepareInvoke(body, toolByName);
 	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
-	const auth = authorizeInvoke(req, tenantLease);
+	const auth = authorizeInvoke(req);
 	if (!auth.ok) return send(auth.status, auth.body);
 	return send(200, await executeInvoke(prepared, usageEnabled, signal));
 }
@@ -355,27 +351,6 @@ async function handlePairWaitRoute(context: DaemonControlContext, req: http.Inco
 	return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
 }
 
-async function handleLeaseRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {
-	const auth = authorizePairing(req);
-	if (!auth.ok) return send(auth.status, auth.body);
-	const { action, ttlMs } = await readBody(req);
-	if (action === "acquire") {
-		const result = context.tenantLease.acquire(auth.record.pairingId, auth.record.label, typeof ttlMs === "number" ? ttlMs : undefined);
-		return result.ok
-			? send(200, { ok: true, lease: result.lease })
-			: send(409, { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: result.heldBy });
-	}
-	if (action === "release") {
-		context.tenantLease.release(auth.record.pairingId);
-		return send(200, { ok: true });
-	}
-	if (action === "status") {
-		const lease = context.tenantLease.status();
-		return send(200, { ok: true, lease, self: lease?.pairingId === auth.record.pairingId });
-	}
-	return send(400, { ok: false, error: `unknown lease action: ${String(action)}` });
-}
-
 function scheduleShutdown(context: DaemonControlContext): void {
 	setImmediate(() => {
 		let completed = false;
@@ -420,7 +395,7 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 					const body = await readBody(req);
 					const invocation = invocationAbortController(req, res);
 					try {
-						return await handleInvokeRoute({ req, send, body, toolByName: context.toolByName, tenantLease: context.tenantLease, usageEnabled: context.usageEnabled, signal: invocation.signal });
+						return await handleInvokeRoute({ req, send, body, toolByName: context.toolByName, usageEnabled: context.usageEnabled, signal: invocation.signal });
 					} finally {
 						invocation.cleanup();
 					}
@@ -429,12 +404,9 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 				return await handlePairStartRoute(context, req, send);
 			case "POST /pair/wait":
 				return await handlePairWaitRoute(context, req, send);
-			case "POST /lease":
-				return await handleLeaseRoute(context, req, send);
 			case "POST /revoke": {
 				const { pairingId } = await readBody(req);
 				if (!authStore.revoke(String(pairingId))) return send(404, { ok: false, code: AUTH_ERROR_CODES.pairingNotFound });
-				context.tenantLease.release(String(pairingId));
 				context.bridgeServer.broadcastPairedAgents(context.composeSummaries());
 				return send(200, { ok: true, revoked: pairingId });
 			}
@@ -456,21 +428,17 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 
 	const bridgeServer = new BrowserBridgeServer();
 
-	const tenantLease = new TenantLeaseRegistry();
-
 	function composeSummaries(): PairingSummary[] {
 		return authStore.listAgents().map((r) => ({
 			pairingId: r.pairingId,
 			label: r.label,
 			status: r.status,
 			lastSeenAt: r.lastSeenAt,
-			leaseHeld: tenantLease.holderPairingId() === r.pairingId,
 		}));
 	}
 
 	bridgeServer.onRevokeRequest((pairingId: string) => {
 		authStore.revoke(pairingId);
-		tenantLease.release(pairingId);
 		bridgeServer.broadcastPairedAgents(composeSummaries());
 	});
 
@@ -507,7 +475,6 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	const close = async (): Promise<void> => {
 		if (closing) return;
 		closing = true;
-		tenantLease.stop();
 		await new Promise<void>((resolve) => {
 			server.close(() => resolve());
 			server.closeIdleConnections?.();
@@ -522,7 +489,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		if (writeLock) removeLockfile();
 	};
 
-	const controlContext: DaemonControlContext = { token, bridgeServer, tenantLease, ensureStarted, toolByName, toolCount, contractIdentity, usageEnabled, pendingPairResults, composeSummaries, draining: false, close, onShutdown: options.onShutdown };
+	const controlContext: DaemonControlContext = { token, bridgeServer, ensureStarted, toolByName, toolCount, contractIdentity, usageEnabled, pendingPairResults, composeSummaries, draining: false, close, onShutdown: options.onShutdown };
 	const server = http.createServer((req, res) => void handleControlRequest(controlContext, req, res));
 
 	await new Promise<void>((resolve, reject) => {

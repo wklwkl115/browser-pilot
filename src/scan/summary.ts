@@ -25,7 +25,6 @@ function summaryTable<T>(items: T[], columns: SummaryColumn<T>[], limit = 20): S
 }
 
 export type ScanSummaryOptions = {
-	detailLevel?: unknown;
 	maxChars?: number;
 	entityContext?: Partial<ScanEntityContext>;
 	scanEntities?: ReturnType<typeof buildScanEntities>;
@@ -397,19 +396,11 @@ function textSignals(candidates: TextSignalCandidate[], actionNames: Set<string>
 
 function scanBudget(options: ScanSummaryOptions): number {
 	const maxChars = Number(options.maxChars || 0);
-	const level = String(options.detailLevel || "summary").toLowerCase();
-	const ratio = level === "preview" ? 0.35 : 0.25;
-	const fallback = level === "preview" ? 5_200 : 4_200;
-	return maxChars > 0 ? clamp(Math.floor(maxChars * ratio), 2_200, level === "preview" ? 8_000 : 5_600) : fallback;
+	return maxChars > 0 ? clamp(Math.floor(maxChars * 0.25), 2_200, 5_600) : 4_200;
 }
 
-function limitSets(options: ScanSummaryOptions): Limits[] {
-	const preview = String(options.detailLevel || "summary").toLowerCase() === "preview";
-	return preview ? [
-		{ primaryActions: 12, actionRows: 8, lists: 5, listRows: 5, mediaRows: 10, textSignals: 8, headings: 8, interactive: 10, textPreviewChars: 520 },
-		{ primaryActions: 10, actionRows: 6, lists: 4, listRows: 4, mediaRows: 8, textSignals: 6, headings: 6, interactive: 6, textPreviewChars: 360 },
-		{ primaryActions: 6, actionRows: 4, lists: 3, listRows: 3, mediaRows: 5, textSignals: 4, headings: 4, interactive: 3, textPreviewChars: 180 },
-	] : [
+function limitSets(): Limits[] {
+	return [
 		{ primaryActions: 10, actionRows: 6, lists: 4, listRows: 4, mediaRows: 8, textSignals: 6, headings: 6, interactive: 6, textPreviewChars: 360 },
 		{ primaryActions: 8, actionRows: 5, lists: 3, listRows: 3, mediaRows: 6, textSignals: 5, headings: 4, interactive: 4, textPreviewChars: 240 },
 		{ primaryActions: 5, actionRows: 3, lists: 2, listRows: 2, mediaRows: 4, textSignals: 3, headings: 3, interactive: 2, textPreviewChars: 120 },
@@ -688,7 +679,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 
 export function summarizeScanData(data: PageWorldScanBundleV1, tabs: unknown[] = [], options: ScanSummaryOptions = {}): Summary {
 	const budget = scanBudget(options);
-	const sets = limitSets(options);
+	const sets = limitSets();
 	const prepared = prepareScanSummary(data, tabs, options);
 	for (const [index, limits] of sets.entries()) {
 		const omitted = index === 0 ? [] : ["interactive", "textPreview", "mediaCandidates", "rows"];

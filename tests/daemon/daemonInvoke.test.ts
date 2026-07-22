@@ -7,7 +7,6 @@ import path from "node:path";
 import { Type } from "typebox";
 import { handleInvokeRoute, startDaemon } from "../../src/apps/daemon/server.ts";
 import { controlRequest, lockfilePath, readLockfile, removeLockfile, writeLockfile, type DaemonInfo } from "../../src/apps/daemon/daemonControl.ts";
-import { TenantLeaseRegistry } from "../../src/apps/daemon/tenantLease.ts";
 import { AUTH_ERROR_CODES, AUTH_STORE_VERSION, ENV_AUTH_STATE_DIR, PAIRING_TOKEN_HEADER } from "../../src/apps/daemon/authTypes.ts";
 import * as authStore from "../../src/apps/daemon/authStore.ts";
 import { strictCommandParameters } from "../../src/commands/commandShared.ts";
@@ -47,7 +46,6 @@ function request(headers: Record<string, string> = {}) {
 async function invoke(options: {
 	body: Record<string, unknown>;
 	toolByName: Map<string, CommandDefinition>;
-	tenantLease?: TenantLeaseRegistry;
 	headers?: Record<string, string>;
 }) {
 	let response: { status: number; json: Record<string, unknown> } | undefined;
@@ -58,7 +56,6 @@ async function invoke(options: {
 		},
 		body: options.body,
 		toolByName: options.toolByName,
-		tenantLease: options.tenantLease ?? new TenantLeaseRegistry(),
 		usageEnabled: false,
 	});
 	assert.ok(response);
@@ -175,20 +172,6 @@ test("daemon invoke rejects revoked pairing token", async () => {
 	assert.equal(res.json.code, AUTH_ERROR_CODES.pairingRevoked);
 });
 
-test("daemon invoke reports lease busy for another active agent", async () => {
-	isolateAuthStore();
-	const holder = await activePairing("holder");
-	const contender = await activePairing("contender");
-	const tenantLease = new TenantLeaseRegistry();
-	const acquired = tenantLease.acquire(holder.pairingId, "holder", 30_000);
-	assert.equal(acquired.ok, true);
-	const res = await invoke({ body: { tool: "browser_success", params: { message: "ok" } }, toolByName: tools(), tenantLease, headers: { [PAIRING_TOKEN_HEADER]: contender.token } });
-	assert.equal(res.status, 409);
-	assert.equal(res.json.code, AUTH_ERROR_CODES.leaseBusy);
-	assert.deepEqual((res.json.heldBy as Record<string, unknown>).label, "holder");
-	tenantLease.stop();
-});
-
 test("daemon invoke returns unknown tool response before authorization", async () => {
 	isolateAuthStore();
 	await activePairing("agent-a");
@@ -300,40 +283,6 @@ test("daemon auth store treats damaged persisted agent lists as fresh state", ()
 	assert.equal(authStore.authStorePath().startsWith(dir), true);
 });
 
-test("tenant lease expires, transfers, and ignores non-holder release", () => {
-	const tenantLease = new TenantLeaseRegistry();
-	try {
-		const first = tenantLease.acquire("pair-a", "agent-a", -1);
-		assert.equal(first.ok, true);
-		assert.equal(tenantLease.status(), null);
-		const second = tenantLease.acquire("pair-b", "agent-b", 30_000);
-		assert.equal(second.ok, true);
-		tenantLease.release("pair-a");
-		assert.equal(tenantLease.status()?.pairingId, "pair-b");
-		tenantLease.release("pair-b");
-		assert.equal(tenantLease.status(), null);
-	} finally {
-		tenantLease.stop();
-	}
-});
-
-test("tenant lease refresh preserves holder lease id and blocks contenders", () => {
-	const tenantLease = new TenantLeaseRegistry();
-	try {
-		const first = tenantLease.acquire("pair-a", "agent-a", 30_000);
-		assert.equal(first.ok, true);
-		const refreshed = tenantLease.acquire("pair-a", "agent-a", 60_000);
-		assert.equal(refreshed.ok, true);
-		assert.equal(refreshed.lease.leaseId, first.lease.leaseId);
-		assert.equal(refreshed.lease.since, first.lease.since);
-		const contender = tenantLease.acquire("pair-b", "agent-b", 30_000);
-		assert.equal(contender.ok, false);
-		assert.equal(contender.heldBy.pairingId, "pair-a");
-	} finally {
-		tenantLease.stop();
-	}
-});
-
 test("daemon control lockfile treats missing and malformed state as absent", () => {
 	isolateDaemonState();
 	assert.equal(readLockfile(), undefined);
@@ -353,46 +302,6 @@ test("daemon control lockfile writes and removes token-bearing singleton state",
 	removeLockfile();
 	assert.equal(existsSync(lockfilePath()), false);
 	removeLockfile();
-});
-
-test("daemon lease route validates actions and avoids echoing pairing tokens or local paths", async () => {
-	isolateAuthStore();
-	const pair = await activePairing("route-agent");
-	const handle = await startDaemonForRouteTest();
-	try {
-		const secret = `${pair.token}-secret-suffix`;
-		const invalid = await controlRequest(handle, "POST", "/lease", { action: "invalid", stateDir: authStore.authStateDir() }, 1_000, { pairingToken: secret });
-		const rawInvalid = JSON.stringify(invalid.json);
-		assert.equal(invalid.status, 401);
-		assert.equal(rawInvalid.includes(secret), false);
-		assert.equal(rawInvalid.includes(authStore.authStateDir()), false);
-		const unknown = await controlRequest(handle, "POST", "/lease", { action: "invalid" }, 1_000, { pairingToken: pair.token });
-		assert.equal(unknown.status, 400);
-		assert.deepEqual(unknown.json, { ok: false, error: "unknown lease action: invalid" });
-	} finally {
-		await handle.close();
-	}
-});
-
-test("daemon lease route transfers lease after release", async () => {
-	isolateAuthStore();
-	const holder = await activePairing("holder");
-	const contender = await activePairing("contender");
-	const handle = await startDaemonForRouteTest();
-	try {
-		const acquired = await controlRequest(handle, "POST", "/lease", { action: "acquire", ttlMs: 30_000 }, 1_000, { pairingToken: holder.token });
-		assert.equal(acquired.status, 200);
-		const busy = await controlRequest(handle, "POST", "/lease", { action: "acquire", ttlMs: 30_000 }, 1_000, { pairingToken: contender.token });
-		assert.equal(busy.status, 409);
-		assert.equal(busy.json?.code, AUTH_ERROR_CODES.leaseBusy);
-		const released = await controlRequest(handle, "POST", "/lease", { action: "release" }, 1_000, { pairingToken: holder.token });
-		assert.equal(released.status, 200);
-		const transferred = await controlRequest(handle, "POST", "/lease", { action: "acquire", ttlMs: 30_000 }, 1_000, { pairingToken: contender.token });
-		assert.equal(transferred.status, 200);
-		assert.equal(((transferred.json?.lease as Record<string, unknown>)?.pairingId), contender.pairingId);
-	} finally {
-		await handle.close();
-	}
 });
 
 test("daemon status, connect, and unknown routes preserve control contracts", async () => {
@@ -438,7 +347,7 @@ test("daemon pairing routes preserve pending, listing, and revoke contracts", as
 
 		const before = await controlRequest(handle, "GET", "/pairings", undefined, 1_000);
 		assert.equal(before.status, 200);
-		assert.deepEqual((before.json?.agents as Array<Record<string, unknown>>).map(({ pairingId, status, leaseHeld }) => ({ pairingId, status, leaseHeld })), [{ pairingId: pair.pairingId, status: "active", leaseHeld: false }]);
+		assert.deepEqual((before.json?.agents as Array<Record<string, unknown>>).map(({ pairingId, status }) => ({ pairingId, status })), [{ pairingId: pair.pairingId, status: "active" }]);
 
 		const missing = await controlRequest(handle, "POST", "/revoke", { pairingId: "missing" }, 1_000);
 		assert.equal(missing.status, 404);

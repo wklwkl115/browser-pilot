@@ -5,7 +5,7 @@ import { BrowserBridgeError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 import { withBrowserOperation } from "./browserOperation.js";
-import { artifactFallbackName, commandMaxChars, commandTimeoutMs, defineBrowserCommand, jsonCommandResult, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
+import { artifactFallbackName, defineBrowserCommand, jsonCommandResult, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import type { ValidationIssue } from "./commandDefinition.js";
@@ -14,13 +14,7 @@ type ExecuteParams = {
 	script?: string;
 	refs?: Record<string, string>;
 	readOnly?: unknown;
-	browserSessionId?: string;
 	targetRef?: string;
-	detailLevel?: string;
-	outputPath?: string;
-	timeoutMs?: number;
-	maxChars?: number;
-	redact?: boolean;
 };
 
 function detectCommandLikeScript(script: string): boolean {
@@ -69,7 +63,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
 			"Pass observed bp-ref URIs through refs; each entry is available as browserPilot.refs.<name>, and its owner selects the tab automatically. Use browser_command input.ref for trusted native input.",
-			"Use readOnly:true for queries; mutating calls are serialized per target and bounded by timeoutMs.",
+			"Use readOnly:true for queries; mutating calls are serialized per target and bounded by the execution deadline.",
 		],
 		parameters: strictCommandParameters({
 			script: Type.String({ description: "JavaScript to execute." }),
@@ -87,11 +81,9 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 				const input = prepareExecute(params);
 				const prepared = prepareExecuteStdlib(input.script, { refs: input.refs });
 				const server = await ensureStarted();
-				const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
-				const maxChars = commandMaxChars(params, "browser_execute");
-				const requestedBrowserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
+				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
 				const rawTarget = targetTabId(params as { targetRef?: string });
-				const target = resolveRefExecutionTarget(server, prepared.targetRefs, { browserSessionId: requestedBrowserSessionId, rawTarget });
+				const target = resolveRefExecutionTarget(server, prepared.targetRefs, { rawTarget });
 				const result = await withBrowserOperation({
 					server,
 					browserSessionId: target.browserSessionId,
@@ -99,9 +91,8 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					timeoutMs,
 					signal,
 				}, ({ signal: operationSignal }) => executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal }));
-				return await jsonCommandResult(result, params, ctx, {
+				return await jsonCommandResult(result, {}, ctx, {
 					commandName: "browser_execute",
-					maxChars,
 					fallbackName: artifactFallbackName("execute-result"),
 					details: { mode: "javascript", refsBound: Object.keys(input.refs).length },
 				});

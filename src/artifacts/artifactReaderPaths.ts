@@ -16,23 +16,12 @@ export function allowedArtifactRoot(ctx: BrowserArtifactContext): string {
 export function resolveInputPath(ctx: BrowserArtifactContext, requested: unknown): string {
 	const text = String(requested || "").trim();
 	if (!text) throw new ArtifactReaderError("ARTIFACT_PATH_REQUIRED", "browser_artifact requires path");
-	if (path.isAbsolute(text)) return path.normalize(text);
-	const base = path.resolve(ctx?.cwd || process.cwd());
-	const target = path.resolve(base, text);
-	const allowed = allowedArtifactRoot(ctx);
-	if (!isInsideOrEqual(allowed, target)) {
-		throw new ArtifactReaderError("ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT", "Relative browser_artifact paths must stay under .browser-pilot/artifacts; use an absolute path for explicit files", { requested: text, allowedRoot: allowed });
-	}
-	return target;
-}
-
-export function resolveSearchRoot(ctx: BrowserArtifactContext, requested: unknown): string {
-	const allowed = allowedArtifactRoot(ctx);
-	const text = String(requested || "").trim();
-	if (!text) return allowed;
 	const base = path.resolve(ctx?.cwd || process.cwd());
 	const target = path.isAbsolute(text) ? path.normalize(text) : path.resolve(base, text);
-	if (!isInsideOrEqual(allowed, target)) throw new ArtifactReaderError("ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT", "browser_artifact root must stay under .browser-pilot/artifacts", { requested: text, allowedRoot: allowed });
+	const allowed = allowedArtifactRoot(ctx);
+	if (!isInsideOrEqual(allowed, target)) {
+		throw new ArtifactReaderError("ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT", "browser_artifact paths must stay under .browser-pilot/artifacts", { requested: text, allowedRoot: allowed });
+	}
 	return target;
 }
 
@@ -46,10 +35,10 @@ export async function statArtifact(absPath: string, requested: unknown): Promise
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException)?.code;
 		if (code === "ENOENT" || code === "ENOTDIR") {
-			throw new ArtifactReaderError("ARTIFACT_NOT_FOUND", "Artifact path was not found", {
-				...publicRequestedArtifactPath(requested),
+				throw new ArtifactReaderError("ARTIFACT_NOT_FOUND", "Artifact path was not found", {
+					...publicRequestedArtifactPath(requested),
 					recovery: { nextActions: ["call browser_artifact with mode=inspect and path=<saved.path>", "browser_observe"] },
-			});
+				});
 		}
 		throw error;
 	}

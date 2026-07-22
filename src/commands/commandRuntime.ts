@@ -27,11 +27,9 @@ export type CommandResultContext = { cwd?: string; omitTransportDetails?: boolea
 export type StandardToolParams = {
 	browserSessionId?: string;
 	targetRef?: string;
-	detailLevel?: string;
 	outputPath?: string;
 	timeoutMs?: number;
 	maxChars?: number;
-	redact?: boolean;
 };
 
 type JsonCommandResultOptions = {

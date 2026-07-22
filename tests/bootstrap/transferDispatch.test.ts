@@ -13,6 +13,7 @@ const downloadCalls: JsonRecord[] = [];
 const cdpCalls: Array<{ tabId: number; method: string; params: JsonRecord; options: JsonRecord }> = [];
 const evalPlans: EvalPlan[] = [];
 let downloadId = 100;
+let nextDownloadDanger = "safe";
 
 function event<T extends (...args: never[]) => unknown>(listeners: Set<T>) {
 	return {
@@ -42,7 +43,7 @@ const chromeStub = {
 		download(options: JsonRecord, callback: (id?: number) => void) {
 			downloadCalls.push({ ...options });
 			const id = ++downloadId;
-			const item = completedDownload(id, String(options.url), typeof options.filename === "string" ? `C:\\Downloads\\${options.filename}` : undefined);
+			const item = { ...completedDownload(id, String(options.url), typeof options.filename === "string" ? `C:\\Downloads\\${options.filename}` : undefined), danger: nextDownloadDanger };
 			downloads.set(id, item);
 			for (const listener of downloadCreatedListeners) listener(item);
 			callback(id);
@@ -86,6 +87,7 @@ function reset(): void {
 	cdpCalls.length = 0;
 	evalPlans.length = 0;
 	downloadId = 100;
+	nextDownloadDanger = "safe";
 }
 
 test("transfer download completes direct URL and selector media paths", async () => {
@@ -115,6 +117,15 @@ test("transfer click uses extracted HTTP URL without arming a page-event wait", 
 	assert.equal(((result.data as JsonRecord).trigger as JsonRecord).directUrl, true);
 	assert.equal(debuggerListeners.size, 0);
 	assert.equal(cdpCalls.filter((call) => call.method === "Runtime.evaluate").length, 1);
+});
+
+test("transfer download fails immediately when Chrome requires confirmation", async () => {
+	reset();
+	nextDownloadDanger = "uncommon";
+	const result = await transfer.handleBrowserPilotTransferCommand("transfer.download", 7, { url: "https://example.test/uncommon.exe", timeoutMs: 500 });
+	assert.equal(result.ok, false);
+	assert.equal(result.error_code, "DOWNLOAD_BLOCKED_BY_BROWSER");
+	assert.equal((result.details as JsonRecord).danger, "uncommon");
 });
 
 test("transfer click matches the tab CDP event to a completed Chrome download", async () => {

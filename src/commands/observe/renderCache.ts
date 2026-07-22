@@ -6,7 +6,7 @@ import { isPageObservationV3, type PageObservationV3 } from "../../kernels/abml/
 type RenderCache = NonNullable<CommandPerceptionLedgerFrame["renderCache"]>;
 
 export function sessionDeltaEnabled(params: ObserveToolParams): boolean {
-	return params.fresh !== true && process.env.BROWSER_PILOT_SESSION_DELTA !== "0" && String(params.detailLevel || "summary") !== "full" && params.baseline === undefined;
+	return params.fresh !== true && process.env.BROWSER_PILOT_SESSION_DELTA !== "0" && params.baseline === undefined;
 }
 
 export function observeCacheTtlMs(): number {
@@ -28,31 +28,30 @@ function observeSessionDeltaCacheMarker(params: ObserveToolParams): string {
 	return sessionDeltaEnabled(params) ? "on" : "off";
 }
 
-function relevanceEnabled(params: ObserveToolParams): boolean {
-	return process.env.BROWSER_PILOT_RELEVANCE !== "0" && String(params.detailLevel || "summary") !== "full";
+function relevanceEnabled(): boolean {
+	return process.env.BROWSER_PILOT_RELEVANCE !== "0";
 }
 
 function observeIntent(params: ObserveToolParams): string | undefined {
 	return typeof params.intent === "string" && params.intent.trim() ? params.intent.trim() : undefined;
 }
 
-function observeRelevanceCacheMarker(params: ObserveToolParams): string {
-	return relevanceEnabled(params) ? "on" : "off";
+function observeRelevanceCacheMarker(): string {
+	return relevanceEnabled() ? "on" : "off";
 }
 
 function observeRelevanceDebugCacheMarker(): string {
 	return process.env.BROWSER_PILOT_RELEVANCE_DEBUG === "1" ? "on" : "off";
 }
 
-export function observeRenderParamsSignature(params: ObserveToolParams, detailLevel: string, maxChars: number, captureMaxChars: number): string {
+export function observeRenderParamsSignature(params: ObserveToolParams, maxChars: number, captureMaxChars: number): string {
 	const maxNodes = Number(params.maxNodes);
 	return JSON.stringify({
-		detailLevel,
 		maxChars,
 		captureMaxChars,
 		sessionDelta: observeSessionDeltaCacheMarker(params),
 		standingPerception: observeStandingPerceptionCacheMarker(),
-		relevance: observeRelevanceCacheMarker(params),
+		relevance: observeRelevanceCacheMarker(),
 		relevanceDebug: observeRelevanceDebugCacheMarker(),
 		includeIframes: params.includeIframes !== false,
 		...(Number.isFinite(maxNodes) ? { maxNodes } : {}),
@@ -93,15 +92,12 @@ function dirtyWindowClean(fingerprint: PageFingerprint): boolean {
 	return !!dirty && dirty.overflow !== true && dirty.roots.length === 0;
 }
 
-export function renderCacheMatches(frame: CommandPerceptionLedgerFrame | undefined, detailLevel: string, maxChars: number, paramsSignature: string, fingerprint: PageFingerprint | undefined, now = Date.now(), ttlMs = observeCacheTtlMs()): frame is CommandPerceptionLedgerFrame & { renderCache: RenderCache } {
+export function renderCacheMatches(frame: CommandPerceptionLedgerFrame | undefined, paramsSignature: string, fingerprint: PageFingerprint | undefined, now = Date.now(), ttlMs = observeCacheTtlMs()): frame is CommandPerceptionLedgerFrame & { renderCache: RenderCache } {
 	if (!frame?.pageFingerprint || !frame.renderCache || !fingerprint) return false;
 	if (ttlMs <= 0 || typeof frame.renderCache.renderedAt !== "number") return false;
 	const withinTtl = now - frame.renderCache.renderedAt <= ttlMs;
 	if (!withinTtl && !(standingPerceptionEnabled() && dirtyWindowClean(fingerprint))) return false;
 	return pageFingerprintMatches(frame.pageFingerprint, fingerprint)
-			&& frame.renderCache.mode === "scan"
-		&& frame.renderCache.detailLevel === detailLevel
-		&& frame.renderCache.maxChars === maxChars
 		&& frame.renderCache.paramsSignature === paramsSignature;
 }
 

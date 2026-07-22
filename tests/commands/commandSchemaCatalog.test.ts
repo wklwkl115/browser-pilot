@@ -12,7 +12,7 @@ function command(name: string) {
 	return definition;
 }
 
-test("public commands reject missing and unknown inputs", () => {
+test("public schemas reject unknown tool inputs without enumerating native commands", () => {
 	const execute = command("browser_execute");
 	assert.deepEqual(execute.validateArguments?.({ script: "document.title", readOnly: true }), []);
 	assert.deepEqual(execute.validateArguments?.({}), [{ code: "EXECUTE_SCRIPT_REQUIRED", path: "/script", message: "browser_execute requires script" }]);
@@ -22,7 +22,7 @@ test("public commands reject missing and unknown inputs", () => {
 	const invalid = validateCommandArgs(command("browser_command").parameters, { command: { cmd: "tabs" }, typo: true });
 	assert.equal(invalid.ok, false);
 	if (!invalid.ok) assert.match(invalid.error, /unknown parameter "typo"/);
-	assert.equal(validateCommandArgs(command("browser_command").parameters, { command: { cmd: "batch", commands: [] } }).ok, false);
+	assert.equal(validateCommandArgs(command("browser_command").parameters, { command: { cmd: "batch", commands: [] } }).ok, true);
 });
 
 test("input.ref public protocol requires an opaque ref instead of a private target", () => {
@@ -34,12 +34,10 @@ test("browser_observe rejects contradictory freshness inputs", () => {
 	assert.deepEqual(validateObserveArguments({ fresh: true, diff: true }), [{ code: "OBSERVE_FRESH_DIFF_CONFLICT", path: "/fresh", message: "browser_observe fresh:true cannot be combined with diff:true" }]);
 });
 
-test("browser_tabs advanced session actions pass the public validation boundary", () => {
+test("browser_tabs rejects removed session actions at the public validation boundary", () => {
 	const validation = validateBrowserCommandArguments(command("browser_tabs"), { action: "selectSession", browserSessionId: "session-1" });
-	assert.equal(validation.ok, true);
-	const missingSession = validateBrowserCommandArguments(command("browser_tabs"), { action: "selectSession" });
-	assert.equal(missingSession.ok, false);
-	if (!missingSession.ok) assert.match(missingSession.error, /requires browserSessionId/);
+	assert.equal(validation.ok, false);
+	if (!validation.ok) assert.match(validation.error, /browserSessionId.*removed/);
 });
 
 function pageIdentity(browserSessionId: string, tabId: number, pageEpoch = "page-1") {

@@ -77,8 +77,7 @@ export async function prepareScanSession(options: {
 	const scanScript = buildScanScript({ textOnly: false, maxChars: captureMaxChars, maxNodes: params.maxNodes, includeIframes: params.includeIframes });
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const effectiveTabId = tabId ?? bridge.defaultTabId;
-	const detailLevel = "summary";
-	const paramsSignature = observeRenderParamsSignature(params, detailLevel, maxChars, captureMaxChars);
+	const paramsSignature = observeRenderParamsSignature(params, maxChars, captureMaxChars);
 	const pageFingerprint = await readScanFingerprint({ server, params, effectiveTabId, timeoutMs, timings });
 	const pageIdentity = currentPageIdentity(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId }, pageFingerprint);
 	const plannedLedgerKey = perceptionLedgerKey(pageIdentity);
@@ -88,7 +87,6 @@ export async function prepareScanSession(options: {
 	const cachedResult = await tryRenderCacheHit({
 		server,
 		params,
-		detailLevel,
 		maxChars,
 		paramsSignature,
 		pageFingerprint,
@@ -111,7 +109,6 @@ export async function prepareScanSession(options: {
 		captureMaxChars,
 		scanScript,
 		ledgerFrame,
-		detailLevel,
 		paramsSignature,
 		pageFingerprint,
 		pageIdentity,

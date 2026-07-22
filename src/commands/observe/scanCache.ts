@@ -24,7 +24,6 @@ export function cachedObserveResultFromEnvelope(envelope: Record<string, unknown
 export async function tryRenderCacheHit(options: {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
-	detailLevel: string;
 	maxChars: number;
 	paramsSignature: string;
 	pageFingerprint: PageFingerprint | undefined;
@@ -38,8 +37,8 @@ export async function tryRenderCacheHit(options: {
 	onUpdate?: CommandOnUpdate;
 	observeTimings: ObserveTimingMetrics;
 }): Promise<BrowserTextCommandResult | undefined> {
-	const { server, params, detailLevel, maxChars, paramsSignature, pageFingerprint, ledgerFrame, plannedLedgerKey, effectiveTabId, resultParams, outputPath, browserSessionId, onUpdate } = options;
-	if (!ledgerFrame || !pageFingerprint || !renderCacheMatches(ledgerFrame, detailLevel, maxChars, paramsSignature, pageFingerprint) || typeof server.getObservationSnapshot !== "function") return undefined;
+	const { server, params, maxChars, paramsSignature, pageFingerprint, ledgerFrame, plannedLedgerKey, effectiveTabId, resultParams, outputPath, browserSessionId, onUpdate } = options;
+	if (!ledgerFrame || !pageFingerprint || !renderCacheMatches(ledgerFrame, paramsSignature, pageFingerprint) || typeof server.getObservationSnapshot !== "function") return undefined;
 
 	const priorPath = server.getObservationSnapshot(ledgerFrame.snapshotId)?.saved?.path;
 	if (!priorPath) return undefined;
@@ -50,7 +49,7 @@ export async function tryRenderCacheHit(options: {
 
 		const networkState = server.getKnownRecorderState?.("network", params.browserSessionId, effectiveTabId) ?? { active: false };
 		const hookState = server.getKnownRecorderState?.("hook", params.browserSessionId, effectiveTabId) ?? { active: false };
-			const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, outputPath, pageFingerprint.url, networkState.lastSeq, hookState.lastSeq);
+		const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, outputPath, pageFingerprint.url, networkState.lastSeq, hookState.lastSeq);
 		const { result } = await withTrackedOperation({
 			commandName: "browser_observe",
 			command: "scan",
@@ -97,7 +96,7 @@ export async function tryRenderCacheHit(options: {
 				capturedAt: snapshotMeta.capturedAt,
 				facts: ledgerFrame.facts,
 				pageFingerprint,
-					renderCache: { mode: "scan", detailLevel, maxChars, paramsSignature, renderedAt: ledgerFrame.renderCache.renderedAt },
+				renderCache: { paramsSignature, renderedAt: ledgerFrame.renderCache.renderedAt },
 				allocation: ledgerFrame.allocation,
 			});
 		}

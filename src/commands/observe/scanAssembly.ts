@@ -94,7 +94,6 @@ function buildBaseSummary(options: ScanAssemblyOptions, relevance: ObserveReleva
 	const { tabs, maxChars, summaryData, scanEntityContext, summaryScanEntities, browserSessionId, tabId, selectionVersion } = options;
 	return {
 		...summarizeScanData(summaryData, tabs, {
-			detailLevel: "summary",
 			maxChars,
 			entityContext: scanEntityContext,
 			scanEntities: summaryScanEntities,

@@ -1,17 +1,17 @@
 import { stableJson, tryJson } from "../utils/json.js";
 import { getJsonPath, parseJsonPath, type JsonPathToken } from "../utils/jsonPath.js";
-import { asPositiveInt } from "../utils/params.js";
 import { projectJsonValue } from "../kernels/evidence/distill/projection.js";
 import { ArtifactReaderError, type BrowserArtifactParams } from "./artifactReaderShared.js";
 import { positiveIntParam } from "./artifactReaderLineUtils.js";
 
 const JSON_INLINE_STRING_CHARS = 800;
 const JSON_STRING_WINDOW_MAX_CHARS = 100_000;
+const JSON_READ_MAX_CHARS = 8_000;
 
 function jsonStringWindow(value: string, params: BrowserArtifactParams): unknown {
 	if (params.offset === undefined && params.limit === undefined && value.length <= JSON_INLINE_STRING_CHARS) return value;
 	const offset = Math.max(0, Math.min(value.length, Math.floor(Number(params.offset || 0))));
-	const limit = positiveIntParam(params.limit, asPositiveInt(params.maxChars, 8_000), 1, JSON_STRING_WINDOW_MAX_CHARS);
+	const limit = positiveIntParam(params.limit, JSON_READ_MAX_CHARS, 1, JSON_STRING_WINDOW_MAX_CHARS);
 	const end = Math.max(offset, Math.min(value.length, offset + limit));
 	return { type: "string", text: value.slice(offset, end), offset, limit, nextOffset: end < value.length ? end : null, originalLength: value.length, truncated: end < value.length || offset > 0, truncatedBefore: offset > 0, truncatedAfter: end < value.length };
 }
@@ -35,7 +35,7 @@ function compactJsonValue(value: unknown, params: BrowserArtifactParams, depth =
 function compactJsonValueForArtifact(value: unknown, params: BrowserArtifactParams, jsonPath?: string): unknown {
 	const compact = compactJsonValue(value, params);
 	if (typeof value === "string") return compact;
-	const projection = projectJsonValue(value, { jsonPath, offset: params.offset, limit: params.limit, maxChars: asPositiveInt(params.maxChars, 8_000) });
+	const projection = projectJsonValue(value, { jsonPath, offset: params.offset, limit: params.limit, maxChars: JSON_READ_MAX_CHARS });
 	if (!projection) return compact;
 	const offset = Math.max(0, Math.floor(Number(params.offset || 0)));
 	const limit = Math.max(1, Math.floor(Number(params.limit ?? (Array.isArray(value) ? Math.max(1, value.length - offset) : 40))));

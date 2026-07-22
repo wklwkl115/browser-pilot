@@ -1,9 +1,8 @@
 import { canonicalBridgeCommand, getNativeCommandProtocolSchema, type BridgeCommand } from "../types/nativeProtocol.js";
-import { nativeCommandToolMetadata } from "./nativeActionMetadata.js";
 
 const nativeCommandOwners: Readonly<Record<string, string>> = {
 	tabs: "browser_tabs",
-	[nativeCommandToolMetadata.browser_screenshot.command]: "browser_screenshot",
+	"screenshot.capture": "browser_screenshot",
 };
 
 export function nativeCommandOwner(command: BridgeCommand): string | undefined {
@@ -13,9 +12,14 @@ export function nativeCommandOwner(command: BridgeCommand): string | undefined {
 
 export function publicNativeCommandNames(): string[] {
 	const schema = getNativeCommandProtocolSchema();
-	return Object.entries(schema.commands)
-		.filter(([cmd, spec]) => cmd !== "batch" && spec.internal !== true && !nativeCommandOwner({ cmd }))
-		.map(([cmd]) => cmd);
+	return Object.keys(schema.commands).filter((cmd) => isPublicNativeCommand({ cmd }));
+}
+
+export function isPublicNativeCommand(command: BridgeCommand): boolean {
+	const schema = getNativeCommandProtocolSchema();
+	const canonical = canonicalBridgeCommand(String(command.cmd || ""), schema);
+	const spec = schema.commands[canonical];
+	return canonical !== "batch" && spec !== undefined && spec.internal !== true && !nativeCommandOwner({ cmd: canonical });
 }
 
 export function isNativeWriteCommand(command: BridgeCommand): boolean {

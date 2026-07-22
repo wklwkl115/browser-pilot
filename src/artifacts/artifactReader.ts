@@ -1,15 +1,15 @@
 import { readFile } from "node:fs/promises";
-import { asPositiveInt, normalizeArtifactMode } from "../utils/params.js";
-import { MAX_ARTIFACT_READ_BYTES, ArtifactReaderError, type BrowserArtifactContext, type BrowserArtifactParams, type BrowserArtifactReadResult, type ArtifactReaderErrorCode, MAX_ARTIFACT_SEARCH_REGEX_CHARS, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS, MAX_MULTI_ARTIFACT_FILES, MAX_MULTI_ARTIFACT_BYTES, MAX_MULTI_ARTIFACT_MATCHES_PER_FILE, MAX_MULTI_ARTIFACT_TOTAL_MATCHES } from "./artifactReaderShared.js";
+import { normalizeArtifactMode } from "../utils/params.js";
+import { MAX_ARTIFACT_READ_BYTES, ArtifactReaderError, type BrowserArtifactContext, type BrowserArtifactParams, type BrowserArtifactReadResult, type ArtifactReaderErrorCode, MAX_ARTIFACT_SEARCH_REGEX_CHARS, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS } from "./artifactReaderShared.js";
 import { resolveInputPath, statArtifact } from "./artifactReaderPaths.js";
 import { redactArtifactResult } from "./artifactReaderRedaction.js";
-import { readTextRange, sampleText } from "./artifactReaderTextModes.js";
+import { readTextRange } from "./artifactReaderTextModes.js";
 import { readJson } from "./artifactReaderJson.js";
-import { searchMultipleArtifacts, searchText } from "./artifactReaderSearch.js";
+import { searchText } from "./artifactReaderSearch.js";
 import { getJsonPath, hasJsonPathValue } from "../utils/jsonPath.js";
 import { isRecord, pickDefined } from "../utils/records.js";
 
-export { MAX_ARTIFACT_READ_BYTES, MAX_ARTIFACT_SEARCH_REGEX_CHARS, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS, MAX_MULTI_ARTIFACT_FILES, MAX_MULTI_ARTIFACT_BYTES, MAX_MULTI_ARTIFACT_MATCHES_PER_FILE, MAX_MULTI_ARTIFACT_TOTAL_MATCHES, ArtifactReaderError };
+export { MAX_ARTIFACT_READ_BYTES, MAX_ARTIFACT_SEARCH_REGEX_CHARS, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS, ArtifactReaderError };
 export type { BrowserArtifactContext, BrowserArtifactParams, BrowserArtifactReadResult, ArtifactReaderErrorCode };
 
 // Keep the public browser_artifact contract in one facade: infer mode, enforce guards, then delegate to the extracted mode readers.
@@ -17,17 +17,15 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 	const wantsJson = !!(params.jsonPath || (Array.isArray(params.pick) && params.pick.length));
 	const hasQuery = typeof params.query === "string" && params.query.trim() !== "";
 	const mode = normalizeArtifactMode(params.mode ?? (wantsJson ? "json" : hasQuery ? "search" : undefined));
-	if (mode === "inspect" || mode === "paths") return await inspectArtifact(params, ctx, mode);
+	if (mode === "inspect") return await inspectArtifact(params, ctx);
 	if (hasQuery && mode !== "search") throw queryModeError(mode, params.jsonPath);
-	const maxChars = asPositiveInt(params.maxChars, 8_000);
+	const maxChars = 8_000;
 	const targetedJsonRaw = mode === "json" && (Boolean(Array.isArray(params.pick) && params.pick.length) || (typeof params.jsonPath === "string" && params.jsonPath.trim() !== "" && params.jsonPath.trim() !== "$"));
-	const redact = params.redact !== false && !targetedJsonRaw;
-	if (mode !== "search" && (Array.isArray(params.paths) || params.root !== undefined || params.glob !== undefined)) throw multiSearchModeError(mode, params);
-	if (mode === "search" && ((Array.isArray(params.paths) && params.paths.length) || params.root !== undefined || params.glob !== undefined)) return redactArtifactResult(await searchMultipleArtifacts(params, ctx), redact);
+	const redact = !targetedJsonRaw;
 	const absPath = resolveInputPath(ctx, params.path);
 	const info = await statArtifact(absPath, params.path);
 	if (mode === "json") return readJsonMode(absPath, info.size, params, redact, targetedJsonRaw);
-	const result = mode === "search" ? await searchText(absPath, info.size, params, maxChars) : mode === "sample" ? await sampleText(absPath, info.size, params, maxChars) : await readTextRange(absPath, info.size, params, maxChars);
+	const result = mode === "search" ? await searchText(absPath, info.size, params, maxChars) : await readTextRange(absPath, info.size, params, maxChars);
 	return redactArtifactResult(result, redact);
 }
 
@@ -105,7 +103,7 @@ function describePath(value: unknown, label: string, jsonPath: string): Record<s
 	return { label, jsonPath, exists: target !== undefined, ...compactValueShape(target) };
 }
 
-async function inspectArtifact(params: BrowserArtifactParams, ctx: BrowserArtifactContext, mode: "inspect" | "paths"): Promise<BrowserArtifactReadResult> {
+async function inspectArtifact(params: BrowserArtifactParams, ctx: BrowserArtifactContext): Promise<BrowserArtifactReadResult> {
 	const absPath = resolveInputPath(ctx, params.path);
 	const info = await statArtifact(absPath, params.path);
 	if (info.size > MAX_ARTIFACT_READ_BYTES) throw new ArtifactReaderError("ARTIFACT_TOO_LARGE", `Artifact exceeds byte limit (${info.size} bytes, max ${MAX_ARTIFACT_READ_BYTES})`, { path: absPath, bytes: info.size, maxBytes: MAX_ARTIFACT_READ_BYTES });
@@ -114,15 +112,11 @@ async function inspectArtifact(params: BrowserArtifactParams, ctx: BrowserArtifa
 	try {
 		value = JSON.parse(text);
 	} catch {
-		return { mode, summary: { path: absPath, bytes: info.size, chars: text.length, json: false }, saved: { path: absPath, bytes: info.size }, jsonPaths: {}, preferredReads: [], pathDescriptions: [], compactSummary: { type: "text", chars: text.length }, malformed: true };
+		return { mode: "inspect", summary: { path: absPath, bytes: info.size, chars: text.length, json: false }, saved: { path: absPath, bytes: info.size }, jsonPaths: {}, preferredReads: [], pathDescriptions: [], compactSummary: { type: "text", chars: text.length }, malformed: true };
 	}
 	const hints = inspectHints(value, absPath);
 	const pathDescriptions = Object.entries(hints.jsonPaths).map(([label, jsonPath]) => describePath(value, label, jsonPath));
-	return { mode, summary: { path: absPath, bytes: info.size, chars: text.length, json: true, pathCount: pathDescriptions.length }, ...hints, pathDescriptions, compactSummary: compactSummaryFromArtifact(value) ?? compactValueShape(value) };
-}
-
-function multiSearchModeError(mode: string, params: BrowserArtifactParams): ArtifactReaderError {
-	return new ArtifactReaderError("ARTIFACT_MULTI_SEARCH_MODE_INVALID", "browser_artifact paths/root/glob are only valid for mode=search", { mode, root: params.root, glob: params.glob, pathCount: Array.isArray(params.paths) ? params.paths.length : 0 });
+	return { mode: "inspect", summary: { path: absPath, bytes: info.size, chars: text.length, json: true, pathCount: pathDescriptions.length }, ...hints, pathDescriptions, compactSummary: compactSummaryFromArtifact(value) ?? compactValueShape(value) };
 }
 
 async function readJsonMode(absPath: string, fileSize: number, params: BrowserArtifactParams, redact: boolean, targetedJsonRaw: boolean) {

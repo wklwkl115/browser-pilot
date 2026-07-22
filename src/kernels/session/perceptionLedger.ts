@@ -30,9 +30,6 @@ export type PerceptionLedgerFrame = {
 		};
 	};
 	renderCache?: {
-		mode: string;
-		detailLevel: string;
-		maxChars: number;
 		paramsSignature: string;
 		renderedAt: number;
 	};

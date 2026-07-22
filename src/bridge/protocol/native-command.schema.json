@@ -974,6 +974,11 @@
       "retryable": false,
       "summary": "Requested operation cannot cross an iframe origin boundary."
     },
+    "DOWNLOAD_BLOCKED_BY_BROWSER": {
+      "category": "runtime.transfer",
+      "retryable": false,
+      "summary": "Chrome requires confirmation or blocked the download."
+    },
     "ELEMENT_NOT_FOUND": {
       "category": "runtime.page",
       "retryable": true,
@@ -1333,25 +1338,6 @@
       "category": "driver.lifecycle",
       "retryable": true,
       "summary": "The connected extension capture contract is incompatible with this daemon."
-    }
-  },
-  "toolMetadata": {
-    "nativeCommandTools": {
-      "browser_screenshot": {
-        "domain": "screenshot",
-        "command": "screenshot.capture",
-        "parameters": [
-          "tabId",
-          "outputPath",
-          "timeoutMs",
-          "maxChars",
-          "format",
-          "quality",
-          "captureBeyondViewport",
-          "fallback"
-        ],
-        "artifactPrefix": "screenshot"
-      }
     }
   }
 }

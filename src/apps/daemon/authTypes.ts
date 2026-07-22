@@ -31,7 +31,6 @@ export interface AuthStore {
 }
 
 // ---- TTLs / timeouts (milliseconds) ----
-export const TENANT_LEASE_TTL_MS = 120_000;
 export const PAIR_PENDING_TTL_MS = 120_000;
 export const PAIR_WAIT_DEFAULT_MS = 120_000;
 
@@ -49,26 +48,9 @@ export const AUTH_ERROR_CODES = {
   pairingInvalid: "PAIRING_INVALID",
   pairingRevoked: "PAIRING_REVOKED",
   pairingNotFound: "PAIRING_NOT_FOUND",
-  leaseBusy: "LEASE_BUSY",
 } as const;
 
 // ---- HTTP response shapes shared with MCP ----
-export type LeaseAction = "acquire" | "release" | "status";
-export interface LeaseInfo {
-  leaseId: string;
-  pairingId: string;
-  label: string;
-  since: string;
-  expiresAt: string;
-}
-export interface LeaseAcquireResponse { ok: true; lease: LeaseInfo; }
-export interface LeaseStatusResponse { ok: true; lease: LeaseInfo | null; self: boolean; }
-export interface LeaseBusyResponse {
-  ok: false;
-  code: "LEASE_BUSY";
-  heldBy: { pairingId: string; label: string; since: string; expiresAt: string };
-}
-
 export interface RevokeResponse { ok: true; revoked: string; }
 
 export interface PairingSummary {
@@ -76,6 +58,5 @@ export interface PairingSummary {
   label: string;
   status: AgentStatus;
   lastSeenAt: string | null;
-  leaseHeld: boolean;
 }
 export interface PairingsResponse { ok: true; agents: PairingSummary[]; }

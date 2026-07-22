@@ -22,7 +22,6 @@ export interface PairedAgentSummary {
   pairingId: string;
   label: string;
   status: "pending" | "active" | "revoked";
-  leaseHeld: boolean;
   lastSeenAt: string | null;
 }
 

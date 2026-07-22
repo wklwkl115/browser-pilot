@@ -363,7 +363,7 @@ test("BrowserBridgeServer consent port sends requests, resolves decisions and br
 		ws.send(JSON.stringify({ type: CONSENT_MESSAGE_TYPES.response, pairingId: "pair-1", decision: "approve" }));
 		assert.equal(await decisionPromise, "approve");
 
-		server.broadcastPairedAgents([{ pairingId: "pair-1", label: "agent", status: "active", lastSeenAt: "now", leaseHeld: false }]);
+		server.broadcastPairedAgents([{ pairingId: "pair-1", label: "agent", status: "active", lastSeenAt: "now" }]);
 		await new Promise<void>((resolve) => {
 			const poll = () => messages.some((message) => message.type === CONSENT_MESSAGE_TYPES.pairedAgents) ? resolve() : setImmediate(poll);
 			poll();

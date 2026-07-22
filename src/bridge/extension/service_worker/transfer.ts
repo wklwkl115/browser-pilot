@@ -29,6 +29,8 @@ type TransferPageDownloadEvent = JsonRecord & { method?: string; url?: string; s
 type TransferDownloadOptions = JsonRecord & { url: string; saveAs: boolean; filename?: string; conflictAction?: string };
 type TransferEvalData = JsonRecord & { href?: string; suggestedFilename?: string };
 type TransferCdpBridge = BrowserPilotPersistentCdpBridge & { send: NonNullable<BrowserPilotPersistentCdpBridge["send"]> };
+const DOWNLOAD_PENDING_DANGERS = new Set(['asyncScanning', 'asyncLocalPasswordScanning']);
+const DOWNLOAD_ALLOWED_DANGERS = new Set(['safe', 'accepted', 'allowlistedByPolicy', 'deepScannedSafe']);
 
 function errorRecord(error: unknown): JsonRecord {
   return asRecord(error);
@@ -144,6 +146,15 @@ function browserPilotTransferDownloadStartedAfter(item: TransferDownloadSummary 
   return !itemStart || itemStart >= Math.max(0, Number(startedAt || 0) - 2000);
 }
 
+function browserPilotTransferBlockedDownload(item: TransferDownloadSummary | null | undefined): Error | undefined {
+  const danger = typeof item?.danger === 'string' ? item.danger : '';
+  if (!danger || DOWNLOAD_ALLOWED_DANGERS.has(danger) || DOWNLOAD_PENDING_DANGERS.has(danger)) return undefined;
+  return Object.assign(new Error(`Chrome blocked download ${String(item?.id || '')}: ${danger}`), {
+    code: 'DOWNLOAD_BLOCKED_BY_BROWSER',
+    details: { downloadId: item?.id, danger, url: item?.finalUrl || item?.url },
+  });
+}
+
 function browserPilotTransferDownloadMatchesPageEvent(item: TransferDownloadSummary | null | undefined, event: TransferPageDownloadEvent | null | undefined, startedAt: unknown): boolean {
   if (!item) return false;
   if (!browserPilotTransferDownloadStartedAfter(item, startedAt)) return false;
@@ -176,6 +187,8 @@ function browserPilotTransferWaitDownloadComplete(id: unknown, timeoutMs: number
     };
     const finishFromSearch = async () => {
       const item = await browserPilotTransferSearchDownload(id);
+      const blocked = browserPilotTransferBlockedDownload(item);
+      if (blocked) { cleanup(); reject(blocked); return true; }
       if (item && item.state === 'complete') { cleanup(); resolve(item); return true; }
       if (item && item.state === 'interrupted') { cleanup(); reject(new Error('Download ' + id + ' failed: ' + (item.error || 'interrupted'))); return true; }
       return false;
@@ -184,7 +197,7 @@ function browserPilotTransferWaitDownloadComplete(id: unknown, timeoutMs: number
       if (!delta || Number(delta.id) !== Number(id)) return;
       if (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted')) {
         void finishFromSearch();
-      } else if (delta.filename) {
+      } else if (delta.filename || delta.danger) {
         void finishFromSearch();
       }
     };
@@ -354,7 +367,14 @@ function browserPilotTransferMediaUrlScript(selector: unknown, index: unknown, f
 async function browserPilotTransferDownloadWithOptions(options: TransferDownloadOptions, timeoutMs: number, mode: TransferDownloadMode, trigger: unknown): Promise<BrowserPilotBridgeResponse> {
   if (!chrome.downloads?.download) return browserPilotError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'chrome.downloads API is unavailable; reload the bridge extension after granting downloads permission', {});
   const id = await browserPilotTransferDownload(options);
-  const item = await browserPilotTransferWaitDownloadComplete(id, timeoutMs);
+  let item: TransferDownloadSummary;
+  try {
+    item = await browserPilotTransferWaitDownloadComplete(id, timeoutMs);
+  } catch (error) {
+    const record = errorRecord(error);
+    if (record.code === 'DOWNLOAD_BLOCKED_BY_BROWSER') return browserPilotError('DOWNLOAD_BLOCKED_BY_BROWSER', record.message || 'Chrome blocked the download', asRecord(record.details));
+    throw error;
+  }
   return { ok: true, data: { mode, trigger: trigger || null, download: item, downloadId: item.id, path: item.path || null } };
 }
 

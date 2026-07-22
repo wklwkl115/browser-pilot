@@ -32,7 +32,6 @@ export type NativeCommandProtocolSchema = {
 	aliases?: Record<string, string>;
 	commands: Record<string, CommandSpec>;
 	errorCodes?: Record<string, { category?: string; retryable?: boolean; summary?: string }>;
-	toolMetadata?: Record<string, unknown>;
 };
 
 export type BridgeCommandValidation =

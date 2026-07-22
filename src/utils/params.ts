@@ -1,7 +1,7 @@
 import { isRecord, toTabId } from "./records.js";
 
 export type DetailLevel = "summary" | "preview" | "full";
-export type ArtifactMode = "text" | "json" | "search" | "sample" | "inspect" | "paths";
+export type ArtifactMode = "text" | "json" | "search" | "inspect";
 
 export function asPositiveInt(value: unknown, fallback: number): number {
 	const n = Number(value);
@@ -17,7 +17,7 @@ export function normalizeDetailLevel(value: unknown): DetailLevel {
 
 export function normalizeArtifactMode(value: unknown): ArtifactMode {
 	const mode = String(value || "text").trim().toLowerCase();
-	if (mode === "json" || mode === "search" || mode === "sample" || mode === "inspect" || mode === "paths") return mode;
+	if (mode === "json" || mode === "search" || mode === "inspect") return mode;
 	return "text";
 }
 

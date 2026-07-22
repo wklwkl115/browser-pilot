@@ -3,14 +3,12 @@ import { resolveExecutionRef, type ExecutionRefTarget } from "../browser-command
 import { BrowserBridgeError } from "../utils/errors.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { withBrowserOperation } from "./browserOperation.js";
-import { commandMaxChars, commandTimeoutMs, defineBrowserCommand, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
+import { defineBrowserCommand, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { validateParams } from "./validationMiddleware.js";
 import { BridgeCommandSchema, type ValidatedBridgeCommand } from "../validation/schemas.js";
-import { isNativeWriteCommand, nativeCommandOwner, publicNativeCommandNames } from "./nativeCommandAccess.js";
-
-const nativeCommandNames = publicNativeCommandNames();
+import { isNativeWriteCommand, isPublicNativeCommand, nativeCommandOwner } from "./nativeCommandAccess.js";
 
 function prepareNativeRef(command: ValidatedBridgeCommand): { command: ValidatedBridgeCommand; refs: ExecutionRefTarget[] } {
 	if (command.cmd !== "input.ref") return { command, refs: [] };
@@ -36,7 +34,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 		],
 		parameters: strictCommandParameters({
 			command: Type.Object({
-				cmd: Type.String({ enum: nativeCommandNames, description: "Native command name. Command-specific fields are documented by browser-pilot://native-commands." }),
+				cmd: Type.String({ minLength: 1, description: "Native command name from browser-pilot://native-commands." }),
 			}, { additionalProperties: true, description: "Validated native bridge command object." }),
 			...sharedTabScopedToolParams(),
 		}),
@@ -46,15 +44,14 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 				const validated = validateParams(BridgeCommandSchema, params.command);
 				const owner = nativeCommandOwner(validated);
 				if (owner) throw new BrowserBridgeError("INVALID_RULE", `${String(validated.cmd)} must be invoked through ${owner}`, { commandName: "browser_command", useTool: owner });
+				if (!isPublicNativeCommand(validated)) throw new BrowserBridgeError("INVALID_RULE", `${String(validated.cmd)} is not a public native command`, { commandName: "browser_command", catalog: "browser-pilot://native-commands" });
 				const prepared = prepareNativeRef(validated);
 				const command = prepared.command;
 				const server = await ensureStarted();
-				const timeoutMs = commandTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
-				const maxChars = commandMaxChars(params, "browser_command");
-				const requestedBrowserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
+				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
 				const rawTarget = targetTabId(params, command);
 				const write = isNativeWriteCommand(command);
-				const target = resolveRefExecutionTarget(server, prepared.refs, { browserSessionId: requestedBrowserSessionId, rawTarget });
+				const target = resolveRefExecutionTarget(server, prepared.refs, { rawTarget });
 				const commandName = String(command.cmd || "");
 				const dispatch = ({ signal: dispatchSignal }: { signal?: AbortSignal }) => server.sendCommand(command, {
 					browserSessionId: target.browserSessionId,
@@ -66,7 +63,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 				const result = write
 					? await withBrowserOperation({ server, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, signal }, dispatch)
 					: await dispatch({ signal });
-				return jsonResult(result, { mode: "command", command: commandName }, maxChars);
+				return jsonResult(result, { mode: "command", command: commandName });
 			});
 		},
 	});
