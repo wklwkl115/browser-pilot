@@ -418,6 +418,8 @@
       "domain": "core",
       "tabScoped": false,
       "accessMode": "write",
+      "internal": true,
+      "notes": "Internal transport optimization; public callers issue one browser primitive per browser_command call.",
       "required": [
         "commands"
       ]

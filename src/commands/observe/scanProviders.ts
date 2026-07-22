@@ -56,7 +56,7 @@ async function probeRecorderStates(options: ObserveProvidersOptions, timeoutMs: 
 	if (options.baseline?.hookSeq !== undefined && !hook) { commands.push({ cmd: "hook.status" }); indexes.push("hook"); }
 	if (!commands.length || timeoutMs <= 0) return { network, hook, bridgeRoundTrips: 0 };
 	try {
-		const result = await options.server.sendCommand({ cmd: "batch", commands }, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs });
+		const result = await options.server.sendCommand({ cmd: "batch", commands }, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs, internal: true });
 		const results = batchResults(result);
 		let nextNetwork = network;
 		let nextHook = hook;

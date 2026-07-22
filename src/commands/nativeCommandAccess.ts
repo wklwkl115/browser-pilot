@@ -19,7 +19,7 @@ export function isPublicNativeCommand(command: BridgeCommand): boolean {
 	const schema = getNativeCommandProtocolSchema();
 	const canonical = canonicalBridgeCommand(String(command.cmd || ""), schema);
 	const spec = schema.commands[canonical];
-	return canonical !== "batch" && spec !== undefined && spec.internal !== true && !nativeCommandOwner({ cmd: canonical });
+	return spec !== undefined && spec.internal !== true && !nativeCommandOwner({ cmd: canonical });
 }
 
 export function isNativeWriteCommand(command: BridgeCommand): boolean {

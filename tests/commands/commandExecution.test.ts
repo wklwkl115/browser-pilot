@@ -413,13 +413,23 @@ test("commands execution: browser_execute binds refs and routes to their owner",
 	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", tabId: 7, timeoutMs: 15000, accessMode: "write", signal: undefined });
 });
 
-test("commands execution: ref URIs inside JavaScript stay ordinary data", async () => {
-	const runtime = createRuntime();
+test("commands execution: read-only ref literals skip write lifecycle", async () => {
+	let transactions = 0;
+	const runtime = createRuntime({
+		async withTargetTransaction(_input, run) {
+			transactions += 1;
+			return await run();
+		},
+	});
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const script = "return 'bp-ref://control/not-a-binding'";
-	const result = parseResult(await command.execute("tool-ref-literal", { script, targetRef: "tab-7", readOnly: true }));
-	assert.equal(runtime.calls.find((call) => call.name === "executeJavaScript")?.args[0], script);
+	const result = parseResult(await command.execute("tool-ref-literal", { script, readOnly: true }));
+	const execute = runtime.calls.find((call) => call.name === "executeJavaScript");
+	assert.equal(execute?.args[0], script);
+	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: undefined, tabId: undefined, timeoutMs: 15000, accessMode: "read", signal: undefined });
 	assert.equal(result.effect, undefined);
+	assert.equal(runtime.calls.some((call) => call.name === "snapshot"), false);
+	assert.equal(transactions, 0);
 	assert.equal(runtime.calls.some((call) => (call.args[0] as Record<string, unknown>)?.cmd === "content.fingerprint"), false);
 });
 

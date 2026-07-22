@@ -87,7 +87,8 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 				const server = await ensureStarted();
 				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
 				const rawTarget = targetTabId(params as { targetRef?: string });
-				const target = pinTabExecutionTarget(server, resolveRefExecutionTarget(server, prepared.targetRefs, { rawTarget }));
+				const resolvedTarget = resolveRefExecutionTarget(server, prepared.targetRefs, { rawTarget });
+				const target = input.readOnly ? resolvedTarget : pinTabExecutionTarget(server, resolvedTarget);
 				const outcome = await withBrowserOperation({
 					server,
 					browserSessionId: target.browserSessionId,

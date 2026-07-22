@@ -59,7 +59,7 @@ test("input.ref public protocol requires an opaque ref instead of a private targ
 test("every public native command has one closed canonical parameter schema", () => {
 	const protocol = getNativeCommandProtocolSchema();
 	const names = publicNativeCommandNames();
-	for (const internal of ["bridge_wake", "persistent_cdp", "hook.list_sessions", "hook.list_targets", "hook.install_targets"]) assert.equal(names.includes(internal), false);
+	for (const internal of ["batch", "bridge_wake", "persistent_cdp", "hook.list_sessions", "hook.list_targets", "hook.install_targets"]) assert.equal(names.includes(internal), false);
 	assert.equal(names.includes("hook.clear"), false);
 	assert.equal(new Set(names).size, names.length);
 	const forbiddenFields = new Set(["browserSessionId", "tabId", "sessionId", "timeoutMs", "waitId", "networkSessionId", "targetId", "name", "persistent", "detachOnError", "protocolVersion", "bringToFront", "maxIdleMs"]);
