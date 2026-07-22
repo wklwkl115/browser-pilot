@@ -10,6 +10,7 @@ export type CommandEffect = {
 	observed: boolean;
 	changed: boolean | null;
 	settled: boolean;
+	verification?: "verified" | "failed" | "inconclusive";
 	elapsedMs: number;
 	page?: {
 		navigation?: { from?: string; to?: string };
@@ -29,6 +30,7 @@ type CommandEffectOptions = {
 	signal?: AbortSignal;
 	quietMs?: number;
 	settleMs?: number;
+	verify?: () => Promise<boolean>;
 };
 
 function finiteDelta(after: number | undefined, before: number | undefined): number | undefined {
@@ -65,7 +67,7 @@ export function summarizeCommandEffect(
 	before: PageFingerprint | undefined,
 	after: PageFingerprint | undefined,
 	result: BrowserBridgeExecutionResult,
-	options: { settled: boolean; elapsedMs: number },
+	options: { settled: boolean; elapsedMs: number; verification?: CommandEffect["verification"] },
 ): CommandEffect {
 	const newTabs = newTabCount(result);
 	if (!before || !after) {
@@ -73,6 +75,7 @@ export function summarizeCommandEffect(
 			observed: false,
 			changed: newTabs > 0 ? true : null,
 			settled: false,
+			...(options.verification ? { verification: options.verification } : {}),
 			elapsedMs: Math.max(0, Math.round(options.elapsedMs)),
 			...(newTabs > 0 ? { newTabs } : {}),
 		};
@@ -93,6 +96,7 @@ export function summarizeCommandEffect(
 		observed: true,
 		changed: pageChanged || newTabs > 0,
 		settled: options.settled && after.readyState !== "loading",
+		...(options.verification ? { verification: options.verification } : {}),
 		elapsedMs: Math.max(0, Math.round(options.elapsedMs)),
 		page: {
 			...(navigated ? { navigation: { ...(before.url ? { from: before.url } : {}), ...(after.url ? { to: after.url } : {}) } } : {}),
@@ -130,6 +134,21 @@ async function captureFingerprint(server: BrowserCommandRuntimePort, options: Co
 	});
 }
 
+async function verifyPostcondition(options: CommandEffectOptions): Promise<CommandEffect["verification"]> {
+	if (!options.verify) return undefined;
+	let observedFalse = false;
+	while (!options.signal?.aborted && Date.now() < options.deadlineAt) {
+		try {
+			if (await options.verify()) return "verified";
+			observedFalse = true;
+		} catch {
+			return "inconclusive";
+		}
+		await waitFor(Math.min(EFFECT_QUIET_MS, Math.max(0, options.deadlineAt - Date.now())), options.signal);
+	}
+	return options.signal?.aborted ? "inconclusive" : observedFalse ? "failed" : "inconclusive";
+}
+
 export async function withCommandEffect<T extends BrowserBridgeExecutionResult>(
 	server: BrowserCommandRuntimePort,
 	options: CommandEffectOptions,
@@ -158,9 +177,10 @@ export async function withCommandEffect<T extends BrowserBridgeExecutionResult>(
 			previous = current;
 		}
 	}
+	const verification = await verifyPostcondition(options);
 
 	return {
 		result,
-		effect: summarizeCommandEffect(before, after, result, { settled, elapsedMs: Date.now() - startedAt }),
+		effect: summarizeCommandEffect(before, after, result, { settled, verification, elapsedMs: Date.now() - startedAt }),
 	};
 }

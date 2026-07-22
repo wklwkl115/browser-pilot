@@ -22,8 +22,8 @@ function deepKeys(value: unknown): string[] {
 test("public tool surface remains five general tools without new mechanical inputs", () => {
 	const definitions = browserCommandDefinitions();
 	assert.deepEqual(definitions.map((definition) => definition.name), ["browser_tabs", "browser_command", "browser_execute", "browser_observe", "browser_screenshot"]);
-	assert.deepEqual(Object.keys((command("browser_execute").parameters as { properties: Record<string, unknown> }).properties), ["script", "refs", "readOnly", "targetRef"]);
-	assert.deepEqual(Object.keys((command("browser_command").parameters as { properties: Record<string, unknown> }).properties), ["command", "targetRef"]);
+	assert.deepEqual(Object.keys((command("browser_execute").parameters as { properties: Record<string, unknown> }).properties), ["script", "refs", "readOnly", "expect", "targetRef"]);
+	assert.deepEqual(Object.keys((command("browser_command").parameters as { properties: Record<string, unknown> }).properties), ["command", "expect", "targetRef"]);
 	const forbiddenFields = new Set(["browserSessionId", "tabId", "sessionId", "timeoutMs", "targetId"]);
 	for (const definition of definitions) {
 		assert.deepEqual(deepKeys(definition.parameters).filter((field) => forbiddenFields.has(field)), [], `${definition.name} should not expose runtime control fields`);
@@ -34,6 +34,7 @@ test("public tool surface remains five general tools without new mechanical inpu
 test("public schemas reject unknown tool inputs and enumerate canonical native commands", () => {
 	const execute = command("browser_execute");
 	assert.deepEqual(execute.validateArguments?.({ script: "document.title", readOnly: true }), []);
+	assert.equal(execute.validateArguments?.({ script: "return 1", readOnly: true, expect: "document.title === 'Done'" })[0]?.code, "EXECUTE_EXPECT_READ_ONLY");
 	assert.deepEqual(execute.validateArguments?.({}), [{ code: "EXECUTE_SCRIPT_REQUIRED", path: "/script", message: "browser_execute requires script" }]);
 	assert.equal(validateCommandArgs(execute.parameters, { script: "browserPilot.refs.target.click()", refs: { target: "bp-ref://control/1" } }).ok, true);
 	assert.equal(validateCommandArgs(execute.parameters, { script: "return 1", refs: { "not-valid-name": "bp-ref://control/1" } }).ok, false);

@@ -31,6 +31,7 @@ test("MCP publishes the command catalog as tools", () => {
 		"browser_pair",
 	]);
 	assert.ok(tools.every((tool) => tool.inputSchema.type === "object"));
+	assert.equal(tools.find((tool) => tool.name === "browser_observe")?.outputSchema?.$id, "browser-page-observation/v3");
 	const pair = tools.find((tool) => tool.name === "browser_pair")!;
 	assert.deepEqual(Object.keys(pair.inputSchema.properties as Record<string, unknown>), ["action", "label", "pairingId"]);
 	const tabs = tools.find((tool) => tool.name === "browser_tabs")!;
@@ -127,9 +128,9 @@ test("MCP resources expose a compact native index, per-command schemas, and proj
 	try {
 		const artifacts = path.join(root, ".browser-pilot", "artifacts");
 		await mkdir(artifacts, { recursive: true });
-		await writeFile(path.join(artifacts, "sample.json"), "{\"ok\":true}");
+		await writeFile(path.join(artifacts, "sample.json"), JSON.stringify({ ok: true, browserSessionId: "private", nested: { tabId: 7, targetRef: "tab-7" } }));
 		const artifact = await readMcpResource("browser-pilot://artifact/sample.json", root);
-		assert.equal(resourceText(artifact), "{\"ok\":true}");
+		assert.deepEqual(JSON.parse(resourceText(artifact)), { ok: true, nested: { targetRef: "tab-7" } });
 		await assert.rejects(() => readMcpResource("browser-pilot://artifact/..%2Foutside.txt", root), /invalid resource URI/i);
 
 		const observationPath = path.join(artifacts, "observation.json");
@@ -150,7 +151,7 @@ test("MCP resources expose a compact native index, per-command schemas, and proj
 		assert.equal(link?.type, "resource_link");
 		if (!link || link.type !== "resource_link") throw new Error("observation resource link missing");
 		const expanded = await readMcpResource(link.uri, root);
-		assert.match(resourceText(expanded), /Details/);
+		assert.match(resourceText(expanded), /Introduction/);
 		assert.equal(resourceText(expanded).includes(observationPath), false);
 		const causal = descriptors.find((item) => item.kind === "details")!;
 		const expandedCausal = await readMcpResource(causal.uri, root);

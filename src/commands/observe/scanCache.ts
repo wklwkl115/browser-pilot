@@ -68,6 +68,7 @@ export async function tryRenderCacheHit(options: {
 					observation: value,
 					artifactPath: outputPath,
 					fallbackName: `observe-cache-${snapshotMeta.snapshotId}.json`,
+					intent: params.intent,
 					details: {
 						model: "PageObservation",
 						canonical: true,

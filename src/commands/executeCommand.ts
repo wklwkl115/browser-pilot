@@ -17,6 +17,7 @@ type ExecuteParams = {
 	script?: string;
 	refs?: Record<string, string>;
 	readOnly?: unknown;
+	expect?: unknown;
 	targetRef?: string;
 };
 
@@ -27,7 +28,7 @@ function detectCommandLikeScript(script: string): boolean {
 	return isRecord(parsed) && typeof parsed.cmd === "string";
 }
 
-function prepareExecute(params: ExecuteParams): { script: string; refs: Record<string, string>; readOnly: boolean } {
+function prepareExecute(params: ExecuteParams): { script: string; refs: Record<string, string>; readOnly: boolean; expect?: string } {
 	const script = typeof params.script === "string" && params.script.length ? params.script : undefined;
 	if (!script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script", { commandName: "browser_execute" });
 	if (detectCommandLikeScript(script)) throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { commandName: "browser_execute", recovery: { useTool: "browser_command" } });
@@ -39,13 +40,18 @@ function prepareExecute(params: ExecuteParams): { script: string; refs: Record<s
 			throw new BrowserBridgeError("INVALID_RULE", "browser_execute refs must map JavaScript identifiers to bp-ref URIs", { commandName: "browser_execute", name, ref });
 		}
 	}
-	return { script, refs, readOnly: params.readOnly === true };
+	const expect = typeof params.expect === "string" && params.expect.trim() ? params.expect.trim() : undefined;
+	if (params.expect !== undefined && !expect) throw new BrowserBridgeError("INVALID_RULE", "browser_execute expect must be a non-empty JavaScript expression", { commandName: "browser_execute" });
+	if (expect && params.readOnly === true) throw new BrowserBridgeError("INVALID_RULE", "browser_execute expect is only valid for writes", { commandName: "browser_execute" });
+	return { script, refs, readOnly: params.readOnly === true, expect };
 }
 
 export function validateExecuteArguments(args: Record<string, unknown>): ValidationIssue[] {
 	if (typeof args.script !== "string" || !args.script.length) return [{ code: "EXECUTE_SCRIPT_REQUIRED", path: "/script", message: "browser_execute requires script" }];
 	const script = args.script;
 	if (detectCommandLikeScript(script)) return [{ code: "EXECUTE_COMMAND_SHAPED_SCRIPT", path: "/script", message: "browser_execute only accepts JavaScript; use browser_command for bridge commands" }];
+	if (args.expect !== undefined && (typeof args.expect !== "string" || !args.expect.trim())) return [{ code: "EXECUTE_EXPECT_INVALID", path: "/expect", message: "browser_execute expect must be a non-empty JavaScript expression" }];
+	if (args.expect !== undefined && args.readOnly === true) return [{ code: "EXECUTE_EXPECT_READ_ONLY", path: "/expect", message: "browser_execute expect is only valid for writes" }];
 	return [];
 }
 
@@ -61,13 +67,13 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 	defineBrowserCommand(commands, {
 		name: "browser_execute",
 		label: "Browser Execute",
-		description: "Execute JavaScript in the selected or ref-owning tab. Browser Pilot resolves bp-ref bindings, serializes writes, handles CSP/CDP fallback, and returns compact page-effect feedback.",
+		description: "Execute JavaScript in the selected or ref-owning tab. Browser Pilot resolves bp-ref bindings, serializes writes, handles CSP/CDP fallback, and can verify a declared postcondition.",
 		promptSnippet: "Execute JavaScript directly; omit targetRef for the selected tab and bind observed elements through refs when available.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
 			"Pass observed bp-ref URIs through refs; each entry is available as browserPilot.refs.<name>, and its owner selects the tab automatically. Use browser_command input.ref for trusted native input.",
-			"The page runtime exposes browserPilot.refs, resolve(ref), box(ref), setValue(target,value), and settled(quietMs?,timeoutMs?).",
-			"Use readOnly:true for queries. Writes are serialized per target and return effect with observed, changed, settled, page deltas, and new-tab count; changed:null means page signals were unavailable.",
+			"The page runtime exposes browserPilot.refs, resolve(ref), box(ref), and setValue(target,value).",
+			"Use readOnly:true for queries. For writes, expect may declare a JavaScript truth expression; Browser Pilot owns waiting and reports effect.verification as verified, failed, or inconclusive.",
 		],
 		parameters: strictCommandParameters({
 			script: Type.String({ description: "JavaScript to execute." }),
@@ -77,6 +83,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 				{ additionalProperties: false, maxProperties: MAX_EXECUTION_REFS, description: "Named observed refs to resolve, inject, and use for automatic tab/session routing." },
 			)),
 			readOnly: Type.Optional(Type.Boolean({ description: "Declare that the script does not mutate browser state." })),
+			expect: Type.Optional(Type.String({ minLength: 1, description: "Write postcondition as a JavaScript expression returning truthy when the intended state is reached." })),
 			...sharedTabScopedToolParams(),
 		}),
 		validateArguments: validateExecuteArguments,
@@ -84,6 +91,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 			return await runCommandHandler(async () => {
 				const input = prepareExecute(params);
 				const prepared = prepareExecuteStdlib(input.script, { refs: input.refs });
+				const expected = input.expect ? prepareExecuteStdlib(`return Boolean(await (${input.expect}));`, { refs: input.refs }) : undefined;
 				const server = await ensureStarted();
 				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
 				const rawTarget = targetTabId(params as { targetRef?: string });
@@ -99,10 +107,17 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					const dispatch = () => executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal });
 					return input.readOnly
 						? { result: await dispatch() }
-						: await withCommandEffect(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, deadlineAt, signal: operationSignal }, dispatch);
+						: await withCommandEffect(server, {
+							browserSessionId: target.browserSessionId,
+							tabId: target.tabId,
+							timeoutMs,
+							deadlineAt,
+							signal: operationSignal,
+							...(expected ? { verify: async () => (await executePrepared({ script: expected.script, readOnly: true }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal })).data === true } : {}),
+						}, dispatch);
 				});
 				const value = "effect" in outcome ? { ...outcome.result, effect: outcome.effect } : outcome.result;
-				return jsonResult(redactSensitiveValue(value), { mode: "javascript", refsBound: Object.keys(input.refs).length });
+				return jsonResult(redactSensitiveValue(value), { mode: "javascript", refsBound: Object.keys(input.refs).length }, { preserveExecutionData: true });
 			});
 		},
 	});

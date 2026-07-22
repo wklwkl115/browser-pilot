@@ -63,6 +63,7 @@ type FinalizeScanObservationOptions = {
 	effectivePageFingerprint: PageFingerprint | undefined;
 	paramsSignature: string;
 	renderStartedAt: number;
+	intent?: string;
 };
 
 function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summary: Record<string, unknown>) {
@@ -169,6 +170,7 @@ export async function finalizeScanObservation(options: FinalizeScanObservationOp
 		fallbackName,
 		ctx,
 		details,
+		intent: options.intent,
 	});
 	recordLedgerProjection(options, ledger.frame);
 	return result;

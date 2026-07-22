@@ -174,6 +174,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		effectivePageFingerprint,
 		paramsSignature,
 		renderStartedAt,
+		intent: params.intent,
 	});
 }
 

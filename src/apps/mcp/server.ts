@@ -11,13 +11,14 @@ import { invokeDaemonTool } from "./client.js";
 import { runMcpPairing } from "./auth.js";
 import { getJsonPath } from "../../utils/jsonPath.js";
 import { redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
-import { isPageObservationV3 } from "../../kernels/abml/pageObservation.js";
+import { isPageObservationV3, PAGE_OBSERVATION_V3_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
 import { OBSERVATION_RESOURCE_SCHEMA, OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
+import { publicToolValue } from "../../utils/toolResult.js";
 
 type JsonRpcId = string | number | null;
 type JsonRpcMessage = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown; result?: unknown; error?: unknown };
 type McpContent = { type: "text"; text: string } | { type: "resource_link"; uri: string; name: string; mimeType?: string };
-type McpTool = { name: string; description?: string; inputSchema: Record<string, unknown>; annotations?: Record<string, boolean> };
+type McpTool = { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; annotations?: Record<string, boolean> };
 type McpToolResult = { content: McpContent[]; structuredContent?: Record<string, unknown>; isError?: boolean; _meta?: Record<string, unknown> };
 type McpServerState = { initialized: boolean; projectRoot: string; clientName: string; supportsRoots: boolean; rootRefresh?: Promise<void> };
 type PendingServerRequest = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
@@ -59,13 +60,14 @@ function toolAnnotations(name: string): Record<string, boolean> | undefined {
 
 export function mcpTools(): McpTool[] {
 	return [...definitions.map((definition) => ({
-			name: definition.name,
-			description: toolDescription(definition),
-			inputSchema: definition.parameters && typeof definition.parameters === "object"
-				? definition.parameters as Record<string, unknown>
-				: { type: "object", properties: {} },
-			...(toolAnnotations(definition.name) ? { annotations: toolAnnotations(definition.name) } : {}),
-		})), pairingTool];
+		name: definition.name,
+		description: toolDescription(definition),
+		inputSchema: definition.parameters && typeof definition.parameters === "object"
+			? definition.parameters as Record<string, unknown>
+			: { type: "object", properties: {} },
+		...(definition.name === "browser_observe" ? { outputSchema: PAGE_OBSERVATION_V3_JSON_SCHEMA as unknown as Record<string, unknown> } : {}),
+		...(toolAnnotations(definition.name) ? { annotations: toolAnnotations(definition.name) } : {}),
+	})), pairingTool];
 }
 
 export function mcpProjectRoot(): string {
@@ -148,12 +150,12 @@ export function registerMcpObservationResources(details: Record<string, unknown>
 		const token = typeof descriptor.uri === "string" ? observationResourceToken(descriptor.uri) : undefined;
 		const target = typeof descriptor.path === "string" ? path.resolve(descriptor.path) : "";
 		const relative = target ? path.relative(root, target) : "";
-			if (!token || !relative || relative.startsWith("..") || path.isAbsolute(relative)
-				|| descriptor.mimeType !== "application/json" || typeof descriptor.name !== "string" || !descriptor.name.trim()
-				|| typeof descriptor.snapshotId !== "string" || !descriptor.snapshotId.trim() || typeof descriptor.ref !== "string" || !descriptor.ref.trim()
-				|| descriptor.label !== undefined && typeof descriptor.label !== "string"
-				|| !["template-instances", "collection-window", "content", "details"].includes(descriptor.kind)
-				|| !Number.isFinite(descriptor.expiresAt) || descriptor.expiresAt <= now || !validObservationResourceTarget(descriptor)) continue;
+		if (!token || !relative || relative.startsWith("..") || path.isAbsolute(relative)
+			|| descriptor.mimeType !== "application/json" || typeof descriptor.name !== "string" || !descriptor.name.trim()
+			|| typeof descriptor.snapshotId !== "string" || !descriptor.snapshotId.trim() || typeof descriptor.ref !== "string" || !descriptor.ref.trim()
+			|| descriptor.label !== undefined && typeof descriptor.label !== "string"
+			|| !["template-instances", "collection-window", "content", "details"].includes(descriptor.kind)
+			|| !Number.isFinite(descriptor.expiresAt) || descriptor.expiresAt <= now || !validObservationResourceTarget(descriptor)) continue;
 		observationResources.set(token, { ...descriptor, projectRoot: resolvedProjectRoot });
 		links.push({ type: "resource_link", uri: descriptor.uri, name: descriptor.name, mimeType: "application/json" });
 	}
@@ -163,11 +165,33 @@ export function registerMcpObservationResources(details: Record<string, unknown>
 function publicResultDetails(details: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
 	if (!details) return undefined;
 	const { [OBSERVATION_RESOURCES_DETAIL_KEY]: _resources, ...publicDetails } = details;
-	return Object.keys(publicDetails).length ? publicDetails : undefined;
+	const projected = publicToolValue(publicDetails) as Record<string, unknown>;
+	return Object.keys(projected).length ? projected : undefined;
+}
+
+function publicContent(content: McpContent[]): McpContent[] {
+	return content.map((item) => {
+		if (item.type !== "text") return item;
+		return { ...item, text: publicJsonText(item.text) };
+	});
+}
+
+function publicJsonText(value: string): string {
+	try { return JSON.stringify(publicToolValue(JSON.parse(value) as unknown)); }
+	catch { return value; }
 }
 
 function jsonToolResult(value: Record<string, unknown>): McpToolResult {
 	return { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value };
+}
+
+function observationSummary(value: Record<string, unknown>): string {
+	const target = record(value.target);
+	const content = record(value.content);
+	const title = record(value.gist).title;
+	const actionables = Array.isArray(value.actionables) ? value.actionables.length : 0;
+	const frontier = Array.isArray(record(value.frontier).items) ? record(value.frontier).items as unknown[] : [];
+	return `Observed ${typeof title === "string" ? title : typeof target.url === "string" ? target.url : "page"}: ${actionables} actionables, ${frontier.length} expandable regions${content.complete === false ? ", additional content available" : ""}.`;
 }
 
 export async function callMcpTool(name: string, args: Record<string, unknown>, signal?: AbortSignal, projectRoot = mcpProjectRoot(), clientName = ""): Promise<McpToolResult> {
@@ -184,10 +208,15 @@ export async function callMcpTool(name: string, args: Record<string, unknown>, s
 		const resourceLinks = registerMcpObservationResources(result.details, projectRoot);
 		const details = publicResultDetails(result.details);
 		const link = resourceLink(details, projectRoot);
+		const isError = result.isError === true || result.terminate === true;
+		const content = isError ? publicContent(result.content) : result.content;
+		const textContent = content.filter((item): item is { type: "text"; text: string } => item.type === "text");
+		const structuredContent = isError ? undefined : recordJsonText(textContent);
+		const observation = name === "browser_observe" && structuredContent && isPageObservationV3(structuredContent) ? structuredContent : undefined;
 		return {
-			content: [...result.content, ...resourceLinks, ...(link ? [link] : [])],
-			...(recordJsonText(result.content) ? { structuredContent: recordJsonText(result.content) } : {}),
-			isError: result.isError === true || result.terminate === true,
+			content: [...(observation ? [{ type: "text" as const, text: observationSummary(observation) }] : content), ...resourceLinks, ...(link ? [link] : [])],
+			...(structuredContent ? { structuredContent } : {}),
+				isError,
 			...(details ? { _meta: { "browser-pilot/details": details } } : {}),
 		};
 	} catch (error) {
@@ -289,7 +318,7 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 		} else {
 			throw new Error("Observation resource target is invalid");
 		}
-		const payload = redactSensitiveValue({ schema: OBSERVATION_RESOURCE_SCHEMA, snapshotId: descriptor.snapshotId, ref: descriptor.ref, kind: descriptor.kind, ...(descriptor.label ? { label: descriptor.label } : {}), value });
+		const payload = publicToolValue(redactSensitiveValue({ schema: OBSERVATION_RESOURCE_SCHEMA, snapshotId: descriptor.snapshotId, ref: descriptor.ref, kind: descriptor.kind, ...(descriptor.label ? { label: descriptor.label } : {}), value }));
 		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(payload) }] };
 	}
 	const requested = safeArtifactPath(uri, projectRoot);
@@ -300,9 +329,11 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 	if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Artifact resource is outside the project artifact root");
 	const data = await readFile(target);
 	const mimeType = mimeTypeFor(target);
-	return mimeType.startsWith("text/") || mimeType === "application/json"
-		? { contents: [{ uri, mimeType, text: data.toString("utf8") }] }
-		: { contents: [{ uri, mimeType, blob: data.toString("base64") }] };
+	return mimeType === "application/json"
+		? { contents: [{ uri, mimeType, text: publicJsonText(data.toString("utf8")) }] }
+		: mimeType.startsWith("text/")
+			? { contents: [{ uri, mimeType, text: data.toString("utf8") }] }
+			: { contents: [{ uri, mimeType, blob: data.toString("base64") }] };
 }
 
 let nextServerRequestId = 1;

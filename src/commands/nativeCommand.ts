@@ -34,12 +34,13 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 			"Use browser_command for explicit native CDP/management operations and browser_execute only for JavaScript.",
 			"For raw CDP, pass command={cmd:'cdp',method:'Domain.method',params:{...}}; Browser Pilot owns attach, reuse, recovery, and cleanup.",
 			"For a trusted physical click, use command={cmd:'input.ref',action:'click',ref:'bp-ref://...'}; Browser Pilot resolves its tab and private CDP target.",
-			"Tab-scoped writes return the same compact effect feedback as browser_execute; changed:null means page signals were unavailable, not that the command failed.",
+			"For tab-scoped writes, expect may declare a JavaScript truth expression; Browser Pilot owns waiting and reports effect.verification as verified, failed, or inconclusive.",
 		],
 		parameters: strictCommandParameters({
 			command: Type.Object({
 				cmd: Type.String({ enum: nativeCommandNames, description: "Canonical native command name from browser-pilot://native-commands." }),
 			}, { additionalProperties: true, description: "Validated native bridge command object." }),
+			expect: Type.Optional(Type.String({ minLength: 1, description: "Write postcondition as a JavaScript expression returning truthy when the intended state is reached." })),
 			...sharedTabScopedToolParams(),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
@@ -49,15 +50,19 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 				if (!protocol.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", protocol.error, protocol.details);
 				const owner = nativeCommandOwner(protocol.command);
 				if (owner) throw new BrowserBridgeError("INVALID_RULE", `${String(protocol.command.cmd)} must be invoked through ${owner}`, { commandName: "browser_command", useTool: owner });
-				if (!isPublicNativeCommand(protocol.command)) throw new BrowserBridgeError("INVALID_RULE", `${String(protocol.command.cmd)} is not a public native command`, { commandName: "browser_command", catalog: "browser-pilot://native-commands" });
-				const prepared = prepareNativeRef(protocol.command);
-				const command = prepared.command;
-				const server = await ensureStarted();
-				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
-				const rawTarget = targetTabId(params, command);
-				const write = isNativeWriteCommand(command);
+					if (!isPublicNativeCommand(protocol.command)) throw new BrowserBridgeError("INVALID_RULE", `${String(protocol.command.cmd)} is not a public native command`, { commandName: "browser_command", catalog: "browser-pilot://native-commands" });
+					const prepared = prepareNativeRef(protocol.command);
+					const command = prepared.command;
+					const write = isNativeWriteCommand(command);
+					const expect = typeof params.expect === "string" && params.expect.trim() ? params.expect.trim() : undefined;
+					if (params.expect !== undefined && !expect) throw new BrowserBridgeError("INVALID_RULE", "browser_command expect must be a non-empty JavaScript expression", { commandName: "browser_command" });
+					if (expect && !write) throw new BrowserBridgeError("INVALID_RULE", "browser_command expect is only valid for writes", { commandName: "browser_command" });
+					const server = await ensureStarted();
+					const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
+					const rawTarget = targetTabId(params, command);
 				const resolvedTarget = resolveRefExecutionTarget(server, prepared.refs, { rawTarget });
 				const target = isNativeTabScopedCommand(command) ? pinTabExecutionTarget(server, resolvedTarget) : resolvedTarget;
+				if (expect && target.tabId === undefined) throw new BrowserBridgeError("INVALID_RULE", "browser_command expect requires a tab-scoped write", { commandName: "browser_command" });
 				const commandName = String(command.cmd || "");
 				const dispatch = ({ signal: dispatchSignal }: { signal?: AbortSignal }) => server.sendCommand(command, {
 					browserSessionId: target.browserSessionId,
@@ -70,7 +75,14 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 					const run = () => dispatch({ signal: operationSignal });
 					return target.tabId === undefined
 						? { result: await run() }
-						: await withCommandEffect(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, deadlineAt, signal: operationSignal }, run);
+						: await withCommandEffect(server, {
+							browserSessionId: target.browserSessionId,
+							tabId: target.tabId,
+							timeoutMs,
+							deadlineAt,
+							signal: operationSignal,
+							...(expect ? { verify: async () => (await server.executeJavaScript(`return Boolean(await (${expect}));`, { browserSessionId: target.browserSessionId, tabId: target.rawTarget, timeoutMs, accessMode: "read", signal: operationSignal })).data === true } : {}),
+						}, run);
 				};
 				const outcome = write
 					? await withBrowserOperation({ server, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, signal }, dispatchWrite)

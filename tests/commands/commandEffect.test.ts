@@ -94,6 +94,30 @@ test("command effect samples and settles inside one caller-owned transaction", a
 	assert.equal(outcome.effect.page?.changeSeqDelta, 2);
 });
 
+test("command effect owns postcondition polling", async () => {
+	let attempts = 0;
+	const server = { async sendCommand() { return { id: "fingerprint", acknowledged: true, data: undefined }; } } as unknown as BrowserCommandRuntimePort;
+	const outcome = await withCommandEffect(server, {
+		timeoutMs: 1_000,
+		deadlineAt: Date.now() + 1_000,
+		quietMs: 0,
+		settleMs: 0,
+		verify: async () => (attempts += 1) === 2,
+	}, async () => bridgeResult);
+	assert.equal(outcome.effect.verification, "verified");
+	assert.equal(attempts, 2);
+});
+
+test("command effect keeps an unreadable postcondition inconclusive", async () => {
+	const server = { async sendCommand() { return { id: "fingerprint", acknowledged: true, data: undefined }; } } as unknown as BrowserCommandRuntimePort;
+	const outcome = await withCommandEffect(server, {
+		timeoutMs: 1_000,
+		deadlineAt: Date.now() + 1_000,
+		verify: async () => { throw new Error("page replaced"); },
+	}, async () => bridgeResult);
+	assert.equal(outcome.effect.verification, "inconclusive");
+});
+
 test("command effect summary stays bounded and stateless under 10k-result pressure", () => {
 	const before = fingerprint();
 	const after = fingerprint({ changeSeq: 11, visibleCount: 21 });

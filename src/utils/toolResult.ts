@@ -8,19 +8,67 @@ export type BrowserTextCommandResult = {
 	isError?: boolean;
 };
 
+const RUNTIME_RESULT_KEYS = new Set([
+	"browserSessionId", "tabSessionId", "sessionId", "session_id", "networkSessionId",
+	"tabId", "targetId", "target_id", "tabHandle", "defaultTabHandle", "latestTabHandle",
+	"targetGeneration", "pageEpoch", "documentId", "selectionVersion", "operationId",
+	"waitId", "leaseOwnerHash", "host", "port",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isExecutionEnvelope(value: Record<string, unknown>): boolean {
+	return typeof value.id === "string" && typeof value.acknowledged === "boolean"
+		&& ("data" in value || "target" in value || "diagnostics" in value);
+}
+
+function isRuntimeResultKey(key: string): boolean {
+	return RUNTIME_RESULT_KEYS.has(key)
+		|| /(?:TabId|TargetId|SessionId|SessionKey|SessionName|TabHandle)$/.test(key)
+		|| /(?:tab|target|session)_(?:id|key|name)$/.test(key);
+}
+
+type PublicToolValueOptions = { preserveExecutionData?: boolean };
+
+function projectRecord(value: Record<string, unknown>, options: PublicToolValueOptions): Record<string, unknown> {
+	if (isExecutionEnvelope(value)) {
+		const data = options.preserveExecutionData ? value.data : publicToolValue(value.data, options);
+		const rest = Object.fromEntries(Object.entries(value)
+			.filter(([key]) => !["id", "acknowledged", "data", "tabId", "target", "diagnostics"].includes(key))
+			.map(([key, item]) => [key, publicToolValue(item, options)]));
+		return {
+			...(isRecord(data) ? data : data === undefined ? {} : { result: data }),
+			...rest,
+		};
+	}
+
+	const errorEnvelope = typeof value.code === "string" && typeof value.message === "string";
+	return Object.fromEntries(Object.entries(value)
+		.filter(([key]) => !isRuntimeResultKey(key) && !(errorEnvelope && key === "diagnostics"))
+		.map(([key, item]) => [key, publicToolValue(item, options)]));
+}
+
+/** Keep private routing/lifecycle state out of every agent-facing JSON value. */
+export function publicToolValue(value: unknown, options: PublicToolValueOptions = {}): unknown {
+	if (Array.isArray(value)) return value.map((item) => publicToolValue(item, options));
+	return isRecord(value) ? projectRecord(value, options) : value;
+}
+
 function normalizeDetails(details: Record<string, unknown>): Record<string, unknown> {
 	return JSON.parse(stableJson(redactSensitiveValue(details))) as Record<string, unknown>;
 }
 
-export function jsonResult(value: unknown, details: Record<string, unknown> = {}): BrowserTextCommandResult {
+export function jsonResult(value: unknown, details: Record<string, unknown> = {}, options: PublicToolValueOptions = {}): BrowserTextCommandResult {
 	return {
-		content: [{ type: "text", text: stableJson(value) }],
+		content: [{ type: "text", text: stableJson(publicToolValue(value, options)) }],
 		details: normalizeDetails(details),
 	};
 }
 
 export function errorResult(error: unknown): BrowserTextCommandResult {
-	const normalized = compactError(error);
+	const normalized = publicToolValue(compactError(error)) as Record<string, unknown>;
 	return {
 		content: [{ type: "text", text: stableJson(normalized) }],
 		details: normalizeDetails({ error: normalized }),

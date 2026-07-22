@@ -134,14 +134,14 @@ function registerOwnedRef(options: { tabId?: number; browserSessionId?: string; 
 	});
 }
 
-test("commands execution: browser_tabs list returns compact transport envelope from runtime port", async () => {
+test("commands execution: browser_tabs list hides runtime identity", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
 	const result = await command.execute("tool-1", { action: "list" }, undefined, undefined, { omitTransportDetails: true });
 	const body = parseResult(result);
 	assert.equal(body.tabCount, 1);
-	assert.deepEqual(body.bridge, { browserSessionId: "session-1", host: "127.0.0.1", port: 18765, running: true, connectedClients: 1, extensionConnected: true, defaultTabId: 7, defaultTabHandle: "tab-7", selectionVersion: 3 });
-	assert.deepEqual(body.tabs, [{ id: "tab-7", tabId: 7, tabHandle: "tab-7", targetRef: "tab-7", url: "https://example.test/", title: "Example", active: true }]);
+	assert.deepEqual(body.bridge, { running: true, connectedClients: 1, extensionConnected: true });
+	assert.deepEqual(body.tabs, [{ id: "tab-7", targetRef: "tab-7", url: "https://example.test/", title: "Example", active: true }]);
 	assert.deepEqual(result.details, {});
 	assert.equal(runtime.calls.some((call) => call.name === "refreshTabs"), true);
 });
@@ -157,15 +157,14 @@ test("commands execution: browser_tabs runtime failure returns the bridge error"
 	const body = parseResult(result);
 	assert.equal(body.code, "NO_TAB");
 	assert.match(String(body.message), /tab vanished/);
+	assert.equal(JSON.stringify(body).includes("tabId"), false);
 });
 
 test("commands execution: browser_tabs actions preserve runtime dispatch", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
 	const create = parseResult(await command.execute("tool-1", { action: "create", url: "https://example.test/new", active: false, incognito: true }));
-	assert.equal(create.id, "create-1");
-	assert.equal(create.acknowledged, true);
-	assert.equal((create.target as Record<string, unknown>).tabId, 8);
+	assert.deepEqual(create, { url: "https://example.test/new" });
 	const createArgs = runtime.calls.find((call) => call.name === "createTab")?.args;
 	assert.deepEqual(createArgs?.slice(0, 3), ["https://example.test/new", false, 5_000]);
 	assert.deepEqual({ ...(createArgs?.[3] as Record<string, unknown>), signal: undefined }, { incognito: true, signal: undefined });
@@ -203,7 +202,7 @@ test("commands execution: browser_command read commands return immediately", asy
 	const envelope = parseResult(result);
 	const send = runtime.calls.find((call) => (call.args[0] as Record<string, unknown>)?.cmd === "network.list");
 	assert.deepEqual(send?.args[0], { cmd: "network.list", limit: 20 });
-	assert.equal(envelope.id, "cmd-1");
+	assert.deepEqual(envelope.echoed, { cmd: "network.list", limit: 20 });
 	assert.equal(result.details?.mode, "command");
 });
 
@@ -216,7 +215,7 @@ test("commands execution: browser_command preserves large JSON results", async (
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const result = parseResult(await command.execute("tool-large", { command: { cmd: "network.list", limit: 20 } }));
-	assert.equal(((result.data as Record<string, unknown>).payload as string).length, payload.length);
+	assert.equal((result.payload as string).length, payload.length);
 });
 
 test("tool results preserve complete metadata", () => {
@@ -224,7 +223,7 @@ test("tool results preserve complete metadata", () => {
 	assert.equal(jsonResult({}, { diagnosticText }).details?.diagnosticText, diagnosticText);
 });
 
-test("commands execution: browser_command writes return the raw bridge result", async () => {
+test("commands execution: browser_command writes return domain data and effect", async () => {
 	const runtime = createRuntime({
 		async sendCommand(command, options) {
 			runtime.calls.push({ name: "sendCommand", args: [command, options] });
@@ -233,10 +232,26 @@ test("commands execution: browser_command writes return the raw bridge result", 
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const outcome = parseResult(await command.execute("tool-native-write", { command: { cmd: "network.start" } }));
-	assert.equal(outcome.id, "network-start");
-	assert.equal(outcome.acknowledged, true);
-	assert.equal((outcome.data as Record<string, unknown>).active, true);
+	assert.equal(outcome.active, true);
 	assert.deepEqual({ ...(outcome.effect as Record<string, unknown>), elapsedMs: 0 }, { observed: false, changed: null, settled: false, elapsedMs: 0 });
+});
+
+test("commands execution: browser_command verifies a declared postcondition", async () => {
+	const runtime = createRuntime({
+		async sendCommand(command, options) {
+			runtime.calls.push({ name: "sendCommand", args: [command, options] });
+			return { id: "command", acknowledged: true, data: command.cmd === "content.fingerprint" ? undefined : { active: true } } as BrowserBridgeExecutionResult;
+		},
+		async executeJavaScript(script, options) {
+			runtime.calls.push({ name: "executeJavaScript", args: [script, options] });
+			return { id: "expect", acknowledged: true, data: true } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const outcome = parseResult(await command.execute("tool-native-expect", { command: { cmd: "network.start" }, expect: "document.body.dataset.ready === '1'" }));
+	assert.equal(outcome.active, true);
+	assert.equal((outcome.effect as Record<string, unknown>).verification, "verified");
+	assert.equal(runtime.calls.filter((call) => call.name === "executeJavaScript").length, 1);
 });
 
 test("commands execution: browser-wide writes skip irrelevant page-effect sampling", async () => {
@@ -306,6 +321,15 @@ test("commands execution: browser_command rejects command-specific schema errors
 	assert.equal(runtime.calls.length, 0);
 });
 
+test("commands execution: browser_command rejects postconditions on reads", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const body = parseResult(await command.execute("tool-read-expect", { command: { cmd: "network.list" }, expect: "true" }));
+	assert.equal(body.code, "INVALID_RULE");
+	assert.match(String(body.message), /only valid for writes/);
+	assert.equal(runtime.calls.some((call) => call.name === "sendCommand"), false);
+});
+
 test("dedicated screenshot and browser_command dispatch their native commands", async () => {
 	const directory = await mkdtemp(path.join(tmpdir(), "browser-pilot-owned-tools-"));
 	const runtime = createRuntime({
@@ -344,7 +368,7 @@ test("commands execution: browser_command write failures return the error", asyn
 	assert.match(String(body.message), /bridge send failed/);
 });
 
-test("commands execution: browser_execute summarizes successful JavaScript result and runtime target context", async () => {
+test("commands execution: browser_execute returns only script data and effect", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const result = await command.execute("tool-1", { script: "return 42", targetRef: "tab-7" });
@@ -353,10 +377,18 @@ test("commands execution: browser_execute summarizes successful JavaScript resul
 	assert.equal(execute?.args[0], "return 42");
 	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", tabId: "tab-7", timeoutMs: 15000, accessMode: "write", signal: undefined });
 	assert.ok((execute?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
-	assert.equal(envelope.id, "exec-1");
-	assert.equal(envelope.acknowledged, true);
-	assert.deepEqual(envelope.data, { answer: 42, script: "return 42" });
+	assert.equal(envelope.answer, 42);
+	assert.equal(envelope.script, "return 42");
 	assert.deepEqual({ ...(envelope.effect as Record<string, unknown>), elapsedMs: 0 }, { observed: false, changed: null, settled: false, elapsedMs: 0 });
+});
+
+test("commands execution: browser_execute preserves application-owned identity fields", async () => {
+	const runtime = createRuntime({
+		async executeJavaScript() { return { id: "exec", acknowledged: true, tabId: 7, data: { sessionId: "application-session", tabId: "application-tab" } } as BrowserBridgeExecutionResult; },
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const result = parseResult(await command.execute("tool-app-data", { script: "return app.state", readOnly: true }));
+	assert.deepEqual(result, { sessionId: "application-session", tabId: "application-tab" });
 });
 
 test("commands execution: browser_execute keeps effect sampling inside the pinned target transaction", async () => {
@@ -378,17 +410,33 @@ test("commands execution: browser_execute keeps effect sampling inside the pinne
 			order.push(`fingerprint:${fingerprintReads += 1}`);
 			return { id: "fingerprint", acknowledged: true, data: fingerprints.shift() } as BrowserBridgeExecutionResult;
 		},
-		async executeJavaScript(script, options) {
+		async executeJavaScript(script, _options) {
 			order.push("dispatch");
-			return { id: "exec-effect", acknowledged: true, tabId: 7, target: { tabId: 7 }, data: { script, target: options?.tabId } } as BrowserBridgeExecutionResult;
+			return { id: "exec-effect", acknowledged: true, tabId: 7, target: { tabId: 7 }, data: { script } } as BrowserBridgeExecutionResult;
 		},
 	});
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const envelope = parseResult(await command.execute("tool-effect", { script: "document.body.dataset.ready = '1'" }));
 	assert.deepEqual(order, ["lock:7", "fingerprint:1", "dispatch", "fingerprint:2", "fingerprint:3", "unlock:7"]);
-	assert.deepEqual((envelope.data as Record<string, unknown>).target, 7);
+	assert.equal(envelope.script, "document.body.dataset.ready = '1'");
 	assert.equal((envelope.effect as Record<string, unknown>).changed, true);
 	assert.equal((envelope.effect as Record<string, unknown>).settled, true);
+});
+
+test("commands execution: browser_execute verifies a declared postcondition", async () => {
+	let checks = 0;
+	const runtime = createRuntime({
+		async sendCommand() { return { id: "fingerprint", acknowledged: true, data: undefined } as BrowserBridgeExecutionResult; },
+		async executeJavaScript(script, options) {
+			runtime.calls.push({ name: "executeJavaScript", args: [script, options] });
+			return { id: "exec", acknowledged: true, data: script.includes("Boolean(await") ? (checks += 1) === 2 : { submitted: true } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	const result = parseResult(await command.execute("tool-expect", { script: "submit()", expect: "document.body.dataset.state === 'done'" }));
+	assert.equal(result.submitted, true);
+	assert.equal((result.effect as Record<string, unknown>).verification, "verified");
+	assert.equal(checks, 2);
 });
 
 test("commands execution: browser_execute rejects command-shaped scripts with recovery metadata", async () => {
