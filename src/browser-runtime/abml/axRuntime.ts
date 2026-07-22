@@ -22,7 +22,7 @@ export type AxReadRuntimeOptions = {
 	cacheKey?: string;
 };
 
-async function sendPersistentCdp(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown> }) {
+export async function sendPersistentCdp(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown> }) {
 	const result = await server.sendCommand({
 		cmd: "persistent_cdp",
 		action: "send",

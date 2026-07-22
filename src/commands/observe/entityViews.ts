@@ -1,5 +1,5 @@
 import type { Entity } from "../../kernels/abml/entity.js";
-import type { ObserveRelevanceResult } from "./relevanceTypes.js";
+import type { RelevanceResult } from "../../kernels/evidence/distill/relevance.js";
 
 export function entitySalienceRank(entity: Entity): number {
 	const s = entity.state;
@@ -10,7 +10,7 @@ export function entitySalienceRank(entity: Entity): number {
 	return 4;
 }
 
-export function sortEntitiesBySalience(entities: Entity[], relevance?: ObserveRelevanceResult): Entity[] {
+export function sortEntitiesBySalience(entities: Entity[], relevance?: RelevanceResult): Entity[] {
 	return entities
 		.map((entity, index) => ({ entity, index, relevance: relevance?.byRef.get(entity.ref)?.score ?? 0 }))
 		.sort((a, b) => entitySalienceRank(a.entity) - entitySalienceRank(b.entity) || b.relevance - a.relevance || a.index - b.index)

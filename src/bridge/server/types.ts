@@ -2,8 +2,10 @@ import type { WebSocket } from "ws";
 import type { SessionReleasedTabLeaseInfo, SessionReleasedUiLockInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../../kernels/session/leaseRegistry.js";
 import type { SessionObservationSnapshotInfo } from "../../kernels/session/observationSnapshotRegistry.js";
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../../ports/BrowserRuntimeTypes.js";
+import type { BrowserCommandQueueInfo } from "./BrowserCommandQueueRegistry.js";
 
 export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserBridgeTargetSource } from "../../ports/BrowserRuntimeTypes.js";
+export type { BrowserCommandQueueInfo } from "./BrowserCommandQueueRegistry.js";
 
 export type BrowserBridgeClientInfo = {
 	id: string;
@@ -87,13 +89,6 @@ export type BrowserTabLeaseInfo = SessionTabLeaseInfo;
 export type BrowserReleasedTabLeaseInfo = SessionReleasedTabLeaseInfo;
 export type BrowserUiLockInfo = SessionUiLockInfo;
 export type BrowserReleasedUiLockInfo = SessionReleasedUiLockInfo;
-
-export type BrowserCommandQueueInfo = {
-	key: string;
-	browserSessionId: string;
-	tabId: number;
-	depth: number;
-};
 
 export type BrowserObservationSnapshotInfo = SessionObservationSnapshotInfo;
 

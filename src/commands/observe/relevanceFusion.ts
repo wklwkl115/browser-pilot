@@ -1,32 +1,31 @@
 import type { Entity } from "../../kernels/abml/entity.js";
 import { buildInferenceSummary } from "../../kernels/abml/inference.js";
 import { extractScalarTerm, extractUrlTerms } from "../../kernels/evidence/distill/relevanceTaps.js";
+import { computeRelevanceMap, type RelevanceInput, type RelevanceResult, type RelevanceTerm } from "../../kernels/evidence/distill/relevance.js";
 import type { BrowserCommandRuntimePort, CommandPerceptionTraceSnapshot } from "../../ports/BrowserCommandRuntimePort.js";
 import type { ObserveToolParams } from "./common.js";
-import { computeObserveRelevanceMap } from "./relevanceScoring.js";
-import type { ObserveRelevanceInput, ObserveRelevanceResult, ObserveRelevanceTerm } from "./relevanceTypes.js";
 
 export function observeIntent(params: ObserveToolParams): string | undefined {
 	return typeof params.intent === "string" && params.intent.trim() ? params.intent.trim() : undefined;
 }
 
-function traceTerms(snapshot: CommandPerceptionTraceSnapshot | undefined): ObserveRelevanceTerm[] {
-	return (snapshot?.terms ?? []).map((term, age) => ({ term: term.term, kind: term.kind as ObserveRelevanceTerm["kind"], weight: term.weight, age, source: "A" }));
+function traceTerms(snapshot: CommandPerceptionTraceSnapshot | undefined): RelevanceTerm[] {
+	return (snapshot?.terms ?? []).map((term, age) => ({ term: term.term, kind: term.kind as RelevanceTerm["kind"], weight: term.weight, age, source: "A" }));
 }
 
-function urlTerms(url: string | undefined): ObserveRelevanceTerm[] {
+function urlTerms(url: string | undefined): RelevanceTerm[] {
 	return extractUrlTerms(url).map((term) => ({ ...term, source: "D" }));
 }
 
-function intentTerms(intent: string | undefined): ObserveRelevanceTerm[] {
+function intentTerms(intent: string | undefined): RelevanceTerm[] {
 	return extractScalarTerm(intent, "intent", 1.35).map((term) => ({ ...term, source: "E" }));
 }
 
-function archetypeTerms(inference: ReturnType<typeof buildInferenceSummary> | undefined): ObserveRelevanceTerm[] {
+function archetypeTerms(inference: ReturnType<typeof buildInferenceSummary> | undefined): RelevanceTerm[] {
 	return (inference?.intents ?? []).flatMap((item) => extractScalarTerm(item.intent, "intent", item.confidence === "high" ? 1.25 : 0.9).map((term) => ({ ...term, source: "C" as const })));
 }
 
-function entityRelevanceInputs(entities: Entity[]): ObserveRelevanceInput[] {
+function entityRelevanceInputs(entities: Entity[]): RelevanceInput[] {
 	const labelConsumers = new Map<string, string[]>();
 	for (const entity of entities) {
 		for (const rel of entity.relations ?? []) {
@@ -59,7 +58,7 @@ function entityRelevanceInputs(entities: Entity[]): ObserveRelevanceInput[] {
 	});
 }
 
-export function buildObserveRelevance(server: BrowserCommandRuntimePort, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>): ObserveRelevanceResult | undefined {
+export function buildObserveRelevance(server: BrowserCommandRuntimePort, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>): RelevanceResult | undefined {
 	const trace = typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(browserSessionId) : undefined;
 	const terms = [
 		...traceTerms(trace),
@@ -68,6 +67,6 @@ export function buildObserveRelevance(server: BrowserCommandRuntimePort, params:
 		...intentTerms(observeIntent(params)),
 	];
 	if (!terms.length) return undefined;
-	const result = computeObserveRelevanceMap(entityRelevanceInputs(entities), terms);
+	const result = computeRelevanceMap(entityRelevanceInputs(entities), terms);
 	return result.boosted > 0 ? result : undefined;
 }

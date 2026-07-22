@@ -1,25 +1,20 @@
 import { PerceptionLedger } from "../../kernels/session/perceptionLedger.js";
-import { createIntentRefRegistry, type IntentRefRegistry } from "../../kernels/session/intentRefRegistry.js";
-
-// Bridge-local re-export so the bridge-server main file can annotate its accessor without importing
-// the session kernel directly (architecture boundary: bridge-server-main-to-kernels).
-export type { IntentRefRegistry } from "../../kernels/session/intentRefRegistry.js";
-import { SessionKernel } from "../../kernels/session/SessionKernel.js";
-import { BrowserTemporalCoordinator } from "./BrowserTemporalCoordinator.js";
+import { SessionLeaseRegistry } from "../../kernels/session/leaseRegistry.js";
+import { SessionObservationSnapshotRegistry } from "../../kernels/session/observationSnapshotRegistry.js";
+import { SessionRegistry } from "../../kernels/session/sessionRegistry.js";
 import { isOpen } from "./bridgeUtils.js";
 import type { WebSocket } from "ws";
 
-export class BrowserBridgeSessionState extends SessionKernel<WebSocket> {
+export class BrowserBridgeSessionState {
+	readonly browserSessions = new SessionRegistry<WebSocket>({ isOpenClient: isOpen });
+	readonly leases = new SessionLeaseRegistry();
+	readonly observationSnapshots = new SessionObservationSnapshotRegistry();
 	readonly perceptionLedger = new PerceptionLedger();
-	readonly intentRefRegistry: IntentRefRegistry = createIntentRefRegistry();
-	readonly temporal = new BrowserTemporalCoordinator();
-
-	constructor() {
-		super({ isOpenClient: isOpen });
-	}
 
 	clear(): void {
-		super.clear();
+		this.browserSessions.clear();
+		this.leases.clear();
+		this.observationSnapshots.clear();
 		this.perceptionLedger.clear();
 	}
 }

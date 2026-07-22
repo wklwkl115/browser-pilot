@@ -1,6 +1,7 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { BrowserBridgeError } from "../../utils/errors.js";
 import { isRecord } from "../../utils/records.js";
+import { urlOrigin } from "../../utils/url.js";
 import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
@@ -9,6 +10,7 @@ import { scanEntitiesForEnvelope } from "../../scan/summary.js";
 import { normalizeTabId } from "../../utils/params.js";
 import { resolveRefUriDetailed, registerRefDescriptor, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import type { Entity } from "../../kernels/abml/entity.js";
+import { diffEntities } from "../../kernels/abml/diff.js";
 import { createCaptureRef, buildNetworkEntryEntity, buildEventEntity, type CaptureRefContext } from "../../kernels/abml/stream.js";
 import { buildCausalRequest, buildCausalEvent, buildCausalSummary, buildCausalEvents, latestSeq } from "../../kernels/abml/causal.js";
 import { mergeAxIntoDomEntities, readAxEntities, readPartialAxTree, type AxReadResult, type PartialAxDiagnostics } from "./axRuntime.js";
@@ -20,9 +22,6 @@ import { decideRefAccess, defaultRefPolicyForKind } from "../../kernels/refs/ref
 import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
 import type { ActionabilityReport, VerificationResult } from "../../kernels/abml/types.js";
 import type { AbmlFrameInput, AbmlPierceInput, AbmlReadInput, AbmlRuntimeContext, AbmlVerbFailure, AbmlVerbResult } from "../../kernels/abml/verbs/router.js";
-import { runAbmlRead } from "../../kernels/abml/verbs/read.js";
-import { runAbmlPierce } from "../../kernels/abml/verbs/pierce.js";
-import { runAbmlFrame } from "../../kernels/abml/verbs/frame.js";
 import { inspectVisionRegion } from "./visionRuntime.js";
 import { readFrameEntities, frameIdFromRef, probeFrameReachability } from "./frameRuntime.js";
 import { pierceRefEntities } from "./pierceRuntime.js";
@@ -70,11 +69,6 @@ type ListenerProbeStats = {
 	maxCandidates: number;
 	maxListenersPerNode: number;
 };
-
-function originOf(url: string | undefined): string | undefined {
-	if (!url) return undefined;
-	try { return new URL(url).origin; } catch { return undefined; }
-}
 
 function numberValue(value: unknown): number | undefined {
 	const n = Number(value);
@@ -234,7 +228,7 @@ function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessio
 				owner: {
 					...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 					...(typeof context.tabId === "number" ? { tabId: context.tabId } : {}),
-					...(originOf(context.url) ? { topLevelOrigin: originOf(context.url) } : {}),
+					...(urlOrigin(context.url) ? { topLevelOrigin: urlOrigin(context.url) } : {}),
 				},
 				policy: defaultRefPolicyForKind(entity.kind),
 				semantic: {
@@ -650,7 +644,16 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 }
 
 async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions = {}): Promise<AbmlVerbResult> {
-	return await runAbmlRead(input, async () => await resolveBrowserAbmlRead(server, input, options));
+	const resolved = await resolveBrowserAbmlRead(server, input, options);
+	const diff = input.baseline && resolved.entities ? diffEntities(input.baseline, resolved.entities, input.diffOptions) : undefined;
+	return {
+		ok: true,
+		verb: "read",
+		...(resolved.entities ? { entities: resolved.entities } : {}),
+		...(diff ? { diff } : {}),
+		...(resolved.data ? { data: resolved.data } : {}),
+		meta: { plane: input.plane || "structure", depth: input.depth, entityCount: resolved.entities?.length ?? 0 },
+	};
 }
 
 function filterEntitiesForRef(entities: Entity[], descriptor: RefDescriptor): Entity[] {
@@ -671,17 +674,15 @@ async function executeBrowserAbmlPierce(server: AbmlBrowserRuntimeServer, input:
 	if (!target.tabId) return failure("pierce", { code: "NO_TAB", message: "No target browser tab is available for ABML pierce" });
 	const access = accessForLiveVerb(descriptor, target, true);
 	if (!access.ok) return failure("pierce", access.error);
-	return await runAbmlPierce(input, async () => {
-		const pierced = await pierceRefEntities(server, descriptor, {
-			browserSessionId: target.browserSessionId,
-			tabId: target.tabId!,
-			observationId: descriptor.observationId,
-			capturedAt: descriptor.createdAt,
-			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
-		});
-		if (!pierced.ok) throw pierced.error;
-		return { entities: pierced.entities, data: pierced.data };
+	const pierced = await pierceRefEntities(server, descriptor, {
+		browserSessionId: target.browserSessionId,
+		tabId: target.tabId,
+		observationId: descriptor.observationId,
+		capturedAt: descriptor.createdAt,
+		timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
 	});
+	if (!pierced.ok) throw pierced.error;
+	return { ok: true, verb: "pierce", entities: pierced.entities, data: pierced.data, meta: { depth: input.depth ?? 1, entityCount: pierced.entities.length } };
 }
 
 async function executeBrowserAbmlFrame(server: AbmlBrowserRuntimeServer, input: AbmlFrameInput, options: BrowserAbmlRuntimeOptions = {}): Promise<AbmlVerbResult> {
@@ -694,25 +695,27 @@ async function executeBrowserAbmlFrame(server: AbmlBrowserRuntimeServer, input: 
 		const access = accessForLiveVerb(descriptor, target, true);
 		if (!access.ok) return failure("frame", access.error);
 	}
-	return await runAbmlFrame(input, async () => {
-		const observationId = descriptor?.observationId || `frame:${target.tabId}`;
-		const frameRead = await readFrameEntities(server, {
-			browserSessionId: target.browserSessionId,
-			tabId: target.tabId!,
-			observationId,
-			capturedAt: descriptor?.createdAt,
-			depth: input.depth,
-		});
-		const frameId = descriptor ? (frameIdFromRef(descriptor) || frameLocatorFromRef(descriptor)) : undefined;
-		if (frameId) {
-			const reachability = await probeFrameReachability(server, { browserSessionId: target.browserSessionId, tabId: target.tabId!, frameId, timeoutMs: options.timeoutMs ?? 8_000 });
-			if (!reachability.ok) throw reachability.error;
-		}
-		return {
-			entities: frameId ? frameRead.entities.filter((entity) => entity.hints?.frameId === frameId || entity.value === frameId) : frameRead.entities,
-			data: { frameTree: frameRead.frameTree, frameCount: frameRead.frames.length, frameId, source: "frame.list", oopifBoundaryExplicit: true, abmlIntegrated: true },
-		};
+	const observationId = descriptor?.observationId || `frame:${target.tabId}`;
+	const frameRead = await readFrameEntities(server, {
+		browserSessionId: target.browserSessionId,
+		tabId: target.tabId,
+		observationId,
+		capturedAt: descriptor?.createdAt,
+		depth: input.depth,
 	});
+	const frameId = descriptor ? (frameIdFromRef(descriptor) || frameLocatorFromRef(descriptor)) : undefined;
+	if (frameId) {
+		const reachability = await probeFrameReachability(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, frameId, timeoutMs: options.timeoutMs ?? 8_000 });
+		if (!reachability.ok) throw reachability.error;
+	}
+	const entities = frameId ? frameRead.entities.filter((entity) => entity.hints?.frameId === frameId || entity.value === frameId) : frameRead.entities;
+	return {
+		ok: true,
+		verb: "frame",
+		entities,
+		data: { frameTree: frameRead.frameTree, frameCount: frameRead.frames.length, frameId, source: "frame.list", oopifBoundaryExplicit: true, abmlIntegrated: true },
+		meta: { depth: input.depth ?? 1, entityCount: entities.length, abmlIntegrated: true },
+	};
 }
 
 export function createBrowserAbmlRuntime(server: AbmlBrowserRuntimeServer, options: BrowserAbmlRuntimeOptions = {}): AbmlRuntimeContext {

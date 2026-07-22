@@ -1,5 +1,6 @@
 import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import { isRecord } from "../../utils/records.js";
+import { urlOrigin } from "../../utils/url.js";
 import type { BuiltEntity, Entity, EntityKind, EntityState, EntityStructure, RelationType } from "./entity.js";
 import type { Locator } from "./types.js";
 import { sanitizeSemanticText } from "./semanticText.js";
@@ -110,22 +111,13 @@ function boolValue(value: unknown): boolean | undefined {
 	return typeof value === "boolean" ? value : undefined;
 }
 
-function topLevelOrigin(url: string | undefined): string | undefined {
-	if (!url) return undefined;
-	try {
-		return new URL(url).origin;
-	} catch {
-		return undefined;
-	}
-}
-
 let cachedTopLevelOriginUrl: string | undefined;
 let cachedTopLevelOriginValue: string | undefined;
 let hasCachedTopLevelOrigin = false;
 
 function memoizedTopLevelOrigin(url: string | undefined): string | undefined {
 	if (hasCachedTopLevelOrigin && url === cachedTopLevelOriginUrl) return cachedTopLevelOriginValue;
-	const origin = topLevelOrigin(url);
+	const origin = urlOrigin(url);
 	cachedTopLevelOriginUrl = url;
 	cachedTopLevelOriginValue = origin;
 	hasCachedTopLevelOrigin = true;

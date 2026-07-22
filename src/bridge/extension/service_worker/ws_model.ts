@@ -1,4 +1,4 @@
-import { redactSensitive, runtimeRecord as asRecord } from "./runtimeSupport.js";
+import { integerInRange as numberInRange, redactSensitive, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
 export type WsSessionState = "opening" | "open" | "closed" | "error";
@@ -48,12 +48,6 @@ function wsSessionId(msg: BrowserPilotBridgeCommand | JsonRecord | null | undefi
 
 function wsSessionKey(tabId: unknown, sessionId: unknown): string {
 	return `${Number(tabId)}:${String(sessionId || BROWSER_PILOT_WS_DEFAULT_SESSION_ID)}`;
-}
-
-function numberInRange(value: unknown, fallback: number, min: number, max: number): number {
-	const n = Number(value);
-	if (!Number.isFinite(n)) return fallback;
-	return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
 function createWsSession(tabId: unknown, config: { sessionId: string; url: string; headers: Record<string, string>; protocols: string[]; maxTranscript: number }): WsSessionRecord {

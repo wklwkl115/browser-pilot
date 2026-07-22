@@ -1,5 +1,6 @@
 import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import { isRecord } from "../../utils/records.js";
+import { urlOrigin } from "../../utils/url.js";
 import type { Entity } from "./entity.js";
 import type { CaptureRef, CaptureState, RefDescriptor } from "./types.js";
 
@@ -12,15 +13,6 @@ function stringValue(value: unknown): string | undefined {
 function numberValue(value: unknown): number | undefined {
 	const n = Number(value);
 	return Number.isFinite(n) ? n : undefined;
-}
-
-function topLevelOrigin(url: string | undefined): string | undefined {
-	if (!url) return undefined;
-	try {
-		return new URL(url).origin;
-	} catch {
-		return undefined;
-	}
 }
 
 export type CaptureRefContext = {
@@ -48,7 +40,7 @@ export function createCaptureRef(params: {
 		owner: {
 			...(params.context.browserSessionId ? { browserSessionId: params.context.browserSessionId } : {}),
 			...(params.context.tabId !== undefined ? { tabId: params.context.tabId } : {}),
-			...(topLevelOrigin(params.context.url) ? { topLevelOrigin: topLevelOrigin(params.context.url) } : {}),
+			...(urlOrigin(params.context.url) ? { topLevelOrigin: urlOrigin(params.context.url) } : {}),
 		},
 		policy: defaultRefPolicyForKind("signal"),
 		observationId: params.context.observationId,
@@ -102,7 +94,7 @@ export function buildNetworkEntryEntity(entry: Record<string, unknown>, context:
 			owner: {
 				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
-				...(topLevelOrigin(url || context.url) ? { topLevelOrigin: topLevelOrigin(url || context.url) } : {}),
+				...(urlOrigin(url || context.url) ? { topLevelOrigin: urlOrigin(url || context.url) } : {}),
 			},
 			policy: defaultRefPolicyForKind("network-entry"),
 			snapshot: bodyHandle ? { observationId: context.observationId, resourceUri: bodyHandle, immutable: true } : undefined,
@@ -147,7 +139,7 @@ export function buildEventEntity(event: Record<string, unknown>, context: Captur
 			owner: {
 				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
-				...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {}),
+				...(urlOrigin(context.url) ? { topLevelOrigin: urlOrigin(context.url) } : {}),
 			},
 			policy: defaultRefPolicyForKind("event"),
 			snapshot: payloadHandle ? { observationId: context.observationId, resourceUri: payloadHandle, immutable: true } : undefined,

@@ -57,14 +57,6 @@
     "typebox": "^1.0.55",
     "ws": "^8.21.0"
   },
-  "peerDependencies": {
-    "typebox": "^1.0.55"
-  },
-  "peerDependenciesMeta": {
-    "typebox": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.4",

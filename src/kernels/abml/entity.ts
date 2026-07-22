@@ -1,6 +1,7 @@
 import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import type { Locator, RefDescriptor, RefKind } from "./types.js";
 import { isRecord } from "../../utils/records.js";
+import { urlOrigin } from "../../utils/url.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
 import type { ScanActionable, ScanCanvasRegion, ScanListHint } from "./pageWorldScan.js";
 
@@ -144,22 +145,13 @@ function roleForTag(tag: string | undefined): string {
 	}
 }
 
-function topLevelOrigin(url: string | undefined): string | undefined {
-	if (!url) return undefined;
-	try {
-		return new URL(url).origin;
-	} catch {
-		return undefined;
-	}
-}
-
 let cachedTopLevelOriginUrl: string | undefined;
 let cachedTopLevelOriginValue: string | undefined;
 let hasCachedTopLevelOrigin = false;
 
 function memoizedTopLevelOrigin(url: string | undefined): string | undefined {
 	if (hasCachedTopLevelOrigin && url === cachedTopLevelOriginUrl) return cachedTopLevelOriginValue;
-	const origin = topLevelOrigin(url);
+	const origin = urlOrigin(url);
 	cachedTopLevelOriginUrl = url;
 	cachedTopLevelOriginValue = origin;
 	hasCachedTopLevelOrigin = true;

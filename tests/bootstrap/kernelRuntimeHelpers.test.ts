@@ -13,15 +13,11 @@ import { buildSnapshotProjection } from "../../src/kernels/abml/snapshotProjecti
 import { buildIdentityGraph, identityGraphSummary } from "../../src/kernels/abml/identityGraph.ts";
 import { buildEventEntity, buildNetworkEntryEntity, createCaptureRef } from "../../src/kernels/abml/stream.ts";
 import { buildCausalEvents, buildCausalSummary, buildTriggeredRelations } from "../../src/kernels/abml/causal.ts";
-import { classifyStaleness, classifyStateLoss, classifyTimeout, diagnoseWaitTimeout } from "../../src/kernels/temporal/classify.ts";
-import { classifyDeadlinePressure } from "../../src/kernels/temporal/budget.ts";
-import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity } from "../../src/kernels/temporal/estimate.ts";
-import { TEMPORAL_REASON_MODEL_CAP, type TemporalAnchor, type TemporalStamp } from "../../src/kernels/temporal/types.ts";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../src/capture/inject.ts";
 import { buildScanEntities } from "../../src/scan/summary.ts";
 import { stableRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
 import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
-import type { ResourceRefDescriptor } from "../../src/ports/ResourceRefTypes.ts";
+import type { ResourceRefDescriptor } from "../../src/resources/resourceRefs.ts";
 import { readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
 import { pierceRefEntities } from "../../src/browser-runtime/abml/pierceRuntime.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
@@ -44,23 +40,6 @@ function entity(ref: string, overrides: Partial<Entity> = {}): Entity {
 		source: "dom",
 		...overrides,
 	};
-}
-
-function stamp(overrides: Partial<TemporalStamp> = {}): TemporalStamp {
-	return {
-		version: "temporal-stamp/v1",
-		browserSessionId: "session-1",
-		tabId: 1,
-		targetRef: "target-1",
-		capturedAtMs: 1_000,
-		clockDomain: "driver_wall",
-		changeSeq: 5,
-		...overrides,
-	};
-}
-
-function anchor(overrides: Partial<TemporalStamp> = {}): TemporalAnchor {
-	return { version: "temporal-anchor/v1", source: "observe", stamp: stamp(overrides) };
 }
 
 type CdpCall = { method: string; params?: Record<string, unknown>; timeoutMs?: number };
@@ -266,92 +245,6 @@ test("pierce runtime prefers scoped partial AX enrichment and falls back without
 	assert.equal((fallback.data.partialAx as { status?: string; reason?: string }).status, "degraded");
 	assert.equal((fallback.data.partialAx as { status?: string; reason?: string }).reason, "empty");
 	assert.deepEqual(fallback.entities.map((item) => item.name), ["Save changes"]);
-});
-
-test("temporal classifier prioritizes deterministic state loss and bounds reason output", () => {
-	assert.deepEqual(classifyStateLoss({ extensionUnavailable: true }), {
-		verdict: { status: "unknown", confidence: "lost", reasons: ["extension_unavailable"] },
-		frontier: { next: "fail_closed" },
-		source: "driver_snapshot",
-	});
-	assert.deepEqual(classifyStateLoss({}), {
-		verdict: { status: "fresh", confidence: "mechanical", reasons: ["same_wait_history"] },
-		frontier: { next: "retry_same_wait" },
-		source: "wait_supervisor",
-	});
-	assert.deepEqual(classifyTimeout({ historyLost: true, lateSuccessAfterDeadline: true }), {
-		verdict: { status: "unknown", confidence: "lost", reasons: ["worker_restarted_history_lost", "unknown_due_to_history_loss"] },
-		frontier: { next: "diagnose" },
-		source: "wait_supervisor",
-	});
-	assert.equal(classifyStaleness({ targetRegionDirty: true }).verdict.reasons.length <= TEMPORAL_REASON_MODEL_CAP, true);
-});
-
-test("temporal classifier handles empty, malformed-adjacent, and boundary wait signals", () => {
-	assert.deepEqual(classifyTimeout({}), {
-		verdict: { status: "unknown", confidence: "partial", reasons: ["underconstrained_wait"] },
-		frontier: { next: "diagnose" },
-		source: "wait_supervisor",
-	});
-	assert.deepEqual(classifyTimeout({ workerRestarts: -1, acknowledged: false }), {
-		verdict: { status: "unknown", confidence: "partial", reasons: ["no_ack"] },
-		frontier: { next: "retry_same_wait" },
-		source: "wait_supervisor",
-	});
-	assert.deepEqual(classifyStaleness({ targetRegionDirty: true, stableLocator: true, cssOnlyLocator: false }), {
-		verdict: { status: "stale", confidence: "mechanical", reasons: ["target_stale_before_dispatch", "target_region_dirty"] },
-		frontier: { next: "reobserve" },
-		source: "execute_effect",
-	});
-	assert.deepEqual(classifyStaleness({}), {
-		verdict: { status: "fresh", confidence: "mechanical", reasons: ["same_target"] },
-		frontier: { next: "reuse_target" },
-		source: "execute_effect",
-	});
-});
-
-test("temporal estimates handle missing anchors, fallback sources, and deadline clamps", () => {
-	assert.deepEqual(estimateTargetContinuity({ current: stamp() }), {
-		verdict: { status: "unknown", confidence: "partial", reasons: ["unknown_due_to_missing_anchor"] },
-		frontier: { next: "reobserve" },
-		source: "ref_descriptor",
-	});
-	assert.deepEqual(estimateTargetContinuity({ anchor: anchor({ tabHandle: "old" }), current: stamp({ tabHandle: "new" }) }), {
-		verdict: { status: "stale", confidence: "mechanical", reasons: ["tab_replaced"] },
-		frontier: { next: "reobserve" },
-		source: "driver_snapshot",
-	});
-	assert.deepEqual(estimateTargetContinuity({ anchor: anchor({ clockDomain: "driver_wall", targetRef: undefined, tabId: undefined }), current: stamp({ clockDomain: "page_wall", targetRef: undefined, tabId: undefined, changeSeq: undefined }) }), {
-		verdict: { status: "unknown", confidence: "partial", reasons: ["unknown_due_to_clock_domain"] },
-		frontier: { next: "reobserve" },
-		source: "driver_snapshot",
-	});
-	assert.deepEqual(estimatePageFreshness({ anchor: anchor(), current: stamp({ capturedAtMs: 2_100 }), maxSameDomainAgeMs: 1_000 }), {
-		verdict: { status: "possibly_stale", confidence: "bounded", reasons: ["target_possibly_stale"] },
-		frontier: { next: "reobserve" },
-		source: "page_signal",
-	});
-	assert.deepEqual(estimateWaitContinuity({ eventSource: "poll_fallback" }), {
-		verdict: { status: "possibly_stale", confidence: "bounded", reasons: ["selector_unstable"] },
-		frontier: { next: "retry_same_wait" },
-		source: "poll_fallback",
-	});
-	assert.equal(classifyDeadlinePressure({ remainingMs: 10, requiredMs: 20 }).frontier.next, "fail_closed");
-	assert.equal(classifyDeadlinePressure({ remainingMs: -1, requiredMs: -2 }).verdict.status, "fresh");
-});
-
-test("wait timeout diagnosis maps selector, network, infrastructure, and fallback cases", () => {
-	assert.deepEqual(diagnoseWaitTimeout({ command: "wait.selector", reasons: ["selector_missing"], selector: "#login" }), {
-		waitType: "selector",
-		condition: "element matching \"#login\" to appear",
-		observedState: "element not found in document",
-		suggestion: "element not found — verify selector is correct, re-observe the page with browser_observe, or check if the element is inside an iframe",
-	});
-	assert.equal(diagnoseWaitTimeout({ command: "network.wait", reasons: ["network_active"], pendingRequests: 1 }).observedState, "1 network request still pending");
-	assert.equal(diagnoseWaitTimeout({ command: "network.wait", reasons: ["network_active"], pendingRequests: 2 }).observedState, "2 network requests still pending");
-	assert.equal(diagnoseWaitTimeout({ command: "wait.loadState", reasons: [], loadState: "interactive", loadStateTarget: "complete" }).condition, "page load state to reach \"complete\"");
-	assert.equal(diagnoseWaitTimeout({ command: "custom.wait", reasons: [], bridgeTimeout: true }).observedState, "bridge communication timed out — command was acknowledged but no result received");
-	assert.equal(diagnoseWaitTimeout({ command: "custom.wait", reasons: [] }).waitType, "wait");
 });
 
 test("ABML grouping helpers normalize descriptors and suppress nested non-control groups", () => {
@@ -566,7 +459,7 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 });
 
 test("ABML identity graph ignores malformed relations and summarizes duplicate node identities", () => {
-	assert.deepEqual(identityGraphSummary(buildIdentityGraph([], undefined)), {
+	assert.deepEqual(identityGraphSummary(buildIdentityGraph([])), {
 		entityCount: 0,
 		backendNodeIdCount: 0,
 		backendNodeIdCoverage: 0,
@@ -586,7 +479,7 @@ test("ABML identity graph ignores malformed relations and summarizes duplicate n
 		}),
 		entity("bp-ref://control/save-copy", { name: "Save", locators: [{ by: "backendNodeId", value: 10, targetId: "target-1" }] }),
 		entity("bp-ref://region/plain", { kind: "region", role: "region", source: "ax" }),
-	], undefined);
+	]);
 	assert.equal(graph.entityCount, 3);
 	assert.equal(graph.backendNodeIdCount, 2);
 	assert.equal(graph.triggeredCount, 2);

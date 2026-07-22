@@ -8,8 +8,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // prepack uses --quiet so npm pack stdout stays parseable.
 const quiet = process.argv.includes("--quiet");
 const defaultDistDir = path.join(root, "bridge", "browser_pilot_bridge", "dist");
-const serviceWorkerBuildMode = "esm-import-graph";
-const targetServiceWorkerBuildMode = "esm-import-graph";
 const buildIdPlaceholder = "__BROWSER_PILOT_BRIDGE_BUILD_ID_PLACEHOLDER__";
 const staticDir = path.join(root, "src", "bridge", "extension", "static");
 const fingerprintInputs = [
@@ -133,17 +131,8 @@ async function main() {
 			"dist/.gitignore": "Generated-file marker, not browser-loaded runtime.",
 			"dist/.npmignore": "Packaging include override, not browser-loaded runtime.",
 		},
-		runtimeSwitched: true,
 		manifestTarget: "dist/service-worker.js",
-		serviceWorkerBuildMode,
-		targetServiceWorkerBuildMode,
-		orderedConcatenation: false,
-		foundationImported: true,
-		commandImported: true,
-		startupImported: true,
-			entries,
-		pageScriptEntries: entries.filter((entry) => !["service-worker", "offscreen"].includes(entry.name)),
-		offscreenEntry: entries.find((entry) => entry.name === "offscreen"),
+		entries,
 	}, null, 2) + "\n", "utf8");
 
 	if (!quiet) console.log(JSON.stringify({ ok: true, distDir: path.relative(root, defaultDistDir), buildId, entries: entries.map((entry) => entry.outfile) }, null, 2));

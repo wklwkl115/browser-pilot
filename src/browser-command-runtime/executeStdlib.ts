@@ -1,4 +1,4 @@
-import type { ResourceRefDescriptor as RefDescriptor } from "../ports/ResourceRefTypes.js";
+import type { ResourceRefDescriptor as RefDescriptor } from "../resources/resourceRefs.js";
 import { stdlibPrelude } from "./executeStdlibPrelude.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { MAX_EXECUTION_REFS, resolveExecutionRef, type ExecutionRefTarget } from "./executionRef.js";

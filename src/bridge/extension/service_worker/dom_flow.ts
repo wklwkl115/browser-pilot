@@ -1,12 +1,6 @@
-import { normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp, BROWSER_PILOT_ERROR_CODES, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
+import { normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp, BROWSER_PILOT_ERROR_CODES, integerInRange as asPositiveInt, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
-
-function asPositiveInt(value: unknown, fallback: number, min: number, max: number): number {
-	const n = Number(value);
-	if (!Number.isFinite(n)) return fallback;
-	return Math.max(min, Math.min(max, Math.floor(n)));
-}
 
 function selectorText(value: unknown): string {
 	const text = String(value || "").trim();

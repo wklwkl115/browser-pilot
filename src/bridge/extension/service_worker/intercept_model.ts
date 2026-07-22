@@ -1,4 +1,4 @@
-import { redactSensitive, runtimeRecord as asRecord } from "./runtimeSupport.js";
+import { integerInRange as numberInRange, redactSensitive, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
 export type InterceptPhase = "request" | "response";
@@ -73,12 +73,6 @@ function asAction(value: unknown): InterceptAction {
 	const normalized = String(value || "continue").trim();
 	if (normalized === "fail" || normalized === "fulfill" || normalized === "replaceScript") return normalized;
 	return "continue";
-}
-
-function numberInRange(value: unknown, fallback: number, min: number, max: number): number {
-	const n = Number(value);
-	if (!Number.isFinite(n)) return fallback;
-	return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
 function stringifyInterceptBody(value: unknown): string {

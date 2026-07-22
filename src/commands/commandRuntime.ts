@@ -4,6 +4,7 @@ import { BrowserBridgeError, errorToPlain } from "../utils/errors.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import { normalizeTabId } from "../utils/params.js";
 import { isRecord } from "../utils/records.js";
+import { urlOrigin } from "../utils/url.js";
 import { errorResult, type BrowserTextCommandResult } from "../utils/toolResult.js";
 import { stableJson } from "../utils/json.js";
 import { classifyRefScope } from "../kernels/refs/refPolicy.js";
@@ -83,11 +84,6 @@ function soleRefOwner<T extends string | number>(refs: ExecutionRefTarget[], fie
 	return values.values().next().value;
 }
 
-function originOf(url: unknown): string | undefined {
-	if (typeof url !== "string" || !url) return undefined;
-	try { return new URL(url).origin; } catch { return undefined; }
-}
-
 export function resolveRefExecutionTarget(
 	server: Pick<BrowserCommandRuntimePort, "resolveTargetTabId" | "snapshot">,
 	refs: ExecutionRefTarget[],
@@ -130,7 +126,7 @@ export function resolveRefExecutionTarget(
 	const snapshot = server.snapshot({ browserSessionId });
 	const effectiveBrowserSessionId = browserSessionId ?? snapshot.browserSessionId;
 	const currentTab = snapshot.tabs.find((tab) => tab.tabId === tabId);
-	const currentOrigin = originOf(currentTab?.url);
+	const currentOrigin = urlOrigin(currentTab?.url);
 	const currentIdentity = pageIdentityFromUnknown({ ...currentTab, browserSessionId: effectiveBrowserSessionId });
 	for (const ref of refs) {
 		const scope = classifyRefScope(ref, { browserSessionId: effectiveBrowserSessionId, tabId, topLevelOrigin: currentOrigin });

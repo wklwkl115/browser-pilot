@@ -56,7 +56,6 @@ async function invoke(options: {
 		},
 		body: options.body,
 		toolByName: options.toolByName,
-		usageEnabled: false,
 	});
 	assert.ok(response);
 	return response;

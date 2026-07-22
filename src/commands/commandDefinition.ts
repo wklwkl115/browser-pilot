@@ -25,10 +25,6 @@ export type BrowserCommandDefinition = {
 	promptSnippet?: string;
 	promptGuidelines?: string[];
 	parameters?: unknown;
-	/** Explicit, command-owned canonical normalization; never removes unknown keys. */
-	coerceArguments?: (args: Record<string, unknown>) => Record<string, unknown>;
-	removedArguments?: readonly string[];
-	internalArguments?: readonly string[];
 	validateArguments?: (args: Record<string, unknown>) => ValidationIssue[];
 	execute: (
 		toolCallId: string,

@@ -6,9 +6,8 @@ const scope = process.argv[2] || "all";
 const root = process.cwd();
 const testsDir = path.join(root, "tests");
 const scopeDirs = {
-	all: ["bootstrap", "commands", "daemon", "mcp", "artifacts", "observe"],
+	all: ["bootstrap", "commands", "daemon", "mcp", "observe"],
 	mcp: ["bootstrap", "commands", "daemon", "mcp"],
-	artifacts: ["bootstrap", "artifacts"],
 	observe: ["bootstrap", "observe"],
 };
 

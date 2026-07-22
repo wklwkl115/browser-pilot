@@ -10,13 +10,13 @@ import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js"
 import { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
-import { BrowserBridgeSessionState, type IntentRefRegistry } from "./BrowserBridgeSessionState.js";
-import { delay, normalizePort } from "./bridgeUtils.js";
+import { BrowserBridgeSessionState } from "./BrowserBridgeSessionState.js";
+import { browserTabInfo, delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
 import { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
 import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "../protocol/consentTypes.js";
-import type { BrowserCommandTargetTransactionInput, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot, CommandTemporalProfileSample, CommandTemporalProfileSampleInput } from "../../ports/BrowserCommandRuntimePort.js";
+import type { BrowserCommandTargetTransactionInput, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot } from "../../ports/BrowserCommandRuntimePort.js";
 import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo, ExecuteOptions } from "./types.js";
 
 export class BrowserBridgeServer implements ConsentPort {
@@ -113,13 +113,10 @@ export class BrowserBridgeServer implements ConsentPort {
 		this.stopHeartbeat();
 		this.pendingRequests.rejectAllStopped();
 		this.clients.clear();
-		this.state.browserSessions.clear();
+		this.state.clear();
 		this.queues.clear();
-		this.state.leases.clear();
 		this.tabs.clear();
 		this.knownRecorderStates.clear();
-		this.state.observationSnapshots.clear();
-		this.state.perceptionLedger.clear();
 		await this.httpEndpoint.stop();
 	}
 
@@ -184,7 +181,7 @@ export class BrowserBridgeServer implements ConsentPort {
 			const resolution = this.tabs.replacementResolution(id, options.browserSessionId);
 			throw tabNotFoundError({ tabId: id, browserSessionId: options.browserSessionId, tabs: this.getTabs(), latestTabId: this.tabs.latestTabId(options.browserSessionId), replacedByTabId: resolution.tabId !== id ? resolution.tabId : undefined, replacementChainFailure: resolution.replacementChainFailure, replacementHops: resolution.replacementHops, replacementChainAge: resolution.replacementChainAge });
 		}
-		return this.tabInfo(attached);
+		return browserTabInfo(attached);
 	}
 
 	detachTabFromBrowserSession(tabId: number | string, options: { browserSessionId?: string } = {}): BrowserAutomationSessionInfo {
@@ -369,10 +366,6 @@ export class BrowserBridgeServer implements ConsentPort {
 		return this.state.perceptionLedger.get(key);
 	}
 
-	getRecentPerceptionLedgerFrames(key: CommandPerceptionLedgerKey, limit = 3): CommandPerceptionLedgerFrame[] {
-		return this.state.perceptionLedger.recent(key, limit);
-	}
-
 	recordPerceptionLedgerFrame(frame: CommandPerceptionLedgerFrame): CommandPerceptionLedgerFrame {
 		return this.state.perceptionLedger.record(frame);
 	}
@@ -383,22 +376,6 @@ export class BrowserBridgeServer implements ConsentPort {
 
 	perceptionTraceSnapshot(browserSessionId?: string): CommandPerceptionTraceSnapshot {
 		return this.state.perceptionLedger.traceSnapshot(browserSessionId);
-	}
-
-	getIntentRefRegistry(): IntentRefRegistry {
-		return this.state.intentRefRegistry;
-	}
-
-	buildTemporalProfileSample(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample {
-		return this.state.temporal.buildProfileSample(input);
-	}
-
-	recordTemporalProfileSample(sample: CommandTemporalProfileSample, options: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string } = {}): Promise<unknown> {
-		return this.state.temporal.recordProfileSample(sample, options);
-	}
-
-	temporalProfileSummary(): unknown {
-		return this.state.temporal.profileSummary();
 	}
 
 	// ConsentPort implementation — delegated to the coordinator
@@ -455,11 +432,6 @@ export class BrowserBridgeServer implements ConsentPort {
 
 	private browserSessionInfo(session: BrowserAutomationSession): BrowserAutomationSessionInfo {
 		return this.tabs.describeBrowserSession(session, this.state.browserSessions.selectedInfo(session, (client) => this.clients.info(client)));
-	}
-
-	private tabInfo(session: BrowserTabSession): BrowserTabInfo {
-		const { client: _client, ...info } = session;
-		return { ...info, targetGeneration: info.generation, targetRef: info.tabHandle };
 	}
 
 	private startHeartbeat(): void {

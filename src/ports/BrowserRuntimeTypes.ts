@@ -1,9 +1,6 @@
-export type BrowserRuntimeCommand = {
-	cmd: string;
-	method?: string;
-	tabId?: number | string;
-	[key: string]: unknown;
-};
+import type { BridgeCommand } from "../types/nativeProtocol.js";
+
+export type BrowserRuntimeCommand = BridgeCommand;
 
 export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "none";
 

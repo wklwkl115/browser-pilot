@@ -1,11 +1,10 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
 import { buildAxEntityFromNode, boxModelToGeometry, isInterestingAxNode } from "../../kernels/abml/ax.js";
 import { registerRefDescriptor, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import { recordValue } from "../../utils/records.js";
-import { readPartialAxTree, type PartialAxDiagnostics } from "./axRuntime.js";
+import { readPartialAxTree, sendPersistentCdp, type PartialAxDiagnostics } from "./axRuntime.js";
 
 export type AbmlPierceRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
 
@@ -60,20 +59,6 @@ async function buildEntitiesFromAxNodes(server: AbmlPierceRuntimeServer, nodes: 
 		built.push({ ...builtAx.entity, ref: refId, source: "ax", hints: { ...(builtAx.entity.hints || {}), piercedFrom: descriptor.refId, selector, axRefinement: source } });
 	}
 	return built;
-}
-
-async function sendPersistentCdp(server: AbmlPierceRuntimeServer, options: { browserSessionId?: string; tabId: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown> }) {
-	const result = await server.sendCommand({
-		cmd: "persistent_cdp",
-		action: "send",
-		tabId: options.tabId,
-		cdpMethod: options.cdpMethod,
-		params: options.params || {},
-		persistent: true,
-		timeoutMs: options.timeoutMs,
-	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
-	assertBridgeCommandSucceeded(result, `persistent_cdp:${options.cdpMethod}`);
-	return result;
 }
 
 export async function pierceRefEntities(server: AbmlPierceRuntimeServer, descriptor: RefDescriptor, options: { browserSessionId?: string; tabId: number; observationId: string; capturedAt?: number; timeoutMs?: number }): Promise<{ ok: true; entities: Entity[]; data: Record<string, unknown> } | { ok: false; error: ReturnType<typeof normalizeAbmlError> }> {

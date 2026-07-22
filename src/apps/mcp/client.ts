@@ -1,12 +1,8 @@
 import { controlRequest, ensureDaemon } from "../daemon/daemonControl.js";
 import { resolvePairingToken } from "./auth.js";
+import type { BrowserCommandResult } from "../../commands/commandDefinition.js";
 
-export type McpToolResult = {
-	content: Array<{ type: "text"; text: string }>;
-	details?: Record<string, unknown>;
-	isError?: boolean;
-	terminate?: boolean;
-};
+export type McpToolResult = BrowserCommandResult;
 
 export async function invokeDaemonTool(tool: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, clientName = ""): Promise<McpToolResult> {
 	const daemon = await ensureDaemon();

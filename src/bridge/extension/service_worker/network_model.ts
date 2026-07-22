@@ -1,7 +1,7 @@
 // network_model.js - Browser Pilot Network recorder state, config, filtering and body storage helpers.
 
 import { matchNetworkPattern } from "./patterns";
-import { redactSensitive, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
+import { integerInRange as numberInRange, redactSensitive, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { diagnoseBrowserPilotCdpDomainRefs } from "./wait_cdp";
 import { makeWaitId } from "./wait_coordinator";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotWaitRecord, NetworkBodyMimeDecision, NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecordSnapshot, NetworkRecordSummary, NetworkRecorder, NetworkRecorderConfig, NetworkRecorderSummary, NetworkStringList, NetworkWaitNotifier } from "./types";
@@ -29,11 +29,6 @@ function notifyNetworkWaits(recorder: NetworkRecorder, eventType: string, rec: N
 
 function networkRecorderKey(tabId: unknown, sessionId: unknown): string { return Number(tabId) + ':' + String(sessionId || 'default'); }
 function defaultNetworkSessionId(msg: BrowserPilotBridgeCommand | JsonRecord | null | undefined): string { return String(msg?.sessionId || msg?.session_id || 'default'); }
-function numberInRange(value: unknown, fallback: number, min: number, max: number): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, Math.floor(n)));
-}
 function getHeaderValue(headers: unknown, name: unknown): string {
   if (!headers || !name) return '';
   const target = String(name).toLowerCase();

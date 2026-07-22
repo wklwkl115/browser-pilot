@@ -1,13 +1,9 @@
-import type { TemporalDecision } from "./types.js";
-
-export type DeadlinePressureInput = {
+export function classifyDeadlinePressure(input: {
 	remainingMs: number;
 	requiredMs: number;
 	queueDelayMs?: number;
 	queueDepthAtEnqueue?: number;
-};
-
-export function classifyDeadlinePressure(input: DeadlinePressureInput): TemporalDecision {
+}) {
 	if (input.queueDelayMs !== undefined && input.queueDelayMs > input.remainingMs) {
 		return {
 			verdict: { status: "unknown", confidence: "partial", reasons: ["queue_delay_budget_exceeded"] },

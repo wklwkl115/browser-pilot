@@ -22,8 +22,6 @@ import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
-import { registerHook, emitLog, timingLogHook, type MiddlewareContext } from "../../commands/middleware.js";
-import { resolveUsageLogOptions, createUsageLogHook } from "../../commands/usageLog.js";
 import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
 import { daemonVersion } from "./packageInfo.js";
 import { createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
@@ -69,7 +67,7 @@ export interface StartDaemonOptions {
 
 type JsonSender = (status: number, obj: Record<string, unknown>) => void;
 
-export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName" | "usageEnabled"> & {
+export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName"> & {
 	req: http.IncomingMessage;
 	send: JsonSender;
 	body: Record<string, unknown>;
@@ -94,25 +92,12 @@ type DaemonControlContext = {
 	toolByName: Map<string, CommandDefinition>;
 	toolCount: number;
 	contractIdentity: DaemonContractIdentity;
-	usageEnabled: boolean;
 	pendingPairResults: Map<string, Promise<PairResult>>;
 	composeSummaries: () => PairingSummary[];
 	draining: boolean;
 	close: () => Promise<void>;
 	onShutdown: StartDaemonOptions["onShutdown"];
 };
-
-let hooksRegistered = false;
-function registerDaemonHooks(): void {
-	if (hooksRegistered) return;
-	hooksRegistered = true;
-	registerHook("on_log", timingLogHook);
-	const usage = resolveUsageLogOptions();
-	if (usage.enabled) {
-		registerHook("on_log", createUsageLogHook(usage));
-		console.error(`[browser-pilot] usage logging → ${usage.filePath}${usage.raw ? " (raw args)" : ""}`);
-	}
-}
 
 function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 	return new Promise((resolve, reject) => {
@@ -246,33 +231,27 @@ function prepareInvoke(body: Record<string, unknown>, toolByName: Map<string, Co
 	return { tool, cwd, def, args: validation.args };
 }
 
-async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean, signal?: AbortSignal): Promise<Record<string, unknown>> {
-	const ctx: MiddlewareContext = {
-		method: "invoke",
-		commandName: invocation.tool,
-		startedAt: Date.now(),
-		...(usageEnabled ? { args: invocation.args } : {}),
-		};
-		try {
-			const result = await invocation.def.execute(`mcp-${invocation.tool}-${Date.now()}`, invocation.args, signal, undefined, { cwd: invocation.cwd });
-		if (usageEnabled) ctx.resultBytes = JSON.stringify(result.content).length;
-		emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok");
-			const terminate = result.terminate === true;
-			const isError = result.isError === true || terminate;
-				return { ok: true, content: result.content, details: result.details, isError, terminate };
-		} catch (error) {
+async function executeInvoke(invocation: PreparedInvoke, signal?: AbortSignal): Promise<Record<string, unknown>> {
+	const startedAt = Date.now();
+	try {
+		const result = await invocation.def.execute(`mcp-${invocation.tool}-${Date.now()}`, invocation.args, signal, undefined, { cwd: invocation.cwd });
+		console.error(`[browser-pilot] invoke ${invocation.tool} ${result.terminate ? "error" : "ok"} +${Date.now() - startedAt}ms`);
+		const terminate = result.terminate === true;
+		const isError = result.isError === true || terminate;
+		return { ok: true, content: result.content, details: result.details, isError, terminate };
+	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		emitLog(ctx, Date.now() - ctx.startedAt, "error", { error: message });
-			return { ok: true, content: [{ type: "text", text: message }], isError: true, terminate: true };
+		console.error(`[browser-pilot] invoke ${invocation.tool} error +${Date.now() - startedAt}ms ${JSON.stringify({ error: message })}`);
+		return { ok: true, content: [{ type: "text", text: message }], isError: true, terminate: true };
 	}
 }
 
-export async function handleInvokeRoute({ req, send, body, toolByName, usageEnabled, signal }: InvokePipelineContext): Promise<void> {
+export async function handleInvokeRoute({ req, send, body, toolByName, signal }: InvokePipelineContext): Promise<void> {
 	const prepared = prepareInvoke(body, toolByName);
 	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
 	const auth = authorizeInvoke(req);
 	if (!auth.ok) return send(auth.status, auth.body);
-	return send(200, await executeInvoke(prepared, usageEnabled, signal));
+	return send(200, await executeInvoke(prepared, signal));
 }
 
 function invocationAbortController(req: http.IncomingMessage, res: http.ServerResponse): { signal: AbortSignal; cleanup: () => void } {
@@ -395,7 +374,7 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 					const body = await readBody(req);
 					const invocation = invocationAbortController(req, res);
 					try {
-						return await handleInvokeRoute({ req, send, body, toolByName: context.toolByName, usageEnabled: context.usageEnabled, signal: invocation.signal });
+						return await handleInvokeRoute({ req, send, body, toolByName: context.toolByName, signal: invocation.signal });
 					} finally {
 						invocation.cleanup();
 					}
@@ -424,8 +403,6 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 /** Construct the daemon, start its control server, and (optionally) write the lockfile. */
 export async function startDaemon(options: StartDaemonOptions = {}): Promise<DaemonHandle> {
 	const writeLock = options.writeLock ?? true;
-	registerDaemonHooks();
-
 	const bridgeServer = new BrowserBridgeServer();
 
 	function composeSummaries(): PairingSummary[] {
@@ -469,8 +446,6 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	const contractIdentity = createDaemonContractIdentity(commandDefinitions);
 
 	const token = randomBytes(24).toString("hex");
-	const usageEnabled = resolveUsageLogOptions().enabled;
-
 	let closing = false;
 	const close = async (): Promise<void> => {
 		if (closing) return;
@@ -489,7 +464,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		if (writeLock) removeLockfile();
 	};
 
-	const controlContext: DaemonControlContext = { token, bridgeServer, ensureStarted, toolByName, toolCount, contractIdentity, usageEnabled, pendingPairResults, composeSummaries, draining: false, close, onShutdown: options.onShutdown };
+	const controlContext: DaemonControlContext = { token, bridgeServer, ensureStarted, toolByName, toolCount, contractIdentity, pendingPairResults, composeSummaries, draining: false, close, onShutdown: options.onShutdown };
 	const server = http.createServer((req, res) => void handleControlRequest(controlContext, req, res));
 
 	await new Promise<void>((resolve, reject) => {

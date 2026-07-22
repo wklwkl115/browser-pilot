@@ -20,6 +20,11 @@ export function runtimeRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
+export function integerInRange(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.floor(parsed))) : fallback;
+}
+
 export function redactSensitive(value: unknown, depth = 0, seen?: WeakSet<object>): unknown {
   const patterns = [
     /bearer\s+fixture-secret/gi,

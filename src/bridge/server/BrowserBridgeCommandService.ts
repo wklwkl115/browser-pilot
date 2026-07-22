@@ -20,11 +20,31 @@ import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.
 import type { BrowserBridgeLeaseRegistryPort, BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
 import type { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import type { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
-import { queueTemporalDiagnostics } from "./BrowserTemporalCoordinator.js";
+import { classifyDeadlinePressure } from "../../kernels/temporal/budget.js";
 
 type SendPayloadOptions = ExecuteOptions & { target?: BrowserBridgeTargetInfo };
 type CommandExecutionPlan = { target?: BrowserBridgeTargetInfo; tabId?: number; accessMode: "read" | "write" };
 type CreatedTabFields = Pick<BrowserBridgeExecutionResult, "createdTarget" | "createdTab">;
+type QueueTemporalProfile = {
+	queueDepthAtEnqueue?: number;
+	queueDepthAtStart?: number;
+	queueDelayMs?: number;
+	deadlineMs?: number;
+};
+type QueueTemporalDecision = Pick<ReturnType<typeof classifyDeadlinePressure>, "verdict" | "frontier">;
+
+function queueTemporalDiagnostics(input: QueueTemporalProfile): { temporal?: QueueTemporalDecision; temporalProfile: QueueTemporalProfile } {
+	const pressure = classifyDeadlinePressure({
+		remainingMs: input.deadlineMs ?? 0,
+		requiredMs: 0,
+		queueDelayMs: input.queueDelayMs,
+		queueDepthAtEnqueue: input.queueDepthAtEnqueue,
+	});
+	return {
+		...(pressure.verdict.status === "fresh" ? {} : { temporal: { verdict: pressure.verdict, frontier: pressure.frontier } }),
+		temporalProfile: { ...input },
+	};
+}
 
 /**
  * Grace window to let a not-yet-connected extension dial into the bridge before a

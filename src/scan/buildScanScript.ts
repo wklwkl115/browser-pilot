@@ -1,7 +1,7 @@
 import { ACTIONABLE_ATTRIBUTE_NAMES, ACTIONABLE_HIGH_INTENT_PATTERN, ACTIONABLE_KEYWORD_PATTERN, ACTIONABLE_PRIMARY_INTENT_PATTERN, FRAMEWORK_ACTION_HANDLER_PATTERN, FRAMEWORK_HANDLER_OWNER_PATTERN } from "./actionableRules.js";
 import { DOM_ACCESSIBILITY_API_BUNDLE } from "./domAccessibilityApiBundle.js";
 import { BROWSER_NOISE_ATTRIBUTE_NAMES, BROWSER_NOISE_ATTRIBUTE_PREFIXES, BROWSER_NOISE_CLASS_PATTERNS, BROWSER_NOISE_IDS, BROWSER_NOISE_SELECTORS, BROWSER_NOISE_TAGS, SCAN_EXTENSION_URL_PATTERN } from "./noiseRules.js";
-import { jsonForInlineScript as captureJsonForInlineScript, renderCaptureTemplate } from "../capture/inject.js";
+import { jsonForInlineScript, renderCaptureTemplate } from "../capture/inject.js";
 import { SCAN_TEMPLATE } from "../../capture-src/entries/scanTemplate.js";
 import { PAGE_WORLD_SCAN_SCHEMA } from "../kernels/abml/pageWorldScan.js";
 
@@ -13,10 +13,6 @@ export type BrowserScanOptions = {
 	/** Growth-probe wait after scrolling, in ms. Default 300; env BROWSER_PILOT_GROWTH_PROBE_WAIT_MS overrides. Clamped to minimum 80. */
 	probeWaitMs?: number;
 };
-
-export function jsonForInlineScript(value: unknown): string {
-	return captureJsonForInlineScript(value);
-}
 
 function injectAccessibleNameProvider(script: string): string {
 	const markerStart = "  const options = ";

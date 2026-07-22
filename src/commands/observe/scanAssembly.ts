@@ -8,7 +8,6 @@ import { buildTreeDiff, type TreeDiff } from "../../kernels/abml/treeDiff.js";
 import { buildSnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 import { buildCollectionModels } from "../../kernels/abml/collections.js";
 import { buildIdentityGraph, identityGraphSummary } from "../../kernels/abml/identityGraph.js";
-import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
 import { buildNativeTreeDiff } from "../../native/browserPilotNativeKernels.js";
 import { buildScanEntities, scanEntitiesFromGroups } from "../../scan/summary.js";
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";
@@ -46,26 +45,6 @@ function attributedEntitiesForCausal(entities: Entity[] | null, causal: CausalSu
 	});
 }
 
-function registerIntentAnchors(server: BrowserCommandRuntimePort, entities: Entity[], pageUrl: string | undefined, seenAt: number) {
-	const registry = typeof server.getIntentRefRegistry === "function" ? server.getIntentRefRegistry() : undefined;
-	if (!registry || !pageUrl) return registry;
-	let origin: string | undefined;
-	try {
-		origin = new URL(pageUrl).origin;
-	} catch {
-		return registry;
-	}
-	const entries = deriveSemanticRefAnchors(entities).anchors
-		.filter((item) => item.anchor.confidence === "high" && item.anchor.mintingEligible)
-		.map((item) => {
-			const anchor = item.anchor;
-			const anchorKey = [anchor.containerRole, anchor.containerName, anchor.normalizedName, anchor.role, anchor.kind].filter(Boolean).join("/");
-			return { anchorKey, ref: item.ref, origin, seenAt };
-		});
-	if (entries.length) registry.register(entries);
-	return registry;
-}
-
 type ScanAssemblyOptions = {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
@@ -78,7 +57,6 @@ type ScanAssemblyOptions = {
 	causal: CausalSummary | undefined;
 	ledgerDeltaFields: Record<string, unknown>;
 	runtimeRelationGraph: Record<string, unknown> | undefined;
-	snapshotCapturedAt: number;
 };
 
 type EnvelopeDiff = EntityDiff & { summary?: ReturnType<typeof summarizeEntityDiff> };
@@ -89,15 +67,14 @@ function buildBaseSummary(summaryData: PageWorldScanBundleV1): Record<string, un
 }
 
 function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[], envelopeDiff: EnvelopeDiff | undefined, treeDiff: TreeDiff | undefined, causalBlock: CausalBlock): { summary: Record<string, unknown> } {
-	const { server, params, browserSessionId, abmlDiff, summaryData, causal, runtimeRelationGraph, snapshotCapturedAt, ledgerDeltaFields } = options;
+	const { server, params, browserSessionId, abmlDiff, summaryData, runtimeRelationGraph, ledgerDeltaFields } = options;
 	const pageUrl = summaryData.page.url;
 	const relations = buildRelationSummary(entities);
 	const inference = buildInferenceSummary(entities, relations, abmlDiff);
 	const relevance = buildObserveRelevance(server, params, browserSessionId, pageUrl, entities, inference);
 	const snapshotProjection = buildSnapshotProjection(entities, { treeDiff });
 	const collections = buildCollectionModels({ entities, treeDiff, snapshotProjection, scanEvidence: scanCollectionEvidence(summaryData) });
-	const intentRegistry = registerIntentAnchors(server, entities, pageUrl, snapshotCapturedAt);
-	const identityGraph = buildIdentityGraph(entities, causal, intentRegistry);
+	const identityGraph = buildIdentityGraph(entities);
 	const relationGraph = runtimeRelationGraph || buildRelationGraph(entities);
 	const referencedEntities = mergeEntitiesByRef(entitiesForInferenceEvidence(entities, inference)).slice(0, 12);
 	const primaryEntities = sortEntitiesBySalience(entities.filter((entity) => entity.kind !== "region"), relevance).slice(0, 10);
@@ -116,7 +93,6 @@ function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[]
 			...causalBlock,
 			...(identity.backendNodeIdCount || identity.anchorCount || identity.triggeredCount ? { identity } : {}),
 			...(inference.intents.length ? { inference } : {}),
-			...(identityGraph.intentRefs?.length ? { intentRefs: identityGraph.intentRefs } : {}),
 			_identityGraph: identityGraph,
 			...(isRecord(relationGraph) && Number(relationGraph.edgeCount || 0) > 0 ? { _relationGraph: relationGraph } : {}),
 			focus: {
@@ -197,8 +173,7 @@ export function prepareScanAssembly(options: {
 			causal,
 			ledgerDeltaFields,
 			runtimeRelationGraph,
-			snapshotCapturedAt: snapshotMeta.capturedAt,
-		}),
+			}),
 	};
 }
 

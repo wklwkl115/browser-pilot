@@ -1,14 +1,8 @@
 // layer.js - internal LayerTree mechanism probes.
 
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, integerInRange as asPositiveInt, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
-
-function asPositiveInt(value: unknown, fallback: number, min: number, max: number): number {
-	const n = Number(value);
-	if (!Number.isFinite(n)) return fallback;
-	return Math.max(min, Math.min(max, Math.floor(n)));
-}
 
 function arrayValue(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];

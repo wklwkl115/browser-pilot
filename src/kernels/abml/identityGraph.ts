@@ -1,9 +1,7 @@
 import type { Entity } from "./entity.js";
-import type { CausalSummary } from "./causal.js";
 import { backendNodeKey, cleanTargetId } from "./nodeKey.js";
 import { deriveSemanticRefAnchors } from "./semanticRefAnchor.js";
 import { isRecord } from "../../utils/records.js";
-import type { IntentRefRegistry } from "../../kernels/session/intentRefRegistry.js";
 
 export type IdentityGraphEntry = {
 	anchorKey?: string;
@@ -14,13 +12,6 @@ export type IdentityGraphEntry = {
 	triggeredRequests: string[];
 };
 
-export type IntentRefInfo = {
-	ref: string;
-	anchorKey: string;
-	previousRefs?: string[];
-	navigationCount?: number;
-};
-
 export type IdentityGraph = {
 	byRef: Record<string, IdentityGraphEntry>;
 	entityCount: number;
@@ -28,7 +19,6 @@ export type IdentityGraph = {
 	anchorCount: number;
 	triggeredCount: number;
 	sourceCounts: Record<string, number>;
-	intentRefs?: IntentRefInfo[];
 };
 
 export type IdentityGraphSummary = {
@@ -50,7 +40,7 @@ function backendNodeIdentityFor(entity: Entity): { backendNodeId: number; target
 	return Number.isFinite(hintedBackendNodeId) ? { backendNodeId: hintedBackendNodeId, targetId: hintedTargetId } : undefined;
 }
 
-export function buildIdentityGraph(entities: Entity[], _causal: CausalSummary | undefined, intentRegistry?: IntentRefRegistry): IdentityGraph {
+export function buildIdentityGraph(entities: Entity[]): IdentityGraph {
 	const { anchors } = deriveSemanticRefAnchors(entities);
 	const anchorByRef = new Map(anchors.map((a) => [a.ref, a]));
 
@@ -94,26 +84,7 @@ export function buildIdentityGraph(entities: Entity[], _causal: CausalSummary | 
 		byRef[entity.ref] = entry;
 	}
 
-	// Resolve cross-navigation intent refs from the registry when available.
-	let intentRefs: IntentRefInfo[] | undefined;
-	if (intentRegistry) {
-		const resolved: IntentRefInfo[] = [];
-		for (const [ref, entry] of Object.entries(byRef)) {
-			if (!entry.anchorKey || entry.anchorConfidence !== "high") continue;
-			const match = intentRegistry.resolveByPreviousRef(ref);
-			if (match && match.navigationCount > 0) {
-				resolved.push({
-					ref: match.currentRef,
-					anchorKey: match.anchorKey,
-					...(match.previousRefs.length ? { previousRefs: match.previousRefs } : {}),
-					...(match.navigationCount ? { navigationCount: match.navigationCount } : {}),
-				});
-			}
-		}
-		if (resolved.length) intentRefs = resolved;
-	}
-
-	return { byRef, entityCount: entities.length, backendNodeIdCount, anchorCount, triggeredCount, sourceCounts, ...(intentRefs ? { intentRefs } : {}) };
+	return { byRef, entityCount: entities.length, backendNodeIdCount, anchorCount, triggeredCount, sourceCounts };
 }
 
 export function identityGraphSummary(graph: IdentityGraph): IdentityGraphSummary {

@@ -4,6 +4,7 @@ import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntim
 import type { Entity } from "../../kernels/abml/entity.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
 import { recordValue } from "../../utils/records.js";
+import { urlOrigin } from "../../utils/url.js";
 
 export type AbmlFrameRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
 
@@ -13,15 +14,6 @@ function stringValue(value: unknown): string | undefined {
 	return text ? text : undefined;
 }
 
-
-function topLevelOrigin(url: string | undefined): string | undefined {
-	if (!url) return undefined;
-	try {
-		return new URL(url).origin;
-	} catch {
-		return undefined;
-	}
-}
 
 export type FrameEntityRuntimeOptions = {
 	browserSessionId?: string;
@@ -45,7 +37,7 @@ export async function readFrameEntities(server: AbmlFrameRuntimeServer, options:
 			descriptor: {
 				kind: "frame",
 				locators: [{ by: "attrSignature", value: { frameId, ...(url ? { url } : {}), ...(stringValue(frame.name) ? { name: String(frame.name) } : {}) } }],
-				owner: { ...(options.browserSessionId ? { browserSessionId: options.browserSessionId } : {}), tabId: options.tabId, ...(topLevelOrigin(url) ? { topLevelOrigin: topLevelOrigin(url) } : {}) },
+					owner: { ...(options.browserSessionId ? { browserSessionId: options.browserSessionId } : {}), tabId: options.tabId, ...(urlOrigin(url) ? { topLevelOrigin: urlOrigin(url) } : {}) },
 				policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
 				semantic: { role: "frame", name, value: frameId },
 				observationId: options.observationId,

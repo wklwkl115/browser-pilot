@@ -60,10 +60,13 @@ test("browser_observe rejects contradictory freshness inputs", () => {
 	assert.equal(browserCommandDefinitions().some((definition) => definition.name === "browser_artifact"), false);
 });
 
-test("browser_tabs rejects removed session actions at the public validation boundary", () => {
+test("browser_tabs rejects unknown session arguments at the public validation boundary", () => {
 	const validation = validateBrowserCommandArguments(command("browser_tabs"), { action: "selectSession", browserSessionId: "session-1" });
 	assert.equal(validation.ok, false);
-	if (!validation.ok) assert.match(validation.error, /browserSessionId.*removed/);
+	if (!validation.ok) {
+		assert.match(validation.error, /browserSessionId.*Unknown argument/);
+		assert.equal(validation.issues[0]?.code, "UNKNOWN_ARGUMENT");
+	}
 });
 
 function pageIdentity(browserSessionId: string, tabId: number, pageEpoch = "page-1") {

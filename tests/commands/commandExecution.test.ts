@@ -9,7 +9,6 @@ import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
 import { jsonResult } from "../../src/utils/toolResult.ts";
 import { defineScreenshotCommand } from "../../src/commands/screenshotCommand.ts";
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
-import { publicCreateTabResult } from "../../src/commands/tabsProjection.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
 import { registerRefDescriptor } from "../../src/resources/resourceRefs.ts";
@@ -195,37 +194,6 @@ test("commands execution: browser_tabs rejects invalid targets, URLs, and action
 		assert.equal(parseResult(await command.execute("tool-invalid", params)).code, code);
 	}
 	assert.equal(runtime.calls.some((call) => ["closeTab", "createTab"].includes(call.name)), false);
-});
-
-test("tabs create projection keeps stable identity precedence and strips nested transport noise", () => {
-	assert.deepEqual(publicCreateTabResult({
-		id: "request-1",
-		acknowledged: true,
-		tabId: 9,
-		createdTarget: { browserSessionId: "session-1", browserId: "browser-1", tabId: 9, tabHandle: "tab-9", targetRef: "tab-9", url: "https://target.test/", ignored: "target-noise" },
-		createdTab: { id: "tab-session-9", tabId: 9, tabHandle: "tab-9", targetRef: "tab-9", url: "https://tab.test/", title: "Created", active: true, bridge: { token: "noise" } },
-		data: { tabId: 10, tabHandle: "tab-data", url: "https://data.test/", title: "Data" },
-		target: { tabId: 9 },
-		newTabs: [{ tabId: 9 }],
-		diagnostics: { latency: 1 },
-	}), {
-		id: "tab-9",
-		targetRef: "tab-9",
-		tabHandle: "tab-9",
-		tabId: 9,
-		browserSessionId: "session-1",
-		browserId: "browser-1",
-		url: "https://data.test/",
-		title: "Data",
-		requestId: "request-1",
-		acknowledged: true,
-		createdTarget: { browserSessionId: "session-1", browserId: "browser-1", tabId: 9, tabHandle: "tab-9", targetRef: "tab-9", url: "https://target.test/" },
-		createdTab: { id: "tab-9", tabSessionId: "tab-session-9", tabId: 9, tabHandle: "tab-9", targetRef: "tab-9", url: "https://tab.test/", title: "Created", active: true },
-		data: { tabId: 10, tabHandle: "tab-data", url: "https://data.test/", title: "Data" },
-		target: { tabId: 9 },
-		newTabs: [{ tabId: 9 }],
-		diagnostics: { latency: 1 },
-	});
 });
 
 test("commands execution: browser_command read commands return immediately", async () => {

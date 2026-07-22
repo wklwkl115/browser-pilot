@@ -2,36 +2,11 @@ import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRunt
 import type { SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/leaseRegistry.js";
 import type { SessionObservationSnapshotInfo } from "../kernels/session/observationSnapshotRegistry.js";
 import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../kernels/session/perceptionLedger.js";
-import type { TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../kernels/temporal/types.js";
 
 export type CommandPerceptionLedgerKey = PerceptionLedgerKey;
 export type CommandPerceptionLedgerFactState = PerceptionLedgerFactState;
 export type CommandPerceptionLedgerFrame = PerceptionLedgerFrame;
 export type CommandPerceptionTraceSnapshot = PerceptionTraceSnapshot;
-
-export type CommandTemporalVerdictStatus = TemporalVerdictStatus;
-export type CommandTemporalReason = TemporalReason;
-export type CommandTemporalFrontierNext = TemporalFrontierNext;
-
-export type CommandTemporalProfileSample = {
-	operationId?: string;
-	tool: string;
-	command?: string;
-	target?: { browserSessionId?: string; tabId?: number; targetRef?: string };
-	deadlineMs?: number;
-	elapsedMs: number;
-	bridgeRoundTrips?: number;
-	queueDepthAtEnqueue?: number;
-	queueDepthAtStart?: number;
-	queueDelayMs?: number;
-	waitAttempts?: number;
-	workerRestarts?: number;
-	historyLost?: boolean;
-	rawSignals?: string[];
-	verdict?: CommandTemporalVerdictStatus;
-	reasons?: CommandTemporalReason[];
-	recovery?: CommandTemporalFrontierNext;
-};
 
 export type CommandObservationSnapshotInfo = SessionObservationSnapshotInfo;
 export type CommandTabLeaseInfo = SessionTabLeaseInfo;
@@ -64,17 +39,6 @@ export type BrowserTabLike = Record<string, unknown> & {
 	targetRef?: string;
 	url?: string;
 	title?: string;
-};
-
-export type CommandTemporalProfileSampleInput = {
-	operationId?: string;
-	tool: string;
-	command?: string;
-	target?: { browserSessionId?: string; tabId?: number; targetRef?: string };
-	deadlineMs?: number;
-	elapsedMs: number;
-	result?: BrowserBridgeExecutionResult;
-	diagnostics?: Record<string, unknown>;
 };
 
 export type BrowserCommandTargetTransactionInput = {
@@ -138,19 +102,9 @@ export interface BrowserCommandRecorderStatePort {
 
 export interface BrowserCommandPerceptionPort {
 	getPerceptionLedgerFrame?(key: CommandPerceptionLedgerKey): CommandPerceptionLedgerFrame | undefined;
-	getRecentPerceptionLedgerFrames?(key: CommandPerceptionLedgerKey, limit?: number): CommandPerceptionLedgerFrame[];
 	recordPerceptionLedgerFrame?(frame: CommandPerceptionLedgerFrame): CommandPerceptionLedgerFrame;
 	recordPerceptionTraceTerms?(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>): CommandPerceptionTraceSnapshot;
 	perceptionTraceSnapshot?(browserSessionId?: string): CommandPerceptionTraceSnapshot;
-}
-
-export interface BrowserCommandTemporalPort {
-	buildTemporalProfileSample?(input: CommandTemporalProfileSampleInput): CommandTemporalProfileSample;
-	recordTemporalProfileSample?(sample: CommandTemporalProfileSample, options?: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string }): Promise<unknown>;
-}
-
-export interface BrowserCommandIntentRefPort {
-	getIntentRefRegistry?(): import("../kernels/session/intentRefRegistry.js").IntentRefRegistry | undefined;
 }
 
 export interface BrowserCommandRuntimePort extends
@@ -161,9 +115,7 @@ export interface BrowserCommandRuntimePort extends
 	BrowserCommandLeasePort,
 	BrowserCommandObservationPort,
 	BrowserCommandRecorderStatePort,
-	BrowserCommandPerceptionPort,
-	BrowserCommandTemporalPort,
-	BrowserCommandIntentRefPort {
+	BrowserCommandPerceptionPort {
 }
 
 export type BrowserCommandRelevanceTracePort = Pick<BrowserCommandPerceptionPort, "recordPerceptionTraceTerms">;

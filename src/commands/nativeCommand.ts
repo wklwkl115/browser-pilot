@@ -6,14 +6,12 @@ import { withBrowserOperation } from "./browserOperation.js";
 import { defineBrowserCommand, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
-import { validateParams } from "./validationMiddleware.js";
-import { BridgeCommandSchema, type ValidatedBridgeCommand } from "../validation/schemas.js";
-import { validateBridgeCommand } from "../types/nativeProtocol.js";
+import { validateBridgeCommand, type BridgeCommand } from "../types/nativeProtocol.js";
 import { isNativeWriteCommand, isPublicNativeCommand, nativeCommandOwner, publicNativeCommandNames } from "./nativeCommandAccess.js";
 
 const nativeCommandNames = publicNativeCommandNames();
 
-function prepareNativeRef(command: ValidatedBridgeCommand): { command: ValidatedBridgeCommand; refs: ExecutionRefTarget[] } {
+function prepareNativeRef(command: BridgeCommand): { command: BridgeCommand; refs: ExecutionRefTarget[] } {
 	if (command.cmd !== "input.ref") return { command, refs: [] };
 	if (typeof command.ref !== "string" || !command.ref.startsWith("bp-ref://")) {
 		throw new BrowserBridgeError("INVALID_REF_TARGET", "input.ref requires a bp-ref URI in ref", { ref: command.ref });
@@ -44,13 +42,12 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 			return await runCommandHandler(async () => {
 				if (!params.command || typeof params.command !== "object" || Array.isArray(params.command)) throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", { commandName: "browser_command" });
-				const validated = validateParams(BridgeCommandSchema, params.command);
-				const owner = nativeCommandOwner(validated);
-				if (owner) throw new BrowserBridgeError("INVALID_RULE", `${String(validated.cmd)} must be invoked through ${owner}`, { commandName: "browser_command", useTool: owner });
-				if (!isPublicNativeCommand(validated)) throw new BrowserBridgeError("INVALID_RULE", `${String(validated.cmd)} is not a public native command`, { commandName: "browser_command", catalog: "browser-pilot://native-commands" });
-				const protocol = validateBridgeCommand(validated, { allowMissingTabId: true });
+				const protocol = validateBridgeCommand(params.command, { allowMissingTabId: true });
 				if (!protocol.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", protocol.error, protocol.details);
-				const prepared = prepareNativeRef(protocol.command as ValidatedBridgeCommand);
+				const owner = nativeCommandOwner(protocol.command);
+				if (owner) throw new BrowserBridgeError("INVALID_RULE", `${String(protocol.command.cmd)} must be invoked through ${owner}`, { commandName: "browser_command", useTool: owner });
+				if (!isPublicNativeCommand(protocol.command)) throw new BrowserBridgeError("INVALID_RULE", `${String(protocol.command.cmd)} is not a public native command`, { commandName: "browser_command", catalog: "browser-pilot://native-commands" });
+				const prepared = prepareNativeRef(protocol.command);
 				const command = prepared.command;
 				const server = await ensureStarted();
 				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;

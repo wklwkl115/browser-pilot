@@ -11,10 +11,6 @@ run = "node scripts/run-tests.mjs all"
 description = "Run bootstrap + MCP tests"
 run = "node scripts/run-tests.mjs mcp"
 
-[tasks.test-artifacts]
-description = "Run bootstrap + artifact tests"
-run = "node scripts/run-tests.mjs artifacts"
-
 [tasks.test-observe]
 description = "Run bootstrap + canonical observe tests"
 run = "node scripts/run-tests.mjs observe"
