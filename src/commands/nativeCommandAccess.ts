@@ -1,11 +1,9 @@
 import { canonicalBridgeCommand, getNativeCommandProtocolSchema, type BridgeCommand } from "../types/nativeProtocol.js";
-import { nativeCommandToolMetadata, nativeTransferToolMetadata } from "./nativeActionMetadata.js";
+import { nativeCommandToolMetadata } from "./nativeActionMetadata.js";
 
 const nativeCommandOwners: Readonly<Record<string, string>> = {
 	tabs: "browser_tabs",
 	[nativeCommandToolMetadata.browser_screenshot.command]: "browser_screenshot",
-	[nativeTransferToolMetadata.browser_download.command]: "browser_download",
-	[nativeTransferToolMetadata.browser_upload.command]: "browser_upload",
 };
 
 export function nativeCommandOwner(command: BridgeCommand): string | undefined {

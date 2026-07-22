@@ -23,7 +23,7 @@ test("MCP publishes the command catalog as tools", () => {
 	const tools = mcpTools();
 	assert.deepEqual(tools.map((tool) => tool.name), [
 		"browser_tabs", "browser_command", "browser_execute", "browser_observe",
-		"browser_download", "browser_upload", "browser_screenshot", "browser_artifact",
+		"browser_screenshot", "browser_artifact",
 		"browser_pair",
 	]);
 	assert.ok(tools.every((tool) => tool.inputSchema.type === "object"));
@@ -36,6 +36,8 @@ test("MCP publishes the command catalog as tools", () => {
 	const nativeProperties = native.inputSchema.properties as Record<string, Record<string, unknown>>;
 	const commandProperties = nativeProperties.command.properties as Record<string, Record<string, unknown>>;
 		assert.ok((commandProperties.cmd.enum as string[]).includes("network.list"));
+		assert.ok((commandProperties.cmd.enum as string[]).includes("transfer.download"));
+		assert.ok((commandProperties.cmd.enum as string[]).includes("transfer.upload"));
 		assert.equal((commandProperties.cmd.enum as string[]).includes("tabs"), false);
 		assert.equal((commandProperties.cmd.enum as string[]).includes("batch"), false);
 });

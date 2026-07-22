@@ -115,8 +115,6 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 		code === "ARTIFACT_JSON_INVALID" ? "use browser_artifact mode=text|search for non-JSON artifacts, or choose a valid JSON artifact path" : undefined,
 		path ? `browser_artifact path=${path}` : undefined,
 		query && (code.startsWith("ARTIFACT_SEARCH_") || code === "ARTIFACT_QUERY_REQUIRES_SEARCH_MODE") ? `retry browser_artifact search with query=${query}` : undefined,
-		code === "UPLOAD_CONFIRMATION_REQUIRED" ? "use browser_upload confirm:true with explicit absolute file paths" : undefined,
-		code === "DOWNLOAD_TARGET_REQUIRED" ? "use browser_download with explicit selector or url" : undefined,
 			["INVALID_TIMEOUT", "TIMEOUT", "BRIDGE_TIMEOUT", "NAVIGATION_TIMEOUT", "NETWORK_IDLE_TIMEOUT", "SELECTOR_TIMEOUT"].includes(code) ? "retry with explicit timeoutMs and targetRef/browserSessionId" : undefined,
 		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=snapshot" : undefined,
 		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=list to target an unleased tab, or retry after the lease's remainingMs elapses" : undefined,

@@ -9,7 +9,6 @@ import { defineExecuteCommand } from "../../src/commands/executeCommand.ts";
 import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
 import { defineScreenshotCommand } from "../../src/commands/screenshotCommand.ts";
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
-import { defineDownloadCommand, defineUploadCommand } from "../../src/commands/transferCommands.ts";
 import { publicCreateTabResult } from "../../src/commands/tabsProjection.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
@@ -299,7 +298,7 @@ test("commands execution: browser_command writes return the raw bridge result", 
 test("commands execution: browser_command rejects commands owned by dedicated tools", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
-	for (const [cmd, owner] of [["tabs", "browser_tabs"], ["screenshot.capture", "browser_screenshot"], ["transfer.download", "browser_download"], ["transfer.upload", "browser_upload"]]) {
+	for (const [cmd, owner] of [["tabs", "browser_tabs"], ["screenshot.capture", "browser_screenshot"]]) {
 		const body = parseResult(await command.execute("tool-owned", { command: { cmd } }));
 		assert.equal(body.code, "INVALID_RULE");
 		assert.match(String(body.message), new RegExp(String(owner)));
@@ -307,11 +306,9 @@ test("commands execution: browser_command rejects commands owned by dedicated to
 	assert.equal(runtime.calls.some((call) => call.name === "sendCommand"), false);
 });
 
-test("dedicated screenshot and transfer tools dispatch their owned native commands", async () => {
+test("dedicated screenshot and browser_command dispatch their native commands", async () => {
 	const directory = await mkdtemp(path.join(tmpdir(), "browser-pilot-owned-tools-"));
 	const screenshotPath = path.join(directory, "screenshot.png");
-	const uploadPath = path.join(directory, "upload.txt");
-	await writeFile(uploadPath, "upload", "utf8");
 	const runtime = createRuntime({
 		async sendCommand(command, options) {
 			runtime.calls.push({ name: "sendCommand", args: [command, options] });
@@ -326,13 +323,11 @@ test("dedicated screenshot and transfer tools dispatch their owned native comman
 	const screenshotResult = parseResult(await screenshot.execute("screenshot", { targetRef: "tab-7", outputPath: screenshotPath }, undefined, undefined, { cwd: directory }));
 	assert.equal((screenshotResult.saved as Record<string, unknown>).path, screenshotPath);
 
-	const download = defineCommand((context) => defineDownloadCommand(context), runtime);
-	await download.execute("download", { targetRef: "tab-7", url: "https://example.test/file.txt" });
-	const upload = defineCommand((context) => defineUploadCommand(context), runtime);
-	await upload.execute("upload", { targetRef: "tab-7", selector: "input[type=file]", files: [uploadPath], confirm: true });
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	await command.execute("download", { targetRef: "tab-7", command: { cmd: "transfer.download", url: "https://example.test/file.txt" } });
+	await command.execute("upload", { targetRef: "tab-7", command: { cmd: "transfer.upload", selector: "input[type=file]", files: ["D:\\fixtures\\upload.txt"] } });
 
 	assert.deepEqual(runtime.calls.filter((call) => call.name === "sendCommand").map((call) => (call.args[0] as Record<string, unknown>).cmd), ["screenshot.capture", "transfer.download", "transfer.upload"]);
-	assert.deepEqual(runtime.calls.filter((call) => call.name.endsWith("UiLock")).map((call) => call.name), ["acquireUiLock", "releaseUiLock"]);
 });
 
 test("commands execution: browser_command write failures return the error", async () => {

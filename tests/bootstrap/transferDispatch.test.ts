@@ -101,6 +101,7 @@ test("transfer download completes direct URL and selector media paths", async ()
 	const media = await transfer.handleBrowserPilotTransferCommand("transfer.download", 7, { selector: "img.hero", mode: "media", timeoutMs: 500 });
 	assert.equal(media.ok, true);
 	assert.equal((media.data as JsonRecord).mode, "media");
+	assert.deepEqual((media.data as JsonRecord).mimeMismatch, { expected: "image", actual: "application/octet-stream" });
 	assert.equal(downloadCalls[0]?.url, "https://example.test/image.png");
 	assert.equal(downloadCalls[0]?.filename, "image.png");
 });

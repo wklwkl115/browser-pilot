@@ -54,17 +54,17 @@ function browserPilotTransferNormalizeDownloadMode(msg: BrowserPilotBridgeComman
   const omitted = raw === undefined || raw === null || raw === '';
   if (omitted) return { ok: true, mode: target === 'url' ? 'url' : 'click' };
   if (typeof raw !== 'string') {
-    return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_download mode must be one of click, media, or url', { mode: raw, target, allowedModes: ['click', 'media', 'url'] });
+    return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'transfer.download mode must be one of click, media, or url', { mode: raw, target, allowedModes: ['click', 'media', 'url'] });
   }
   const mode = raw.trim().toLowerCase();
   if (!['click', 'media', 'url'].includes(mode)) {
-    return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_download mode must be one of click, media, or url', { mode: raw, target, allowedModes: ['click', 'media', 'url'] });
+    return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'transfer.download mode must be one of click, media, or url', { mode: raw, target, allowedModes: ['click', 'media', 'url'] });
   }
   if (target === 'url' && mode !== 'url') {
-    return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_download url target only accepts mode:url or omitted mode', { mode, target, allowedModes: ['url'] });
+    return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'transfer.download url target only accepts mode:url or omitted mode', { mode, target, allowedModes: ['url'] });
   }
   if (target === 'selector' && mode === 'url') {
-    return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_download selector target only accepts mode:click, mode:media, or omitted mode', { mode, target, allowedModes: ['click', 'media'] });
+    return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'transfer.download selector target only accepts mode:click, mode:media, or omitted mode', { mode, target, allowedModes: ['click', 'media'] });
   }
   return { ok: true, mode: mode as TransferDownloadMode };
 }
@@ -87,6 +87,28 @@ function browserPilotTransferDownloadItem(item: BrowserPilotChromeDownloadItem |
     endTime: item.endTime,
     error: item.error,
   };
+}
+
+function browserPilotTransferMimeMatchesExpectation(mime: string, expected: string): boolean {
+  const actual = mime.toLowerCase();
+  return expected === 'image' || expected === 'media'
+    ? /^(image|video|audio)\//.test(actual)
+    : actual === expected || actual.startsWith(expected);
+}
+
+function browserPilotTransferAnnotateMime(response: BrowserPilotBridgeResponse, msg: BrowserPilotBridgeCommand): BrowserPilotBridgeResponse {
+  if (response.ok === false) return response;
+  const data = responseData(response);
+  const mode = String(data.mode || '');
+  const expected = typeof msg.expectMime === 'string' && msg.expectMime.trim()
+    ? msg.expectMime.trim().toLowerCase()
+    : mode === 'media' ? 'image' : '';
+  const download = asRecord(data.download);
+  const mime = typeof download.mime === 'string' ? download.mime : '';
+  if (expected && mime && !browserPilotTransferMimeMatchesExpectation(mime, expected)) {
+    data.mimeMismatch = { expected, actual: mime };
+  }
+  return response;
 }
 
 function browserPilotTransferDownload(options: TransferDownloadOptions): Promise<number> {
@@ -358,7 +380,7 @@ async function browserPilotTransferEvaluateSelector(tabId: number, expression: s
 async function browserPilotTransferDownloadUrl(msg: BrowserPilotBridgeCommand, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
   const modeCheck = browserPilotTransferNormalizeDownloadMode(msg, 'url');
   if (modeCheck.ok === false) return modeCheck;
-  if (!browserPilotTransferIsHttpUrl(msg.url)) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_download url must be http(s)', { url: msg.url });
+  if (!browserPilotTransferIsHttpUrl(msg.url)) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'transfer.download url must be http(s)', { url: msg.url });
   return await browserPilotTransferDownloadWithOptions(browserPilotTransferDownloadOptions(msg, String(msg.url)), timeoutMs, 'url', null);
 }
 
@@ -409,7 +431,7 @@ async function browserPilotTransferDownloadClick(tabId: number, msg: BrowserPilo
 async function browserPilotTransferDownloadFromPage(tabId: number, msg: BrowserPilotBridgeCommand, timeoutMs: number): Promise<BrowserPilotBridgeResponse> {
   if (!chrome.downloads?.onCreated) return browserPilotError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'chrome.downloads API is unavailable; reload the bridge extension after granting downloads permission', {});
   const selector = String(msg.selector || '');
-  if (!selector) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_download requires selector or url', {});
+  if (!selector) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'transfer.download requires selector or url', {});
   const modeCheck = browserPilotTransferNormalizeDownloadMode(msg, 'selector');
   if (modeCheck.ok === false) return modeCheck;
   if (!('mode' in modeCheck)) return modeCheck;
@@ -420,8 +442,10 @@ async function browserPilotTransferDownloadFromPage(tabId: number, msg: BrowserP
 
 async function handleBrowserPilotTransferDownload(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
   const timeoutMs = browserPilotTransferTimeoutMs(msg, 30000);
-  if (msg.url) return await browserPilotTransferDownloadUrl(msg, timeoutMs);
-  return await browserPilotTransferDownloadFromPage(tabId, msg, timeoutMs);
+  const response = msg.url
+    ? await browserPilotTransferDownloadUrl(msg, timeoutMs)
+    : await browserPilotTransferDownloadFromPage(tabId, msg, timeoutMs);
+  return browserPilotTransferAnnotateMime(response, msg);
 }
 
 function browserPilotTransferFiles(msg: BrowserPilotBridgeCommand): string[] {
@@ -475,9 +499,9 @@ async function browserPilotTransferCompleteUpload(cdp: TransferCdpBridge, tabId:
 
 async function handleBrowserPilotTransferUpload(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
   const files = browserPilotTransferFiles(msg);
-  if (!files.length) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_upload requires at least one file', {});
+  if (!files.length) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'transfer.upload requires at least one file', {});
   const selector = String(msg.selector || '');
-  if (!selector) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'browser_upload requires selector', {});
+  if (!selector) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'transfer.upload requires selector', {});
   const timeoutMs = browserPilotTransferTimeoutMs(msg, 30000);
   const cdp = browserPilotPersistentCdp();
   if (!cdp?.send) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'persistent CDP helper is not loaded', { tabId });

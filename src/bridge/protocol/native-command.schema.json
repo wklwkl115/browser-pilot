@@ -814,6 +814,7 @@
       "domain": "transfer",
       "tabScoped": true,
       "accessMode": "write",
+      "notes": "Download through Chrome. Use selector with mode click or media, or url with mode url; optional fields: index, filename, conflictAction, saveAs, timeoutMs, expectMime.",
       "requiredAny": [
         [
           "selector"
@@ -827,6 +828,7 @@
       "domain": "transfer",
       "tabScoped": true,
       "accessMode": "write",
+      "notes": "Upload local files through a page file chooser. Required fields: selector and files; optional fields: index and timeoutMs.",
       "required": [
         "selector",
         "files"
@@ -971,11 +973,6 @@
       "category": "runtime.frame",
       "retryable": false,
       "summary": "Requested operation cannot cross an iframe origin boundary."
-    },
-    "DOWNLOAD_TARGET_REQUIRED": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "browser_download requires selector or url."
     },
     "ELEMENT_NOT_FOUND": {
       "category": "runtime.page",
@@ -1327,41 +1324,6 @@
       "retryable": false,
       "summary": "Target URL, element, or chooser mode is unsupported."
     },
-    "UPLOAD_CONFIRMATION_REQUIRED": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "browser_upload requires confirm:true after user approval."
-    },
-    "UPLOAD_FILES_LIMIT": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "browser_upload file count exceeds the supported limit."
-    },
-    "UPLOAD_FILES_REQUIRED": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "browser_upload requires at least one file."
-    },
-    "UPLOAD_FILE_NOT_FOUND": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "browser_upload file path does not exist."
-    },
-    "UPLOAD_PATH_NOT_ABSOLUTE": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "browser_upload requires absolute local file paths."
-    },
-    "UPLOAD_PATH_NOT_FILE": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "browser_upload path is not a file."
-    },
-    "UPLOAD_SELECTOR_REQUIRED": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "browser_upload requires a selector."
-    },
     "SCAN_BUNDLE_INVALID": {
       "category": "abml.input",
       "retryable": false,
@@ -1388,44 +1350,7 @@
           "captureBeyondViewport",
           "fallback"
         ],
-		"artifactPrefix": "screenshot"
-	  }
-    },
-    "transferTools": {
-      "browser_download": {
-        "domain": "transfer",
-        "command": "transfer.download",
-        "parameters": [
-          "tabId",
-          "detailLevel",
-          "outputPath",
-          "timeoutMs",
-          "maxChars",
-          "selector",
-          "url",
-          "mode",
-          "index",
-          "filename",
-          "conflictAction",
-          "saveAs"
-        ],
-        "artifactPrefix": "download"
-      },
-      "browser_upload": {
-        "domain": "transfer",
-        "command": "transfer.upload",
-        "parameters": [
-          "tabId",
-          "detailLevel",
-          "outputPath",
-          "timeoutMs",
-          "maxChars",
-          "selector",
-          "files",
-          "index",
-          "confirm"
-        ],
-        "artifactPrefix": "upload"
+        "artifactPrefix": "screenshot"
       }
     }
   }

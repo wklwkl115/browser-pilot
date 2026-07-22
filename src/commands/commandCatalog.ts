@@ -4,7 +4,6 @@ import { defineExecuteCommand } from "./executeCommand.js";
 import { defineObserveCommand } from "./observeCommand.js";
 import { defineScreenshotCommand } from "./screenshotCommand.js";
 import { defineTabsCommand } from "./tabsCommand.js";
-import { defineDownloadCommand, defineUploadCommand } from "./transferCommands.js";
 import type { CommandRegistrar } from "./commandShared.js";
 
 const CORE_BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = [
@@ -12,8 +11,6 @@ const CORE_BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = [
 	defineNativeCommand,
 	defineExecuteCommand,
 	defineObserveCommand,
-	defineDownloadCommand,
-	defineUploadCommand,
 	defineScreenshotCommand,
 	defineArtifactCommand,
 ];
