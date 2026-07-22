@@ -11,7 +11,7 @@ import { invokeDaemonTool } from "./client.js";
 import { runMcpPairing } from "./auth.js";
 import { getJsonPath } from "../../utils/jsonPath.js";
 import { redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
-import { isPageObservationV3, PAGE_OBSERVATION_V3_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
+import { isPageObservationV3, isPageObservationView, PAGE_OBSERVATION_VIEW_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
 import { OBSERVATION_RESOURCE_SCHEMA, OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
 import { publicToolValue } from "../../utils/toolResult.js";
 
@@ -65,7 +65,7 @@ export function mcpTools(): McpTool[] {
 		inputSchema: definition.parameters && typeof definition.parameters === "object"
 			? definition.parameters as Record<string, unknown>
 			: { type: "object", properties: {} },
-		...(definition.name === "browser_observe" ? { outputSchema: PAGE_OBSERVATION_V3_JSON_SCHEMA as unknown as Record<string, unknown> } : {}),
+		...(definition.name === "browser_observe" ? { outputSchema: PAGE_OBSERVATION_VIEW_JSON_SCHEMA as unknown as Record<string, unknown> } : {}),
 		...(toolAnnotations(definition.name) ? { annotations: toolAnnotations(definition.name) } : {}),
 	})), pairingTool];
 }
@@ -212,7 +212,7 @@ export async function callMcpTool(name: string, args: Record<string, unknown>, s
 		const content = isError ? publicContent(result.content) : result.content;
 		const textContent = content.filter((item): item is { type: "text"; text: string } => item.type === "text");
 		const structuredContent = isError ? undefined : recordJsonText(textContent);
-		const observation = name === "browser_observe" && structuredContent && isPageObservationV3(structuredContent) ? structuredContent : undefined;
+		const observation = name === "browser_observe" && structuredContent && isPageObservationView(structuredContent) ? structuredContent : undefined;
 		return {
 			content: [...(observation ? [{ type: "text" as const, text: observationSummary(observation) }] : content), ...resourceLinks, ...(link ? [link] : [])],
 			...(structuredContent ? { structuredContent } : {}),

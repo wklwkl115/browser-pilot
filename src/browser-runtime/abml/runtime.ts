@@ -111,7 +111,7 @@ function descriptorBackendNodeId(descriptor: RefDescriptor | undefined): number 
 	return undefined;
 }
 
-async function readLocalPartialAxDiagnostics(server: AbmlBrowserRuntimeServer, descriptor: RefDescriptor | undefined, options: { browserSessionId?: string; tabId: number; timeoutMs: number }): Promise<PartialAxDiagnostics | undefined> {
+async function readLocalPartialAxDiagnostics(server: AbmlBrowserRuntimeServer, descriptor: RefDescriptor | undefined, options: { browserSessionId?: string; tabId: number; timeoutMs: number; signal?: AbortSignal }): Promise<PartialAxDiagnostics | undefined> {
 	const backendNodeId = descriptorBackendNodeId(descriptor);
 	if (backendNodeId === undefined) return undefined;
 	return (await readPartialAxTree(server, { ...options, backendNodeId, timeoutMs: Math.min(options.timeoutMs, 1_500), maxNodes: 8, fetchRelatives: false })).diagnostics;
@@ -132,7 +132,7 @@ function listenerProbeCandidates(entities: Entity[]): Array<{ entity: Entity; ba
 	return out;
 }
 
-async function sendRuntimeCdp(server: AbmlBrowserRuntimeServer, options: { browserSessionId?: string; tabId: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown> }): Promise<Record<string, unknown>> {
+async function sendRuntimeCdp(server: AbmlBrowserRuntimeServer, options: { browserSessionId?: string; tabId: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown>; signal?: AbortSignal }): Promise<Record<string, unknown>> {
 	const result = await server.sendCommand({
 		cmd: "persistent_cdp",
 		action: "send",
@@ -141,7 +141,7 @@ async function sendRuntimeCdp(server: AbmlBrowserRuntimeServer, options: { brows
 		params: options.params || {},
 		persistent: true,
 		timeoutMs: options.timeoutMs,
-	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, internal: true });
+	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, internal: true, signal: options.signal });
 	assertBridgeCommandSucceeded(result, `persistent_cdp:${options.cdpMethod}`);
 	const data = isRecord(result.data) ? result.data : {};
 	return isRecord(data.result) ? data.result : data;
@@ -163,7 +163,8 @@ function listenerHintsFromCdp(value: unknown): { listeners: ListenerHint[]; trun
 	return { listeners, truncated: raw.length > listeners.length };
 }
 
-async function annotateListenerHints(server: AbmlBrowserRuntimeServer, entities: Entity[], options: { browserSessionId?: string; tabId: number; timeoutMs: number }): Promise<{ entities: Entity[]; stats: ListenerProbeStats }> {
+async function annotateListenerHints(server: AbmlBrowserRuntimeServer, entities: Entity[], options: { browserSessionId?: string; tabId: number; timeoutMs: number; signal?: AbortSignal }): Promise<{ entities: Entity[]; stats: ListenerProbeStats }> {
+	options.signal?.throwIfAborted();
 	const startedAt = Date.now();
 	const candidates = listenerProbeCandidates(entities);
 	const byRef = new Map<string, ListenerHint[]>();
@@ -189,6 +190,7 @@ async function annotateListenerHints(server: AbmlBrowserRuntimeServer, entities:
 				listenerCount += hints.listeners.length;
 			}
 		} catch {
+			options.signal?.throwIfAborted();
 			failureCount += 1;
 		}
 	}
@@ -513,17 +515,23 @@ function structureAxFusionDiagnostics(fusion: { diagnostics: AxFusionDiagnostics
 	};
 }
 
-async function settlementPartialAxDiagnostics(server: AbmlBrowserRuntimeServer, descriptor: RefDescriptor | undefined, options: { browserSessionId?: string; tabId: number; timeoutMs: number }, settlementCapture: boolean) {
+async function settlementPartialAxDiagnostics(server: AbmlBrowserRuntimeServer, descriptor: RefDescriptor | undefined, options: { browserSessionId?: string; tabId: number; timeoutMs: number; signal?: AbortSignal }, settlementCapture: boolean) {
 	if (settlementCapture) return undefined;
-	return await readLocalPartialAxDiagnostics(server, descriptor, options).catch(() => undefined);
+	return await readLocalPartialAxDiagnostics(server, descriptor, options).catch(() => {
+		options.signal?.throwIfAborted();
+		return undefined;
+	});
 }
 
 async function settlementAxRead(server: AbmlBrowserRuntimeServer, options: Parameters<typeof readAxEntities>[1], settlementCapture: boolean): Promise<AxReadResult> {
 	if (settlementCapture) return { entities: [], anchors: [] };
-	return await readAxEntities(server, options).catch((): AxReadResult => ({ entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, cacheHit: false, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } }));
+	return await readAxEntities(server, options).catch((): AxReadResult => {
+		options.signal?.throwIfAborted();
+		return { entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, cacheHit: false, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } };
+	});
 }
 
-async function settlementListenerHints(server: AbmlBrowserRuntimeServer, entities: Entity[], options: { browserSessionId?: string; tabId: number; timeoutMs: number }, settlementCapture: boolean) {
+async function settlementListenerHints(server: AbmlBrowserRuntimeServer, entities: Entity[], options: { browserSessionId?: string; tabId: number; timeoutMs: number; signal?: AbortSignal }, settlementCapture: boolean) {
 	if (!settlementCapture) return await annotateListenerHints(server, entities, options);
 	return {
 		entities,
@@ -543,6 +551,7 @@ async function resolveBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 }
 
 async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions, descriptor: RefDescriptor | undefined, target: { browserSessionId?: string; tabId: number }) {
+	options.signal?.throwIfAborted();
 	const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
 	const settlementCapture = options.captureProfile === "settlement";
 	const descriptorUrl = descriptor?.documentEpoch?.url;
@@ -583,6 +592,7 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		browserSessionId: target.browserSessionId,
 		tabId: target.tabId,
 		timeoutMs,
+		signal: options.signal,
 	}, settlementCapture);
 	const axRead = await settlementAxRead(server, {
 		browserSessionId: target.browserSessionId,
@@ -594,6 +604,7 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		capturedAt: snapshot.capturedAt,
 		timeoutMs,
 		cacheKey: input.axCacheKey,
+		signal: options.signal,
 	}, settlementCapture);
 	const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries ?? [], {
 		scanCapturedAt: snapshot.capturedAt,
@@ -618,6 +629,7 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		browserSessionId: target.browserSessionId,
 		tabId: target.tabId,
 		timeoutMs,
+		signal: options.signal,
 	}, settlementCapture);
 	const entitiesWithListenerHints = listenerProbe.entities;
 	const relations = materializeStructureRelations(entitiesWithListenerHints, axRead, descriptor);
@@ -723,6 +735,7 @@ export function createBrowserAbmlRuntime(server: AbmlBrowserRuntimeServer, optio
 			try {
 				return await executeBrowserAbmlRead(server, input, options);
 			} catch (error) {
+				options.signal?.throwIfAborted();
 				return failure("read", error);
 			}
 		},
@@ -730,6 +743,7 @@ export function createBrowserAbmlRuntime(server: AbmlBrowserRuntimeServer, optio
 			try {
 				return await executeBrowserAbmlPierce(server, input, options);
 			} catch (error) {
+				options.signal?.throwIfAborted();
 				return failure("pierce", error);
 			}
 		},
@@ -737,6 +751,7 @@ export function createBrowserAbmlRuntime(server: AbmlBrowserRuntimeServer, optio
 			try {
 				return await executeBrowserAbmlFrame(server, input, options);
 			} catch (error) {
+				options.signal?.throwIfAborted();
 				return failure("frame", error);
 			}
 		},

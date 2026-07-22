@@ -50,13 +50,17 @@ async function prepareObservationRequest(
 	params: ObserveToolParams,
 	ctx: CommandResultContext,
 	timings: ObserveTimingMetrics,
+	signal?: AbortSignal,
 ) {
 	const providerFailures: ObservationProviderFailure[] = [];
 	const startedAt = Date.now();
-	const tabs = await server.refreshTabs(5_000, { browserSessionId: params.browserSessionId }).catch((error: unknown) => {
+	signal?.throwIfAborted();
+	const tabs = await server.refreshTabs(5_000, { browserSessionId: params.browserSessionId, signal }).catch((error: unknown) => {
+		signal?.throwIfAborted();
 		providerFailures.push(providerFailureFromError("tabs-refresh", error, "TABS_REFRESH_FAILED"));
 		return server.getTabs();
 	});
+	signal?.throwIfAborted();
 	timings.tabRefreshMs = elapsedMs(startedAt);
 	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 	const rawTargetRef = targetTabId(params);
@@ -74,7 +78,7 @@ async function prepareObservationRequest(
 	};
 }
 
-export async function runScanObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, onUpdate?: CommandOnUpdate) {
+export async function runScanObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, onUpdate?: CommandOnUpdate, signal?: AbortSignal) {
 	const startedAt = Date.now();
 	const extension = server.snapshot({ browserSessionId: params.browserSessionId }).extension;
 	if (extension && extension.captureContractVersion !== 1) {
@@ -85,19 +89,16 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		});
 	}
 	const observeTimings: ObserveTimingMetrics = {};
-	const request = await prepareObservationRequest(server, params, ctx, observeTimings);
+	const request = await prepareObservationRequest(server, params, ctx, observeTimings, signal);
 	const { tabs, providerFailures, browserSessionId, rawTargetRef, tabId, fallbackName, outputPath } = request;
 	const session = await prepareScanSession({
 		server,
 		params,
 		tabId,
-		outputPath,
-		browserSessionId,
-		onUpdate,
 		timings: observeTimings,
+		signal,
 	});
-	if (session.cacheHit) return session.result;
-	const { timeoutMs, effectiveTabId, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, paramsSignature, pageFingerprint, pageIdentity, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
+	const { timeoutMs, effectiveTabId, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, pageFingerprint, pageIdentity, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
 	const capture = await executeScanCapture({
 		server,
 		params,
@@ -113,13 +114,13 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		reanchorReason: sessionReanchorReason,
 		timings: observeTimings,
 		onUpdate,
+		signal,
 	});
 	const { observation, fusedPageFingerprint } = capture;
 	const baseline = capture.baseline;
 	const ledgerFrame = capture.reanchorReason ? undefined : sessionLedgerFrame;
 	const data = observation.result.data;
 	const scanPageFingerprint = publicPageFingerprint(fusedPageFingerprint);
-	const effectivePageFingerprint = fusedPageFingerprint ?? pageFingerprint;
 	const content = data.content.text;
 	const scanMeta = { schema: data.schema, page: data.page, stats: data.stats };
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
@@ -131,6 +132,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		deadlineAt: startedAt + timeoutMs,
 		baseline,
 		timings: observeTimings,
+		signal,
 	});
 	const { causal, recorderState, hookState } = providers;
 	const snapshotMeta = currentObserveSnapshotMeta(server, params, outputPath, data.page.url, recorderState.lastSeq, hookState.lastSeq, capture.pageIdentity);
@@ -171,8 +173,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		capture,
 		assembly,
 		scanPageFingerprint,
-		effectivePageFingerprint,
-		paramsSignature,
 		renderStartedAt,
 		intent: params.intent,
 	});

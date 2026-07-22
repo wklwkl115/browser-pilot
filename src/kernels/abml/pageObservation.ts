@@ -36,6 +36,8 @@ export interface ProviderExecutionItem {
 	bridgeRoundTrips?: number;
 }
 export type ProviderExecutionReport = Record<string, ProviderExecutionItem>;
+export type PublicProviderExecutionItem = Pick<ProviderExecutionItem, "status" | "reason">;
+export type PublicProviderExecutionReport = Record<string, PublicProviderExecutionItem>;
 
 export interface CompactActionable {
 	ref: string;
@@ -134,6 +136,29 @@ export interface PageObservationV3 {
 	nextActions?: string[];
 }
 
+export interface PageObservationView {
+	schema: typeof PAGE_OBSERVATION_SCHEMA_V3;
+	tool: "browser_observe";
+	model: "PageObservation";
+	canonical: true;
+	target: Pick<PageTarget, "url">;
+	snapshot: Pick<ObservationSnapshot, "snapshotId" | "capturedAt" | "ttlMs">;
+	content?: PageObservationContent;
+	gist?: Record<string, unknown>;
+	outline?: Array<Record<string, unknown>>;
+	actionables?: CompactActionable[];
+	relations?: RelationSummary;
+	inference?: InferenceSummary;
+	causal?: CausalSummary;
+	treeDiff?: TreeDiff;
+	snapshotProjection?: SnapshotProjection;
+	collections?: CompactCollection[];
+	providers: PublicProviderExecutionReport;
+	frontier: ObservationFrontier;
+	diagnostics?: Record<string, unknown>;
+	nextActions?: string[];
+}
+
 const FRONTIER_ITEM_SCHEMA = {
 	type: "object",
 	properties: {
@@ -211,6 +236,67 @@ export const PAGE_OBSERVATION_V3_JSON_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
+const PUBLIC_PROVIDER_ITEM_SCHEMA = {
+	type: "object",
+	properties: {
+		status: { enum: ["executed", "scan-backed", "skipped", "failed", "degraded"] },
+		reason: { type: "string" },
+	},
+	required: ["status"],
+	additionalProperties: false,
+} as const;
+
+const PUBLIC_COLLECTION_SCHEMA = {
+	type: "object",
+	properties: {
+		ref: { type: "string", minLength: 1 },
+		kind: { type: "string", minLength: 1 },
+		name: { type: "string" },
+		observed: { type: "integer", minimum: 0 },
+		total: { type: "integer", minimum: 0 },
+		completeness: { type: "string" },
+		confidence: { type: "string" },
+		itemRefs: { type: "array", maxItems: 3, items: { type: "string" } },
+		frontierRef: { type: "string" },
+	},
+	required: ["ref", "kind", "observed", "completeness", "confidence", "itemRefs"],
+	additionalProperties: false,
+} as const;
+
+export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
+	$id: "browser-page-observation-view/v1",
+	type: "object",
+	properties: {
+		schema: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.schema,
+		tool: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.tool,
+		model: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.model,
+		canonical: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.canonical,
+		target: { type: "object", properties: { url: { type: "string" } }, additionalProperties: false },
+		snapshot: {
+			type: "object",
+			properties: { snapshotId: { type: "string" }, capturedAt: { type: "number" }, ttlMs: { type: "number" } },
+			required: ["snapshotId", "capturedAt", "ttlMs"],
+			additionalProperties: false,
+		},
+		content: { type: "object", properties: { text: { type: "string", maxLength: 6_000 }, headings: { type: "array", maxItems: 16, items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
+		gist: { type: "object" },
+		outline: { type: "array", maxItems: 8, items: { type: "object" } },
+		actionables: { type: "array", maxItems: 10, items: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.actionables.items },
+		relations: { type: "object" },
+		inference: { type: "object" },
+		causal: { type: "object" },
+		treeDiff: { type: "object" },
+		snapshotProjection: { type: "object", properties: { summary: { type: "object" }, templates: { type: "array", maxItems: 12, items: { type: "object" } } }, additionalProperties: false },
+		collections: { type: "array", maxItems: 12, items: PUBLIC_COLLECTION_SCHEMA },
+		providers: { type: "object", additionalProperties: PUBLIC_PROVIDER_ITEM_SCHEMA },
+		frontier: { type: "object", properties: { items: { type: "array", maxItems: 13, items: FRONTIER_ITEM_SCHEMA } }, required: ["items"], additionalProperties: false },
+		diagnostics: { type: "object" },
+		nextActions: { type: "array", maxItems: 8, items: { type: "string" } },
+	},
+	required: ["schema", "tool", "model", "canonical", "target", "snapshot", "providers", "frontier"],
+	additionalProperties: false,
+} as const;
+
 const PAGE_OBSERVATION_ROOT_KEYS = new Set(Object.keys(PAGE_OBSERVATION_V3_JSON_SCHEMA.properties));
 const TARGET_KEYS = new Set(["browserSessionId", "tabId", "targetGeneration", "pageEpoch", "url"]);
 const SNAPSHOT_KEYS = new Set(["snapshotId", "browserSessionId", "tabId", "url", "targetGeneration", "pageEpoch", "documentId", "frameScope", "selectionVersion", "sourceMode", "capturedAt", "ttlMs", "networkSeq", "hookSeq", "invalidatedReason", "expired"]);
@@ -218,6 +304,9 @@ const PROVIDER_KEYS = new Set(["planned", "status", "reason", "reservedMs", "act
 const FRONTIER_KEYS = new Set(["ref", "kind", "state", "label", "observed", "total", "controlRef", "resourceUri", "unavailableReason"]);
 const ACTIONABLE_KEYS = new Set(["ref", "kind", "name", "state"]);
 const COLLECTION_KEYS = new Set(Object.keys(COLLECTION_SCHEMA.properties));
+const PAGE_OBSERVATION_VIEW_ROOT_KEYS = new Set(Object.keys(PAGE_OBSERVATION_VIEW_JSON_SCHEMA.properties));
+const PUBLIC_PROVIDER_KEYS = new Set(["status", "reason"]);
+const PUBLIC_COLLECTION_KEYS = new Set(Object.keys(PUBLIC_COLLECTION_SCHEMA.properties));
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
@@ -283,7 +372,7 @@ function validCollections(value: unknown): boolean {
 		&& typeof item.completeness === "string" && typeof item.confidence === "string" && Array.isArray(item.itemRefs) && item.itemRefs.every((ref) => typeof ref === "string"));
 }
 
-/** Strict runtime guard used at cache/artifact boundaries. */
+/** Strict runtime guard used at artifact boundaries. */
 export function isPageObservationV3(value: unknown): value is PageObservationV3 {
 	if (!isRecord(value) || !exactKeys(value, PAGE_OBSERVATION_ROOT_KEYS)) return false;
 	if (value.schema !== PAGE_OBSERVATION_SCHEMA_V3 || value.tool !== "browser_observe" || value.model !== "PageObservation" || value.canonical !== true) return false;
@@ -291,5 +380,21 @@ export function isPageObservationV3(value: unknown): value is PageObservationV3 
 	if (!Object.values(value.providers).every(validProvider) || !validActionables(value.actionables) || !validCollections(value.collections)) return false;
 	if (value.content !== undefined && (!isRecord(value.content) || typeof value.content.text !== "string" || typeof value.content.complete !== "boolean" || value.content.headings !== undefined && (!Array.isArray(value.content.headings) || !value.content.headings.every((item) => typeof item === "string")))) return false;
 	if (value.nextActions !== undefined && (!Array.isArray(value.nextActions) || !value.nextActions.every((item) => typeof item === "string"))) return false;
+	return true;
+}
+
+export function isPageObservationView(value: unknown): value is PageObservationView {
+	if (!isRecord(value) || !exactKeys(value, PAGE_OBSERVATION_VIEW_ROOT_KEYS)) return false;
+	if (value.schema !== PAGE_OBSERVATION_SCHEMA_V3 || value.tool !== "browser_observe" || value.model !== "PageObservation" || value.canonical !== true) return false;
+	if (!isRecord(value.target) || !exactKeys(value.target, new Set(["url"])) || !validOptionalString(value.target.url)) return false;
+	if (!isRecord(value.snapshot) || !exactKeys(value.snapshot, new Set(["snapshotId", "capturedAt", "ttlMs"]))) return false;
+	if (typeof value.snapshot.snapshotId !== "string" || typeof value.snapshot.capturedAt !== "number" || !Number.isFinite(value.snapshot.capturedAt) || typeof value.snapshot.ttlMs !== "number" || !Number.isFinite(value.snapshot.ttlMs) || value.snapshot.ttlMs < 0) return false;
+	if (!isRecord(value.providers) || !Object.values(value.providers).every((provider) => isRecord(provider) && exactKeys(provider, PUBLIC_PROVIDER_KEYS) && typeof provider.status === "string" && ["executed", "scan-backed", "skipped", "failed", "degraded"].includes(provider.status) && validOptionalString(provider.reason))) return false;
+	if (!validFrontier(value.frontier) || value.frontier.items.length > 13 || !validActionables(value.actionables) || (Array.isArray(value.actionables) && value.actionables.length > 10)) return false;
+	if (value.content !== undefined && (!isRecord(value.content) || typeof value.content.text !== "string" || value.content.text.length > 6_000 || typeof value.content.complete !== "boolean" || value.content.headings !== undefined && (!Array.isArray(value.content.headings) || value.content.headings.length > 16 || !value.content.headings.every((item) => typeof item === "string")))) return false;
+	if (value.outline !== undefined && (!Array.isArray(value.outline) || value.outline.length > 8)) return false;
+	if (value.collections !== undefined && (!Array.isArray(value.collections) || value.collections.length > 12 || !value.collections.every((item) => isRecord(item) && exactKeys(item, PUBLIC_COLLECTION_KEYS) && typeof item.ref === "string" && typeof item.kind === "string" && Number.isInteger(item.observed) && typeof item.completeness === "string" && typeof item.confidence === "string" && Array.isArray(item.itemRefs) && item.itemRefs.length <= 3 && item.itemRefs.every((ref) => typeof ref === "string")))) return false;
+	if (value.snapshotProjection !== undefined && (!isRecord(value.snapshotProjection) || !exactKeys(value.snapshotProjection, new Set(["summary", "templates"])) || !isRecord(value.snapshotProjection.summary) || !Array.isArray(value.snapshotProjection.templates) || value.snapshotProjection.templates.length > 12)) return false;
+	if (value.nextActions !== undefined && (!Array.isArray(value.nextActions) || value.nextActions.length > 8 || !value.nextActions.every((item) => typeof item === "string"))) return false;
 	return true;
 }

@@ -31,7 +31,11 @@ test("MCP publishes the command catalog as tools", () => {
 		"browser_pair",
 	]);
 	assert.ok(tools.every((tool) => tool.inputSchema.type === "object"));
-	assert.equal(tools.find((tool) => tool.name === "browser_observe")?.outputSchema?.$id, "browser-page-observation/v3");
+	const observeSchema = tools.find((tool) => tool.name === "browser_observe")?.outputSchema;
+	assert.equal(observeSchema?.$id, "browser-page-observation-view/v1");
+	assert.doesNotMatch(JSON.stringify(observeSchema), /browserSessionId|tabId|targetGeneration|pageEpoch|documentId|frameScope|selectionVersion|sourceMode|networkSeq|hookSeq|reanchorReason|baselineSnapshotId|reservedMs|actualMs|bridgeRoundTrips|planned/);
+	const observeProperties = observeSchema?.properties as Record<string, unknown>;
+	for (const internal of ["delta", "baselineSnapshotId", "reanchorReason", "entities", "diff", "identity"]) assert.equal(internal in observeProperties, false);
 	const pair = tools.find((tool) => tool.name === "browser_pair")!;
 	assert.deepEqual(Object.keys(pair.inputSchema.properties as Record<string, unknown>), ["action", "label", "pairingId"]);
 	const tabs = tools.find((tool) => tool.name === "browser_tabs")!;

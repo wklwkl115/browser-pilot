@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CollectionSummary, CompactCollection, ObservationFrontierItem, PageObservationContent, PageObservationV3 } from "../../kernels/abml/pageObservation.js";
+import type { CollectionSummary, CompactCollection, ObservationFrontierItem, PageObservationContent, PageObservationV3, PageObservationView, PublicProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
 import type { SnapshotProjection, SnapshotProjectionTemplate } from "../../kernels/abml/snapshotProjection.js";
 import type { TreeDiffChangedBucket, TreeDiffInstanceBucket, TreeTemplateDiff } from "../../kernels/abml/treeDiff.js";
 import { computeRelevanceMap } from "../../kernels/evidence/distill/relevance.js";
@@ -99,17 +99,19 @@ function compactDiagnostics(value: PageObservationV3["diagnostics"]): PageObserv
 	const axFusion = isRecord(value.axFusion) && value.axFusion.degraded === true
 		? { degraded: true, ...(isRecord(value.axFusion.skipped) ? { skipped: value.axFusion.skipped } : {}) }
 		: undefined;
-	const providerFailures = Array.isArray(value.providerFailures)
-		? value.providerFailures.filter(isRecord).map((failure) => ({ provider: failure.provider, code: failure.code, ...(typeof failure.message === "string" ? { message: failure.message } : {}) }))
-		: undefined;
 	const diagnostics = {
 		...(value.abmlIntegrated === false ? { abmlIntegrated: false } : {}),
 		...(Array.isArray(value.warnings) && value.warnings.length ? { warnings: value.warnings.filter((warning): warning is string => typeof warning === "string") } : {}),
-		...(isRecord(value.baseline) ? { baseline: value.baseline } : {}),
-		...(providerFailures?.length ? { providerFailures } : {}),
 		...(axFusion ? { axFusion } : {}),
 	};
 	return Object.keys(diagnostics).length ? diagnostics : undefined;
+}
+
+function compactProviders(value: PageObservationV3["providers"]): PublicProviderExecutionReport {
+	return Object.fromEntries(Object.entries(value).map(([provider, item]) => [provider, {
+		status: item.status,
+		...(item.reason ? { reason: item.reason } : {}),
+	}]));
 }
 
 function descriptor(observation: PageObservationV3, path: string, input: Omit<ObservationResourceDescriptor, "uri" | "mimeType" | "path" | "expiresAt" | "snapshotId">): ObservationResourceDescriptor {
@@ -278,7 +280,7 @@ function projectCollections(observation: PageObservationV3, path: string, resour
 	});
 }
 
-export function projectObservationResources(observation: PageObservationV3, path: string, intent?: string): { observation: PageObservationV3; resources: ObservationResourceDescriptor[] } {
+export function projectObservationResources(observation: PageObservationV3, path: string, intent?: string): { observation: PageObservationView; resources: ObservationResourceDescriptor[] } {
 	const resources: ObservationResourceDescriptor[] = [];
 	const items: ObservationFrontierItem[] = [];
 	const deltaOnly = observation.delta === "session" || observation.baselineSnapshotId !== undefined || observation.diff !== undefined || observation.treeDiff !== undefined;
@@ -303,23 +305,31 @@ export function projectObservationResources(observation: PageObservationV3, path
 		const { frontierRef: _frontierRef, ...withoutFrontier } = collection;
 		return withoutFrontier;
 	});
-	const { content: _content, entities: _entities, outline: _outline, identity: _identity, diff: _diff, diagnostics: _diagnostics, snapshotProjection: _snapshotProjection, collections: _collections, treeDiff: _treeDiff, causal: _causal, relations: _relations, gist: _gist, ...base } = observation;
 	const headings = observation.content?.headings?.slice(0, ROOT_HEADINGS_LIMIT);
 	const title = headings?.[0];
-	const outline = compactOutline(_outline);
-	const diagnostics = compactDiagnostics(_diagnostics);
+	const outline = compactOutline(observation.outline);
+	const diagnostics = compactDiagnostics(observation.diagnostics);
 	return {
 		observation: {
-			...base,
-			...(_gist || title ? { gist: { ...(_gist ?? {}), ...(title ? { title } : {}) } } : {}),
+			schema: observation.schema,
+			tool: observation.tool,
+			model: observation.model,
+			canonical: observation.canonical,
+			target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
+			snapshot: { snapshotId: observation.snapshot.snapshotId, capturedAt: observation.snapshot.capturedAt, ttlMs: observation.snapshot.ttlMs },
+			...(observation.gist || title ? { gist: { ...(observation.gist ?? {}), ...(title ? { title } : {}) } } : {}),
 			...(rootSection ? { content: { text: rootSection.text.slice(0, ROOT_CONTENT_MAX_CHARS), ...(headings?.length ? { headings } : {}), complete: observation.content?.complete !== false && sections.length <= 1 && rootSection.text.length <= ROOT_CONTENT_MAX_CHARS } } : {}),
 			...(outline?.length ? { outline } : {}),
+			...(observation.actionables?.length ? { actionables: observation.actionables.slice(0, 10) } : {}),
 			...(snapshotProjection ? { snapshotProjection } : {}),
 			...(publicCollections?.length ? { collections: publicCollections } : {}),
 			...(treeDiff ? { treeDiff } : {}),
 			...(causal ? { causal } : {}),
 			...(relations ? { relations } : {}),
+			...(observation.inference ? { inference: observation.inference } : {}),
+			providers: compactProviders(observation.providers),
 			...(diagnostics ? { diagnostics } : {}),
+			...(observation.nextActions?.length ? { nextActions: observation.nextActions.slice(0, 8) } : {}),
 			frontier: { items: frontier.items },
 		},
 		resources: frontier.resources,

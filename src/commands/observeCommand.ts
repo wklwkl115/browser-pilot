@@ -9,16 +9,8 @@ import { currentPageIdentity, pageIdentityFromUnknown } from "./observe/pageIden
 import { samePageIdentity } from "../kernels/session/pageIdentity.js";
 import type { ValidationIssue } from "./commandDefinition.js";
 
-function provided(args: Record<string, unknown>, key: string): boolean {
-	return Object.prototype.hasOwnProperty.call(args, key) && args[key] !== undefined;
-}
-
 export function validateObserveArguments(args: Record<string, unknown>): ValidationIssue[] {
 	const issues: ValidationIssue[] = [];
-	const baselineKeys = ["baseline", "baselineSnapshotId"].filter((key) => provided(args, key));
-	if (baselineKeys.length > 1) issues.push({ code: "OBSERVE_BASELINE_CONFLICT", path: "/", message: `browser_observe accepts only one baseline source, got ${baselineKeys.join(", ")}` });
-	if (args.diff === true && baselineKeys.length) issues.push({ code: "OBSERVE_DIFF_BASELINE_CONFLICT", path: "/diff", message: "browser_observe diff:true cannot be combined with an explicit baseline source" });
-	if (args.fresh === true && baselineKeys.length) issues.push({ code: "OBSERVE_FRESH_BASELINE_CONFLICT", path: "/fresh", message: "browser_observe fresh:true cannot be combined with a baseline" });
 	if (args.fresh === true && args.diff === true) issues.push({ code: "OBSERVE_FRESH_DIFF_CONFLICT", path: "/fresh", message: "browser_observe fresh:true cannot be combined with diff:true" });
 	return issues;
 }
@@ -45,33 +37,24 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 			"Use browser_observe only for page understanding. It returns canonical page content directly and exposes additional semantic regions as MCP resources.",
 		],
 		parameters: strictCommandParameters({
-			baseline: Type.Optional(Type.Union([Type.Array(Type.Object({}, { additionalProperties: true })), Type.Object({}, { additionalProperties: true })], { description: "Prior PageObservation or entity list used for diffing" })),
-			baselineSnapshotId: Type.Optional(Type.String({ description: "Snapshot id of a prior PageObservation" })),
-			actionRef: Type.Optional(Type.String({ description: "Ref of the action that caused the observed delta" })),
 			intent: Type.Optional(Type.String({ description: "Optional relevance hint" })),
-			fresh: Type.Optional(Type.Boolean({ description: "Ignore the cached baseline and force a fresh observation" })),
+			fresh: Type.Optional(Type.Boolean({ description: "Ignore prior observation state and return a fresh observation" })),
 			diff: Type.Optional(Type.Boolean({ description: "Diff against the latest observation for this tab" })),
 			...sharedTabScopedToolParams(),
 		}),
 		validateArguments: validateObserveArguments,
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			return await runCommandHandler(async (): Promise<import("../utils/toolResult.js").BrowserTextCommandResult> => {
 				const toolCtx = ctx ?? {};
 				const server = await ensureStarted();
-				const observeParams = params as ObserveToolParams;
-				if (observeParams.baseline === undefined) {
-					const raw = params as Record<string, unknown>;
-					const baselineSnapshotId = typeof raw.baselineSnapshotId === "string" ? raw.baselineSnapshotId.trim() : "";
-					if (baselineSnapshotId) observeParams.baseline = { snapshotId: baselineSnapshotId };
-				}
+				const observeParams = { ...params } as ObserveToolParams;
 				// --diff: keep the choice (do I want a diff?) with the agent but resolve the bookkeeping
-				// (which snapshotId) here — pick the most recent prior scan snapshot for this tab. Explicit
-				// baseline still wins; if no prior scan exists, leave baseline unset (full scan, no error).
+				// (which snapshotId) here — pick the most recent prior scan snapshot for this tab.
 				if (observeParams.baseline === undefined && observeParams.diff === true) {
 					const latestSnapshotId = selectDiffBaselineSnapshot(server, observeParams);
-					if (latestSnapshotId) observeParams.baseline = { snapshotId: latestSnapshotId };
+					if (latestSnapshotId) observeParams.baseline = latestSnapshotId;
 				}
-				return await runScanObservation(server, observeParams, toolCtx, _onUpdate);
+				return await runScanObservation(server, observeParams, toolCtx, _onUpdate, signal);
 			}, observeErrorResult);
 		},
 	});

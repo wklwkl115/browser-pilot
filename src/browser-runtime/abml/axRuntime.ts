@@ -20,9 +20,10 @@ export type AxReadRuntimeOptions = {
 	capturedAt?: number;
 	timeoutMs?: number;
 	cacheKey?: string;
+	signal?: AbortSignal;
 };
 
-export async function sendPersistentCdp(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown> }) {
+export async function sendPersistentCdp(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown>; signal?: AbortSignal }) {
 	const result = await server.sendCommand({
 		cmd: "persistent_cdp",
 		action: "send",
@@ -31,7 +32,7 @@ export async function sendPersistentCdp(server: AbmlAxRuntimeServer, options: { 
 		params: options.params || {},
 		persistent: true,
 		timeoutMs: options.timeoutMs,
-	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, internal: true });
+	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, internal: true, signal: options.signal });
 	assertBridgeCommandSucceeded(result, `persistent_cdp:${options.cdpMethod}`);
 	return result;
 }
@@ -254,7 +255,8 @@ function partialAxDiagnostics(input: Omit<PartialAxDiagnostics, "provider">): Pa
 	return { provider: "partial-ax", ...input };
 }
 
-export async function readPartialAxTree(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; backendNodeId?: number; timeoutMs?: number; maxNodes?: number; fetchRelatives?: boolean }): Promise<PartialAxResult> {
+export async function readPartialAxTree(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; backendNodeId?: number; timeoutMs?: number; maxNodes?: number; fetchRelatives?: boolean; signal?: AbortSignal }): Promise<PartialAxResult> {
+	options.signal?.throwIfAborted();
 	const startedAt = Date.now();
 	const timeoutMs = Math.max(250, Math.min(options.timeoutMs ?? 1_500, 5_000));
 	const maxNodes = Math.max(1, Math.min(options.maxNodes ?? 12, 100));
@@ -271,6 +273,7 @@ export async function readPartialAxTree(server: AbmlAxRuntimeServer, options: { 
 			timeoutMs,
 			cdpMethod: "Accessibility.getPartialAXTree",
 			params: { backendNodeId: base.backendNodeId, fetchRelatives },
+			signal: options.signal,
 		});
 		const root = valueRecord(partial.data);
 		const rootResult = valueRecord(root.result);
@@ -286,6 +289,7 @@ export async function readPartialAxTree(server: AbmlAxRuntimeServer, options: { 
 			diagnostics: partialAxDiagnostics({ ...base, cdpCalls: 1, nodeCount, status: overBudget ? "degraded" : "ok", ...(overBudget ? { reason: "over-budget" } : {}), elapsedMs: Date.now() - startedAt }),
 		};
 	} catch (error) {
+		options.signal?.throwIfAborted();
 		const details = cdpErrorDetails(error);
 		const lowered = details.message.toLowerCase();
 		const unsupported = lowered.includes("wasn't found") || lowered.includes("not found") || lowered.includes("unknown method") || lowered.includes("not supported");
@@ -445,11 +449,13 @@ async function readAxSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOption
 			snapshotData = await requestDomSnapshot(sendCdp, options, timeoutMs, true);
 			paintOrderEntries = snapshotPaintOrderEntries(snapshotData);
 		} catch {
+			options.signal?.throwIfAborted();
 			paintOrderSnapshotUnsupported = true;
 			try {
 				snapshotData = await requestDomSnapshot(sendCdp, options, timeoutMs, false);
 				paintOrderGeometryFallbackUsed = true;
 			} catch {
+				options.signal?.throwIfAborted();
 				snapshotGeometryUnavailable = true;
 			}
 		}
@@ -489,6 +495,7 @@ async function readAxGeometry(sendCdp: AxCdpSender, options: AxReadRuntimeOption
 			rawGeometryByBackend.set(backendNodeId, geometry);
 			geometryByNode.set(node, geometry);
 		} catch {
+			options.signal?.throwIfAborted();
 			rawGeometryByBackend.set(backendNodeId, undefined);
 			geometryByNode.set(node, undefined);
 		}
@@ -550,6 +557,7 @@ function projectAxReadResult(input: { startedAt: number; cdpCalls: number; geome
 }
 
 export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxReadRuntimeOptions): Promise<AxReadResult> {
+	options.signal?.throwIfAborted();
 	const startedAt = Date.now();
 	const timeoutMs = options.timeoutMs ?? 10_000;
 	const rawCacheKey = axRawCacheKey(options);
@@ -559,7 +567,7 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	const sendCdp: AxCdpSender = async (request) => {
 		cdpCalls += 1;
 		if (request.cdpMethod === "DOM.getBoxModel") geometryCdpCalls += 1;
-		return await sendPersistentCdp(server, request);
+		return await sendPersistentCdp(server, { ...request, signal: options.signal });
 	};
 	const nodes = await loadAxNodes(sendCdp, options, timeoutMs, cachedRaw);
 	const interestingNodes = nodes.filter(isInterestingAxNode);

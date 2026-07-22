@@ -4,7 +4,7 @@ import test from "node:test";
 import { summarizeCommandEffect, withCommandEffect } from "../../src/commands/commandEffect.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
-import type { PageFingerprint } from "../../src/commands/pageSignals.ts";
+import { readPageFingerprint, type PageFingerprint } from "../../src/commands/pageSignals.ts";
 
 function fingerprint(overrides: Partial<PageFingerprint> = {}): PageFingerprint {
 	return {
@@ -116,6 +116,21 @@ test("command effect keeps an unreadable postcondition inconclusive", async () =
 		verify: async () => { throw new Error("page replaced"); },
 	}, async () => bridgeResult);
 	assert.equal(outcome.effect.verification, "inconclusive");
+});
+
+test("page fingerprint fallback never swallows cancellation", async () => {
+	const controller = new AbortController();
+	const server = {
+		async sendCommand(_command: unknown, options: { signal?: AbortSignal }) {
+			assert.equal(options.signal, controller.signal);
+			controller.abort();
+			throw new Error("transport closed");
+		},
+	} as unknown as BrowserCommandRuntimePort;
+	await assert.rejects(
+		() => readPageFingerprint(server, { tabId: 7, timeoutMs: 1_000, signal: controller.signal }),
+		(error) => error === controller.signal.reason,
+	);
 });
 
 test("command effect summary stays bounded and stateless under 10k-result pressure", () => {

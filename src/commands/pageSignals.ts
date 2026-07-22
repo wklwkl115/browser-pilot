@@ -72,18 +72,21 @@ export function normalizePageFingerprint(value: unknown): PageFingerprint | unde
 }
 
 export async function readPageFingerprint(server: BrowserCommandRuntimePort, options: PageSignalOptions): Promise<PageFingerprint | undefined> {
+	options.signal?.throwIfAborted();
 	if (!options.tabId) return undefined;
 	try {
 		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs, ...(options.drainDirty === true ? { drainDirty: true } : {}) }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: Math.min(options.timeoutMs, 2_000), internal: true, signal: options.signal });
 		return normalizePageFingerprint(result.data);
 	} catch {
+		options.signal?.throwIfAborted();
 		return undefined;
 	}
 }
 
 export async function queryNetworkDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<RecorderDelta> {
+	options.signal?.throwIfAborted();
 	if (!options.tabId) return { active: false, items: [] };
-	const res = await server.sendCommand({ cmd: "network.list", sinceSeq: options.sinceSeq, limit: 500 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
+	const res = await server.sendCommand({ cmd: "network.list", sinceSeq: options.sinceSeq, limit: 500 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, signal: options.signal });
 	const data = isRecord(res.data) ? res.data : {};
 	return {
 		active: data.active !== false,
@@ -93,8 +96,9 @@ export async function queryNetworkDelta(server: BrowserCommandRuntimePort, optio
 }
 
 export async function queryHookDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<RecorderDelta> {
+	options.signal?.throwIfAborted();
 	if (!options.tabId) return { active: false, items: [] };
-	const res = await server.sendCommand({ cmd: "hook.collect", sinceSeq: options.sinceSeq, limit: 200 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
+	const res = await server.sendCommand({ cmd: "hook.collect", sinceSeq: options.sinceSeq, limit: 200 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, signal: options.signal });
 	const data = isRecord(res.data) ? res.data : {};
 	const lastSeq = typeof data.lastSeq === "number" ? data.lastSeq : typeof data.last_seq === "number" ? data.last_seq : undefined;
 	return {

@@ -60,8 +60,6 @@ type FinalizeScanObservationOptions = {
 	capture: CaptureResult;
 	assembly: AssemblyResult;
 	scanPageFingerprint: PageFingerprint | undefined;
-	effectivePageFingerprint: PageFingerprint | undefined;
-	paramsSignature: string;
 	renderStartedAt: number;
 	intent?: string;
 };
@@ -142,13 +140,9 @@ function buildLedgerProjection(options: FinalizeScanObservationOptions) {
 }
 
 function recordLedgerProjection(options: FinalizeScanObservationOptions, frame: CommandPerceptionLedgerFrame | undefined) {
-	const { server, effectivePageFingerprint, paramsSignature, snapshotMeta } = options;
+	const { server } = options;
 	if (!frame || typeof server.recordPerceptionLedgerFrame !== "function") return;
-	server.recordPerceptionLedgerFrame({
-		...frame,
-		...(effectivePageFingerprint ? { pageFingerprint: effectivePageFingerprint } : {}),
-		renderCache: { paramsSignature, renderedAt: snapshotMeta.capturedAt },
-	});
+	server.recordPerceptionLedgerFrame(frame);
 }
 
 export async function finalizeScanObservation(options: FinalizeScanObservationOptions) {

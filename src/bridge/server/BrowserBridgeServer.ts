@@ -225,7 +225,7 @@ export class BrowserBridgeServer implements ConsentPort {
 		return this.state.leases.releaseUiLock(this.browserSession(browserSessionId).id);
 	}
 
-	async refreshTabs(timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserTabInfo[]> {
+	async refreshTabs(timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserTabInfo[]> {
 		return await this.commandService.refreshTabs(timeoutMs, options);
 	}
 

@@ -12,24 +12,6 @@ export type PerceptionLedgerFrame = {
 	snapshotId: string;
 	capturedAt: number;
 	facts: Record<string, PerceptionLedgerFactState>;
-	pageFingerprint?: {
-		changeSeq: number;
-		url?: string;
-		title?: string;
-		readyState?: string;
-		visibleCount?: number;
-		interactiveCount?: number;
-		capturedAt?: number;
-		dirty?: {
-			roots: string[];
-			overflow: boolean;
-			sinceSeq?: number;
-		};
-	};
-	renderCache?: {
-		paramsSignature: string;
-		renderedAt: number;
-	};
 };
 
 export type PerceptionTraceTerm = {

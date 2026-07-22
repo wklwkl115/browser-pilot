@@ -137,13 +137,14 @@ function registerOwnedRef(options: { tabId?: number; browserSessionId?: string; 
 test("commands execution: browser_tabs list hides runtime identity", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
-	const result = await command.execute("tool-1", { action: "list" }, undefined, undefined, { omitTransportDetails: true });
+	const controller = new AbortController();
+	const result = await command.execute("tool-1", { action: "list" }, controller.signal, undefined, { omitTransportDetails: true });
 	const body = parseResult(result);
 	assert.equal(body.tabCount, 1);
 	assert.deepEqual(body.bridge, { running: true, connectedClients: 1, extensionConnected: true });
 	assert.deepEqual(body.tabs, [{ id: "tab-7", targetRef: "tab-7", url: "https://example.test/", title: "Example", active: true }]);
 	assert.deepEqual(result.details, {});
-	assert.equal(runtime.calls.some((call) => call.name === "refreshTabs"), true);
+	assert.deepEqual(runtime.calls.find((call) => call.name === "refreshTabs")?.args, [5_000, { signal: controller.signal }]);
 });
 
 test("commands execution: browser_tabs runtime failure returns the bridge error", async () => {

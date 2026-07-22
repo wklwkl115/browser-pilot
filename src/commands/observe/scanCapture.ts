@@ -37,11 +37,12 @@ type ScanCaptureOptions = {
 	reanchorReason: PageReanchorReason | undefined;
 	timings: ObserveTimingMetrics;
 	onUpdate?: CommandOnUpdate;
+	signal?: AbortSignal;
 };
 
 async function readCapturedPageIdentity(options: ScanCaptureOptions, fingerprint: PageFingerprint | undefined, target: unknown) {
 	const startedAt = Date.now();
-	const liveFingerprint = await readPageFingerprint(options.server, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
+	const liveFingerprint = await readPageFingerprint(options.server, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, signal: options.signal });
 	options.timings.fingerprintMs = Number(options.timings.fingerprintMs ?? 0) + elapsedMs(startedAt);
 	addBridgeRoundTrips(options.timings, 1);
 	const effectiveFingerprint = liveFingerprint ?? fingerprint;
@@ -74,7 +75,7 @@ async function readScanAbml(
 	const { browserSessionId, tabId, timeoutMs, captureMaxChars, pageFingerprint, timings } = options;
 	const canReuseScanForAbml = true;
 	timings.abmlPrefetchedScan = canReuseScanForAbml;
-	const cacheFingerprint = pageFingerprint ?? fusedPageFingerprint;
+	const cacheFingerprint = fusedPageFingerprint ?? pageFingerprint;
 	const abmlStartedAt = Date.now();
 	const abmlRead = await abml.readStructure({
 		browserSessionId,
@@ -93,7 +94,7 @@ async function readScanAbml(
 
 export async function executeScanCapture(options: ScanCaptureOptions) {
 	const { server, params, rawTargetRef, browserSessionId, tabId, timeoutMs, captureMaxChars, scanScript, baseline, timings, onUpdate } = options;
-	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars });
+	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, signal: options.signal });
 	let fusedPageFingerprint: PageFingerprint | undefined;
 	let capturedPageIdentity: PageIdentity | undefined;
 	let effectiveBaseline = baseline;
@@ -111,7 +112,7 @@ export async function executeScanCapture(options: ScanCaptureOptions) {
 	}, onUpdate, async (handle) => {
 		await handle.update({ progress: 40 });
 		const pageScriptStartedAt = Date.now();
-		const evaluated = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract" });
+		const evaluated = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract", signal: options.signal });
 		const result = { ...evaluated, data: validatedScanBundle(evaluated.data) };
 		timings.pageScriptMs = elapsedMs(pageScriptStartedAt);
 		addBridgeRoundTrips(timings, 1);

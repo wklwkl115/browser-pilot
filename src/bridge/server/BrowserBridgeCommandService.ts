@@ -135,8 +135,8 @@ export class BrowserBridgeCommandService {
 		this.deps = deps;
 	}
 
-	async refreshTabs(timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserTabInfo[]> {
-		const result = await this.sendCommand({ cmd: "tabs", method: "list" }, { timeoutMs, browserSessionId: options.browserSessionId });
+	async refreshTabs(timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserTabInfo[]> {
+		const result = await this.sendCommand({ cmd: "tabs", method: "list" }, { timeoutMs, browserSessionId: options.browserSessionId, signal: options.signal });
 		const data = Array.isArray(result.data) ? result.data : [];
 		this.deps.tabs.updateTabs(data, this.socketForBrowserSessionCommand(options.browserSessionId));
 		return this.deps.getTabs();
@@ -252,7 +252,7 @@ export class BrowserBridgeCommandService {
 		// event arrives (chrome.tabs.onCreated -> sendTabsUpdate). Eagerly refresh (tabs.list ->
 		// updateTabs) so follow-up tab-scoped calls can use the created targetRef without an extra list.
 		// Best-effort: a refresh/resolution failure must not turn a successful create into a failure.
-		try { await this.refreshTabs(options.timeoutMs ?? 5_000, { browserSessionId: options.browserSessionId }); } catch { /* keep the bridge create result usable by numeric tabId */ }
+		try { await this.refreshTabs(options.timeoutMs ?? 5_000, { browserSessionId: options.browserSessionId, signal: options.signal }); } catch { /* keep the bridge create result usable by numeric tabId */ }
 		return this.attachCreatedTabFields(result, createdTabId, options.browserSessionId);
 	}
 

@@ -50,7 +50,7 @@ export type BrowserCommandTargetTransactionInput = {
 export interface BrowserCommandSnapshotPort {
 	snapshot(options?: { browserSessionId?: string }): BrowserCommandRuntimeSnapshot;
 	getTabs(options?: { includeDisconnected?: boolean }): BrowserTabLike[];
-	refreshTabs(timeoutMs?: number, options?: { browserSessionId?: string }): Promise<BrowserTabLike[]>;
+	refreshTabs(timeoutMs?: number, options?: { browserSessionId?: string; signal?: AbortSignal }): Promise<BrowserTabLike[]>;
 	waitForExtensionReconnect(previousClientId: string | undefined, timeoutMs?: number): Promise<BrowserCommandRuntimeSnapshot>;
 }
 

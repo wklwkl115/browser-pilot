@@ -7,9 +7,8 @@ export type ObserveToolParams = {
 	browserSessionId?: string;
 	targetRef?: string;
 	intent?: string;
-	baseline?: unknown;
-	baselineSnapshotId?: string;
-	actionRef?: string;
+	/** Internal server-selected snapshot; never part of the public tool schema. */
+	baseline?: string;
 	fresh?: boolean;
 	diff?: boolean;
 };

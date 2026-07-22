@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { buildPageObservation } from "../../src/commands/observe/scanProjection.ts";
 import { pageObservationResult } from "../../src/commands/resultMiddleware.ts";
-import { isPageObservationV3 } from "../../src/kernels/abml/pageObservation.ts";
+import { isPageObservationV3, isPageObservationView } from "../../src/kernels/abml/pageObservation.ts";
 import { OBSERVATION_RESOURCES_DETAIL_KEY, type ObservationResourceDescriptor } from "../../src/commands/observe/observationResources.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
 
@@ -20,6 +20,7 @@ test("canonical PageObservation returns its first semantic region and opaque MCP
 		snapshot: { snapshotId: "snapshot-1", browserSessionId: "session-1", tabId: 7, targetGeneration: 2, pageEpoch: "page-1", sourceMode: "scan", capturedAt: 1, ttlMs: 300_000 },
 		abmlIntegrated: true,
 		diagnostics: {},
+		providerExecution: { causal: { planned: true, status: "executed", reservedMs: 500, actualMs: 20, bridgeRoundTrips: 2 } },
 		causal: { sinceSeq: 0, requests: Array.from({ length: 4 }, (_, index) => ({ ref: `bp-ref://network/${index}`, url: `https://example.test/${index}` })) },
 	});
 	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-"));
@@ -30,11 +31,12 @@ test("canonical PageObservation returns its first semantic region and opaque MCP
 	const artifact = JSON.parse(await readFile(outputPath, "utf8")) as Record<string, unknown>;
 	const resources = result.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
 
-	assert.equal(isPageObservationV3(inline), true);
+	assert.equal(isPageObservationView(inline), true);
 	assert.equal(isPageObservationV3(artifact), true);
 	assert.deepEqual(inline.target, { url: "https://example.test/" });
-	assert.equal("browserSessionId" in (inline.snapshot as Record<string, unknown>), false);
+	assert.deepEqual(inline.snapshot, { snapshotId: "snapshot-1", capturedAt: 1, ttlMs: 300_000 });
 	assert.equal((artifact.snapshot as Record<string, unknown>).browserSessionId, "session-1");
+	assert.deepEqual((inline.providers as Record<string, unknown>).causal, { status: "executed" });
 	assert.equal((inline.content as { text?: string }).text, "Install dependencies");
 	assert.equal((inline.content as { complete?: boolean }).complete, false);
 	assert.equal((artifact.content as { text?: string }).text, "Introduction Install dependencies Verify the build");
@@ -47,6 +49,30 @@ test("canonical PageObservation returns its first semantic region and opaque MCP
 	assert.equal("limits" in inline, false);
 	assert.equal("continuation" in inline, false);
 	assert.equal(result.content[0]?.text.includes("\n"), false);
+});
+
+test("agent PageObservation view hides internal baseline and re-anchor bookkeeping", async () => {
+	const built = buildPageObservation({
+		summary: { delta: "session", baselineSnapshotId: "baseline-1", reanchorReason: "session_changed" },
+		entities: [],
+		content: "Changed content",
+		url: "https://example.test/changed",
+		snapshot: { snapshotId: "snapshot-delta", sourceMode: "scan", capturedAt: 2, ttlMs: 300_000 },
+		abmlIntegrated: true,
+		diagnostics: { baseline: { reanchorReason: "session_changed" } },
+	});
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-delta-"));
+	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
+	await mkdir(path.dirname(outputPath), { recursive: true });
+	const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observation.json" });
+	const inline = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+	const artifact = JSON.parse(await readFile(outputPath, "utf8")) as Record<string, unknown>;
+
+	for (const key of ["baselineSnapshotId", "delta", "reanchorReason"]) assert.equal(inline[key], undefined);
+	assert.equal((inline.diagnostics as Record<string, unknown> | undefined)?.baseline, undefined);
+	assert.equal(artifact.baselineSnapshotId, "baseline-1");
+	assert.equal(artifact.delta, "session");
+	assert.equal(artifact.reanchorReason, "session_changed");
 });
 
 test("canonical PageObservation keeps the full entity graph in its artifact and bounds the agent projection", async () => {

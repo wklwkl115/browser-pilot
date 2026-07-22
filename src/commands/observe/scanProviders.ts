@@ -16,6 +16,7 @@ type ObserveProvidersOptions = {
 	deadlineAt: number;
 	baseline: BaselineResolution | undefined;
 	timings: ObserveTimingMetrics;
+	signal?: AbortSignal;
 };
 
 type RecorderState = { active: boolean; lastSeq?: number };
@@ -56,7 +57,7 @@ async function probeRecorderStates(options: ObserveProvidersOptions, timeoutMs: 
 	if (options.baseline?.hookSeq !== undefined && !hook) { commands.push({ cmd: "hook.status" }); indexes.push("hook"); }
 	if (!commands.length || timeoutMs <= 0) return { network, hook, bridgeRoundTrips: 0 };
 	try {
-		const result = await options.server.sendCommand({ cmd: "batch", commands }, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs, internal: true });
+		const result = await options.server.sendCommand({ cmd: "batch", commands }, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs, internal: true, signal: options.signal });
 		const results = batchResults(result);
 		let nextNetwork = network;
 		let nextHook = hook;
@@ -70,6 +71,7 @@ async function probeRecorderStates(options: ObserveProvidersOptions, timeoutMs: 
 		}
 		return { network: nextNetwork, hook: nextHook, bridgeRoundTrips: 1 };
 	} catch {
+		options.signal?.throwIfAborted();
 		return { network, hook, bridgeRoundTrips: 1 };
 	}
 }
@@ -121,7 +123,7 @@ async function queryCausalNetworkDelta(
 		return { causal: preflight ?? causalUnavailable("causal provider preflight failed"), network: knownNetwork, bridgeRoundTrips: 0 };
 	}
 	try {
-		const delta = await queryNetworkDelta(options.server, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs: remainingMs(), sinceSeq: baselineNetworkSeq });
+		const delta = await queryNetworkDelta(options.server, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs: remainingMs(), sinceSeq: baselineNetworkSeq, signal: options.signal });
 		const network = { active: delta.active, ...(delta.lastSeq !== undefined ? { lastSeq: delta.lastSeq } : knownNetwork.lastSeq !== undefined ? { lastSeq: knownNetwork.lastSeq } : {}) };
 		options.server.recordKnownRecorderState?.("network", options.params.browserSessionId, options.tabId, network);
 		return {
@@ -130,6 +132,7 @@ async function queryCausalNetworkDelta(
 			bridgeRoundTrips: 1,
 		};
 	} catch {
+		options.signal?.throwIfAborted();
 		return { causal: causalUnavailable("network recorder delta query failed"), network: knownNetwork, bridgeRoundTrips: 1 };
 	}
 }
@@ -145,12 +148,13 @@ async function appendCausalHookEvents(
 		return { causal, hook: knownHook, bridgeRoundTrips: 0 };
 	}
 	try {
-		const delta = await queryHookDelta(options.server, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs: remainingMs(), sinceSeq: hookSeq });
+		const delta = await queryHookDelta(options.server, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs: remainingMs(), sinceSeq: hookSeq, signal: options.signal });
 		const hook = { active: delta.active, ...(delta.lastSeq !== undefined ? { lastSeq: delta.lastSeq } : knownHook.lastSeq !== undefined ? { lastSeq: knownHook.lastSeq } : {}) };
 		options.server.recordKnownRecorderState?.("hook", options.params.browserSessionId, options.tabId, hook);
 		const events = buildCausalEvents(delta.items, hookSeq);
 		return { causal: events.events.length ? { ...causal, ...events } : causal, hook, bridgeRoundTrips: 1 };
 	} catch {
+		options.signal?.throwIfAborted();
 		return { causal, hook: knownHook, bridgeRoundTrips: 1 };
 	}
 }
@@ -190,6 +194,7 @@ async function runCausalProvider(options: ObserveProvidersOptions, item: CausalP
 }
 
 export async function runObserveProviders(options: ObserveProvidersOptions) {
+	options.signal?.throwIfAborted();
 	const knownNetwork = options.server.getKnownRecorderState?.("network", options.params.browserSessionId, options.tabId);
 	const knownHook = options.server.getKnownRecorderState?.("hook", options.params.browserSessionId, options.tabId);
 	const plan = causalPlan(options, knownNetwork, knownHook);

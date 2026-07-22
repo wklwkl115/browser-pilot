@@ -100,7 +100,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 				const omitTransportDetails = (ctx as { omitTransportDetails?: boolean } | undefined)?.omitTransportDetails === true;
 				const detailsForTransport = (build: () => Record<string, unknown>): Record<string, unknown> => omitTransportDetails ? {} : build();
 				if (action === "list") {
-					const tabs = await server.refreshTabs(timeoutMs);
+					const tabs = await server.refreshTabs(timeoutMs, { signal });
 					const snapshot = server.snapshot();
 					const compactTabs = tabs.map((tab) => compactTabForList(tab as Record<string, unknown>));
 					return jsonResult({ tabs: compactTabs, tabCount: tabs.length, bridge: compactBridgeForTabsList(snapshot as Record<string, unknown>) }, detailsForTransport(() => ({ action, snapshot, observationSnapshots: server.listObservationSnapshots().length })));

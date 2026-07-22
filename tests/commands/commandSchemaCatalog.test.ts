@@ -81,8 +81,10 @@ test("every public native command has one closed canonical parameter schema", ()
 test("browser_observe rejects contradictory freshness inputs", () => {
 	assert.deepEqual(validateObserveArguments({ fresh: true, diff: true }), [{ code: "OBSERVE_FRESH_DIFF_CONFLICT", path: "/fresh", message: "browser_observe fresh:true cannot be combined with diff:true" }]);
 	const properties = (command("browser_observe").parameters as { properties: Record<string, unknown> }).properties;
-	for (const removed of ["maxChars", "outputPath", "timeoutMs", "maxNodes", "includeIframes", "baselinePath"]) assert.equal(removed in properties, false);
+	assert.deepEqual(Object.keys(properties), ["intent", "fresh", "diff", "targetRef"]);
+	for (const removed of ["maxChars", "outputPath", "timeoutMs", "maxNodes", "includeIframes", "baseline", "baselinePath", "baselineSnapshotId", "actionRef"]) assert.equal(removed in properties, false);
 	assert.equal(validateBrowserCommandArguments(command("browser_observe"), { maxChars: 1000 }).ok, false);
+	assert.equal(validateBrowserCommandArguments(command("browser_observe"), { baseline: { saved: { path: "C:\\Windows\\win.ini" } } }).ok, false);
 	assert.equal(browserCommandDefinitions().some((definition) => definition.name === "browser_artifact"), false);
 });
 
