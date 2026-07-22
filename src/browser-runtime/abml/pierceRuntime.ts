@@ -56,7 +56,7 @@ async function buildEntitiesFromAxNodes(server: AbmlPierceRuntimeServer, nodes: 
 			if (dist !== undefined && dist > 80) continue;
 		}
 		const builtAx = buildAxEntityFromNode(node, { browserSessionId: options.browserSessionId, tabId: options.tabId, observationId: options.observationId, capturedAt: options.capturedAt }, geometry);
-		const refId = registerRefDescriptor({ descriptor: builtAx.descriptor, resourceKind: "scan", name: builtAx.entity.name || builtAx.entity.role });
+		const refId = registerRefDescriptor({ descriptor: builtAx.descriptor });
 		built.push({ ...builtAx.entity, ref: refId, source: "ax", hints: { ...(builtAx.entity.hints || {}), piercedFrom: descriptor.refId, selector, axRefinement: source } });
 	}
 	return built;

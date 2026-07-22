@@ -48,7 +48,7 @@ export async function statArtifact(absPath: string, requested: unknown): Promise
 		if (code === "ENOENT" || code === "ENOTDIR") {
 			throw new ArtifactReaderError("ARTIFACT_NOT_FOUND", "Artifact path was not found", {
 				...publicRequestedArtifactPath(requested),
-				recovery: { nextActions: ["browser-pilot artifact inspect --path <saved.path> --json", "browser-pilot observe --json"] },
+					recovery: { nextActions: ["call browser_artifact with mode=inspect and path=<saved.path>", "browser_observe"] },
 			});
 		}
 		throw error;

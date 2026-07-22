@@ -23,7 +23,7 @@ test("ABML stream reads report inactive recorders without issuing list commands"
 	});
 	const read = await executeBrowserAbmlRead(server, { plane: "network" });
 	assert.equal(read.ok, true);
-	assert.deepEqual(read.ok ? read.data : undefined, { plane: "network", mode: "stream", unavailable: "network recorder not active — start via browser_network start", recorderActive: false });
+	assert.deepEqual(read.ok ? read.data : undefined, { plane: "network", mode: "stream", unavailable: "network recorder not active; use browser_command network.start", recorderActive: false });
 	assert.deepEqual(commands, ["network.status"]);
 });
 

@@ -86,14 +86,6 @@ type RecoveryResult = {
   diagnostics: Array<Record<string, unknown>>;
 };
 
-type StateStoreDiagnostics = {
-  totalRecords: number;
-  byKind: Record<string, number>;
-  oldestUpdatedAt: number | null;
-  newestUpdatedAt: number | null;
-  lastStorageWriteError?: string | null;
-};
-
 type StateStoreWriteResult = { ok: boolean; error?: string; generation?: number };
 
 type RuntimeRecoverySummary = {
@@ -264,7 +256,6 @@ async function loadAll(): Promise<Record<string, RuntimeStateRecord>> {
   return {};
 }
 
-let lastStorageWriteError: string | null = null;
 const writeChains = new Map<RuntimeStateKind, Promise<StateStoreWriteResult>>();
 
 async function saveAll(map: Record<string, RuntimeStateRecord>): Promise<StateStoreWriteResult> {
@@ -272,11 +263,9 @@ async function saveAll(map: Record<string, RuntimeStateRecord>): Promise<StateSt
   if (!session?.set) return { ok: true };
   try {
     await session.set({ [STORAGE_KEY]: map });
-    lastStorageWriteError = null;
     return { ok: true };
   } catch (error) {
-    lastStorageWriteError = error instanceof Error ? error.message : String(error);
-    return { ok: false, error: lastStorageWriteError };
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -495,28 +484,6 @@ async function recover(
   return result;
 }
 
-async function diagnostics(): Promise<StateStoreDiagnostics> {
-  const map = await loadAll();
-  const records = Object.values(map);
-  const byKind: Record<string, number> = {};
-  let oldest: number | null = null;
-  let newest: number | null = null;
-
-  for (const record of records) {
-    byKind[record.kind] = (byKind[record.kind] || 0) + 1;
-    if (oldest === null || record.updatedAt < oldest) oldest = record.updatedAt;
-    if (newest === null || record.updatedAt > newest) newest = record.updatedAt;
-  }
-
-  return {
-    totalRecords: records.length,
-    byKind,
-    oldestUpdatedAt: oldest,
-    newestUpdatedAt: newest,
-    lastStorageWriteError,
-  };
-}
-
 function summarizeRecovery(results: RecoveryResult[]): {
   recovered: number;
   recoveredWithHistoryLoss: number;
@@ -545,11 +512,6 @@ function summarizeRecovery(results: RecoveryResult[]): {
   return { recovered, recoveredWithHistoryLoss, lost, byKind };
 }
 
-function getRecoveryCodes() {
-  return RECOVERY_CODES;
-}
-
-let lastRecoverySummary: RuntimeRecoverySummary | null = null;
 runtimeRecoveryGlobal().__BROWSER_PILOT_RUNTIME_RECOVERY_SUMMARY__ = null;
 
 type RecoveryRegistrar = (results: RecoveryResult[]) => Promise<void>;
@@ -574,13 +536,8 @@ async function runStartupRecovery(): Promise<RuntimeRecoverySummary> {
     results,
     totals: summarizeRecovery(results),
   };
-  lastRecoverySummary = summary;
   runtimeRecoveryGlobal().__BROWSER_PILOT_RUNTIME_RECOVERY_SUMMARY__ = summary;
   return summary;
-}
-
-function getRuntimeRecoverySummary(): RuntimeRecoverySummary | null {
-  return lastRecoverySummary;
 }
 
 export {
@@ -591,7 +548,6 @@ export {
   type RuntimeStateRecord,
   type RecoveryResult,
   type RecoveryResultEntry,
-  type StateStoreDiagnostics,
   type StateStoreWriteResult,
   type RuntimeRecoverySummary,
   makeRecord,
@@ -600,12 +556,9 @@ export {
   get,
   getAll,
   recover,
-  diagnostics,
   summarizeRecovery,
-  getRecoveryCodes,
   registerRecovery,
   runStartupRecovery,
-  getRuntimeRecoverySummary,
   redactConfig,
   currentBootId,
   browserPilotSessions,
@@ -619,21 +572,4 @@ export {
   TTL_MS,
   SCHEMA_VERSION,
   STORAGE_KEY,
-};
-// ESM module metadata
-export const __browserPilotBridgeModule_state_store = {
-  name: "state_store",
-  symbols: {
-    RECOVERY_CODES,
-    persist,
-    forget,
-    get,
-    getAll,
-    recover,
-    diagnostics,
-    summarizeRecovery,
-    registerRecovery,
-    runStartupRecovery,
-    getRuntimeRecoverySummary,
-  },
 };

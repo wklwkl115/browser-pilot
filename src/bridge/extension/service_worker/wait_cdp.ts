@@ -1,5 +1,5 @@
 import { chromeApi as chrome } from "./runtimeEnv";
-import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp, runtimeErrorMessage as waitCdpErrorMessage, runtimeRecord as waitCdpRecord } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotCdpDomainRef, BrowserPilotCdpSubscription, BrowserPilotWaitRecord } from "./types";
 
 // wait_cdp.js - Browser Pilot wait CDP domain refcount, subscription and diagnostics helpers.
@@ -10,8 +10,6 @@ const browserPilotCdpTabRefs = new Map<number, Set<string>>();
 const browserPilotCdpDomainRefs = new Map<string, BrowserPilotCdpDomainRef>();
 const browserPilotCdpCleanupHistory: Array<JsonRecord & { t: number }> = [];
 type BrowserPilotCdpSubscriptionRecord = Partial<Pick<BrowserPilotWaitRecord, "waitId" | "kind" | "cdpSubscriptions">>;
-function waitCdpErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
-function waitCdpRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 let browserPilotCdpSubSeq = 0;
 function browserPilotCdpDomainKey(tabId: unknown, domain: unknown): string { return Number(tabId) + ':' + String(domain); }
 function browserPilotCdpHolderId(record: Partial<BrowserPilotWaitRecord> | null | undefined): string { return record?.key || (Number(record?.tabId) + ':' + String(record?.waitId || record?.kind || 'anonymous')); }
@@ -213,5 +211,3 @@ function diagnoseBrowserPilotCdpCleanupHistory(tabId?: unknown) {
   return browserPilotCdpCleanupHistory.filter(e => tabId === undefined || Number(e.tabId) === Number(tabId)).slice(-50).map(e => ({ ...e, age_ms: Date.now() - e.t }));
 }
 export { browserPilotCdpSubscriptions, browserPilotCdpTabRefs, browserPilotCdpDomainRefs, browserPilotCdpCleanupHistory, browserPilotCdpSubSeq, browserPilotCdpDomainKey, browserPilotCdpHolderId, rememberBrowserPilotCdpCleanup, sendBrowserPilotCdpDomainCommand, acquireBrowserPilotCdpDomain, scheduleBrowserPilotCdpDomainDisable, releaseBrowserPilotCdpDomains, forceReleaseBrowserPilotCdpDomainsForTab, enableBrowserPilotCdpDomains, attachDebuggerForWait, subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp, cleanupBrowserPilotCdpTab, diagnoseBrowserPilotCdpSubscriptions, diagnoseBrowserPilotCdpDomainRefs, diagnoseBrowserPilotCdpCleanupHistory };
-// ESM module metadata
-export const __browserPilotBridgeModule_wait_cdp = { name: "wait_cdp", symbols: { browserPilotCdpSubscriptions, browserPilotCdpTabRefs, browserPilotCdpDomainRefs, browserPilotCdpCleanupHistory, browserPilotCdpSubSeq, browserPilotCdpDomainKey, browserPilotCdpHolderId, rememberBrowserPilotCdpCleanup, sendBrowserPilotCdpDomainCommand, acquireBrowserPilotCdpDomain, scheduleBrowserPilotCdpDomainDisable, releaseBrowserPilotCdpDomains, forceReleaseBrowserPilotCdpDomainsForTab, enableBrowserPilotCdpDomains, attachDebuggerForWait, subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp, cleanupBrowserPilotCdpTab, diagnoseBrowserPilotCdpSubscriptions, diagnoseBrowserPilotCdpDomainRefs, diagnoseBrowserPilotCdpCleanupHistory } };

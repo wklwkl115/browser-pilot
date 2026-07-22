@@ -69,7 +69,7 @@ test("temporal profile samples prefer command diagnostics outside execute and om
 	const coordinator = new BrowserTemporalCoordinator();
 	const sample = coordinator.buildProfileSample({
 		operationId: "",
-		tool: "browser_network",
+		tool: "browser_command",
 		command: "network.wait",
 		target: { browserSessionId: "session-input", tabId: 9, targetRef: "bp-ref://control/input" },
 		elapsedMs: 40,
@@ -86,7 +86,7 @@ test("temporal profile samples prefer command diagnostics outside execute and om
 	});
 
 	assert.deepEqual(sample, {
-		tool: "browser_network",
+			tool: "browser_command",
 		command: "network.wait",
 		target: { browserSessionId: "session-input", tabId: 9, targetRef: "bp-ref://control/input" },
 		deadlineMs: 750,

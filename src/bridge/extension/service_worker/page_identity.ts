@@ -119,16 +119,3 @@ export {
   browserPilotPageIdentityForTab,
   resetBrowserPilotPageIdentitiesForTest,
 };
-
-export const __browserPilotBridgeModule_page_identity = {
-  name: "page_identity",
-  symbols: {
-    ensureBrowserPilotPageIdentity,
-    recordBrowserPilotDocumentCommit,
-    recordBrowserPilotSameDocumentUpdate,
-    replaceBrowserPilotPageIdentity,
-    forgetBrowserPilotPageIdentity,
-    browserPilotPageIdentityFields,
-    browserPilotPageIdentityForTab,
-  },
-};

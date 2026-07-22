@@ -825,5 +825,3 @@ const cdpGlobal = self as typeof self & { BrowserPilotPersistentCdp?: unknown; b
 cdpGlobal.BrowserPilotPersistentCdp = browserPilotPersistentCdpBridge;
 cdpGlobal.browserPilotPersistentCdpBridge = browserPilotPersistentCdpBridge;
 export { browserPilotPersistentCdpSend, cleanupPersistentCdpForTab, handlePersistentCdpCommand, browserPilotPersistentCdpBridge };
-// ESM module metadata
-export const __browserPilotBridgeModule_cdp = { name: "cdp", symbols: { browserPilotPersistentCdpSend, cleanupPersistentCdpForTab, handlePersistentCdpCommand, browserPilotPersistentCdpBridge } };

@@ -14,7 +14,6 @@ export type ErrorTaxonomyDomain =
 	| "cdp"
 	| "network"
 	| "transfer"
-	| "security"
 	| "artifact"
 	| "protocol"
 	| "abml"
@@ -92,14 +91,12 @@ function cleanDetails(value: unknown): Record<string, unknown> {
 	return isRecord(value) ? stripStackFields(value) as Record<string, unknown> : {};
 }
 
-function domainFromCategory(category: string, details: Record<string, unknown>): ErrorTaxonomyDomain {
-	if (String(details.domain || "").toLowerCase() === "websecurity") return "security";
+function domainFromCategory(category: string): ErrorTaxonomyDomain {
 	if (category.startsWith("abml.")) return "abml";
 	if (category === "bridge.ws") return "websocket";
 	if (category.startsWith("driver.")) return "driver";
 	if (category === "tool.transfer" || category === "runtime.transfer") return "transfer";
 	if (category === "tool.artifact") return "artifact";
-	if (category === "tool.security") return "security";
 	if (category === "runtime.network") return "network";
 	if (category === "runtime.cdp") return "cdp";
 	if (category === "runtime.page" || category === "runtime.selector" || category === "runtime.frame" || category === "runtime.tab") return "page";
@@ -108,16 +105,12 @@ function domainFromCategory(category: string, details: Record<string, unknown>):
 	return "unknown";
 }
 
-export function errorTaxonomyForCode(code: string, details: Record<string, unknown> = {}): ErrorTaxonomy {
-	const detailsDomain = String(details.domain || "").toLowerCase();
-	if (detailsDomain === "websecurity" || detailsDomain === "security") {
-		return { domain: "security", category: "tool.security", retryable: false, summary: "WebSecurity tool failure.", source: "heuristic" };
-	}
+export function errorTaxonomyForCode(code: string): ErrorTaxonomy {
 	const schemaEntry = nativeErrorCodes[code as keyof typeof nativeErrorCodes] as { category?: string; retryable?: boolean; summary?: string } | undefined;
 	if (schemaEntry) {
 		const category = schemaEntry.category || "runtime.internal";
 		return {
-			domain: code === "INVALID_BROWSER_COMMAND" ? "protocol" : domainFromCategory(category, details),
+			domain: code === "INVALID_BROWSER_COMMAND" ? "protocol" : domainFromCategory(category),
 			category,
 			retryable: schemaEntry.retryable === true,
 			summary: schemaEntry.summary || code,
@@ -162,7 +155,6 @@ export function errorDiagnosticsFromDetails(details: Record<string, unknown>, co
 	if (firstDefined(details, ["files", "files_count", "selector", "downloadId"])) scopes.push("transfer");
 	if (isRecord(details.operation)) scopes.push("operation");
 	if (isRecord(details.snapshot) || firstDefined(details, ["snapshotId", "invalidatedReason"])) scopes.push("snapshot");
-	if (String(details.domain || "").toLowerCase() === "websecurity") scopes.push("security");
 	if (code && isAbmlRecoveryCode(code)) scopes.push("abml");
 	if (code && isWebSocketRecoveryCode(code)) scopes.push("websocket");
 	const supervisor = isRecord(details.supervisor) ? details.supervisor : undefined;
@@ -182,7 +174,7 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 		const extra = error as Error & { code?: unknown; details?: unknown };
 		const code = typeof extra.code === "string" && extra.code.trim() ? extra.code : fallbackCode;
 		const details = cleanDetails(extra.details);
-		const taxonomy = errorTaxonomyForCode(code, details);
+		const taxonomy = errorTaxonomyForCode(code);
 		const generatedRecovery = recoveryForNormalized(code, details, taxonomy);
 		const existingRecovery = isRecord(details.recovery) ? details.recovery as ErrorRecovery : undefined;
 		const recovery = mergeRecoveries(existingRecovery, generatedRecovery);
@@ -212,14 +204,14 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 							: String(code);
 		const nestedDetails = cleanDetails(nested.details);
 		const details = cleanDetails({ ...nestedDetails, ...cleanDetails(error.details) });
-		const taxonomy = errorTaxonomyForCode(code, details);
+		const taxonomy = errorTaxonomyForCode(code);
 		const generatedRecovery = recoveryForNormalized(code, details, taxonomy);
 		const existingRecovery = isRecord(details.recovery) ? details.recovery as ErrorRecovery : undefined;
 		const recovery = mergeRecoveries(existingRecovery, generatedRecovery);
 		return { code, message, details, taxonomy, diagnostics: errorDiagnosticsFromDetails(details, code), recovery, name: typeof error.name === "string" ? error.name : undefined };
 	}
 	const details = {};
-	const taxonomy = errorTaxonomyForCode(fallbackCode, details);
+	const taxonomy = errorTaxonomyForCode(fallbackCode);
 	const recovery = recoveryForNormalized(fallbackCode, details, taxonomy);
 	return { code: fallbackCode, message: String(error), details, taxonomy, diagnostics: errorDiagnosticsFromDetails(details, fallbackCode), recovery, name: "Error" };
 }

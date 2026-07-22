@@ -1,6 +1,6 @@
 import type { ConsentDecision } from "../../bridge/protocol/consentTypes.js";
 
-// Re-export so cli-side modules have a single import site for the consent seam.
+// Re-export so MCP-side modules have a single import site for the consent seam.
 export type { ConsentDecision };
 
 // ---- Pairing token + code ----
@@ -52,10 +52,7 @@ export const AUTH_ERROR_CODES = {
   leaseBusy: "LEASE_BUSY",
 } as const;
 
-// CLI-side error code surfaced by invokeTool when a command call hits a held lease (HTTP 409).
-export const CLI_LEASE_BUSY = "CLI_LEASE_BUSY";
-
-// ---- HTTP response shapes shared with the CLI ----
+// ---- HTTP response shapes shared with MCP ----
 export type LeaseAction = "acquire" | "release" | "status";
 export interface LeaseInfo {
   leaseId: string;

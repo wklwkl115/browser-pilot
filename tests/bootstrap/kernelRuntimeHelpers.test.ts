@@ -20,7 +20,7 @@ import { jsonForInlineScript, renderCaptureTemplate } from "../../src/capture/in
 import { buildScanEntities } from "../../src/scan/summary.ts";
 import { stableRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
 import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
-import type { ResourceRefDescriptor } from "../../src/ports/ResourceRefStorePort.ts";
+import type { ResourceRefDescriptor } from "../../src/ports/ResourceRefTypes.ts";
 import { readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
 import { pierceRefEntities } from "../../src/browser-runtime/abml/pierceRuntime.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
@@ -580,7 +580,6 @@ test("ABML identity graph ignores malformed relations and summarizes duplicate n
 	assert.equal(graph.triggeredCount, 2);
 	assert.deepEqual(graph.byRef["bp-ref://control/save"]?.triggeredRequests, ["bp-ref://network-entry/request-1", ""]);
 	assert.equal(graph.byRef["bp-ref://control/save"]?.nodeKey, "t:target-1:b:10");
-	assert.equal(graph.byRef["bp-ref://control/save"]?.legacyNodeKey, "b:10");
 	assert.equal(graph.byRef["bp-ref://region/plain"], undefined);
 	assert.deepEqual(identityGraphSummary(graph), {
 		entityCount: 3,
@@ -690,13 +689,14 @@ test("ABML query priority oracle prefers user-facing semantics over selector-lik
 test("ABML ref stability oracle ignores runtime locators when concise semantic anchors are available", () => {
 	const base = {
 		kind: "control" as const,
-		owner: { tabId: 3, topLevelOrigin: "https://example.test" },
-		documentEpoch: { url: "https://example.test/settings" },
+		owner: { browserSessionId: "session-1", tabId: 3, topLevelOrigin: "https://example.test" },
+		documentEpoch: { targetGeneration: 1, pageEpoch: "page-1", url: "https://example.test/settings" },
 		semantic: { role: "button", name: "Submit order" },
 	};
+	const anchoredSemantic = { role: "button", name: "Submit order", anchor: { scope: "abml-template" as const, confidence: "high" as const, mintingEligible: true, containerRole: "form", containerName: "Checkout", role: "button", kind: "control", normalizedName: "submit order" } };
 	const first = stableRefIdForDescriptor({
 		...base,
-		semantic: { role: "button", name: "Submit order", anchor: { scope: "abml-template", confidence: "high", mintingEligible: true, containerRole: "form", containerName: "Checkout", role: "button", kind: "control", normalizedName: "submit order" } },
+		semantic: anchoredSemantic,
 		locators: [
 			{ by: "css" as const, value: ".css-1abc23 > button:nth-child(2)" },
 			{ by: "backendNodeId" as const, value: 101 },
@@ -705,7 +705,7 @@ test("ABML ref stability oracle ignores runtime locators when concise semantic a
 	});
 	const second = stableRefIdForDescriptor({
 		...base,
-		semantic: { role: "button", name: "Submit order", anchor: { scope: "abml-template", confidence: "high", mintingEligible: true, containerRole: "form", containerName: "Checkout", role: "button", kind: "control", normalizedName: "submit order" } },
+		semantic: anchoredSemantic,
 		locators: [
 			{ by: "css" as const, value: ".css-9xyz88 > button:nth-child(4)" },
 			{ by: "backendNodeId" as const, value: 202 },
@@ -718,6 +718,8 @@ test("ABML ref stability oracle ignores runtime locators when concise semantic a
 	assert.equal(first!.includes("nth-child"), false);
 	assert.equal(first!.includes("101"), false);
 	assert.equal(first!.includes("202"), false);
+	assert.notEqual(first, stableRefIdForDescriptor({ ...base, owner: { ...base.owner, browserSessionId: "session-2" }, semantic: anchoredSemantic, locators: [] }));
+	assert.notEqual(first, stableRefIdForDescriptor({ ...base, documentEpoch: { ...base.documentEpoch, pageEpoch: "page-2" }, semantic: anchoredSemantic, locators: [] }));
 
 	const semanticAnchor = {
 		kind: "control" as const,
@@ -975,8 +977,8 @@ test("scan script builder clamps options and injects scan helper blocks determin
 		assert.match(script, /function roleProviderRole\(el\) \{/);
 		assert.match(script, /LOW_VALUE_PROVIDER_ROLES/);
 		assert.match(script, /function explicitRoleOf\(el\) \{/);
-		assert.match(script, /function legacyRoleOf\(el\) \{/);
-		assert.match(script, /return explicitRoleOf\(el\) \|\| roleProviderRole\(el\) \|\| legacyRoleOf\(el\)/);
+		assert.match(script, /function nativeRoleOf\(el\) \{/);
+		assert.match(script, /return explicitRoleOf\(el\) \|\| roleProviderRole\(el\) \|\| nativeRoleOf\(el\)/);
 		assert.match(script, /catch \(_\) \{ return ''; \}/);
 		assert.match(script, /catch \(_\) \{ return null; \}/);
 		assert.match(script, /function safeSemanticLabel\(text, max = 160\) \{/);
@@ -1034,7 +1036,7 @@ test("scan role provider covers representative implicit roles without widening n
 	assert.equal(roleOf(roleFixture("FOOTER", { "data-provider-role": "contentinfo" })), "contentinfo");
 });
 
-test("scan role provider fails closed and preserves legacy role fallback", () => {
+test("scan role provider fails closed and preserves native role fallback", () => {
 	for (const provider of [null, {}, { getRole: () => { throw new Error("provider unavailable"); } }, { getRole: () => "generic" }]) {
 		const roleOf = scanRoleOf(provider);
 		assert.equal(roleOf(roleFixture("BUTTON")), "button");

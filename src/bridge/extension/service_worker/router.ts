@@ -5,8 +5,6 @@ import { enableCspBypassForTab } from "./bridge_info";
 import { dispatchBrowserPilotBridgeCommand, validateBrowserPilotBridgeProtocolMessage } from "./core_commands";
 import { handleWsExec } from "./exec";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeMessageSender } from "./types";
-import { handleBrowserPilotOperationCheckpointEvent, handleBrowserPilotOperationDomEvent, invalidateBrowserPilotOperationTarget, markBrowserPilotOperationDispatch } from "./operation_coordinator";
-import { bindBrowserPilotOperationEventSocket, releaseBrowserPilotOperationEventSocket } from "./operation_event_transport";
 import { recordBrowserPilotPrerenderActivation } from "./tab_sync";
 
 // router.js - protocol validation and command dispatch for Browser Pilot Bridge messages.
@@ -28,20 +26,11 @@ let cachedPairedAgents: JsonRecord[] = [];
 
 let browserPilotBridgeRouterInstalled = false;
 
-function handleBrowserPilotRuntimeEventMessage(msgType: string, msg: JsonRecord, sender: BrowserPilotChromeMessageSender, sendResponse: (response: unknown) => void): boolean {
-	if (msgType === "browser-pilot-operation-dom-event") {
-		sendResponse({ ok: handleBrowserPilotOperationDomEvent(msg) });
-		return true;
-	}
-	if (msgType === "browser-pilot-operation-checkpoint-event") {
-		sendResponse(handleBrowserPilotOperationCheckpointEvent(msg));
-		return true;
-	}
-	if (msgType === "browser-pilot-prerender-activated") {
-		const tabId = Number(sender.tab?.id ?? 0);
-		const activated = recordBrowserPilotPrerenderActivation(tabId);
-		if (activated) invalidateBrowserPilotOperationTarget(tabId, "prerender_activated");
-		sendResponse({ ok: activated, tabId });
+function handleBrowserPilotRuntimeEventMessage(msgType: string, sender: BrowserPilotChromeMessageSender, sendResponse: (response: unknown) => void): boolean {
+		if (msgType === "browser-pilot-prerender-activated") {
+			const tabId = Number(sender.tab?.id ?? 0);
+			const activated = recordBrowserPilotPrerenderActivation(tabId);
+			sendResponse({ ok: activated, tabId });
 		return true;
 	}
 	return false;
@@ -60,7 +49,7 @@ function installBrowserPilotBridgeRouter() {
     // Pass-through guard: let transport.ts handle offscreen-prefixed messages.
 		if (msg && typeof msg === 'object' && typeof (msg as JsonRecord).type === 'string' && String((msg as JsonRecord).type).startsWith('browser-pilot-offscreen-')) return false;
 		const msgType = msg && typeof msg === 'object' ? String((msg as JsonRecord).type ?? '') : '';
-		if (handleBrowserPilotRuntimeEventMessage(msgType, msg as JsonRecord, sender, sendResponse)) return false;
+			if (handleBrowserPilotRuntimeEventMessage(msgType, sender, sendResponse)) return false;
     // Popup→SW consent messages
     if (msgType === 'browser-pilot-consent-poll') {
       const storage = getStorageLocal();
@@ -143,38 +132,12 @@ function parseBrowserPilotBridgeWsCode(rawCode: unknown): unknown {
 	return rawCode;
 }
 
-async function browserPilotDispatchMarkerFailure(data: RoutedBrowserPilotBridgeWsEnvelope, msg: BrowserPilotBridgeCommand, socket: BrowserPilotBridgeWebSocketLike): Promise<BrowserPilotBridgeResponse | undefined> {
-	const operationId = typeof data.operationId === "string" ? data.operationId.trim() : "";
-	if (!operationId || String(msg.cmd || "").startsWith("operation.") || msg.tabId === undefined) return undefined;
-	const rawGeneration = Number(data.operationGeneration);
-	const marker = await markBrowserPilotOperationDispatch(operationId, {
-		tabId: Number.isInteger(Number(msg.tabId)) ? Number(msg.tabId) : undefined,
-		operationGeneration: Number.isInteger(rawGeneration) ? rawGeneration : undefined,
-		socket,
-	});
-	if (marker.ok) return undefined;
-	return {
-		ok: false,
-		error_code: marker.error_code || "INVALID_RULE",
-		error: marker.error || "operation dispatch marker failed",
-		details: { operationId, dispatchStarted: false, acked: false, ...(marker.details || {}) },
-	};
-}
-
-function bindBrowserPilotOperationSocket(msg: BrowserPilotBridgeCommand, res: BrowserPilotBridgeResponse, socket: BrowserPilotBridgeWebSocketLike): void {
-	const operationId = typeof msg.operationId === "string" ? msg.operationId : "";
-	if (msg.cmd !== "operation.begin" || !operationId) return;
-	if (res.ok) bindBrowserPilotOperationEventSocket(operationId, socket);
-	else releaseBrowserPilotOperationEventSocket(operationId);
-}
-
 async function dispatchValidatedBrowserPilotBridgeWsCommand(data: RoutedBrowserPilotBridgeWsEnvelope, msg: BrowserPilotBridgeCommand, socket: BrowserPilotBridgeWebSocketLike): Promise<void> {
 	// From this point an ACK means the exact operation/action boundary is established and the
 	// validated handler is about to run, rather than merely that the envelope was received.
 	socket.send(JSON.stringify({ type: "ack", id: data.id }));
 	enableCspBypassForTab(msg.tabId);
 	const res = await dispatchBrowserPilotBridgeCommand(msg, {});
-	bindBrowserPilotOperationSocket(msg, res, socket);
 	sendBrowserPilotBridgeWsCommandResult(socket, data.id, msg, res);
 }
 
@@ -191,11 +154,6 @@ async function handleBrowserPilotBridgeWsCommand(data: RoutedBrowserPilotBridgeW
 		return;
 	}
 	const msg = validation.command;
-	const markerFailure = await browserPilotDispatchMarkerFailure(data, msg, socket);
-	if (markerFailure) {
-		sendBrowserPilotBridgeWsCommandResult(socket, data.id, msg, markerFailure);
-		return;
-	}
 	await dispatchValidatedBrowserPilotBridgeWsCommand(data, msg, socket);
 }
 
@@ -210,5 +168,3 @@ async function handleBrowserPilotBridgeWsMessage(data: BrowserPilotBridgeWsEnvel
 	sendBrowserPilotBridgeWsInputError(socket, data.id, `Unsupported message code type: ${typeof code}`, { codeType: typeof code });
 }
 export { installBrowserPilotBridgeRouter, handleBrowserPilotBridgeMessage, sendBrowserPilotBridgeWsCommandResult, sendBrowserPilotBridgeWsInputError, handleBrowserPilotBridgeWsMessage, setTransportSocketGetter };
-// ESM module metadata
-export const __browserPilotBridgeModule_router = { name: "router", symbols: { installBrowserPilotBridgeRouter, setTransportSocketGetter, validateBrowserPilotBridgeProtocolMessage, handleBrowserPilotBridgeMessage, sendBrowserPilotBridgeWsCommandResult, sendBrowserPilotBridgeWsInputError, handleBrowserPilotBridgeWsMessage } };

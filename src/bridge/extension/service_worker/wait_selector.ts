@@ -1,16 +1,13 @@
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp, runtimeErrorMessage as selectorErrorMessage, runtimeRecord as selectorRecord } from "./runtimeSupport.js";
 import { enableBrowserPilotCdpDomains, subscribeBrowserPilotCdp } from "./wait_cdp";
 import { finishBrowserPilotWait, normalizeBrowserPilotTimeoutMs, recordWaitEvent, registerWait, waitAbortMessage } from "./wait_coordinator";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotPersistentCdpBridge, BrowserPilotWaitRecord } from "./types";
 
 type SelectorProbeOptions = { maxStableWaitMs?: number; max_stable_wait_ms?: number; mutationEpoch?: number; visible?: boolean; useIntersectionObserver?: boolean };
-function selectorRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
-function selectorErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
 // wait_selector.js - Browser Pilot selector wait probe and polling helpers.
 // Loaded before wait.js by background.js.
 
-const BROWSER_PILOT_SELECTOR_STABLE_SAMPLES = 2;
 const BROWSER_PILOT_SELECTOR_PROBE_SOURCE = String.raw`(() => {
   const cfg = __BROWSER_PILOT_SELECTOR_PROBE_CFG__;
   const selector = String(cfg.selector || '');
@@ -272,7 +269,7 @@ async function waitForSelector(tabId: number, msg: BrowserPilotBridgeCommand): P
       if (completed) return;
       clearPollTimer();
       const tickFromPollTimer = () => triggerTick('poll');
-      // Compatibility contract for the legacy polling fallback: setTimeout(tick, pollMs)
+      // Polling fallback remains bounded by pollMs.
       timerHandle = setTimeout(tickFromPollTimer, pollMs);
       record.timers.push(timerHandle);
     };
@@ -295,6 +292,4 @@ async function waitForSelector(tabId: number, msg: BrowserPilotBridgeCommand): P
     triggerTick('initial');
   });
 }
-export { BROWSER_PILOT_SELECTOR_STABLE_SAMPLES, BROWSER_PILOT_SELECTOR_PROBE_SOURCE, buildSelectorProbe, waitForSelector };
-// ESM module metadata
-export const __browserPilotBridgeModule_wait_selector = { name: "wait_selector", symbols: { BROWSER_PILOT_SELECTOR_STABLE_SAMPLES, BROWSER_PILOT_SELECTOR_PROBE_SOURCE, buildSelectorProbe, waitForSelector } };
+export { BROWSER_PILOT_SELECTOR_PROBE_SOURCE, buildSelectorProbe, waitForSelector };

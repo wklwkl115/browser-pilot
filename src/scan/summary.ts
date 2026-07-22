@@ -577,7 +577,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 	// reading controlCount:0 as "empty page" and wasting probes. Conservative: a single actionable or
 	// any real text suppresses it, so minimal-but-valid pages are not flagged.
 	if (actionablesScanned === 0 && content.length < 40) {
-		warnings.push(`low-substance page: ${item.stats.nodeCount} nodes, ${content.length} text chars, 0 actionable controls (title="${item.page.title.slice(0, 50)}") — likely an anti-bot/consent/login wall or genuinely empty; verify the title/URL and the preceding browser-operation/v2 terminal evidence before trusting this scan`);
+		warnings.push(`low-substance page: ${item.stats.nodeCount} nodes, ${content.length} text chars, 0 actionable controls (title="${item.page.title.slice(0, 50)}") — likely an anti-bot/consent/login wall or genuinely empty; verify the title and URL before trusting this scan`);
 	}
 	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
 	const primaryActionsWithEntityRefs = primaryActions.map((action) => {

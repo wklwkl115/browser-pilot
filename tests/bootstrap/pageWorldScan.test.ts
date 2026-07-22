@@ -34,15 +34,14 @@ test("page-world scan bundle validates empty and fully populated v1 captures", (
 	assert.deepEqual(validatePageWorldScanBundle(full), { ok: true, value: full });
 });
 
-test("page-world scan bundle rejects unknown schemas, legacy roots, malformed nested fields, and unknown nested keys", () => {
+test("page-world scan bundle rejects unknown schemas and malformed fields", () => {
 	const valid = pageWorldScanBundle();
 	const unknownSchema = { ...valid, schema: "browser-page-scan/v2" };
-	const legacyRoot = { url: valid.page.url, content: valid.content.text, list_hints: [], node_count: 1 };
 	const malformed = { ...valid, stats: { ...valid.stats, nodeCount: "one" } };
 	const unknownNested = { ...valid, structure: { ...valid.structure, actionables: [{ selector: "#pay", unknownField: true }] } };
 	const internalAnnotation = { ...valid, structure: { ...valid.structure, actionables: [{ selector: "#pay", entityRefs: { domAction: "bp-ref://control/pay" } }] } };
 
-	for (const value of [unknownSchema, legacyRoot, malformed, unknownNested, internalAnnotation]) {
+	for (const value of [unknownSchema, malformed, unknownNested, internalAnnotation]) {
 		const result = validatePageWorldScanBundle(value);
 		assert.equal(result.ok, false, JSON.stringify(value));
 		if (!result.ok) assert.equal(result.issues.length > 0, true);

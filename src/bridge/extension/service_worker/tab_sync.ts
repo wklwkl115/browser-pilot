@@ -173,5 +173,3 @@ function installBrowserPilotTabSync(deps: BrowserPilotTabSyncTransport | undefin
   return true;
 }
 export { setBrowserPilotTabSyncTransport, requireBrowserPilotTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, cleanupBrowserPilotTab, installBrowserPilotTabSync, recordBrowserPilotPrerenderActivation };
-// ESM module metadata
-export const __browserPilotBridgeModule_tab_sync = { name: "tab_sync", symbols: { setBrowserPilotTabSyncTransport, requireBrowserPilotTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, cleanupBrowserPilotTab, installBrowserPilotTabSync } };

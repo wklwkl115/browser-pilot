@@ -1,5 +1,5 @@
 import { matchNetworkPattern } from "./patterns";
-import { BROWSER_PILOT_ERROR_CODES } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, runtimeRecord as networkRecord } from "./runtimeSupport.js";
 import { attachDebuggerForWait, subscribeBrowserPilotCdp } from "./wait_cdp";
 import { finishBrowserPilotWait, makeWaitId, normalizeBrowserPilotTimeoutMs, recordWaitEvent, registerWait, waitAbortMessage } from "./wait_coordinator";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
@@ -7,7 +7,6 @@ import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse 
 type NetworkIdleRequest = JsonRecord & { requestId: string; url: string; type: string; method: string; initiatorType?: string; startedAt?: number; ignoreLongPollingMs?: number; status?: unknown; mimeType?: unknown; fromServiceWorker?: boolean; fromDiskCache?: boolean };
 type NetworkIdleDecision = { track: boolean; reason: string; ignoreLongPollingMs?: number };
 
-function networkRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function stringList(value: unknown): string[] { return Array.isArray(value) ? value.map((x: unknown) => String(x)) : []; }
 
 // wait_network_idle.js - Browser Pilot network-idle wait helpers.
@@ -102,5 +101,3 @@ async function waitForNetworkIdle(tabId: number, msg: BrowserPilotBridgeCommand)
 // N1: Edge F12 Network-equivalent recorder (CDP Network/Page)
 // ============================================================
 export { compileNetworkIdleFilter, waitForNetworkIdle };
-// ESM module metadata
-export const __browserPilotBridgeModule_wait_network_idle = { name: "wait_network_idle", symbols: { compileNetworkIdleFilter, waitForNetworkIdle } };

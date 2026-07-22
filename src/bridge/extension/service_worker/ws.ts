@@ -1,18 +1,10 @@
-import { BROWSER_PILOT_ERROR_CODES, browserPilotError } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, browserPilotError, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { findLostRuntimeSession, persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, redactConfig, summarizeLostRuntimeSession } from "./state_store.js";
 import { collectWsSessionTranscript, createWsSession, getWsSession, normalizeWsOpenConfig, browserPilotWsSessions, rememberWsTranscript, wsSessionId, wsSessionSummary, numberInRange, cleanupWsSessionsForTab as cleanupWsSessionsForTabState } from "./ws_model";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 
 const findLostWsRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
 const summarizeLostWsRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
-
-function asRecord(value: unknown): JsonRecord {
-	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function errorText(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 function previewText(text: string, limit = 160): string {
 	const compact = String(text || "").replace(/\s+/g, " ").trim();
@@ -411,5 +403,3 @@ registerRecovery(async (results) => {
 });
 
 export { handleBrowserPilotWsCommand, cleanupWsSessionsForTab };
-// ESM module metadata
-export const __browserPilotBridgeModule_ws = { name: "ws", symbols: { handleBrowserPilotWsCommand, cleanupWsSessionsForTab } };

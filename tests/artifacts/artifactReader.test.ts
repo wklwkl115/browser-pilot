@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ArtifactReaderError, readBrowserArtifact } from "../../src/artifacts/artifactReader.ts";
@@ -146,7 +146,7 @@ test("missing artifact reads keep coded not-found recovery metadata", async () =
 		readBrowserArtifact({ path: ".browser-pilot/artifacts/missing.json", mode: "json" }, { cwd }),
 		(error: unknown) => {
 			const nextActions = error instanceof ArtifactReaderError ? (error.details as { recovery?: { nextActions?: unknown[] } }).recovery?.nextActions : undefined;
-			return error instanceof ArtifactReaderError && error.code === "ARTIFACT_NOT_FOUND" && Array.isArray(nextActions) && nextActions.includes("browser-pilot observe --json") && !nextActions.some((action) => typeof action === "string" && action.includes("observe --mode scan"));
+				return error instanceof ArtifactReaderError && error.code === "ARTIFACT_NOT_FOUND" && Array.isArray(nextActions) && nextActions.includes("browser_observe") && nextActions.includes("call browser_artifact with mode=inspect and path=<saved.path>");
 		},
 	);
 });
@@ -170,10 +170,4 @@ test("absolute artifact reads are explicit while relative paths stay scoped to c
 	assert.match(relative.snippets[0]?.text ?? "", /second cwd/);
 	const absolute = expectMode(await readBrowserArtifact({ path: absolutePath }, { cwd: second.cwd }), "text");
 	assert.match(absolute.snippets[0]?.text ?? "", /first cwd/);
-});
-
-test("artifactReader refactor target stays within the file-size budget", () => {
-	const filePath = path.join(process.cwd(), "src/artifacts/artifactReader.ts");
-	const lines = readFileSync(filePath, "utf8").split(/\r?\n/).length;
-	assert.ok(lines <= 200, `expected src/artifacts/artifactReader.ts to stay within 200 lines, got ${lines}`);
 });

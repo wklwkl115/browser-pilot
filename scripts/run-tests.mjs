@@ -6,12 +6,10 @@ const scope = process.argv[2] || "all";
 const root = process.cwd();
 const testsDir = path.join(root, "tests");
 const scopeDirs = {
-	all: ["bootstrap", "cli", "artifacts", "web-security", "observe", "governance"],
-	cli: ["bootstrap", "cli"],
+	all: ["bootstrap", "commands", "daemon", "mcp", "artifacts", "observe"],
+	mcp: ["bootstrap", "commands", "daemon", "mcp"],
 	artifacts: ["bootstrap", "artifacts"],
-	"web-security": ["bootstrap", "web-security"],
 	observe: ["bootstrap", "observe"],
-	governance: ["bootstrap", "governance"],
 };
 
 function walk(dir, out = []) {

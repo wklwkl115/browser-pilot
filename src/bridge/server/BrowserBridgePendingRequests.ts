@@ -23,7 +23,7 @@ export class BrowserBridgePendingRequests {
 	readonly pending = new Map<string, PendingRequest>();
 	private readonly timeoutDiagnostics: TimeoutDiagnostics;
 	private readonly resolvedTarget: ResolveTarget;
-	private readonly _metrics: BridgeRequestMetrics = { drained: 0, graceExpired: 0, redelivered: 0, reconciledNotDelivered: 0, reconciledInflightUnknown: 0 };
+	private readonly _metrics: BridgeRequestMetrics = { drained: 0, graceExpired: 0, reconciledNotDelivered: 0, reconciledInflightUnknown: 0 };
 
 	metrics(): BridgeRequestMetrics {
 		return { ...this._metrics };
@@ -38,7 +38,7 @@ export class BrowserBridgePendingRequests {
 		return Array.from(this.pending.values()).map((item) => ({ id: item.id, tabId: item.tabId, createdAt: item.createdAt, acked: item.acked, target: item.target }));
 	}
 
-	send(socket: WebSocket, code: unknown, options: { tabId?: number; operationId?: string; operationGeneration?: number; timeoutMs?: number; target?: BrowserBridgeTargetInfo; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
+	send(socket: WebSocket, code: unknown, options: { tabId?: number; timeoutMs?: number; target?: BrowserBridgeTargetInfo; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 		const id = randomUUID();
 		const timeoutMs = Math.max(100, Math.floor(options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
 		if (options.signal?.aborted) {
@@ -54,12 +54,10 @@ export class BrowserBridgePendingRequests {
 		return new Promise<BrowserBridgeExecutionResult>((resolve, reject) => {
 			let dispatched = false;
 			const pending: PendingRequest = {
-				id,
-				tabId: options.tabId,
-				operationId: options.operationId,
-				operationGeneration: options.operationGeneration,
-				client: socket,
-				code,
+					id,
+					tabId: options.tabId,
+					client: socket,
+					code,
 				timeoutMs,
 				createdAt: Date.now(),
 				acked: false,
@@ -89,7 +87,7 @@ export class BrowserBridgePendingRequests {
 				return;
 			}
 			try {
-				socket.send(JSON.stringify(this.buildPayload(pending)));
+					socket.send(JSON.stringify({ id, code, timeoutMs, ...(options.tabId !== undefined ? { tabId: options.tabId } : {}) }));
 				dispatched = true;
 			} catch (error) {
 				this.clearTimers(pending);
@@ -97,15 +95,6 @@ export class BrowserBridgePendingRequests {
 				reject(new BrowserBridgeError("BRIDGE_SEND_FAILED", normalizeErrorMessage(error), { id, tabId: options.tabId, target: this.resolvedTarget(options.target) }));
 			}
 		});
-	}
-
-	/** Serialize the wire payload for a pending request; `extra` carries redelivery flags. */
-	private buildPayload(pending: PendingRequest, extra?: Record<string, unknown>): Record<string, unknown> {
-		const payload: Record<string, unknown> = { id: pending.id, code: pending.code, timeoutMs: pending.timeoutMs };
-		if (pending.tabId !== undefined) payload.tabId = pending.tabId;
-		if (pending.operationId) payload.operationId = pending.operationId;
-		if (pending.operationGeneration !== undefined) payload.operationGeneration = pending.operationGeneration;
-		return extra ? { ...payload, ...extra } : payload;
 	}
 
 	/** (Re)arm the per-request timeout. Replaces any existing timer. */
@@ -219,16 +208,13 @@ export class BrowserBridgePendingRequests {
 	}
 
 	/**
-	 * An extension instance reconnected. Reconcile its draining requests:
-	 *  - durable extension (advertises request dedupe): redeliver each with the stable id so
-	 *    the extension can replay a cached result or safely re-run a provably-undelivered
-	 *    command; the new socket's result/error then settles the original promise.
-	 *  - otherwise: fail honestly without silent replay — not-acked requests as not-delivered
-	 *    (safe to retry), acked requests as outcome-unknown (may have run; do not auto-retry).
-	 * No-op when `instanceId` is absent (older extension build): those requests keep draining
+	 * An extension instance reconnected. Fail draining requests honestly without
+	 * silent replay: not-acked requests are safe to retry; acked requests have an
+	 * unknown outcome and must not be replayed automatically.
+		 * No-op when `instanceId` is absent: those requests keep draining
 	 * until grace expiry. Returns the number of reconciled requests.
 	 */
-	reconnectInstance(instanceId: string | undefined, socket: WebSocket, opts: { durable: boolean }): number {
+	reconnectInstance(instanceId: string | undefined): number {
 		if (!instanceId) return 0;
 		let reconciled = 0;
 		for (const pending of Array.from(this.pending.values())) {
@@ -238,20 +224,6 @@ export class BrowserBridgePendingRequests {
 				pending.graceTimer = undefined;
 			}
 			reconciled += 1;
-			if (opts.durable) {
-				pending.draining = false;
-				pending.client = socket;
-				this._metrics.redelivered += 1;
-				this.armTimeout(pending);
-				try {
-					socket.send(JSON.stringify(this.buildPayload(pending, { redelivered: true, priorAck: pending.acked })));
-				} catch (error) {
-					this.clearTimers(pending);
-					this.pending.delete(pending.id);
-					pending.reject(new BrowserBridgeError("BRIDGE_SEND_FAILED", normalizeErrorMessage(error), { id: pending.id, tabId: pending.tabId, target: this.resolvedTarget(pending.target) }));
-				}
-				continue;
-			}
 			this.pending.delete(pending.id);
 			if (pending.acked) this._metrics.reconciledInflightUnknown += 1;
 			else this._metrics.reconciledNotDelivered += 1;

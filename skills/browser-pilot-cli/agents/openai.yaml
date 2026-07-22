@@ -1,4 +1,0 @@
-interface:
-  display_name: "Browser Pilot CLI"
-  short_description: "Operate real browser tabs through Browser Pilot CLI"
-  default_prompt: "Use $browser-pilot-cli to inspect and automate the current browser tab safely through the CLI."

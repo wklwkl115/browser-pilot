@@ -1,6 +1,6 @@
 // evidence.js - Browser Pilot event/evidence aggregation.
 
-import { BROWSER_PILOT_ERROR_CODES, callPageBrowserPilot, browserPilotError } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, callPageBrowserPilot, browserPilotError, runtimeErrorMessage as evidenceErrorMessage, runtimeRecord as evidenceRecord } from "./runtimeSupport.js";
 import { getPerformanceEntries } from "./wait";
 import { normalizeBrowserPilotTimeoutMs } from "./wait_coordinator";
 import { handleNetworkRecorderCommand } from "./network";
@@ -8,8 +8,6 @@ import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse 
 
 const BROWSER_PILOT_EVIDENCE_EVENT_TYPES = ['network', 'dom', 'console', 'error', 'storage', 'websocket', 'crypto', 'dom_sinks'];
 
-function evidenceRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
-function evidenceErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
 async function safeBrowserPilotEvidence(label: string, task: () => Promise<BrowserPilotBridgeResponse> | BrowserPilotBridgeResponse): Promise<BrowserPilotBridgeResponse & { source: string }> {
   try {
@@ -58,5 +56,3 @@ async function handleBrowserPilotEvidenceCommand(cmd: string, tabId: number, msg
   return { ok: true, data: out };
 }
 export { BROWSER_PILOT_EVIDENCE_EVENT_TYPES, safeBrowserPilotEvidence, handleBrowserPilotEvidenceCommand };
-// ESM module metadata
-export const __browserPilotBridgeModule_evidence = { name: "evidence", symbols: { BROWSER_PILOT_EVIDENCE_EVENT_TYPES, safeBrowserPilotEvidence, handleBrowserPilotEvidenceCommand } };

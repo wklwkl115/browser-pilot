@@ -44,124 +44,23 @@ async function existingBrowserCandidates() {
 }
 
 async function startFixtureServer() {
-	const events = new Set();
-	const eventWaiters = new Map();
-	const navigationGates = new Map();
-	const markEvent = (key) => {
-		events.add(key);
-		for (const resolve of eventWaiters.get(key) ?? []) resolve();
-		eventWaiters.delete(key);
-	};
-	const waitForEvent = (key, timeoutMs = launchTimeoutMs) => {
-		if (events.has(key)) return Promise.resolve();
-		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => {
-				const waiters = eventWaiters.get(key) ?? [];
-				eventWaiters.set(key, waiters.filter((candidate) => candidate !== onEvent));
-				reject(new Error(`fixture event ${key} timed out after ${timeoutMs}ms`));
-			}, timeoutMs);
-			const onEvent = () => { clearTimeout(timer); resolve(); };
-			eventWaiters.set(key, [...(eventWaiters.get(key) ?? []), onEvent]);
-		});
-	};
-	const send = (res, body, contentType = "text/html; charset=utf-8") => {
-		res.writeHead(200, { "content-type": contentType, "content-length": Buffer.byteLength(body), "cache-control": "public, max-age=60" });
-		res.end(body);
-	};
 	const server = http.createServer((req, res) => {
 		const requestUrl = new URL(req.url || "/", "http://127.0.0.1");
-		if (requestUrl.pathname === "/api/navigation-gate") {
-			const token = requestUrl.searchParams.get("token") || "";
-			navigationGates.set(token, res);
-			res.once("close", () => { if (navigationGates.get(token) === res) navigationGates.delete(token); });
-			markEvent(`navigation-gate-ready:${token}`);
-			return;
-		}
-		if (requestUrl.pathname === "/api/operation-armed") {
-			markEvent(`operation-armed:${requestUrl.searchParams.get("token") || ""}`);
-			send(res, JSON.stringify({ ok: true, armed: true }), "application/json");
-			return;
-		}
-		if (requestUrl.pathname === "/api/prerender-ready") {
-			markEvent(`prerender-ready:${requestUrl.searchParams.get("token") || ""}`);
-			send(res, JSON.stringify({ ok: true, prerendering: true }), "application/json");
-			return;
-		}
-		if (requestUrl.pathname.startsWith("/api/")) {
-			send(res, JSON.stringify({ ok: true, path: req.url }), "application/json");
-			return;
-		}
-		if (requestUrl.pathname === "/bfcache-a" || requestUrl.pathname === "/bfcache-b") {
-			const marker = requestUrl.pathname.endsWith("a") ? "A" : "B";
-			const token = requestUrl.searchParams.get("token") || "";
-			const encodedToken = encodeURIComponent(token);
-			const transitionScript = token && marker === "A"
-				? `<script>globalThis.__browserPilotBFCacheRestored=false;fetch('/api/navigation-gate?token=${encodeURIComponent(`bfcache-to-b:${token}`)}').then(response=>{if(!response.ok)throw new Error('BFCache B gate failed');location.href='/bfcache-b?token=${encodedToken}'});addEventListener('pageshow',event=>{globalThis.__browserPilotBFCacheRestored=event.persisted;if(event.persisted)fetch('/api/navigation-gate?token=${encodeURIComponent(`bfcache-forward:${token}`)}').then(response=>{if(response.ok)history.forward()})})</script>`
-				: token ? `<script>globalThis.__browserPilotBFCacheRestored=false;fetch('/api/navigation-gate?token=${encodeURIComponent(`bfcache-back:${token}`)}').then(response=>{if(response.ok)history.back()});addEventListener('pageshow',event=>{globalThis.__browserPilotBFCacheRestored=event.persisted})</script>` : "";
-			send(res, `<!doctype html><html><head><title>BFCache ${marker}</title></head><body><main><h1 id="bfcache-marker">BFCache ${marker}</h1><p>This document is intentionally eligible for a real back-forward cache restore.</p></main>${transitionScript}</body></html>`);
-			return;
-		}
-		if (requestUrl.pathname === "/operation-event-source") {
-			const token = requestUrl.searchParams.get("token") || "missing";
-			send(res, `<!doctype html><html><head><title>Operation Event Source</title></head><body><main><h1>Operation Event Source</h1></main><script>fetch('/api/navigation-gate?token=${encodeURIComponent(`operation-start:${token}`)}').then(response=>{if(!response.ok)throw new Error('navigation gate failed');location.href='/operation-complete?token=${encodeURIComponent(token)}'})</script></body></html>`);
-			return;
-		}
-		if (requestUrl.pathname === "/operation-complete") {
-			send(res, "<!doctype html><html><head><title>Operation Complete</title></head><body><main><h1>Operation Complete</h1></main></body></html>");
-			return;
-		}
-		if (requestUrl.pathname === "/frontier") {
-			const cards = Array.from({ length: 80 }, (_, index) => `<article class="frontier-card"><h2>Frontier item ${index + 1}</h2><p>Deterministic collection evidence ${index + 1} ${"x".repeat(160)}</p><button type="button" data-item="${index + 1}">Inspect item ${index + 1}</button></article>`).join("");
-			send(res, `<!doctype html><html><head><title>Frontier Fixture</title></head><body><main><h1>Frontier Fixture</h1><section aria-label="Frontier collection">${cards}</section></main></body></html>`);
-			return;
-		}
-		if (requestUrl.pathname === "/prerender-prehost") {
-			const rawToken = requestUrl.searchParams.get("token") || "missing";
-			const host = `/prerender-host?token=${encodeURIComponent(rawToken)}`;
-			send(res, `<!doctype html><html><head><title>Prerender Prehost</title></head><body><main><h1>Prerender Prehost</h1></main><script>fetch('/api/navigation-gate?token=${encodeURIComponent(`prerender-enter:${rawToken}`)}').then(response=>{if(response.ok)location.href=${JSON.stringify(host)}})</script></body></html>`);
-			return;
-		}
-		if (requestUrl.pathname === "/prerender-host") {
-			const rawToken = requestUrl.searchParams.get("token") || "missing";
-			const token = encodeURIComponent(rawToken);
-			const target = `/prerender-target?token=${token}`;
-			const rules = JSON.stringify({ prerender: [{ source: "list", urls: [target], eagerness: "immediate" }] });
-			send(res, `<!doctype html><html><head><title>Prerender Host</title><script type="speculationrules">${rules}</script></head><body><main><h1>Prerender Host</h1><a id="activate-prerender" href="${target}">Activate prerender</a></main><script>fetch('/api/navigation-gate?token=${encodeURIComponent(`prerender-activate:${rawToken}`)}').then(response=>{if(response.ok)document.querySelector('#activate-prerender').click()})</script></body></html>`);
-			return;
-		}
-		if (requestUrl.pathname === "/prerender-target") {
-			const token = encodeURIComponent(requestUrl.searchParams.get("token") || "missing");
-			send(res, `<!doctype html><html><head><title>Prerender Target</title><script>globalThis.__browserPilotWasPrerendered=document.prerendering===true;if(document.prerendering){fetch('/api/prerender-ready?token=${token}')}document.addEventListener('prerenderingchange',()=>{globalThis.__browserPilotWasPrerendered=true},{once:true})</script></head><body><main><h1 id="prerender-marker">Prerender Target</h1></main></body></html>`);
-			return;
-		}
-		const body = "<!doctype html><html><head><title>Browser Pilot Smoke</title></head><body><main><h1 id=\"smoke-marker\">Browser Pilot Smoke</h1><button id=\"smoke-button\" type=\"button\">Run smoke</button><button id=\"smoke-toggle\" type=\"button\" aria-pressed=\"false\" data-toggle-count=\"0\">Verified physical toggle</button></main><script>document.querySelector('#smoke-toggle').addEventListener('click',event=>{if(!event.isTrusted)return;const button=event.currentTarget;const next=button.getAttribute('aria-pressed')!=='true';button.setAttribute('aria-pressed',String(next));button.dataset.toggleCount=String(Number(button.dataset.toggleCount||0)+1)});fetch('/api/boot').then(r=>r.json()).then(v=>globalThis.__smokeBoot=v)</script></body></html>";
-		send(res, body);
+		const body = requestUrl.pathname.startsWith("/api/")
+			? JSON.stringify({ ok: true, path: req.url })
+			: '<!doctype html><html><head><title>Browser Pilot Smoke</title></head><body><main><h1 id="smoke-marker">Browser Pilot Smoke</h1><button id="smoke-action" type="button" onclick="this.dataset.clicked=\'yes\'">Run smoke</button></main><script>fetch("/api/boot")</script></body></html>';
+		res.writeHead(200, { "content-type": requestUrl.pathname.startsWith("/api/") ? "application/json" : "text/html; charset=utf-8", "content-length": Buffer.byteLength(body) });
+		res.end(body);
 	});
 	await new Promise((resolve, reject) => {
 		server.once("error", reject);
-		server.listen(0, "127.0.0.1", () => {
-			server.off("error", reject);
-			resolve();
-		});
+		server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
 	});
 	const address = server.address();
 	if (!address || typeof address === "string") throw new Error("fixture server did not expose a TCP port");
 	return {
-		url: `http://127.0.0.1:${address.port}/`,
-		waitForEvent,
-		releaseNavigationGate(token) {
-			const response = navigationGates.get(token);
-			if (!response) throw new Error(`navigation gate ${token} is not waiting`);
-			navigationGates.delete(token);
-			send(response, JSON.stringify({ ok: true, released: true }), "application/json");
-		},
-		close: () => {
-			for (const [token, response] of navigationGates) {
-				navigationGates.delete(token);
-				response.destroy();
-			}
-			return new Promise((resolve) => server.close(() => resolve()));
-		},
+		url: "http://127.0.0.1:" + address.port + "/",
+		close: () => new Promise((resolve) => server.close(resolve)),
 	};
 }
 
@@ -184,26 +83,21 @@ function resultText(result) {
 	return Array.isArray(result?.content) ? result.content.map((item) => typeof item?.text === "string" ? item.text : "").join("\n") : "";
 }
 
-function operationOutcome(result, label, expectedStatus) {
-	let value;
-	try { value = JSON.parse(resultText(result)); } catch { throw new Error(`${label} did not return JSON: ${resultText(result)}`); }
-	if (value?.schema !== "browser-operation/v2") throw new Error(`${label} did not return browser-operation/v2: ${JSON.stringify(value)}`);
-	if (expectedStatus && value.status !== expectedStatus) throw new Error(`${label} returned ${String(value.status)}, expected ${expectedStatus}: ${JSON.stringify(value)}`);
-	const completed = value.status === "completed";
-	if (value.ok !== completed || value.completionVerified !== completed || value.classification !== (completed ? "success" : ["effect_observed", "ambiguous", "target_lost", "deadline"].includes(value.status) ? "inconclusive" : "failure")) {
-		throw new Error(`${label} returned inconsistent browser-operation/v2 classification: ${JSON.stringify(value)}`);
-	}
-	return value;
-}
-
 function resultEnvelope(result, label) {
 	try { return JSON.parse(resultText(result)); } catch { throw new Error(`${label} did not return JSON: ${resultText(result)}`); }
+}
+
+function bridgeResult(result, label) {
+	const value = resultEnvelope(result, label);
+	if (value?.acknowledged === true) return value;
+	if (value?.summary?.type === "bridgeResult") return value.summary;
+	throw new Error(`${label} was not acknowledged: ${JSON.stringify(value)}`);
 }
 
 async function invoke(daemon, tool, params, transportTimeoutMs = 10_000) {
 	const result = await daemonJson(daemon, "/invoke", {
 		method: "POST",
-		body: JSON.stringify({ tool, params, cwd: root, cli: { command: tool } }),
+			body: JSON.stringify({ tool, params, cwd: root }),
 	}, transportTimeoutMs);
 	if (result.ok !== true || result.terminate === true) throw new Error(`${tool} failed: ${resultText(result) || JSON.stringify(result)}`);
 	return result;
@@ -218,30 +112,6 @@ async function waitForStatus(daemon, predicate, label) {
 		await delay(250);
 	} while (Date.now() < deadline);
 	throw new Error(`${label} timed out after ${launchTimeoutMs}ms; last status=${JSON.stringify(last)}`);
-}
-
-function tabForUrl(status, expectedUrl) {
-	return Array.isArray(status?.tabs) ? status.tabs.find((tab) => String(tab?.url || "").startsWith(expectedUrl)) : undefined;
-}
-
-function assertCostVector(value, label) {
-	if (!value || !Number.isInteger(value.chars) || value.chars < 0 || !Number.isInteger(value.bytes) || value.bytes < 0 || !Number.isInteger(value.estimatedTokens) || value.estimatedTokens < 0) {
-		throw new Error(`${label} did not expose a valid CostVector: ${JSON.stringify(value)}`);
-	}
-}
-
-function assertProviderBudgetTelemetry(observation) {
-	const providers = observation?.providers;
-	for (const provider of ["causal", "axe", "readability"]) {
-		const item = providers?.[provider];
-		if (item?.planned !== true || item.status === "skipped" || !Number.isInteger(item.reservedMs) || item.reservedMs < 500 || !Number.isInteger(item.actualMs) || item.actualMs < 0 || !Number.isInteger(item.bridgeRoundTrips) || item.bridgeRoundTrips < 0) {
-			throw new Error(`${provider} provider telemetry was not executed under a bounded plan: ${JSON.stringify(item)}`);
-		}
-		assertCostVector(item.cost, `${provider} provider`);
-	}
-	if (Math.abs(providers.causal.reservedMs - (providers.axe.reservedMs * 2)) > 1 || providers.axe.reservedMs !== providers.readability.reservedMs) {
-		throw new Error(`provider reserve weights were not causal:axe:readability=2:1:1: ${JSON.stringify(providers)}`);
-	}
 }
 
 function captureProcessOutput(child) {
@@ -350,14 +220,16 @@ await import("./build-bridge.mjs");
 const { startDaemon } = await import("../src/apps/daemon/server.ts");
 const profileDir = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-smoke-"));
 const fixture = await startFixtureServer();
-let daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true });
+const daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true });
 let browser;
 try {
 	if (!daemon.bridgePort) throw new Error("daemon did not start the browser bridge");
 	browser = await launchConnectedBrowser(daemon, fixture.url, profileDir);
 	const tab = browser.status.tabs.find((item) => String(item?.url || "").startsWith(fixture.url));
-	const tabId = Number(tab?.tabId ?? tab?.id);
-	if (!Number.isInteger(tabId) || tabId <= 0) throw new Error(`fixture tab was not routable: ${JSON.stringify(tab)}`);
+		const tabId = Number(tab?.tabId ?? tab?.id);
+		if (!Number.isInteger(tabId) || tabId <= 0) throw new Error(`fixture tab was not routable: ${JSON.stringify(tab)}`);
+		const targetRef = typeof tab?.targetRef === "string" ? tab.targetRef : typeof tab?.tabHandle === "string" ? tab.tabHandle : "";
+		if (!targetRef) throw new Error(`fixture tab had no stable targetRef: ${JSON.stringify(tab)}`);
 	const browserId = typeof tab?.browserId === "string" ? tab.browserId : "";
 	if (!browserId) throw new Error(`fixture browser client was not identifiable: ${JSON.stringify(tab)}`);
 	const selectedBrowser = await invoke(daemon, "browser_tabs", { action: "selectBrowser", browserId });
@@ -365,331 +237,63 @@ try {
 
 	const tabs = await invoke(daemon, "browser_tabs", { action: "list" });
 	if (!resultText(tabs).includes("Browser Pilot Smoke")) throw new Error(`browser_tabs did not expose the fixture tab: ${resultText(tabs)}`);
-	const executed = await invoke(daemon, "browser_execute", {
-		tabId,
+		const executed = await invoke(daemon, "browser_execute", {
+			targetRef,
 		readOnly: true,
 		script: "(async()=>{const api=await(await fetch('/api/execute')).json();return{title:document.title,marker:document.querySelector('#smoke-marker')?.textContent,api:api.ok}})()",
 	});
-	const executedOutcome = operationOutcome(executed, "browser_execute", "completed");
-	if (!resultText(executed).includes("Browser Pilot Smoke")) throw new Error(`browser_execute did not return fixture evidence: ${resultText(executed)}`);
-	if (executedOutcome.completion?.source !== "script-resolved" || executedOutcome.business?.status !== "inconclusive" || executedOutcome.semantic?.stability !== "stable") throw new Error(`browser_execute query did not separate mechanical completion from business/semantic evidence: ${JSON.stringify(executedOutcome)}`);
-	const noEffect = await invoke(daemon, "browser_execute", { tabId, script: "void 0" }, 25_000);
-	const noEffectOutcome = operationOutcome(noEffect, "browser_execute no-effect", "deadline");
-	if ((noEffectOutcome.ok ? 0 : 1) !== 1 || noEffectOutcome.business?.status !== "inconclusive" || noEffectOutcome.semantic?.stability !== "stable") throw new Error(`browser_execute no-effect did not remain semantically inconclusive through its deadline: ${JSON.stringify(noEffectOutcome)}`);
-	const noEffectObservation = JSON.parse(resultText(await invoke(daemon, "browser_observe", { tabId, maxChars: 20_000 })));
-	if (noEffectObservation?.schema !== "browser-page-observation/v3") throw new Error(`no-effect recovery did not perform the required canonical observation: ${JSON.stringify(noEffectObservation)}`);
-	const businessIntentId = `script-business-${process.pid}-${Date.now()}`;
-	const businessVerified = operationOutcome(await invoke(daemon, "browser_execute", {
-		tabId,
-		intentId: businessIntentId,
-		script: "setTimeout(()=>{document.body.dataset.businessState='liked'},75);({actionDispatched:true})",
-		postcondition: "document.body.dataset.businessState === 'liked'",
-	}), "browser_execute scripted business postcondition", "completed");
-	if (businessVerified.completion?.source !== "script-postcondition-verified" || businessVerified.completionVerified !== true) throw new Error(`script business postcondition was not the completion proof: ${JSON.stringify(businessVerified)}`);
+		const executedResult = bridgeResult(executed, "browser_execute");
+		if (!resultText(executed).includes("Browser Pilot Smoke")) throw new Error(`browser_execute did not return fixture evidence: ${resultText(executed)}`);
+		if (executedResult.data?.title !== "Browser Pilot Smoke") throw new Error(`browser_execute did not return raw script data: ${JSON.stringify(executedResult)}`);
 
-	let delayedProgramTimedOut = false;
-	try {
-		await invoke(daemon, "browser_execute", {
-			tabId,
-			program: [
-				{ eval: "document.body.dataset.lateProgramMutation='should-not-run';true", delay: 1_500 },
-			],
-		}, 500);
-	} catch (error) {
-		delayedProgramTimedOut = error?.name === "TimeoutError";
-		if (!delayedProgramTimedOut) throw error;
-	}
-	if (!delayedProgramTimedOut) throw new Error("program cancellation smoke did not hit the caller transport deadline");
-	await new Promise((resolve) => setTimeout(resolve, 1_200));
-	const delayedProgramProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, readOnly: true, script: "document.body.dataset.lateProgramMutation || 'not-run'" }), "browser_execute delayed program cancellation proof", "completed");
-	if (delayedProgramProof.completion?.evidence?.result !== "not-run") throw new Error(`timed-out program dispatched a later mutation frame in the background: ${JSON.stringify(delayedProgramProof)}`);
-	const physicalIntentId = `physical-toggle-${process.pid}-${Date.now()}`;
-	const physicalProgram = [
-		{ eval: "(()=>{const r=document.querySelector('#smoke-toggle').getBoundingClientRect();return{point:{x:r.left+r.width/2,y:r.top+r.height/2}}})()", as: "toggleTarget" },
-		{ mouse: "press", refFrom: "toggleTarget" },
-		{ mouse: "release", refFrom: "toggleTarget" },
-		{ eval: "document.querySelector('#smoke-toggle').getAttribute('aria-pressed')==='true'", verify: true },
-	];
-	const physical = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: physicalIntentId, program: physicalProgram }), "browser_execute verified physical toggle", "completed");
-	if (physical.completion?.source !== "program-verified" || physical.dispatch?.acknowledged !== true) throw new Error(`physical program did not preserve verified acknowledgement: ${JSON.stringify(physical)}`);
-	const reused = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: physicalIntentId, program: physicalProgram }), "browser_execute repeated physical intent", "completed");
-	if (!JSON.stringify(reused.diagnostics || []).includes("INTENT_RESULT_REUSED")) throw new Error(`repeated physical intent was not reused safely: ${JSON.stringify(reused)}`);
-	const toggleProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, readOnly: true, script: "({pressed:document.querySelector('#smoke-toggle').getAttribute('aria-pressed'),count:Number(document.querySelector('#smoke-toggle').dataset.toggleCount)})" }), "browser_execute physical toggle proof", "completed");
-	const toggleResult = toggleProof.completion?.evidence?.result;
-	if (toggleResult?.pressed !== "true" || toggleResult?.count !== 1) throw new Error(`repeated intent toggled the control twice: ${JSON.stringify(toggleProof)}`);
-	operationOutcome(await invoke(daemon, "browser_execute", {
-		tabId,
-		intentId: `physical-reset-${process.pid}-${Date.now()}`,
-		script: "(()=>{const el=document.querySelector('#smoke-toggle');el.setAttribute('aria-pressed','false');el.dataset.toggleCount='0';return true})()",
-		postcondition: "document.querySelector('#smoke-toggle').getAttribute('aria-pressed') === 'false' && document.querySelector('#smoke-toggle').dataset.toggleCount === '0'",
-	}), "browser_execute reset physical toggle", "completed");
-	const uncertainIntentId = `physical-uncertain-${process.pid}-${Date.now()}`;
-	const uncertainProgram = [
-		{ eval: "(()=>{const r=document.querySelector('#smoke-toggle').getBoundingClientRect();return{point:{x:r.left+r.width/2,y:r.top+r.height/2}}})()", as: "toggleTarget" },
-		{ mouse: "press", refFrom: "toggleTarget" },
-		{ mouse: "release", refFrom: "toggleTarget" },
-		{ eval: "false", verify: true },
-	];
-	const uncertain = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: uncertainIntentId, program: uncertainProgram }), "browser_execute uncertain physical toggle", "ambiguous");
-	if (uncertain.dispatch?.acknowledged !== true) throw new Error(`uncertain physical program lost acknowledgement: ${JSON.stringify(uncertain)}`);
-	const blockedUncertain = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: uncertainIntentId, program: uncertainProgram }), "browser_execute blocked uncertain replay", "ambiguous");
-	if (!JSON.stringify(blockedUncertain.diagnostics || []).includes("MUTATION_REPLAY_BLOCKED")) throw new Error(`uncertain intent replay was not blocked: ${JSON.stringify(blockedUncertain)}`);
-	const uncertainObservation = JSON.parse(resultText(await invoke(daemon, "browser_observe", { tabId, maxChars: 20_000 })));
-	if (uncertainObservation?.schema !== "browser-page-observation/v3") throw new Error(`uncertain recovery did not complete canonical observation: ${JSON.stringify(uncertainObservation)}`);
-	const blockedAfterObserve = operationOutcome(await invoke(daemon, "browser_execute", { tabId, intentId: uncertainIntentId, program: uncertainProgram }), "browser_execute blocked uncertain replay after observe", "ambiguous");
-	if (!JSON.stringify(blockedAfterObserve.diagnostics || []).includes("intent_replay")) throw new Error(`observation incorrectly released the same uncertain intent: ${JSON.stringify(blockedAfterObserve)}`);
-	const uncertainProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId, readOnly: true, script: "({pressed:document.querySelector('#smoke-toggle').getAttribute('aria-pressed'),count:Number(document.querySelector('#smoke-toggle').dataset.toggleCount)})" }), "browser_execute uncertain toggle proof", "completed");
-	if (uncertainProof.completion?.evidence?.result?.pressed !== "true" || uncertainProof.completion?.evidence?.result?.count !== 1) throw new Error(`uncertain intent replay changed the control more than once: ${JSON.stringify(uncertainProof)}`);
-	const created = operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}secondary`, active: true }), "browser_tabs create", "completed");
-	const createdTabId = Number(created.target?.tabId);
-	const originalTargetRef = tab?.targetRef || tab?.tabHandle || tabId;
-	if (!Number.isInteger(createdTabId) || createdTabId <= 0 || !created.target?.targetRef) throw new Error(`created tab was not ready/routable: ${JSON.stringify(created)}`);
-	operationOutcome(await invoke(daemon, "browser_tabs", { action: "switch", targetRef: originalTargetRef }), "browser_tabs switch", "completed");
-	operationOutcome(await invoke(daemon, "browser_execute", { targetRef: originalTargetRef, readOnly: true, script: "document.title" }), "browser_execute after switch", "completed");
-	operationOutcome(await invoke(daemon, "browser_tabs", { action: "close", targetRef: created.target.targetRef }), "browser_tabs close", "completed");
-	const observedResult = await invoke(daemon, "browser_observe", { tabId, maxNodes: 200 });
-	const observed = resultEnvelope(observedResult, "browser_observe full");
-	if (!resultText(observedResult).includes("Browser Pilot Smoke")) throw new Error(`browser_observe did not return fixture evidence: ${resultText(observedResult)}`);
-	const reloadBaselineSnapshotId = observed.snapshot?.snapshotId;
-	const reloadBaselinePageEpoch = observed.snapshot?.pageEpoch;
-	if (typeof reloadBaselineSnapshotId !== "string" || typeof reloadBaselinePageEpoch !== "string") throw new Error(`browser_observe full did not expose page identity: ${JSON.stringify(observed.snapshot)}`);
-	const network = await invoke(daemon, "browser_network", {
-		action: "captureReload",
-		tabId,
-		params: { idleMs: 300, waitTimeoutMs: 10_000, limit: 20 },
-	});
-	if (!/networkCaptureReload|captureReload|api\/boot/.test(resultText(network))) throw new Error(`browser_network did not return capture evidence: ${resultText(network)}`);
-	const sameUrlReload = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, baselineSnapshotId: reloadBaselineSnapshotId, maxNodes: 200 }), "browser_observe after same-url reload");
-	if (sameUrlReload.snapshot?.pageEpoch === reloadBaselinePageEpoch) throw new Error(`same-URL reload reused the old page epoch: ${JSON.stringify(sameUrlReload.snapshot)}`);
-	const reloadReanchorReason = sameUrlReload.reanchorReason;
-	if (reloadReanchorReason !== "document_changed") throw new Error(`same-URL reload did not re-anchor as document_changed: ${JSON.stringify({ reloadReanchorReason, snapshot: sameUrlReload.snapshot })}`);
-	if (sameUrlReload.diff !== undefined || sameUrlReload.treeDiff !== undefined) throw new Error(`same-URL reload reused an old baseline delta: ${JSON.stringify({ diff: sameUrlReload.diff, treeDiff: sameUrlReload.treeDiff })}`);
-	const hookSessionId = `browser-pilot-smoke-${process.pid}`;
-	await invoke(daemon, "browser_hook", {
-		action: "installTargets",
-		tabId,
-		sessionId: hookSessionId,
-		params: { targets: ["console", "networkApi"], bufferSize: 50 },
-	});
-	await invoke(daemon, "browser_execute", {
-		tabId,
-		readOnly: true,
-		script: "(async()=>{console.info('browser-pilot-hook-smoke');await fetch('/api/hook-smoke');return true})()",
-	});
-	const hookEvents = await invoke(daemon, "browser_hook", {
-		action: "collect",
-		tabId,
-		sessionId: hookSessionId,
-		params: { eventTypes: ["console.", "network."], limit: 20 },
-	});
-	if (!/console\.info/.test(resultText(hookEvents)) || !/network\.(request|response)/.test(resultText(hookEvents))) {
-		throw new Error(`browser_hook did not collect console and network evidence: ${resultText(hookEvents)}`);
-	}
-	await invoke(daemon, "browser_hook", { action: "uninstall", tabId, sessionId: hookSessionId });
+	const created = bridgeResult(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}secondary`, active: true }), "browser_tabs create");
+	const createdTargetRef = created.createdTarget?.targetRef ?? created.data?.targetRef;
+		if (!createdTargetRef) throw new Error(`created tab was not routable: ${JSON.stringify(created)}`);
+	bridgeResult(await invoke(daemon, "browser_tabs", { action: "close", targetRef: createdTargetRef }), "browser_tabs close");
 
-	const reconnectBaseline = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, maxNodes: 200 }), "browser_observe reconnect baseline");
-	const sameDocumentBaselineId = reconnectBaseline.snapshot?.snapshotId;
-	const sameDocumentPageEpoch = reconnectBaseline.snapshot?.pageEpoch;
-	if (typeof sameDocumentBaselineId !== "string" || typeof sameDocumentPageEpoch !== "string") throw new Error(`browser_observe did not expose page identity: ${JSON.stringify(reconnectBaseline.snapshot)}`);
-	const spaMutationToken = `${Date.now()}`;
-	operationOutcome(await invoke(daemon, "browser_execute", {
-		tabId,
-		intentId: `spa-mutation-${process.pid}-${spaMutationToken}`,
-		script: `history.pushState({browserPilotSmoke:true},'',${JSON.stringify(`/spa?smoke=${spaMutationToken}`)});document.body.dataset.browserPilotSmokeDelta=${JSON.stringify(spaMutationToken)};true`,
-		postcondition: `location.pathname === '/spa' && document.body.dataset.browserPilotSmokeDelta === ${JSON.stringify(spaMutationToken)}`,
-	}), "browser_execute same-document SPA mutation", "completed");
-	await waitForStatus(daemon, (value) => Array.isArray(value.tabs) && value.tabs.some((item) => Number(item?.tabId ?? item?.id) === tabId && String(item?.url || "").includes("/spa?smoke=")), "SPA history tab sync");
-	const deltaObservation = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, baselineSnapshotId: sameDocumentBaselineId, maxNodes: 200 }), "browser_observe same-document delta");
-	if (deltaObservation.snapshot?.pageEpoch !== sameDocumentPageEpoch) throw new Error(`same-document SPA mutation changed page epoch: ${JSON.stringify(deltaObservation.snapshot)}`);
-	if (deltaObservation.diff === undefined && deltaObservation.treeDiff === undefined) throw new Error(`same-document observation did not produce a delta: ${JSON.stringify(deltaObservation)}`);
-	const baselineSnapshotId = deltaObservation.snapshot?.snapshotId;
-	const baselinePageEpoch = deltaObservation.snapshot?.pageEpoch;
-	if (typeof baselineSnapshotId !== "string" || typeof baselinePageEpoch !== "string") throw new Error(`delta observation did not expose page identity: ${JSON.stringify(deltaObservation.snapshot)}`);
-	operationOutcome(await invoke(daemon, "browser_execute", {
-		tabId,
-		intentId: `provider-mutation-${process.pid}-${Date.now()}`,
-		script: "document.querySelector('main')?.append(Object.assign(document.createElement('p'),{textContent:'provider telemetry mutation'}));true",
-		postcondition: "Array.from(document.querySelectorAll('main p')).some((node) => node.textContent === 'provider telemetry mutation')",
-	}), "browser_execute provider telemetry mutation", "completed");
-	const providerObservation = resultEnvelope(await invoke(daemon, "browser_observe", {
-		tabId,
-		baselineSnapshotId,
-		axe: true,
-		readability: true,
-		timeoutMs: 12_000,
-		maxChars: 64_000,
-	}), "browser_observe provider telemetry");
-	if (providerObservation.schema !== "browser-page-observation/v3") throw new Error(`provider observation did not use PageObservation v3: ${JSON.stringify(providerObservation)}`);
-	assertProviderBudgetTelemetry(providerObservation);
-	const beforeReloadStatus = await daemonJson(daemon, "/status?tabs=1");
-	const beforeExtensionConnectedAt = Number(beforeReloadStatus.health?.connectedAt || 0);
-	if (!Number.isFinite(beforeExtensionConnectedAt) || beforeExtensionConnectedAt <= 0) throw new Error(`extension reload baseline did not expose connectedAt: ${JSON.stringify(beforeReloadStatus.health)}`);
-	await invoke(daemon, "browser_command", { command: { cmd: "management", method: "reload" } });
-	const reconnected = await waitForStatus(daemon, (value) => value.extensionConnected === true
-		&& Number(value.health?.connectedAt || 0) > beforeExtensionConnectedAt, "extension reload reconnect");
-	const reanchored = resultEnvelope(await invoke(daemon, "browser_observe", { tabId, baselineSnapshotId }), "browser_observe after extension reconnect");
-	if (reanchored.snapshot?.pageEpoch === baselinePageEpoch) throw new Error(`extension reconnect reused the old page epoch: ${JSON.stringify(reanchored.snapshot)}`);
-	const reanchorReason = reanchored.reanchorReason;
-	if (!["identity_unproven", "document_changed"].includes(reanchorReason)) throw new Error(`extension reconnect did not force a full re-anchor: ${JSON.stringify({ reanchorReason, snapshot: reanchored.snapshot })}`);
-	if (reanchored.diff !== undefined || reanchored.treeDiff !== undefined) throw new Error(`extension reconnect reused an old baseline delta: ${JSON.stringify({ diff: reanchored.diff, treeDiff: reanchored.treeDiff })}`);
+		await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.start", clear: true } });
+		await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "fetch('/api/smoke').then(r=>r.text())" });
+		const network = await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.list", limit: 20 } });
+		if (!/api\/smoke/.test(resultText(network))) throw new Error(`browser_command network.list did not return capture evidence: ${resultText(network)}`);
+		await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.stop" } });
 
-	const lineageToken = `${process.pid}-${Date.now()}`;
-	const bfcacheAUrl = `${fixture.url}bfcache-a?token=${lineageToken}`;
-	const bfcacheBUrl = `${fixture.url}bfcache-b?token=${lineageToken}`;
-	const eventSourceUrl = `${fixture.url}operation-event-source?token=${lineageToken}`;
-	const completionEventUrl = `${fixture.url}operation-complete?token=${lineageToken}`;
-	const eventSourceTarget = operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: eventSourceUrl, active: true }), "browser_tabs operation event source", "completed");
-	const completionTabId = Number(eventSourceTarget.target?.tabId);
-	if (!Number.isInteger(completionTabId) || completionTabId <= 0) throw new Error(`operation event source target was invalid: ${JSON.stringify(eventSourceTarget.target)}`);
-	await fixture.waitForEvent(`navigation-gate-ready:operation-start:${lineageToken}`);
-	const completionEventStartedAt = Date.now();
-	const completionEventPromise = invoke(daemon, "browser_execute", {
-		tabId: completionTabId,
-		program: [
-			{ eval: `fetch('/api/operation-armed?token=${encodeURIComponent(lineageToken)}').then(()=>true)` },
-			{ key: "down", code: "ShiftLeft" },
-			{ key: "up", code: "ShiftLeft" },
-		],
-	});
-	await fixture.waitForEvent(`operation-armed:${lineageToken}`);
-	fixture.releaseNavigationGate(`operation-start:${lineageToken}`);
-	const completionEventOutcome = operationOutcome(await completionEventPromise, "browser_execute navigation completion event");
-	const completionEventElapsedMs = Date.now() - completionEventStartedAt;
-	const completionNavigationStatus = await waitForStatus(daemon, (value) => Boolean(tabForUrl(value, completionEventUrl)), "operation completion navigation");
-	if (completionEventOutcome.status !== "completed") {
-		throw new Error(`navigation reached the real tab but operation did not settle completed: ${JSON.stringify({ outcome: completionEventOutcome, tab: tabForUrl(completionNavigationStatus, completionEventUrl) })}`);
+		const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, maxNodes: 200 }), "browser_observe");
+	if (observed.schema !== "browser-page-observation/v3" || typeof observed.saved?.path !== "string") {
+			throw new Error(`browser_observe did not return canonical PageObservation: ${JSON.stringify(observed)}`);
 	}
-	if (completionEventOutcome.completion?.source !== "navigation-completed" || completionEventElapsedMs >= 5_000) {
-		throw new Error(`navigation completion event did not settle immediately through the operation waiter: ${JSON.stringify({ completionEventElapsedMs, completion: completionEventOutcome.completion })}`);
-	}
+			const artifact = await invoke(daemon, "browser_artifact", { mode: "json", path: observed.saved.path, jsonPath: "entities" });
+			if (!resultText(artifact).includes("Browser Pilot Smoke")) throw new Error(`browser_artifact did not read observation entities: ${resultText(artifact)}`);
+			const entities = resultEnvelope(artifact, "browser_artifact entities").value;
+			const actionRef = Array.isArray(entities)
+				? entities.find((entity) => entity?.name === "Run smoke")?.ref
+				: entities?.projection === "folded-v1" && Array.isArray(entities.items)
+					? entities.items.find((item) => item?.v?.[0] === "button")?.v?.[1]
+					: undefined;
+			if (typeof actionRef !== "string") throw new Error(`browser_observe did not mint the smoke action ref: ${JSON.stringify(entities)}`);
+			const bound = bridgeResult(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "({id:browserPilot.refs.action?.id,tag:browserPilot.refs.action?.tagName})" }), "browser_execute refs");
+			if (bound.data?.id !== "smoke-action" || bound.data?.tag !== "BUTTON") throw new Error(`browser_execute did not bind the observed ref: ${JSON.stringify(bound)}`);
+			bridgeResult(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "browser_command input.ref");
+			const clicked = bridgeResult(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "browserPilot.refs.action?.dataset.clicked" }), "browser_execute ref verification");
+			if (clicked.data !== "yes") throw new Error(`input.ref did not dispatch the physical click: ${JSON.stringify(clicked)}`);
+			bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action');el.dataset.clicked='';el.textContent='Changed action';return true})()" }), "change ref semantics");
+			const semanticMismatch = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "semantic mismatch input.ref");
+			if (semanticMismatch.code !== "BACKEND_NODE_STALE") throw new Error(`input.ref did not reject changed semantics: ${JSON.stringify(semanticMismatch)}`);
+			bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action');el.textContent='Run smoke';const rect=el.getBoundingClientRect();const cover=document.createElement('div');cover.id='smoke-cover';Object.assign(cover.style,{position:'fixed',left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`,zIndex:'2147483647'});document.body.append(cover);return true})()" }), "cover ref target");
+			const occluded = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "occluded input.ref");
+			if (occluded.code !== "BACKEND_NODE_STALE") throw new Error(`input.ref did not reject an occluded target: ${JSON.stringify(occluded)}`);
+			bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: "document.querySelector('#smoke-cover')?.remove()" }), "uncover ref target");
+			bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const old=document.querySelector('#smoke-action');const next=document.createElement('button');next.id='danger-action';next.textContent='Danger';next.onclick=()=>{next.dataset.clicked='yes'};old.replaceWith(next);return true})()" }), "replace ref target");
+			const staleInput = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "stale input.ref");
+			if (staleInput.code !== "BACKEND_NODE_STALE") throw new Error(`stale input.ref did not fail closed: ${JSON.stringify(staleInput)}`);
+			const untouched = bridgeResult(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "document.querySelector('#danger-action')?.dataset.clicked" }), "stale ref verification");
+			if (untouched.data !== undefined && untouched.data !== "[undefined]") throw new Error(`stale input.ref clicked the replacement element: ${JSON.stringify(untouched)}`);
 
-	const bfcacheTarget = operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: bfcacheAUrl, active: true }), "browser_tabs isolated BFCache target", "completed");
-	const lineageTabId = Number(bfcacheTarget.target?.tabId);
-	if (!Number.isInteger(lineageTabId) || lineageTabId <= 0 || lineageTabId === completionTabId) throw new Error(`isolated BFCache target was invalid: ${JSON.stringify(bfcacheTarget.target)}`);
-	const bfcacheAStatus = await waitForStatus(daemon, (value) => Boolean(tabForUrl(value, bfcacheAUrl)), "isolated BFCache A load");
-	const bfcacheATab = tabForUrl(bfcacheAStatus, bfcacheAUrl);
-	const bfcacheAEpoch = bfcacheATab?.pageEpoch;
-	const bfcacheADocumentId = bfcacheATab?.documentId;
-	if (![bfcacheAEpoch, bfcacheADocumentId].every((value) => typeof value === "string" && value.length > 0)) throw new Error(`BFCache A identity was incomplete: ${JSON.stringify(bfcacheATab)}`);
-
-	await fixture.waitForEvent(`navigation-gate-ready:bfcache-to-b:${lineageToken}`);
-	fixture.releaseNavigationGate(`bfcache-to-b:${lineageToken}`);
-	const bfcacheBNavigationStatus = await waitForStatus(daemon, (value) => Boolean(tabForUrl(value, bfcacheBUrl)), "BFCache B navigation");
-	const bfcacheBTab = tabForUrl(bfcacheBNavigationStatus, bfcacheBUrl);
-	const bfcacheBEpoch = bfcacheBTab?.pageEpoch;
-	const bfcacheBDocumentId = bfcacheBTab?.documentId;
-	if (typeof bfcacheBEpoch !== "string" || typeof bfcacheBDocumentId !== "string" || bfcacheBEpoch === bfcacheAEpoch || bfcacheBDocumentId === bfcacheADocumentId) {
-		throw new Error(`BFCache B did not establish a distinct document lineage: ${JSON.stringify(bfcacheBTab)}`);
-	}
-
-	await fixture.waitForEvent(`navigation-gate-ready:bfcache-back:${lineageToken}`);
-	fixture.releaseNavigationGate(`bfcache-back:${lineageToken}`);
-	const restoredAStatus = await waitForStatus(daemon, (value) => Boolean(tabForUrl(value, bfcacheAUrl)), "real BFCache back restore");
-	const restoredATab = tabForUrl(restoredAStatus, bfcacheAUrl);
-	if (restoredATab?.pageEpoch !== bfcacheAEpoch || restoredATab?.documentId !== bfcacheADocumentId) {
-		throw new Error(`real BFCache back did not reuse proven A lineage: ${JSON.stringify(restoredATab)}`);
-	}
-
-	await fixture.waitForEvent(`navigation-gate-ready:bfcache-forward:${lineageToken}`);
-	fixture.releaseNavigationGate(`bfcache-forward:${lineageToken}`);
-	const restoredBStatus = await waitForStatus(daemon, (value) => Boolean(tabForUrl(value, bfcacheBUrl)), "real BFCache forward restore");
-	const restoredBTab = tabForUrl(restoredBStatus, bfcacheBUrl);
-	if (restoredBTab?.pageEpoch !== bfcacheBEpoch || restoredBTab?.documentId !== bfcacheBDocumentId) {
-		throw new Error(`real BFCache forward did not reuse proven B lineage: ${JSON.stringify(restoredBTab)}`);
-	}
-	const bfcacheProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId: lineageTabId, readOnly: true, script: "({persisted:globalThis.__browserPilotBFCacheRestored===true,navigationType:performance.getEntriesByType('navigation')[0]?.type})" }), "browser_execute BFCache proof", "completed");
-	const bfcacheProofValue = bfcacheProof.completion?.evidence?.result;
-	if (bfcacheProofValue?.persisted !== true) throw new Error(`real BFCache pageshow.persisted proof was missing: ${JSON.stringify(bfcacheProofValue)}`);
-	const bfcacheObservation = resultEnvelope(await invoke(daemon, "browser_observe", { tabId: lineageTabId, fresh: true, maxNodes: 200 }), "browser_observe after BFCache lineage");
-	if (bfcacheObservation.snapshot?.pageEpoch !== bfcacheBEpoch) throw new Error(`PageObservation did not consume the restored BFCache epoch: ${JSON.stringify(bfcacheObservation.snapshot)}`);
-
-	const frontierUrl = `${fixture.url}frontier`;
-	const frontierTarget = operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: frontierUrl, active: true }), "browser_tabs frontier target", "completed");
-	const frontierTabId = Number(frontierTarget.target?.tabId);
-	if (!Number.isInteger(frontierTabId) || frontierTabId <= 0) throw new Error(`frontier target was invalid: ${JSON.stringify(frontierTarget.target)}`);
-	const frontierOutputPath = path.join(profileDir, "frontier-observation.json");
-	const frontierObservation = resultEnvelope(await invoke(daemon, "browser_observe", { tabId: frontierTabId, fresh: true, maxNodes: 1_000, maxChars: 20_000, timeoutMs: 20_000, outputPath: frontierOutputPath }), "browser_observe frontier artifact");
-	const frontierItem = frontierObservation.frontier?.items?.find((item) => item?.read?.tool === "browser_artifact" && typeof item.read.jsonPath === "string");
-	if (!frontierItem || typeof frontierObservation.saved?.path !== "string") throw new Error(`folded frontier did not expose a verified artifact read: ${JSON.stringify(frontierObservation.frontier)}`);
-	const targetedFrontierRead = resultEnvelope(await invoke(daemon, "browser_artifact", {
-		mode: "json",
-		path: frontierObservation.saved.path,
-		jsonPath: frontierItem.read.jsonPath,
-		...(Number.isInteger(frontierItem.read.offset) ? { offset: frontierItem.read.offset } : {}),
-		...(Number.isInteger(frontierItem.read.limit) ? { limit: frontierItem.read.limit } : {}),
-	}), "browser_artifact targeted frontier read");
-	if (targetedFrontierRead.summary?.exists !== true || targetedFrontierRead.jsonPath !== frontierItem.read.jsonPath) {
-		throw new Error(`frontier targeted read did not resolve the verified JSON path: ${JSON.stringify(targetedFrontierRead)}`);
-	}
-
-	const prerenderToken = `${process.pid}-${Date.now()}`;
-	const prerenderPrehostUrl = `${fixture.url}prerender-prehost?token=${prerenderToken}`;
-	const prerenderHostUrl = `${fixture.url}prerender-host?token=${prerenderToken}`;
-	const prerenderTargetUrl = `${fixture.url}prerender-target?token=${prerenderToken}`;
-	operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: prerenderPrehostUrl, active: true }), "browser_tabs prerender prehost", "completed");
-	const prerenderPrehostStatus = await waitForStatus(daemon, (value) => Boolean(tabForUrl(value, prerenderPrehostUrl)), "prerender prehost navigation");
-	const prerenderPrehostTab = tabForUrl(prerenderPrehostStatus, prerenderPrehostUrl);
-	const prerenderPrehostTabId = Number(prerenderPrehostTab?.tabId ?? prerenderPrehostTab?.id);
-	const prerenderPrehostObservation = resultEnvelope(await invoke(daemon, "browser_observe", { tabId: prerenderPrehostTabId, fresh: true, maxNodes: 200 }), "browser_observe prerender prehost");
-	operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: prerenderHostUrl, active: true }), "browser_tabs isolated prerender host", "completed");
-	const prerenderHostStatus = await waitForStatus(daemon, (value) => Boolean(tabForUrl(value, prerenderHostUrl)), "prerender host navigation");
-	const prerenderHostTab = tabForUrl(prerenderHostStatus, prerenderHostUrl);
-	const prerenderHostTabId = Number(prerenderHostTab?.tabId ?? prerenderHostTab?.id);
-	if (!Number.isInteger(prerenderHostTabId) || prerenderHostTabId <= 0 || prerenderHostTabId === prerenderPrehostTabId) throw new Error(`isolated prerender host did not receive a fresh tab identity: ${JSON.stringify({ prerenderPrehostTab, prerenderHostTab })}`);
-	await fixture.waitForEvent(`navigation-gate-ready:prerender-activate:${prerenderToken}`);
-	await fixture.waitForEvent(`prerender-ready:${prerenderToken}`);
-	fixture.releaseNavigationGate(`prerender-activate:${prerenderToken}`);
-	const prerenderActivatedStatus = await waitForStatus(daemon, (value) => {
-		const activated = tabForUrl(value, prerenderTargetUrl);
-		const activatedTabId = Number(activated?.tabId ?? activated?.id);
-		const activatedGeneration = Number(activated?.targetGeneration ?? activated?.generation);
-		const hostGeneration = Number(prerenderHostTab?.targetGeneration ?? prerenderHostTab?.generation);
-		return Number(activated?.replacedFromTabId) === prerenderHostTabId && (activatedTabId !== prerenderHostTabId || activatedGeneration > hostGeneration);
-	}, "prerender tabs.onReplaced activation");
-	const prerenderTargetTab = tabForUrl(prerenderActivatedStatus, prerenderTargetUrl);
-	const prerenderTargetTabId = Number(prerenderTargetTab?.tabId ?? prerenderTargetTab?.id);
-	const prerenderTargetRef = prerenderTargetTab?.targetRef;
-	if (!Number.isInteger(prerenderTargetTabId) || prerenderTargetTabId <= 0 || typeof prerenderTargetRef !== "string") throw new Error(`prerender activation did not replace the target generation: ${JSON.stringify(prerenderTargetTab)}`);
-	const prerenderProof = operationOutcome(await invoke(daemon, "browser_execute", { tabId: prerenderTargetTabId, readOnly: true, script: "({wasPrerendered:globalThis.__browserPilotWasPrerendered===true,prerendering:document.prerendering===true,activationStart:Number(performance.getEntriesByType('navigation')[0]?.activationStart||0),title:document.title})" }), "browser_execute prerender proof", "completed");
-	const prerenderProofValue = prerenderProof.completion?.evidence?.result;
-	if (prerenderProofValue?.wasPrerendered !== true || prerenderProofValue?.prerendering !== false || !(prerenderProofValue?.activationStart > 0)) {
-		throw new Error(`target was not activated from a real prerender: ${JSON.stringify(prerenderProofValue)}`);
-	}
-	const prerenderObservation = resultEnvelope(await invoke(daemon, "browser_observe", { tabId: prerenderTargetTabId, baselineSnapshotId: prerenderPrehostObservation.snapshot?.snapshotId, maxNodes: 200 }), "browser_observe after tabs.onReplaced");
-	if (prerenderObservation.reanchorReason !== "target_replaced" || prerenderObservation.snapshot?.tabId !== prerenderTargetTabId) {
-		throw new Error(`tabs.onReplaced did not force target_replaced observation lineage: ${JSON.stringify(prerenderObservation)}`);
-	}
-
-	const finalCreated = operationOutcome(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}final-target`, active: true }), "browser_tabs final target create", "completed");
-	const finalTargetRef = finalCreated.target?.targetRef;
-	const finalTabId = Number(finalCreated.target?.tabId);
-	if (!finalTargetRef || !Number.isInteger(finalTabId) || finalTabId <= 0 || finalTabId === prerenderTargetTabId) throw new Error(`new final target was invalid: ${JSON.stringify(finalCreated.target)}`);
-	operationOutcome(await invoke(daemon, "browser_tabs", { action: "close", targetRef: prerenderTargetRef }), "browser_tabs close replaced target", "completed");
-	await waitForStatus(daemon, (value) => Array.isArray(value.tabs) && !value.tabs.some((item) => Number(item?.tabId ?? item?.id) === prerenderTargetTabId) && value.tabs.some((item) => Number(item?.tabId ?? item?.id) === finalTabId), "target close and new-target retention");
-	const finalObservation = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef: finalTargetRef, fresh: true, maxNodes: 200 }), "browser_observe new target after close");
-	if (finalObservation.schema !== "browser-page-observation/v3" || finalObservation.snapshot?.tabId !== finalTabId || typeof finalObservation.snapshot?.pageEpoch !== "string") {
-		throw new Error(`new target was not independently observable after closing the prior target: ${JSON.stringify(finalObservation)}`);
-	}
-	const stableBrowserId = tabForUrl(await daemonJson(daemon, "/status?tabs=1"), `${fixture.url}final-target`)?.browserId;
-	if (typeof stableBrowserId !== "string" || !stableBrowserId) throw new Error("final target did not expose a stable browserId before daemon replacement");
-	await daemon.close();
-	daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true });
-	const replacementStatus = await waitForStatus(daemon, (value) => {
-		const candidate = tabForUrl(value, `${fixture.url}final-target`);
-		return candidate?.targetRef === finalTargetRef && candidate?.browserId === stableBrowserId;
-	}, "daemon replacement target identity");
-	const replacementObservation = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef: finalTargetRef, fresh: true, maxNodes: 200 }), "browser_observe with pre-replacement targetRef");
-	if (replacementObservation.schema !== "browser-page-observation/v3" || replacementObservation.snapshot?.tabId !== finalTabId) {
-		throw new Error(`pre-replacement targetRef did not resolve after daemon replacement: ${JSON.stringify({ tab: tabForUrl(replacementStatus, `${fixture.url}final-target`), observation: replacementObservation })}`);
-	}
 	console.log(JSON.stringify({
 		ok: true,
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute-operation-v2", "no-effect-semantic-deadline", "script-business-postcondition", "program-deadline-cancels-later-frames", "physical-program-verified-idempotent", "physical-program-uncertain-replay-blocked", "tab-create-switch-close", "observe-full-delta", "network-capture-reload", "same-url-reload-page-epoch", "spa-history-preserves-page-epoch", "hook-install-collect-uninstall", "provider-budget-telemetry", "extension-reconnect-page-epoch", "operation-completion-event-wakeup", "bfcache-back-forward-lineage", "frontier-artifact-targeted-read", "prerender-tabs-onReplaced", "target-close-new-target", "daemon-replacement-targetref-stable"],
-		operationCompletionEventMs: completionEventElapsedMs,
-		connectionMetrics: reconnected.health?.connectionMetrics,
+		checks: ["extension-handshake", "tabs", "execute", "tab-create-close", "browser-command-network", "canonical-observe", "artifact-read", "ref-execute", "ref-input", "ref-semantic-mismatch-rejected", "ref-occlusion-rejected", "stale-ref-rejected"],
 	}, null, 2));
 } finally {
 	await stopBrowser(browser?.child, browser?.profileDir);

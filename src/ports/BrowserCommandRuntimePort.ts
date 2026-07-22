@@ -1,8 +1,6 @@
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
 import type { SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/leaseRegistry.js";
 import type { SessionObservationSnapshotInfo } from "../kernels/session/observationSnapshotRegistry.js";
-import type { SessionActiveOperationInfo, SessionMutationGuardInput, SessionMutationReplayGuard, SessionOperationBeginInput } from "../kernels/session/operationRegistry.js";
-import type { BrowserOperationEvent, BrowserOperationLateEffect, BrowserOperationOutcome } from "../kernels/session/browserOperation.js";
 import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionObjectiveKey, PerceptionTraceSnapshot, PerceptionTraceTerm } from "../kernels/session/perceptionLedger.js";
 import type { TemporalConfidence, TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../kernels/temporal/types.js";
 
@@ -53,7 +51,6 @@ export type CommandTemporalProfileSample = {
 	recovery?: CommandTemporalFrontierNext;
 };
 
-export type CommandActiveOperationInfo = SessionActiveOperationInfo;
 export type CommandObservationSnapshotInfo = SessionObservationSnapshotInfo;
 export type CommandTabLeaseInfo = SessionTabLeaseInfo;
 export type CommandUiLockInfo = SessionUiLockInfo;
@@ -76,7 +73,6 @@ export type BrowserCommandRuntimeSnapshot = {
 	leases?: CommandTabLeaseInfo[];
 	uiLock?: CommandUiLockInfo;
 	queues?: Array<Record<string, unknown>>;
-	operations?: CommandActiveOperationInfo[];
 	pending: Array<Record<string, unknown>>;
 };
 
@@ -117,8 +113,8 @@ export interface BrowserCommandTargetPort {
 }
 
 export interface BrowserCommandDispatchPort extends BrowserCommandTargetPort {
-	sendCommand(command: BrowserRuntimeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; operationId?: string; operationGeneration?: number; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
-	executeJavaScript(script: string, options?: { browserSessionId?: string; tabId?: number | string; operationId?: string; operationGeneration?: number; timeoutMs?: number; accessMode?: "read" | "write"; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	sendCommand(command: BrowserRuntimeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	executeJavaScript(script: string, options?: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number; accessMode?: "read" | "write"; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
 	withTargetTransaction?<T>(input: BrowserCommandTargetTransactionInput, run: () => Promise<T>): Promise<T>;
 }
 
@@ -153,19 +149,6 @@ export interface BrowserCommandObservationPort {
 	listObservationSnapshots(): CommandObservationSnapshotInfo[];
 }
 
-export interface BrowserCommandOperationPort {
-	beginOperation(operation: SessionOperationBeginInput): CommandActiveOperationInfo;
-	updateOperation(operationId: string, patch: Partial<Omit<CommandActiveOperationInfo, "operationId" | "startedAt">>): CommandActiveOperationInfo | undefined;
-	finishOperation(operationId: string, outcome?: BrowserOperationOutcome): CommandActiveOperationInfo | undefined;
-	finishOperationIfRevision?(operationId: string, expectedRevision: number, outcome?: BrowserOperationOutcome): CommandActiveOperationInfo | undefined;
-	getOperation?(operationId: string): CommandActiveOperationInfo | undefined;
-	waitForOperationChange?(operationId: string, afterRevision: number, timeoutMs: number, signal?: AbortSignal): Promise<CommandActiveOperationInfo | undefined>;
-	recordOperationEvent?(operationId: string, event: Omit<BrowserOperationEvent, "operationId" | "sequence" | "ledgerRevision" | "timestamp"> & { sequence?: number; sourceSequence?: number; timestamp?: number }): CommandActiveOperationInfo | undefined;
-	surfaceLateEffects?(input: { ownerId?: string; browserSessionId?: string; excludeOperationId?: string }): BrowserOperationLateEffect[];
-	mutationReplayGuard?(input: SessionMutationGuardInput): SessionMutationReplayGuard | undefined;
-	markMutationObserved?(input: Omit<SessionMutationGuardInput, "intentId">): number;
-}
-
 export interface BrowserCommandRecorderStatePort {
 	getKnownRecorderState?(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined): { active: boolean; lastSeq?: number } | undefined;
 	recordKnownRecorderState?(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined, state: { active: boolean; lastSeq?: number }): void;
@@ -195,7 +178,6 @@ export interface BrowserCommandRuntimePort extends
 	BrowserCommandSessionPort,
 	BrowserCommandLeasePort,
 	BrowserCommandObservationPort,
-	BrowserCommandOperationPort,
 	BrowserCommandRecorderStatePort,
 	BrowserCommandPerceptionPort,
 	BrowserCommandTemporalPort,

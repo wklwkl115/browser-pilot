@@ -16,8 +16,7 @@ import { isRecord } from "../../utils/params.js";
 import { buildEntityOutline, buildPageGist, sortEntitiesBySalience } from "./entityViews.js";
 import { entityRefs, mergeEntitiesByRef, type BaselineResolution } from "./baseline.js";
 import { buildObserveRelevance, type ObserveRelevance } from "./relevanceFusion.js";
-import { legacyProjectionSummary, modeInferredSummary } from "./renderCache.js";
-import { withObservationMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
+import type { ObserveToolParams } from "./common.js";
 import type { executeScanCapture } from "./scanCapture.js";
 import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
 
@@ -70,7 +69,6 @@ function registerIntentAnchors(server: BrowserCommandRuntimePort, entities: Enti
 type ScanAssemblyOptions = {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
-	mode: Extract<ObserveMode, "scan" | "text">;
 	tabs: unknown[];
 	maxChars: number;
 	summaryData: PageWorldScanBundleV1;
@@ -93,16 +91,19 @@ type EnvelopeDiff = EntityDiff & { summary?: ReturnType<typeof summarizeEntityDi
 type CausalBlock = { causal?: CausalSummary };
 
 function buildBaseSummary(options: ScanAssemblyOptions, relevance: ObserveRelevance | undefined): Record<string, unknown> {
-	const { params, mode, tabs, maxChars, summaryData, scanEntityContext, summaryScanEntities, browserSessionId, tabId, selectionVersion } = options;
+	const { tabs, maxChars, summaryData, scanEntityContext, summaryScanEntities, browserSessionId, tabId, selectionVersion } = options;
 	return {
-		...withObservationMeta(summarizeScanData(summaryData, tabs, {
-			detailLevel: params.detailLevel,
+		...summarizeScanData(summaryData, tabs, {
+			detailLevel: "summary",
 			maxChars,
 			entityContext: scanEntityContext,
 			scanEntities: summaryScanEntities,
 			relevance: relevance?.result,
-		}), mode, "scan"),
-		...(mode === "scan" && !params.modeExplicit ? { model: "PageObservation", canonical: true } : legacyProjectionSummary(params, mode)),
+		}),
+		mode: "scan",
+		sourceMode: "scan",
+		model: "PageObservation",
+		canonical: true,
 		browserSessionId,
 		tabId,
 		selectionVersion,
@@ -180,14 +181,12 @@ export function assembleScanSummary(options: ScanAssemblyOptions) {
 		? buildIntegratedSummary(options, attributedEntities, envelopeDiff, treeDiff, causalBlock)
 		: buildFallbackSummary(options, scanEnvelopeEntities, causalBlock);
 	const { summary, artifactRelevance } = projection;
-	Object.assign(summary, modeInferredSummary(params));
 	return { summary, envelopeEntities: attributedEntities ?? scanEnvelopeEntities, attributedEntities, envelopeDiff, treeDiff, artifactRelevance, causalBlock };
 }
 
 export function prepareScanAssembly(options: {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
-	mode: Extract<ObserveMode, "scan" | "text">;
 	tabs: unknown[];
 	maxChars: number;
 	tabId: number | undefined;
@@ -199,11 +198,13 @@ export function prepareScanAssembly(options: {
 	causal: CausalSummary | undefined;
 	ledgerFrame: CommandPerceptionLedgerFrame | undefined;
 }) {
-	const { server, params, mode, tabs, maxChars, tabId, data, bridge, snapshotMeta, observation, baseline, causal, ledgerFrame } = options;
+	const { server, params, tabs, maxChars, tabId, data, bridge, snapshotMeta, observation, baseline, causal, ledgerFrame } = options;
 	const pageUrl = data.page.url;
 	const scanEntityContext = {
 		browserSessionId: bridge.browserSessionId,
 		tabId,
+		targetGeneration: snapshotMeta.targetGeneration,
+		pageEpoch: snapshotMeta.pageEpoch,
 		url: pageUrl,
 		observationId: snapshotMeta.snapshotId,
 		capturedAt: snapshotMeta.capturedAt,
@@ -215,7 +216,6 @@ export function prepareScanAssembly(options: {
 		assembly: assembleScanSummary({
 			server,
 			params,
-			mode,
 			tabs,
 			maxChars,
 			summaryData,

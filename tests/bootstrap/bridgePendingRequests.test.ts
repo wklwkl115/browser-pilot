@@ -68,10 +68,10 @@ test("request cancellation preserves whether browser dispatch was acknowledged",
 	assert.equal(pr.snapshot().length, 0);
 });
 
-test("extension-side dispatch prevention is lifted into the bridge error evidence", async () => {
+test("extension-side rejection is lifted into the bridge error", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();
-	const promise = pr.send(ws, "blocked-action", { tabId: 7, operationId: "operation-blocked", timeoutMs: 5_000 });
+	const promise = pr.send(ws, "blocked-action", { tabId: 7, timeoutMs: 5_000 });
 	const id = lastId(ws);
 	pr.rejectBrowserError(id, {
 		code: "INVALID_RULE",
@@ -153,7 +153,7 @@ test("resolved requests include bounded latency diagnostics without payload prev
 	assert.equal(JSON.stringify(result.diagnostics).includes("secret.test"), false);
 });
 
-test("non-durable reconnect fails not-acked as not-delivered and acked as inflight-unknown", async () => {
+test("reconnect fails not-acked as not-delivered and acked as inflight-unknown", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();
 	const newWs = fakeSocket();
@@ -163,7 +163,7 @@ test("non-durable reconnect fails not-acked as not-delivered and acked as inflig
 	pr.ack(lastId(ws)); // ack the second request (c2)
 	pr.drainClient(ws, "inst-X", 1_000);
 
-	const reconciled = pr.reconnectInstance("inst-X", newWs, { durable: false });
+	const reconciled = pr.reconnectInstance("inst-X");
 	assert.equal(reconciled, 2);
 
 	await assert.rejects(notAcked, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
@@ -176,58 +176,29 @@ test("non-durable reconnect fails not-acked as not-delivered and acked as inflig
 		assert.equal(error.details?.outcome, "inflight-unknown");
 		return true;
 	});
-	assert.equal(newWs.sent.length, 0, "non-durable reconnect never redelivers");
-});
-
-test("durable reconnect redelivers the request to the new socket and settles on its result", async () => {
-	const pr = newPending();
-	const ws = fakeSocket();
-	const newWs = fakeSocket();
-
-	const promise = pr.send(ws, "click", { tabId: 7, operationId: "operation-click-7", operationGeneration: 3, timeoutMs: 5_000 });
-	assert.equal(ws.sent[0]?.operationId, "operation-click-7");
-	assert.equal(ws.sent[0]?.operationGeneration, 3);
-	const id = lastId(ws);
-	pr.drainClient(ws, "inst-X", 1_000);
-
-	const reconciled = pr.reconnectInstance("inst-X", newWs, { durable: true });
-	assert.equal(reconciled, 1);
-	const redelivered = newWs.sent[0];
-	assert.equal(redelivered.id, id);
-	assert.equal(redelivered.redelivered, true);
-	assert.equal(redelivered.priorAck, false);
-	assert.equal(redelivered.code, "click");
-	assert.equal(redelivered.operationId, "operation-click-7");
-	assert.equal(redelivered.operationGeneration, 3);
-
-	pr.resolve(id, { clicked: true }, []);
-	const result = await promise;
-	assert.deepEqual(result.data, { clicked: true });
+	assert.equal(newWs.sent.length, 0, "reconnect never redelivers");
 });
 
 test("reconnect with no instance id is a no-op; the request still fails at grace expiry", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();
-	const newWs = fakeSocket();
 	const promise = pr.send(ws, "code", { tabId: 1, timeoutMs: 5_000 });
 	pr.drainClient(ws, undefined, 30);
 
-	assert.equal(pr.reconnectInstance(undefined, newWs, { durable: true }), 0, "cannot correlate without an instance id");
-	assert.equal(newWs.sent.length, 0);
+	assert.equal(pr.reconnectInstance(undefined), 0, "cannot correlate without an instance id");
 
 	await assert.rejects(promise, (error: Error & { code?: string }) => error.code === "BRIDGE_CLIENT_DISCONNECTED");
 });
 
-test("request metrics tally drained, reconciliation outcomes, and redelivery", async () => {
+test("request metrics tally drained and reconciliation outcomes", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();
-	const newWs = fakeSocket();
 
 	const notAcked = pr.send(ws, "c1", { tabId: 1, timeoutMs: 5_000 });
 	const acked = pr.send(ws, "c2", { tabId: 2, timeoutMs: 5_000 });
 	pr.ack(lastId(ws));
 	pr.drainClient(ws, "inst-X", 1_000);
-	pr.reconnectInstance("inst-X", newWs, { durable: false });
+	pr.reconnectInstance("inst-X");
 	await assert.rejects(notAcked);
 	await assert.rejects(acked);
 
@@ -235,12 +206,4 @@ test("request metrics tally drained, reconciliation outcomes, and redelivery", a
 	assert.equal(afterNonDurable.drained, 2);
 	assert.equal(afterNonDurable.reconciledNotDelivered, 1);
 	assert.equal(afterNonDurable.reconciledInflightUnknown, 1);
-
-	const promise = pr.send(ws, "c3", { tabId: 3, timeoutMs: 5_000 });
-	const id = lastId(ws);
-	pr.drainClient(ws, "inst-X", 1_000);
-	pr.reconnectInstance("inst-X", newWs, { durable: true });
-	assert.equal(pr.metrics().redelivered, 1);
-	pr.resolve(id, { ok: true }, []);
-	await promise;
 });

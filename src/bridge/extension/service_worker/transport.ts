@@ -1,11 +1,10 @@
-import { BROWSER_PILOT_BRIDGE_HTTP_URL, BROWSER_PILOT_BRIDGE_PORT, BROWSER_PILOT_BRIDGE_WS_URL } from "./config";
+import { BROWSER_PILOT_BRIDGE_PORT } from "./config";
 import { chromeApi as chrome } from "./runtimeEnv";
 import { installCspBypassRule, isScriptable, browserPilotBridgeInfo, getExtensionInstanceId, validateCspBypassRule, registerOffscreenUnreachableGetter } from "./bridge_info";
 import { setBridgeWakeProbe } from "./core_commands";
 import { handleBrowserPilotBridgeWsMessage, setTransportSocketGetter } from "./router";
 import { runStartupRecovery } from "./state_store";
 import { installBrowserPilotTabSync } from "./tab_sync";
-import { setBrowserPilotOperationEventSocketGetter } from "./operation_event_transport";
 import { browserPilotPageIdentityFields } from "./page_identity";
 import { browserPilotTabIdentityFields } from "./tab_identity";
 import type { JsonRecord, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeAlarm, BrowserPilotChromeTab } from "./types";
@@ -23,8 +22,6 @@ let browserPilotTransportInstalled = false;
 let offscreenCreateInFlight: Promise<boolean> | null = null;
 let offscreenUnreachable = false;
 registerOffscreenUnreachableGetter(() => offscreenUnreachable);
-const WS_URL = BROWSER_PILOT_BRIDGE_WS_URL;
-const WS_HEALTH_URL = BROWSER_PILOT_BRIDGE_HTTP_URL;
 
 function isOffscreenEventMessage(message: unknown): message is OffscreenMessage {
   if (!message || typeof message !== "object") return false;
@@ -178,19 +175,6 @@ function scheduleProbe(resetDelay = false): void {
   chrome.alarms.create("browser-pilot-ws-probe", { delayInMinutes: 1, periodInMinutes: 1 });
 }
 
-function bumpProbeBackoff(): void {
-  scheduleProbe(false);
-}
-
-function scheduleKeepalive(): void {
-  runTransportTask("offscreen status", async () => { await sendOffscreenMessage({ type: "browser-pilot-offscreen-status" }); });
-}
-
-async function isServerAlive(): Promise<boolean> {
-  const response = await sendOffscreenMessage({ type: "browser-pilot-offscreen-status" });
-  return responseOpenPorts(response).length > 0;
-}
-
 async function syncOpenPorts(response: unknown): Promise<void> {
   for (const port of responseOpenPorts(response)) await handleOffscreenConnected(port);
 }
@@ -199,10 +183,6 @@ async function probeAndConnectWS(resetDelay: boolean): Promise<void> {
   const response = await sendOffscreenMessage({ type: "browser-pilot-offscreen-probe", resetDelay });
   await syncOpenPorts(response);
   scheduleProbe(resetDelay);
-}
-
-function connectWS(port: number = BROWSER_PILOT_BRIDGE_PORT): void {
-  runTransportTask("offscreen probe", async () => { await syncOpenPorts(await sendOffscreenMessage({ type: "browser-pilot-offscreen-probe", port, resetDelay: false })); });
 }
 
 async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> {
@@ -252,7 +232,7 @@ async function handleBrowserPilotTransportAlarm(alarm: BrowserPilotChromeAlarm):
     chrome.runtime.reload();
     return;
   }
-  if (alarm.name === "browser-pilot-ws-keepalive" || alarm.name === "browser-pilot-ws-probe") await probeAndConnectWS(false);
+  if (alarm.name === "browser-pilot-ws-probe") await probeAndConnectWS(false);
 }
 
 function installBrowserPilotTransport(): boolean {
@@ -270,7 +250,6 @@ function installBrowserPilotTransport(): boolean {
   chrome.alarms.onAlarm.addListener((alarm: BrowserPilotChromeAlarm) => { runTransportTask("transport alarm", async () => { await handleBrowserPilotTransportAlarm(alarm); }); });
   setBridgeWakeProbe(probeAndConnectWS);
   setTransportSocketGetter(getBrowserPilotTransportSocket);
-  setBrowserPilotOperationEventSocketGetter(getBrowserPilotTransportSocket);
   runTransportTask("initial probe", async () => { await probeAndConnectWS(true); });
   chrome.runtime.onStartup.addListener(() => { runTransportTask("startup probe", async () => { await probeAndConnectWS(true); }); });
   installBrowserPilotTabSync({ getSocket: getBrowserPilotTransportSocket, getSockets: getBrowserPilotTransportSockets, probe: probeAndConnectWS });
@@ -278,6 +257,4 @@ function installBrowserPilotTransport(): boolean {
   return true;
 }
 
-export { installBrowserPilotTransport, getBrowserPilotTransportSocket, getBrowserPilotTransportSockets, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handleBrowserPilotTransportAlarm, connectWS, handleBrowserPilotOffscreenMessage, ensureOffscreenDocument };
-// ESM module metadata
-export const __browserPilotBridgeModule_transport = { name: "transport", symbols: { installBrowserPilotTransport, sockets, WS_URL, WS_HEALTH_URL, getBrowserPilotTransportSocket, getBrowserPilotTransportSockets, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handleBrowserPilotTransportAlarm, connectWS, handleBrowserPilotOffscreenMessage, ensureOffscreenDocument } };
+export { installBrowserPilotTransport, getBrowserPilotTransportSocket, getBrowserPilotTransportSockets, cleanupTransportSocket, scheduleProbe, probeAndConnectWS, handleBrowserPilotTransportAlarm, handleBrowserPilotOffscreenMessage, ensureOffscreenDocument };

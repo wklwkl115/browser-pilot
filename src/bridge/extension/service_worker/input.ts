@@ -99,51 +99,104 @@ function refPoint(target: JsonRecord): RefPoint | undefined {
 	for (const locator of Array.isArray(target.locators) ? target.locators : []) { const r = rec(locator), x = opt(r.x), y = opt(r.y); if (r.by === "point" && x !== undefined && y !== undefined) return { x, y }; }
 	return undefined;
 }
-function preferRefPoint(target: JsonRecord, point: RefPoint | undefined): boolean {
-	return target.preferPoint === true && !!point;
+function cssSelectors(target: JsonRecord): string[] {
+	return (Array.isArray(target.locators) ? target.locators : [])
+		.map(rec)
+		.filter((locator) => locator.by === "css" && typeof locator.value === "string" && locator.value.trim())
+		.map((locator) => String(locator.value).trim())
+		.slice(0, 8);
 }
-function centerFromBoxModel(data: JsonRecord): RefPoint | undefined {
-	const result = rec(data.result);
-	const rawBorder = result.border ?? rec(result.model).border;
-	const border = Array.isArray(rawBorder) ? rawBorder.map(opt) : [];
-	if (border.length < 8 || border.some((n) => n === undefined)) return undefined;
-	const xs = [border[0], border[2], border[4], border[6]] as number[], ys = [border[1], border[3], border[5], border[7]] as number[];
-	return { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+function runtimeValue(response: BrowserPilotBridgeResponse): JsonRecord {
+	return rec(rec(rec(rec(response.data).result).result).value);
+}
+
+const REF_POINT_FUNCTION = `function(input) {
+	const normalize = value => String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
+	const el = this;
+	if (!el || el.nodeType !== 1) return { ok: false, reason: "not_found" };
+	const inputRoles = { checkbox: "checkbox", radio: "radio", button: "button", submit: "button", reset: "button", search: "searchbox", range: "slider", number: "spinbutton" };
+	const implicitRoles = { A: "link", BUTTON: "button", TEXTAREA: "textbox", SELECT: "combobox", CANVAS: "region", IMG: "img" };
+	const actualRole = normalize(el.getAttribute("role") || (el.tagName === "INPUT" ? inputRoles[String(el.type || "").toLowerCase()] || "textbox" : implicitRoles[el.tagName] || ""));
+	const labelledBy = String(el.getAttribute("aria-labelledby") || "").split(/\\s+/).filter(Boolean).map(id => document.getElementById(id)?.textContent || "").join(" ");
+	const labels = el.labels ? Array.from(el.labels).map(label => label.textContent || "").join(" ") : "";
+	const actualName = normalize(el.getAttribute("aria-label") || labelledBy || labels || el.getAttribute("alt") || el.innerText || el.textContent || el.value || el.getAttribute("title") || "");
+	if (input.role && actualRole !== normalize(input.role)) return { ok: false, reason: "role_mismatch", actualRole };
+	if (input.name && actualName !== normalize(input.name)) return { ok: false, reason: "name_mismatch", actualName };
+	el.scrollIntoView({ block: "center", inline: "center" });
+	const rect = el.getBoundingClientRect();
+	const style = getComputedStyle(el);
+	if ((!rect.width && !rect.height) || style.display === "none" || style.visibility === "hidden" || style.opacity === "0" || style.pointerEvents === "none") return { ok: false, reason: "not_hittable" };
+	for (const pair of [[0.5,0.5],[0.25,0.5],[0.75,0.5],[0.5,0.25],[0.5,0.75]]) {
+		const x = Math.round(rect.left + rect.width * pair[0]);
+		const y = Math.round(rect.top + rect.height * pair[1]);
+		const hit = document.elementFromPoint(x, y);
+		if (hit && (hit === el || el.contains(hit))) return { ok: true, x, y };
+	}
+	return { ok: false, reason: "occluded" };
+}`;
+
+async function liveRefPoint(tabId: number, msg: BrowserPilotBridgeCommand, target: JsonRecord, startedAt: number): Promise<RefPoint | BrowserPilotBridgeResponse> {
+	const selectors = cssSelectors(target);
+	const fallback = refPoint(target);
+	const kind = cleanString(target.kind);
+	const semantic = rec(target.semantic);
+	const role = cleanString(semantic.role);
+	const name = cleanString(semantic.name);
+	if (!selectors.length && (!fallback || !["region", "media"].includes(kind || "") || (!role && !name))) return failRef("INVALID_REF_TARGET", "Point-only input.ref targets require region/media semantic identity", startedAt, target);
+	const expression = `(() => {
+	  const input = ${JSON.stringify({ selectors, point: selectors.length ? undefined : fallback, role, name })};
+	  let el = null;
+	  for (const selector of input.selectors) { try { el = document.querySelector(selector); } catch (_) {} if (el) break; }
+	  if (!el && input.point) el = document.elementFromPoint(Number(input.point.x), Number(input.point.y));
+	  return (${REF_POINT_FUNCTION}).call(el, input);
+	})()`;
+	const response = await cdp(tabId, msg, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, targetIdFor(target));
+	if (!response.ok) return failRef(backendFailure(response), cdpErrorText(response), startedAt, target, undefined, { resolution: "liveLocator", phase: "resolve" });
+	const value = runtimeValue(response);
+	const x = opt(value.x), y = opt(value.y);
+	if (value.ok !== true || x === undefined || y === undefined) return failRef("BACKEND_NODE_STALE", `input.ref live locator failed: ${String(value.reason || "not_found")}`, startedAt, target, undefined, { resolution: "liveLocator", phase: "resolve" });
+	return { x, y };
 }
 async function backendPoint(tabId: number, msg: BrowserPilotBridgeCommand, target: JsonRecord, backend: BackendTarget, startedAt: number): Promise<RefPoint | BrowserPilotBridgeResponse> {
 	const id = backend.backendNodeId;
 	const route = backend.targetId ? { targetId: backend.targetId, targetScoped: true } : { targetScoped: false };
-	const scroll = await cdp(tabId, msg, "DOM.scrollIntoViewIfNeeded", { backendNodeId: id }, backend.targetId);
-	if (!scroll.ok) return failRef(backendFailure(scroll), cdpErrorText(scroll), startedAt, target, id, { resolution: "backendNodeId", phase: "scrollIntoViewIfNeeded", ...route });
-	const box = await cdp(tabId, msg, "DOM.getBoxModel", { backendNodeId: id }, backend.targetId);
-	if (!box.ok) return failRef(backendFailure(box), cdpErrorText(box), startedAt, target, id, { resolution: "backendNodeId", phase: "getBoxModel", ...route });
-	const cdpRoute = rec(rec(box.data).cdpRoute);
-	const point = centerFromBoxModel(rec(box.data));
-	if (!point) return failRef("BACKEND_NODE_STALE", "DOM.getBoxModel returned no usable border box", startedAt, target, id, { resolution: "backendNodeId", phase: "getBoxModel", ...route, ...(Object.keys(cdpRoute).length ? { cdpRoute } : {}) });
-	return { ...point, ...(Object.keys(cdpRoute).length ? { cdpRoute } : {}) };
+	const resolved = await cdp(tabId, msg, "DOM.resolveNode", { backendNodeId: id }, backend.targetId);
+	if (!resolved.ok) return failRef(backendFailure(resolved), cdpErrorText(resolved), startedAt, target, id, { resolution: "backendNodeId", phase: "resolveNode", ...route });
+	const objectId = cleanString(rec(rec(rec(resolved.data).result).object).objectId);
+	if (!objectId) return failRef("BACKEND_NODE_STALE", "DOM.resolveNode returned no live object", startedAt, target, id, { resolution: "backendNodeId", phase: "resolveNode", ...route });
+	const semantic = rec(target.semantic);
+	const inspected = await cdp(tabId, msg, "Runtime.callFunctionOn", {
+		objectId,
+		functionDeclaration: REF_POINT_FUNCTION,
+		arguments: [{ value: { role: cleanString(semantic.role), name: cleanString(semantic.name) } }],
+		returnByValue: true,
+		awaitPromise: true,
+	}, backend.targetId);
+	if (!inspected.ok) return failRef(backendFailure(inspected), cdpErrorText(inspected), startedAt, target, id, { resolution: "backendNodeId", phase: "validate", ...route });
+	const value = runtimeValue(inspected);
+	const x = opt(value.x), y = opt(value.y);
+	if (value.ok !== true || x === undefined || y === undefined) return failRef("BACKEND_NODE_STALE", `input.ref live backend validation failed: ${String(value.reason || "not_found")}`, startedAt, target, id, { resolution: "backendNodeId", phase: "validate", ...route });
+	const cdpRoute = rec(rec(inspected.data).cdpRoute);
+	return { x, y, ...(Object.keys(cdpRoute).length ? { cdpRoute } : {}) };
 }
 async function handleBrowserPilotRefInputCommand(cmd: string, tabId: number, msg: BrowserPilotBridgeCommand, startedAt = Date.now()): Promise<BrowserPilotBridgeResponse> {
 	if (cmd !== "input.ref") return err("INVALID_RULE", "Unknown ref input command: " + cmd, { cmd });
 	const action = String(msg.action || "").toLowerCase();
 	if (action !== "click") return err("INVALID_RULE", "input.ref action must be click", { action });
-	const target = rec(msg.target), backend = backendTarget(target), pointFallback = refPoint(target);
-	const usePoint = preferRefPoint(target, pointFallback);
-	let point = usePoint
-		? pointFallback
-		: backend ? await backendPoint(tabId, msg, target, backend, startedAt) : pointFallback;
+	const target = rec(msg.target), backend = backendTarget(target);
+	const point = backend ? await backendPoint(tabId, msg, target, backend, startedAt) : await liveRefPoint(tabId, msg, target, startedAt);
 	if (point && "ok" in point) {
-		if (!usePoint && pointFallback) point = pointFallback;
-		else return point;
+		return point;
 	}
 	if (!point) return failRef("INVALID_REF_TARGET", "input.ref target requires backendNodeId or point", startedAt, target, backend?.backendNodeId);
-	const resolution = usePoint || !backend || point === pointFallback ? "point" : "backendNodeId";
+	const resolution = backend ? "backendNodeId" : "liveLocator";
 	const sent: Sent[] = [], focusEmulation = await focus(tabId, msg), base = { x: point.x, y: point.y, modifiers: 0 };
 	for (const p of [{ ...base, type: "mouseMoved", button: "none" }, { ...base, type: "mousePressed", button: "left", clickCount: 1 }, { ...base, type: "mouseReleased", button: "left", clickCount: 1 }]) {
-		const failed = await emit(tabId, msg, "Input.dispatchMouseEvent", p, sent, usePoint ? undefined : backend?.targetId);
-		if (failed) return failRef("BACKEND_NODE_STALE", cdpErrorText(failed), startedAt, target, backend?.backendNodeId, { resolution, phase: "dispatchMouseEvent", attemptedEvents: sent.map((item) => item.type).filter(Boolean), ...(!usePoint && backend?.targetId ? { targetId: backend.targetId, targetScoped: true } : {}) });
+		const failed = await emit(tabId, msg, "Input.dispatchMouseEvent", p, sent, backend?.targetId);
+		if (failed) return failRef("BACKEND_NODE_STALE", cdpErrorText(failed), startedAt, target, backend?.backendNodeId, { resolution, phase: "dispatchMouseEvent", attemptedEvents: sent.map((item) => item.type).filter(Boolean), ...(backend?.targetId ? { targetId: backend.targetId, targetScoped: true } : {}) });
 	}
 	const pointRoute = "cdpRoute" in point ? point.cdpRoute : undefined;
-	return done("input.ref", startedAt, sent, focusEmulation, { action: "click", resolution, dispatchOnly: true, target: refTargetSummary(target, backend?.backendNodeId), ...(!usePoint && backend?.targetId ? { targetId: backend.targetId, targetScoped: true, attachRouteUsed: pointRoute?.attachRouteUsed === true, ...(pointRoute ? { cdpRoute: pointRoute } : {}) } : {}), coordinates: { x: Math.round(point.x), y: Math.round(point.y) } });
+	return done("input.ref", startedAt, sent, focusEmulation, { action: "click", resolution, dispatchOnly: true, target: refTargetSummary(target, backend?.backendNodeId), ...(backend?.targetId ? { targetId: backend.targetId, targetScoped: true, attachRouteUsed: pointRoute?.attachRouteUsed === true, ...(pointRoute ? { cdpRoute: pointRoute } : {}) } : {}), coordinates: { x: Math.round(point.x), y: Math.round(point.y) } });
 }
 
 async function pointer(tabId: number, msg: BrowserPilotBridgeCommand, startedAt: number): Promise<BrowserPilotBridgeResponse> {
@@ -174,8 +227,7 @@ async function pointer(tabId: number, msg: BrowserPilotBridgeCommand, startedAt:
 const MODIFIER_CODES: Record<string, [string, number]> = { ShiftLeft: ["Shift", 16], ShiftRight: ["Shift", 16], ControlLeft: ["Control", 17], ControlRight: ["Control", 17], AltLeft: ["Alt", 18], AltRight: ["Alt", 18], MetaLeft: ["Meta", 91], MetaRight: ["Meta", 91] };
 function keyParams(key: string, type: string, modifiers: number): JsonRecord {
 	const named: Record<string, [string, number]> = { Enter: ["Enter", 13], Escape: ["Escape", 27], Tab: ["Tab", 9], Backspace: ["Backspace", 8], Delete: ["Delete", 46], ArrowLeft: ["ArrowLeft", 37], ArrowUp: ["ArrowUp", 38], ArrowRight: ["ArrowRight", 39], ArrowDown: ["ArrowDown", 40], Home: ["Home", 36], End: ["End", 35], PageUp: ["PageUp", 33], PageDown: ["PageDown", 34] };
-	// browser_execute program frames pass KeyboardEvent.code values (KeyC, Digit5, ShiftLeft, …); browser_command
-	// passes a single character ("a") or a named key ("Enter"). Detect the code form first.
+	// Accept KeyboardEvent.code values, a single character, or a named key. Detect codes first.
 	const letterCode = /^Key([A-Z])$/.exec(key);
 	if (letterCode) { const ch = letterCode[1]!; return { type, key: ch.toLowerCase(), code: key, windowsVirtualKeyCode: ch.charCodeAt(0), nativeVirtualKeyCode: ch.charCodeAt(0), modifiers }; }
 	const digitCode = /^Digit([0-9])$/.exec(key);
@@ -200,7 +252,7 @@ async function keys(tabId: number, msg: BrowserPilotBridgeCommand, startedAt: nu
 		if (!key) return err("INVALID_RULE", "input.keys key entries require key");
 		keyNames.push(key);
 		// Support optional `type` field for single-phase key events (keyDown or keyUp).
-		// When omitted, emit both keyDown and keyUp (legacy behavior).
+		// An omitted event represents a complete key press.
 		const itemType = typeof r.type === "string" ? r.type.toLowerCase() : undefined;
 		if (itemType === "keydown") {
 			const failed = await emit(tabId, msg, "Input.dispatchKeyEvent", keyParams(key, "keyDown", mods(r.modifiers)), sent); if (failed) return failed;
@@ -242,4 +294,3 @@ async function handleBrowserPilotInputCommand(cmd: string, tabId: number, msg: B
 }
 
 export { INPUT_CDP_SESSION_NAME, handleBrowserPilotInputCommand, handleBrowserPilotRefInputCommand };
-export const __browserPilotBridgeModule_input = { name: "input", symbols: { INPUT_CDP_SESSION_NAME, handleBrowserPilotInputCommand, handleBrowserPilotRefInputCommand } };

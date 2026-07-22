@@ -1,4 +1,4 @@
-import { redactSensitive } from "./runtimeSupport.js";
+import { redactSensitive, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
 export type WsSessionState = "opening" | "open" | "closed" | "error";
@@ -40,11 +40,7 @@ export type WsSessionRecord = JsonRecord & {
 
 export const browserPilotWsSessions = new Map<string, WsSessionRecord>();
 export const BROWSER_PILOT_WS_DEFAULT_SESSION_ID = "default";
-export const BROWSER_PILOT_WS_DEFAULT_MAX_TRANSCRIPT = 200;
-
-function asRecord(value: unknown): JsonRecord {
-	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
+const BROWSER_PILOT_WS_DEFAULT_MAX_TRANSCRIPT = 200;
 
 function wsSessionId(msg: BrowserPilotBridgeCommand | JsonRecord | null | undefined): string {
 	return String(msg?.sessionId || msg?.session_id || BROWSER_PILOT_WS_DEFAULT_SESSION_ID);
@@ -170,5 +166,3 @@ function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup"): JsonRec
 }
 
 export { wsSessionId, wsSessionKey, numberInRange, createWsSession, rememberWsTranscript, wsSessionSummary, normalizeWsHeaders, normalizeWsProtocols, normalizeWsOpenConfig, getWsSession, collectWsSessionTranscript, cleanupWsSessionsForTab };
-// ESM module metadata
-export const __browserPilotBridgeModule_ws_model = { name: "ws_model", symbols: { browserPilotWsSessions, BROWSER_PILOT_WS_DEFAULT_SESSION_ID, BROWSER_PILOT_WS_DEFAULT_MAX_TRANSCRIPT, wsSessionId, wsSessionKey, numberInRange, createWsSession, rememberWsTranscript, wsSessionSummary, normalizeWsHeaders, normalizeWsProtocols, normalizeWsOpenConfig, getWsSession, collectWsSessionTranscript, cleanupWsSessionsForTab } };

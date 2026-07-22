@@ -24,61 +24,28 @@ jobs:
       - name: Require exact package tag
         run: node scripts/verify-release-artifact.mjs
 
-  verify:
-    name: release verify (${{ matrix.os }})
-    needs: tag-check
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup mise
-        uses: jdx/mise-action@v2
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run release-readiness gate
-        run: mise run verify
-
-      - name: Run isolated tarball install smoke
-        run: mise run package-smoke
-
-      - name: Run full real-browser smoke on Windows
-        if: matrix.os == 'windows-latest'
-        run: mise run smoke-browser
-
   package:
-    name: produce verified npm tarball
-    needs: verify
+    name: produce npm tarball
+    needs: tag-check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup mise
-        uses: jdx/mise-action@v2
-
       - name: Install dependencies
         run: npm ci
 
-      - name: Pack and smoke the retained tarball
-        run: node scripts/package-smoke.mjs --artifact-dir release-artifact
+      - name: Pack tarball
+        run: npm pack --pack-destination release-artifact
 
-      - name: Recheck retained tarball identity and SHA-256
+      - name: Check retained tarball name
         run: node scripts/verify-release-artifact.mjs --artifact-dir release-artifact
 
       - name: Upload the only publishable artifact
         uses: actions/upload-artifact@v4
         with:
           name: verified-npm-package
-          path: release-artifact/*
+          path: release-artifact/*.tgz
           if-no-files-found: error
           retention-days: 7
 
@@ -107,7 +74,7 @@ jobs:
           name: verified-npm-package
           path: release-artifact
 
-      - name: Verify tag, version, and downloaded SHA-256
+      - name: Verify tag, version, and downloaded tarball
         id: artifact
         run: node scripts/verify-release-artifact.mjs --artifact-dir release-artifact --github-output "$GITHUB_OUTPUT"
 

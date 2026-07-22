@@ -46,6 +46,8 @@ export type RefDocumentEpoch = {
 	frameId?: string;
 	loaderId?: string;
 	navigationId?: string;
+	targetGeneration?: number;
+	pageEpoch?: string;
 	url?: string;
 	mutationEpoch?: number;
 	capturedAt: number;

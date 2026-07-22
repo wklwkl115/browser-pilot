@@ -2,7 +2,6 @@
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
-import { markBrowserPilotOperationDispatch } from "./operation_coordinator";
 import { enableCspBypassForTab } from "./bridge_info";
 import type { JsonRecord, BrowserPilotChromeTab, BrowserPilotWebSocketLike } from "./types";
 
@@ -154,7 +153,7 @@ function normalizeExecNavigationUrl(rawUrl: unknown): string {
   return raw;
 }
 
-type ExecRequest = JsonRecord & { id?: string | number; operationId?: string; operationGeneration?: number; tabId?: number; code?: unknown; timeoutMs?: number; timeout_ms?: number };
+type ExecRequest = JsonRecord & { id?: string | number; tabId?: number; code?: unknown; timeoutMs?: number; timeout_ms?: number };
 type ExecDiagnostics = { mayOpenNewTab: boolean; newTabObservationWaitTriggered: boolean; newTabObservationWaitMs: number; totalMs?: number };
 
 function execError(error: unknown): { name: string; message: string } {
@@ -313,28 +312,6 @@ async function handleWsExec(data: ExecRequest, socket: BrowserPilotWebSocketLike
 		sendExecMessage(socket, { type: "error", id: data.id, error: { name: "InvalidRule", code: "INVALID_RULE", message: "No JavaScript code provided", details: { dispatchStarted: false, acked: false } } });
 		return;
 	}
-	const operationId = typeof data.operationId === "string" ? data.operationId.trim() : "";
-	if (operationId) {
-		const operationGeneration = Number(data.operationGeneration);
-		const marker = await markBrowserPilotOperationDispatch(operationId, {
-			tabId,
-			operationGeneration: Number.isInteger(operationGeneration) ? operationGeneration : undefined,
-			socket,
-		});
-		if (!marker.ok) {
-			sendExecMessage(socket, {
-				type: "error",
-				id: data.id,
-				error: {
-					name: "OperationDispatchMarkerError",
-					code: marker.error_code || "INVALID_RULE",
-					message: typeof marker.error === "string" ? marker.error : "operation dispatch marker failed",
-					details: { operationId, dispatchStarted: false, acked: false, ...(marker.details || {}) },
-				},
-			});
-			return;
-		}
-	}
 	// ACK now means validation and the exact semantic action boundary both succeeded.
 	sendExecMessage(socket, { type:'ack', id:data.id });
 	enableCspBypassForTab(tabId);
@@ -365,5 +342,3 @@ async function handleWsExec(data: ExecRequest, socket: BrowserPilotWebSocketLike
   }
 }
 export { buildExecScript, buildPageScript, buildCdpScript, handleWsExec };
-// ESM module metadata
-export const __browserPilotBridgeModule_exec = { name: "exec", symbols: { buildExecScript, buildPageScript, buildCdpScript, handleWsExec } };

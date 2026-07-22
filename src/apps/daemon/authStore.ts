@@ -170,7 +170,7 @@ export async function approve(pairingId: string): Promise<{ token: string } | nu
 	delete record.pendingExpiresAt;
 
 	// Persist to disk — await so the write completes before the caller responds.
-	// If the write fails the exception propagates, ensuring the CLI knows the
+	// If the write fails the exception propagates, ensuring the caller knows the
 	// approval was not durably persisted.
 	await serialized(() => persistStore());
 

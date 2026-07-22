@@ -1,15 +1,8 @@
 import { makeWaitId } from "./wait_coordinator";
 import { ensureNetworkEntry, rememberNetworkError, networkBodyMimeDecision, setNetworkBodyAvailability, storeNetworkBody, pruneNetworkRecorder, truncateStringByBytes } from "./network_model";
+import { runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import type { JsonRecord } from "./types";
 import type { NetworkRecord, NetworkRecorder } from "./network_model";
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function appendBounded<T>(arr: T[], item: T, max: number, overflowCounterTarget: { overflow?: number } | null = null): void {
   if (max <= 0) return;
@@ -228,5 +221,3 @@ export function browserPilotNetworkHandleRecorderCdpEvent(recorder: NetworkRecor
 }
 
 export { asRecord, errorText };
-// ESM module metadata
-export const __browserPilotBridgeModule_network_events = { name: "network_events", symbols: { asRecord, errorText, appendBounded, browserPilotNetworkMaybeCaptureBody, browserPilotNetworkHandleRecorderCdpEvent } };

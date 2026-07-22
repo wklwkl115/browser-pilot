@@ -81,5 +81,3 @@ async function handleBrowserPilotHtml(tabId: number, msg: BrowserPilotBridgeComm
   return data && data.ok === true ? data : { ok: true, data: res.data };
 }
 export { handleBrowserPilotHtml };
-// ESM module metadata
-export const __browserPilotBridgeModule_html = { name: "html", symbols: { handleBrowserPilotHtml } };

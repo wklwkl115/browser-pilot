@@ -1,18 +1,10 @@
 // network_model.js - Browser Pilot Network recorder state, config, filtering and body storage helpers.
 
 import { matchNetworkPattern } from "./patterns";
-import { redactSensitive } from "./runtimeSupport.js";
+import { redactSensitive, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { diagnoseBrowserPilotCdpDomainRefs } from "./wait_cdp";
 import { makeWaitId } from "./wait_coordinator";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotWaitRecord, NetworkBodyMimeDecision, NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecordSnapshot, NetworkRecordSummary, NetworkRecorder, NetworkRecorderConfig, NetworkRecorderSummary, NetworkStringList, NetworkWaitNotifier } from "./types";
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 const BROWSER_PILOT_NETWORK_DEFAULT_MAX_ENTRIES = 1000;
 const BROWSER_PILOT_NETWORK_DEFAULT_MAX_AGE_MS = 30 * 60 * 1000;
@@ -404,5 +396,3 @@ function storeNetworkBody(recorder: NetworkRecorder, rec: NetworkRecord, bodyRes
 }
 export type { NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderConfig, NetworkRecorderWait } from "./types";
 export { BROWSER_PILOT_NETWORK_DEFAULT_MAX_ENTRIES, BROWSER_PILOT_NETWORK_DEFAULT_MAX_AGE_MS, BROWSER_PILOT_NETWORK_DEFAULT_MAX_BODY_BYTES, BROWSER_PILOT_NETWORK_MAX_WS_FRAMES, BROWSER_PILOT_NETWORK_MAX_SSE_EVENTS, BROWSER_PILOT_NETWORK_DEFAULT_BODY_MIME_ALLOW, BROWSER_PILOT_NETWORK_DEFAULT_BODY_RESOURCE_TYPES, browserPilotNetworkRecorders, browserPilotNetworkRecorderSeq, browserPilotNetworkEntrySeq, browserPilotNetworkBodySeq, browserPilotNetworkWaitNotifier, setNetworkWaitNotifier, notifyNetworkWaits, networkRecorderKey, defaultNetworkSessionId, numberInRange, getHeaderValue, headersObjectToArray, normalizeNetworkStringList, estimateStringBytes, truncateStringByBytes, truncateBase64Body, makeNetworkRecorderFilter, normalizeNetworkBodyMimeAllow, networkResponseMimeType, isLikelyBinaryNetworkMime, networkMimeMatchesToken, networkBodyMimeDecision, classifyNetworkBodyError, setNetworkBodyAvailability, normalizeNetworkRecorderConfig, makeNetworkCdpRecord, createNetworkRecorder, recorderPublicConfig, getNetworkRecorder, getActiveNetworkRecorder, rememberNetworkError, networkRecorderSummary, ensureNetworkEntry, deleteNetworkBodyForRecord, pruneNetworkRecorder, networkRecordMatchesList, networkCriterionMatchesText, networkWsFrameMatches, networkSseEventMatches, networkRecordSummary, networkRecordClone, storeNetworkBody };
-// ESM module metadata
-export const __browserPilotBridgeModule_network_model = { name: "network_model", symbols: { BROWSER_PILOT_NETWORK_DEFAULT_MAX_ENTRIES, BROWSER_PILOT_NETWORK_DEFAULT_MAX_AGE_MS, BROWSER_PILOT_NETWORK_DEFAULT_MAX_BODY_BYTES, BROWSER_PILOT_NETWORK_MAX_WS_FRAMES, BROWSER_PILOT_NETWORK_MAX_SSE_EVENTS, BROWSER_PILOT_NETWORK_DEFAULT_BODY_MIME_ALLOW, BROWSER_PILOT_NETWORK_DEFAULT_BODY_RESOURCE_TYPES, browserPilotNetworkRecorders, browserPilotNetworkRecorderSeq, browserPilotNetworkEntrySeq, browserPilotNetworkBodySeq, browserPilotNetworkWaitNotifier, setNetworkWaitNotifier, notifyNetworkWaits, networkRecorderKey, defaultNetworkSessionId, numberInRange, getHeaderValue, headersObjectToArray, normalizeNetworkStringList, estimateStringBytes, truncateStringByBytes, truncateBase64Body, makeNetworkRecorderFilter, normalizeNetworkBodyMimeAllow, networkResponseMimeType, isLikelyBinaryNetworkMime, networkMimeMatchesToken, networkBodyMimeDecision, classifyNetworkBodyError, setNetworkBodyAvailability, normalizeNetworkRecorderConfig, makeNetworkCdpRecord, createNetworkRecorder, recorderPublicConfig, getNetworkRecorder, getActiveNetworkRecorder, rememberNetworkError, networkRecorderSummary, ensureNetworkEntry, deleteNetworkBodyForRecord, pruneNetworkRecorder, networkRecordMatchesList, networkCriterionMatchesText, networkWsFrameMatches, networkSseEventMatches, networkRecordSummary, networkRecordClone, storeNetworkBody } };

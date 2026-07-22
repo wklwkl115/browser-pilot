@@ -1,6 +1,6 @@
 import type { Entity } from "./entity.js";
 import type { CausalSummary } from "./causal.js";
-import { backendNodeKey, cleanTargetId, legacyBackendNodeKey } from "./nodeKey.js";
+import { backendNodeKey, cleanTargetId } from "./nodeKey.js";
 import { deriveSemanticRefAnchors } from "./semanticRefAnchor.js";
 import { isRecord } from "../../utils/records.js";
 import type { IntentRefRegistry } from "../../kernels/session/intentRefRegistry.js";
@@ -11,7 +11,6 @@ export type IdentityGraphEntry = {
 	backendNodeId?: number;
 	targetId?: string;
 	nodeKey?: string;
-	legacyNodeKey?: string;
 	triggeredRequests: string[];
 };
 
@@ -84,7 +83,6 @@ export function buildIdentityGraph(entities: Entity[], _causal: CausalSummary | 
 			entry.backendNodeId = backendIdentity.backendNodeId;
 			if (backendIdentity.targetId) entry.targetId = backendIdentity.targetId;
 			entry.nodeKey = backendNodeKey(backendIdentity);
-			if (backendIdentity.targetId) entry.legacyNodeKey = legacyBackendNodeKey(backendIdentity.backendNodeId);
 		}
 		if (anchor) {
 			const a = anchor.anchor;

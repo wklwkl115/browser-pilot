@@ -80,7 +80,7 @@ export class BrowserBridgeHttpServer {
 		const wss = new WebSocketServer({ noServer: true, maxPayload: this.maxPayloadBytes });
 		server.on("upgrade", (req, socket, head) => {
 			if (!isAllowedBridgeOrigin(req.headers.origin)) {
-				const body = JSON.stringify({ ok: false, error: "Origin not allowed", rejectedOrigin: req.headers.origin ?? null, allowedOrigins: ["chrome-extension://*", "(no origin / null)"], hint: "Only chrome-extension:// origins and requests with no Origin header are accepted. If you are connecting from a web page or another extension, ensure the request originates from an allowed source." });
+					const body = JSON.stringify({ ok: false, error: "Extension origin not allowed", rejectedOrigin: req.headers.origin ?? null });
 				socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" + body);
 				socket.destroy();
 				return;

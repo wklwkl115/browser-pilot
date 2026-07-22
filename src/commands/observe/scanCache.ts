@@ -6,8 +6,8 @@ import { isRecord } from "../../utils/params.js";
 import type { PageFingerprint } from "../pageSignals.js";
 import { withTrackedOperation, type CommandOnUpdate } from "../commandRuntime.js";
 import type { ObserveTimingMetrics } from "./timings.js";
-import { currentObserveSnapshotMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
-import { cachedEnvelopeFromArtifact, modeInferredDetails, observeCacheTtlMs, renderCacheMatches } from "./renderCache.js";
+import { currentObserveSnapshotMeta, type ObserveToolParams } from "./common.js";
+import { cachedEnvelopeFromArtifact, observeCacheTtlMs, renderCacheMatches } from "./renderCache.js";
 import { PAGE_OBSERVATION_SCHEMA_V3, type PageObservationV3 } from "../../kernels/abml/pageObservation.js";
 import { renderWithExactCost } from "../../kernels/evidence/cost.js";
 import { pageObservationResult } from "../resultMiddleware.js";
@@ -24,7 +24,6 @@ export function cachedObserveResultFromEnvelope(envelope: Record<string, unknown
 export async function tryRenderCacheHit(options: {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
-	mode: Extract<ObserveMode, "scan" | "text">;
 	detailLevel: string;
 	maxChars: number;
 	paramsSignature: string;
@@ -39,9 +38,8 @@ export async function tryRenderCacheHit(options: {
 	onUpdate?: CommandOnUpdate;
 	observeTimings: ObserveTimingMetrics;
 }): Promise<BrowserTextCommandResult | undefined> {
-	const { server, params, mode, detailLevel, maxChars, paramsSignature, pageFingerprint, ledgerFrame, plannedLedgerKey, effectiveTabId, resultParams, outputPath, browserSessionId, onUpdate } = options;
-	if (mode !== "scan" || params.modeExplicit) return undefined;
-	if (!ledgerFrame || !pageFingerprint || !renderCacheMatches(ledgerFrame, mode, detailLevel, maxChars, paramsSignature, pageFingerprint) || typeof server.getObservationSnapshot !== "function") return undefined;
+	const { server, params, detailLevel, maxChars, paramsSignature, pageFingerprint, ledgerFrame, plannedLedgerKey, effectiveTabId, resultParams, outputPath, browserSessionId, onUpdate } = options;
+	if (!ledgerFrame || !pageFingerprint || !renderCacheMatches(ledgerFrame, detailLevel, maxChars, paramsSignature, pageFingerprint) || typeof server.getObservationSnapshot !== "function") return undefined;
 
 	const priorPath = server.getObservationSnapshot(ledgerFrame.snapshotId)?.saved?.path;
 	if (!priorPath) return undefined;
@@ -52,8 +50,8 @@ export async function tryRenderCacheHit(options: {
 
 		const networkState = server.getKnownRecorderState?.("network", params.browserSessionId, effectiveTabId) ?? { active: false };
 		const hookState = server.getKnownRecorderState?.("hook", params.browserSessionId, effectiveTabId) ?? { active: false };
-		const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, pageFingerprint.url, networkState.lastSeq, hookState.lastSeq);
-		const { result } = await withTrackedOperation(server, {
+			const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, outputPath, pageFingerprint.url, networkState.lastSeq, hookState.lastSeq);
+		const { result } = await withTrackedOperation({
 			commandName: "browser_observe",
 			command: "scan",
 			browserSessionId,
@@ -82,9 +80,7 @@ export async function tryRenderCacheHit(options: {
 				limits: { ...prior.limits, budgetChars: maxChars, cost: { chars: 0, bytes: 0, estimatedTokens: 0 } },
 			};
 			return await pageObservationResult({ inline: value, artifact: value, maxChars, outputPath, fallbackName: `observe-cache-${snapshotMeta.snapshotId}.json`, details: {
-				mode,
-				modeInferred: modeInferredDetails(params),
-				model: "PageObservation",
+					model: "PageObservation",
 				canonical: true,
 				sourceMode: "scan",
 				sourceCommand: "content.fingerprint",
@@ -101,7 +97,7 @@ export async function tryRenderCacheHit(options: {
 				capturedAt: snapshotMeta.capturedAt,
 				facts: ledgerFrame.facts,
 				pageFingerprint,
-				renderCache: { mode, detailLevel, maxChars, paramsSignature, renderedAt: ledgerFrame.renderCache.renderedAt },
+					renderCache: { mode: "scan", detailLevel, maxChars, paramsSignature, renderedAt: ledgerFrame.renderCache.renderedAt },
 				allocation: ledgerFrame.allocation,
 			});
 		}

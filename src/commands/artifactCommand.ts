@@ -62,11 +62,6 @@ export function defineArtifactCommand({ commands }: CommandRegistrarContext) {
 			"Keep maxChars small and request the next offset, column window, or a narrower jsonPath/query when more detail is needed.",
 			"When a previous tool returns correlation metadata, prefer browser_artifact mode=json with jsonPath like operation.operationId, snapshot.snapshotId, or data.requestId/data.waitId/data.listenerId before reading the whole artifact.",
 		],
-		cliSubcommands: [
-			{ token: "inspect", parameter: "mode", value: "inspect" },
-			{ token: "paths", parameter: "mode", value: "paths" },
-			{ token: "json", parameter: "mode", value: "json" },
-		],
 		parameters: strictCommandParameters({
 			path: Type.Optional(Type.String({ description: "Artifact path returned by a browser tool, absolute or relative to cwd" })),
 			paths: Type.Optional(Type.Array(Type.String(), { description: "Explicit artifact paths for bounded multi-artifact search mode." })),
@@ -76,7 +71,7 @@ export function defineArtifactCommand({ commands }: CommandRegistrarContext) {
 			offset: Type.Optional(Type.Number({ description: "Line offset for text/search; item offset for json arrays; character offset for json scalar strings" })),
 			limit: Type.Optional(Type.Number({ description: "Line count for text/sample; item/key limit for json arrays/objects; character limit for json scalar strings" })),
 			jsonPath: Type.Optional(Type.String({ description: "Simple dot/bracket path for json mode; when provided without mode, read defaults to json. Missing paths return exists:false/notFound:true. Browser tool artifacts usually keep primary results under data, e.g. data, data.items, data.links." })),
-			pick: Type.Optional(Type.Array(Type.String(), { description: "Multiple simple JSON paths; repeat --pick path for each path in the CLI (not a JSON array string). Results stay aligned one entry per requested path." })),
+				pick: Type.Optional(Type.Array(Type.String(), { description: "Multiple simple JSON paths. Results stay aligned one entry per requested path." })),
 			query: Type.Optional(Type.String({ description: "String or bounded safe-regex query for search mode; when provided without mode and without jsonPath/pick, read defaults to search." })),
 			regex: Type.Optional(Type.Boolean({ description: "Treat query as a bounded regular expression; unsafe patterns are rejected" })),
 			ignoreCase: Type.Optional(Type.Boolean({ description: "Case-insensitive search unless false" })),

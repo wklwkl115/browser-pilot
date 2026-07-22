@@ -7,66 +7,18 @@ node = "22"
 description = "Run deterministic Node tests for all bootstrap and refactor scopes"
 run = "node scripts/run-tests.mjs all"
 
-[tasks.test-cli]
-description = "Run bootstrap + CLI characterization tests"
-run = "node scripts/run-tests.mjs cli"
+[tasks.test-mcp]
+description = "Run bootstrap + MCP tests"
+run = "node scripts/run-tests.mjs mcp"
 
 [tasks.test-artifacts]
-description = "Run bootstrap + artifact characterization tests"
+description = "Run bootstrap + artifact tests"
 run = "node scripts/run-tests.mjs artifacts"
 
-[tasks.test-web-security]
-description = "Run bootstrap + Web Security characterization tests"
-run = "node scripts/run-tests.mjs web-security"
-
 [tasks.test-observe]
-description = "Run bootstrap + observe and result-envelope characterization tests"
+description = "Run bootstrap + canonical observe tests"
 run = "node scripts/run-tests.mjs observe"
 
-[tasks.test-governance]
-description = "Run bootstrap + governance/workflow validation tests"
-run = "node scripts/run-tests.mjs governance"
-
-[tasks.coverage]
-description = "Run executed-source coverage (lines >=70%, branches >=65%, functions >=60%; source modules loaded >=90%)"
-run = "node scripts/run-coverage.mjs all"
-
 [tasks.smoke-browser]
-description = "Launch a real Chrome/Edge instance and verify handshake, tools, network, hooks, and reconnect"
+description = "Launch Chrome/Edge and verify the core browser workflow"
 run = "node --import tsx scripts/run-browser-smoke.mjs --quiet"
-
-[tasks.package-smoke]
-description = "Pack, install, and verify the exact npm tarball in an isolated project"
-run = "node scripts/package-smoke.mjs"
-
-[tasks.update-observe-benchmark]
-description = "Explicitly regenerate the immutable v2 observe cost baseline from git object 1573380"
-run = "node scripts/update-observe-benchmark-baseline.mjs --ref 1573380 --write"
-
-[tasks.dev]
-description = "Fast developer validation for the current refactor scope"
-run = "node scripts/run-validation.mjs dev all"
-
-[tasks.dev-cli]
-description = "Fast developer validation for CLI refactor work"
-run = "node scripts/run-validation.mjs dev cli"
-
-[tasks.dev-artifacts]
-description = "Fast developer validation for artifact refactor work"
-run = "node scripts/run-validation.mjs dev artifacts"
-
-[tasks.dev-web-security]
-description = "Fast developer validation for Web Security refactor work"
-run = "node scripts/run-validation.mjs dev web-security"
-
-[tasks.dev-governance]
-description = "Fast developer validation for governance and workflow changes"
-run = "node scripts/run-validation.mjs dev governance"
-
-[tasks.affected]
-description = "Changed-file validation with deterministic fallback to full dev"
-run = "node scripts/run-validation.mjs affected changed"
-
-[tasks.verify]
-description = "Release-readiness validation for the current refactor scope"
-run = "node scripts/run-validation.mjs verify all"

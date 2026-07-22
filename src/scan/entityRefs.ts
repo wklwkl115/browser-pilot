@@ -6,7 +6,7 @@ import type { PageWorldScanBundleV1, ScanListHint } from "../kernels/abml/pageWo
 type Built = ReturnType<typeof buildDomEntityFromScanActionable>;
 
 function refFor(built: Built): string {
-	return registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
+	return registerRefDescriptor({ descriptor: built.descriptor });
 }
 
 function annotateNode<T extends object>(node: T, slot: string, refId: string) {

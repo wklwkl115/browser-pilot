@@ -39,12 +39,6 @@
       "content.fingerprint",
       "contentSettings"
     ],
-    "operation": [
-      "operation.begin",
-      "operation.checkpoint",
-      "operation.finish",
-      "operation.cancel"
-    ],
     "input": [
       "input.pointer",
       "input.keys",
@@ -150,45 +144,7 @@
       "tabScoped": true,
       "accessMode": "read",
       "internal": true,
-      "notes": "Internal page fingerprint signal used by execute/observe effect collection."
-    },
-    "operation.begin": {
-      "domain": "operation",
-      "tabScoped": false,
-      "accessMode": "read",
-      "internal": true,
-      "required": [
-        "operationId"
-      ],
-      "notes": "Internal operation supervisor arm command. Observers are installed before the mutating action is dispatched."
-    },
-    "operation.finish": {
-      "domain": "operation",
-      "tabScoped": false,
-      "accessMode": "read",
-      "internal": true,
-      "required": [
-        "operationId"
-      ]
-    },
-    "operation.checkpoint": {
-      "domain": "operation",
-      "tabScoped": false,
-      "accessMode": "read",
-      "internal": true,
-      "required": [
-        "operationId"
-      ],
-      "notes": "Internal source fence. Pending MutationObserver records are drained before the checkpoint event is emitted."
-    },
-    "operation.cancel": {
-      "domain": "operation",
-      "tabScoped": false,
-      "accessMode": "read",
-      "internal": true,
-      "required": [
-        "operationId"
-      ]
+      "notes": "Internal page fingerprint signal used by observation caching."
     },
     "tabs": {
       "domain": "core",
@@ -312,8 +268,9 @@
       "accessMode": "write",
       "required": [
         "action",
-        "target"
-      ]
+        "ref"
+      ],
+      "notes": "Pass an observed bp-ref URI in ref. The daemon resolves ownership and expands the private CDP target before dispatch."
     },
     "batch": {
       "domain": "core",
@@ -1050,46 +1007,6 @@
       "retryable": false,
       "summary": "Referenced input target lacks a backendNodeId and explicit point fallback."
     },
-    "MATURE_BRIDGE_LAUNCHER_NOT_FOUND": {
-      "category": "tool.security",
-      "retryable": false,
-      "summary": "External mature bridge launcher was not found."
-    },
-    "MATURE_BRIDGE_LAUNCHER_OVERRIDE_REQUIRED": {
-      "category": "tool.security",
-      "retryable": false,
-      "summary": "Explicit mature bridge launcher overrides require an opt-in flag."
-    },
-    "MATURE_BRIDGE_LAUNCHER_PROBE_TIMEOUT": {
-      "category": "tool.security",
-      "retryable": true,
-      "summary": "External mature bridge launcher probe timed out."
-    },
-    "MATURE_BRIDGE_LAUNCHER_PROBE_FAILED": {
-      "category": "tool.security",
-      "retryable": false,
-      "summary": "External mature bridge launcher probe failed."
-    },
-    "MATURE_BRIDGE_LAUNCH_FAILED": {
-      "category": "tool.security",
-      "retryable": false,
-      "summary": "External mature bridge process failed to start."
-    },
-    "MATURE_BRIDGE_PROCESS_TIMEOUT": {
-      "category": "tool.security",
-      "retryable": true,
-      "summary": "External mature bridge process timed out."
-    },
-    "MATURE_BRIDGE_TARGET_REQUIRED": {
-      "category": "tool.security",
-      "retryable": false,
-      "summary": "External mature bridge requires an explicit scoped target or request input."
-    },
-    "MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED": {
-      "category": "tool.security",
-      "retryable": false,
-      "summary": "External mature bridge requires explicit template or selector input."
-    },
     "INVALID_BROWSER_COMMAND": {
       "category": "driver.command",
       "retryable": false,
@@ -1440,40 +1357,10 @@
       "retryable": false,
       "summary": "browser_upload path is not a file."
     },
-    "UPLOAD_REQUIRES_BROWSER_UPLOAD": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "transfer.upload must go through browser_upload validation."
-    },
     "UPLOAD_SELECTOR_REQUIRED": {
       "category": "tool.transfer",
       "retryable": false,
       "summary": "browser_upload requires a selector."
-    },
-    "WORDLIST_PATH_BLOCKED": {
-      "category": "tool.security",
-      "retryable": false,
-      "summary": "Local wordlist paths must stay within allowed roots and bounded size."
-    },
-    "HTTPS_CERT_GENERATION_FAILED": {
-      "category": "tool.security",
-      "retryable": false,
-      "summary": "Callback HTTPS certificate generation failed or explicit certificate inputs were invalid."
-    },
-    "RESOURCE_NOT_FOUND": {
-      "category": "abml.ref",
-      "retryable": false,
-      "summary": "Referenced browser-result resource was not found."
-    },
-    "RESOURCE_STALE": {
-      "category": "abml.ref",
-      "retryable": true,
-      "summary": "Referenced browser-result resource is stale; re-capture to mint a fresh handle."
-    },
-    "RESOURCE_READ_ERROR": {
-      "category": "abml.ref",
-      "retryable": false,
-      "summary": "Failed to read the referenced browser-result resource."
     },
     "SCAN_BUNDLE_INVALID": {
       "category": "abml.input",
@@ -1487,296 +1374,7 @@
     }
   },
   "toolMetadata": {
-    "nativeActionTools": {
-      "browser_network": {
-        "domain": "network",
-        "parameters": [
-          "action",
-          "params",
-          "tabId",
-          "detailLevel",
-          "outputPath",
-          "timeoutMs",
-          "maxChars",
-          "sessionId"
-        ],
-        "actionDescription": "start | stop | status | clear | list | get | body | exportHar | wait",
-        "actions": [
-          {
-            "action": "start",
-            "command": "network.start",
-            "aliases": [
-              "start"
-            ]
-          },
-          {
-            "action": "stop",
-            "command": "network.stop",
-            "aliases": [
-              "stop"
-            ]
-          },
-          {
-            "action": "status",
-            "command": "network.status",
-            "aliases": [
-              "status"
-            ]
-          },
-          {
-            "action": "clear",
-            "command": "network.clear",
-            "aliases": [
-              "clear"
-            ]
-          },
-          {
-            "action": "list",
-            "command": "network.list",
-            "aliases": [
-              "list"
-            ]
-          },
-          {
-            "action": "get",
-            "command": "network.get",
-            "aliases": [
-              "get"
-            ]
-          },
-          {
-            "action": "body",
-            "command": "network.body",
-            "aliases": [
-              "body"
-            ]
-          },
-          {
-            "action": "exportHar",
-            "command": "network.exportHar",
-            "aliases": [
-              "exportHar",
-              "export"
-            ]
-          },
-          {
-            "action": "wait",
-            "command": "network.wait",
-            "aliases": [
-              "wait"
-            ]
-          }
-        ]
-      },
-      "browser_hook": {
-        "domain": "hook",
-        "parameters": [
-          "action",
-          "params",
-          "tabId",
-          "detailLevel",
-          "outputPath",
-          "timeoutMs",
-          "maxChars",
-          "sessionId"
-        ],
-        "actionDescription": "listTargets | installTargets | install | collect | status | clear | pause | resume | uninstall | evaluate | addEventListener | removeEventListener | performance | listSessions | getNodeListeners | getListenerChain | getSinkHints",
-        "actions": [
-          {
-            "action": "listTargets",
-            "command": "hook.list_targets",
-            "aliases": [
-              "listTargets",
-              "targets",
-              "targetList"
-            ]
-          },
-          {
-            "action": "installTargets",
-            "command": "hook.install_targets",
-            "aliases": [
-              "installTargets",
-              "targetInstall"
-            ]
-          },
-          {
-            "action": "listSessions",
-            "command": "hook.list_sessions",
-            "aliases": [
-              "listSessions",
-              "sessions"
-            ]
-          },
-          {
-            "action": "install",
-            "command": "hook.install",
-            "aliases": [
-              "install"
-            ]
-          },
-          {
-            "action": "status",
-            "command": "hook.status",
-            "aliases": [
-              "status"
-            ]
-          },
-          {
-            "action": "collect",
-            "command": "hook.collect",
-            "aliases": [
-              "collect"
-            ]
-          },
-          {
-            "action": "clearBuffer",
-            "command": "hook.clear_buffer",
-            "aliases": [
-              "clearBuffer"
-            ]
-          },
-          {
-            "action": "pause",
-            "command": "hook.pause",
-            "aliases": [
-              "pause"
-            ]
-          },
-          {
-            "action": "resume",
-            "command": "hook.resume",
-            "aliases": [
-              "resume"
-            ]
-          },
-          {
-            "action": "uninstall",
-            "command": "hook.uninstall",
-            "aliases": [
-              "uninstall"
-            ]
-          },
-          {
-            "action": "evaluate",
-            "command": "hook.evaluate",
-            "aliases": [
-              "evaluate"
-            ]
-          },
-          {
-            "action": "addEventListener",
-            "command": "hook.addEventListener",
-            "aliases": [
-              "addEventListener"
-            ]
-          },
-          {
-            "action": "removeEventListener",
-            "command": "hook.removeEventListener",
-            "aliases": [
-              "removeEventListener"
-            ]
-          },
-          {
-            "action": "performance",
-            "command": "hook.getPerformanceEntries",
-            "aliases": [
-              "performance",
-              "getPerformanceEntries"
-            ]
-          },
-          {
-            "action": "getNodeListeners",
-            "command": "hook.getNodeListeners",
-            "aliases": [
-              "getNodeListeners",
-              "listeners"
-            ]
-          },
-          {
-            "action": "getListenerChain",
-            "command": "hook.getListenerChain",
-            "aliases": [
-              "getListenerChain",
-              "listenerChain"
-            ]
-          },
-          {
-            "action": "getSinkHints",
-            "command": "hook.getSinkHints",
-            "aliases": [
-              "getSinkHints",
-              "sinkHints"
-            ]
-          }
-        ]
-      },
-      "browser_frame": {
-        "domain": "frame",
-        "parameters": [
-          "action",
-          "params",
-          "tabId",
-          "detailLevel",
-          "outputPath",
-          "timeoutMs",
-          "maxChars"
-        ],
-        "actionDescription": "list | evaluate | addNewDocumentScript | removeNewDocumentScript",
-        "actions": [
-          {
-            "action": "list",
-            "command": "frame.list",
-            "aliases": [
-              "list",
-              "frames"
-            ]
-          },
-          {
-            "action": "evaluate",
-            "command": "frame.evaluate",
-            "aliases": [
-              "evaluate"
-            ]
-          },
-          {
-            "action": "addNewDocumentScript",
-            "command": "frame.addNewDocumentScript",
-            "aliases": [
-              "addNewDocumentScript",
-              "addScript"
-            ]
-          },
-          {
-            "action": "removeNewDocumentScript",
-            "command": "frame.removeNewDocumentScript",
-            "aliases": [
-              "removeNewDocumentScript",
-              "removeScript"
-            ]
-          }
-        ]
-      }
-    },
     "nativeCommandTools": {
-      "browser_evidence": {
-        "domain": "evidence",
-        "command": "evidence.collect",
-        "parameters": [
-          "params",
-          "tabId",
-          "detailLevel",
-          "outputPath",
-          "timeoutMs",
-          "maxChars",
-          "sessionId",
-          "eventTypes",
-          "includeHook",
-          "includeNetwork",
-          "includePerformance"
-        ],
-        "artifactPrefix": "evidence"
-      },
       "browser_screenshot": {
         "domain": "screenshot",
         "command": "screenshot.capture",
@@ -1790,24 +1388,8 @@
           "captureBeyondViewport",
           "fallback"
         ],
-        "artifactPrefix": "screenshot"
-      },
-      "browser_observe_html": {
-        "domain": "html",
-        "displayName": "browser_observe (mode=html)",
-        "command": "html.get",
-        "parameters": [
-          "selector",
-          "htmlMode",
-          "params",
-          "tabId",
-          "detailLevel",
-          "outputPath",
-          "timeoutMs",
-          "maxChars"
-        ],
-        "artifactPrefix": "observe-html"
-      }
+		"artifactPrefix": "screenshot"
+	  }
     },
     "transferTools": {
       "browser_download": {

@@ -1,11 +1,11 @@
 // network.js - Browser Pilot Network recorder CDP event, lifecycle and command runtime.
 // Loaded after network_model.js by background.js.
 import { chromeApi as chrome } from "./runtimeEnv";
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, browserPilotWithTimeout, redactSensitive } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, browserPilotWithTimeout, redactSensitive, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { findLostRuntimeSession, persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, summarizeLostRuntimeSession } from "./state_store.js";
 import { enableBrowserPilotCdpDomains, releaseBrowserPilotCdpDomains, subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import { makeWaitId, normalizeBrowserPilotTimeoutMs } from "./wait_coordinator";
-import { appendBounded, asRecord, errorText, browserPilotNetworkHandleRecorderCdpEvent, browserPilotNetworkMaybeCaptureBody } from "./network_events";
+import { appendBounded, browserPilotNetworkHandleRecorderCdpEvent, browserPilotNetworkMaybeCaptureBody } from "./network_events";
 import { classifyNetworkBodyError, createNetworkRecorder, defaultNetworkSessionId, getActiveNetworkRecorder, getNetworkRecorder, estimateStringBytes, getHeaderValue, networkRecordClone, networkCriterionMatchesText, networkRecordMatchesList, networkRecordSummary, networkRecorderKey, networkRecorderSummary, headersObjectToArray, numberInRange, browserPilotNetworkRecorders, recorderPublicConfig, rememberNetworkError, normalizeNetworkRecorderConfig, truncateBase64Body, truncateStringByBytes, networkSseEventMatches, networkWsFrameMatches, setNetworkWaitNotifier } from "./network_model";
 import type { JsonRecord, NetworkClearResult, NetworkHarContent, NetworkHarEntry, NetworkRecorderSummary, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 import type { NetworkBodyStoreEntry, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderWait } from "./network_model";
@@ -483,5 +483,3 @@ registerRecovery(async (results) => {
 });
 
 export { cdpSendNetworkCommand, maybeCaptureNetworkBody, appendBounded, handleNetworkRecorderCdpEvent, startNetworkRecorder, clearNetworkRecorderBuffer, cleanupNetworkRecorder, stopNetworkRecorder, cleanupNetworkRecorderTab, requireNetworkRecorder, listNetworkRecorderEntries, getNetworkRecorderEntry, getNetworkRecorderBody, makeHarEntry, exportNetworkRecorderHar, networkWaitMatches, finishNetworkRecorderWait, wakeNetworkWaits, waitNetworkRecorder, handleNetworkRecorderCommand };
-// ESM module metadata
-export const __browserPilotBridgeModule_network = { name: "network", symbols: { cdpSendNetworkCommand, maybeCaptureNetworkBody, appendBounded, handleNetworkRecorderCdpEvent, startNetworkRecorder, clearNetworkRecorderBuffer, cleanupNetworkRecorder, stopNetworkRecorder, cleanupNetworkRecorderTab, requireNetworkRecorder, listNetworkRecorderEntries, getNetworkRecorderEntry, getNetworkRecorderBody, makeHarEntry, exportNetworkRecorderHar, networkWaitMatches, finishNetworkRecorderWait, wakeNetworkWaits, waitNetworkRecorder, handleNetworkRecorderCommand } };

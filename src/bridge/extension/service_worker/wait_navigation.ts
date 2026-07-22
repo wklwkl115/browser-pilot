@@ -1,5 +1,5 @@
 import { chromeApi as chrome } from "./runtimeEnv";
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { enableBrowserPilotCdpDomains, subscribeBrowserPilotCdp } from "./wait_cdp";
 import { cleanupTabWaits, finishBrowserPilotWait, makeWaitId, normalizeBrowserPilotTimeoutMs, normalizeWaitState, recordWaitEvent, registerWait, waitAbortMessage } from "./wait_coordinator";
 import { waitForNetworkIdle } from "./wait_network_idle";
@@ -9,14 +9,6 @@ import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse,
 type LoadMetrics = JsonRecord & { readyState?: string; url?: string; title?: string; domContentLoaded?: boolean; load?: boolean };
 type NavigationDetails = JsonRecord & { tabId?: number; frameId?: number; url?: string; error?: string; transitionType?: string; transitionQualifiers?: unknown };
 type NavigationState = { ok: boolean; url: string | null; tab: BrowserPilotChromeTab | null; metrics: LoadMetrics | null; stage: string | null; reason?: string };
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 // wait_navigation.js - Browser Pilot navigation and load-state wait helpers.
 // Loaded after wait_coordinator.js and before wait.js by background.js.
@@ -256,5 +248,3 @@ async function waitForLoadState(tabId: number, msg: BrowserPilotBridgeCommand): 
 }
 // CDP contract literal: 'Network.enable'
 export { navigateBrowserPilot, navigateAndWait, waitForNavigation, loadStateSatisfied, queryLoadMetrics, waitForLoadState };
-// ESM module metadata
-export const __browserPilotBridgeModule_wait_navigation = { name: "wait_navigation", symbols: { navigateBrowserPilot, navigateAndWait, waitForNavigation, loadStateSatisfied, queryLoadMetrics, waitForLoadState } };

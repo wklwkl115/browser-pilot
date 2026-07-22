@@ -43,7 +43,6 @@ The modules below make up the kernel's public surface — consumers import them 
 | --- | --- |
 | `types.ts` | Foundational types — locators, refs, actionability, errors, captures. |
 | `entity.ts` | `Entity` / `EntityState` / `EntityStructure` model + builders. |
-| `actionOutcome.ts` | Bounded post-action semantic effects and stable expectation verification over entity diffs. |
 | `ax.ts` | **DOM↔AX merge** — box-IoU/role/name scoring, AX-authoritative state/structure fusion. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |
@@ -81,14 +80,7 @@ runtime, Node-only, or npm dependency import is a boundary violation.
   sides of the line.
 - **Improve perception** (new ARIA state/relationship/structure) → it almost always belongs in
   `ax.ts` (the merge), `entity.ts` (the model), `grouping.ts`, `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, `snapshotProjection.ts`, or `collections.ts`. Stay generic —
-  ABML models ARIA patterns, never per-site/per-framework branches (see the project-level
-  ABML development rules).
-- **Need a new shared helper** → if it is genuinely pure, add it to the `PURE_CROSSCUTTING`
-  whitelist in the boundary test (after re-verifying its dependency closure stays pure).
-  Otherwise the consumer belongs in the runtime layer, not here.
-
-For repo-wide contributor workflow, canonical gates, and validation expectations, start with
-[`REPO_GOVERNANCE.md`](../../../REPO_GOVERNANCE.md). During development, use the affected gate for the touched scope; before claiming completion, run `mise run verify` plus any focused manual verification needed for the touched surface.
+	ABML models ARIA patterns, never per-site/per-framework branches.
 
 ## Consumers
 

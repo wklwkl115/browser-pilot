@@ -60,7 +60,7 @@ test("supersedeInstanceClients closes other sockets of the same instance, keeps 
 	assert.equal((other as unknown as { readyState: number }).readyState, 1, "different-instance socket is untouched");
 });
 
-test("supersedeInstanceClients is a no-op without an instance id (older extension build)", () => {
+test("supersedeInstanceClients is a no-op without an instance id", () => {
 	const registry = new BrowserBridgeClientRegistry(18765);
 	const a = connect(registry, "X", "boot-1");
 	const b = fakeSocket();

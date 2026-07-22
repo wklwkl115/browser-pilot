@@ -3,11 +3,6 @@ import assert from "node:assert/strict";
 import { mintRef, parseRef, isBrowserPilotRef, normalizeRef } from "../../src/kernels/refs/core.ts";
 import { projectJsonValue } from "../../src/kernels/evidence/distill/projection.ts";
 import { computeRelevanceMap } from "../../src/kernels/evidence/distill/relevance.ts";
-import { fitSalienceEnvelopeBudget } from "../../src/kernels/evidence/distill/salienceEnvelope.ts";
-import type { BudgetedEnvelope } from "../../src/kernels/evidence/distill/ladder.ts";
-import { detectSqlDbms, firstBooleanOracle, hasSqlError, nearestBooleanTruth, sqliUnionMeta } from "../../src/kernels/security/sqliOracle.ts";
-import type { ResponseFingerprint } from "../../src/kernels/security/replayDiff.ts";
-import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseReplayDelta, sameBaselineCluster } from "../../src/kernels/security/replayDiff.ts";
 
 test("refs kernel parses scoped refs and rejects malformed boundary values", () => {
 	const scoped = mintRef("control", "login/button:1", { scope: "https://example.test/app path" });
@@ -73,53 +68,4 @@ test("evidence relevance scores low, high, propagated, aged, and CJK signal edge
 	assert.deepEqual(profile.sources, ["E"]);
 	assert.deepEqual(relevance.signals, ["A", "C", "E"]);
 	assert.equal(relevance.scoreFields({ name: "totally unrelated" }), 0);
-});
-
-test("evidence salience envelope fits summary budgets and falls back on sparse oversized inputs", () => {
-	const envelope: BudgetedEnvelope = {
-		tool: "browser_observe",
-		detailLevel: "full",
-		summary: { title: "Checkout", textPreview: "x".repeat(2_000), samples: Array.from({ length: 20 }, (_, index) => `sample-${index}`) },
-		nextActions: ["Click bp-ref://control/pay"],
-		snapshotProjection: { summary: { templateCount: 1, instanceCount: 2 }, templates: [{ templateKey: "pay", count: 1, instances: [{ ref: "bp-ref://control/pay", name: "Pay now", role: "button" }] }] },
-		collections: [{ kind: "list", itemRefs: ["bp-ref://control/pay"], completeness: "complete" }],
-		entities: [
-			{ ref: "bp-ref://control/pay", name: "Pay now", role: "button", selector: "#pay-now", value: "x".repeat(1_000) },
-			{ ref: "bp-ref://control/cancel", name: "Cancel", role: "button", value: "y".repeat(1_000) },
-		],
-		relations: { summary: { triggered: 1 }, verbose: "z".repeat(2_000) },
-	};
-	const fitted = fitSalienceEnvelopeBudget(envelope, 1_500);
-	assert.equal(fitted.tool, "browser_observe");
-	assert.ok(JSON.stringify(fitted).length <= 1_500);
-	assert.ok(fitted.summary.rendererOmitted === undefined || Array.isArray(fitted.summary.rendererOmitted));
-
-	const sparse = fitSalienceEnvelopeBudget({ ...envelope, summary: { textPreview: "x".repeat(5_000) }, snapshotProjection: undefined, collections: undefined, diff: { summary: { changed: 1 } }, treeDiff: { summary: { changed: 1 } } }, 1);
-	assert.ok(JSON.stringify(sparse).length <= 1_000);
-	assert.ok(sparse.diff !== undefined || sparse.treeDiff !== undefined || (sparse.summary as Record<string, unknown>).summaryTruncatedToBudget === true);
-});
-
-test("security replay and SQLi kernels classify normal, malformed, and boundary fingerprints", () => {
-	const baseline: ResponseFingerprint = { status: 200, title: "Home", bodyBytes: 1_000, bodySha256: "aaa", location: "/" };
-	const near: ResponseFingerprint = { status: 200, title: "Home", bodyBytes: 1_050, bodySha256: "bbb", location: "/" };
-	const far: ResponseFingerprint = { status: 500, title: "Error", bodyBytes: 12, bodySha256: "ccc", location: "/error" };
-	assert.equal(normalizeBaselineStrategy(" CLUSTER "), "cluster");
-	assert.equal(normalizeBaselineStrategy("bad"), "auto");
-	assert.equal(matchesStatusBodyResult(200, 1000, { matchStatus: [200], filterStatus: [], filterBodyBytes: [] }), true);
-	assert.equal(matchesStatusBodyResult(500, 1000, { matchStatus: [200], filterStatus: [], filterBodyBytes: [] }), false);
-	assert.equal(baselineClusterKey(baseline), "200|Home|/");
-	assert.equal(sameBaselineCluster(baseline, near), true);
-	assert.equal(sameBaselineCluster(baseline, far), false);
-	assert.deepEqual(responseReplayDelta(baseline, far).classifier, ["status", "title", "length", "body-hash", "location"]);
-	assert.deepEqual(nearestBaselineByDistance([far, baseline], near)?.baseline, baseline);
-	assert.equal(hasSqlError("You have an error in your SQL syntax near 'x'"), true);
-	assert.deepEqual(detectSqlDbms("PostgreSQL ERROR: unterminated quoted string"), ["postgresql"]);
-	assert.deepEqual(sqliUnionMeta("1 order by 7--"), { unionTechnique: "order-by", columnCount: 7 });
-	assert.deepEqual(sqliUnionMeta("1 UNION ALL SELECT id, name, email--"), { unionTechnique: "union-select", columnCount: 3 });
-	assert.equal(nearestBooleanTruth(near, { trueFp: baseline, falseFp: far }), true);
-	assert.deepEqual(firstBooleanOracle([
-		{ type: "boolean", matched: false },
-		{ type: "boolean", matched: true, location: "query", paramName: "id", trueResponse: { fingerprint: baseline }, falseResponse: { fingerprint: far } },
-	])?.paramName, "id");
-	assert.equal(firstBooleanOracle([{ type: "boolean", matched: true, trueResponse: null, falseResponse: {} }]), undefined);
 });

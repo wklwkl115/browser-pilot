@@ -2,7 +2,7 @@
  * Command parameter validation (TypeBox-based).
  *
  * Checks already-normalized values against the command schema. Canonical
- * coercion belongs to the CLI parser or an explicit command-owned
+ * coercion belongs to the caller or an explicit command-owned
  * `coerceArguments` hook; daemon JSON is never generically converted here.
  */
 import { Value } from "typebox/value";

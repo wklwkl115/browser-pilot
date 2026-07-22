@@ -1,7 +1,7 @@
 // transfer.js - upload/download commands for the Browser Pilot bridge.
 
 import { chromeApi as chrome } from "./runtimeEnv.js";
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp.js";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotChromeDownloadItem, BrowserPilotPersistentCdpBridge } from "./types.js";
 
@@ -29,14 +29,6 @@ type TransferPageDownloadEvent = JsonRecord & { method?: string; url?: string; s
 type TransferDownloadOptions = JsonRecord & { url: string; saveAs: boolean; filename?: string; conflictAction?: string };
 type TransferEvalData = JsonRecord & { href?: string; suggestedFilename?: string };
 type TransferCdpBridge = BrowserPilotPersistentCdpBridge & { send: NonNullable<BrowserPilotPersistentCdpBridge["send"]> };
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function errorRecord(error: unknown): JsonRecord {
   return asRecord(error);
@@ -510,5 +502,3 @@ async function handleBrowserPilotTransferCommand(cmd: string, tabId: number, msg
   return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unknown transfer command: ' + cmd, { cmd });
 }
 export { handleBrowserPilotTransferCommand };
-// ESM module metadata
-export const __browserPilotBridgeModule_transfer = { name: "transfer", symbols: { handleBrowserPilotTransferCommand } };

@@ -53,9 +53,7 @@ export async function readFrameEntities(server: AbmlFrameRuntimeServer, options:
 				createdAt: capturedAt,
 				ttlMs: 5 * 60 * 1000,
 				stabilityScore: 0.55,
-			},
-			resourceKind: "scan",
-			name,
+				},
 		});
 		return {
 			ref: refId,

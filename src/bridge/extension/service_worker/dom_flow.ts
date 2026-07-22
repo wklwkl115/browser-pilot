@@ -1,14 +1,6 @@
-import { normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp, BROWSER_PILOT_ERROR_CODES } from "./runtimeSupport.js";
+import { normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp, BROWSER_PILOT_ERROR_CODES, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
-
-function asRecord(value: unknown): JsonRecord {
-	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function errorText(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 function asPositiveInt(value: unknown, fallback: number, min: number, max: number): number {
 	const n = Number(value);

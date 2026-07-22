@@ -9,6 +9,8 @@ export type AxTreeNode = Record<string, unknown>;
 export type AxContext = {
 	browserSessionId?: string;
 	tabId?: number;
+	targetGeneration?: number;
+	pageEpoch?: string;
 	url?: string;
 	observationId: string;
 	capturedAt: number;
@@ -389,7 +391,12 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 			semantic: { role, ...(name ? { name } : {}), ...(value ? { value } : {}) },
 			...(geometry ? { geometry } : {}),
 			observationId: context.observationId,
-			documentEpoch: { url: context.url, capturedAt },
+			documentEpoch: {
+				...(context.targetGeneration ? { targetGeneration: context.targetGeneration } : {}),
+				...(context.pageEpoch ? { pageEpoch: context.pageEpoch } : {}),
+				url: context.url,
+				capturedAt,
+			},
 			createdAt: capturedAt,
 			ttlMs: 5 * 60 * 1000,
 			stabilityScore: 0.65,

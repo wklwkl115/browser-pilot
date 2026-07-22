@@ -2,7 +2,6 @@ import type { ChromeApi } from "./types";
 
 export const serviceWorkerGlobal = globalThis as typeof globalThis & {
   chrome?: ChromeApi;
-  BrowserPilotNativeProtocol?: unknown;
   BrowserPilotPersistentCdp?: unknown;
   browserPilotPersistentCdpBridge?: unknown;
   __BROWSER_PILOT_WORKER_STARTED_AT__?: number;

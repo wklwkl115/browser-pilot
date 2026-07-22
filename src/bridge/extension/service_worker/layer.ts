@@ -1,21 +1,13 @@
 // layer.js - internal LayerTree mechanism probes.
 
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
-
-function asRecord(value: unknown): JsonRecord {
-	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
 
 function asPositiveInt(value: unknown, fallback: number, min: number, max: number): number {
 	const n = Number(value);
 	if (!Number.isFinite(n)) return fallback;
 	return Math.max(min, Math.min(max, Math.floor(n)));
-}
-
-function errorText(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function arrayValue(value: unknown): unknown[] {
@@ -101,7 +93,7 @@ function summarizeLayer(layer: JsonRecord): JsonRecord {
 	};
 }
 
-export async function probeLayerTree(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+async function probeLayerTree(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
 	const timeoutMs = asPositiveInt(msg.timeoutMs ?? msg.timeout_ms, 2_000, 100, 15_000);
 	const waitMs = asPositiveInt(msg.waitMs ?? msg.wait_ms, 350, 50, Math.min(timeoutMs, 5_000));
 	const maxEvents = asPositiveInt(msg.maxEvents ?? msg.max_events, 3, 1, 20);
@@ -170,5 +162,3 @@ export async function handleBrowserPilotLayerCommand(cmd: string, tabId: number,
 	if (cmd === "layer.probe") return await probeLayerTree(tabId, msg);
 	return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, "Unknown Browser Pilot layer command: " + cmd, { cmd });
 }
-
-export const __browserPilotBridgeModule_layer = { name: "layer", symbols: { probeLayerTree, handleBrowserPilotLayerCommand } };

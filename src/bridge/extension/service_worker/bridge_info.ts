@@ -197,5 +197,3 @@ const isScriptable = (url: unknown): boolean => {
   return !!text && (/^https?:/.test(text) || text === 'about:blank');
 };
 export { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, getExtensionInstanceId, installCspBypassRule, enableCspBypassForTab, validateCspBypassRule, isScriptable, registerLostHookSessionsGetter, registerOffscreenUnreachableGetter };
-// ESM module metadata
-export const __browserPilotBridgeModule_bridge_info = { name: "bridge_info", symbols: { BROWSER_PILOT_WORKER_STARTED_AT, BROWSER_PILOT_WORKER_BOOT_ID, browserPilotBridgeInfo, getExtensionInstanceId, installCspBypassRule, enableCspBypassForTab, validateCspBypassRule, isScriptable, registerLostHookSessionsGetter, registerOffscreenUnreachableGetter } };

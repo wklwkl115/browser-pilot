@@ -2,3 +2,4 @@
 export const DEFAULT_BROWSER_BRIDGE_HOST = "127.0.0.1";
 export const DEFAULT_BROWSER_BRIDGE_PORT = 18765;
 export const DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END = 18784;
+export const BROWSER_PILOT_EXTENSION_ID = "lkfcdgafdedpmnlhlpemgkfbagbmaagg";

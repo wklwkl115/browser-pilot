@@ -153,8 +153,3 @@ export async function callPageBrowserPilot(tabId: number, command: string, args:
   const response = await browserPilotEval(tabId, expression, true, options);
   return (response.ok ? runtimeRecord(response.data) : response) as BrowserPilotBridgeResponse;
 }
-
-export const __browserPilotBridgeModule_runtimeSupport = {
-  name: "runtimeSupport",
-  symbols: { BROWSER_PILOT_ERROR_CODES, browserPilotError, bridgeError, normalizeBridgeResponse, browserPilotPersistentCdp, normalizePersistentBrowserPilotResponse, browserPilotEval, callPageBrowserPilot, browserPilotWithTimeout },
-};

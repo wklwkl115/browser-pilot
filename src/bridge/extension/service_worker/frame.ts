@@ -66,5 +66,3 @@ async function handleBrowserPilotFrameCommand(cmd: string, tabId: number, msg: B
 }
 
 export { handleBrowserPilotFrameCommand };
-// ESM module metadata
-export const __browserPilotBridgeModule_frame = { name: "frame", symbols: { handleBrowserPilotFrameCommand } };

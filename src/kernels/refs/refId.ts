@@ -13,6 +13,7 @@ export type BrowserPilotStableRefDescriptor = {
 	kind: BrowserPilotRefKind;
 	locators: BrowserPilotRefLocator[];
 	owner: {
+		browserSessionId?: string;
 		tabId?: number;
 		topLevelOrigin?: string;
 	};
@@ -32,6 +33,8 @@ export type BrowserPilotStableRefDescriptor = {
 		};
 	};
 	documentEpoch?: {
+		targetGeneration?: number;
+		pageEpoch?: string;
 		url?: string;
 	};
 };
@@ -81,8 +84,11 @@ export function stableRefIdForDescriptor(descriptor: BrowserPilotStableRefDescri
 	if (!semanticAnchor && !locator) return undefined;
 	const stable = {
 		kind: descriptor.kind,
+		browserSessionId: descriptor.owner.browserSessionId,
 		tabId: descriptor.owner.tabId,
 		origin: descriptor.owner.topLevelOrigin,
+		targetGeneration: descriptor.documentEpoch?.targetGeneration,
+		pageEpoch: descriptor.documentEpoch?.pageEpoch,
 		url: descriptor.documentEpoch?.url,
 		...(semanticAnchor ? { semanticAnchor } : { locator, role: semantic.role, name: semantic.name }),
 	};

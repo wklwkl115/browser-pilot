@@ -1,4 +1,4 @@
-import { redactSensitive } from "./runtimeSupport.js";
+import { redactSensitive, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
 export type InterceptPhase = "request" | "response";
@@ -59,10 +59,6 @@ export type InterceptSession = JsonRecord & {
 export const browserPilotInterceptSessions = new Map<string, InterceptSession>();
 
 const BROWSER_PILOT_INTERCEPT_DEFAULT_MAX_TRANSCRIPT = 200;
-
-function asRecord(value: unknown): JsonRecord {
-	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
 
 function asString(value: unknown): string | undefined {
 	const text = typeof value === "string" ? value.trim() : "";

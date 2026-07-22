@@ -1,34 +1,12 @@
 import type { CommandPerceptionLedgerFrame } from "../../ports/BrowserCommandRuntimePort.js";
-import { isRecord } from "../../utils/records.js";
 import type { PageFingerprint } from "../pageSignals.js";
-import type { ObserveMode, ObserveToolParams } from "./common.js";
+import type { ObserveToolParams } from "./common.js";
 import { isPageObservationV3, type PageObservationV3 } from "../../kernels/abml/pageObservation.js";
 
 type RenderCache = NonNullable<CommandPerceptionLedgerFrame["renderCache"]>;
 
 export function sessionDeltaEnabled(params: ObserveToolParams): boolean {
 	return params.fresh !== true && process.env.BROWSER_PILOT_SESSION_DELTA !== "0" && String(params.detailLevel || "summary") !== "full" && params.baseline === undefined;
-}
-
-export function modeInferredDetails(params: ObserveToolParams): ObserveToolParams["modeInferred"] {
-	return params.modeInferred ?? null;
-}
-
-export function modeInferredSummary(params: ObserveToolParams): Record<string, unknown> {
-	return params.modeInferred ? { modeInferred: params.modeInferred.mode } : {};
-}
-
-export function legacyProjectionDetails(params: ObserveToolParams, _mode: ObserveMode): Record<string, unknown> {
-	return params.modeExplicit ? { projection: "legacy", canonical: false, modeExplicit: true, semantics: ["legacy", "debug", "projection"] } : {};
-}
-
-export function legacyProjectionSummary(params: ObserveToolParams, _mode: ObserveMode): Record<string, unknown> {
-	return params.modeExplicit ? { projection: "legacy", canonical: false, modeExplicit: true, semantics: ["legacy", "debug", "projection"] } : {};
-}
-
-export function scanCommandName(mode: Extract<ObserveMode, "scan" | "text">, hasNavigation: boolean): string {
-	if (hasNavigation) return mode === "text" ? "navigate+text" : "navigate+scan";
-	return mode === "text" ? "scan.text" : "scan";
 }
 
 export function observeCacheTtlMs(): number {
@@ -46,14 +24,6 @@ function observeStandingPerceptionCacheMarker(): string {
 	return standingPerceptionEnabled() ? "on" : "off";
 }
 
-function observeRendererCacheMarker(): string {
-	return process.env.BROWSER_PILOT_RENDERER === "ladder" ? "ladder" : "salience-v1";
-}
-
-function observeCostModelCacheMarker(): string {
-	return "estimated-tokens-v1";
-}
-
 function observeSessionDeltaCacheMarker(params: ObserveToolParams): string {
 	return sessionDeltaEnabled(params) ? "on" : "off";
 }
@@ -63,9 +33,7 @@ function relevanceEnabled(params: ObserveToolParams): boolean {
 }
 
 function observeIntent(params: ObserveToolParams): string | undefined {
-	if (typeof params.intent === "string" && params.intent.trim()) return params.intent.trim();
-	const nested = isRecord(params.params) ? params.params : undefined;
-	return typeof nested?.intent === "string" && nested.intent.trim() ? nested.intent.trim() : undefined;
+	return typeof params.intent === "string" && params.intent.trim() ? params.intent.trim() : undefined;
 }
 
 function observeRelevanceCacheMarker(params: ObserveToolParams): string {
@@ -76,15 +44,12 @@ function observeRelevanceDebugCacheMarker(): string {
 	return process.env.BROWSER_PILOT_RELEVANCE_DEBUG === "1" ? "on" : "off";
 }
 
-export function observeRenderParamsSignature(params: ObserveToolParams, mode: ObserveMode, detailLevel: string, maxChars: number, captureMaxChars: number): string {
+export function observeRenderParamsSignature(params: ObserveToolParams, detailLevel: string, maxChars: number, captureMaxChars: number): string {
 	const maxNodes = Number(params.maxNodes);
 	return JSON.stringify({
-		mode,
 		detailLevel,
 		maxChars,
 		captureMaxChars,
-		renderer: observeRendererCacheMarker(),
-		costModel: observeCostModelCacheMarker(),
 		sessionDelta: observeSessionDeltaCacheMarker(params),
 		standingPerception: observeStandingPerceptionCacheMarker(),
 		relevance: observeRelevanceCacheMarker(params),
@@ -128,13 +93,13 @@ function dirtyWindowClean(fingerprint: PageFingerprint): boolean {
 	return !!dirty && dirty.overflow !== true && dirty.roots.length === 0;
 }
 
-export function renderCacheMatches(frame: CommandPerceptionLedgerFrame | undefined, mode: ObserveMode, detailLevel: string, maxChars: number, paramsSignature: string, fingerprint: PageFingerprint | undefined, now = Date.now(), ttlMs = observeCacheTtlMs()): frame is CommandPerceptionLedgerFrame & { renderCache: RenderCache } {
+export function renderCacheMatches(frame: CommandPerceptionLedgerFrame | undefined, detailLevel: string, maxChars: number, paramsSignature: string, fingerprint: PageFingerprint | undefined, now = Date.now(), ttlMs = observeCacheTtlMs()): frame is CommandPerceptionLedgerFrame & { renderCache: RenderCache } {
 	if (!frame?.pageFingerprint || !frame.renderCache || !fingerprint) return false;
 	if (ttlMs <= 0 || typeof frame.renderCache.renderedAt !== "number") return false;
 	const withinTtl = now - frame.renderCache.renderedAt <= ttlMs;
 	if (!withinTtl && !(standingPerceptionEnabled() && dirtyWindowClean(fingerprint))) return false;
 	return pageFingerprintMatches(frame.pageFingerprint, fingerprint)
-		&& frame.renderCache.mode === mode
+			&& frame.renderCache.mode === "scan"
 		&& frame.renderCache.detailLevel === detailLevel
 		&& frame.renderCache.maxChars === maxChars
 		&& frame.renderCache.paramsSignature === paramsSignature;

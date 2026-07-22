@@ -13,6 +13,8 @@ export type AbmlAxRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">
 export type AxReadRuntimeOptions = {
 	browserSessionId?: string;
 	tabId: number;
+	targetGeneration?: number;
+	pageEpoch?: string;
 	observationId: string;
 	url?: string;
 	capturedAt?: number;
@@ -565,6 +567,8 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	const context: AxContext = {
 		browserSessionId: options.browserSessionId,
 		tabId: options.tabId,
+		targetGeneration: options.targetGeneration,
+		pageEpoch: options.pageEpoch,
 		url: options.url,
 		observationId: options.observationId,
 		capturedAt: options.capturedAt ?? Date.now(),
@@ -579,7 +583,7 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 export function mergeAxIntoDomEntities(domEntities: Entity[], axEntities: BuiltEntity[]): { entities: Entity[]; diagnostics: AxFusionDiagnostics } {
 	const merged = mergeDomAndAxEntities(domEntities, axEntities);
 	const appended = merged.unmatchedAx.map((item) => {
-		const refId = registerRefDescriptor({ descriptor: item.descriptor, name: item.entity.name || item.entity.role });
+		const refId = registerRefDescriptor({ descriptor: item.descriptor });
 		return { ...item.entity, ref: refId };
 	});
 	return { entities: [...merged.merged, ...appended], diagnostics: merged.diagnostics };

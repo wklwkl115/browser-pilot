@@ -44,7 +44,7 @@ function createContext() {
 		[visible, { display: "block", visibility: "visible", opacity: "1", pointerEvents: "auto" }],
 	]);
 	const context = {
-		console,
+			console: { warn() {} },
 		Date,
 		Map,
 		Math,
@@ -58,10 +58,10 @@ function createContext() {
 			observe() {}
 			disconnect() {}
 		},
-		document: {
+			document: {
 			documentElement: { clientWidth: 800, clientHeight: 600 },
-			querySelector(selector: string) {
-				return selector === ".hidden-link" ? hidden : null;
+				querySelector(selector: string) {
+					return selector === ".hidden-link" ? hidden : selector === ".visible-card" ? visible : null;
 			},
 			querySelectorAll() {
 				return [];
@@ -78,8 +78,9 @@ function createContext() {
 		},
 		window: undefined as unknown,
 		globalThis: undefined as unknown,
-		__result: undefined as unknown,
-		__namespace: undefined as unknown,
+			__result: undefined as unknown,
+			__bound: undefined as unknown,
+			__namespace: undefined as unknown,
 	};
 	context.window = context;
 	context.globalThis = context;
@@ -96,21 +97,29 @@ test("browserPilot.resolve skips hidden locator matches when a later locator is 
 				refId: "bp-ref://control/1",
 				locators: [
 					{ by: "css", value: ".hidden-link" },
-					{ by: "point", x: 90, y: 60 },
+					{ by: "css", value: ".visible-card" },
 				],
 			},
 		},
 	};
-	const script = `${stdlibPrelude(registry)}\nglobalThis.__result = browserPilot.resolve("bp-ref://control/1");`;
+	const script = `${stdlibPrelude(registry, { target: "bp-ref://control/1" })}\nglobalThis.__result = browserPilot.resolve("bp-ref://control/1"); globalThis.__bound = browserPilot.refs.target;`;
 	vm.runInContext(script, vm.createContext(context));
 	const result = context.__result as { el?: FakeElement; tried?: string[] };
 	assert.equal(result.el, visible);
-	assert.deepEqual(Array.from(result.tried ?? []), ["css", "point"]);
+	assert.equal(context.__bound, visible);
+	assert.deepEqual(Array.from(result.tried ?? []), ["css", "css"]);
 });
 
-test("browserPilot stdlib namespace no longer exposes the removed physical-action helper", () => {
+test("browserPilot refs never resolve an element from stale coordinates", () => {
 	const { context } = createContext();
-	vm.runInContext(`${stdlibPrelude({})}\nglobalThis.__namespace = browserPilot.__namespace;\nglobalThis.__result = Object.prototype.hasOwnProperty.call(browserPilot, "click");`, vm.createContext(context));
-	assert.deepEqual(Array.from((context.__namespace as string[]) ?? []), ["resolve", "box", "setValue", "settled"]);
-	assert.equal(context.__result, false);
+	const ref = "bp-ref://control/point-only";
+	const registry = { [ref]: { ok: true, fresh: true, descriptor: { refId: ref, locators: [{ by: "point", x: 90, y: 60 }] } } };
+	vm.runInContext(`${stdlibPrelude(registry, { target: ref })}\nglobalThis.__bound = browserPilot.refs.target;`, vm.createContext(context));
+	assert.equal(context.__bound, null);
+});
+
+test("browserPilot stdlib exposes its current helper namespace", () => {
+	const { context } = createContext();
+	vm.runInContext(`${stdlibPrelude({})}\nglobalThis.__namespace = browserPilot.__namespace;`, vm.createContext(context));
+	assert.deepEqual(Array.from((context.__namespace as string[]) ?? []), ["refs", "resolve", "box", "setValue", "settled"]);
 });

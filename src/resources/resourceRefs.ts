@@ -1,32 +1,13 @@
 export {
 	BROWSER_PILOT_REF_URI_SCHEME,
-	RESOURCE_URI_SCHEME,
-	clearResourceStore,
-	isResourceFresh,
-	lastEviction,
-	listResources,
-	parseBrowserPilotRefUri,
-	parseResourceUri,
-	pruneExpired,
-	registerBrowserResultResource,
 	registerRefDescriptor,
-	resolveRefUri,
 	resolveRefUriDetailed,
-	resolveResourceUri,
-	resourceRefStore,
-	stats,
 } from "./resourceStore.js";
 
 export type {
-	BrowserResultResource,
-	EvictionRecord,
 	RegisteredRefRecord,
-	RegisterBrowserResultResourceParams,
 	RegisterRefDescriptorParams,
 	ResolveRefResult,
 	ResolvedRefRecord,
-	ResourceKind,
 	ResourceRefDescriptor,
-	ResourceRefStorePort,
-	ResourceStoreStats,
-} from "../ports/ResourceRefStorePort.js";
+} from "../ports/ResourceRefTypes.js";

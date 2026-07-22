@@ -141,11 +141,10 @@ export function noBrowserExtensionError(args: {
 		recovery: {
 			retryable: true,
 			hint,
-			nextActions: [
-				"verify the Browser Pilot Bridge extension is installed and enabled in the browser",
-				"open or reload any browser tab so the extension service worker wakes and connects to the bridge",
-				"check connection state with `browser-pilot daemon status`",
-			],
+				nextActions: [
+					"verify the Browser Pilot Bridge extension is installed and enabled in the browser",
+					"open or reload any browser tab so the extension service worker wakes and connects to the bridge",
+				],
 		},
 	});
 }

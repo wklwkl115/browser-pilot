@@ -9,7 +9,6 @@ type RuntimeMessage = {
 
 type ChromeRuntimeLite = {
   sendMessage(message: unknown): Promise<unknown>;
-  connect?(connectInfo?: { name?: string }): { name?: string; onDisconnect?: { addListener(listener: () => void): void }; disconnect?(): void };
   onMessage: { addListener(listener: (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => boolean | void): void };
 };
 
@@ -25,12 +24,6 @@ const WS_RECONNECT_INITIAL_MS = 1000;
 // instead of stalling for up to 30s.
 const WS_RECONNECT_MAX_MS = 8000;
 const PORT_PROBE_TIMEOUT_MS = 500;
-const KEEPALIVE_PORT_NAME = "browser-pilot-keepalive";
-// Reconnect the SW-keepalive port quickly (was 10s) to minimize the window where
-// the service worker can sleep between Chrome's ~5-minute forced port resets.
-const KEEPALIVE_PORT_RECONNECT_MS = 2000;
-let keepalivePort: ReturnType<NonNullable<ChromeRuntimeLite["connect"]>> | null = null;
-let keepalivePortTimer: ReturnType<typeof setTimeout> | null = null;
 
 function portRange(): number[] {
   const ports: number[] = [];
@@ -48,27 +41,6 @@ function httpUrlForPort(port: number): string {
 
 function post(message: RuntimeMessage): void {
   void chromeRuntime.sendMessage(message).catch((error: unknown) => console.debug("[BROWSER-PILOT-OFFSCREEN] message failed", error));
-}
-
-function connectKeepalivePort(): void {
-  if (!chromeRuntime.connect || keepalivePort) return;
-  if (keepalivePortTimer) {
-    clearTimeout(keepalivePortTimer);
-    keepalivePortTimer = null;
-  }
-  try {
-    keepalivePort = chromeRuntime.connect({ name: KEEPALIVE_PORT_NAME });
-    keepalivePort.onDisconnect?.addListener(() => {
-      keepalivePort = null;
-      if (keepalivePortTimer) clearTimeout(keepalivePortTimer);
-      keepalivePortTimer = setTimeout(connectKeepalivePort, KEEPALIVE_PORT_RECONNECT_MS);
-    });
-  } catch (error) {
-    keepalivePort = null;
-    console.debug("[BROWSER-PILOT-OFFSCREEN] keepalive port failed", error);
-    if (keepalivePortTimer) clearTimeout(keepalivePortTimer);
-    keepalivePortTimer = setTimeout(connectKeepalivePort, KEEPALIVE_PORT_RECONNECT_MS);
-  }
 }
 
 function openPorts(): number[] {
@@ -201,7 +173,6 @@ function handleRuntimeMessage(message: unknown, _sender: unknown, sendResponse: 
 }
 
 function installBrowserPilotOffscreenTransport(): void {
-  connectKeepalivePort();
   chromeRuntime.onMessage.addListener(handleRuntimeMessage);
   post({ type: "browser-pilot-offscreen-ready", data: { openPorts: openPorts() } });
   void probeAndConnectWS(true);

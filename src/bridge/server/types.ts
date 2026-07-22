@@ -1,7 +1,6 @@
 import type { WebSocket } from "ws";
 import type { SessionReleasedTabLeaseInfo, SessionReleasedUiLockInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../../kernels/session/leaseRegistry.js";
 import type { SessionObservationSnapshotInfo } from "../../kernels/session/observationSnapshotRegistry.js";
-import type { SessionActiveOperationInfo } from "../../kernels/session/operationRegistry.js";
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../../ports/BrowserRuntimeTypes.js";
 
 export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserBridgeTargetSource } from "../../ports/BrowserRuntimeTypes.js";
@@ -96,7 +95,6 @@ export type BrowserCommandQueueInfo = {
 	depth: number;
 };
 
-export type BrowserActiveOperationInfo = SessionActiveOperationInfo;
 export type BrowserObservationSnapshotInfo = SessionObservationSnapshotInfo;
 
 export type BridgeConnectionMetrics = {
@@ -111,7 +109,6 @@ export type BridgeConnectionMetrics = {
 export type BridgeRequestMetrics = {
 	drained: number;
 	graceExpired: number;
-	redelivered: number;
 	reconciledNotDelivered: number;
 	reconciledInflightUnknown: number;
 };
@@ -136,7 +133,6 @@ export type BrowserBridgeSnapshot = {
 	leases?: BrowserTabLeaseInfo[];
 	uiLock?: BrowserUiLockInfo;
 	queues?: BrowserCommandQueueInfo[];
-	operations?: BrowserActiveOperationInfo[];
 	pending: Array<{
 		id: string;
 		tabId?: number;
@@ -152,8 +148,6 @@ export type ExecuteOptions = {
 	browserSessionId?: string;
 	tabId?: number | string;
 	targetRef?: string;
-	operationId?: string;
-	operationGeneration?: number;
 	timeoutMs?: number;
 	accessMode?: "read" | "write";
 	internal?: boolean;
@@ -163,12 +157,10 @@ export type ExecuteOptions = {
 export type PendingRequest = {
 	id: string;
 	tabId?: number;
-	operationId?: string;
-	operationGeneration?: number;
 	client: WebSocket;
-	/** Original command payload, retained so the request can be redelivered to a reconnected socket. */
+	/** Command payload retained only for bounded timeout diagnostics. */
 	code: unknown;
-	/** Effective per-request timeout, retained to re-arm the timer after a redelivery. */
+	/** Effective per-request timeout. */
 	timeoutMs: number;
 	/** Owning extension instance, tagged when the request enters the draining state. */
 	instanceId?: string;

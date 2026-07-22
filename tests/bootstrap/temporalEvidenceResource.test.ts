@@ -7,10 +7,7 @@ import { classifyDeadlinePressure } from "../../src/kernels/temporal/budget.ts";
 import { classifyStateLoss, classifyStaleness, classifyTimeout, diagnoseWaitTimeout } from "../../src/kernels/temporal/classify.ts";
 import { estimatePageFreshness, estimateTargetContinuity, estimateWaitContinuity } from "../../src/kernels/temporal/estimate.ts";
 import type { TemporalAnchor, TemporalStamp } from "../../src/kernels/temporal/types.ts";
-import { fitInlineJsonToBudgetMeasured } from "../../src/kernels/evidence/distill/fit.ts";
-import { fitSalienceEnvelopeBudget } from "../../src/kernels/evidence/distill/salienceEnvelope.ts";
-import type { BudgetedEnvelope } from "../../src/kernels/evidence/distill/ladder.ts";
-import { clearResourceStore, listResources, parseBrowserPilotRefUri, parseResourceUri, pruneExpired, registerBrowserResultResource, registerRefDescriptor, resolveRefUriDetailed, resolveResourceUri, resourceRefStore, stats } from "../../src/resources/resourceRefs.ts";
+import { registerRefDescriptor, resolveRefUriDetailed } from "../../src/resources/resourceRefs.ts";
 
 function tempArtifact(name: string, value: unknown): string {
 	const cwd = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-resource-test-"));
@@ -118,174 +115,12 @@ test("wait diagnostics render selector, network, load-state, navigation, and gen
 	});
 });
 
-test("evidence fit trims array/object payloads and salience envelope prefers structural compact candidates", () => {
-	const arrayResult = { value: { type: "array", offset: 2, count: 10, items: Array.from({ length: 8 }, (_, index) => ({ index, text: "x".repeat(80) })) } };
-	const arrayFit = fitInlineJsonToBudgetMeasured(arrayResult, 400);
-	const fittedArray = (arrayFit.value as { value: Record<string, unknown> }).value;
-	assert.equal(fittedArray.budgetTrimmed, true);
-	assert.equal(fittedArray.nextOffset, 3);
-	assert.ok(arrayFit.length <= 400);
-
-	const objectResult = { value: { a: "x".repeat(100), b: "y".repeat(100), c: "z".repeat(100), d: "w".repeat(100) } };
-	const objectFit = fitInlineJsonToBudgetMeasured(objectResult, 260);
-	assert.equal(typeof ((objectFit.value as { value: Record<string, unknown> }).value.truncatedKeys), "number");
-	assert.equal(fitInlineJsonToBudgetMeasured({ value: { only: "x".repeat(500) } }, 50).length > 50, true);
-
-	const envelope: BudgetedEnvelope = {
-		tool: "browser_observe",
-		detailLevel: "full",
-		summary: { title: "Checkout", textPreview: "summary" },
-		nextActions: ["Click bp-ref://control/pay"],
-		diagnostics: { warnings: ["existing"] },
-		snapshotProjection: { summary: { templateCount: 1, instanceCount: 2 }, templates: [{ templateKey: "checkout", count: 2, instances: [{ ref: "bp-ref://control/pay", name: "Pay now", role: "button" }, { ref: "bp-ref://control/cancel", name: "Cancel", role: "button" }] }] },
-		collections: [{ kind: "list", itemRefs: ["bp-ref://control/pay"], completeness: "complete" }],
-		diff: { summary: { changed: 1 }, verbose: "d".repeat(2_000) },
-		treeDiff: { summary: { changed: 1 }, verbose: "t".repeat(2_000) },
-		relations: { summary: { labelled: 1 }, verbose: "r".repeat(2_000) },
-		entities: [
-			{ ref: "bp-ref://control/cancel", name: "Cancel", role: "button", value: "c".repeat(500) },
-			{ ref: "bp-ref://control/pay", name: "Pay now", role: "button", selector: "#pay", value: "p".repeat(500) },
-		],
-	};
-	const fitted = fitSalienceEnvelopeBudget(envelope, 1_500, { granularityCeiling: "compact" });
-	assert.ok(JSON.stringify(fitted).length <= 1_500);
-	assert.equal(typeof fitted.summary, "object");
-	assert.deepEqual(fitted.nextActions, envelope.nextActions);
-
-	const ladderFallback = fitSalienceEnvelopeBudget({ ...envelope, summary: { textPreview: "x".repeat(10_000) } }, 50);
-	assert.equal((ladderFallback.summary as Record<string, unknown>).summaryTruncatedToBudget === true || JSON.stringify(ladderFallback).length <= 1_000, true);
-});
-
-test("resource store rejects traversal and malformed refs without leaking path payloads", () => {
-	clearResourceStore();
-	const artifactPath = tempArtifact("secret-local-path.json", { secret: "local-only" });
-	const uri = registerBrowserResultResource({ kind: "evidence", artifactPath, name: "evidence" });
-	const resource = resolveResourceUri(uri);
-	assert.ok(resource);
-
-	const sensitiveInputs = [
-		"browser-result://../outside/secret-local-path.json",
-		"browser-result://..%2foutside%2fsecret-local-path.json",
-		"browser-result:///etc/passwd",
-		"browser-result://C:/Users/Alice/AppData/secret-local-path.json",
-		"browser-result://C:\\Users\\Alice\\AppData\\secret-local-path.json",
-		"file:///C:/Users/Alice/AppData/secret-local-path.json",
-		"https://example.test/secret-local-path.json",
-		"bp-ref://data-slice/../outside/secret-local-path.json",
-		"bp-ref://data-slice/..%2foutside%2fsecret-local-path.json",
-		"bp-ref://data-slice/C:/Users/Alice/AppData/secret-local-path.json",
-		"bp-ref://data-slice/C:\\Users\\Alice\\AppData\\secret-local-path.json",
-		"bp-ref://data-slice/%2fetc%2fpasswd",
-		"bp-ref://data-slice",
-		"bp-ref://data-slice/other-scope/missing-id",
-		`${resource.refId}/../outside/secret-local-path.json`,
-	];
-
-	for (const input of sensitiveInputs) {
-		const resolved = resolveRefUriDetailed(input);
-		assert.equal(resolved.ok, false, input);
-		if (resolved.ok) continue;
-		assert.match(resolved.error, /^(Unrecognized ref URI|Ref not found|Resource not found)$/);
-		assert.doesNotMatch(resolved.error, /secret-local-path|Alice|AppData|etc\/passwd|\.\.|%2f|C:/i);
-	}
-
-	const missingResource = resolveRefUriDetailed("browser-result://missing-secret-local-path");
-	assert.equal(missingResource.ok, false);
-	assert.equal(missingResource.ok ? undefined : missingResource.error, "Resource not found");
-	assert.doesNotMatch(missingResource.ok ? "" : missingResource.error, /missing-secret-local-path/);
-	clearResourceStore();
-});
-
-test("resource store handles expired and missing backing refs without path disclosure", () => {
-	clearResourceStore();
-	const artifactPath = tempArtifact("cross-scope-secret.json", { ok: true });
-	const uri = registerBrowserResultResource({ kind: "evidence", artifactPath, name: "evidence" });
-	const resource = resolveResourceUri(uri);
-	assert.ok(resource);
+test("ref store resolves current refs, tracks artifact freshness, and expires stale refs", () => {
+	const artifactPath = tempArtifact("ref.json", { value: 1 });
 	const now = Date.now();
-	const backedRef = registerRefDescriptor({
+	const ref = registerRefDescriptor({
 		descriptor: {
-			kind: "data-slice",
-			locators: [],
-			owner: {},
-			policy: { redaction: "default", shareableAcrossSessions: true, liveActionsAllowed: false },
-			snapshot: { observationId: "obs-backed", resourceUri: uri, immutable: true },
-			observationId: "obs-backed",
-			createdAt: now,
-			ttlMs: 60_000,
-		},
-		name: "backed",
-	});
-	assert.equal(resolveRefUriDetailed(backedRef).ok, true);
-	resource.expiresAt = Date.now() - 1;
-	const expiredBacking = resolveRefUriDetailed(backedRef);
-	assert.equal(expiredBacking.ok, false);
-	assert.equal(expiredBacking.ok ? undefined : expiredBacking.code, "HANDLE_EXPIRED");
-	assert.equal(expiredBacking.ok ? undefined : expiredBacking.error, "Resource expired");
-	assert.doesNotMatch(expiredBacking.ok ? "" : expiredBacking.error, /cross-scope-secret|browser-result|bp-ref|\.browser-pilot|[A-Z]:\\/i);
-
-	const missingWrapped = resolveRefUriDetailed("bp-ref://data-slice/missing-cross-scope-secret");
-	assert.equal(missingWrapped.ok, false);
-	assert.equal(missingWrapped.ok ? undefined : missingWrapped.error, "Resource not found");
-	assert.doesNotMatch(missingWrapped.ok ? "" : missingWrapped.error, /missing-cross-scope-secret|cross-scope-secret|[A-Z]:\\/i);
-
-	const expiredRef = registerRefDescriptor({
-		descriptor: {
-			refId: "bp-ref://control/expired-local-secret",
-			kind: "control",
-			locators: [],
-			owner: {},
-			policy: { redaction: "default", shareableAcrossSessions: true, liveActionsAllowed: false },
-			observationId: "obs-expired-local-secret",
-			createdAt: Date.now() - 10_000,
-			ttlMs: 1,
-		},
-	});
-	const expired = resolveRefUriDetailed(expiredRef);
-	assert.equal(expired.ok, false);
-	assert.equal(expired.ok ? undefined : expired.code, "REF_STALE");
-	assert.equal(expired.ok ? undefined : expired.error, "Ref expired");
-	assert.doesNotMatch(expired.ok ? "" : expired.error, /expired-local-secret|bp-ref/);
-	clearResourceStore();
-});
-test("resource store resolves wrapped refs, expiry, backing resources, and store ports", () => {
-	clearResourceStore();
-	const artifactPath = tempArtifact("network.json", { requests: [{ id: 1, body: "ok" }] });
-	const uri = registerBrowserResultResource({ kind: "http-request", artifactPath, jsonPath: "$.requests[0]", name: "request", mime: "application/json", bytes: 10, browserSessionId: "session-1", redaction: "disabled" });
-	assert.match(uri, /^browser-result:\/\//);
-	assert.equal(parseResourceUri(`${uri}/extra?mode=json`), parseResourceUri(uri));
-	assert.equal(parseResourceUri("http://example.test"), undefined);
-	const resource = resolveResourceUri(uri);
-	assert.ok(resource);
-	assert.equal(resource.hash?.length, 64);
-	assert.equal(resourceRefStore.isResourceFresh(resource), true);
-	const wrapped = resolveRefUriDetailed(resource.refId);
-	assert.equal(wrapped.ok, true);
-	assert.equal(wrapped.ok ? wrapped.ref.resourceUri : undefined, uri);
-	assert.equal(wrapped.ok ? wrapped.ref.redaction : undefined, "disabled");
-
-	const now = Date.now();
-	const backingRef = registerRefDescriptor({
-		descriptor: {
-			kind: "data-slice",
-			locators: [],
-			owner: {},
-			policy: { redaction: "default", shareableAcrossSessions: true, liveActionsAllowed: false },
-			snapshot: { observationId: "obs-1", resourceUri: uri, immutable: true },
-			observationId: "obs-1",
-			createdAt: now,
-			ttlMs: 60_000,
-		},
-		name: "backed",
-	});
-	const backed = resolveRefUriDetailed(backingRef);
-	assert.equal(backed.ok, true);
-	assert.equal(backed.ok ? backed.ref.artifactPath : undefined, artifactPath);
-	assert.deepEqual(parseBrowserPilotRefUri(backingRef)?.kind, "data-slice");
-
-	const directRef = registerRefDescriptor({
-		descriptor: {
-			refId: "bp-ref://control/manual-control",
+			refId: "bp-ref://control/current-ref",
 			kind: "control",
 			locators: [{ by: "css", value: "#submit" }],
 			owner: { browserSessionId: "session-2" },
@@ -295,16 +130,14 @@ test("resource store resolves wrapped refs, expiry, backing resources, and store
 			ttlMs: 60_000,
 		},
 		artifactPath,
-		resourceKind: "scan",
-		browserSessionId: "session-2",
 	});
-	assert.equal(resolveRefUriDetailed(directRef).ok, true);
-	assert.equal(resolveRefUriDetailed("not-a-ref").ok, false);
-	assert.ok(listResources().length >= 1);
-	assert.ok(stats().totalEntries >= 3);
-	resource.expiresAt = Date.now() - 1;
-	assert.equal(resolveResourceUri(uri), undefined);
-	assert.equal(resolveRefUriDetailed(resource.refId).ok, false);
+	const resolved = resolveRefUriDetailed(ref);
+	assert.equal(resolved.ok, true);
+	assert.equal(resolved.ok ? resolved.ref.fresh : undefined, true);
+	writeFileSync(artifactPath, JSON.stringify({ value: "changed" }), "utf8");
+	const changed = resolveRefUriDetailed(ref);
+	assert.equal(changed.ok ? changed.ref.fresh : undefined, false);
+	assert.deepEqual(resolveRefUriDetailed("not-a-ref"), { ok: false, code: "HANDLE_NOT_FOUND", error: "Unrecognized ref URI" });
 
 	const expiredRef = registerRefDescriptor({
 		descriptor: {
@@ -314,12 +147,9 @@ test("resource store resolves wrapped refs, expiry, backing resources, and store
 			owner: {},
 			policy: { redaction: "default", shareableAcrossSessions: true, liveActionsAllowed: false },
 			observationId: "obs-expired",
-			createdAt: Date.now() - 10_000,
+			createdAt: now - 10_000,
 			ttlMs: 1,
 		},
 	});
-	assert.equal(resolveRefUriDetailed(expiredRef).ok, false);
-	pruneExpired();
-	assert.equal(stats().lastEviction?.reason, undefined);
-	clearResourceStore();
+	assert.deepEqual(resolveRefUriDetailed(expiredRef), { ok: false, code: "REF_STALE", error: "Ref expired" });
 });

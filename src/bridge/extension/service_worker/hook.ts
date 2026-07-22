@@ -308,8 +308,4 @@ registerRecovery(async (results) => {
   results.push(result);
 });
 
-function getLostHookSessions(): Array<{ sessionId: string; tabId: number; config?: unknown; reason: string }> { return lostHookSessions.slice(); }
-
-export { injectBrowserPilotDispatcherViaCdp, confirmBrowserPilotDispatcher, browserPilotHookSessionId, browserPilotHookSessionArgs, ensureBrowserPilotDispatcher, handleBrowserPilotHookCommand, getLostHookSessions };
-// ESM module metadata
-export const __browserPilotBridgeModule_hook = { name: "hook", symbols: { injectBrowserPilotDispatcherViaCdp, confirmBrowserPilotDispatcher, browserPilotHookSessionId, browserPilotHookSessionArgs, ensureBrowserPilotDispatcher, handleBrowserPilotHookCommand, getLostHookSessions } };
+export { injectBrowserPilotDispatcherViaCdp, confirmBrowserPilotDispatcher, browserPilotHookSessionId, browserPilotHookSessionArgs, ensureBrowserPilotDispatcher, handleBrowserPilotHookCommand };

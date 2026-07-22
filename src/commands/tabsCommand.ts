@@ -9,12 +9,11 @@ import { compactBridgeForTabsList, compactTabForList, publicSnapshot } from "./t
 import { asPositiveInt, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { withBrowserOperation } from "./browserOperation.js";
-import { browserOperationCommandResult } from "./browserOperationResult.js";
 import type { ValidationIssue } from "./commandDefinition.js";
 
 const TAB_TARGET_ACTIONS = new Set(["switch", "close", "attachtab", "detachtab", "leasetab", "releasetab"]);
-const SNAPSHOT_NOT_FOUND_RECOVERY = { nextActions: ["browser-pilot observe --json", "browser-pilot tabs --action snapshot --json"] };
-const SNAPSHOT_EXPIRED_RECOVERY = { nextActions: ["browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json", "browser-pilot artifact inspect --path <saved.path> --json", "browser-pilot observe --json"] };
+const SNAPSHOT_NOT_FOUND_RECOVERY = { nextActions: ["browser_observe", "call browser_tabs with action=snapshot"] };
+const SNAPSHOT_EXPIRED_RECOVERY = { nextActions: ["call browser_tabs with action=snapshot, allowExpired=true, and snapshotId=<snapshotId>", "call browser_artifact with mode=inspect and path=<saved.path>", "browser_observe"] };
 
 type BrowserSessionOptions = { browserSessionId: string | undefined };
 type TabsDetails = (build: () => Record<string, unknown>) => Record<string, unknown>;
@@ -23,10 +22,9 @@ function tabsToolError(code: NativeErrorCode, message: string, details: Record<s
 	return new BrowserBridgeError(code, message, details);
 }
 
-function requireTabsActionTargetRef(action: string, value: unknown): number | string {
-	if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+function requireTabsActionTargetRef(action: string, value: unknown): string {
 	if (typeof value === "string" && value.trim()) return value.trim();
-	throw tabsToolError("TAB_ID_REQUIRED", `browser_tabs ${action} requires a valid targetRef or tabId`, { action, targetRef: value });
+	throw tabsToolError("TAB_ID_REQUIRED", `browser_tabs ${action} requires a valid targetRef`, { action, targetRef: value });
 }
 
 function normalizeCreateTabUrl(value: unknown): string {
@@ -61,20 +59,18 @@ export function validateTabsArguments(args: Record<string, unknown>): Validation
 	const action = typeof args.action === "string" ? args.action : "";
 	if (!TAB_ACTIONS.includes(action as typeof TAB_ACTIONS[number])) return [{ code: "TABS_ACTION_UNKNOWN", path: "/action", message: `Unsupported browser_tabs action "${action}"; expected one of ${TAB_ACTIONS.join(", ")}` }];
 	const issues: ValidationIssue[] = [];
-	const targetProvided = args.targetRef !== undefined || args.tabId !== undefined;
-	if (args.targetRef !== undefined && args.tabId !== undefined) issues.push({ code: "TARGET_ARGUMENT_CONFLICT", path: "/", message: "browser_tabs accepts targetRef or tabId, not both" });
-	if (["switch", "close", "attachTab", "detachTab", "leaseTab", "releaseTab"].includes(action) && !targetProvided) issues.push({ code: "TAB_ID_REQUIRED", path: "/", message: `browser_tabs ${action} requires targetRef or tabId` });
+	if (["switch", "close", "attachTab", "detachTab", "leaseTab", "releaseTab"].includes(action) && args.targetRef === undefined) issues.push({ code: "TAB_ID_REQUIRED", path: "/targetRef", message: `browser_tabs ${action} requires targetRef` });
+	if (["selectSession", "closeSession"].includes(action) && (typeof args.browserSessionId !== "string" || !args.browserSessionId.trim())) issues.push({ code: "BROWSER_SESSION_ID_REQUIRED", path: "/browserSessionId", message: `browser_tabs ${action} requires browserSessionId` });
 	issues.push(...validateCreateTabArgument(args));
 	if (action === "snapshot" && args.allowExpired !== undefined && args.snapshotId === undefined) issues.push({ code: "TABS_SNAPSHOT_OPTION_CONFLICT", path: "/allowExpired", message: "browser_tabs allowExpired requires snapshotId" });
 	const allowedByAction: Record<string, Set<string>> = {
-		list: new Set(["includeBridgePerTab"]),
 		snapshot: new Set(["snapshotId", "allowExpired"]),
 		create: new Set(["url", "active", "incognito"]),
 		createSession: new Set(["name"]),
 		selectBrowser: new Set(["browserId"]),
 		attachTab: new Set(["browserId"]),
 	};
-	const actionOnly = ["includeBridgePerTab", "snapshotId", "allowExpired", "url", "active", "incognito", "name", "browserId"];
+	const actionOnly = ["snapshotId", "allowExpired", "url", "active", "incognito", "name", "browserId"];
 	const allowed = allowedByAction[action] ?? new Set<string>();
 	for (const key of actionOnly) if (args[key] !== undefined && !allowed.has(key)) issues.push({ code: "TABS_ARGUMENT_NOT_ALLOWED", path: `/${key}`, message: `Argument "${key}" is not valid for browser_tabs action ${action}` });
 	if (action === "selectBrowser" && (typeof args.browserId !== "string" || !args.browserId.trim())) issues.push({ code: "TABS_BROWSER_ID_REQUIRED", path: "/browserId", message: "browser_tabs selectBrowser requires browserId" });
@@ -131,19 +127,18 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 		promptSnippet: "Control connected browser tabs. Common: list, snapshot, switch, create, close. Advanced (browser session & lease lifecycle — rarely needed): selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab.",
 		promptGuidelines: [
 			"Start automation with browser_tabs list unless browser_tabs create just returned id/targetRef; use switch only when you intentionally change the browser active tab.",
-			"Prefer the returned id/targetRef/tabHandle for later tab-scoped browser_* calls; numeric tabId remains compatibility input.",
+				"Reuse the returned id/targetRef/tabHandle for later tab-scoped browser_* calls.",
 			"Everyday tab control is list/switch/create/close/snapshot; the session & lease actions (selectBrowser/listSessions/createSession/selectSession/closeSession/attachTab/detachTab/leaseTab/releaseTab) are advanced multi-agent isolation/coordination — skip them unless you are managing browser sessions or tab leases.",
 		],
-		cliSubcommands: ["list", "snapshot", "switch", "create", "close"].map((action) => ({ token: action, parameter: "action", value: action })),
-		parameters: strictCommandParameters({
-			action: Type.String({ description: "Common: list, snapshot, switch, create, close. Advanced (session & lease lifecycle): selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
-			...sharedTabScopedToolParams({ tabIdDescription: "Compatibility target for switch/close: numeric tabId or tabHandle string.", targetRefDescription: "Preferred stable tabHandle for switch/close/attach/detach/lease/release." }),
+			parameters: strictCommandParameters({
+				action: Type.String({ enum: [...TAB_ACTIONS], description: "Common: list, snapshot, switch, create, close. Advanced (session & lease lifecycle): selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
+					...sharedTabScopedToolParams("Stable tabHandle for switch/close/attach/detach/lease/release."),
+				browserSessionId: Type.Optional(Type.String({ description: "Browser session id for selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab, or scoped tab operations." })),
 			name: Type.Optional(Type.String({ description: "Browser session display name for createSession." })),
 			browserId: Type.Optional(Type.String({ description: "Browser client id or extension id for selectBrowser" })),
 			snapshotId: Type.Optional(Type.String({ description: "Optional observation snapshot id for browser_tabs action=snapshot." })),
 			allowExpired: Type.Optional(Type.Boolean({ description: "browser_tabs action=snapshot only: allow returning expired observation snapshot metadata." })),
-			includeBridgePerTab: Type.Optional(Type.Boolean({ description: "browser_tabs action=list only: advanced compatibility; include the repeated per-tab bridge block. Default false keeps tabs compact and hoists bridge to top-level." })),
-			url: Type.Optional(Type.String({ description: "URL for create" })),
+				url: Type.Optional(Type.String({ description: "URL for create" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether created tab should be active" })),
 				incognito: Type.Optional(Type.Boolean({ description: "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint." })),
 		}),
@@ -153,7 +148,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 				const action = String(params.action || "").trim().toLowerCase();
 				const timeoutMs = commandTimeoutMs(params.timeoutMs, 5_000);
 				const maxChars = asPositiveInt(params.maxChars, 50_000);
-				const tabRef = TAB_TARGET_ACTIONS.has(action) ? requireTabsActionTargetRef(action, params.targetRef ?? params.tabId) : undefined;
+					const tabRef = TAB_TARGET_ACTIONS.has(action) ? requireTabsActionTargetRef(action, params.targetRef) : undefined;
 				const createUrl = action === "create" ? normalizeCreateTabUrl(params.url) : undefined;
 				const server = await ensureStarted();
 				const browserSession = { browserSessionId: stringParam(params.browserSessionId) };
@@ -162,7 +157,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 				if (action === "list") {
 					const tabs = await server.refreshTabs(timeoutMs, browserSession);
 					const snapshot = server.snapshot(browserSession);
-					const compactTabs = params.includeBridgePerTab === true ? tabs : tabs.map((tab) => compactTabForList(tab as Record<string, unknown>));
+						const compactTabs = tabs.map((tab) => compactTabForList(tab as Record<string, unknown>));
 					return jsonResult({ tabs: compactTabs, tabCount: tabs.length, bridge: compactBridgeForTabsList(snapshot as Record<string, unknown>) }, detailsForTransport(() => ({ action, snapshot, observationSnapshots: server.listObservationSnapshots().length })), maxChars);
 				}
 				if (action === "snapshot") return tabsSnapshotResult(server, params, browserSession, detailsForTransport, maxChars);
@@ -170,29 +165,18 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 				if (advanced) return advanced;
 				if (["switch", "create", "close"].includes(action)) {
 					const trackedTabId = action === "create" ? undefined : resolveLocalTargetTabId(server, tabRef, browserSession.browserSessionId);
-					const outcome = await withBrowserOperation({
-						server,
-						commandName: "browser_tabs",
-						command: action,
-						action,
-						browserSessionId: browserSession.browserSessionId,
-						tabId: trackedTabId,
-						targetRef: typeof tabRef === "string" ? tabRef : undefined,
-						timeoutMs,
-						ctx,
-						onUpdate: _onUpdate,
-						signal,
+						const result = await withBrowserOperation({
+							server,
+							browserSessionId: browserSession.browserSessionId,
+							tabId: trackedTabId,
+							timeoutMs,
+							signal,
 					}, async ({ signal: operationSignal }) => {
 						if (action === "switch") return await server.switchTab(tabRef!, timeoutMs, { ...browserSession, signal: operationSignal });
 						if (action === "create") return await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { ...browserSession, incognito: params.incognito === true, signal: operationSignal });
 						return await server.closeTab(tabRef!, timeoutMs, { ...browserSession, signal: operationSignal });
 					});
-					return await browserOperationCommandResult(outcome, {
-						budgetName: "browser_tabs",
-						maxChars,
-						ctx,
-						details: { action, operationId: outcome.operationId, status: outcome.status },
-					});
+						return jsonResult(result, { action }, maxChars);
 				}
 				throw tabsToolError("INVALID_RULE", `Unsupported browser_tabs action: ${params.action}`, { action: params.action });
 			});

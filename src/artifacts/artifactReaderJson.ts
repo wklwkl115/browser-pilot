@@ -33,14 +33,14 @@ function compactJsonValue(value: unknown, params: BrowserArtifactParams, depth =
 }
 
 function compactJsonValueForArtifact(value: unknown, params: BrowserArtifactParams, jsonPath?: string): unknown {
-	const legacy = compactJsonValue(value, params);
-	if (process.env.BROWSER_PILOT_JSON_PROJECTION === "0" || typeof value === "string") return legacy;
+	const compact = compactJsonValue(value, params);
+	if (typeof value === "string") return compact;
 	const projection = projectJsonValue(value, { jsonPath, offset: params.offset, limit: params.limit, maxChars: asPositiveInt(params.maxChars, 8_000) });
-	if (!projection) return legacy;
+	if (!projection) return compact;
 	const offset = Math.max(0, Math.floor(Number(params.offset || 0)));
 	const limit = Math.max(1, Math.floor(Number(params.limit ?? (Array.isArray(value) ? Math.max(1, value.length - offset) : 40))));
 	const baseline = Array.isArray(value) ? stableJson({ type: "array", count: value.length, offset, limit, nextOffset: offset + limit < value.length ? offset + limit : null, items: value.slice(offset, offset + limit) }).length : Number.POSITIVE_INFINITY;
-	return stableJson(projection).length < baseline ? projection : legacy;
+	return stableJson(projection).length < baseline ? projection : compact;
 }
 
 function formatJsonPath(tokens: JsonPathToken[]): string {

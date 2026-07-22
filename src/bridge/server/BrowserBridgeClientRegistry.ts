@@ -191,8 +191,7 @@ export class BrowserBridgeClientRegistry {
 	 * reporting the same extensionInstanceId, keeping the newest socket. A reconnect
 	 * (SW restart / offscreen re-dial) can briefly leave the stale socket registered;
 	 * collapsing avoids split-brain selection and double delivery. Returns the
-	 * superseded sockets (already told to close). No-op when instanceId is absent
-	 * (older extension build) — falls back to prior multi-socket behavior.
+		 * superseded sockets (already told to close). No-op when instanceId is absent.
 	 */
 	supersedeInstanceClients(instanceId: string | undefined, keep: WebSocket): WebSocket[] {
 		if (!instanceId) return [];

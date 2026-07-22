@@ -1,9 +1,9 @@
 /**
- * Command definition collector for CLI/daemon command consumers.
+ * Command definition collector for MCP/daemon command consumers.
  *
  * command manifest functions write into a tiny internal host interface. The
- * collected definitions are then consumed by the CLI for
- * local schema/help generation and by the daemon for execution.
+ * collected definitions are consumed by MCP for tool discovery and by the daemon
+ * for execution.
  */
 import type { BrowserCommandDefinition } from "./commandDefinition.js";
 

@@ -45,12 +45,6 @@ export function requireUploadConfirmation(confirm: unknown, selector: unknown): 
 	if (confirm !== true) throw codedTransferError("UPLOAD_CONFIRMATION_REQUIRED", "browser_upload requires confirm:true after user approval", { selector });
 }
 
-export function rejectUnsafeExecuteCommand(command: { cmd?: unknown }): void {
-	if (String(command?.cmd || "") === nativeTransferToolMetadata.browser_upload.command) {
-		throw codedTransferError("UPLOAD_REQUIRES_BROWSER_UPLOAD", "transfer.upload must be invoked through browser_upload so confirm:true and file path validation are enforced", {});
-	}
-}
-
 export async function checkedUploadFiles(value: unknown): Promise<string[]> {
 	const files = asUploadFiles(value);
 	if (!files.length) throw codedTransferError("UPLOAD_FILES_REQUIRED", "browser_upload requires at least one file", {});

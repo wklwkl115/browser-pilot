@@ -1,11 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { WebSocket } from "ws";
 import { BrowserBridgeServer } from "../../src/bridge/server/BrowserBridgeServer.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import { CONSENT_MESSAGE_TYPES } from "../../src/bridge/protocol/consentTypes.ts";
 import { readExpectedExtensionBuild } from "../../src/bridge/server/extensionBuild.ts";
+import { BROWSER_PILOT_EXTENSION_ID } from "../../src/bridge/server/browserBridgeConfig.ts";
+
+const EXTENSION_ORIGIN = `chrome-extension://${BROWSER_PILOT_EXTENSION_ID}`;
 
 function bridgeUrl(server: BrowserBridgeServer): string {
 	return `ws://${server.host}:${server.port}`;
@@ -65,7 +71,7 @@ async function connectExtension(
 	tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }],
 	identity: { extensionId?: string; extensionInstanceId?: string; workerBootId?: string; buildId?: string } = {},
 ): Promise<WebSocket> {
-	const ws = new WebSocket(bridgeUrl(server));
+	const ws = new WebSocket(bridgeUrl(server), { origin: EXTENSION_ORIGIN });
 	await new Promise<void>((resolve, reject) => {
 		ws.once("open", resolve);
 		ws.once("error", reject);
@@ -77,7 +83,6 @@ async function connectExtension(
 			extensionInstanceId: identity.extensionInstanceId ?? "instance-1",
 			workerBootId: identity.workerBootId ?? "worker-1",
 			build: { buildId: identity.buildId ?? readExpectedExtensionBuild().buildId },
-			durableRequests: true,
 		},
 		extension: { id: identity.extensionId ?? "extension-1" },
 		tabs,
@@ -91,7 +96,17 @@ async function connectExtension(
 	return ws;
 }
 
-test("current extension readiness waits past a stale peer and promotes the current build", async () => {
+test("current extension readiness waits past a stale peer and promotes the current build", async (t) => {
+	const directory = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-extension-build-"));
+	const manifestPath = path.join(directory, "build-manifest.json");
+	await writeFile(manifestPath, JSON.stringify({ buildId: "current-build" }));
+	const previousManifest = process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST;
+	process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST = manifestPath;
+	t.after(async () => {
+		if (previousManifest === undefined) delete process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST;
+		else process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST = previousManifest;
+		await rm(directory, { recursive: true, force: true });
+	});
 	await withServer(async (server) => {
 		const stale = await connectExtension(server, [{ id: 7, url: "https://stale.test/", active: true }], { extensionInstanceId: "stale-instance", buildId: "stale-build" });
 		assert.equal(server.snapshot().extension?.extensionStale, true);
@@ -145,7 +160,7 @@ test("BrowserBridgeServer reports and enforces the configured websocket payload 
 		const health = await fetch(`http://${server.host}:${server.port}/health`).then((res) => res.json() as Promise<Record<string, unknown>>);
 		assert.equal(health.maxPayloadBytes, maxPayloadBytes);
 
-		const ws = new WebSocket(bridgeUrl(server));
+			const ws = new WebSocket(bridgeUrl(server), { origin: EXTENSION_ORIGIN });
 		await new Promise<void>((resolve, reject) => {
 			ws.once("open", resolve);
 			ws.once("error", reject);
@@ -153,6 +168,37 @@ test("BrowserBridgeServer reports and enforces the configured websocket payload 
 		const closeCode = new Promise<number>((resolve) => ws.once("close", resolve));
 		ws.send("x".repeat(maxPayloadBytes + 1));
 		assert.equal(await closeCode, 1009);
+	} finally {
+		await server.stop();
+	}
+});
+
+test("BrowserBridgeServer rejects websocket clients outside the packaged extension origin", async () => {
+	await withServer(async (server) => {
+		for (const options of [undefined, { origin: "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]) {
+			const ws = new WebSocket(bridgeUrl(server), options);
+			const status = await new Promise<number | undefined>((resolve, reject) => {
+				ws.once("unexpected-response", (_request, response) => resolve(response.statusCode));
+				ws.once("open", () => reject(new Error("unauthorized websocket opened")));
+				ws.once("error", () => {});
+			});
+			assert.equal(status, 403);
+		}
+	});
+});
+
+test("BrowserBridgeServer closes clients that do not complete ext_ready", async () => {
+	const server = new BrowserBridgeServer({ port: 0, handshakeTimeoutMs: 50 });
+	await server.start();
+	try {
+		const ws = new WebSocket(bridgeUrl(server), { origin: EXTENSION_ORIGIN });
+		await new Promise<void>((resolve, reject) => {
+			ws.once("open", resolve);
+			ws.once("error", reject);
+		});
+		assert.equal(server.snapshot().connectedClients, 1);
+		await new Promise<void>((resolve) => ws.once("close", () => resolve()));
+		assert.equal(server.snapshot().connectedClients, 0);
 	} finally {
 		await server.stop();
 	}
@@ -178,7 +224,7 @@ test("BrowserBridgeServer fails with diagnostics when the configured port range 
 	}
 });
 
-test("BrowserBridgeServer command runtime port exposes snapshot, tabs, sessions, leases, operations and perception state", async () => {
+test("BrowserBridgeServer command runtime port exposes snapshot, tabs, sessions, leases and perception state", async () => {
 	await withServer(async (server) => {
 		const port: BrowserCommandRuntimePort = server;
 		const ws = await connectExtension(server);
@@ -200,11 +246,6 @@ test("BrowserBridgeServer command runtime port exposes snapshot, tabs, sessions,
 		assert.equal(lease.tabId, 7);
 		assert.equal(port.leaseOwnerHash(browserSession.id, 7), browserSession.id);
 		assert.equal(port.releaseTab(7, { browserSessionId: browserSession.id })?.id, lease.id);
-
-		const operation = port.beginOperation({ commandName: "browser_observe", browserSessionId: browserSession.id, tabId: 7, phase: "running" });
-		assert.equal(port.updateOperation(operation.operationId, { progress: 0.5 })?.progress, 0.5);
-		assert.equal(port.finishOperation(operation.operationId)?.operationId, operation.operationId);
-		assert.equal(port.snapshot().operations?.find((item) => item.operationId === operation.operationId)?.state, "terminal");
 
 		const observation = port.createObservationSnapshot({ browserSessionId: browserSession.id, tabId: 7, sourceMode: "scan", capturedAt: Date.now() });
 		assert.equal(port.getObservationSnapshot(observation.snapshotId)?.sourceMode, "scan");
@@ -252,7 +293,7 @@ test("BrowserBridgeServer pending request surface records ack/result lifecycle i
 	});
 });
 
-test("BrowserBridgeServer keeps explicit browser selection stable and routes targeted operations to the owning client", async () => {
+test("BrowserBridgeServer keeps explicit browser selection stable and routes targeted commands to the owning client", async () => {
 	await withServer(async (server) => {
 		const user = await connectExtension(
 			server,
@@ -289,82 +330,17 @@ test("BrowserBridgeServer keeps explicit browser selection stable and routes tar
 		const target = server.snapshot().tabs.find((tab) => tab.targetRef === isolatedTab.targetRef);
 		assert.equal(target?.browserId, isolatedTab.browserId);
 		assert.equal(target?.url, "https://isolated.test/");
-		const beginPromise = server.sendCommand({
-			cmd: "operation.begin",
-			operationId: "isolated-operation",
-			tabId: 7,
-			targetRef: isolatedTab.targetRef,
-			generation: isolatedTab.generation,
-		}, { targetRef: isolatedTab.targetRef, timeoutMs: 1_000, accessMode: "read", internal: true });
+		const commandPromise = server.executeJavaScript("document.title", { targetRef: isolatedTab.targetRef, timeoutMs: 1_000, accessMode: "read" });
 		const firstCommand = await Promise.race([
 			waitForCommand(isolatedMessages).then((message) => ({ owner: "isolated", message, socket: isolated })),
 			waitForCommand(userMessages).then((message) => ({ owner: "user", message, socket: user })),
 		]);
 		firstCommand.socket.send(JSON.stringify({ type: "ack", id: firstCommand.message.id }));
 		firstCommand.socket.send(JSON.stringify({ type: "result", id: firstCommand.message.id, result: { armed: true } }));
-		await beginPromise;
+		await commandPromise;
 		assert.equal(firstCommand.owner, "isolated");
 		assert.equal(userMessages.length, 0);
 
-		user.close();
-		isolated.close();
-	});
-});
-
-test("same-socket worker reboot is classified as sw-restart and invalidates active operation observers", async () => {
-	await withServer(async (server) => {
-		const ws = await connectExtension(server, undefined, { extensionInstanceId: "stable-instance", workerBootId: "worker-1" });
-		const tab = server.getTabs()[0];
-		assert.ok(tab);
-		const operation = server.beginOperation({
-			commandName: "browser_execute",
-			command: "program",
-			browserSessionId: "default",
-			tabId: tab.tabId,
-			generation: tab.generation,
-			phase: "resolving",
-		});
-		ws.send(JSON.stringify({
-			type: "ext_ready",
-			bridge: { id: "bridge-1", extensionInstanceId: "stable-instance", workerBootId: "worker-2", durableRequests: false },
-			tabs: [{ id: tab.tabId, url: tab.url, title: tab.title, active: true }],
-		}));
-		const deadlineAt = Date.now() + 1_000;
-		while (!server.getOperation(operation.operationId)?.events.some((event) => event.type === "observer_lost")) {
-			if (Date.now() >= deadlineAt) throw new Error("worker restart did not invalidate the active operation observer");
-			await new Promise((resolve) => setImmediate(resolve));
-		}
-		assert.equal(server.snapshot().connectionMetrics?.swRestarts, 1);
-		assert.equal(server.snapshot().connectionMetrics?.reconnects, 1);
-		assert.match(JSON.stringify(server.getOperation(operation.operationId)?.events), /extension_worker_restarted/);
-		ws.close();
-	});
-});
-
-test("worker reboot invalidates only operations owned by the restarted browser instance", async () => {
-	await withServer(async (server) => {
-		const user = await connectExtension(server, [{ id: 7, url: "https://user.test/", title: "User", active: true }], { extensionInstanceId: "user-instance", workerBootId: "user-worker-1" });
-		const isolated = await connectExtension(server, [{ id: 7, url: "https://isolated.test/", title: "Isolated", active: true }], { extensionInstanceId: "isolated-instance", workerBootId: "isolated-worker-1" });
-		const userTab = server.getTabs().find((tab) => tab.url === "https://user.test/");
-		const isolatedTab = server.getTabs().find((tab) => tab.url === "https://isolated.test/");
-		assert.ok(userTab?.browserId);
-		assert.ok(isolatedTab?.browserId);
-		const secondary = server.createBrowserSession("isolated-session");
-		server.selectBrowser(userTab.browserId, { browserSessionId: "default" });
-		server.selectBrowser(isolatedTab.browserId, { browserSessionId: secondary.id });
-		const userOperation = server.beginOperation({ commandName: "browser_execute", browserSessionId: "default", tabId: userTab.tabId, generation: userTab.generation, phase: "resolving", mutation: true });
-		const isolatedOperation = server.beginOperation({ commandName: "browser_execute", browserSessionId: secondary.id, tabId: isolatedTab.tabId, generation: isolatedTab.generation, phase: "resolving", mutation: true });
-		isolated.send(JSON.stringify({
-			type: "ext_ready",
-			bridge: { id: "bridge-1", extensionInstanceId: "isolated-instance", workerBootId: "isolated-worker-2", durableRequests: false },
-			tabs: [{ id: 7, url: "https://isolated.test/", title: "Isolated", active: true }],
-		}));
-		const deadlineAt = Date.now() + 1_000;
-		while (!server.getOperation(isolatedOperation.operationId)?.events.some((event) => event.type === "observer_lost")) {
-			if (Date.now() >= deadlineAt) throw new Error("isolated worker restart did not invalidate its operation");
-			await new Promise((resolve) => setImmediate(resolve));
-		}
-		assert.equal(server.getOperation(userOperation.operationId)?.events.some((event) => event.type === "observer_lost"), false);
 		user.close();
 		isolated.close();
 	});

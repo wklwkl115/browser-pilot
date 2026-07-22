@@ -1,12 +1,11 @@
 import { Type } from "typebox";
 import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUploadFiles, codedTransferError, requireDownloadTarget, requireUploadConfirmation } from "./transferValidation.js";
-import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs } from "./commandRuntime.js";
+import { defineBrowserCommand, inlineJsonCommandResult, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { isRecord } from "../utils/records.js";
 import { resolveLocalTargetTabId } from "./commandRuntime.js";
 import { withBrowserOperation } from "./browserOperation.js";
-import { browserOperationCommandResult } from "./browserOperationResult.js";
 import path from "node:path";
 import type { ValidationIssue } from "./commandDefinition.js";
 
@@ -54,7 +53,7 @@ function annotateDownloadMimeMismatch(result: unknown, expectMime: string): void
 		data.mimeMismatch = {
 			expected: expectMime,
 			actual: mime,
-			note: `downloaded content is ${mime}, not the expected ${expectMime} — the file was saved but is likely an anti-bot/redirect HTML page, not the intended media. Verify the URL or refetch via browser_http_replay.`,
+			note: `downloaded content is ${mime}, not the expected ${expectMime} — the file was saved but is likely an anti-bot/redirect HTML page, not the intended media. Verify the URL before retrying.`,
 		};
 	}
 }
@@ -78,7 +77,7 @@ export function defineDownloadCommand({ commands, ensureStarted }: CommandRegist
 			expectMime: Type.Optional(Type.String({ description: "Expected MIME or category ('image'/'media'/'video'/'audio', or a full type like 'image/png'). media mode defaults to 'image'. If the completed download's MIME doesn't match, the result flags a `mimeMismatch` diagnostic (e.g. an anti-bot text/html page returned for an image)." })),
 		}),
 		validateArguments: validateDownloadArguments,
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 			return await runCommandHandler(async () => {
 				requireDownloadTarget(params);
 				const command = buildTransferDownloadCommand(params);
@@ -88,18 +87,13 @@ export function defineDownloadCommand({ commands, ensureStarted }: CommandRegist
 				const server = await ensureStarted();
 				const rawTarget = targetTabId(params) as string | number | undefined;
 				const tabId = resolveLocalTargetTabId(server, rawTarget, params.browserSessionId);
-				const outcome = await withBrowserOperation({ server, commandName: "browser_download", command: "transfer.download", action: String(command.mode || "click"), browserSessionId: params.browserSessionId, tabId, targetRef: typeof rawTarget === "string" ? rawTarget : undefined, timeoutMs, ctx, onUpdate: _onUpdate, signal }, async ({ signal: operationSignal }) => {
-					const result = await server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: rawTarget, timeoutMs, accessMode: "write", signal: operationSignal });
-					const expectMime = typeof params.expectMime === "string" && params.expectMime.trim() ? params.expectMime.trim().toLowerCase() : (command.mode === "media" ? "image" : undefined);
-					if (expectMime) annotateDownloadMimeMismatch(result, expectMime);
-					return result;
-				});
-				return await browserOperationCommandResult(outcome, {
-					budgetName: "browser_download",
-					maxChars,
-					ctx,
-					details: { command: "transfer.download", mode: command.mode || "click", operationId: outcome.operationId, status: outcome.status },
-				});
+					const result = await withBrowserOperation({ server, browserSessionId: params.browserSessionId, tabId, timeoutMs, signal }, async ({ signal: operationSignal }) => {
+						const result = await server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: rawTarget, timeoutMs, accessMode: "write", signal: operationSignal });
+						const expectMime = typeof params.expectMime === "string" && params.expectMime.trim() ? params.expectMime.trim().toLowerCase() : (command.mode === "media" ? "image" : undefined);
+						if (expectMime) annotateDownloadMimeMismatch(result, expectMime);
+						return result;
+					});
+					return inlineJsonCommandResult(result, { command: "transfer.download", mode: command.mode || "click" }, { maxChars }, "browser_download");
 			});
 		},
 	});
@@ -120,7 +114,7 @@ export function defineUploadCommand({ commands, ensureStarted }: CommandRegistra
 			confirm: Type.Boolean({ description: "Must be true to confirm the user approved uploading these exact local file path(s)." }),
 		}),
 		validateArguments: validateUploadArguments,
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 			return await runCommandHandler(async () => {
 				requireUploadConfirmation(params.confirm, params.selector);
 				const selector = String(params.selector || "").trim();
@@ -135,13 +129,8 @@ export function defineUploadCommand({ commands, ensureStarted }: CommandRegistra
 					command.timeoutMs = timeoutMs;
 					const rawTarget = targetTabId(params) as string | number | undefined;
 					const tabId = resolveLocalTargetTabId(server, rawTarget, params.browserSessionId);
-					const outcome = await withBrowserOperation({ server, commandName: "browser_upload", command: "transfer.upload", action: "upload", browserSessionId: params.browserSessionId, tabId, targetRef: typeof rawTarget === "string" ? rawTarget : undefined, timeoutMs, ctx, onUpdate: _onUpdate, signal }, ({ signal: operationSignal }) => server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: rawTarget, timeoutMs, accessMode: "write", signal: operationSignal }));
-					return await browserOperationCommandResult(outcome, {
-						budgetName: "browser_upload",
-						maxChars,
-						ctx,
-						details: { command: "transfer.upload", selector, files_count: files.length, operationId: outcome.operationId, status: outcome.status },
-					});
+						const result = await withBrowserOperation({ server, browserSessionId: params.browserSessionId, tabId, timeoutMs, signal }, ({ signal: operationSignal }) => server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: rawTarget, timeoutMs, accessMode: "write", signal: operationSignal }));
+						return inlineJsonCommandResult(result, { command: "transfer.upload", selector, files_count: files.length }, { maxChars }, "browser_upload");
 				} finally {
 					server.releaseUiLock(params.browserSessionId);
 				}

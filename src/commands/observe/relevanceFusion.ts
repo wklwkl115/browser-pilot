@@ -2,7 +2,6 @@ import type { Entity } from "../../kernels/abml/entity.js";
 import { buildInferenceSummary } from "../../kernels/abml/inference.js";
 import { extractScalarTerm, extractUrlTerms } from "../../kernels/evidence/distill/relevanceTaps.js";
 import type { BrowserCommandRuntimePort, CommandPerceptionTraceSnapshot } from "../../ports/BrowserCommandRuntimePort.js";
-import { isRecord } from "../../utils/params.js";
 import type { ObserveToolParams } from "./common.js";
 import { computeObserveRelevanceMap } from "./relevanceScoring.js";
 import type { ObserveRelevanceInput, ObserveRelevanceResult, ObserveRelevanceTerm } from "./relevanceTypes.js";
@@ -12,9 +11,7 @@ export function relevanceEnabled(params: ObserveToolParams): boolean {
 }
 
 export function observeIntent(params: ObserveToolParams): string | undefined {
-	if (typeof params.intent === "string" && params.intent.trim()) return params.intent.trim();
-	const nested = isRecord(params.params) ? params.params : undefined;
-	return typeof nested?.intent === "string" && nested.intent.trim() ? nested.intent.trim() : undefined;
+	return typeof params.intent === "string" && params.intent.trim() ? params.intent.trim() : undefined;
 }
 
 function traceTerms(snapshot: CommandPerceptionTraceSnapshot | undefined): ObserveRelevanceTerm[] {

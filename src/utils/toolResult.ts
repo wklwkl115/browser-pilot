@@ -5,6 +5,7 @@ import { redactSensitiveValue } from "./redaction.js";
 export type BrowserTextCommandResult = {
 	content: Array<{ type: "text"; text: string }>;
 	details?: Record<string, unknown>;
+	isError?: boolean;
 };
 
 const DETAIL_MAX_STRING_CHARS = 800;
@@ -71,5 +72,6 @@ export function errorResult(error: unknown): BrowserTextCommandResult {
 	return {
 		content: [{ type: "text", text: stableJson(normalized) }],
 		details: compactDetails({ error: normalized }),
+		isError: true,
 	};
 }

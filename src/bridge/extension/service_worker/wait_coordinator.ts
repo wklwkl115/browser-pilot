@@ -95,7 +95,7 @@ function cleanupWaitsForFrame(tabId: unknown, frameId: unknown, reason?: string)
 function cleanupWaitsForUninstall(tabId: unknown): number { cleanupEventSubscriptionsForTab(tabId); return cancelWaitsForTab(tabId, 'uninstall'); }
 
 const browserPilotWaits = new WaitCoordinator();
-// Legacy Map-compatible wait registry contract: const browserPilotWaits = new Map
+// Map-like registry used by the wait handlers below.
 const BROWSER_PILOT_ORPHAN_WAIT_MAX_AGE_MS = 300000;
 function cleanupBrowserPilotOrphanWaits(reason?: string, maxAgeMs?: unknown): number {
   const now = Date.now();
@@ -169,7 +169,6 @@ function terminalWaitRecord(record: BrowserPilotWaitRecord, status: string, deta
     details,
   };
 }
-function isAbortError(e: unknown): boolean { const err = e && typeof e === 'object' ? e as JsonRecord : {}; return !!e && (err.name === 'AbortError' || /aborted|cancelled/i.test(String(err.message || e))); }
 function waitAbortMessage(record: BrowserPilotWaitRecord): string { return 'browserPilot wait ' + record.waitId + ' cancelled'; }
 function normalizeWaitState(value: unknown, fallback = 'complete'): string {
   const s = String(value || fallback || '').toLowerCase().replace(/_/g, '');
@@ -279,13 +278,6 @@ function cancelWaitsForTab(tabId: unknown, reason?: string): number {
 function cleanupEventSubscriptionsForTab(tabId: unknown): number {
   return browserPilotWaits.cleanupEventSubscriptionsForTab(tabId);
 }
-function waitWithTimeout<T>(record: BrowserPilotWaitRecord, promise: Promise<T>, timeoutMs: number, label?: string): Promise<T> {
-  if (timeoutMs === 0) return promise;
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => { timeoutHandle = setTimeout(() => reject(new Error((label || record.kind) + ' timed out')), timeoutMs); });
-  if (timeoutHandle) record.timers.push(timeoutHandle);
-  return Promise.race([promise, timeout]).finally(() => timeoutHandle && clearTimeout(timeoutHandle));
-}
 function finishBrowserPilotWait(record: BrowserPilotWaitRecord, ok: boolean, data: JsonRecord | null = null, errorCode?: string, message?: string, details: JsonRecord = {}): BrowserPilotBridgeResponse {
   const elapsed_ms = Date.now() - record.createdAt;
   const base = { waitId: record.waitId, nativeWaitId: record.waitId, kind: record.kind, tabId: record.tabId, elapsed_ms, criteria: record.criteria };
@@ -295,9 +287,4 @@ function finishBrowserPilotWait(record: BrowserPilotWaitRecord, ok: boolean, dat
   if (ok) return { ok: true, data: { ...base, ...(data || {}) } };
   return browserPilotError(errorCode || BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, message || 'wait failed', { ...base, ...(details || {}) });
 }
-function rejectIfAborted(record: BrowserPilotWaitRecord): void {
-  if (record.abortController?.signal?.aborted || record.status === 'cancelled') throw new DOMException(waitAbortMessage(record), 'AbortError');
-}
-export { WaitCoordinator, cleanupWait, cleanupWaitsForFrame, cleanupWaitsForUninstall, browserPilotWaits, BROWSER_PILOT_ORPHAN_WAIT_MAX_AGE_MS, cleanupBrowserPilotOrphanWaits, browserPilotWaitSeq, BROWSER_PILOT_DEFAULT_WAIT_TIMEOUT_MS, normalizeBrowserPilotTimeoutMs, makeWaitId, waitKey, eventSubscriptionKey, isAbortError, waitAbortMessage, normalizeWaitState, registerWait, recordWaitEvent, shouldAbortWaitCleanupReason, clearWait, cleanupBrowserPilotWait, isWaitRecordForTab, cleanupTabWaits, cancelWaitsForTab, cleanupEventSubscriptionsForTab, waitWithTimeout, finishBrowserPilotWait, rejectIfAborted };
-// ESM module metadata
-export const __browserPilotBridgeModule_wait_coordinator = { name: "wait_coordinator", symbols: { WaitCoordinator, cleanupWait, cleanupWaitsForFrame, cleanupWaitsForUninstall, browserPilotWaits, BROWSER_PILOT_ORPHAN_WAIT_MAX_AGE_MS, cleanupBrowserPilotOrphanWaits, browserPilotWaitSeq, BROWSER_PILOT_DEFAULT_WAIT_TIMEOUT_MS, normalizeBrowserPilotTimeoutMs, makeWaitId, waitKey, eventSubscriptionKey, isAbortError, waitAbortMessage, normalizeWaitState, registerWait, recordWaitEvent, shouldAbortWaitCleanupReason, clearWait, cleanupBrowserPilotWait, isWaitRecordForTab, cleanupTabWaits, cancelWaitsForTab, cleanupEventSubscriptionsForTab, waitWithTimeout, finishBrowserPilotWait, rejectIfAborted } };
+export { WaitCoordinator, cleanupWait, cleanupWaitsForFrame, cleanupWaitsForUninstall, browserPilotWaits, BROWSER_PILOT_ORPHAN_WAIT_MAX_AGE_MS, cleanupBrowserPilotOrphanWaits, browserPilotWaitSeq, BROWSER_PILOT_DEFAULT_WAIT_TIMEOUT_MS, normalizeBrowserPilotTimeoutMs, makeWaitId, waitKey, eventSubscriptionKey, waitAbortMessage, normalizeWaitState, registerWait, recordWaitEvent, shouldAbortWaitCleanupReason, clearWait, cleanupBrowserPilotWait, isWaitRecordForTab, cleanupTabWaits, cancelWaitsForTab, cleanupEventSubscriptionsForTab, finishBrowserPilotWait };

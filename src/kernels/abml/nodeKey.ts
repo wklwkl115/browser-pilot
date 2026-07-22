@@ -10,10 +10,9 @@ export function cleanTargetId(value: unknown): string | undefined {
 }
 
 export function backendNodeKey(identity: BackendNodeIdentity): string {
-	return identity.targetId ? `t:${identity.targetId}:b:${identity.backendNodeId}` : legacyBackendNodeKey(identity.backendNodeId);
+	return identity.targetId ? `t:${identity.targetId}:b:${identity.backendNodeId}` : bareBackendNodeKey(identity.backendNodeId);
 }
 
-export function legacyBackendNodeKey(backendNodeId: number): string {
+export function bareBackendNodeKey(backendNodeId: number): string {
 	return `b:${backendNodeId}`;
 }
-

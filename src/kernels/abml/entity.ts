@@ -93,10 +93,21 @@ export type ScanEntityContext = {
 	browserSessionId?: string;
 	tabId?: number;
 	targetId?: string;
+	targetGeneration?: number;
+	pageEpoch?: string;
 	url?: string;
 	observationId: string;
 	capturedAt: number;
 };
+
+function documentEpoch(context: ScanEntityContext): NonNullable<RefDescriptor["documentEpoch"]> {
+	return {
+		...(context.targetGeneration ? { targetGeneration: context.targetGeneration } : {}),
+		...(context.pageEpoch ? { pageEpoch: context.pageEpoch } : {}),
+		url: context.url,
+		capturedAt: context.capturedAt,
+	};
+}
 
 export type BuiltEntity = {
 	entity: Omit<Entity, "ref">;
@@ -313,10 +324,7 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 			},
 			...(Object.keys(geometry).length ? { geometry } : {}),
 			observationId: context.observationId,
-			documentEpoch: {
-				url: context.url,
-				capturedAt,
-			},
+			documentEpoch: documentEpoch(context),
 			createdAt: capturedAt,
 			ttlMs: 5 * 60 * 1000,
 			stabilityScore: node.hitOk === true ? 0.9 : node.hitOk === false ? 0.4 : 0.6,
@@ -392,10 +400,7 @@ export function buildRegionEntityFromListHint(node: ScanListHintInput, context: 
 			policy: defaultRefPolicyForKind("region"),
 			semantic: { role: "list", name },
 			observationId: context.observationId,
-			documentEpoch: {
-				url: context.url,
-				capturedAt,
-			},
+			documentEpoch: documentEpoch(context),
 			createdAt: capturedAt,
 			ttlMs: 5 * 60 * 1000,
 			stabilityScore: 0.7,
@@ -453,7 +458,7 @@ export function buildControlsSourceEntity(node: ScanActionableInput, context: Sc
 			policy: defaultRefPolicyForKind(kind),
 			semantic: { role, ...(name ? { name } : {}) },
 			observationId: context.observationId,
-			documentEpoch: { url: context.url, capturedAt },
+			documentEpoch: documentEpoch(context),
 			createdAt: capturedAt,
 			ttlMs: 5 * 60 * 1000,
 			stabilityScore: 0.4,
@@ -496,7 +501,7 @@ export function buildReferencedTargetEntity(node: ScanActionableInput, context: 
 			policy: defaultRefPolicyForKind(kind),
 			semantic: { role, ...(name ? { name } : {}) },
 			observationId: context.observationId,
-			documentEpoch: { url: context.url, capturedAt },
+			documentEpoch: documentEpoch(context),
 			createdAt: capturedAt,
 			ttlMs: 5 * 60 * 1000,
 			stabilityScore: 0.5,
@@ -550,10 +555,7 @@ export function buildVisionRegionFromCanvasActionable(node: ScanVisionInput, con
 			semantic: { role: "region", name },
 			...(Object.keys(geometry).length ? { geometry } : {}),
 			observationId: context.observationId,
-			documentEpoch: {
-				url: context.url,
-				capturedAt,
-			},
+			documentEpoch: documentEpoch(context),
 			createdAt: capturedAt,
 			ttlMs: 5 * 60 * 1000,
 			stabilityScore: 0.25,

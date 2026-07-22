@@ -1,18 +1,20 @@
-import type { BrowserCommandRuntimePort, BrowserTabLike, CommandActiveOperationInfo as BrowserActiveOperationInfo } from "../ports/BrowserCommandRuntimePort.js";
+import { randomUUID } from "node:crypto";
+import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { BrowserBridgeError, errorToPlain } from "../utils/errors.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
-import type { DetailLevel } from "../utils/params.js";
 import { normalizeTabId } from "../utils/params.js";
 import { isRecord } from "../utils/records.js";
 import { errorResult, jsonResult, type BrowserTextCommandResult } from "../utils/toolResult.js";
 import { stableJson } from "../utils/json.js";
 import { fitInlineJsonToBudgetMeasured } from "../kernels/evidence/distill/fit.js";
+import { classifyRefScope } from "../kernels/refs/refPolicy.js";
+import { pageReanchorReason } from "../kernels/session/pageIdentity.js";
+import type { ExecutionRefTarget } from "../browser-command-runtime/executionRef.js";
+import { pageIdentityFromUnknown } from "./observe/pageIdentity.js";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
-import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
-import { asPositiveInt, optionalTargetRef, optionalTargetTabId } from "./commandShared.js";
+import { simpleJsonResult } from "./resultMiddleware.js";
+import { asPositiveInt, optionalTargetRef } from "./commandShared.js";
 import type { BrowserCommandDefinition, BrowserCommandSink } from "./commandDefinition.js";
-import type { CommandFactGranularity } from "./resultTypes.js";
-import type { SessionOperationBeginInput } from "../kernels/session/operationRegistry.js";
 
 // Mandatory-read pair with resultMiddleware.ts: this file normalizes params/operation/errors,
 // while resultMiddleware.ts shapes the returned envelope, budgets, redaction, and artifacts.
@@ -20,11 +22,10 @@ import type { SessionOperationBeginInput } from "../kernels/session/operationReg
 /** Hard ceiling for any command timeout to prevent unbounded hangs. */
 const MAX_COMMAND_TIMEOUT_MS = 300_000;
 
-export type CommandResultContext = { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean; operationOwnerId?: string } | undefined;
+export type CommandResultContext = { cwd?: string; omitTransportDetails?: boolean } | undefined;
 
 export type StandardToolParams = {
 	browserSessionId?: string;
-	tabId?: number | string;
 	targetRef?: string;
 	detailLevel?: string;
 	outputPath?: string;
@@ -33,137 +34,41 @@ export type StandardToolParams = {
 	redact?: boolean;
 };
 
-type SharedCommandParamOptions = {
-	tabIdDescription?: string;
-	targetRefDescription?: string;
-	includeTabId?: boolean;
-	includeTargetRef?: boolean;
-};
-
-type DistillFn = (value: unknown) => Record<string, unknown>;
-type TextDistillFn = (text: string) => Record<string, unknown>;
-
-type CommandResultOptions = {
+type JsonCommandResultOptions = {
 	commandName: ToolResultBudgetName | string;
 	budgetName?: ToolResultBudgetName;
-	command?: string;
-	browserSessionId?: string;
-	defaultDetailLevel?: DetailLevel;
 	fallbackName: string;
 	details?: Record<string, unknown>;
-	operation?: Record<string, unknown>;
-	snapshot?: Record<string, unknown>;
-	diagnostics?: Record<string, unknown>;
-	artifactValue?: unknown;
-	entities?: Array<Record<string, unknown>>;
-	artifactThreshold?: number;
 	maxChars?: number;
-	granularityCeiling?: Exclude<CommandFactGranularity, "omit">;
-	stableRefs?: Set<string>;
-	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
-	activeContext?: Record<string, unknown>;
 };
-
-type JsonCommandResultOptions = CommandResultOptions & {
-	distill?: DistillFn;
-};
-
-type TextCommandResultOptions = CommandResultOptions & {
-	summary?: Record<string, unknown>;
-	distill?: TextDistillFn;
-};
-
-function normalizeCommandResultOptions<T extends CommandResultOptions>(
-	params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">,
-	ctx: CommandResultContext,
-	options: T,
-) {
-	const { budgetName: configuredBudgetName, defaultDetailLevel, commandName, browserSessionId, maxChars, ...resultOptions } = options;
-	const budgetName = configuredBudgetName ?? (commandName as ToolResultBudgetName);
-	return {
-		...resultOptions,
-		commandName: String(commandName),
-		browserSessionId: browserSessionId ?? params.browserSessionId,
-		detailLevel: params.detailLevel ?? defaultDetailLevel,
-		maxChars: maxChars ?? commandMaxChars(params, budgetName),
-		ctx,
-		outputPath: params.outputPath,
-		redact: params.redact,
-	};
-}
 
 export type CommandOnUpdate = ((result: BrowserTextCommandResult) => void | Promise<void>) | undefined;
 
-export type TrackedOperationHandle = {
-	operation: BrowserActiveOperationInfo;
-	update: (patch: Partial<Omit<BrowserActiveOperationInfo, "operationId" | "startedAt">>, options?: { content?: boolean }) => Promise<BrowserActiveOperationInfo | undefined>;
-	finish: (outcome?: import("../kernels/session/browserOperation.js").BrowserOperationOutcome) => BrowserActiveOperationInfo | undefined;
-};
-
-type BrowserCommandOperationResolver<TParams, TPrepared, TValue> = TValue | ((params: TParams, prepared: TPrepared) => TValue);
-
-type BrowserCommandOperationConfig<TParams, TPrepared> = false | {
-	command: BrowserCommandOperationResolver<TParams, TPrepared, string>;
-	tabId?: (params: TParams, prepared: TPrepared) => unknown;
-	initialProgress?: number;
-	phase?: BrowserActiveOperationInfo["phase"];
-	sourceMode?: BrowserCommandOperationResolver<TParams, TPrepared, string | undefined>;
-	snapshotId?: BrowserCommandOperationResolver<TParams, TPrepared, string | undefined>;
-};
-
-type BrowserCommandErrorConfig<TParams> = {
-	map?: (error: unknown, params: TParams) => unknown;
-	result?: (error: unknown) => BrowserTextCommandResult;
-};
-
-export type BrowserCommandRunArgs<TParams, TPrepared> = {
-	server: BrowserCommandRuntimePort;
-	params: TParams;
-	prepared: TPrepared;
-	ctx: CommandResultContext;
-	onUpdate: CommandOnUpdate;
-	timeoutMs: number;
-	maxChars: number;
-	browserSessionId?: string;
-	rawTabId: unknown;
-	tabId?: number;
-	handle?: TrackedOperationHandle;
-};
-
-type RunBrowserCommandSpec<TParams extends Partial<StandardToolParams>, TPrepared extends TParams = TParams, TResult = unknown> = {
-	ensureStarted: () => Promise<BrowserCommandRuntimePort>;
+export type TrackedOperationInfo = {
+	operationId: string;
 	commandName: string;
-	params: TParams;
-	ctx: CommandResultContext;
-	onUpdate?: CommandOnUpdate;
-	budgetName?: ToolResultBudgetName;
-	defaultTimeoutMs: number;
-	fallbackMaxChars?: number;
-	prepare?: (args: Omit<BrowserCommandRunArgs<TParams, TPrepared>, "prepared" | "rawTabId" | "tabId" | "handle">) => Promise<TPrepared> | TPrepared;
-	operation?: BrowserCommandOperationConfig<TParams, TPrepared>;
-	error?: BrowserCommandErrorConfig<TParams>;
-	run: (args: BrowserCommandRunArgs<TParams, TPrepared>) => Promise<TResult>;
-	finalize: (args: BrowserCommandRunArgs<TParams, TPrepared> & { result: TResult; operation?: BrowserActiveOperationInfo }) => Promise<BrowserTextCommandResult>;
+	command?: string;
+	browserSessionId?: string;
+	tabId?: number;
+	phase: string;
+	progress?: number;
+	queueDepth?: number;
+	leaseOwnerHash?: string;
+	conflictReason?: string;
+	snapshotId?: string;
+	sourceMode?: string;
+	details?: Record<string, unknown>;
+	state: "active" | "terminal";
+	startedAt: number;
+	updatedAt: number;
 };
 
-type RunWebSecurityCommandSpec<TParams extends StandardToolParams, TRunParams extends TParams, TResult> = {
-	ensureStarted: () => Promise<BrowserCommandRuntimePort>;
-	params: TParams;
-	ctx: CommandResultContext;
-	onUpdate?: CommandOnUpdate;
-	commandName: ToolResultBudgetName;
-	command: string;
-	fallbackPrefix: string;
-	defaultMaxBodyBytes?: number;
-	defaultTimeoutMs?: number;
-	includeTimeout?: boolean;
-	includeCookieProvider?: boolean;
-	augmentParams?: (params: TParams) => Partial<TRunParams>;
-	createCookieProvider?: (params: TParams, timeoutMs: number) => unknown;
-	run: (params: TRunParams) => Promise<TResult>;
-	details: (result: TResult) => Record<string, unknown>;
-	distill: (result: TResult) => Record<string, unknown>;
-	error?: BrowserCommandErrorConfig<TParams>;
+type TrackedOperationInput = Omit<TrackedOperationInfo, "operationId" | "state" | "startedAt" | "updatedAt"> & { operationId?: string };
+
+export type TrackedOperationHandle = {
+	operation: TrackedOperationInfo;
+	update: (patch: Partial<Omit<TrackedOperationInfo, "operationId" | "startedAt">>, options?: { content?: boolean }) => Promise<TrackedOperationInfo>;
+	finish: () => TrackedOperationInfo;
 };
 
 export function defineBrowserCommand(commands: BrowserCommandSink, spec: BrowserCommandDefinition) {
@@ -171,11 +76,8 @@ export function defineBrowserCommand(commands: BrowserCommandSink, spec: Browser
 	return spec;
 }
 
-export function sharedTabScopedToolParams(options: SharedCommandParamOptions = {}) {
-	const params: Record<string, unknown> = {};
-	if (options.includeTabId !== false) params.tabId = optionalTargetTabId(options.tabIdDescription);
-	if (options.includeTargetRef !== false) params.targetRef = optionalTargetRef(options.targetRefDescription);
-	return params;
+export function sharedTabScopedToolParams(targetRefDescription?: string) {
+	return { targetRef: optionalTargetRef(targetRefDescription) };
 }
 
 export function commandMaxChars(params: Pick<StandardToolParams, "maxChars">, budgetName: ToolResultBudgetName): number {
@@ -197,12 +99,8 @@ export function artifactFallbackName(prefix: string, extension = "json"): string
 	return `${prefix}-${Date.now()}.${extension}`;
 }
 
-export function applyDefaultTimeout(body: Record<string, unknown>, timeoutMs: number): void {
-	if (body.timeoutMs === undefined && body.timeout_ms === undefined) body.timeoutMs = timeoutMs;
-}
-
-export function targetTabId(params: Pick<StandardToolParams, "tabId" | "targetRef">, body?: Record<string, unknown>): unknown {
-	return params.targetRef ?? params.tabId ?? body?.targetRef ?? body?.tabHandle ?? body?.tabId;
+export function targetTabId(params: Pick<StandardToolParams, "targetRef">, body?: Record<string, unknown>): unknown {
+	return params.targetRef ?? body?.targetRef ?? body?.tabHandle ?? body?.tabId;
 }
 
 export function resolveLocalTargetTabId(server: Partial<Pick<BrowserCommandRuntimePort, "resolveTargetTabId">>, value: unknown, browserSessionId?: string): number | undefined {
@@ -211,28 +109,68 @@ export function resolveLocalTargetTabId(server: Partial<Pick<BrowserCommandRunti
 	return normalizeTabId(value);
 }
 
-/**
- * Read-only "active context" echo (pure legibility, no behavior change): the resolved tab plus the
- * latest scan snapshot the agent can thread into the next observe --diff/baseline or capture call,
- * so it never has to scroll back through prior outputs for an id. Network recorders / hook sessions
- * are intentionally absent — that state lives browser-side and is not reachable from the command layer.
- */
-export function buildActiveContext(server: BrowserCommandRuntimePort, params: Pick<StandardToolParams, "browserSessionId" | "tabId" | "targetRef">): Record<string, unknown> | undefined {
-	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
+function soleRefOwner<T extends string | number>(refs: ExecutionRefTarget[], field: "browserSessionId" | "tabId"): T | undefined {
+	const values = new Set(refs.map((ref) => ref.owner[field]).filter((value): value is T => value !== undefined));
+	if (values.size > 1) throw new BrowserBridgeError("REF_SCOPE_VIOLATION", `Referenced elements belong to different ${field === "tabId" ? "tabs" : "browser sessions"}`, { refs: refs.map((ref) => ref.refId) });
+	return values.values().next().value;
+}
+
+function originOf(url: unknown): string | undefined {
+	if (typeof url !== "string" || !url) return undefined;
+	try { return new URL(url).origin; } catch { return undefined; }
+}
+
+export function resolveRefExecutionTarget(
+	server: Pick<BrowserCommandRuntimePort, "resolveTargetTabId" | "snapshot">,
+	refs: ExecutionRefTarget[],
+	options: { browserSessionId?: string; rawTarget?: unknown },
+): { browserSessionId?: string; rawTarget?: string | number; tabId?: number } {
+	if (!refs.length) {
+		const tabId = resolveLocalTargetTabId(server, options.rawTarget, options.browserSessionId);
+		return { browserSessionId: options.browserSessionId, rawTarget: options.rawTarget as string | number | undefined, tabId };
+	}
+	const stale = refs.find((ref) => !ref.fresh);
+	if (stale) throw new BrowserBridgeError("REF_STALE", "Referenced browser state is stale", { ref: stale.refId });
+	const blocked = refs.find((ref) => ref.policy.liveActionsAllowed !== true);
+	if (blocked) throw new BrowserBridgeError("INVALID_RULE", "Referenced browser state does not allow live actions", { ref: blocked.refId });
+	const unowned = refs.find((ref) => ref.owner.tabId === undefined);
+	if (unowned) throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Executable refs must own a browser tab", { ref: unowned.refId });
+
+	const ownerSession = soleRefOwner<string>(refs, "browserSessionId");
+	const ownerTabId = soleRefOwner<number>(refs, "tabId");
+	if (options.browserSessionId && ownerSession && options.browserSessionId !== ownerSession) {
+		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit browserSessionId conflicts with ref ownership", { browserSessionId: options.browserSessionId, ownerBrowserSessionId: ownerSession, refs: refs.map((ref) => ref.refId) });
+	}
+	const browserSessionId = ownerSession ?? options.browserSessionId;
+	let canonicalOwnerTabId: number | undefined;
+	try {
+		canonicalOwnerTabId = ownerTabId === undefined ? undefined : resolveLocalTargetTabId(server, ownerTabId, browserSessionId);
+	} catch {
+		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab no longer exists", { ownerTabId, refs: refs.map((ref) => ref.refId) });
+	}
+	if (ownerTabId !== undefined && canonicalOwnerTabId !== ownerTabId) {
+		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab was replaced", { ownerTabId, canonicalOwnerTabId, refs: refs.map((ref) => ref.refId) });
+	}
+	const explicitTabId = options.rawTarget === undefined ? undefined : resolveLocalTargetTabId(server, options.rawTarget, browserSessionId);
+	if (options.rawTarget !== undefined && (!Number.isInteger(explicitTabId) || explicitTabId! <= 0)) {
+		throw new BrowserBridgeError("INVALID_TAB_ID", "A valid targetRef is required", { targetRef: options.rawTarget });
+	}
+	if (explicitTabId !== undefined && canonicalOwnerTabId !== undefined && explicitTabId !== canonicalOwnerTabId) {
+		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit targetRef conflicts with ref ownership", { tabId: explicitTabId, ownerTabId: canonicalOwnerTabId, refs: refs.map((ref) => ref.refId) });
+	}
+	const tabId = canonicalOwnerTabId ?? explicitTabId;
 	const snapshot = server.snapshot({ browserSessionId });
-	const tabId = resolveLocalTargetTabId(server, params.targetRef ?? params.tabId, browserSessionId) ?? snapshot.defaultTabId;
-	const tab = (snapshot.tabs as BrowserTabLike[] | undefined)?.find((entry) => typeof entry.tabId === "number" && entry.tabId === tabId);
-	const targetRef = (tab?.targetRef ?? tab?.tabHandle ?? (tabId === snapshot.defaultTabId ? snapshot.defaultTabHandle : undefined)) || undefined;
-	// Match observe --diff's baseline filter (incl. browserSessionId isolation + saved.path) so the echoed id is always a usable baseline.
-	const effectiveBrowserSessionId = snapshot.browserSessionId;
-	const lastObservationSnapshotId = server.listObservationSnapshots().find((snap) => snap.browserSessionId === effectiveBrowserSessionId && snap.tabId === tabId && snap.sourceMode === "scan" && !snap.expired && Boolean(snap.saved?.path))?.snapshotId;
-	const context: Record<string, unknown> = {
-		...(snapshot.browserSessionId ? { browserSessionId: snapshot.browserSessionId } : {}),
-		...(typeof tabId === "number" ? { tabId } : {}),
-		...(targetRef ? { targetRef } : {}),
-		...(lastObservationSnapshotId ? { lastObservationSnapshotId } : {}),
-	};
-	return Object.keys(context).length ? context : undefined;
+	const effectiveBrowserSessionId = browserSessionId ?? snapshot.browserSessionId;
+	const currentTab = snapshot.tabs.find((tab) => tab.tabId === tabId);
+	const currentOrigin = originOf(currentTab?.url);
+	const currentIdentity = pageIdentityFromUnknown({ ...currentTab, browserSessionId: effectiveBrowserSessionId });
+	for (const ref of refs) {
+		const scope = classifyRefScope(ref, { browserSessionId: effectiveBrowserSessionId, tabId, topLevelOrigin: currentOrigin });
+		if (!scope.ok) throw new BrowserBridgeError(scope.code, `Ref scope violation: ${scope.reason}`, { ref: ref.refId, browserSessionId: effectiveBrowserSessionId, tabId, topLevelOrigin: currentOrigin });
+		const reason = pageReanchorReason(ref.pageIdentity, currentIdentity);
+		if (reason) throw new BrowserBridgeError("REF_STALE", "Referenced page identity cannot be proven current", { ref: ref.refId, reason, observed: ref.pageIdentity, current: currentIdentity });
+	}
+	return { browserSessionId: effectiveBrowserSessionId, rawTarget: options.rawTarget === undefined ? tabId : options.rawTarget as string | number, tabId };
 }
 
 export async function runCommandHandler(handler: () => Promise<BrowserTextCommandResult>, onError: (error: unknown) => BrowserTextCommandResult | Promise<BrowserTextCommandResult> = errorResult): Promise<BrowserTextCommandResult> {
@@ -269,15 +207,18 @@ export function inlineJsonCommandResult(value: unknown, details: Record<string, 
 	return jsonResult(fitted.value, details, serializeBudget);
 }
 
-export async function jsonCommandResult(value: unknown, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">, ctx: CommandResultContext, options: JsonCommandResultOptions): Promise<BrowserTextCommandResult> {
-	return await distilledJsonResult(value, normalizeCommandResultOptions(params, ctx, options));
+export async function jsonCommandResult(value: unknown, params: Pick<StandardToolParams, "outputPath" | "maxChars">, ctx: CommandResultContext, options: JsonCommandResultOptions): Promise<BrowserTextCommandResult> {
+	const budgetName = options.budgetName ?? options.commandName as ToolResultBudgetName;
+	return await simpleJsonResult(value, {
+		maxChars: options.maxChars ?? commandMaxChars(params, budgetName),
+		ctx,
+		outputPath: params.outputPath,
+		fallbackName: options.fallbackName,
+		details: options.details,
+	});
 }
 
-export async function textCommandResult(text: string, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">, ctx: CommandResultContext, options: TextCommandResultOptions): Promise<BrowserTextCommandResult> {
-	return await distilledTextResult(text, normalizeCommandResultOptions(params, ctx, options));
-}
-
-function compactOperationForEnvelope(operation: BrowserActiveOperationInfo): Record<string, unknown> {
+function compactOperationForEnvelope(operation: TrackedOperationInfo): Record<string, unknown> {
 	return {
 		operationId: operation.operationId,
 		commandName: operation.commandName,
@@ -293,15 +234,12 @@ function compactOperationForEnvelope(operation: BrowserActiveOperationInfo): Rec
 		sourceMode: operation.sourceMode,
 		details: operation.details,
 		state: operation.state,
-		sequence: operation.sequence,
-		lastProgressAt: operation.lastProgressAt,
-		terminalStatus: operation.terminalStatus,
 		startedAt: operation.startedAt,
 		updatedAt: operation.updatedAt,
 	};
 }
 
-async function emitTrackedProgress(onUpdate: CommandOnUpdate, operation: BrowserActiveOperationInfo, options: { content?: boolean } = {}): Promise<void> {
+async function emitTrackedProgress(onUpdate: CommandOnUpdate, operation: TrackedOperationInfo, options: { content?: boolean } = {}): Promise<void> {
 	if (!onUpdate) return;
 	const payload = compactOperationForEnvelope(operation);
 	if (options.content === false) {
@@ -311,7 +249,7 @@ async function emitTrackedProgress(onUpdate: CommandOnUpdate, operation: Browser
 	await onUpdate({ content: [{ type: "text", text: stableJson({ progress: payload }) }], details: { progress: payload } });
 }
 
-function attachOperationToError(error: unknown, operation: BrowserActiveOperationInfo): unknown {
+function attachOperationToError(error: unknown, operation: TrackedOperationInfo): unknown {
 	const operationDetails = { operation: compactOperationForEnvelope(operation) };
 	if (error instanceof BrowserBridgeError) {
 		return new BrowserBridgeError(error.code, error.message, { ...error.details, ...operationDetails });
@@ -325,25 +263,23 @@ function attachOperationToError(error: unknown, operation: BrowserActiveOperatio
 	return error;
 }
 
-export async function startTrackedOperation(server: BrowserCommandRuntimePort, meta: SessionOperationBeginInput, onUpdate?: CommandOnUpdate): Promise<TrackedOperationHandle> {
-	let current = server.beginOperation(meta);
+export async function startTrackedOperation(meta: TrackedOperationInput, onUpdate?: CommandOnUpdate): Promise<TrackedOperationHandle> {
+	const startedAt = Date.now();
+	let current: TrackedOperationInfo = { ...meta, operationId: meta.operationId ?? randomUUID(), state: "active", startedAt, updatedAt: startedAt };
 	await emitTrackedProgress(onUpdate, current);
 	return {
 		get operation() { return current; },
 		update: async (patch, options) => {
-			const next = server.updateOperation(current.operationId, patch);
-			if (next) {
-				current = next;
-				await emitTrackedProgress(onUpdate, next, options);
-			}
-			return next;
+			current = { ...current, ...patch, operationId: current.operationId, startedAt: current.startedAt, updatedAt: Date.now() };
+			await emitTrackedProgress(onUpdate, current, options);
+			return current;
 		},
-		finish: (outcome) => server.finishOperation(current.operationId, outcome),
+		finish: () => (current = { ...current, state: "terminal", updatedAt: Date.now() }),
 	};
 }
 
-export async function withTrackedOperation<T>(server: BrowserCommandRuntimePort, meta: SessionOperationBeginInput, onUpdate: CommandOnUpdate, run: (handle: TrackedOperationHandle) => Promise<T>): Promise<{ result: T; operation: BrowserActiveOperationInfo }> {
-	const handle = await startTrackedOperation(server, meta, onUpdate);
+export async function withTrackedOperation<T>(meta: TrackedOperationInput, onUpdate: CommandOnUpdate, run: (handle: TrackedOperationHandle) => Promise<T>): Promise<{ result: T; operation: TrackedOperationInfo }> {
+	const handle = await startTrackedOperation(meta, onUpdate);
 	let heartbeat: NodeJS.Timeout | undefined;
 	try {
 		heartbeat = setInterval(() => {
@@ -351,126 +287,13 @@ export async function withTrackedOperation<T>(server: BrowserCommandRuntimePort,
 		}, 1_000);
 		heartbeat.unref?.();
 		const result = await run(handle);
-		const completed = await handle.update({ phase: "completed", progress: 100 });
-		const finalOperation = handle.finish() || completed || handle.operation;
-		return { result, operation: finalOperation };
+		await handle.update({ phase: "completed", progress: 100 });
+		return { result, operation: handle.finish() };
 	} catch (error) {
 		const failed = await handle.update({ phase: "failed", conflictReason: error instanceof Error ? error.message : String(error) });
 		handle.finish();
-		throw attachOperationToError(error, failed || handle.operation);
+		throw attachOperationToError(error, failed);
 	} finally {
 		if (heartbeat) clearInterval(heartbeat);
 	}
-}
-
-function budgetedMaxChars<TParams extends Partial<StandardToolParams>>(params: TParams, budgetName: ToolResultBudgetName | undefined, fallbackMaxChars: number | undefined): number {
-	if (budgetName) return commandMaxChars(params as Pick<StandardToolParams, "maxChars">, budgetName);
-	return commandPositiveInt((params as { maxChars?: unknown }).maxChars, fallbackMaxChars ?? 50_000);
-}
-
-function resolveOperationValue<TParams, TPrepared, TValue>(value: BrowserCommandOperationResolver<TParams, TPrepared, TValue> | undefined, params: TParams, prepared: TPrepared): TValue | undefined {
-	if (typeof value === "function") return (value as (params: TParams, prepared: TPrepared) => TValue)(params, prepared);
-	return value;
-}
-
-export async function runBrowserCommand<TParams extends Partial<StandardToolParams>, TPrepared extends TParams = TParams, TResult = unknown>(spec: RunBrowserCommandSpec<TParams, TPrepared, TResult>): Promise<BrowserTextCommandResult> {
-	const onError = (error: unknown) => {
-		const mapped = spec.error?.map ? spec.error.map(error, spec.params) : error;
-		return spec.error?.result ? spec.error.result(mapped) : errorResult(mapped);
-	};
-	return await runCommandHandler(async () => {
-		const server = await spec.ensureStarted();
-		const timeoutMs = commandTimeoutMs((spec.params as { timeoutMs?: unknown }).timeoutMs, spec.defaultTimeoutMs);
-		const maxChars = budgetedMaxChars(spec.params, spec.budgetName, spec.fallbackMaxChars);
-		const browserSessionId = typeof (spec.params as { browserSessionId?: unknown }).browserSessionId === "string"
-			? (spec.params as { browserSessionId?: string }).browserSessionId
-			: undefined;
-		const baseArgs = {
-			server,
-			params: spec.params,
-			ctx: spec.ctx,
-			onUpdate: spec.onUpdate,
-			timeoutMs,
-			maxChars,
-			browserSessionId,
-		} as Omit<BrowserCommandRunArgs<TParams, TPrepared>, "prepared" | "rawTabId" | "tabId" | "handle">;
-		const prepared = spec.prepare ? await spec.prepare(baseArgs) : (spec.params as TPrepared);
-		if (!spec.operation) {
-			const runArgs: BrowserCommandRunArgs<TParams, TPrepared> = { ...baseArgs, prepared, rawTabId: undefined, tabId: undefined, handle: undefined };
-			const result = await spec.run(runArgs);
-			return await spec.finalize({ ...runArgs, result, operation: undefined });
-		}
-		const rawTabId = spec.operation.tabId?.(spec.params, prepared);
-		const tabId = resolveLocalTargetTabId(server, rawTabId, browserSessionId);
-		const command = resolveOperationValue(spec.operation.command, spec.params, prepared) || spec.commandName;
-		const sourceMode = resolveOperationValue(spec.operation.sourceMode, spec.params, prepared);
-		const snapshotId = resolveOperationValue(spec.operation.snapshotId, spec.params, prepared);
-		const { result, operation } = await withTrackedOperation(server, {
-			commandName: spec.commandName,
-			command,
-			browserSessionId,
-			tabId,
-			phase: spec.operation.phase ?? "running",
-			progress: spec.operation.initialProgress ?? 10,
-			queueDepth: server.queueDepth(browserSessionId, tabId),
-			leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
-			...(sourceMode ? { sourceMode } : {}),
-			...(snapshotId ? { snapshotId } : {}),
-		}, spec.onUpdate, async (handle) => await spec.run({ ...baseArgs, prepared, rawTabId, tabId, handle }));
-		return await spec.finalize({ ...baseArgs, prepared, rawTabId, tabId, result, operation });
-	}, onError);
-}
-
-export async function runWebSecurityCommand<TParams extends StandardToolParams & { maxBodyBytes?: unknown }, TRunParams extends TParams, TResult>(spec: RunWebSecurityCommandSpec<TParams, TRunParams, TResult>): Promise<BrowserTextCommandResult> {
-	return await runBrowserCommand<TParams, TRunParams, TResult>({
-		ensureStarted: spec.ensureStarted,
-		commandName: spec.commandName,
-		budgetName: spec.commandName,
-		params: spec.params,
-		ctx: spec.ctx,
-		onUpdate: spec.onUpdate,
-		defaultTimeoutMs: spec.defaultTimeoutMs ?? 15_000,
-		operation: {
-			command: spec.command,
-			tabId: (params) => targetTabId(params),
-			initialProgress: 5,
-		},
-		error: spec.error,
-		prepare: ({ params, timeoutMs, ctx }) => {
-			const runParams: Record<string, unknown> = {
-				...params,
-				...(spec.augmentParams?.(params) || {}),
-			};
-			if (spec.includeTimeout !== false) runParams.timeoutMs = timeoutMs;
-			if (spec.defaultMaxBodyBytes !== undefined) runParams.maxBodyBytes = commandPositiveInt(params.maxBodyBytes, spec.defaultMaxBodyBytes);
-			if (spec.includeCookieProvider && spec.createCookieProvider) runParams.cookieProvider = spec.createCookieProvider(params, timeoutMs);
-			// Propagate the caller cwd so request-scoped paths (nuclei/sqlmap/crawl/oast
-			// artifact + session roots) resolve under the caller's .browser-pilot/, not the daemon's.
-			if (ctx?.cwd) runParams.cwd = ctx.cwd;
-			return runParams as TRunParams;
-		},
-		run: async ({ prepared, handle }) => {
-			await handle?.update({ progress: 35 });
-			const result = await spec.run(prepared);
-			await handle?.update({ progress: 85, details: spec.details(result) });
-			return result;
-		},
-		finalize: async ({ server, params, ctx, maxChars, operation, result }) => {
-			const resultDetails = spec.details(result);
-			const resultRecord = result as Record<string, unknown>;
-			const resultWarnings = Array.isArray(resultRecord.warnings) ? resultRecord.warnings.filter((item): item is string => typeof item === "string") : [];
-			return await jsonCommandResult(result, params, ctx, {
-				commandName: spec.commandName,
-				command: spec.command,
-				maxChars,
-				fallbackName: artifactFallbackName(spec.fallbackPrefix),
-				details: { command: spec.command, ...resultDetails },
-				operation,
-				activeContext: buildActiveContext(server, params),
-				...(resultWarnings.length ? { diagnostics: { warnings: resultWarnings } } : {}),
-				artifactValue: { ...(result as Record<string, unknown>), ...(operation ? { operation } : {}) },
-				distill: (value: unknown) => ({ ...spec.distill(value as TResult), ...(operation ? { operationId: operation.operationId, sourceMode: operation.sourceMode } : {}) }),
-			});
-		},
-	});
 }

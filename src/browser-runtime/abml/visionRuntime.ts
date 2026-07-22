@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { registerBrowserResultResource, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
+import type { ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../capture/inject.js";
 import { VIEWPORT_TEMPLATE } from "../../../capture-src/entries/visionTemplate.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
@@ -12,7 +12,7 @@ import { normalizeAbmlError } from "../../kernels/abml/errors.js";
 export type AbmlVisionRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
 
 export type VisionInspectResult =
-	| { ok: true; artifactPath: string; resourceUri: string; entity: Entity; data: Record<string, unknown> }
+	| { ok: true; artifactPath: string; entity: Entity; data: Record<string, unknown> }
 	| { ok: false; error: ReturnType<typeof normalizeAbmlError> };
 
 function selectorFromRef(descriptor: RefDescriptor): string | undefined {
@@ -69,7 +69,6 @@ export async function inspectVisionRegion(server: AbmlVisionRuntimeServer, descr
 	await mkdir(outDir, { recursive: true });
 	const artifactPath = path.join(outDir, artifactFileName("abml-vision-region", typeof data.format === "string" ? data.format : "png"));
 	const saved = await saveDataUrl(screenshot, artifactPath);
-	const resourceUri = registerBrowserResultResource({ kind: "artifact-slice", artifactPath, name: descriptor.semantic?.name || "vision-region", mime: saved.mime, bytes: saved.bytes, browserSessionId: descriptor.owner.browserSessionId, redaction: "default" });
 	const probe = await evaluatePageObject(server, viewportScript(selector), { browserSessionId: options.browserSessionId ?? descriptor.owner.browserSessionId, tabId, timeoutMs }).catch(() => ({} as Record<string, unknown>));
 	const probeViewport = probe && typeof probe.viewport === "object" && probe.viewport ? probe.viewport : undefined;
 	const probeText = typeof probe.text === "string" ? probe.text : undefined;
@@ -92,11 +91,11 @@ export async function inspectVisionRegion(server: AbmlVisionRuntimeServer, descr
 		geometry: descriptor.geometry,
 		hints: {
 			visualFloor: true,
-			screenshotHandle: resourceUri,
+			screenshotHandle: artifactPath,
 			selector,
 			viewport: probeViewport,
 			text: probeText,
 		},
 	};
-	return { ok: true, artifactPath, resourceUri, entity, data: { screenshotHandle: resourceUri, artifactPath, format: saved.mime, point, selector, viewport: probeViewport, url: probeUrl } };
+	return { ok: true, artifactPath, entity, data: { screenshotHandle: artifactPath, artifactPath, format: saved.mime, point, selector, viewport: probeViewport, url: probeUrl } };
 }

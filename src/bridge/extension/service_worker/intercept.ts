@@ -1,4 +1,4 @@
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import { findLostRuntimeSession, persist as persistState, forget as forgetState, recover as recoverState, RECOVERY_CODES, registerRecovery, summarizeLostRuntimeSession } from "./state_store.js";
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
@@ -23,14 +23,6 @@ import type { InterceptPhase, InterceptRule, InterceptSession, InterceptTranscri
 const findLostInterceptRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
 const summarizeLostInterceptRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
 const INTERCEPT_PAUSED_MAX = 500;
-
-function asRecord(value: unknown): JsonRecord {
-	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function errorText(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 async function interceptCdpSend(tabId: number, method: string, params: JsonRecord = {}, timeoutMs?: number): Promise<JsonRecord> {
 	const cdp = browserPilotPersistentCdp();
@@ -447,13 +439,3 @@ registerRecovery(async (results) => {
 	});
 	results.push(result);
 });
-
-// ESM module metadata
-export const __browserPilotBridgeModule_intercept = {
-	name: "intercept",
-	symbols: {
-		browserPilotInterceptSessions,
-		handleBrowserPilotInterceptCommand,
-		cleanupInterceptSessionTab,
-	},
-};

@@ -85,6 +85,14 @@ function stringValue(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+function tabPageIdentity(tabs: Array<Record<string, unknown>>, tabId: number): { targetGeneration?: number; pageEpoch?: string } {
+	const tab = tabs.find((item) => normalizeTabId(item.tabId ?? item.id) === tabId);
+	return {
+		targetGeneration: numberValue(tab?.targetGeneration ?? tab?.generation),
+		pageEpoch: stringValue(tab?.pageEpoch),
+	};
+}
+
 function booleanValue(value: unknown): boolean | undefined {
 	return typeof value === "boolean" ? value : undefined;
 }
@@ -212,7 +220,7 @@ async function annotateListenerHints(server: AbmlBrowserRuntimeServer, entities:
 	};
 }
 
-function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessionId?: string; tabId?: number; url?: string; observationId: string; capturedAt: number }): Entity[] {
+function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessionId?: string; tabId?: number; targetGeneration?: number; pageEpoch?: string; url?: string; observationId: string; capturedAt: number }): Entity[] {
 	const anchors = deriveSemanticRefAnchors(entities).anchors.filter((item) => item.anchor.mintingEligible && item.anchor.confidence === "high");
 	if (!anchors.length) return entities;
 	const anchorByRef = new Map(anchors.map((item) => [item.ref, item.anchor]));
@@ -237,13 +245,16 @@ function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessio
 				},
 				...(entity.geometry ? { geometry: entity.geometry } : {}),
 				observationId: context.observationId,
-				documentEpoch: { url: context.url, capturedAt: context.capturedAt },
+					documentEpoch: {
+						...(context.targetGeneration ? { targetGeneration: context.targetGeneration } : {}),
+						...(context.pageEpoch ? { pageEpoch: context.pageEpoch } : {}),
+						url: context.url,
+						capturedAt: context.capturedAt,
+					},
 				createdAt: context.capturedAt,
 				ttlMs: 5 * 60 * 1000,
 				stabilityScore: 0.9,
-			},
-			resourceKind: "scan",
-			name: entity.name || entity.role,
+				},
 		});
 		return { ...entity, ref: refId };
 	});
@@ -350,7 +361,7 @@ function mintStreamCapture(lastSeq: number, startedAt: number, context: CaptureR
 	const now = context.capturedAt;
 	const captureRef = createCaptureRef({ refId: "bp-ref://signal/pending", state: "active", startedAt, expiresAt: now + STREAM_CAPTURE_TTL_MS, lastSeq, context });
 	const { refId: _drop, ...descriptor } = captureRef;
-	return registerRefDescriptor({ descriptor, browserSessionId: context.browserSessionId });
+	return registerRefDescriptor({ descriptor });
 }
 
 // One network record → a redacted network-entry entity. buildNetworkEntryEntity is a RAW builder (raw url in
@@ -368,7 +379,7 @@ function shapeNetworkStreamEntity(record: Record<string, unknown>, context: Capt
 		semantic: { ...(built.descriptor.semantic || {}), name: label },
 		documentEpoch: { ...built.descriptor.documentEpoch, url: causalReq.url ?? context.url, capturedAt: built.descriptor.documentEpoch?.capturedAt ?? context.capturedAt },
 	};
-	const refId = registerRefDescriptor({ descriptor, browserSessionId: context.browserSessionId });
+	const refId = registerRefDescriptor({ descriptor });
 	return { ...built.entity, ref: refId, name: label, ...(stream ? { stream } : {}) };
 }
 
@@ -382,7 +393,7 @@ function shapeEventStreamEntity(record: Record<string, unknown>, context: Captur
 		refId: causalEv.ref,
 		semantic: { ...(built.descriptor.semantic || {}), value: causalEv.summary },
 	};
-	const refId = registerRefDescriptor({ descriptor, browserSessionId: context.browserSessionId });
+	const refId = registerRefDescriptor({ descriptor });
 	const { value: _rawValue, ...entityNoValue } = built.entity;
 	return { ...entityNoValue, ref: refId, ...(causalEv.summary ? { value: causalEv.summary } : {}) };
 }
@@ -426,8 +437,8 @@ async function readStreamPlane(server: AbmlBrowserRuntimeServer, input: AbmlRead
 	const status = await readStreamStatus(server, plane, { ...target, tabId: target.tabId }, timeoutMs);
 	if (!status.active) {
 		const reason = plane === "network"
-			? "network recorder not active — start via browser_network start"
-			: "hook session not armed — install via browser_hook installTargets";
+			? "network recorder not active; use browser_command network.start"
+			: "hook session not armed; use browser_command hook.installTargets";
 		return { entities: [], data: { plane, mode: "stream", unavailable: reason, recorderActive: false } };
 	}
 
@@ -551,21 +562,26 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		})).data;
 		const bundle = validatePageWorldScanBundle(rawData);
 		if (!bundle.ok) throw new BrowserBridgeError("SCAN_BUNDLE_INVALID", "ABML structure read received an invalid browser-page-scan/v1 bundle", { issues: bundle.issues.slice(0, 20) });
-		const data = bundle.value;
-		const url = data.page.url || descriptorUrl;
-		const bridge = server.snapshot({ browserSessionId: target.browserSessionId });
-		const snapshot = server.createObservationSnapshot({
-			browserSessionId: bridge.browserSessionId,
-			tabId: target.tabId,
-			url,
+			const data = bundle.value;
+			const url = data.page.url || descriptorUrl;
+			const bridge = server.snapshot({ browserSessionId: target.browserSessionId });
+			const { targetGeneration, pageEpoch } = tabPageIdentity(bridge.tabs, target.tabId);
+			const snapshot = server.createObservationSnapshot({
+				browserSessionId: bridge.browserSessionId,
+				tabId: target.tabId,
+				url,
+				targetGeneration,
+				pageEpoch,
 			frameScope: "tab",
 			selectionVersion: bridge.selectionVersion,
 			sourceMode: "scan",
 			capturedAt: Date.now(),
 		});
-		const entityContext = {
-			browserSessionId: bridge.browserSessionId,
-			tabId: target.tabId,
+			const entityContext = {
+				browserSessionId: bridge.browserSessionId,
+				tabId: target.tabId,
+				targetGeneration,
+				pageEpoch,
 			url,
 			observationId: snapshot.snapshotId,
 			capturedAt: snapshot.capturedAt,
@@ -575,9 +591,11 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 			tabId: target.tabId,
 			timeoutMs,
 		}, settlementCapture);
-		const axRead = await settlementAxRead(server, {
-			browserSessionId: target.browserSessionId,
-			tabId: target.tabId,
+			const axRead = await settlementAxRead(server, {
+				browserSessionId: target.browserSessionId,
+				tabId: target.tabId,
+				targetGeneration,
+				pageEpoch,
 			observationId: snapshot.snapshotId,
 			url,
 			capturedAt: snapshot.capturedAt,
@@ -599,9 +617,11 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		const entities = scanEntitiesForEnvelope(summaryData, { entityContext });
 		const fusion = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : undefined;
 		const mergedEntitiesRaw = fusion ? fusion.entities : entities;
-		const mergedEntities = remintSemanticTemplateRefs(mergedEntitiesRaw, {
-			browserSessionId: bridge.browserSessionId,
-			tabId: target.tabId,
+			const mergedEntities = remintSemanticTemplateRefs(mergedEntitiesRaw, {
+				browserSessionId: bridge.browserSessionId,
+				tabId: target.tabId,
+				targetGeneration,
+				pageEpoch,
 			url,
 			observationId: snapshot.snapshotId,
 			capturedAt: snapshot.capturedAt,

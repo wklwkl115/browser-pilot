@@ -9,8 +9,7 @@
  *
  * This module is pure control plane (loopback HTTP + lockfile); it does not start
  * a BrowserBridgeServer. Auto-start spawns the resolved local daemon entry via
- * process.execPath — built dist uses bin.js, source runs use the local tsx CLI;
- * never shell out to `browser-pilot` by bin name.
+ * process.execPath — built dist uses the daemon bin, source runs use local tsx.
  */
 import http from "node:http";
 import os from "node:os";
@@ -142,7 +141,7 @@ function isStartLockStale(snapshot = readStartLockSnapshot()): boolean {
 	const acquiredAt = Date.parse(String(lock.acquiredAt || ""));
 	if (!Number.isFinite(acquiredAt)) return true;
 	// If the PID is still alive, the daemon is just starting slowly — use a
-	// longer stale window (2x) to avoid two CLIs both spawning daemons.
+	// longer stale window (2x) to avoid concurrent clients spawning daemons.
 	const effectiveStaleMs = pidAlive ? START_LOCK_STALE_MS * 2 : START_LOCK_STALE_MS;
 	return Date.now() - acquiredAt > effectiveStaleMs;
 }
@@ -227,11 +226,7 @@ export function isDaemonReadyForReuse(found: FoundDaemon): boolean {
 	return daemonContractReport(found).check.ok;
 }
 
-/**
- * Compatibility name for existing diagnostics. It now checks the complete lock
- * identity instead of parsing the fuzzy `package+daemon.protocol` display value.
- */
-export function isDaemonVersionCurrent(info: Pick<DaemonInfo, "version" | "contractIdentity">): boolean {
+export function isDaemonContractCurrent(info: Pick<DaemonInfo, "version" | "contractIdentity">): boolean {
 	return compareDaemonContractIdentity(localDaemonContractIdentity(), info.contractIdentity ?? null).ok;
 }
 
@@ -258,6 +253,7 @@ export function isPidAlive(pid: number): boolean {
 export interface ControlRequestOptions {
 	/** If provided, adds the x-browser-pilot-pairing-token header on the request. */
 	pairingToken?: string;
+	signal?: AbortSignal;
 }
 
 /** Loopback control request, token-guarded. Resolves with the parsed JSON body. */
@@ -282,13 +278,14 @@ export function controlRequest(
 			reject(error);
 		};
 		const data = body !== undefined ? JSON.stringify(body) : undefined;
-		const req = http.request(
+			const req = http.request(
 			{
 				host: info.controlHost,
 				port: info.controlPort,
-				method,
-				path: pathname,
-				headers: {
+					method,
+					path: pathname,
+					signal: opts?.signal,
+					headers: {
 					"x-browser-pilot-daemon-token": info.token,
 					...(opts?.pairingToken ? { "x-browser-pilot-pairing-token": opts.pairingToken } : {}),
 					...(data ? { "content-type": "application/json", "content-length": Buffer.byteLength(data) } : {}),
@@ -321,8 +318,8 @@ export function controlRequest(
 				});
 				res.on("error", (error) => safeReject(error instanceof Error ? error : new Error(String(error))));
 			},
-		);
-		req.on("error", (error) => safeReject(error instanceof Error ? error : new Error(String(error))));
+			);
+			req.on("error", (error) => safeReject(error instanceof Error ? error : new Error(String(error))));
 		req.setTimeout(timeoutMs, () => {
 			const error = new Error("control request timeout");
 			req.destroy(error);
@@ -367,9 +364,9 @@ export interface DaemonStartCommand {
  * Build the daemon child's environment, adding `--use-system-ca` to NODE_OPTIONS.
  *
  * `--use-system-ca` (Node ≥22.15) makes the daemon trust the OS/browser CA store
- * in addition to Node's bundled bundle. This is what lets web-security fetches
- * (crawl/fuzz/http_replay) work behind a TLS-intercepting proxy/AV or a corporate
- * root CA — exactly the trust the co-located browser already has — WITHOUT
+ * in addition to Node's bundled bundle. This is what lets daemon HTTP requests
+ * work behind a TLS-intercepting proxy/AV or a corporate root CA — exactly the
+ * trust the co-located browser already has — WITHOUT
  * disabling certificate verification.
  *
  * It is injected via NODE_OPTIONS (not an exec arg) so it survives the tsx loader
@@ -392,39 +389,39 @@ export function daemonSpawnEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS
 	return { ...baseEnv, NODE_OPTIONS: current ? `${current} --use-system-ca` : "--use-system-ca" };
 }
 
-/** Command to start the daemon. Built packages use node+bin.js; source/tsx runs use the local tsx CLI. */
+/** Command to start the daemon. Built packages use node+bin.js; source runs use local tsx. */
 export function resolveDaemonStartCommand(): DaemonStartCommand {
 	const explicit = process.env.BROWSER_PILOT_DAEMON_ENTRY;
-	if (explicit) return { command: process.execPath, args: [explicit, "daemon", "start"] };
+	if (explicit) return { command: process.execPath, args: [explicit] };
 	const modulePath = fileURLToPath(import.meta.url);
 	const root = packageRoot() ?? path.resolve(path.dirname(modulePath), "..", "..", "..");
 	const tsEntry = [
-		path.join(root, "src", "apps", "cli", "bin.ts"),
-		path.join(root, "cli", "bin.ts"),
+		path.join(root, "src", "apps", "daemon", "bin.ts"),
+		path.join(root, "daemon", "bin.ts"),
 	].find((candidate) => existsSync(candidate));
 	// A source checkout may also contain an older dist/ from a prior build. Starting
 	// that output would be correctly rejected by contract identity but could never
 	// converge, so source execution must launch the source entry.
 	if (modulePath.endsWith(".ts") && tsEntry) return resolveSourceDaemonStartCommand(root, tsEntry);
 	const jsEntry = [
-		path.join(root, "dist", "src", "apps", "cli", "bin.js"),
-		path.join(root, "dist", "cli", "bin.js"),
+		path.join(root, "dist", "src", "apps", "daemon", "bin.js"),
+		path.join(root, "dist", "daemon", "bin.js"),
 	].find((candidate) => existsSync(candidate));
-	if (jsEntry) return { command: process.execPath, args: [jsEntry, "daemon", "start"] };
+	if (jsEntry) return { command: process.execPath, args: [jsEntry] };
 	if (tsEntry) return resolveSourceDaemonStartCommand(root, tsEntry);
-	return { command: process.execPath, args: [path.join(root, "dist", "src", "apps", "cli", "bin.js"), "daemon", "start"] };
+	return { command: process.execPath, args: [path.join(root, "dist", "src", "apps", "daemon", "bin.js")] };
 }
 
 function resolveSourceDaemonStartCommand(root: string, tsEntry: string): DaemonStartCommand {
-	const tsxCli = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
-	if (existsSync(tsxCli)) {
+	const tsxEntry = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
+	if (existsSync(tsxEntry)) {
 		// Prefer running the tsx loader IN-PROCESS via `node --import tsx` (Node ≥20.6).
-		// The tsx CLI wrapper (tsxCli) re-execs a child node, which escapes the parent's
+		// The tsx wrapper re-execs a child node, which escapes the parent's
 		// windowsHide and pops a console window on Windows; the single-process form
 		// inherits windowsHide and stays invisible. cwd=root so the bare `tsx` resolves.
 		// Older Node without `--import` falls back to the (windowed) re-exec wrapper.
-		if (supportsImportFlag()) return { command: process.execPath, args: ["--import", "tsx", tsEntry, "daemon", "start"], cwd: root };
-		return { command: process.execPath, args: [tsxCli, tsEntry, "daemon", "start"] };
+			if (supportsImportFlag()) return { command: process.execPath, args: ["--import", "tsx", tsEntry], cwd: root };
+		return { command: process.execPath, args: [tsxEntry, tsEntry] };
 	}
 	return { command: process.execPath, args: [tsEntry, "daemon", "start"] };
 }

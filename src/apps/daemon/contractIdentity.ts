@@ -1,19 +1,15 @@
 import { createHash } from "node:crypto";
-import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
-import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
-import { contractActionMetadata } from "../../commands/publicActionCatalog.js";
-import { BROWSER_OPERATION_OUTCOME_CONTRACT, BROWSER_OPERATION_SCHEMA, BROWSER_OPERATION_SEMANTIC_CONTRACT } from "../../kernels/session/browserOperation.js";
-import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
+import type { CommandDefinition } from "../../commands/commandManifestIndex.js";
+import { browserCommandDefinitions } from "../../commands/commandDefinitions.js";
 import { getNativeCommandProtocolSchema } from "../../types/nativeProtocol.js";
 import { COMMAND_CONTRACT_VERSION, DAEMON_PROTOCOL_VERSION, packageVersion } from "./packageInfo.js";
 import { PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA, PAGE_WORLD_SCAN_SCHEMA } from "../../kernels/abml/pageWorldScan.js";
-import { COMMAND_CATALOG_V3_JSON_SCHEMA, COMMAND_SCHEMA_V3_JSON_SCHEMA } from "../../commands/publicContractSchemas.js";
 import { PAGE_OBSERVATION_SCHEMA_V3, PAGE_OBSERVATION_V3_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
 
 export interface DaemonContractIdentity {
 	packageVersion: string;
 	daemonProtocolVersion: number;
-	commandContractVersion: 3;
+	commandContractVersion: 4;
 	commandContractHash: string;
 	toolCount: number;
 }
@@ -139,18 +135,10 @@ export function nativeProtocolContractHash(): string {
 }
 
 export type CommandContractPayload = {
-	commands: Array<{ name: string; parameters: unknown; cliSubcommands: Array<{ token: string; parameter: string; value: string }> }>;
-	actions: Array<Record<string, unknown>>;
-	operationResult: {
-		schema: typeof BROWSER_OPERATION_SCHEMA;
-		outcomes: typeof BROWSER_OPERATION_OUTCOME_CONTRACT;
-		semantic: typeof BROWSER_OPERATION_SEMANTIC_CONTRACT;
-	};
+	commands: Array<{ name: string; parameters: unknown }>;
 	daemonProtocolVersion: number;
 	nativeProtocolHash: string;
 	publicSchemaHashes: {
-		catalogV3: string;
-		commandSchemaV3: string;
 		pageScanV1: string;
 		pageObservationV3: string;
 	};
@@ -158,25 +146,18 @@ export type CommandContractPayload = {
 
 export function commandContractPayload(definitions: readonly CommandDefinition[]): CommandContractPayload {
 	const commands = definitions
-		.map((definition) => ({
-			name: definition.name,
-			parameters: contractSchema(definition.parameters ?? null),
-			cliSubcommands: [...(definition.cliSubcommands ?? [])]
-				.map((route) => ({ token: route.token, parameter: route.parameter, value: route.value }))
-				.sort((left, right) => left.token.localeCompare(right.token)),
-		}))
+			.map((definition) => ({
+				name: definition.name,
+				parameters: contractSchema(definition.parameters ?? null),
+			}))
 		.sort((left, right) => left.name.localeCompare(right.name));
 	const nativeProtocolHash = nativeProtocolContractHash();
-	return {
-		commands,
-		actions: contractActionMetadata(definitions),
-		operationResult: { schema: BROWSER_OPERATION_SCHEMA, outcomes: BROWSER_OPERATION_OUTCOME_CONTRACT, semantic: BROWSER_OPERATION_SEMANTIC_CONTRACT },
-		daemonProtocolVersion: DAEMON_PROTOCOL_VERSION,
-		nativeProtocolHash,
-		publicSchemaHashes: {
-			catalogV3: sha256(canonicalContractJson(contractSchema(COMMAND_CATALOG_V3_JSON_SCHEMA))),
-			commandSchemaV3: sha256(canonicalContractJson(contractSchema(COMMAND_SCHEMA_V3_JSON_SCHEMA))),
-			pageScanV1: sha256(canonicalContractJson({ schema: PAGE_WORLD_SCAN_SCHEMA, definition: contractSchema(PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA) })),
+		return {
+			commands,
+			daemonProtocolVersion: DAEMON_PROTOCOL_VERSION,
+			nativeProtocolHash,
+			publicSchemaHashes: {
+				pageScanV1: sha256(canonicalContractJson({ schema: PAGE_WORLD_SCAN_SCHEMA, definition: contractSchema(PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA) })),
 			pageObservationV3: sha256(canonicalContractJson({ schema: PAGE_OBSERVATION_SCHEMA_V3, definition: contractSchema(PAGE_OBSERVATION_V3_JSON_SCHEMA) })),
 		},
 	};
@@ -197,17 +178,11 @@ export function createDaemonContractIdentity(definitions: readonly CommandDefini
 	};
 }
 
-// Registration is metadata-only. Command execute closures capture this placeholder
-// but are never called while calculating the local contract identity.
-const placeholderRuntime = {} as BrowserCommandRuntimePort;
-const noopEnsureStarted = async () => placeholderRuntime;
 let cachedLocalIdentity: DaemonContractIdentity | undefined;
 
 export function localDaemonContractIdentity(): DaemonContractIdentity {
 	if (cachedLocalIdentity) return { ...cachedLocalIdentity };
-	const commands = new CommandManifestIndex();
-	defineBrowserCommands(commands, placeholderRuntime, noopEnsureStarted);
-	cachedLocalIdentity = createDaemonContractIdentity(commands.getCommands());
+	cachedLocalIdentity = createDaemonContractIdentity(browserCommandDefinitions());
 	return { ...cachedLocalIdentity };
 }
 

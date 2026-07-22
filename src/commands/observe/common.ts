@@ -6,27 +6,16 @@ import { currentPageIdentity } from "./pageIdentity.js";
 
 export const DEFAULT_CONTENT_TIMEOUT_MS = 35_000;
 export const MIN_CONTENT_TIMEOUT_MS = 100;
-export type ObserveMode = "scan" | "content" | "html" | "text" | "tabs";
 
 export type ObserveToolParams = {
-	mode?: string;
-	modeExplicit?: boolean;
 	browserSessionId?: string;
-	tabId?: number | string;
 	targetRef?: string;
 	detailLevel?: string;
 	outputPath?: string;
 	timeoutMs?: number;
 	maxChars?: number;
-	selector?: string;
-	content?: string;
-	readability?: boolean;
-	url?: string;
-	includeLinks?: boolean;
 	maxNodes?: number;
 	includeIframes?: boolean;
-	htmlMode?: string;
-	params?: unknown;
 	intent?: string;
 	baseline?: unknown;
 	baselineSnapshotId?: string;
@@ -34,11 +23,6 @@ export type ObserveToolParams = {
 	actionRef?: string;
 	fresh?: boolean;
 	diff?: boolean;
-	diagnostics?: string | boolean;
-	debug?: string | boolean;
-	axe?: boolean;
-	axeDiagnostics?: boolean;
-	modeInferred?: { mode: ObserveMode; reason: string } | null;
 };
 
 type ObserveRunnerError = Error & { code: "INVALID_TIMEOUT"; details: Record<string, unknown> };
@@ -61,11 +45,7 @@ export function normalizeContentTimeoutMs(value: unknown): number {
 	return timeoutMs;
 }
 
-export function withObservationMeta(summary: Record<string, unknown>, mode: ObserveMode, sourceMode: "scan" | "content" | "html"): Record<string, unknown> {
-	return { mode, sourceMode, ...summary };
-}
-
-export function currentObserveSnapshotMeta(server: BrowserCommandRuntimePort, params: ObserveToolParams, sourceMode: "scan" | "content" | "html", savedPath: string | undefined, url: string | undefined, networkSeq?: number, hookSeq?: number, identityOverride?: PageIdentity) {
+export function currentObserveSnapshotMeta(server: BrowserCommandRuntimePort, params: ObserveToolParams, savedPath: string | undefined, url: string | undefined, networkSeq?: number, hookSeq?: number, identityOverride?: PageIdentity) {
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const rawTargetRef = targetTabId(params);
 	const tabId = resolveLocalTargetTabId(server, rawTargetRef, params.browserSessionId) ?? bridge.defaultTabId;
@@ -80,7 +60,7 @@ export function currentObserveSnapshotMeta(server: BrowserCommandRuntimePort, pa
 		} : {}),
 		frameScope: "tab",
 		selectionVersion: bridge.selectionVersion,
-		sourceMode,
+		sourceMode: "scan",
 		capturedAt: Date.now(),
 		networkSeq,
 		hookSeq,

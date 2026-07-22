@@ -1,6 +1,7 @@
 import { WebSocket } from "ws";
 import { recordValue, toTabId } from "../../utils/records.js";
 import { DEFAULT_BROWSER_BRIDGE_PORT } from "./browserBridgeConfig.js";
+import { BROWSER_PILOT_EXTENSION_ID } from "./browserBridgeConfig.js";
 import type { BrowserTabInfo, BrowserTabSession } from "./types.js";
 
 export const DEFAULT_TIMEOUT_MS = 15_000;
@@ -29,21 +30,15 @@ export function normalizeErrorMessage(error: unknown): string {
 	return String(error);
 }
 
-export function isAllowedBridgeOrigin(origin: string | undefined): boolean {
-	if (origin === undefined || origin === "null") return true;
-	try {
-		const url = new URL(origin);
-		return url.protocol === "chrome-extension:" && /^[a-p]{32}$/.test(url.hostname);
-	} catch {
-		return false;
-	}
+export function isAllowedBridgeOrigin(origin: string | undefined, extensionId = BROWSER_PILOT_EXTENSION_ID): boolean {
+	return origin === `chrome-extension://${extensionId}`;
 }
 
 export type BridgeReadiness = "bridge-down" | "bridge-up" | "connecting" | "degraded" | "extension-stale" | "ready";
 
 /**
  * Derive a coarse, honest connection-readiness state from bridge snapshot fields,
- * so callers (CLI status/connect, agents) get a graded signal instead of a binary
+ * so callers get a graded signal instead of a binary
  * connected/not-connected. Pure + deterministic — pass `now` in tests.
  *
  * - bridge-down: the bridge server is not listening yet.

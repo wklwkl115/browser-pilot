@@ -1,20 +1,16 @@
-export const BROWSER_PILOT_STDLIB_NAMES = ["resolve", "box", "setValue", "settled"] as const;
+export const BROWSER_PILOT_STDLIB_NAMES = ["refs", "resolve", "box", "setValue", "settled"] as const;
 
-export function stdlibPrelude(registry: Record<string, unknown>): string {
+export function stdlibPrelude(registry: Record<string, unknown>, bindings: Record<string, string> = {}): string {
 	return `
-const browserPilot = (() => {
-  const __registry = ${JSON.stringify(registry)};
+	const browserPilot = (() => {
+	  const __registry = ${JSON.stringify(registry)};
+	  const __bindings = ${JSON.stringify(bindings)};
   const __names = ${JSON.stringify(BROWSER_PILOT_STDLIB_NAMES)};
   function __entry(ref) {
     if (typeof ref === "string") return __registry[ref] || null;
     if (ref && typeof ref === "object" && ref.descriptor) return { ok: true, fresh: true, descriptor: ref.descriptor };
     if (ref && typeof ref === "object" && ref.refId && ref.locators) return { ok: true, fresh: true, descriptor: ref };
     return null;
-  }
-  function __textMatch(el, text, exact) {
-    const value = String((el && (el.innerText || el.textContent)) || "").replace(/\\s+/g, " ").trim();
-    const target = String(text || "").replace(/\\s+/g, " ").trim();
-    return exact ? value === target : value.includes(target);
   }
   function __rect(el) {
     if (!el || typeof el.getBoundingClientRect !== "function") return null;
@@ -52,12 +48,6 @@ const browserPilot = (() => {
     try {
       if (locator.by === "css" && locator.value) return document.querySelector(String(locator.value));
       if (locator.by === "xpath" && locator.value) return document.evaluate(String(locator.value), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      if (locator.by === "point") return document.elementFromPoint(Number(locator.x), Number(locator.y));
-      if (locator.by === "textAnchor" && locator.value) {
-        const role = locator.role ? String(locator.role) : "";
-        const candidates = Array.from(document.querySelectorAll(role ? '[role="' + CSS.escape(role) + '"]' : "body *"));
-        return candidates.find(el => __textMatch(el, locator.value, locator.exact === true)) || null;
-      }
       if (locator.by === "attrSignature" && locator.value && typeof locator.value === "object") {
         const attrs = locator.value;
         const candidates = Array.from(document.querySelectorAll("iframe,frame,[id],[name],[role]"));
@@ -120,7 +110,7 @@ const browserPilot = (() => {
     el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     return { ok: true, freshness: resolved.freshness, tagName: String(el.tagName || "").toLowerCase(), charCount: String(value ?? "").length };
   }
-  function settled(quietMs = 150, timeoutMs = 2000) {
+	  function settled(quietMs = 150, timeoutMs = 2000) {
     const quiet = Math.max(0, Math.min(1000, Number(quietMs) || 150));
     const timeout = Math.max(quiet, Math.min(10000, Number(timeoutMs) || 2000));
     return new Promise(resolveDone => {
@@ -141,8 +131,18 @@ const browserPilot = (() => {
       quietTimer = setTimeout(() => done(true), quiet);
       setTimeout(() => done(false), timeout);
     });
-  }
-  return Object.freeze({ resolve, box, setValue, settled, __namespace: Object.freeze(__names) });
-})();
+	  }
+	  const __resolvedBindings = new Map();
+	  const refs = {};
+	  for (const [name, ref] of Object.entries(__bindings)) Object.defineProperty(refs, name, {
+	    enumerable: true,
+	    get() {
+	      if (!__resolvedBindings.has(name)) __resolvedBindings.set(name, resolve(ref).el);
+	      return __resolvedBindings.get(name);
+	    }
+	  });
+	  Object.freeze(refs);
+	  return Object.freeze({ refs, resolve, box, setValue, settled, __namespace: Object.freeze(__names) });
+	})();
 `;
 }

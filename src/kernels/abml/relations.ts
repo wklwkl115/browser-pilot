@@ -7,7 +7,7 @@
 // anchors and mints refs (DOM↔AX merge), then this pure module materializes anchors→refs and
 // summarizes. No browser, Node, or tools imports — stays inside the abml-kernel boundary.
 import type { Entity, EntityRelation, RelationType } from "./entity.js";
-import { backendNodeKey, cleanTargetId, legacyBackendNodeKey } from "./nodeKey.js";
+import { backendNodeKey, bareBackendNodeKey, cleanTargetId } from "./nodeKey.js";
 
 // A relation edge before ref materialization. sourceKey/targetKey are node-id keys in the
 // shared key space "b:<backendDOMNodeId>" | "a:<axNodeId>" — never leaked to callers.
@@ -69,8 +69,8 @@ function typeRank(type: RelationType): number {
 //   t:<targetId>:b:<backendDOMNodeId> · b:<backendDOMNodeId> · a:<axNodeId> — AX-derived endpoints (property/table/currentIn relations)
 //   s:<selector>          — DOM endpoints (occlusion relations match by CSS selector)
 // All of an entity's keys register so an anchor keyed by any of them resolves to its ref. When an
-// OOPIF target id is known, the composite key is registered first and the legacy bare backend key is
-// still registered for same-target callers and older anchors.
+// OOPIF target id is known, the composite key is registered first and the bare backend key remains
+// available for providers that do not report a target id.
 export function entityRelationKeys(entity: Entity): string[] {
 	const keys: string[] = [];
 	const locator = entity.locators?.find((item) => item.by === "backendNodeId");
@@ -79,10 +79,10 @@ export function entityRelationKeys(entity: Entity): string[] {
 	const backend = Number.isFinite(hintBackend) ? hintBackend : locator?.by === "backendNodeId" && Number.isFinite(locatorBackend) ? locatorBackend : undefined;
 	if (backend !== undefined) {
 		const targetId = cleanTargetId(entity.hints?.targetId ?? entity.hints?.cdpTargetId) ?? (locator?.by === "backendNodeId" ? cleanTargetId(locator.targetId) : undefined);
-		const legacyKey = legacyBackendNodeKey(backend);
+		const bareKey = bareBackendNodeKey(backend);
 		const compositeKey = backendNodeKey({ backendNodeId: backend, targetId });
 		keys.push(compositeKey);
-		if (compositeKey !== legacyKey) keys.push(legacyKey);
+		if (compositeKey !== bareKey) keys.push(bareKey);
 	}
 	const axNodeId = entity.hints?.axNodeId;
 	if (typeof axNodeId === "string" && axNodeId.trim()) keys.push(`a:${axNodeId.trim()}`);

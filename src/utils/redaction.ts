@@ -134,7 +134,7 @@ function redactUrlQueryValues(text: string): string {
 	});
 }
 
-const INTERNAL_URI_RE = /(?:bp-ref|browser-result):\/\/[^\s"'<>)}\]]*[^\s"'<>)}\],;.]/g;
+const INTERNAL_URI_RE = /bp-ref:\/\/[^\s"'<>)}\]]*[^\s"'<>)}\],;.]/g;
 
 export function redactSensitiveText(text: string): string {
 	const raw = String(text);

@@ -1,5 +1,5 @@
 import { chromeApi as chrome } from "./runtimeEnv";
-import { BROWSER_PILOT_ERROR_CODES, callPageBrowserPilot, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, callPageBrowserPilot, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, runtimeErrorMessage as waitErrorMessage, runtimeRecord as waitRecord } from "./runtimeSupport.js";
 import { browserPilotSessions, getBrowserPilotQueueStats } from "./state_store.js";
 import { diagnoseBrowserPilotCdpCleanupHistory, diagnoseBrowserPilotCdpDomainRefs, diagnoseBrowserPilotCdpSubscriptions } from "./wait_cdp";
 import { cancelWaitsForTab, clearWait, makeWaitId, normalizeBrowserPilotTimeoutMs, browserPilotWaits, waitKey } from "./wait_coordinator";
@@ -10,8 +10,6 @@ import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse 
 
 type WaitChild = BrowserPilotBridgeCommand & { cmd?: string; type?: string; kind?: string };
 type SettledWait = PromiseSettledResult<BrowserPilotBridgeResponse>;
-function waitRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
-function waitErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
 // wait.js - Browser Pilot wait, event listener and CDP wait coordination commands.
 
@@ -124,7 +122,6 @@ async function waitForAll(tabId: number, msg: BrowserPilotBridgeCommand): Promis
   }
   return { ok: true, data: aggregate };
 }
-async function waitForComposite(tabId: number, msg: BrowserPilotBridgeCommand, mode: string): Promise<BrowserPilotBridgeResponse> { return mode === 'waitForAny' ? await waitForAny(tabId, msg) : await waitForAll(tabId, msg); }
 function normalizeBrowserPilotWaitKind(kind: unknown, msg?: BrowserPilotBridgeCommand): string {
   const raw = String(kind || msg?.kind || msg?.type || msg?.cmd || 'selector').trim().replace(/^browserPilot[._-]/i, '');
   const withoutWaitPrefix = raw.replace(/^wait[._-]/i, '');
@@ -164,7 +161,6 @@ async function cancelWait(tabId: number, msg: BrowserPilotBridgeCommand): Promis
   else cancelled_count = cancelWaitsForTab(tabId, 'cancelled');
   return { ok: true, data: { cancelled: cancelled_count, cancelled_count, waitId: waitId || null, pending: Array.from(browserPilotWaits.values()).filter(r => Number(r.tabId) === Number(tabId)).map(r => ({ waitId:r.waitId, kind:r.kind, age_ms:Date.now()-r.createdAt })) } };
 }
-function cancelBrowserPilotWait(tabId: number, msg: BrowserPilotBridgeCommand) { return cancelWait(tabId, msg); }
 
 function extractBrowserPilotRuntimeValue(resp: BrowserPilotBridgeResponse): JsonRecord | null {
   const data = waitRecord(resp.data); const result = waitRecord(resp.result); return waitRecord(waitRecord(data.result).result).value as JsonRecord || waitRecord(result.result).value as JsonRecord || waitRecord(data.result).value as JsonRecord || result.value as JsonRecord || null;
@@ -323,8 +319,8 @@ async function diagnoseSelectorForWait(tabId: number, msg: BrowserPilotBridgeCom
     current: data,
     recoveryCommands: [
       `browser_observe to refresh selectors around ${selector}`,
-      `explicit legacy/debug projection browser_observe mode=html selector=${selector} can inspect the current DOM match`,
-      'browser_frame list when iframe placement is suspected',
+      `browser_command html.get with selector=${selector} can inspect the current DOM match`,
+      'use browser_command frame.list when iframe placement is suspected',
     ],
   };
 }
@@ -411,6 +407,4 @@ async function diagnoseBrowserPilot(tabId: number, msg: BrowserPilotBridgeComman
   };
   return { ok: true, data: { tabId:Number(tabId), tab, sessions: Array.from(browserPilotSessions.entries()).map(([tid, s]) => ({ tabId: tid, ...s })), session: browserPilotSessions.get(Number(tabId)) || null, queue: getBrowserPilotQueueStats(tabId), waits: activeWaits, activeWaits, recentWaits, selectorDiagnostics, listeners, frames, frameCount, iframeCount, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
 }
-export { waitForAny, waitForAll, waitForComposite, normalizeBrowserPilotWaitKind, dispatchBrowserPilotWait, cancelWait, cancelBrowserPilotWait, extractBrowserPilotRuntimeValue, cleanupBrowserPilotPageListenersForTab, addEventListener, removeEventListener, getPerformanceEntries, diagnoseBrowserPilot };
-// ESM module metadata
-export const __browserPilotBridgeModule_wait = { name: "wait", symbols: { waitForAny, waitForAll, waitForComposite, normalizeBrowserPilotWaitKind, dispatchBrowserPilotWait, cancelWait, cancelBrowserPilotWait, extractBrowserPilotRuntimeValue, cleanupBrowserPilotPageListenersForTab, addEventListener, removeEventListener, getPerformanceEntries, diagnoseBrowserPilot } };
+export { waitForAny, waitForAll, normalizeBrowserPilotWaitKind, dispatchBrowserPilotWait, cancelWait, extractBrowserPilotRuntimeValue, cleanupBrowserPilotPageListenersForTab, addEventListener, removeEventListener, getPerformanceEntries, diagnoseBrowserPilot };

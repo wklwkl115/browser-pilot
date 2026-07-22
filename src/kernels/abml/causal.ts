@@ -34,7 +34,7 @@ export type CausalEvent = {
 };
 
 // Budget-immune envelope block. `unavailable` is emitted when no network recorder is active for
-// the tab; the agent opts in via `browser_network start`. The optional `events` field carries
+// the tab; the agent opts in via `browser_command network.start`. The optional `events` field carries
 // hook events since baseline alongside the network `requests`.
 export type CausalSummary =
 	| { sinceSeq: number; requests: CausalRequest[]; requestCount?: number; events?: CausalEvent[]; eventCount?: number }
@@ -53,14 +53,14 @@ export function causalRequestsFiredCount(causal: CausalSummary): number {
 }
 
 // The agent-facing "what fired since baseline" hint line. Reports the TRUE fired count and, when the
-// inline `requests` preview is capped below that total, says where the rest live (browser_network list)
+// inline `requests` preview is capped below that total, says where the rest live (`browser_command network.list`)
 // — so the agent isn't left wondering whether the unseen requests are pageable (they are not; the
 // causal block is a bounded preview, the recorder holds the full set).
 export function causalFiredHint(causal: CausalSummary): string | undefined {
 	if (!("requests" in causal) || !causal.requests.length) return undefined;
 	const fired = causalRequestsFiredCount(causal);
 	const shown = causal.requests.length;
-	const more = fired > shown ? ` (first ${shown} shown inline; full set via browser_network list)` : "";
+	const more = fired > shown ? ` (first ${shown} shown inline; full set via browser_command network.list)` : "";
 	return `${fired} request(s) fired since baseline → read envelope.causal.requests${more} (action→request attribution)`;
 }
 const MAX_URL_CHARS = 200;

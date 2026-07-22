@@ -3,7 +3,7 @@ import { BrowserPilotNativeProtocol } from "./protocol";
 import { chromeApi as chrome } from "./runtimeEnv";
 import { isScriptable, browserPilotBridgeInfo } from "./bridge_info";
 import { handleBrowserPilotNativeCommand, isBrowserPilotNativeCommand } from "./runtime.js";
-import { BROWSER_PILOT_ERROR_CODES, bridgeError, normalizeBridgeResponse, normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, bridgeError, normalizeBridgeResponse, normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp, runtimeErrorMessage as coreErrorMessage, runtimeRecord as coreRecord } from "./runtimeSupport.js";
 import { browserPilotPageIdentityForTab } from "./page_identity";
 import { browserPilotTabIdentityFields } from "./tab_identity";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeSender, BrowserPilotChromeCookie, BrowserPilotNativeProtocolRuntime } from "./types";
@@ -16,8 +16,6 @@ type BrowserPilotCoreDispatchContext = { resolveParams?: (params: unknown) => Js
 type BrowserPilotCoreCommandHandler = (msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender, context: BrowserPilotCoreDispatchContext) => Promise<BrowserPilotBridgeResponse>;
 let bridgeWakeProbe: BridgeWakeProbe | null = null;
 
-function coreRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
-function coreErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 function coreErrorDetails(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) }; }
 function optionalString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
 
@@ -391,5 +389,3 @@ async function handleBatch(msg: BrowserPilotBridgeCommand, sender: BrowserPilotB
   }
 }
 export { setBridgeWakeProbe, handleBridgeWake, normalizeBrowserPilotCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, browserPilotCookiePartitionIdentity, browserPilotCookieIdentity, mergeBrowserPilotCookies, normalizeBrowserPilotCookieUrl, handleCookies, handleCDP, handlePersistentCDP, validateBrowserPilotBridgeProtocolMessage, resolveBrowserPilotCoreCommandHandler, dispatchBrowserPilotBridgeCommand, handleBatch };
-// ESM module metadata
-export const __browserPilotBridgeModule_core_commands = { name: "core_commands", symbols: { setBridgeWakeProbe, handleBridgeWake, normalizeBrowserPilotCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, browserPilotCookiePartitionIdentity, browserPilotCookieIdentity, mergeBrowserPilotCookies, normalizeBrowserPilotCookieUrl, handleCookies, handleCDP, handlePersistentCDP, validateBrowserPilotBridgeProtocolMessage, resolveBrowserPilotCoreCommandHandler, dispatchBrowserPilotBridgeCommand, handleBatch } };

@@ -1,14 +1,11 @@
-import { executeBrowserWaitWithSupervisor } from "../../browser-command-runtime/waitSupervisor.js";
 import { createBrowserAbmlIntegration } from "../../browser-command-runtime/abml/integration.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { normalizePageFingerprint, readPageFingerprint, type PageFingerprint } from "../pageSignals.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
-import { scanCommandName } from "./renderCache.js";
-import { withTrackedOperation, type CommandOnUpdate, type TrackedOperationHandle } from "../commandRuntime.js";
+import { withTrackedOperation, type CommandOnUpdate } from "../commandRuntime.js";
 import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import type { BaselineResolution } from "./baseline.js";
-import type { ObserveMode, ObserveToolParams } from "./common.js";
+import type { ObserveToolParams } from "./common.js";
 import type { PageIdentity, PageReanchorReason } from "../../kernels/session/pageIdentity.js";
 import { pageReanchorReason, samePageIdentity } from "../../kernels/session/pageIdentity.js";
 import { currentPageIdentity, pageIdentityFromUnknown } from "./pageIdentity.js";
@@ -28,8 +25,6 @@ function validatedScanBundle(value: unknown): PageWorldScanBundleV1 {
 type ScanCaptureOptions = {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
-	mode: Extract<ObserveMode, "scan" | "text">;
-	hasNavigation: boolean;
 	rawTargetRef: unknown;
 	browserSessionId: string | undefined;
 	tabId: number | undefined;
@@ -43,18 +38,6 @@ type ScanCaptureOptions = {
 	timings: ObserveTimingMetrics;
 	onUpdate?: CommandOnUpdate;
 };
-
-async function navigateForScan(options: ScanCaptureOptions, handle: TrackedOperationHandle) {
-	const { server, params, rawTargetRef, timeoutMs, timings } = options;
-	if (!options.hasNavigation) return undefined;
-	await handle.update({ progress: 20, phase: "navigating" });
-	const startedAt = Date.now();
-	const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url!, state: "complete", timeoutMs }, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs });
-	timings.navigationMs = elapsedMs(startedAt);
-	addBridgeRoundTrips(timings, 1);
-	assertBridgeCommandSucceeded(navigation, "wait.navigateAndWait");
-	return navigation.data;
-}
 
 async function readCapturedPageIdentity(options: ScanCaptureOptions, fingerprint: PageFingerprint | undefined, target: unknown) {
 	const startedAt = Date.now();
@@ -88,8 +71,8 @@ async function readScanAbml(
 	effectiveBaseline: BaselineResolution | undefined,
 	fusedPageFingerprint: PageFingerprint | undefined,
 ) {
-	const { browserSessionId, tabId, timeoutMs, captureMaxChars, mode, params, pageFingerprint, timings } = options;
-	const canReuseScanForAbml = mode !== "text" && params.includeIframes !== false && params.maxNodes === undefined;
+	const { browserSessionId, tabId, timeoutMs, captureMaxChars, params, pageFingerprint, timings } = options;
+	const canReuseScanForAbml = params.includeIframes !== false && params.maxNodes === undefined;
 	timings.abmlPrefetchedScan = canReuseScanForAbml;
 	const cacheFingerprint = pageFingerprint ?? fusedPageFingerprint;
 	const abmlStartedAt = Date.now();
@@ -109,15 +92,15 @@ async function readScanAbml(
 }
 
 export async function executeScanCapture(options: ScanCaptureOptions) {
-	const { server, params, mode, hasNavigation, rawTargetRef, browserSessionId, tabId, timeoutMs, captureMaxChars, scanScript, baseline, timings, onUpdate } = options;
+	const { server, params, rawTargetRef, browserSessionId, tabId, timeoutMs, captureMaxChars, scanScript, baseline, timings, onUpdate } = options;
 	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars });
 	let fusedPageFingerprint: PageFingerprint | undefined;
 	let capturedPageIdentity: PageIdentity | undefined;
 	let effectiveBaseline = baseline;
 	let reanchorReason = options.reanchorReason;
-	const { result: observation, operation } = await withTrackedOperation(server, {
+	const { result: observation, operation } = await withTrackedOperation({
 		commandName: "browser_observe",
-		command: scanCommandName(mode, hasNavigation),
+		command: "scan",
 		browserSessionId,
 		tabId,
 		phase: "running",
@@ -126,8 +109,7 @@ export async function executeScanCapture(options: ScanCaptureOptions) {
 		leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
 		sourceMode: "scan",
 	}, onUpdate, async (handle) => {
-		const navigationData = await navigateForScan(options, handle);
-		await handle.update({ progress: hasNavigation ? 50 : 40 });
+		await handle.update({ progress: 40 });
 		const pageScriptStartedAt = Date.now();
 		const evaluated = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract" });
 		const result = { ...evaluated, data: validatedScanBundle(evaluated.data) };
@@ -145,7 +127,7 @@ export async function executeScanCapture(options: ScanCaptureOptions) {
 		await handle.update({ progress: 70, details: { acknowledged: result.acknowledged, target: result.target } });
 		const abmlRead = await readScanAbml(options, abml, result, effectiveBaseline, fusedPageFingerprint);
 		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target, abml: abmlRead?.ok === true ? { entityCount: abmlRead.entities?.length ?? 0 } : { ok: false } } });
-		return { result, abmlRead, navigationData };
+		return { result, abmlRead };
 	});
 	return { observation, operation, fusedPageFingerprint, pageIdentity: capturedPageIdentity, baseline: effectiveBaseline, reanchorReason };
 }

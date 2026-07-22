@@ -102,5 +102,3 @@ async function captureScreenshotWithRetry(tabId: number, msg: BrowserPilotBridge
   return browserPilotError(BROWSER_PILOT_ERROR_CODES.TIMEOUT, 'screenshot.capture failed', { reason: screenshotErrorMessage(lastErr), attempts });
 }
 export { isScreenshotMissingTabError, screenshotErrorMessage, screenshotTabNotFound, detachScreenshotDebugger, getScreenshotTargetTab, captureVisibleFallback, captureScreenshotWithRetry };
-// ESM module metadata
-export const __browserPilotBridgeModule_screenshot = { name: "screenshot", symbols: { isScreenshotMissingTabError, screenshotErrorMessage, screenshotTabNotFound, detachScreenshotDebugger, getScreenshotTargetTab, captureVisibleFallback, captureScreenshotWithRetry } };

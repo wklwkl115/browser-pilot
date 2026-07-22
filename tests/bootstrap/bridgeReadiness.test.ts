@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { deriveBridgeReadiness, isAllowedBridgeOrigin } from "../../src/bridge/server/bridgeUtils.ts";
+import { BROWSER_PILOT_EXTENSION_ID } from "../../src/bridge/server/browserBridgeConfig.ts";
 
 const NOW = 1_000_000;
 
@@ -40,10 +41,11 @@ test("bridge-up when listening with no extension and no recent disconnect", () =
 	);
 });
 
-test("bridge origin validation accepts only extension, null, or absent origins", () => {
-	assert.equal(isAllowedBridgeOrigin(undefined), true);
-	assert.equal(isAllowedBridgeOrigin("null"), true);
-	assert.equal(isAllowedBridgeOrigin("chrome-extension://abcdefghijklmnopabcdefghijklmnop"), true);
+test("bridge origin validation accepts only the packaged extension", () => {
+	assert.equal(isAllowedBridgeOrigin(undefined), false);
+	assert.equal(isAllowedBridgeOrigin("null"), false);
+	assert.equal(isAllowedBridgeOrigin(`chrome-extension://${BROWSER_PILOT_EXTENSION_ID}`), true);
+	assert.equal(isAllowedBridgeOrigin("chrome-extension://abcdefghijklmnopabcdefghijklmnop"), false);
 	assert.equal(isAllowedBridgeOrigin("https://example.test"), false);
 	assert.equal(isAllowedBridgeOrigin("chrome-extension://abcdefghijklmnop.evil.test"), false);
 	assert.equal(isAllowedBridgeOrigin("not a url"), false);

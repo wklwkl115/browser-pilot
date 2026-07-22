@@ -2,7 +2,7 @@
   "name": "browser-pilot",
   "version": "0.4.0",
   "license": "Apache-2.0",
-  "description": "Agent-driven browser automation: a Chrome extension + Node bridge exposing composable browser_* tools for scanning, execution, evidence capture, and web-security testing.",
+  "description": "Agent-driven browser automation: a Chrome extension + Node bridge exposing composable browser_* tools for scanning, execution, and evidence capture.",
   "keywords": [
     "browser-pilot",
     "browser-automation",
@@ -11,12 +11,10 @@
     "devtools-protocol",
     "web-scraping",
     "dom",
-    "web-security",
     "agent-tools",
     "ai-agent",
     "ai-tools",
-    "browser-testing",
-    "pentesting"
+    "browser-testing"
   ],
   "author": "Wang-ke-li",
   "homepage": "https://github.com/wklwkl115/browser-pilot#readme",
@@ -40,31 +38,23 @@
     }
   },
   "bin": {
-    "browser-pilot": "./dist/src/apps/cli/bin.js"
+    "browser-pilot-mcp": "./dist/src/apps/mcp/bin.js"
   },
   "scripts": {
-    "sync:protocol": "node scripts/sync-native-protocol.mjs",
     "sync:config": "node scripts/sync-bridge-config.mjs",
     "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json",
     "build:bridge": "node scripts/build-bridge.mjs",
     "build:native": "node scripts/build-native.mjs --required",
     "prepare": "tsc -p tsconfig.build.json && node scripts/build-bridge.mjs --quiet",
-    "cli": "tsx src/apps/cli/bin.ts",
+    "mcp": "tsx src/apps/mcp/bin.ts",
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:tests": "tsc -p tsconfig.tests.json",
-    "audit:reachability": "node scripts/audit-reachability.mjs",
-    "audit:complexity": "node scripts/audit-complexity.mjs",
-    "package-smoke": "node scripts/package-smoke.mjs",
-    "benchmark:update-observe": "node scripts/update-observe-benchmark-baseline.mjs --ref 1573380 --write",
-    "lint": "npm run audit:reachability && npm run audit:complexity && eslint .",
+    "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prepack": "npm run build && node scripts/build-native.mjs --quiet && node scripts/build-bridge.mjs --quiet"
   },
   "dependencies": {
-    "@mozilla/readability": "^0.6.0",
-    "axe-core": "^4.12.1",
     "dom-accessibility-api": "^0.7.1",
-    "js-yaml": "^4.3.0",
     "typebox": "^1.0.55",
     "ws": "^8.21.0"
   },
@@ -78,7 +68,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.12.4",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.28.1",
@@ -99,7 +88,6 @@
     "scripts/build-bridge.mjs",
     "scripts/clean-build.mjs",
     "scripts/sync-bridge-config.mjs",
-    "scripts/sync-native-protocol.mjs",
     "src/",
     "native/browser-pilot-kernels/Cargo.toml",
     "native/browser-pilot-kernels/Cargo.lock",

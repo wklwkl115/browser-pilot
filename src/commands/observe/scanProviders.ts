@@ -2,14 +2,9 @@ import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntim
 import { buildCausalEvents, buildCausalSummary, causalUnavailable, type CausalSummary } from "../../kernels/abml/causal.js";
 import { queryHookDelta, queryNetworkDelta } from "../pageSignals.js";
 import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
-import { runAxeDiagnostics } from "./axeDiagnosticsRunner.js";
-import { runReadability } from "./readabilityRunner.js";
 import type { BaselineResolution } from "./baseline.js";
 import type { ObserveToolParams } from "./common.js";
-import { buildObserveProviderPlan } from "../../kernels/abml/observeProviderPlan.js";
-import type { ObserveProviderPlan, RecorderKnowledge } from "../../kernels/abml/observeProviderPlan.js";
 import type { ProviderExecutionItem, ProviderExecutionReport, ProviderExecutionStatus } from "../../kernels/abml/pageObservation.js";
-import { jsonCost } from "../../kernels/evidence/cost.js";
 import type { BrowserBridgeExecutionResult } from "../../ports/BrowserRuntimeTypes.js";
 import { isRecord } from "../../utils/records.js";
 
@@ -17,23 +12,14 @@ type ObserveProvidersOptions = {
 	server: BrowserCommandRuntimePort;
 	params: ObserveToolParams;
 	tabId: number | undefined;
-	rawTargetRef: unknown;
-	timeoutMs: number;
 	startedAt: number;
 	deadlineAt: number;
 	baseline: BaselineResolution | undefined;
-	axeRequested: boolean;
-	readabilityRequested: boolean;
-	outputBudgetChars: number;
-	artifactPath: string | undefined;
 	timings: ObserveTimingMetrics;
 };
 
 type RecorderState = { active: boolean; lastSeq?: number };
-
-function recorderKnowledge(state: RecorderState | undefined): RecorderKnowledge {
-	return state ? state.active ? "active" : "inactive" : "unknown";
-}
+type CausalPlan = { planned: boolean; reservedMs: number; reason: "planned" | "not-required" | "budget-preflight"; probe: boolean };
 
 function recorderHighWater(value: Record<string, unknown>): number | undefined {
 	const candidate = value.lastSeq ?? value.last_seq ?? value.seq ?? value.eventSeq ?? value.event_seq;
@@ -95,7 +81,6 @@ function providerReportItem(input: {
 	reservedMs: number;
 	actualMs: number;
 	bridgeRoundTrips: number;
-	value: unknown;
 }): ProviderExecutionItem {
 	return {
 		planned: input.planned,
@@ -104,8 +89,17 @@ function providerReportItem(input: {
 		reservedMs: input.reservedMs,
 		actualMs: input.actualMs,
 		bridgeRoundTrips: input.bridgeRoundTrips,
-		cost: jsonCost(input.value),
 	};
+}
+
+function causalPlan(options: ObserveProvidersOptions, network: RecorderState | undefined, hook: RecorderState | undefined): CausalPlan {
+	const totalMs = Math.max(0, options.deadlineAt - options.startedAt);
+	const remainingMs = Math.max(0, options.deadlineAt - Date.now());
+	const reservedMs = Math.max(0, remainingMs - Math.min(remainingMs, Math.max(500, Math.ceil(totalMs * 0.1))));
+	const required = options.baseline !== undefined;
+	const planned = required && reservedMs >= 500;
+	const statusUnknown = options.baseline?.networkSeq !== undefined && !network || options.baseline?.hookSeq !== undefined && !hook;
+	return { planned, reservedMs, reason: !required ? "not-required" : planned ? "planned" : "budget-preflight", probe: planned && statusUnknown };
 }
 
 function causalNetworkPreflight(network: RecorderState | undefined, baselineNetworkSeq: number | undefined, remainingMs: number): CausalSummary | undefined {
@@ -161,10 +155,9 @@ async function appendCausalHookEvents(
 	}
 }
 
-async function runCausalProvider(options: ObserveProvidersOptions, plan: ObserveProviderPlan, initialNetwork: RecorderState | undefined, initialHook: RecorderState | undefined): Promise<{ value?: CausalSummary; report: ProviderExecutionItem; network?: RecorderState; hook?: RecorderState }> {
-	const item = plan.items.causal;
+async function runCausalProvider(options: ObserveProvidersOptions, item: CausalPlan, initialNetwork: RecorderState | undefined, initialHook: RecorderState | undefined): Promise<{ value?: CausalSummary; report: ProviderExecutionItem; network?: RecorderState; hook?: RecorderState }> {
 	if (!item.planned) {
-		return { network: initialNetwork, hook: initialHook, report: providerReportItem({ planned: false, status: "skipped", reason: item.reason, reservedMs: item.reservedMs, actualMs: 0, bridgeRoundTrips: 0, value: {} }) };
+		return { network: initialNetwork, hook: initialHook, report: providerReportItem({ planned: false, status: "skipped", reason: item.reason, reservedMs: item.reservedMs, actualMs: 0, bridgeRoundTrips: 0 }) };
 	}
 	const startedAt = Date.now();
 	const providerDeadline = Math.min(options.deadlineAt, startedAt + item.reservedMs);
@@ -172,8 +165,8 @@ async function runCausalProvider(options: ObserveProvidersOptions, plan: Observe
 	let bridgeRoundTrips = 0;
 	let knownNetwork = initialNetwork;
 	let knownHook = initialHook;
-	if (plan.statusProbe.planned) {
-		const probed = await probeRecorderStates(options, Math.min(plan.statusProbe.reservedMs, remainingMs()), knownNetwork, knownHook);
+	if (item.probe) {
+		const probed = await probeRecorderStates(options, Math.min(500, remainingMs()), knownNetwork, knownHook);
 		knownNetwork = probed.network;
 		knownHook = probed.hook;
 		bridgeRoundTrips += probed.bridgeRoundTrips;
@@ -192,86 +185,22 @@ async function runCausalProvider(options: ObserveProvidersOptions, plan: Observe
 		value: causal,
 		network: knownNetwork,
 		hook: knownHook,
-		report: providerReportItem({ planned: true, status: "unavailable" in causal ? "degraded" : "executed", ...( "unavailable" in causal ? { reason: causal.unavailable } : {}), reservedMs: item.reservedMs, actualMs, bridgeRoundTrips, value: causal }),
+		report: providerReportItem({ planned: true, status: "unavailable" in causal ? "degraded" : "executed", ...( "unavailable" in causal ? { reason: causal.unavailable } : {}), reservedMs: item.reservedMs, actualMs, bridgeRoundTrips }),
 	};
-}
-
-async function runAxeProvider(options: ObserveProvidersOptions, providerTabId: number | string | undefined, reservedMs: number, planned: boolean, reason: string) {
-	const startedAt = Date.now();
-	const nested = options.params.params && typeof options.params.params === "object" && !Array.isArray(options.params.params) ? options.params.params as Record<string, unknown> : undefined;
-	const value = await runAxeDiagnostics(options.server, {
-		requested: planned,
-		browserSessionId: options.params.browserSessionId,
-		tabId: providerTabId,
-		timeoutMs: Math.max(500, reservedMs),
-		artifactPath: options.artifactPath,
-		maxResults: typeof nested?.axeMaxResults === "number" ? nested.axeMaxResults : undefined,
-	});
-	const actualMs = planned ? elapsedMs(startedAt) : 0;
-	if (planned) {
-		options.timings.axeMs = actualMs;
-		addBridgeRoundTrips(options.timings, 1);
-	}
-	return { value, report: providerReportItem({ planned, status: planned ? value.status : "skipped", reason: planned ? value.summary?.error?.code as string | undefined : reason, reservedMs, actualMs, bridgeRoundTrips: planned ? 1 : 0, value: value.summary }) };
-}
-
-async function runReadabilityProvider(options: ObserveProvidersOptions, providerTabId: number | string | undefined, reservedMs: number, planned: boolean, reason: string) {
-	const startedAt = Date.now();
-	const nested = options.params.params && typeof options.params.params === "object" && !Array.isArray(options.params.params) ? options.params.params as Record<string, unknown> : undefined;
-	const value = await runReadability(options.server, {
-		requested: planned,
-		browserSessionId: options.params.browserSessionId,
-		tabId: providerTabId,
-		timeoutMs: Math.max(500, reservedMs),
-		artifactPath: options.artifactPath,
-		maxInlineChars: typeof nested?.readabilityMaxInlineChars === "number" ? nested.readabilityMaxInlineChars : undefined,
-		maxContentChars: typeof nested?.readabilityMaxContentChars === "number" ? nested.readabilityMaxContentChars : undefined,
-		maxElemsToParse: typeof nested?.readabilityMaxElemsToParse === "number" ? nested.readabilityMaxElemsToParse : undefined,
-	});
-	const actualMs = planned ? elapsedMs(startedAt) : 0;
-	if (planned) {
-		options.timings.readabilityMs = actualMs;
-		addBridgeRoundTrips(options.timings, 1);
-	}
-	return { value, report: providerReportItem({ planned, status: planned ? value.status : "skipped", reason: planned ? value.summary?.error?.code as string | undefined : reason, reservedMs, actualMs, bridgeRoundTrips: planned ? 1 : 0, value: value.summary }) };
 }
 
 export async function runObserveProviders(options: ObserveProvidersOptions) {
 	const knownNetwork = options.server.getKnownRecorderState?.("network", options.params.browserSessionId, options.tabId);
 	const knownHook = options.server.getKnownRecorderState?.("hook", options.params.browserSessionId, options.tabId);
-	const plan = buildObserveProviderPlan({
-		now: Date.now(),
-		startedAt: options.startedAt,
-		deadlineAt: options.deadlineAt,
-		mode: "scan",
-		cacheHit: false,
-		outputBudgetChars: options.outputBudgetChars,
-		hasBaseline: options.baseline !== undefined,
-		baselineHasNetworkSeq: options.baseline?.networkSeq !== undefined,
-		baselineHasHookSeq: options.baseline?.hookSeq !== undefined,
-		networkState: recorderKnowledge(knownNetwork),
-		hookState: recorderKnowledge(knownHook),
-		axeRequested: options.axeRequested,
-		readabilityRequested: options.readabilityRequested,
-	});
-	const providerTabId = typeof options.rawTargetRef === "number" || typeof options.rawTargetRef === "string" ? options.rawTargetRef : undefined;
-	const [causalResult, axeResult, readabilityResult] = await Promise.all([
-		runCausalProvider(options, plan, knownNetwork, knownHook),
-		runAxeProvider(options, providerTabId, plan.items.axe.reservedMs, plan.items.axe.planned, plan.items.axe.reason),
-		runReadabilityProvider(options, providerTabId, plan.items.readability.reservedMs, plan.items.readability.planned, plan.items.readability.reason),
-	]);
+	const plan = causalPlan(options, knownNetwork, knownHook);
+	const causalResult = await runCausalProvider(options, plan, knownNetwork, knownHook);
 	const report: ProviderExecutionReport = {
 		causal: causalResult.report,
-		axe: axeResult.report,
-		readability: readabilityResult.report,
 	};
 	return {
 		causal: causalResult.value,
-		axeDiagnostics: axeResult.value,
-		readability: readabilityResult.value,
 		recorderState: causalResult.network ?? { active: false, ...(options.baseline?.networkSeq !== undefined ? { lastSeq: options.baseline.networkSeq } : {}) },
 		hookState: causalResult.hook ?? { active: false, ...(options.baseline?.hookSeq !== undefined ? { lastSeq: options.baseline.hookSeq } : {}) },
-		plan,
 		report,
 	};
 }

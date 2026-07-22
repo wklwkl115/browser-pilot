@@ -24,7 +24,6 @@ import { CommandManifestIndex, type CommandDefinition } from "../../commands/com
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
 import { registerHook, emitLog, timingLogHook, type MiddlewareContext } from "../../commands/middleware.js";
 import { resolveUsageLogOptions, createUsageLogHook } from "../../commands/usageLog.js";
-import { isRecord } from "../../utils/records.js";
 import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
 import { daemonVersion } from "./packageInfo.js";
 import { createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
@@ -69,14 +68,6 @@ export interface StartDaemonOptions {
 	commandDefinitions?: readonly CommandDefinition[];
 }
 
-type CliInvokeMetadata = {
-	command?: string;
-	routing?: string;
-	naturalSubcommand?: string;
-	action?: string;
-	compatibilityInterface?: string;
-};
-
 type JsonSender = (status: number, obj: Record<string, unknown>) => void;
 
 export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName" | "tenantLease" | "usageEnabled"> & {
@@ -89,7 +80,6 @@ export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName" | "t
 type PreparedInvoke = {
 	tool: string;
 	cwd?: string;
-	cli?: CliInvokeMetadata;
 	def: CommandDefinition;
 	args: Record<string, unknown>;
 };
@@ -235,7 +225,7 @@ function authorizePairing(req: http.IncomingMessage): PairingAuthorization {
 }
 
 function authorizeInvoke(req: http.IncomingMessage, tenantLease: TenantLeaseRegistry): { ok: true; ownerId: string } | { ok: false; status: number; body: Record<string, unknown> } {
-	if (process.env[ENV_REQUIRE_PAIRING] !== "1" && !authStore.hasActiveAgents()) return { ok: true, ownerId: "local-cli" };
+	if (process.env[ENV_REQUIRE_PAIRING] !== "1" && !authStore.hasActiveAgents()) return { ok: true, ownerId: "local-mcp" };
 	const auth = authorizePairing(req);
 	if (!auth.ok) return auth;
 	const held = tenantLease.ensureHeld(auth.record.pairingId, auth.record.label);
@@ -244,7 +234,7 @@ function authorizeInvoke(req: http.IncomingMessage, tenantLease: TenantLeaseRegi
 	return { ok: true, ownerId: auth.record.pairingId };
 }
 
-/** Pure daemon pre-execution validator, exported for CLI/daemon parity corpora. */
+/** Pure daemon pre-execution validator, exported for contract tests. */
 export function validateDaemonCommandArguments(definition: CommandDefinition, args: unknown) {
 	return validateBrowserCommandArguments(definition, args);
 }
@@ -253,32 +243,31 @@ function prepareInvoke(body: Record<string, unknown>, toolByName: Map<string, Co
 	const tool = typeof body.tool === "string" ? body.tool : "";
 	const params = body.params === undefined ? {} : body.params;
 	const cwd = typeof body.cwd === "string" ? body.cwd : undefined;
-	const cli = isRecord(body.cli) ? body.cli as CliInvokeMetadata : undefined;
 	const def = toolByName.get(tool);
 	if (!def) return { errorStatus: 404, errorBody: { ok: false, error: `unknown tool: ${tool || "(missing)"}` } };
 	const validation = validateDaemonCommandArguments(def, params);
 	if (!validation.ok) return { errorStatus: 400, errorBody: { ok: false, code: "COMMAND_VALIDATION_FAILED", error: validation.error, issues: validation.issues } };
-	return { tool, cwd, cli, def, args: validation.args };
+	return { tool, cwd, def, args: validation.args };
 }
 
-async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean, operationOwnerId = "local-cli", signal?: AbortSignal): Promise<Record<string, unknown>> {
+async function executeInvoke(invocation: PreparedInvoke, usageEnabled: boolean, signal?: AbortSignal): Promise<Record<string, unknown>> {
 	const ctx: MiddlewareContext = {
 		method: "invoke",
 		commandName: invocation.tool,
 		startedAt: Date.now(),
 		...(usageEnabled ? { args: invocation.args } : {}),
-		...(usageEnabled && invocation.cli ? { cli: invocation.cli } : {}),
-	};
-	try {
-		const result = await invocation.def.execute(`cli-${invocation.tool}-${Date.now()}`, invocation.args, signal, undefined, { cwd: invocation.cwd, hasUI: false, operationOwnerId, ...(invocation.cli ? { omitTransportDetails: true } : {}) });
+		};
+		try {
+			const result = await invocation.def.execute(`mcp-${invocation.tool}-${Date.now()}`, invocation.args, signal, undefined, { cwd: invocation.cwd });
 		if (usageEnabled) ctx.resultBytes = JSON.stringify(result.content).length;
 		emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok");
-		const terminate = result.terminate === true;
-		return { ok: true, content: result.content, ...(invocation.cli && !terminate ? {} : { details: result.details }), terminate };
-	} catch (error) {
+			const terminate = result.terminate === true;
+			const isError = result.isError === true || terminate;
+				return { ok: true, content: result.content, details: result.details, isError, terminate };
+		} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		emitLog(ctx, Date.now() - ctx.startedAt, "error", { error: message });
-		return { ok: true, content: [{ type: "text", text: message }], terminate: true };
+			return { ok: true, content: [{ type: "text", text: message }], isError: true, terminate: true };
 	}
 }
 
@@ -287,7 +276,7 @@ export async function handleInvokeRoute({ req, send, body, toolByName, tenantLea
 	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
 	const auth = authorizeInvoke(req, tenantLease);
 	if (!auth.ok) return send(auth.status, auth.body);
-	return send(200, await executeInvoke(prepared, usageEnabled, auth.ownerId, signal));
+	return send(200, await executeInvoke(prepared, usageEnabled, signal));
 }
 
 function invocationAbortController(req: http.IncomingMessage, res: http.ServerResponse): { signal: AbortSignal; cleanup: () => void } {
@@ -318,7 +307,7 @@ async function handleConnectRoute(context: DaemonControlContext, req: http.Incom
 	} catch (error) {
 		return send(503, {
 			ok: false,
-			code: "CLI_BRIDGE_START_FAILED",
+			code: "BRIDGE_START_FAILED",
 			error: error instanceof Error ? error.message : String(error),
 			status: bridgeStatusPayload(context.bridgeServer, context.toolCount, context.contractIdentity, includeTabs),
 		});
@@ -523,7 +512,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 			server.close(() => resolve());
 			server.closeIdleConnections?.();
 			// /shutdown has already acknowledged before close() is scheduled. Force any
-			// lingering loopback keep-alive request closed on the next turn so one CLI
+				// lingering loopback keep-alive request closed on the next turn so one caller
 			// connection cannot hold a draining daemon beyond replacement grace.
 			setImmediate(() => server.closeAllConnections?.());
 		});
