@@ -6,10 +6,8 @@ import { SCAN_TEMPLATE } from "../../capture-src/entries/scanTemplate.js";
 import { PAGE_WORLD_SCAN_SCHEMA } from "../kernels/abml/pageWorldScan.js";
 
 export type BrowserScanOptions = {
-	textOnly?: boolean;
 	maxChars?: number;
 	maxNodes?: number;
-	includeIframes?: boolean;
 };
 
 function injectAccessibleNameProvider(script: string): string {
@@ -33,7 +31,7 @@ function injectAccessibleNameProvider(script: string): string {
 }
 
 function injectPassiveGrowthProbe(script: string): string {
-	const marker = "  const rows = collectVisibleRows(scanRoot);\n";
+	const marker = "  const rows = collectVisibleRows(scanRoot, scanElements);\n";
 	if (!script.includes(marker)) throw new Error("scan template growth probe marker missing; update scan growth injection");
 	return script.replace(marker, marker + "  const growthProbe = undefined;\n");
 }
@@ -46,10 +44,8 @@ function boundedInt(value: unknown, fallback: number, min: number, max: number):
 
 export function buildScanScript(options: BrowserScanOptions = {}): string {
 	const opts = {
-		textOnly: options.textOnly === true,
 		maxChars: boundedInt(options.maxChars, 35_000, 1_000, 500_000),
 		maxNodes: boundedInt(options.maxNodes, 4_000, 100, 20_000),
-		includeIframes: options.includeIframes !== false,
 	};
 	const rendered = renderCaptureTemplate(SCAN_TEMPLATE, {
 		optionsJson: jsonForInlineScript(opts),

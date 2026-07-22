@@ -135,13 +135,6 @@ export interface ScanMediaCandidate {
 	videoHeight?: number;
 }
 
-export interface ScanFrameNote {
-	src: string;
-	accessible: boolean;
-	title?: string;
-	error?: string;
-}
-
 export interface ScanGrowthProbe {
 	supported: boolean;
 	candidateCount: number;
@@ -181,7 +174,7 @@ export interface ScanPageFingerprint {
 export interface PageWorldScanBundleV1 {
 	schema: typeof PAGE_WORLD_SCAN_SCHEMA;
 	page: { url: string; title: string; readyState: string; language?: string };
-	content: { text: string; tree?: string; headings: string[]; interactive: string[] };
+	content: { text: string; headings: string[]; interactive: string[] };
 	structure: {
 		actionables: ScanActionable[];
 		rows: ScanRow[];
@@ -189,7 +182,6 @@ export interface PageWorldScanBundleV1 {
 		canvasRegions: ScanCanvasRegion[];
 		mediaCandidates: ScanMediaCandidate[];
 	};
-	frames: { notes: ScanFrameNote[] };
 	signals: { fingerprint: ScanPageFingerprint; growthProbe?: ScanGrowthProbe };
 	stats: { nodeCount: number; outputChars: number; truncated: boolean };
 }
@@ -264,7 +256,7 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 		},
 		content: {
 			type: "object",
-			properties: { text: stringSchema, tree: stringSchema, headings: stringArraySchema, interactive: stringArraySchema },
+			properties: { text: stringSchema, headings: stringArraySchema, interactive: stringArraySchema },
 			required: ["text", "headings", "interactive"],
 			additionalProperties: false,
 		},
@@ -280,8 +272,7 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 			required: ["actionables", "rows", "listHints", "canvasRegions", "mediaCandidates"],
 			additionalProperties: false,
 		},
-		frames: { type: "object", properties: { notes: { type: "array", items: { type: "object", properties: { src: stringSchema, accessible: booleanSchema, title: stringSchema, error: stringSchema }, required: ["src", "accessible"], additionalProperties: false } } }, required: ["notes"], additionalProperties: false },
-		signals: {
+			signals: {
 			type: "object",
 			properties: {
 				fingerprint: { type: "object", properties: { changeSeq: numberSchema, pageEpoch: stringSchema, documentId: stringSchema, url: stringSchema, title: stringSchema, readyState: stringSchema, visibleCount: numberSchema, interactiveCount: numberSchema, capturedAt: numberSchema }, required: ["changeSeq"], additionalProperties: false },
@@ -292,7 +283,7 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 		},
 		stats: { type: "object", properties: { nodeCount: numberSchema, outputChars: numberSchema, truncated: booleanSchema }, required: ["nodeCount", "outputChars", "truncated"], additionalProperties: false },
 	},
-	required: ["schema", "page", "content", "structure", "frames", "signals", "stats"],
+		required: ["schema", "page", "content", "structure", "signals", "stats"],
 	additionalProperties: false,
 } as const;
 
@@ -424,14 +415,6 @@ function validateMediaCandidate(item: Record<string, unknown>, path: string, iss
 	for (const key of ["naturalWidth", "naturalHeight", "videoWidth", "videoHeight"] as const) optional(item[key], (value) => typeof value === "number" && Number.isFinite(value), `${path}/${key}`, "finite number", issues);
 }
 
-function validateFrameNote(item: Record<string, unknown>, path: string, issues: string[]): void {
-	exactKeys(item, ["src", "accessible", "title", "error"], path, issues);
-	stringValue(item.src, `${path}/src`, issues);
-	booleanValue(item.accessible, `${path}/accessible`, issues);
-	optional(item.title, (value) => typeof value === "string", `${path}/title`, "string", issues);
-	optional(item.error, (value) => typeof value === "string", `${path}/error`, "string", issues);
-}
-
 function validateFingerprint(value: unknown, path: string, issues: string[]): void {
 	const item = record(value);
 	if (!item) return void issues.push(`${path}: expected object`);
@@ -457,7 +440,7 @@ export function validatePageWorldScanBundle(value: unknown): ScanBundleValidatio
 	const issues: string[] = [];
 	const root = record(value);
 	if (!root) return { ok: false, issues: ["/: expected object"] };
-	exactKeys(root, ["schema", "page", "content", "structure", "frames", "signals", "stats"], "", issues);
+	exactKeys(root, ["schema", "page", "content", "structure", "signals", "stats"], "", issues);
 	if (root.schema !== PAGE_WORLD_SCAN_SCHEMA) issues.push(`/schema: expected ${PAGE_WORLD_SCAN_SCHEMA}`);
 
 	const page = record(root.page);
@@ -471,9 +454,8 @@ export function validatePageWorldScanBundle(value: unknown): ScanBundleValidatio
 	const content = record(root.content);
 	if (!content) issues.push("/content: expected object");
 	else {
-		exactKeys(content, ["text", "tree", "headings", "interactive"], "/content", issues);
+		exactKeys(content, ["text", "headings", "interactive"], "/content", issues);
 		stringValue(content.text, "/content/text", issues);
-		optional(content.tree, (entry) => typeof entry === "string", "/content/tree", "string", issues);
 		stringArray(content.headings, "/content/headings", issues);
 		stringArray(content.interactive, "/content/interactive", issues);
 	}
@@ -487,13 +469,6 @@ export function validatePageWorldScanBundle(value: unknown): ScanBundleValidatio
 		objectArray(structure.listHints, "/structure/listHints", issues, validateListHint);
 		objectArray(structure.canvasRegions, "/structure/canvasRegions", issues, validateCanvasRegion);
 		objectArray(structure.mediaCandidates, "/structure/mediaCandidates", issues, validateMediaCandidate);
-	}
-
-	const frames = record(root.frames);
-	if (!frames) issues.push("/frames: expected object");
-	else {
-		exactKeys(frames, ["notes"], "/frames", issues);
-		objectArray(frames.notes, "/frames/notes", issues, validateFrameNote);
 	}
 
 	const signals = record(root.signals);

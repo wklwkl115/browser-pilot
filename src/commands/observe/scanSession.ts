@@ -74,7 +74,7 @@ export async function prepareScanSession(options: {
 	const { server, params, tabId, timings, signal } = options;
 	const timeoutMs = commandTimeoutMs(undefined, DEFAULT_TOOL_TIMEOUT_MS);
 	const captureMaxChars = 500_000;
-	const scanScript = buildScanScript({ textOnly: false, maxChars: captureMaxChars });
+	const scanScript = buildScanScript({ maxChars: captureMaxChars });
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const effectiveTabId = tabId ?? bridge.defaultTabId;
 	const pageFingerprint = await readScanFingerprint({ server, params, effectiveTabId, timeoutMs, timings, signal });

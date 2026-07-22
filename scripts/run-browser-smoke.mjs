@@ -87,13 +87,6 @@ function resultEnvelope(result, label) {
 	try { return JSON.parse(resultText(result)); } catch { throw new Error(`${label} did not return JSON: ${resultText(result)}`); }
 }
 
-function bridgeResult(result, label) {
-	const value = resultEnvelope(result, label);
-	if (value?.acknowledged === true) return value;
-	if (value?.summary?.type === "bridgeResult") return value.summary;
-	throw new Error(`${label} was not acknowledged: ${JSON.stringify(value)}`);
-}
-
 function requireEffect(value, label, options = {}) {
 	const effect = value?.effect;
 	if (effect?.observed !== true) throw new Error(`${label} did not return observed page-effect feedback: ${JSON.stringify(value)}`);
@@ -251,75 +244,70 @@ try {
 		readOnly: true,
 		script: "(async()=>{const api=await(await fetch('/api/execute')).json();return{title:document.title,marker:document.querySelector('#smoke-marker')?.textContent,api:api.ok}})()",
 	});
-	const executedResult = bridgeResult(executed, "browser_execute");
+	const executedResult = resultEnvelope(executed, "browser_execute");
 	if (!resultText(executed).includes("Browser Pilot Smoke")) throw new Error(`browser_execute did not return fixture evidence: ${resultText(executed)}`);
-	if (executedResult.data?.title !== "Browser Pilot Smoke") throw new Error(`browser_execute did not return raw script data: ${JSON.stringify(executedResult)}`);
-	const cdp = bridgeResult(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "cdp", method: "Runtime.evaluate", params: { expression: "document.title", returnByValue: true } } }), "browser_command cdp");
-	if (cdp.data?.result?.value !== "Browser Pilot Smoke") throw new Error(`browser_command cdp did not return raw browser evidence: ${JSON.stringify(cdp)}`);
+	if (executedResult.title !== "Browser Pilot Smoke") throw new Error(`browser_execute did not return raw script data: ${JSON.stringify(executedResult)}`);
+	const cdp = resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "cdp", method: "Runtime.evaluate", params: { expression: "document.title", returnByValue: true } } }), "browser_command cdp");
+	if (cdp.result?.value !== "Browser Pilot Smoke") throw new Error(`browser_command cdp did not return raw browser evidence: ${JSON.stringify(cdp)}`);
 
-	const created = bridgeResult(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}secondary`, active: true }), "browser_tabs create");
-	const createdTargetRef = created.createdTarget?.targetRef ?? created.data?.targetRef;
+	const created = resultEnvelope(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}secondary`, active: true }), "browser_tabs create");
+	const createdTargetRef = created.createdTarget?.targetRef;
 	if (!createdTargetRef) throw new Error(`created tab was not routable: ${JSON.stringify(created)}`);
-	bridgeResult(await invoke(daemon, "browser_tabs", { action: "close", targetRef: createdTargetRef }), "browser_tabs close");
-	const background = bridgeResult(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}background`, active: false }), "browser_tabs create background");
-	const backgroundTargetRef = background.createdTarget?.targetRef ?? background.data?.targetRef;
+	resultEnvelope(await invoke(daemon, "browser_tabs", { action: "close", targetRef: createdTargetRef }), "browser_tabs close");
+	const background = resultEnvelope(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}background`, active: false }), "browser_tabs create background");
+	const backgroundTargetRef = background.createdTarget?.targetRef;
 	if (!backgroundTargetRef) throw new Error(`background tab was not routable: ${JSON.stringify(background)}`);
-	const backgroundWrite = bridgeResult(await invoke(daemon, "browser_execute", { targetRef: backgroundTargetRef, script: "document.documentElement.dataset.background='yes'; true" }), "background browser_execute");
+	const backgroundWrite = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef: backgroundTargetRef, script: "document.documentElement.dataset.background='yes'; true" }), "background browser_execute");
 	requireEffect(backgroundWrite, "background browser_execute");
-	bridgeResult(await invoke(daemon, "browser_tabs", { action: "close", targetRef: backgroundTargetRef }), "browser_tabs close background");
+	resultEnvelope(await invoke(daemon, "browser_tabs", { action: "close", targetRef: backgroundTargetRef }), "browser_tabs close background");
 
-	const networkStarted = bridgeResult(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.start", clear: true } }), "browser_command network.start");
+	const networkStarted = resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.start", clear: true } }), "browser_command network.start");
 	requireEffect(networkStarted, "browser_command network.start", { changed: false });
 	await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "fetch('/api/smoke').then(r=>r.text())" });
 	const network = await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.list", limit: 20 } });
 	if (!/api\/smoke/.test(resultText(network))) throw new Error(`browser_command network.list did not return capture evidence: ${resultText(network)}`);
-	const networkStopped = bridgeResult(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.stop" } }), "browser_command network.stop");
+	const networkStopped = resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.stop" } }), "browser_command network.stop");
 	requireEffect(networkStopped, "browser_command network.stop", { changed: false });
-	bridgeResult(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.install", targets: ["console"] } }), "browser_command hook.install");
-	const hookReused = bridgeResult(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.install", targets: ["console"] } }), "browser_command hook.install reuse");
-	if (hookReused.data?.idempotent !== true && hookReused.data?.reused !== true) throw new Error(`hook.install did not reuse its runtime-owned session: ${JSON.stringify(hookReused)}`);
-	bridgeResult(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.uninstall" } }), "browser_command hook.uninstall");
+	resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.install", targets: ["console"] } }), "browser_command hook.install");
+	const hookReused = resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.install", targets: ["console"] } }), "browser_command hook.install reuse");
+	if (hookReused.idempotent !== true && hookReused.reused !== true) throw new Error(`hook.install did not reuse its runtime-owned session: ${JSON.stringify(hookReused)}`);
+	resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.uninstall" } }), "browser_command hook.uninstall");
 
 	const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef }), "browser_observe");
 	if (observed.schema !== "browser-page-observation/v3" || typeof observed.content?.text !== "string") {
 		throw new Error(`browser_observe did not return canonical PageObservation: ${JSON.stringify(observed)}`);
 	}
 	if (!observed.content.text.includes("Browser Pilot Smoke")) throw new Error(`browser_observe did not return page content: ${JSON.stringify(observed.content)}`);
-	const entities = observed.entities;
-	const actionRef = Array.isArray(entities)
-		? entities.find((entity) => entity?.name === "Run smoke")?.ref
-		: entities?.projection === "folded-v1" && Array.isArray(entities.items)
-			? entities.items.find((item) => item?.v?.[0] === "button")?.v?.[1]
-			: undefined;
-	if (typeof actionRef !== "string") throw new Error(`browser_observe did not mint the smoke action ref: ${JSON.stringify(entities)}`);
-	const bound = bridgeResult(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "({id:browserPilot.refs.action?.id,tag:browserPilot.refs.action?.tagName})" }), "browser_execute refs");
-	if (bound.data?.id !== "smoke-action" || bound.data?.tag !== "BUTTON") throw new Error(`browser_execute did not bind the observed ref: ${JSON.stringify(bound)}`);
-	const input = bridgeResult(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "browser_command input.ref");
+	const actionRef = Array.isArray(observed.actionables) ? observed.actionables.find((entity) => entity?.name === "Run smoke")?.ref : undefined;
+	if (typeof actionRef !== "string") throw new Error(`browser_observe did not mint the smoke action ref: ${JSON.stringify(observed.actionables)}`);
+	const bound = resultEnvelope(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "({id:browserPilot.refs.action?.id,tag:browserPilot.refs.action?.tagName})" }), "browser_execute refs");
+	if (bound.id !== "smoke-action" || bound.tag !== "BUTTON") throw new Error(`browser_execute did not bind the observed ref: ${JSON.stringify(bound)}`);
+	const input = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "browser_command input.ref");
 	requireEffect(input, "browser_command input.ref");
-	const clicked = bridgeResult(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "browserPilot.refs.action?.dataset.clicked" }), "browser_execute ref verification");
-	if (clicked.data !== "yes") throw new Error(`input.ref did not dispatch the physical click: ${JSON.stringify(clicked)}`);
-	bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action');el.dataset.clicked='';el.textContent='Changed action';return true})()" }), "change ref semantics");
+	const clicked = resultEnvelope(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "browserPilot.refs.action?.dataset.clicked" }), "browser_execute ref verification");
+	if (clicked.result !== "yes") throw new Error(`input.ref did not dispatch the physical click: ${JSON.stringify(clicked)}`);
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action');el.dataset.clicked='';el.textContent='Changed action';return true})()" }), "change ref semantics");
 	const semanticMismatch = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "semantic mismatch input.ref");
 	if (semanticMismatch.code !== "BACKEND_NODE_STALE") throw new Error(`input.ref did not reject changed semantics: ${JSON.stringify(semanticMismatch)}`);
-	bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action');el.textContent='Run smoke';const rect=el.getBoundingClientRect();const cover=document.createElement('div');cover.id='smoke-cover';Object.assign(cover.style,{position:'fixed',left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`,zIndex:'2147483647'});document.body.append(cover);return true})()" }), "cover ref target");
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action');el.textContent='Run smoke';const rect=el.getBoundingClientRect();const cover=document.createElement('div');cover.id='smoke-cover';Object.assign(cover.style,{position:'fixed',left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`,zIndex:'2147483647'});document.body.append(cover);return true})()" }), "cover ref target");
 	const occluded = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "occluded input.ref");
 	if (occluded.code !== "BACKEND_NODE_STALE") throw new Error(`input.ref did not reject an occluded target: ${JSON.stringify(occluded)}`);
-	bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: "document.querySelector('#smoke-cover')?.remove()" }), "uncover ref target");
-	bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const old=document.querySelector('#smoke-action');const next=document.createElement('button');next.id='danger-action';next.textContent='Danger';next.onclick=()=>{next.dataset.clicked='yes'};old.replaceWith(next);return true})()" }), "replace ref target");
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "document.querySelector('#smoke-cover')?.remove()" }), "uncover ref target");
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const old=document.querySelector('#smoke-action');const next=document.createElement('button');next.id='danger-action';next.textContent='Danger';next.onclick=()=>{next.dataset.clicked='yes'};old.replaceWith(next);return true})()" }), "replace ref target");
 	const staleInput = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "stale input.ref");
 	if (staleInput.code !== "BACKEND_NODE_STALE") throw new Error(`stale input.ref did not fail closed: ${JSON.stringify(staleInput)}`);
-	const untouched = bridgeResult(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "document.querySelector('#danger-action')?.dataset.clicked" }), "stale ref verification");
-	if (untouched.data !== undefined && untouched.data !== "[undefined]") throw new Error(`stale input.ref clicked the replacement element: ${JSON.stringify(untouched)}`);
-	const burst = bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{let n=0;const timer=setInterval(()=>{document.documentElement.dataset.burst=String(++n);if(n===4)clearInterval(timer)},15);return true})()" }), "burst browser_execute");
+	const untouched = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "document.querySelector('#danger-action')?.dataset.clicked" }), "stale ref verification");
+	if (untouched.result !== undefined && untouched.result !== "[undefined]") throw new Error(`stale input.ref clicked the replacement element: ${JSON.stringify(untouched)}`);
+	const burst = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{let n=0;const timer=setInterval(()=>{document.documentElement.dataset.burst=String(++n);if(n===4)clearInterval(timer)},15);return true})()" }), "burst browser_execute");
 	requireEffect(burst, "burst browser_execute");
 	const popupUrl = `${fixture.url}popup`;
-	const opened = bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: `GM_openInTab('${popupUrl}')` }), "new-tab browser_execute");
+	const opened = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: `GM_openInTab('${popupUrl}')` }), "new-tab browser_execute");
 	requireEffect(opened, "new-tab browser_execute", { newTabs: 1 });
 	const popupStatus = await waitForStatus(daemon, (value) => Array.isArray(value.tabs) && value.tabs.some((item) => String(item?.url || "").startsWith(popupUrl)), "browser_execute new tab routing");
 	const popup = popupStatus.tabs.find((item) => String(item?.url || "").startsWith(popupUrl));
 	if (!popup?.targetRef) throw new Error(`new browser_execute tab was not routable: ${JSON.stringify(popupStatus.tabs)}`);
-	bridgeResult(await invoke(daemon, "browser_tabs", { action: "close", targetRef: popup.targetRef }), "browser_tabs close popup");
-	const navigated = bridgeResult(await invoke(daemon, "browser_execute", { targetRef, script: `location.href='${fixture.url}navigated'` }), "navigation browser_execute");
+	resultEnvelope(await invoke(daemon, "browser_tabs", { action: "close", targetRef: popup.targetRef }), "browser_tabs close popup");
+	const navigated = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: `location.href='${fixture.url}navigated'` }), "navigation browser_execute");
 	const navigationEffect = requireEffect(navigated, "navigation browser_execute", { settled: false });
 	if (!navigationEffect.page?.navigation) throw new Error(`navigation browser_execute did not report navigation: ${JSON.stringify(navigationEffect)}`);
 

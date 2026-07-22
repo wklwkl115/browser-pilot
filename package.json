@@ -44,14 +44,13 @@
     "sync:config": "node scripts/sync-bridge-config.mjs",
     "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json",
     "build:bridge": "node scripts/build-bridge.mjs",
-    "build:native": "node scripts/build-native.mjs --required",
     "prepare": "tsc -p tsconfig.build.json && node scripts/build-bridge.mjs --quiet",
     "mcp": "tsx src/apps/mcp/bin.ts",
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:tests": "tsc -p tsconfig.tests.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "prepack": "npm run build && node scripts/build-native.mjs --quiet && node scripts/build-bridge.mjs --quiet"
+    "prepack": "npm run build && node scripts/build-bridge.mjs --quiet"
   },
   "dependencies": {
     "typebox": "^1.0.55",
@@ -80,9 +79,6 @@
     "scripts/clean-build.mjs",
     "scripts/sync-bridge-config.mjs",
     "src/",
-    "native/browser-pilot-kernels/Cargo.toml",
-    "native/browser-pilot-kernels/Cargo.lock",
-    "native/browser-pilot-kernels/src/",
     "dist/",
     "tsconfig.json",
     "tsconfig.base.json",

@@ -7,7 +7,7 @@ import {
 import { pageWorldScanBundle } from "../helpers/pageWorldScan.ts";
 
 test("page-world scan bundle validates empty and fully populated v1 captures", () => {
-	const empty = pageWorldScanBundle({ content: { text: "", tree: undefined }, stats: { nodeCount: 0, outputChars: 0 } });
+	const empty = pageWorldScanBundle({ content: { text: "" }, stats: { nodeCount: 0, outputChars: 0 } });
 	assert.deepEqual(validatePageWorldScanBundle(empty), { ok: true, value: empty });
 
 	const full = pageWorldScanBundle({
@@ -24,7 +24,6 @@ test("page-world scan bundle validates empty and fully populated v1 captures", (
 			canvasRegions: [{ index: 0, tag: "canvas", role: "img", action: "Chart", label: "Chart", selector: "#chart", point: { x: 10, y: 10 }, rect: { x: 0, y: 0, width: 20, height: 20 }, hitOk: true, clickable: false }],
 			mediaCandidates: [{ index: 0, tag: "img", selector: "#hero", rect: { x: 0, y: 0, w: 640, h: 360 }, src: "https://example.test/hero.png", sameOrigin: true, naturalWidth: 1280, naturalHeight: 720 }],
 		},
-		frames: { notes: [{ src: "https://frame.example.test/", accessible: false }] },
 		signals: {
 			fingerprint: { changeSeq: 9, url: "https://example.test/", title: "Example", readyState: "complete", visibleCount: 1, interactiveCount: 1, capturedAt: 42 },
 			growthProbe: { supported: true, candidateCount: 1, target: "listHint", selector: "#orders > li", beforeCount: 10, afterCount: 20, restoredScrollTop: true, countGrew: true, heightGrew: false, windowShifted: false, elapsedMs: 80 },

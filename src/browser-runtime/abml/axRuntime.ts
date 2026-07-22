@@ -354,14 +354,11 @@ function snapshotLayoutEntries(value: unknown): SnapshotLayoutEntry[] {
 			const geometry = geometryFromSnapshotBounds(bounds[i]);
 			if (!geometry) continue;
 			const paintOrder = Number(paintOrders[i]);
-			out.push({ backendNodeId, geometry, ...(snapshotAttrs(nodes, strings, nodeIndex) ? { attrs: snapshotAttrs(nodes, strings, nodeIndex) } : {}), ...(Number.isFinite(paintOrder) ? { paintOrder } : {}) });
+			const attrs = snapshotAttrs(nodes, strings, nodeIndex);
+			out.push({ backendNodeId, geometry, ...(attrs ? { attrs } : {}), ...(Number.isFinite(paintOrder) ? { paintOrder } : {}) });
 		}
 	}
 	return out;
-}
-
-function snapshotGeometryByBackend(value: unknown): Map<number, AxGeometry> {
-	return new Map(snapshotLayoutEntries(value).map((entry) => [entry.backendNodeId, entry.geometry]));
 }
 
 function uniqueSnapshotLayoutEntries(entries: SnapshotLayoutEntry[]): SnapshotLayoutEntry[] {
@@ -373,12 +370,13 @@ function uniqueSnapshotLayoutEntries(entries: SnapshotLayoutEntry[]): SnapshotLa
 	});
 }
 
-function snapshotGeometryEntries(value: unknown): SnapshotGeometryEntry[] {
-	return uniqueSnapshotLayoutEntries(snapshotLayoutEntries(value)).map((entry) => ({ backendNodeId: entry.backendNodeId, bounds: entry.geometry.box!, ...(entry.attrs ? { attrs: entry.attrs } : {}) }));
-}
-
-function snapshotPaintOrderEntries(value: unknown): PaintOrderEntry[] {
-	return uniqueSnapshotLayoutEntries(snapshotLayoutEntries(value).filter((entry) => entry.paintOrder !== undefined)).map((entry) => ({ backendNodeId: entry.backendNodeId, paintOrder: entry.paintOrder!, bounds: entry.geometry.box! }));
+function snapshotLayoutViews(value: unknown) {
+	const entries = snapshotLayoutEntries(value);
+	return {
+		geometryByBackend: new Map(entries.map((entry) => [entry.backendNodeId, entry.geometry])),
+		snapshotEntries: uniqueSnapshotLayoutEntries(entries).map((entry) => ({ backendNodeId: entry.backendNodeId, bounds: entry.geometry.box!, ...(entry.attrs ? { attrs: entry.attrs } : {}) })),
+		paintOrderEntries: uniqueSnapshotLayoutEntries(entries.filter((entry) => entry.paintOrder !== undefined)).map((entry) => ({ backendNodeId: entry.backendNodeId, paintOrder: entry.paintOrder!, bounds: entry.geometry.box! })),
+	} satisfies { geometryByBackend: Map<number, AxGeometry>; snapshotEntries: SnapshotGeometryEntry[]; paintOrderEntries: PaintOrderEntry[] };
 }
 
 type AxCdpRequest = Parameters<typeof sendPersistentCdp>[1];
@@ -447,7 +445,6 @@ async function readAxSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOption
 		snapshotStartedAt = new Date().toISOString();
 		try {
 			snapshotData = await requestDomSnapshot(sendCdp, options, timeoutMs, true);
-			paintOrderEntries = snapshotPaintOrderEntries(snapshotData);
 		} catch {
 			options.signal?.throwIfAborted();
 			paintOrderSnapshotUnsupported = true;
@@ -461,8 +458,10 @@ async function readAxSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOption
 		}
 		snapshotEndedAt = new Date().toISOString();
 		if (snapshotData !== undefined) {
-			snapshotEntries = snapshotGeometryEntries(snapshotData);
-			for (const [backendNodeId, geometry] of snapshotGeometryByBackend(snapshotData)) {
+			const views = snapshotLayoutViews(snapshotData);
+			snapshotEntries = views.snapshotEntries;
+			paintOrderEntries = views.paintOrderEntries;
+			for (const [backendNodeId, geometry] of views.geometryByBackend) {
 				if (rawGeometryByBackend.has(backendNodeId)) continue;
 				rawGeometryByBackend.set(backendNodeId, geometry);
 				snapshotGeometryCount += 1;
@@ -569,7 +568,10 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 		if (request.cdpMethod === "DOM.getBoxModel") geometryCdpCalls += 1;
 		return await sendPersistentCdp(server, { ...request, signal: options.signal });
 	};
-	const nodes = await loadAxNodes(sendCdp, options, timeoutMs, cachedRaw);
+	const [nodes, snapshot] = await Promise.all([
+		loadAxNodes(sendCdp, options, timeoutMs, cachedRaw),
+		readAxSnapshot(sendCdp, options, timeoutMs, cachedRaw),
+	]);
 	const interestingNodes = nodes.filter(isInterestingAxNode);
 	const indexes = indexAxNodes(nodes);
 	const context: AxContext = {
@@ -581,7 +583,6 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 		observationId: options.observationId,
 		capturedAt: options.capturedAt ?? Date.now(),
 	};
-	const snapshot = await readAxSnapshot(sendCdp, options, timeoutMs, cachedRaw);
 	const geometry = await readAxGeometry(sendCdp, options, timeoutMs, interestingNodes, snapshot.rawGeometryByBackend);
 	if (rawCacheKey && !cachedRaw) rememberAxRawCache(rawCacheKey, { nodes, geometryByBackend: snapshot.rawGeometryByBackend, snapshotGeometryEntries: snapshot.snapshotEntries, paintOrderEntries: snapshot.paintOrderEntries, createdAt: Date.now() });
 	const assembled = assembleAxEntities(nodes, interestingNodes, context, indexes, geometry.geometryByNode);

@@ -173,13 +173,13 @@ async function annotateListenerHints(server: AbmlBrowserRuntimeServer, entities:
 	let failureCount = 0;
 	let probedCount = 0;
 	const timeoutMs = Math.max(500, Math.min(options.timeoutMs, 3_000));
-	for (const candidate of candidates) {
+	await Promise.all(candidates.map(async (candidate) => {
 		try {
 			const resolved = await sendRuntimeCdp(server, { ...options, timeoutMs, cdpMethod: "DOM.resolveNode", params: { backendNodeId: candidate.backendNodeId } });
 			const objectId = stringValue(isRecord(resolved.object) ? resolved.object.objectId : undefined);
 			if (!objectId) {
 				failureCount += 1;
-				continue;
+				return;
 			}
 			const listenerResult = await sendRuntimeCdp(server, { ...options, timeoutMs, cdpMethod: "DOMDebugger.getEventListeners", params: { objectId, depth: 1, pierce: true } });
 			probedCount += 1;
@@ -193,7 +193,7 @@ async function annotateListenerHints(server: AbmlBrowserRuntimeServer, entities:
 			options.signal?.throwIfAborted();
 			failureCount += 1;
 		}
-	}
+	}));
 	const next = byRef.size
 		? entities.map((entity) => {
 			const listeners = byRef.get(entity.ref);
@@ -555,7 +555,7 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 	const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
 	const settlementCapture = options.captureProfile === "settlement";
 	const descriptorUrl = descriptor?.documentEpoch?.url;
-	const rawData = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
+	const rawData = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS) }), {
 		browserSessionId: target.browserSessionId,
 		tabId: target.tabId,
 		timeoutMs,

@@ -189,7 +189,7 @@ function limitedFrontier(resources: ObservationResourceDescriptor[], items: Obse
 	const priority: Record<ObservationFrontierItem["kind"], number> = { details: 0, "collection-window": 1, content: 2, "template-instances": 3 };
 	const selected = items
 		.map((item, index) => ({ item, index }))
-		.sort((a, b) => (a.item.state === "unavailable" ? -1 : priority[a.item.kind]) - (b.item.state === "unavailable" ? -1 : priority[b.item.kind]) || a.index - b.index)
+		.sort((a, b) => (a.item.ref === "frontier:content:root" || a.item.state === "unavailable" ? -1 : priority[a.item.kind]) - (b.item.ref === "frontier:content:root" || b.item.state === "unavailable" ? -1 : priority[b.item.kind]) || a.index - b.index)
 		.slice(0, ROOT_FRONTIER_LIMIT)
 		.map(({ item }) => item);
 	const omitted = items.length - selected.length;
@@ -286,6 +286,11 @@ export function projectObservationResources(observation: PageObservationV3, path
 	const deltaOnly = observation.delta === "session" || observation.baselineSnapshotId !== undefined || observation.diff !== undefined || observation.treeDiff !== undefined;
 	const sections = observation.content && !deltaOnly ? rankedContentSections(observation.content, intent) : [];
 	const rootSection = observation.content ? rootContentSection(observation.content, sections, intent) : undefined;
+	if (rootSection && rootSection.text.length > ROOT_CONTENT_MAX_CHARS) {
+		const resource = descriptor(observation, path, { name: rootSection.label, ref: "frontier:content:root", kind: "content", label: rootSection.label, contentSection: rootSection.index });
+		resources.push(resource);
+		items.push({ ref: "frontier:content:root", kind: "content", state: "folded", label: rootSection.label, observed: ROOT_CONTENT_MAX_CHARS, total: rootSection.text.length, resourceUri: resource.uri });
+	}
 	for (const section of [...sections].sort((a, b) => b.score - a.score || a.index - b.index)) {
 		if (section.index === rootSection?.index) continue;
 		const ref = `frontier:content:${section.index}`;

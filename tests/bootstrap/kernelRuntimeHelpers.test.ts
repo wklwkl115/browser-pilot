@@ -189,6 +189,24 @@ test("full AX reader projects snapshot geometry, paint order, relations, and raw
 	assert.equal(server.calls.length, 2);
 });
 
+test("full AX reader preserves fragmented snapshot projection semantics", async () => {
+	const server = createCdpServer({
+		"Accessibility.getFullAXTree": { nodes: [axNode(42, "button", "Save changes")] },
+		"DOMSnapshot.captureSnapshot": {
+			strings: [],
+			documents: [{
+				nodes: { backendNodeId: [42], attributes: [[]] },
+				layout: { nodeIndex: [0, 0], bounds: [[10, 20, 30, 10], [50, 20, 30, 10]], paintOrders: [1, 2] },
+			}],
+		},
+	});
+	const result = await readAxEntities(server, { tabId: 7, observationId: "obs-fragmented" });
+
+	assert.deepEqual(result.entities[0]?.entity.geometry?.box, { x: 50, y: 20, w: 30, h: 10 });
+	assert.deepEqual(result.snapshotGeometryEntries, [{ backendNodeId: 42, bounds: { x: 10, y: 20, w: 30, h: 10 } }]);
+	assert.deepEqual(result.paintOrderEntries, [{ backendNodeId: 42, paintOrder: 1, bounds: { x: 10, y: 20, w: 30, h: 10 } }]);
+});
+
 test("full AX reader degrades from paint snapshot and falls back to bounded box geometry", async () => {
 	let snapshotCalls = 0;
 	const paintFallbackServer = createCdpServer({
@@ -858,10 +876,11 @@ test("capture template helpers escape inline JSON and fail closed for missing pl
 });
 
 test("scan script builder clamps options and injects scan helper blocks deterministically", () => {
-	const script = buildScanScript({ textOnly: true, maxChars: 1, maxNodes: Number.POSITIVE_INFINITY, includeIframes: false });
-	assert.match(script, /const options = \{"textOnly":true,"maxChars":1000,"maxNodes":4000,"includeIframes":false\};/);
+	const script = buildScanScript({ maxChars: 1, maxNodes: Number.POSITIVE_INFINITY });
+	assert.match(script, /const options = \{"maxChars":1000,"maxNodes":4000\};/);
 	assert.match(script, /schema: "browser-page-scan\/v1"/);
 	assert.match(script, /fingerprint: scanFingerprint/);
+	assert.doesNotMatch(script, /content\.tree|tree: content|function walk\(|iframeNotes|includeIframes/);
 	assert.match(script, /const growthProbe = undefined;/);
 	assert.doesNotMatch(script, /window\.scrollTo|\.scrollTop\s*=/);
 	assert.match(script, /documentRect: visible\.documentRect/);

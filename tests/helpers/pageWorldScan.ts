@@ -7,7 +7,6 @@ type ScanBundleOverrides = {
 	page?: Partial<PageWorldScanBundleV1["page"]>;
 	content?: Partial<PageWorldScanBundleV1["content"]>;
 	structure?: Partial<PageWorldScanBundleV1["structure"]>;
-	frames?: Partial<PageWorldScanBundleV1["frames"]>;
 	signals?: {
 		fingerprint?: Partial<PageWorldScanBundleV1["signals"]["fingerprint"]>;
 		growthProbe?: PageWorldScanBundleV1["signals"]["growthProbe"];
@@ -26,7 +25,6 @@ export function pageWorldScanBundle(overrides: ScanBundleOverrides = {}): PageWo
 		},
 		content: {
 			text: "Example",
-			tree: "<main>Example</main>",
 			headings: [],
 			interactive: [],
 			...overrides.content,
@@ -38,10 +36,6 @@ export function pageWorldScanBundle(overrides: ScanBundleOverrides = {}): PageWo
 			canvasRegions: [],
 			mediaCandidates: [],
 			...overrides.structure,
-		},
-		frames: {
-			notes: [],
-			...overrides.frames,
 		},
 		signals: {
 			fingerprint: {

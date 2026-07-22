@@ -162,3 +162,27 @@ test("canonical PageObservation selects intent-relevant content and bounds front
 	assert.ok(resources.length <= 12);
 	assert.ok(inline.frontier?.items?.some((item) => item.ref === "frontier:budget"));
 });
+
+test("canonical PageObservation keeps truncated root content expandable", async () => {
+	const content = "content ".repeat(1_000);
+	const built = buildPageObservation({
+		summary: {}, entities: [], content, url: "https://example.test/long",
+		snapshot: { snapshotId: "snapshot-long", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 300_000 },
+		abmlIntegrated: true, diagnostics: {},
+	});
+	built.collections = Array.from({ length: 12 }, (_, index) => ({
+		ref: `bp-ref://collection/${index}`, kind: "list", observed: 4, completeness: "complete", confidence: "high",
+		itemRefs: Array.from({ length: 4 }, (_item, itemIndex) => `bp-ref://element/${index}-${itemIndex}`),
+	}));
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-long-"));
+	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
+	await mkdir(path.dirname(outputPath), { recursive: true });
+	const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observation.json" });
+	const inline = JSON.parse(result.content[0]?.text ?? "{}") as { content?: { text?: string; complete?: boolean }; frontier?: { items?: Array<{ ref?: string; observed?: number; total?: number }> } };
+	const resources = result.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
+
+	assert.equal(inline.content?.text?.length, 6_000);
+	assert.equal(inline.content?.complete, false);
+	assert.deepEqual(inline.frontier?.items?.find((item) => item.ref === "frontier:content:root"), { ref: "frontier:content:root", kind: "content", state: "folded", label: "Page content", observed: 6_000, total: content.trim().length, resourceUri: resources.find((resource) => resource.ref === "frontier:content:root")?.uri });
+	assert.equal(resources.find((resource) => resource.ref === "frontier:content:root")?.contentSection, 0);
+});

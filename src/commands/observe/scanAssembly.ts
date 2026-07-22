@@ -8,7 +8,6 @@ import { buildTreeDiff, type TreeDiff } from "../../kernels/abml/treeDiff.js";
 import { buildSnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 import { buildCollectionModels } from "../../kernels/abml/collections.js";
 import { buildIdentityGraph, identityGraphSummary } from "../../kernels/abml/identityGraph.js";
-import { buildNativeTreeDiff } from "../../native/browserPilotNativeKernels.js";
 import { buildScanEntities, scanEntitiesFromGroups } from "../../scan/summary.js";
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";
 import { buildEntityOutline, buildPageGist, sortEntitiesBySalience } from "./entityViews.js";
@@ -116,8 +115,7 @@ export function assembleScanSummary(options: ScanAssemblyOptions) {
 	const diffSummary = abmlDiff ? summarizeEntityDiff(abmlDiff, baseline?.entities, abmlEntities ?? []) : undefined;
 	const envelopeDiff = abmlDiff ? { ...abmlDiff, ...(diffSummary ? { summary: diffSummary } : {}) } : undefined;
 	const treeDiff = abmlEntities && baseline
-		? buildNativeTreeDiff(baseline.entities, abmlEntities, { partialBaseline: baseline.partialBaseline })
-			?? buildTreeDiff(baseline.entities, abmlEntities, { partialBaseline: baseline.partialBaseline })
+		? buildTreeDiff(baseline.entities, abmlEntities, { partialBaseline: baseline.partialBaseline })
 		: undefined;
 	const attributedEntities = attributedEntitiesForCausal(abmlEntities, causal, abmlDiff?.focusedRef);
 	const causalBlock = causal ? { causal } : {};
