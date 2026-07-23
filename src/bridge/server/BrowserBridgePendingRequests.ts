@@ -168,10 +168,10 @@ export class BrowserBridgePendingRequests {
 			const disconnected = this.take(pending.id);
 			if (!disconnected) continue;
 			rejected += 1;
-			const outcome = disconnected.acked ? "inflight-unknown" : "not-delivered";
+			const outcome = disconnected.acked ? "inflight-unknown" : "delivery-unknown";
 			const message = disconnected.acked
 				? "Browser command was acknowledged but its outcome was lost when the extension disconnected"
-				: "Browser command was not acknowledged before the extension disconnected; safe to retry";
+				: "Browser command delivery could not be confirmed before the extension disconnected; retry may duplicate an operation received before disconnect";
 			disconnected.reject(new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", message, { id: disconnected.id, tabId: disconnected.tabId, acked: disconnected.acked, outcome, target: this.resolvedTarget(disconnected.target) }));
 		}
 		return rejected;

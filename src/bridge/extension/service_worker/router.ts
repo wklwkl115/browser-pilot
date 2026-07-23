@@ -145,11 +145,11 @@ async function handleBrowserPilotBridgeWsCommand(data: RoutedBrowserPilotBridgeW
 		sendBrowserPilotBridgeWsInputError(socket, data.id, 'Message object must contain a non-empty "cmd" field', { codeType: "object" });
 		return;
 	}
-		const candidate = {
-			...codeObj,
-			...(codeObj.tabId === undefined && data.tabId !== undefined ? { tabId: data.tabId } : {}),
-			...(codeObj.timeoutMs === undefined && data.timeoutMs !== undefined ? { timeoutMs: data.timeoutMs } : {}),
-		} as BrowserPilotBridgeCommand;
+	const candidate = {
+		...codeObj,
+		...(codeObj.tabId === undefined && data.tabId !== undefined ? { tabId: data.tabId } : {}),
+		...(codeObj.timeoutMs === undefined && data.timeoutMs !== undefined ? { timeoutMs: data.timeoutMs } : {}),
+	} as BrowserPilotBridgeCommand;
 	const validation = validateBrowserPilotBridgeProtocolMessage(candidate);
 	if (!validation.ok) {
 		sendBrowserPilotBridgeWsCommandResult(socket, data.id, candidate, bridgeError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, validation.error, { ...(validation.details || {}), dispatchStarted: false, acked: false }));

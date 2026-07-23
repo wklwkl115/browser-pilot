@@ -18,7 +18,7 @@ const SOCKET_CLOSED = 3;
 let primaryPort = BROWSER_PILOT_BRIDGE_PORT;
 const sockets = new Map<number, SocketAdapter>();
 const outboundTails = new WeakMap<SocketAdapter, Promise<void>>();
-let startupRecoveryDone = false;
+let startupRecovery: Promise<void> | null = null;
 let browserPilotTransportInstalled = false;
 let offscreenCreateInFlight: Promise<boolean> | null = null;
 let offscreenUnreachable = false;
@@ -98,8 +98,9 @@ async function ensureOffscreenDocument(): Promise<boolean> {
   return await offscreenCreateInFlight;
 }
 
-async function sendOffscreenMessage(message: OffscreenMessage): Promise<unknown> {
+async function sendOffscreenMessage(message: OffscreenMessage, shouldSend?: () => boolean): Promise<unknown> {
   if (!await ensureOffscreenDocument()) return { ok: false, error: "offscreen unavailable" };
+  if (shouldSend && !shouldSend()) return undefined;
   return await chrome.runtime.sendMessage(message);
 }
 
@@ -117,13 +118,29 @@ function logTransportAsyncError(reason: string, error: unknown): void {
 
 function runTransportTask(reason: string, task: () => Promise<unknown>): void { void task().catch((error: unknown) => logTransportAsyncError(reason, error)); }
 
+function ensureStartupRecovery(): Promise<void> {
+  if (!startupRecovery) {
+    startupRecovery = runStartupRecovery()
+      .then(() => undefined)
+      .catch((error: unknown) => { console.warn("[BROWSER-PILOT-WS] Startup recovery failed", error); });
+  }
+  return startupRecovery;
+}
+
+function isCurrentSocket(socket: SocketAdapter): boolean {
+  return socket.readyState === SOCKET_OPEN && sockets.get(socket.port) === socket;
+}
+
 function enqueueOffscreenSend(socket: SocketAdapter, buildData: () => string | Promise<string>): Promise<void> {
   const previous = outboundTails.get(socket) || Promise.resolve();
   const next = previous.then(async () => {
-    if (socket.readyState !== SOCKET_OPEN || sockets.get(socket.port) !== socket) return;
+    if (!isCurrentSocket(socket)) return;
     const data = await buildData();
-    if (socket.readyState !== SOCKET_OPEN || sockets.get(socket.port) !== socket) return;
-    const response = await sendOffscreenMessage({ type: "browser-pilot-offscreen-send", port: socket.port, data });
+    if (!isCurrentSocket(socket)) return;
+    const response = await sendOffscreenMessage(
+      { type: "browser-pilot-offscreen-send", port: socket.port, data },
+      () => isCurrentSocket(socket),
+    );
     const sent = response && typeof response === "object" ? (response as JsonRecord).sent : undefined;
     if (sent === false) cleanupTransportSocket(socket, "offscreen-send-failed");
   }).catch((error: unknown) => {
@@ -200,10 +217,7 @@ async function probeAndConnectWS(resetDelay: boolean): Promise<void> {
 async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> {
   primaryPort = port;
   await enqueueOffscreenSend(socket, async () => {
-    if (!startupRecoveryDone) {
-      startupRecoveryDone = true;
-      try { await runStartupRecovery(); } catch (error) { console.warn("[BROWSER-PILOT-WS] Startup recovery failed", error); }
-    }
+    await ensureStartupRecovery();
     const extensionInstanceId = await getExtensionInstanceId();
     const tabs = (await chrome.tabs.query({}) as BrowserPilotChromeTab[]).filter((tab: BrowserPilotChromeTab) => isScriptable(tab.url));
     const tabsWithIdentity = await Promise.all(tabs.map(async (tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId, ...browserPilotPageIdentityFields(tab), ...await browserPilotTabIdentityFields(tab) })));

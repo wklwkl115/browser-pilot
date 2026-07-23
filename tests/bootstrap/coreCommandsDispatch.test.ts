@@ -26,6 +26,7 @@ let failAlreadyAttachedOnce = false;
 let domainEnableConcurrency: { active: number; max: number } | undefined;
 let storageWriteConcurrency: { active: number; max: number } | undefined;
 let tabQueryOverride: (() => Promise<Array<Record<string, unknown>>>) | undefined;
+let offscreenHasDocumentOverride: (() => Promise<boolean>) | undefined;
 let newDocumentScriptSeq = 0;
 
 async function debuggerCommandResult(_debuggee: Debuggee, method: string): Promise<unknown> {
@@ -97,7 +98,7 @@ const chromeStub = {
 		onAlarm: { addListener() {} },
 	},
 	offscreen: {
-		async hasDocument() { return true; },
+		async hasDocument() { return offscreenHasDocumentOverride ? await offscreenHasDocumentOverride() : true; },
 		async createDocument() {},
 	},
 	debugger: {
@@ -312,9 +313,10 @@ test("extension websocket router rejects native command validation errors before
 	const socket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
 
 	await router.handleBrowserPilotBridgeWsMessage({ id: "native-invalid", tabId: 7, code: JSON.stringify({ cmd: "input.pointer" }) }, socket);
+	await router.handleBrowserPilotBridgeWsMessage({ id: "timeout-invalid", tabId: 7, timeoutMs: -1, code: { cmd: "tabs", method: "list" } }, socket);
 
 	const messages = parseSocketMessages(socket);
-	assert.equal(messages.length, 1);
+	assert.equal(messages.length, 2);
 	assert.equal(messages[0]?.type, "error");
 	assert.equal(messages[0]?.id, "native-invalid");
 	assert.deepEqual(messages[0]?.result, {
@@ -324,53 +326,75 @@ test("extension websocket router rejects native command validation errors before
 		details: { cmd: "input.pointer", missing: ["gesture", "x", "y"], dispatchStarted: false, acked: false },
 	});
 	assert.match(String(messages[0]?.error), /input\.pointer missing required fields/);
+	assert.equal(messages[1]?.type, "error");
+	assert.match(String(messages[1]?.error), /timeoutMs must be a non-negative integer/);
 });
 
 test("offscreen transport preserves ext_ready, ACK, and result order", async () => {
 	sentRuntimeMessages.length = 0;
-	await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-connected", port: 9333 });
-	await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-ws-message", port: 9333, data: { id: "ordered", code: { cmd: "tabs", method: "list" } } });
-	const deadline = Date.now() + 1_000;
-	const envelopes = () => sentRuntimeMessages
-		.filter((message): message is Record<string, unknown> => !!message && typeof message === "object" && (message as Record<string, unknown>).type === "browser-pilot-offscreen-send")
-		.map((message) => JSON.parse(String(message.data)) as Record<string, unknown>);
-	while (envelopes().length < 3 && Date.now() < deadline) await new Promise((resolve) => setImmediate(resolve));
-	assert.deepEqual(envelopes().map((message) => message.type), ["ext_ready", "ack", "result"]);
-	await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-disconnected", port: 9333 });
+	let recoveryCalls = 0;
+	let releaseRecovery!: () => void;
+	let markRecoveryStarted!: () => void;
+	const recoveryStarted = new Promise<void>((resolve) => { markRecoveryStarted = resolve; });
+	const recoveryReleased = new Promise<void>((resolve) => { releaseRecovery = resolve; });
+	stateStore.registerRecovery(async () => {
+		recoveryCalls += 1;
+		markRecoveryStarted();
+		await recoveryReleased;
+	});
+	try {
+		const firstConnect = transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-connected", port: 9333 });
+		await recoveryStarted;
+		const secondConnect = transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-connected", port: 9334 });
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(sentRuntimeMessages.some((message) => !!message && typeof message === "object" && (message as Record<string, unknown>).type === "browser-pilot-offscreen-send"), false);
+		releaseRecovery();
+		await Promise.all([firstConnect, secondConnect]);
+		assert.equal(recoveryCalls, 1);
+		await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-ws-message", port: 9333, data: { id: "ordered", code: { cmd: "tabs", method: "list" } } });
+		const deadline = Date.now() + 1_000;
+		const envelopes = () => sentRuntimeMessages
+			.filter((message): message is Record<string, unknown> => !!message && typeof message === "object" && (message as Record<string, unknown>).type === "browser-pilot-offscreen-send" && (message as Record<string, unknown>).port === 9333)
+			.map((message) => JSON.parse(String(message.data)) as Record<string, unknown>);
+		while (envelopes().length < 3 && Date.now() < deadline) await new Promise((resolve) => setImmediate(resolve));
+		assert.deepEqual(envelopes().map((message) => message.type), ["ext_ready", "ack", "result"]);
+	} finally {
+		releaseRecovery();
+		await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-disconnected", port: 9333 });
+		await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-disconnected", port: 9334 });
+	}
 });
 
 test("offscreen transport drops queued sends from a superseded connection", async () => {
 	sentRuntimeMessages.length = 0;
-	let queryCount = 0;
-	let releaseFirst!: () => void;
-	let markFirstStarted!: () => void;
-	const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
-	const firstReleased = new Promise<void>((resolve) => { releaseFirst = resolve; });
-	tabQueryOverride = async () => {
-		queryCount += 1;
-		if (queryCount === 1) {
-			markFirstStarted();
-			await firstReleased;
-			return [{ id: 7, url: "https://example.test/old", title: "Old", active: true, windowId: 1 }];
+	let hasDocumentCalls = 0;
+	let releaseFirstCheck!: () => void;
+	let markFirstCheckStarted!: () => void;
+	const firstCheckStarted = new Promise<void>((resolve) => { markFirstCheckStarted = resolve; });
+	const firstCheckReleased = new Promise<void>((resolve) => { releaseFirstCheck = resolve; });
+	offscreenHasDocumentOverride = async () => {
+		hasDocumentCalls += 1;
+		if (hasDocumentCalls === 1) {
+			markFirstCheckStarted();
+			await firstCheckReleased;
 		}
-		return [{ id: 7, url: "https://example.test/new", title: "New", active: true, windowId: 1 }];
+		return true;
 	};
 	try {
 		const firstConnect = transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-connected", port: 9444 });
-		await firstStarted;
+		await firstCheckStarted;
 		await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-disconnected", port: 9444 });
 		const secondConnect = transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-connected", port: 9444 });
-		releaseFirst();
+		releaseFirstCheck();
 		await Promise.all([firstConnect, secondConnect]);
 		const ready = sentRuntimeMessages
-			.filter((message): message is Record<string, unknown> => !!message && typeof message === "object" && (message as Record<string, unknown>).type === "browser-pilot-offscreen-send")
+			.filter((message): message is Record<string, unknown> => !!message && typeof message === "object" && (message as Record<string, unknown>).type === "browser-pilot-offscreen-send" && (message as Record<string, unknown>).port === 9444)
 			.map((message) => JSON.parse(String(message.data)) as Record<string, unknown>)
 			.filter((message) => message.type === "ext_ready");
 		assert.equal(ready.length, 1);
-		assert.equal(((ready[0]?.tabs as Array<Record<string, unknown>>)[0]?.title), "New");
 	} finally {
-		releaseFirst();
-		tabQueryOverride = undefined;
+		releaseFirstCheck();
+		offscreenHasDocumentOverride = undefined;
 		await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-disconnected", port: 9444 });
 	}
 });

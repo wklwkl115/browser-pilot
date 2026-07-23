@@ -120,7 +120,8 @@ test("client disconnect immediately fails requests without replay and preserves 
 	assert.equal(pr.rejectClient(ws), 2);
 	await assert.rejects(notAcked, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
 		assert.equal(error.code, "BRIDGE_CLIENT_DISCONNECTED");
-		assert.equal(error.details?.outcome, "not-delivered");
+		assert.equal(error.details?.outcome, "delivery-unknown");
+		assert.match(error.message, /retry may duplicate/);
 		return true;
 	});
 	await assert.rejects(acked, (error: Error & { code?: string; details?: Record<string, unknown> }) => {

@@ -28,9 +28,7 @@ type RuntimeStateKind =
   | "intercept"
   | "hook"
   | "ws"
-  | "cdp"
-  | "wait"
-  | "queue";
+  | "cdp";
 
 type RecoveryPolicy = "auto" | "manual" | "diagnosticOnly";
 
