@@ -399,10 +399,6 @@ export class BrowserTabSessionRouter {
 		return target?.tabId !== undefined ? this.liveSessionForTabId(target.tabId, browserSessionId) : undefined;
 	}
 
-	socketForTab(tabId: number, browserSessionId?: string): WebSocket | undefined {
-		return this.liveSessionForTabId(tabId, browserSessionId)?.client;
-	}
-
 	describeBrowserSession(session: BrowserAutomationSession, selectedBrowser?: BrowserAutomationSessionInfo["selectedBrowser"]): BrowserAutomationSessionInfo {
 		return {
 			id: session.id,
@@ -732,11 +728,6 @@ export class BrowserTabSessionRouter {
 			if (age !== undefined && age >= REPLACEMENT_TTL_MS) return true;
 		}
 		return false;
-	}
-
-	replacedByTabId(tabId: number, browserSessionId?: string): number | undefined {
-		const resolved = this.resolveNumericTabId(tabId, browserSessionId);
-		return resolved.tabId !== tabId ? resolved.tabId : undefined;
 	}
 
 	/**

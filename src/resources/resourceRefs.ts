@@ -25,6 +25,11 @@ export type RegisterRefDescriptorParams = {
 	etag?: string;
 };
 
+export function selectorFromRef(descriptor: ResourceRefDescriptor): string | undefined {
+	for (const locator of descriptor.locators) if (locator.by === "css" && locator.value.trim()) return locator.value;
+	return undefined;
+}
+
 const REF_STORE_MAX_ENTRIES = 10_000;
 const PRUNE_EVERY_REGISTRATIONS = 128;
 const refStore = new Map<string, RegisteredRefRecord>();

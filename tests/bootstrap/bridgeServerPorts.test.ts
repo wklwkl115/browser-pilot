@@ -198,6 +198,8 @@ test("BrowserBridgeServer closes clients that do not complete ext_ready", async 
 		});
 		assert.equal(server.snapshot().connectedClients, 1);
 		await new Promise<void>((resolve) => ws.once("close", () => resolve()));
+		const disconnectDeadline = Date.now() + 1_000;
+		while (server.snapshot().connectedClients && Date.now() < disconnectDeadline) await new Promise((resolve) => setTimeout(resolve, 5));
 		assert.equal(server.snapshot().connectedClients, 0);
 	} finally {
 		await server.stop();

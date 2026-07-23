@@ -1,6 +1,6 @@
 import schemaJson from "../bridge/protocol/native-command.schema.json" with { type: "json" };
 import { validateCommandArgs } from "../validation/commandArgs.js";
-import { toTabId } from "../utils/records.js";
+import { isRecord, toTabId } from "../utils/records.js";
 
 export type BridgeCommand = {
 	cmd: string;
@@ -41,10 +41,6 @@ export type BridgeCommandValidation =
 	| { ok: false; error: string; details: Record<string, unknown> };
 
 const schema = schemaJson as unknown as NativeCommandProtocolSchema;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function hasValue(value: unknown): boolean {
 	return value !== undefined && value !== null && value !== "";

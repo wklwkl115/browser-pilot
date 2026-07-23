@@ -215,12 +215,6 @@ export class SessionLeaseRegistry {
 		return this.uiLock;
 	}
 
-	touchUiLock(browserSessionId: string, now = Date.now()): SessionUiLockInfo | undefined {
-		if (!this.uiLock || this.uiLock.browserSessionId !== browserSessionId) return undefined;
-		this.uiLock = { ...this.uiLock, lastSeenAt: now };
-		return this.uiLock;
-	}
-
 	releaseUiLock(browserSessionId: string): SessionUiLockInfo | undefined {
 		if (!this.uiLock || this.uiLock.browserSessionId !== browserSessionId) return undefined;
 		const released = this.uiLock;

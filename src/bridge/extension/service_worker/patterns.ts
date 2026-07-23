@@ -28,4 +28,4 @@ function matchNetworkPattern(url: unknown, pattern: unknown): boolean {
   if (needle.length > BROWSER_PILOT_NETWORK_MAX_PATTERN_CHARS) return false;
   return haystack.includes(needle);
 }
-export { BROWSER_PILOT_NETWORK_MAX_PATTERN_CHARS, BROWSER_PILOT_NETWORK_MAX_MATCH_CHARS, isSafeNetworkRegexPattern, matchNetworkPattern };
+export { matchNetworkPattern };

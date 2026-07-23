@@ -1,6 +1,7 @@
 import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
-import { isRecord } from "../../utils/records.js";
-import { urlOrigin } from "../../utils/url.js";
+import { finiteNumber as numberValue, nonEmptyString as stringValue, recordValue as asRecord } from "../../utils/records.js";
+import { memoizedUrlOrigin } from "../../utils/url.js";
+import { dedupeLocators } from "./entity.js";
 import type { BuiltEntity, Entity, EntityKind, EntityState, EntityStructure, RelationType } from "./entity.js";
 import type { Locator } from "./types.js";
 import { sanitizeSemanticText } from "./semanticText.js";
@@ -90,38 +91,8 @@ const COINCIDENT_BOX_IOU = 0.8;
 const AX_GEOMETRY_BUCKET_SIZE = 64;
 const MAX_AX_GEOMETRY_BUCKETS_PER_RECT = 256;
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-	return isRecord(value) ? value : undefined;
-}
-
-function stringValue(value: unknown): string | undefined {
-	if (typeof value === "string") {
-		const text = value.trim();
-		return text ? text : undefined;
-	}
-	return undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-	const n = Number(value);
-	return Number.isFinite(n) ? n : undefined;
-}
-
 function boolValue(value: unknown): boolean | undefined {
 	return typeof value === "boolean" ? value : undefined;
-}
-
-let cachedTopLevelOriginUrl: string | undefined;
-let cachedTopLevelOriginValue: string | undefined;
-let hasCachedTopLevelOrigin = false;
-
-function memoizedTopLevelOrigin(url: string | undefined): string | undefined {
-	if (hasCachedTopLevelOrigin && url === cachedTopLevelOriginUrl) return cachedTopLevelOriginValue;
-	const origin = urlOrigin(url);
-	cachedTopLevelOriginUrl = url;
-	cachedTopLevelOriginValue = origin;
-	hasCachedTopLevelOrigin = true;
-	return origin;
 }
 
 function axValueText(value: unknown): string | undefined {
@@ -211,18 +182,6 @@ export function isInterestingAxNode(node: AxTreeNode): boolean {
 	if (BORING_AX_ROLES.has(role)) return Boolean(name || axValue(node));
 	if (kindForAxRole(role) !== "element") return true;
 	return Boolean(name || axValue(node) || axBackendNodeId(node));
-}
-
-function dedupeLocators(locators: Locator[]): Locator[] {
-	const seen = new Set<string>();
-	const out: Locator[] = [];
-	for (const locator of locators) {
-		const key = JSON.stringify(locator);
-		if (seen.has(key)) continue;
-		seen.add(key);
-		out.push(locator);
-	}
-	return out;
 }
 
 export function buildAxLocators(node: AxTreeNode, propertyMap?: AxPropertyMap): Locator[] {
@@ -320,7 +279,7 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 	const role = axRole(node);
 	const roleLower = role.toLowerCase();
 	const propertyMap = axPropertyMap(node);
-	const origin = memoizedTopLevelOrigin(context.url);
+	const origin = memoizedUrlOrigin(context.url);
 	const structure = axStructure(node, role, propertyMap);
 	const rawName = axValueText(node.name);
 	const rawValue = axValueText(node.value)
@@ -430,9 +389,7 @@ function entityBackendNodeId(entity: Entity | BuiltEntity["entity"]): number | u
 
 function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number }): number | undefined {
 	if (!a || !b) return undefined;
-	const dx = a.x - b.x;
-	const dy = a.y - b.y;
-	return Math.sqrt(dx * dx + dy * dy);
+	return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {

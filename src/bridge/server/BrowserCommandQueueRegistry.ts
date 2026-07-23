@@ -10,12 +10,6 @@ export type BrowserCommandQueuePressure = {
 	warningThreshold: true;
 };
 
-export type BrowserCommandQueueStatus = {
-	depth: number;
-	maxDepth: number;
-	pressure: number;
-};
-
 export type BrowserCommandQueueInfo = {
 	key: string;
 	browserSessionId: string;
@@ -41,10 +35,6 @@ export class BrowserCommandQueueRegistry {
 
 	constructor(maxDepth = DEFAULT_MAX_QUEUE_DEPTH) {
 		this.maxDepth = Math.max(1, Math.floor(maxDepth));
-	}
-
-	maxQueueDepth(): number {
-		return this.maxDepth;
 	}
 
 	async withTransaction<T>(browserSessionId: string, tabId: number, run: () => Promise<T>, options: { signal?: AbortSignal } = {}): Promise<T> {
@@ -147,11 +137,6 @@ export class BrowserCommandQueueRegistry {
 
 	depth(browserSessionId: string, tabId: number): number {
 		return this.depths.get(this.resolveKey(this.key(browserSessionId, tabId))) || 0;
-	}
-
-	status(browserSessionId: string, tabId: number): BrowserCommandQueueStatus {
-		const depth = this.depth(browserSessionId, tabId);
-		return { depth, maxDepth: this.maxDepth, pressure: depth / this.maxDepth };
 	}
 
 	migrateTabQueue(browserSessionId: string, fromTabId: number, toTabId: number): BrowserCommandQueueInfo | undefined {

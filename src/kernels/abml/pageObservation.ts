@@ -6,6 +6,7 @@ import type { SnapshotProjection } from "./snapshotProjection.js";
 import type { RelationSummary } from "./relations.js";
 import type { InferenceSummary } from "./inference.js";
 import type { PageReanchorReason } from "../session/pageIdentity.js";
+import { isRecord } from "../../utils/records.js";
 
 export const PAGE_OBSERVATION_SCHEMA_V3 = "browser-page-observation/v3" as const;
 
@@ -307,10 +308,6 @@ const COLLECTION_KEYS = new Set(Object.keys(COLLECTION_SCHEMA.properties));
 const PAGE_OBSERVATION_VIEW_ROOT_KEYS = new Set(Object.keys(PAGE_OBSERVATION_VIEW_JSON_SCHEMA.properties));
 const PUBLIC_PROVIDER_KEYS = new Set(["status", "reason"]);
 const PUBLIC_COLLECTION_KEYS = new Set(Object.keys(PUBLIC_COLLECTION_SCHEMA.properties));
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function exactKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
 	return Object.keys(value).every((key) => allowed.has(key));

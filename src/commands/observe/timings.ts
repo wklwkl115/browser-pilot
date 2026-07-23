@@ -1,4 +1,4 @@
-import { isRecord } from "../../utils/records.js";
+import { finiteNumber as numericMetric, isRecord } from "../../utils/records.js";
 import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
 
 export type ObserveTimingMetrics = Record<string, number | boolean | undefined>;
@@ -9,11 +9,6 @@ export function elapsedMs(startedAt: number): number {
 
 export function addBridgeRoundTrips(metrics: ObserveTimingMetrics, count: number): void {
 	metrics.bridgeRoundTrips = Math.max(0, Math.floor(Number(metrics.bridgeRoundTrips || 0) + count));
-}
-
-function numericMetric(value: unknown): number | undefined {
-	const n = Number(value);
-	return Number.isFinite(n) ? n : undefined;
 }
 
 export function finalizedObserveTimings(metrics: ObserveTimingMetrics, data: PageWorldScanBundleV1, abmlRead: unknown): Record<string, unknown> {

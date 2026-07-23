@@ -1,19 +1,8 @@
 import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
-import { isRecord } from "../../utils/records.js";
+import { finiteNumber as numberValue, isRecord, nonEmptyString as stringValue } from "../../utils/records.js";
 import { urlOrigin } from "../../utils/url.js";
 import type { Entity } from "./entity.js";
 import type { CaptureRef, CaptureState, RefDescriptor } from "./types.js";
-
-function stringValue(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim();
-	return text ? text : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-	const n = Number(value);
-	return Number.isFinite(n) ? n : undefined;
-}
 
 export type CaptureRefContext = {
 	browserSessionId?: string;

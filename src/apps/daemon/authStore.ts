@@ -137,14 +137,6 @@ function loadFromDisk(filePath: string): AuthStore {
 }
 
 // ---------------------------------------------------------------------------
-// Fail-closed read (also warms the cache)
-// ---------------------------------------------------------------------------
-
-export function loadStore(): AuthStore {
-	return getCache();
-}
-
-// ---------------------------------------------------------------------------
 // Persist (always persists the current cache to disk)
 // ---------------------------------------------------------------------------
 

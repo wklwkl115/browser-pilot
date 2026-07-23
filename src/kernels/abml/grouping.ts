@@ -1,5 +1,5 @@
 import type { Entity, EntityKind } from "./entity.js";
-import { isRecord } from "../../utils/records.js";
+import { isRecord, nonEmptyString as str } from "../../utils/records.js";
 
 export const MIN_TEMPLATE_INSTANCES = 4;
 
@@ -14,12 +14,6 @@ export type TemplateGroupDescriptor = {
 
 export type IndexedEntity = { entity: Entity; index: number };
 export type TemplateGroup = { descriptor: TemplateGroupDescriptor; members: IndexedEntity[] };
-
-function str(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim();
-	return text ? text : undefined;
-}
 
 function containerRoleOf(entity: Entity): string | undefined {
 	return isRecord(entity.hints) ? str(entity.hints.containerRole) : undefined;

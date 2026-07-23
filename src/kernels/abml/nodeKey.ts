@@ -3,11 +3,7 @@ export type BackendNodeIdentity = {
 	targetId?: string;
 };
 
-export function cleanTargetId(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim();
-	return text ? text : undefined;
-}
+export { nonEmptyString as cleanTargetId } from "../../utils/records.js";
 
 export function backendNodeKey(identity: BackendNodeIdentity): string {
 	return identity.targetId ? `t:${identity.targetId}:b:${identity.backendNodeId}` : bareBackendNodeKey(identity.backendNodeId);

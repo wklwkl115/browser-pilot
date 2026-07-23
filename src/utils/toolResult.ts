@@ -1,6 +1,7 @@
 import { compactError } from "./errors.js";
 import { stableJson } from "./json.js";
 import { redactSensitiveValue } from "./redaction.js";
+import { isRecord } from "./records.js";
 
 export type BrowserTextCommandResult = {
 	content: Array<{ type: "text"; text: string }>;
@@ -14,10 +15,6 @@ const RUNTIME_RESULT_KEYS = new Set([
 	"targetGeneration", "pageEpoch", "documentId", "selectionVersion", "operationId",
 	"waitId", "leaseOwnerHash", "host", "port",
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function isExecutionEnvelope(value: Record<string, unknown>): boolean {
 	return typeof value.id === "string" && typeof value.acknowledged === "boolean"

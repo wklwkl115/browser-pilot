@@ -4,6 +4,7 @@ import type { SnapshotProjection, SnapshotProjectionTemplate } from "../../kerne
 import type { TreeDiffChangedBucket, TreeDiffInstanceBucket, TreeTemplateDiff } from "../../kernels/abml/treeDiff.js";
 import { computeRelevanceMap } from "../../kernels/evidence/distill/relevance.js";
 import { extractScalarTerm } from "../../kernels/evidence/distill/relevanceTaps.js";
+import { isRecord } from "../../utils/records.js";
 
 const ROOT_SAMPLE_SIZE = 3;
 const ROOT_CONTENT_MAX_CHARS = 6_000;
@@ -88,10 +89,6 @@ function compactOutline(outline: PageObservationV3["outline"]): PageObservationV
 		...item,
 		...(Array.isArray(item.memberRefs) ? { memberRefs: item.memberRefs.slice(0, ROOT_SAMPLE_SIZE) } : {}),
 	}));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function compactDiagnostics(value: PageObservationV3["diagnostics"]): PageObservationV3["diagnostics"] {

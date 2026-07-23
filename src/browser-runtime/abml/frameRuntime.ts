@@ -3,17 +3,10 @@ import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
-import { recordValue } from "../../utils/records.js";
+import { nonEmptyString as stringValue, recordValue } from "../../utils/records.js";
 import { urlOrigin } from "../../utils/url.js";
 
 export type AbmlFrameRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
-
-function stringValue(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim();
-	return text ? text : undefined;
-}
-
 
 export type FrameEntityRuntimeOptions = {
 	browserSessionId?: string;

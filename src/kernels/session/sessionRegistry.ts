@@ -82,15 +82,6 @@ export class SessionRegistry<TClient = unknown> {
 		return session;
 	}
 
-	getIfExists(sessionId = this.selectedSessionId): SessionAutomationSession<TClient> | undefined {
-		const id = String(sessionId || this.selectedSessionId || DEFAULT_BROWSER_SESSION_ID).trim() || DEFAULT_BROWSER_SESSION_ID;
-		if (id === DEFAULT_BROWSER_SESSION_ID) return this.ensureDefaultSession();
-		const session = this.sessions.get(id);
-		if (!session) return undefined;
-		session.lastSeenAt = Date.now();
-		return session;
-	}
-
 	selectClient(session: SessionAutomationSession<TClient>, client: TClient | undefined): void {
 		session.selectedClient = client;
 		session.lastSeenAt = Date.now();

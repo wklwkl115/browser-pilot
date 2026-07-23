@@ -165,7 +165,9 @@ test("daemon status publishes the exact identity used by its command registry", 
 const DAEMON_CLIENT_SCRIPT = `
 	const daemon = await import("./src/apps/daemon/daemonControl.ts");
 	if (process.env.BROWSER_PILOT_TEST_ACTION === "stop") {
-		console.log(JSON.stringify({ stopped: await daemon.stopDaemon() }));
+		const info = daemon.readLockfile();
+		const stopped = info ? await daemon.controlRequest(info, "POST", "/shutdown", {}, 2_000).then((response) => response.status === 200).catch(() => false) : false;
+		console.log(JSON.stringify({ stopped }));
 	} else {
 		const info = await daemon.ensureDaemon();
 		console.log(JSON.stringify({ daemon: info, status: await daemon.pingStatus(info) }));

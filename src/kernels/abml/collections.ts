@@ -8,6 +8,7 @@ import type { StructureTemplate } from "./templating.js";
 import type { TreeDiff } from "./treeDiff.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
 import type { ScanActionable, ScanGrowthProbe, ScanListHint, ScanRow } from "./pageWorldScan.js";
+import { nonEmptyString as stringValue } from "../../utils/records.js";
 
 type ListHintInput = ScanListHint | Record<string, unknown>;
 type ActionableInput = ScanActionable | Record<string, unknown>;
@@ -132,12 +133,6 @@ const COLLECTION_CONTAINER_ROLES = new Set([
 	"table",
 	"tree",
 ]);
-
-function stringValue(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim();
-	return text ? text : undefined;
-}
 
 function numberValue(value: unknown): number | undefined {
 	const n = Number(value);

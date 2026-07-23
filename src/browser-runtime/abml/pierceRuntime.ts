@@ -2,22 +2,15 @@ import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntim
 import type { Entity } from "../../kernels/abml/entity.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
 import { buildAxEntityFromNode, boxModelToGeometry, isInterestingAxNode } from "../../kernels/abml/ax.js";
-import { registerRefDescriptor, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
+import { registerRefDescriptor, selectorFromRef, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import { recordValue } from "../../utils/records.js";
 import { readPartialAxTree, sendPersistentCdp, type PartialAxDiagnostics } from "./axRuntime.js";
 
 export type AbmlPierceRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
 
-function selectorFromRef(descriptor: RefDescriptor): string | undefined {
-	for (const locator of descriptor.locators) if (locator.by === "css" && locator.value.trim()) return locator.value;
-	return undefined;
-}
-
 function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number }): number | undefined {
 	if (!a || !b) return undefined;
-	const dx = a.x - b.x;
-	const dy = a.y - b.y;
-	return Math.sqrt(dx * dx + dy * dy);
+	return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function backendNodeIdFromRef(descriptor: RefDescriptor): number | undefined {

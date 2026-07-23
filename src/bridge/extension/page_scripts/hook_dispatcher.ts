@@ -113,6 +113,7 @@ declare global {
     if (max != null) n = Math.min(max, n);
     return n;
   }
+  // Kept local because this source also executes standalone in the page world without module imports.
   function isSafeHookRedactRegexPattern(pattern: unknown): boolean {
     const text = String(pattern || '');
     if (!text || text.length > BROWSER_PILOT_HOOK_REDACT_MAX_PATTERN_CHARS) return false;

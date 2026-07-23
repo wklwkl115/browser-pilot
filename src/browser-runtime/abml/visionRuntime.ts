@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
+import { selectorFromRef, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../capture/inject.js";
 import { VIEWPORT_TEMPLATE } from "../../../capture-src/entries/visionTemplate.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
@@ -14,11 +14,6 @@ export type AbmlVisionRuntimeServer = Pick<BrowserCommandRuntimePort, "sendComma
 export type VisionInspectResult =
 	| { ok: true; artifactPath: string; entity: Entity; data: Record<string, unknown> }
 	| { ok: false; error: ReturnType<typeof normalizeAbmlError> };
-
-function selectorFromRef(descriptor: RefDescriptor): string | undefined {
-	for (const locator of descriptor.locators) if (locator.by === "css" && locator.value.trim()) return locator.value;
-	return undefined;
-}
 
 function pointFromRef(descriptor: RefDescriptor): { x: number; y: number } | undefined {
 	for (const locator of descriptor.locators) if (locator.by === "point") return { x: locator.x, y: locator.y };

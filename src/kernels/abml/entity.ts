@@ -1,7 +1,7 @@
 import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
 import type { Locator, RefDescriptor, RefKind } from "./types.js";
-import { isRecord } from "../../utils/records.js";
-import { urlOrigin } from "../../utils/url.js";
+import { finiteNumber as numberValue, isRecord, nonEmptyString as stringValue } from "../../utils/records.js";
+import { memoizedUrlOrigin } from "../../utils/url.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
 import type { ScanActionable, ScanCanvasRegion, ScanListHint } from "./pageWorldScan.js";
 
@@ -115,17 +115,6 @@ export type BuiltEntity = {
 	descriptor: Omit<RefDescriptor, "refId">;
 };
 
-function stringValue(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim();
-	return text ? text : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-	const n = Number(value);
-	return Number.isFinite(n) ? n : undefined;
-}
-
 function stringArray(value: unknown, limit = 8): string[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	const out = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, limit);
@@ -145,20 +134,7 @@ function roleForTag(tag: string | undefined): string {
 	}
 }
 
-let cachedTopLevelOriginUrl: string | undefined;
-let cachedTopLevelOriginValue: string | undefined;
-let hasCachedTopLevelOrigin = false;
-
-function memoizedTopLevelOrigin(url: string | undefined): string | undefined {
-	if (hasCachedTopLevelOrigin && url === cachedTopLevelOriginUrl) return cachedTopLevelOriginValue;
-	const origin = urlOrigin(url);
-	cachedTopLevelOriginUrl = url;
-	cachedTopLevelOriginValue = origin;
-	hasCachedTopLevelOrigin = true;
-	return origin;
-}
-
-function dedupeLocators(locators: Locator[]): Locator[] {
+export function dedupeLocators(locators: Locator[]): Locator[] {
 	const seen = new Set<string>();
 	const out: Locator[] = [];
 	for (const locator of locators) {
@@ -297,7 +273,7 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 		},
 	};
 	const capturedAt = context.capturedAt;
-	const origin = memoizedTopLevelOrigin(context.url);
+	const origin = memoizedUrlOrigin(context.url);
 	return {
 		entity,
 		descriptor: {
@@ -378,7 +354,7 @@ export function buildRegionEntityFromListHint(node: ScanListHintInput, context: 
 		},
 	};
 	const capturedAt = context.capturedAt;
-	const origin = memoizedTopLevelOrigin(context.url);
+	const origin = memoizedUrlOrigin(context.url);
 	return {
 		entity,
 		descriptor: {
@@ -436,7 +412,7 @@ export function buildControlsSourceEntity(node: ScanActionableInput, context: Sc
 		},
 	};
 	const capturedAt = context.capturedAt;
-	const origin = memoizedTopLevelOrigin(context.url);
+	const origin = memoizedUrlOrigin(context.url);
 	return {
 		entity,
 		descriptor: {
@@ -479,7 +455,7 @@ export function buildReferencedTargetEntity(node: ScanActionableInput, context: 
 		hints: { ...(selector ? { selector } : {}), referencedTarget: true, ...(hidden ? { hidden: true } : {}) },
 	};
 	const capturedAt = context.capturedAt;
-	const origin = memoizedTopLevelOrigin(context.url);
+	const origin = memoizedUrlOrigin(context.url);
 	return {
 		entity,
 		descriptor: {
@@ -532,7 +508,7 @@ export function buildVisionRegionFromCanvasActionable(node: ScanVisionInput, con
 		},
 	};
 	const capturedAt = context.capturedAt;
-	const origin = memoizedTopLevelOrigin(context.url);
+	const origin = memoizedUrlOrigin(context.url);
 	return {
 		entity,
 		descriptor: {

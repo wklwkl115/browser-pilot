@@ -1,4 +1,4 @@
-import { isRecord } from "../../utils/records.js";
+import { finiteNumber as num, isRecord } from "../../utils/records.js";
 import type { PageWorldScanBundleV1, ScanActionable } from "./pageWorldScan.js";
 import { buildBoundedSpatialIndex, queryBoundedSpatialIndex, type BoundedSpatialIndex, type SpatialRect } from "./spatialIndex.js";
 
@@ -57,11 +57,6 @@ export type BackendNodeIdBootstrapResult = {
 const MATCH_IOU_THRESHOLD = 0.9;
 const GEOMETRY_BUCKET_SIZE = 64;
 const MAX_GEOMETRY_BUCKETS_PER_RECT = 256;
-
-function num(value: unknown): number | undefined {
-	const n = Number(value);
-	return Number.isFinite(n) ? n : undefined;
-}
 
 function rectFromScan(value: unknown, scrollX: number, scrollY: number): Rect | undefined {
 	if (!isRecord(value)) return undefined;

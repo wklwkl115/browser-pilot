@@ -7,7 +7,7 @@
 // confidence when the initiator confirms a script-triggered request. URLs are redacted;
 // no bodies. Pure core: zero browser/Node deps.
 import type { Entity, EntityRelation } from "./entity.js";
-import { isRecord } from "../../utils/records.js";
+import { finiteNumber as num, isRecord, nonEmptyString as str } from "../../utils/records.js";
 import { redactSensitiveText } from "../../utils/redaction.js";
 import { mintRef } from "../refs/core.js";
 
@@ -51,20 +51,9 @@ export function causalFiredHint(causal: CausalSummary): string | undefined {
 	return `${fired} request(s) fired since baseline → read envelope.causal.requests and its frontier resource when folded (action→request attribution)`;
 }
 
-function str(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim();
-	return text ? text : undefined;
-}
-
 function refIdComponent(value: string, fallback: string): string {
 	const cleaned = value.replace(/[^A-Za-z0-9._~:@/-]+/g, "-").replace(/^-+|-+$/g, "");
 	return cleaned || fallback;
-}
-
-function num(value: unknown): number | undefined {
-	const n = Number(value);
-	return Number.isFinite(n) ? n : undefined;
 }
 
 function redactUrl(url: string): string {

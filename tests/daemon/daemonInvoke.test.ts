@@ -128,7 +128,7 @@ async function rawControlRequest(handle: Awaited<ReturnType<typeof startDaemonFo
 }
 
 test.afterEach(() => {
-	authStore.loadStore().agents.splice(0);
+	authStore.listAgents().splice(0);
 	restoreEnv();
 });
 
@@ -257,7 +257,7 @@ test("daemon aborts an active invocation when the control client disconnects", a
 test("daemon auth store sweeps expired pending pairings before pairing summaries", () => {
 	isolateAuthStore();
 	const { pairingId } = authStore.mintPending("expired-agent");
-	const record = authStore.loadStore().agents.find((agent) => agent.pairingId === pairingId);
+	const record = authStore.listAgents().find((agent) => agent.pairingId === pairingId);
 	assert.ok(record);
 	record.pendingExpiresAt = new Date(Date.now() - 1_000).toISOString();
 	authStore.sweepExpiredPending();
@@ -275,7 +275,7 @@ test("daemon auth store denies approval for revoked or missing pending pairing",
 test("daemon auth store fails closed on damage and recovers after operator reset", () => {
 	const dir = isolateAuthStore();
 	writeFileSync(authStore.authStorePath(), JSON.stringify({ version: AUTH_STORE_VERSION, agents: "damaged" }), "utf8");
-	assert.throws(() => authStore.loadStore(), /auth store is malformed/);
+	assert.throws(() => authStore.listAgents(), /auth store is malformed/);
 	rmSync(authStore.authStorePath());
 	assert.equal(authStore.mintPending("recovery").code.length, 6);
 	assert.equal(authStore.authStorePath().startsWith(dir), true);

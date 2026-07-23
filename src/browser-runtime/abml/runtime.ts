@@ -1,6 +1,6 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { BrowserBridgeError } from "../../utils/errors.js";
-import { isRecord } from "../../utils/records.js";
+import { finiteNumber as numberValue, isRecord } from "../../utils/records.js";
 import { urlOrigin } from "../../utils/url.js";
 import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
@@ -8,7 +8,7 @@ import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptE
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";
 import { scanEntitiesForEnvelope } from "../../scan/summary.js";
 import { normalizeTabId } from "../../utils/params.js";
-import { resolveRefUriDetailed, registerRefDescriptor, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
+import { resolveRefUriDetailed, registerRefDescriptor, selectorFromRef, type ResourceRefDescriptor as RefDescriptor } from "../../resources/resourceRefs.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { diffEntities } from "../../kernels/abml/diff.js";
 import { createCaptureRef, buildNetworkEntryEntity, buildEventEntity, type CaptureRefContext } from "../../kernels/abml/stream.js";
@@ -69,11 +69,6 @@ type ListenerProbeStats = {
 	maxCandidates: number;
 	maxListenersPerNode: number;
 };
-
-function numberValue(value: unknown): number | undefined {
-	const n = Number(value);
-	return Number.isFinite(n) ? n : undefined;
-}
 
 function stringValue(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim() ? value : undefined;
@@ -282,11 +277,6 @@ function resolveOptionalRefDescriptor(ref: RefDescriptor | string | undefined): 
 	const resolved = resolveRefDescriptor(ref);
 	if (!resolved.ok) throw resolved.error;
 	return resolved.descriptor;
-}
-
-function selectorFromRef(descriptor: RefDescriptor): string | undefined {
-	for (const locator of descriptor.locators) if (locator.by === "css" && locator.value.trim()) return locator.value;
-	return undefined;
 }
 
 function frameLocatorFromRef(descriptor: RefDescriptor): string | undefined {

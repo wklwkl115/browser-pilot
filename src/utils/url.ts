@@ -6,3 +6,15 @@ export function urlOrigin(value: unknown): string | undefined {
 		return undefined;
 	}
 }
+
+let cachedOriginUrl: string | undefined;
+let cachedOrigin: string | undefined;
+let hasCachedOrigin = false;
+
+export function memoizedUrlOrigin(url: string | undefined): string | undefined {
+	if (hasCachedOrigin && url === cachedOriginUrl) return cachedOrigin;
+	cachedOriginUrl = url;
+	cachedOrigin = urlOrigin(url);
+	hasCachedOrigin = true;
+	return cachedOrigin;
+}

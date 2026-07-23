@@ -384,23 +384,6 @@ function entitiesWithGraphRelations(entities: Entity[], graph: RelationGraph): E
 	});
 }
 
-export function buildRelationGraph(entities: Entity[]): RelationGraph {
-	const edges: Array<Omit<RelationGraphEdge, "id">> = [];
-	for (const entity of entities) {
-		for (const relation of entity.relations ?? []) {
-			edges.push({
-				sourceRef: entity.ref,
-				type: relation.type,
-				targetRef: relation.targetRef,
-				source: relation.source,
-				confidence: relation.confidence,
-				...(relation.evidence ? { evidence: relation.evidence } : {}),
-			});
-		}
-	}
-	return relationGraphFromEdges(edges);
-}
-
 export function materializeRelationGraph(entities: Entity[], anchors: RelationAnchor[]): { entities: Entity[]; graph: RelationGraph } {
 	const graph = relationGraphFromEdges(graphEdgesFromAnchors(entities, anchors));
 	return { entities: entitiesWithGraphRelations(entities, graph), graph };
