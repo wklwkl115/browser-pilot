@@ -10,7 +10,6 @@ import { handleNetworkRecorderCommand } from "./network.js";
 import { BrowserPilotNativeProtocol } from "./protocol.js";
 import { BROWSER_PILOT_ERROR_CODES, browserPilotError, runtimeErrorMessage } from "./runtimeSupport.js";
 import { captureScreenshotWithRetry } from "./screenshot.js";
-import { enqueueBrowserPilotCommand } from "./state_store.js";
 import { handleBrowserPilotTransferCommand } from "./transfer.js";
 import { cancelWait, diagnoseBrowserPilot, waitForAll, waitForAny } from "./wait.js";
 import { navigateAndWait, navigateBrowserPilot, waitForLoadState, waitForNavigation } from "./wait_navigation.js";
@@ -99,12 +98,7 @@ async function handleBrowserPilot(msg: BrowserPilotBridgeCommand, sender: Browse
   const tabId = Number(msg.tabId || sender.tab?.id || 0);
   if (cmd === 'hook.list_sessions') return await handleBrowserPilotImpl(msg, sender, cmd, tabId);
   if (!tabId) return browserPilotError('NO_SESSION', cmd + ' requires tabId', { cmd, details: {} });
-  // Diagnostics must be out-of-band: enqueueing wait.diagnose makes its own
-  // queue report show pending/depth=1 and masks the real post-uninstall state.
-  // Running it directly still reports any pre-existing queued/running command
-  // through getBrowserPilotQueueStats(tabId), so genuine queue leaks remain visible.
-  if (cmd === 'wait.diagnose') return await handleBrowserPilotImpl(msg, sender, cmd, tabId);
-  return await enqueueBrowserPilotCommand(tabId, cmd, () => handleBrowserPilotImpl(msg, sender, cmd, tabId));
+  return await handleBrowserPilotImpl(msg, sender, cmd, tabId);
 }
 async function handleBrowserPilotImpl(msg: BrowserPilotBridgeCommand, _sender: BrowserPilotBridgeSender, cmd: string, tabId: number): Promise<BrowserPilotBridgeResponse> {
   try {

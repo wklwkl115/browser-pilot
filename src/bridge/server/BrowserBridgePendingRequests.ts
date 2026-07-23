@@ -3,31 +3,15 @@ import { WebSocket } from "ws";
 import { BrowserBridgeError } from "../../utils/errors.js";
 import { normalizeNativeErrorCode } from "../../types/nativeErrorCodes.js";
 import { DEFAULT_TIMEOUT_MS, normalizeErrorMessage } from "./bridgeUtils.js";
-import type { BridgeRequestMetrics, BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, PendingRequest } from "./types.js";
+import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, PendingRequest } from "./types.js";
 
 type TimeoutDiagnostics = (tabId: number | undefined, timeoutMs: number, acked: boolean, target?: BrowserBridgeTargetInfo) => Record<string, unknown>;
 type ResolveTarget = (target: BrowserBridgeTargetInfo | undefined) => BrowserBridgeTargetInfo | undefined;
-
-/**
- * How long an in-flight request is held after its client socket drops before it fails,
- * giving a reconnecting extension (offscreen re-dial / SW restart) a window to complete
- * or reclaim it. `0` disables the grace window. Env `BROWSER_PILOT_REQUEST_GRACE_MS`.
- */
-export function requestGraceMs(): number {
-	const raw = process.env.BROWSER_PILOT_REQUEST_GRACE_MS;
-	const parsed = raw === undefined ? NaN : Number(raw);
-	return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 10_000;
-}
 
 export class BrowserBridgePendingRequests {
 	readonly pending = new Map<string, PendingRequest>();
 	private readonly timeoutDiagnostics: TimeoutDiagnostics;
 	private readonly resolvedTarget: ResolveTarget;
-	private readonly _metrics: BridgeRequestMetrics = { drained: 0, graceExpired: 0, reconciledNotDelivered: 0, reconciledInflightUnknown: 0 };
-
-	metrics(): BridgeRequestMetrics {
-		return { ...this._metrics };
-	}
 
 	constructor(timeoutDiagnostics: TimeoutDiagnostics, resolvedTarget: ResolveTarget) {
 		this.timeoutDiagnostics = timeoutDiagnostics;
@@ -121,10 +105,6 @@ export class BrowserBridgePendingRequests {
 	private clearTimers(pending: PendingRequest): void {
 		clearTimeout(pending.timer);
 		if (pending.signal && pending.abortListener) pending.signal.removeEventListener("abort", pending.abortListener);
-		if (pending.graceTimer) {
-			clearTimeout(pending.graceTimer);
-			pending.graceTimer = undefined;
-		}
 	}
 
 	ack(id: string): void {
@@ -181,57 +161,20 @@ export class BrowserBridgePendingRequests {
 		}));
 	}
 
-	/**
-	 * A client socket dropped. Instead of failing its in-flight requests immediately, hold
-	 * them in a draining state for `graceMs` so a fast reconnect can complete them (the result
-	 * still settles via resolve/reject) or reclaim them (reconnectInstance). Each drained
-	 * request is tagged with the owning `instanceId` so a reconnect can correlate it. On grace
-	 * expiry the request fails with the same BRIDGE_CLIENT_DISCONNECTED as before. Idempotent:
-	 * already-draining requests are skipped. Returns the number newly drained.
-	 */
-	drainClient(ws: WebSocket, instanceId: string | undefined, graceMs: number): number {
-		let drained = 0;
-		for (const pending of this.pending.values()) {
-			if (pending.client !== ws || pending.draining) continue;
-			clearTimeout(pending.timer);
-			pending.draining = true;
-			pending.instanceId = instanceId;
-			pending.graceTimer = setTimeout(() => {
-				const expired = this.take(pending.id);
-				if (!expired) return;
-				this._metrics.graceExpired += 1;
-				expired.reject(new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", "Browser bridge client disconnected before request completed", { id: expired.id, tabId: expired.tabId, acked: expired.acked, target: this.resolvedTarget(expired.target), draining: true }));
-			}, Math.max(0, graceMs));
-			drained += 1;
-		}
-		this._metrics.drained += drained;
-		return drained;
-	}
-
-	/**
-	 * An extension instance reconnected. Fail draining requests honestly without
-	 * silent replay: not-acked requests are safe to retry; acked requests have an
-	 * unknown outcome and must not be replayed automatically.
-		 * No-op when `instanceId` is absent: those requests keep draining
-	 * until grace expiry. Returns the number of reconciled requests.
-	 */
-	reconnectInstance(instanceId: string | undefined): number {
-		if (!instanceId) return 0;
-		let reconciled = 0;
+	rejectClient(ws: WebSocket): number {
+		let rejected = 0;
 		for (const pending of Array.from(this.pending.values())) {
-			if (!pending.draining || pending.instanceId !== instanceId) continue;
-			this.clearTimers(pending);
-			reconciled += 1;
-			this.pending.delete(pending.id);
-			if (pending.acked) this._metrics.reconciledInflightUnknown += 1;
-			else this._metrics.reconciledNotDelivered += 1;
-			const outcome = pending.acked ? "inflight-unknown" : "not-delivered";
-			const message = pending.acked
-				? "Browser command was acknowledged but its outcome was lost when the extension reconnected"
-				: "Browser command was not delivered before the extension reconnected; safe to retry";
-			pending.reject(new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", message, { id: pending.id, tabId: pending.tabId, acked: pending.acked, outcome, reconnected: true, target: this.resolvedTarget(pending.target) }));
+			if (pending.client !== ws) continue;
+			const disconnected = this.take(pending.id);
+			if (!disconnected) continue;
+			rejected += 1;
+			const outcome = disconnected.acked ? "inflight-unknown" : "not-delivered";
+			const message = disconnected.acked
+				? "Browser command was acknowledged but its outcome was lost when the extension disconnected"
+				: "Browser command was not acknowledged before the extension disconnected; safe to retry";
+			disconnected.reject(new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", message, { id: disconnected.id, tabId: disconnected.tabId, acked: disconnected.acked, outcome, target: this.resolvedTarget(disconnected.target) }));
 		}
-		return reconciled;
+		return rejected;
 	}
 
 	rejectAllStopped(): void {

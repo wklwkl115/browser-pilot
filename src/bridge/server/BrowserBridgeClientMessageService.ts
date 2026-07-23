@@ -1,8 +1,7 @@
 import { WebSocket } from "ws";
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
-import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
-import { BrowserBridgePendingRequests, requestGraceMs } from "./BrowserBridgePendingRequests.js";
+import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
 import type { BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
 import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import { errorToPlain } from "../../utils/errors.js";
@@ -31,7 +30,6 @@ type BrowserBridgeClientMessageServiceDeps = {
 	browserSessions: BrowserBridgeSessionRegistryPort;
 	tabs: BrowserTabSessionRouter;
 	pendingRequests: BrowserBridgePendingRequests;
-	runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
 	queues: BrowserCommandQueueRegistry;
 	consent: BrowserBridgeConsentCoordinator;
 	migratePerceptionLedger?: (fromTabId: number, toTabId: number, browserSessionId: string) => void;
@@ -69,12 +67,11 @@ export class BrowserBridgeClientMessageService {
 	}
 
 	unregisterClient(ws: WebSocket, reason?: string): void {
+		const info = this.deps.clients.info(ws);
+		if (!info) return;
 		this.clearHandshakeTimeout(ws);
-		// Hold in-flight requests in a grace window instead of failing them outright: a fast
-		// reconnect (offscreen re-dial / SW restart) can still complete or reclaim them. Capture
-		// the owning instance before unregister so a same-instance reconnect can correlate.
-		const instanceId = this.deps.clients.info(ws)?.extensionInstanceId;
-		this.deps.pendingRequests.drainClient(ws, instanceId, requestGraceMs());
+		const instanceId = info.extensionInstanceId;
+		this.deps.pendingRequests.rejectClient(ws);
 		if (reason) this.deps.clients.recordDisconnect(reason, instanceId, !this.deps.clients.hasOpenInstanceClient(instanceId, ws));
 		this.deps.clients.unregister(ws);
 		this.deps.tabs.markClientDisconnected(ws);
@@ -147,13 +144,8 @@ export class BrowserBridgeClientMessageService {
 				if (info) info.connectKind = connectKind;
 				this.deps.clients.recordConnect(connectKind, info?.extensionInstanceId, info?.workerBootId);
 				this.deps.clients.recordHandshake();
-				const graceMs = requestGraceMs();
-				// Drain a superseded peer's in-flight requests synchronously (its async close would
-				// otherwise race the reconcile below), then reconcile all draining requests for this
-				// instance against the freshly-connected socket.
 				const superseded = this.deps.clients.supersedeInstanceClients(info?.extensionInstanceId, ws);
-				for (const stale of superseded) this.deps.pendingRequests.drainClient(stale, info?.extensionInstanceId, graceMs);
-				this.deps.pendingRequests.reconnectInstance(info?.extensionInstanceId);
+				for (const stale of superseded) this.deps.pendingRequests.rejectClient(stale);
 			}
 			const replacements = Array.isArray(message.replaced) ? this.deps.tabs.applyTabReplacements(message.replaced, ws) : [];
 			this.deps.tabs.updateTabs(Array.isArray(message.tabs) ? message.tabs : [], ws);
@@ -161,7 +153,6 @@ export class BrowserBridgeClientMessageService {
 			const affectedBrowserSessionId = this.deps.browserSessions.selectedOpenClient(defaultSession) === ws ? defaultSession.id : undefined;
 			this.applyReplacementSideEffects(replacements, affectedBrowserSessionId);
 			this.deps.notifyExtensionReady?.();
-			if (type === "ext_ready") this.deps.runtimeRecoveryArtifacts.recordRuntimeRecovery(this.deps.clients.info(ws), recordValue(message.bridge));
 			return;
 		}
 

@@ -57,7 +57,7 @@ export function validateExecuteArguments(args: Record<string, unknown>): Validat
 async function executePrepared(
 	prepared: { script: string; readOnly: boolean },
 	server: Awaited<ReturnType<CommandRegistrarContext["ensureStarted"]>>,
-	options: { browserSessionId?: string; rawTarget?: string | number; timeoutMs: number; signal: AbortSignal },
+	options: { browserSessionId?: string; rawTarget?: string | number; timeoutMs: number; signal?: AbortSignal },
 ) {
 	return await server.executeJavaScript(prepared.script, { browserSessionId: options.browserSessionId, tabId: options.rawTarget, timeoutMs: options.timeoutMs, accessMode: prepared.readOnly ? "read" : "write", signal: options.signal });
 }
@@ -96,26 +96,24 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 				const rawTarget = targetTabId(params as { targetRef?: string });
 				const resolvedTarget = resolveRefExecutionTarget(server, prepared.targetRefs, { rawTarget });
 				const target = input.readOnly ? resolvedTarget : pinTabExecutionTarget(server, resolvedTarget);
-				const outcome = await withBrowserOperation({
-					server,
-					browserSessionId: target.browserSessionId,
-					tabId: target.tabId,
-					targetRef: target.rawTarget,
-					timeoutMs,
-					signal,
-				}, async ({ signal: operationSignal, deadlineAt }) => {
-					const dispatch = () => executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal });
-					return input.readOnly
-						? { result: await dispatch() }
-						: await withCommandEffect(server, {
+				const dispatch = (dispatchSignal?: AbortSignal) => executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: dispatchSignal });
+				const outcome = input.readOnly
+					? { result: await dispatch(signal) }
+					: await withBrowserOperation({
+						server,
+						browserSessionId: target.browserSessionId,
+						tabId: target.tabId,
+						targetRef: target.rawTarget,
+						timeoutMs,
+						signal,
+					}, async ({ signal: operationSignal, deadlineAt }) => await withCommandEffect(server, {
 							browserSessionId: target.browserSessionId,
 							tabId: target.tabId,
 							timeoutMs,
 							deadlineAt,
 							signal: operationSignal,
 							...(expected ? { verify: async () => (await executePrepared({ script: expected.script, readOnly: true }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal })).data === true } : {}),
-						}, dispatch);
-				});
+						}, () => dispatch(operationSignal)));
 				const value = "effect" in outcome ? { ...outcome.result, effect: outcome.effect } : outcome.result;
 				return jsonResult(value, { mode: "javascript", refsBound: Object.keys(input.refs).length }, { preserveExecutionData: true });
 			});

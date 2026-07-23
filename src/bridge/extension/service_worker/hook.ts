@@ -2,7 +2,7 @@
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { BROWSER_PILOT_ERROR_CODES, BROWSER_PILOT_HOOK_DISPATCHER_FILE, callPageBrowserPilot, browserPilotError, browserPilotEval, browserPilotWithTimeout } from "./runtimeSupport.js";
-import { browserPilotSessions, browserPilotTabQueues, getBrowserPilotQueueStats } from "./state_store.js";
+import { browserPilotSessions } from "./state_store.js";
 import { cleanupBrowserPilotTab } from "./tab_sync.js";
 import { persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, redactConfig } from "./state_store";
 import { addEventListener, cleanupBrowserPilotPageListenersForTab, getPerformanceEntries, removeEventListener } from "./wait";
@@ -137,8 +137,7 @@ function listHookSessions(tabId: number, msg: BrowserPilotBridgeCommand): Browse
   const explicitTab = msg.tabId !== undefined || msg.targetTabId !== undefined;
   const matchesTab = ([tid]: [number, unknown]) => !explicitTab || Number(tid) === Number(tabId);
   const sessionEntries = Array.from(browserPilotSessions.entries()).filter(matchesTab);
-  const queueEntries = Array.from(browserPilotTabQueues.entries()).filter(matchesTab);
-  return { ok:true, data:{ tabId:explicitTab ? Number(tabId) : undefined, sessions:sessionEntries.map(([tid, session]) => ({ tabId:tid, queue:getBrowserPilotQueueStats(tid), ...session })), count:sessionEntries.length, queues:queueEntries.map(([tid]) => ({ tabId:tid, ...getBrowserPilotQueueStats(tid) })) } };
+  return { ok:true, data:{ tabId:explicitTab ? Number(tabId) : undefined, sessions:sessionEntries.map(([tid, session]) => ({ tabId:tid, ...session })), count:sessionEntries.length } };
 }
 
 function listHookTargets(): BrowserPilotBridgeResponse {

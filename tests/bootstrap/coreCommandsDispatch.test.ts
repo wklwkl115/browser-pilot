@@ -24,6 +24,8 @@ let failRunScriptOnce = false;
 let failNotAttachedOnce = false;
 let failAlreadyAttachedOnce = false;
 let domainEnableConcurrency: { active: number; max: number } | undefined;
+let storageWriteConcurrency: { active: number; max: number } | undefined;
+let tabQueryOverride: (() => Promise<Array<Record<string, unknown>>>) | undefined;
 let newDocumentScriptSeq = 0;
 
 async function debuggerCommandResult(_debuggee: Debuggee, method: string): Promise<unknown> {
@@ -63,6 +65,7 @@ const chromeStub = {
 		},
 		async sendMessage(message: unknown) {
 			sentRuntimeMessages.push(message);
+			if (message && typeof message === "object" && (message as Record<string, unknown>).type === "browser-pilot-offscreen-send") return { ok: true, sent: true };
 		},
 	},
 	storage: {
@@ -71,12 +74,20 @@ const chromeStub = {
 			async set() {},
 			async remove() {},
 		},
-		 session: {
+		session: {
 			async get(key?: unknown) {
 				if (typeof key === "string") return { [key]: sessionStorage[key] };
 				return { ...sessionStorage };
 			},
-			async set(value: Record<string, unknown>) { Object.assign(sessionStorage, value); },
+			async set(value: Record<string, unknown>) {
+				if (storageWriteConcurrency) {
+					storageWriteConcurrency.active += 1;
+					storageWriteConcurrency.max = Math.max(storageWriteConcurrency.max, storageWriteConcurrency.active);
+					await new Promise<void>((resolve) => setImmediate(resolve));
+					storageWriteConcurrency.active -= 1;
+				}
+				Object.assign(sessionStorage, value);
+			},
 			async remove(key: string | string[]) { for (const item of Array.isArray(key) ? key : [key]) delete sessionStorage[item]; },
 		},
 	},
@@ -84,6 +95,10 @@ const chromeStub = {
 		create() {},
 		async clear() { return true; },
 		onAlarm: { addListener() {} },
+	},
+	offscreen: {
+		async hasDocument() { return true; },
+		async createDocument() {},
 	},
 	debugger: {
 		async attach(debuggee: Debuggee) {
@@ -120,6 +135,7 @@ const chromeStub = {
 			return { id: tabId, url: "https://example.test/", title: "Example", active: true, windowId: 1 };
 		},
 		async query() {
+			if (tabQueryOverride) return await tabQueryOverride();
 			return [{ id: 7, url: "https://example.test/", title: "Example", active: true, windowId: 1 }];
 		},
 		async update(tabId: number) {
@@ -156,6 +172,7 @@ const cdpCommands = await import("../../src/bridge/extension/service_worker/cdp.
 const waitCdp = await import("../../src/bridge/extension/service_worker/wait_cdp.ts");
 const frameCommands = await import("../../src/bridge/extension/service_worker/frame.ts");
 const tabSync = await import("../../src/bridge/extension/service_worker/tab_sync.ts");
+const transport = await import("../../src/bridge/extension/service_worker/transport.ts");
 const pageIdentity = await import("../../src/bridge/extension/service_worker/page_identity.ts");
 const tabIdentity = await import("../../src/bridge/extension/service_worker/tab_identity.ts");
 
@@ -309,6 +326,55 @@ test("extension websocket router rejects native command validation errors before
 	assert.match(String(messages[0]?.error), /input\.pointer missing required fields/);
 });
 
+test("offscreen transport preserves ext_ready, ACK, and result order", async () => {
+	sentRuntimeMessages.length = 0;
+	await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-connected", port: 9333 });
+	await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-ws-message", port: 9333, data: { id: "ordered", code: { cmd: "tabs", method: "list" } } });
+	const deadline = Date.now() + 1_000;
+	const envelopes = () => sentRuntimeMessages
+		.filter((message): message is Record<string, unknown> => !!message && typeof message === "object" && (message as Record<string, unknown>).type === "browser-pilot-offscreen-send")
+		.map((message) => JSON.parse(String(message.data)) as Record<string, unknown>);
+	while (envelopes().length < 3 && Date.now() < deadline) await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(envelopes().map((message) => message.type), ["ext_ready", "ack", "result"]);
+	await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-disconnected", port: 9333 });
+});
+
+test("offscreen transport drops queued sends from a superseded connection", async () => {
+	sentRuntimeMessages.length = 0;
+	let queryCount = 0;
+	let releaseFirst!: () => void;
+	let markFirstStarted!: () => void;
+	const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+	const firstReleased = new Promise<void>((resolve) => { releaseFirst = resolve; });
+	tabQueryOverride = async () => {
+		queryCount += 1;
+		if (queryCount === 1) {
+			markFirstStarted();
+			await firstReleased;
+			return [{ id: 7, url: "https://example.test/old", title: "Old", active: true, windowId: 1 }];
+		}
+		return [{ id: 7, url: "https://example.test/new", title: "New", active: true, windowId: 1 }];
+	};
+	try {
+		const firstConnect = transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-connected", port: 9444 });
+		await firstStarted;
+		await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-disconnected", port: 9444 });
+		const secondConnect = transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-connected", port: 9444 });
+		releaseFirst();
+		await Promise.all([firstConnect, secondConnect]);
+		const ready = sentRuntimeMessages
+			.filter((message): message is Record<string, unknown> => !!message && typeof message === "object" && (message as Record<string, unknown>).type === "browser-pilot-offscreen-send")
+			.map((message) => JSON.parse(String(message.data)) as Record<string, unknown>)
+			.filter((message) => message.type === "ext_ready");
+		assert.equal(ready.length, 1);
+		assert.equal(((ready[0]?.tabs as Array<Record<string, unknown>>)[0]?.title), "New");
+	} finally {
+		releaseFirst();
+		tabQueryOverride = undefined;
+		await transport.handleBrowserPilotOffscreenMessage({ type: "browser-pilot-offscreen-disconnected", port: 9444 });
+	}
+});
+
 test("extension runtime helpers redact and normalize malformed error responses", () => {
 	const circular: Record<string, unknown> = { token: "fixture-secret" };
 	circular.self = circular;
@@ -338,32 +404,19 @@ test("extension runtime helpers redact and normalize malformed error responses",
 	});
 });
 
-test("extension runtime state owner serializes tab queues and reports previous-boot state", async () => {
-	stateStore.browserPilotTabQueues.clear();
-	let releaseFirst!: () => void;
-	let markStarted!: () => void;
-	const firstStarted = new Promise<void>((resolve) => { markStarted = resolve; });
-	const firstReleased = new Promise<void>((resolve) => { releaseFirst = resolve; });
-	const order: string[] = [];
-	const first = stateStore.enqueueBrowserPilotCommand(7, "first", async () => {
-		order.push("first:start");
-		markStarted();
-		await firstReleased;
-		order.push("first:end");
-		return { ok: true };
-	});
-	const second = stateStore.enqueueBrowserPilotCommand(7, "second", async () => {
-		order.push("second");
-		return { ok: true };
-	});
-	await firstStarted;
-	assert.deepEqual(stateStore.getBrowserPilotQueueStats(7), { pending: true, depth: 2, last_cmd: "second" });
-	releaseFirst();
-	await Promise.all([first, second]);
-	assert.deepEqual(order, ["first:start", "first:end", "second"]);
-	assert.deepEqual(stateStore.getBrowserPilotQueueStats(7), { pending: false, depth: 0, last_cmd: null });
-
+test("extension runtime state serializes its shared storage blob and reports previous-boot state", async () => {
 	delete sessionStorage.browserPilotRuntimeStateV2;
+	storageWriteConcurrency = { active: 0, max: 0 };
+	await Promise.all([
+		stateStore.persist("network", "7:network", { active: true }, { tabId: 7, sessionId: "network" }),
+		stateStore.persist("hook", "7:hook", { active: true }, { tabId: 7, sessionId: "hook" }),
+	]);
+	assert.equal(storageWriteConcurrency.max, 1);
+	storageWriteConcurrency = undefined;
+	const concurrent = sessionStorage.browserPilotRuntimeStateV2 as Record<string, unknown>;
+	assert.ok(concurrent["network:7:network"]);
+	assert.ok(concurrent["hook:7:hook"]);
+
 	await stateStore.persist("ws", "7:lost", { url: "wss://example.test/socket" }, { tabId: 7, sessionId: "lost", recoveryPolicy: "diagnosticOnly" });
 	const persisted = sessionStorage.browserPilotRuntimeStateV2 as Record<string, { workerBootId: string }>;
 	persisted["ws:7:lost"]!.workerBootId = "previous-worker";
@@ -377,7 +430,46 @@ test("extension runtime state owner serializes tab queues and reports previous-b
 		sessionId: "lost",
 		details: { url: "wss://example.test/socket" },
 	});
+	storageWriteConcurrency = { active: 0, max: 0 };
+	await Promise.all([
+		stateStore.recover("ws"),
+		stateStore.persist("intercept", "7:during-recovery", { active: true }, { tabId: 7, sessionId: "during-recovery" }),
+	]);
+	assert.equal(storageWriteConcurrency.max, 1);
+	storageWriteConcurrency = undefined;
+	const recovered = sessionStorage.browserPilotRuntimeStateV2 as Record<string, { workerBootId?: string }>;
+	assert.equal(recovered["ws:7:lost"]?.workerBootId, stateStore.currentBootId());
+	assert.ok(recovered["intercept:7:during-recovery"]);
 	await stateStore.forget("ws", "7:lost");
+	await stateStore.forget("intercept", "7:during-recovery");
+});
+
+test("tab sync coalesces concurrent events without letting an older snapshot overtake", async () => {
+	let queryCount = 0;
+	let releaseFirst!: () => void;
+	let markFirstStarted!: () => void;
+	const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+	const firstReleased = new Promise<void>((resolve) => { releaseFirst = resolve; });
+	tabQueryOverride = async () => {
+		queryCount += 1;
+		if (queryCount === 1) {
+			markFirstStarted();
+			await firstReleased;
+			return [{ id: 7, url: "https://example.test/old", title: "Old", active: true, windowId: 1 }];
+		}
+		return [{ id: 7, url: "https://example.test/new", title: "New", active: true, windowId: 1 }];
+	};
+	const sent: Array<Record<string, unknown>> = [];
+	const socket = { readyState: 1, send(payload: string) { sent.push(JSON.parse(payload) as Record<string, unknown>); } };
+	tabSync.setBrowserPilotTabSyncTransport({ getSocket: () => socket, getSockets: () => [socket], probe: async () => {} });
+	tabSync.safeSendTabsUpdate("test:first");
+	await firstStarted;
+	tabSync.safeSendTabsUpdate("test:second");
+	releaseFirst();
+	const deadline = Date.now() + 1_000;
+	while (sent.length < 2 && Date.now() < deadline) await new Promise((resolve) => setImmediate(resolve));
+	tabQueryOverride = undefined;
+	assert.deepEqual(sent.map((message) => ((message.tabs as Array<Record<string, unknown>>)[0]?.title)), ["Old", "New"]);
 });
 
 test("hook/session cleanup preserves page identity while actual tab removal forgets it", async () => {

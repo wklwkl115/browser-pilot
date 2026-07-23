@@ -4,7 +4,7 @@ import { cleanupInterceptSessionTab } from "./intercept.js";
 import { cleanupNetworkRecorderTab } from "./network.js";
 import { chromeApi as chrome } from "./runtimeEnv.js";
 import { runtimeErrorPreview } from "./runtimeSupport.js";
-import { browserPilotSessions, browserPilotTabQueues } from "./state_store.js";
+import { browserPilotSessions } from "./state_store.js";
 import { cleanupBrowserPilotPageListenersForTab } from "./wait.js";
 import { cancelWaitsForTab, cleanupTabWaits } from "./wait_coordinator.js";
 import { cleanupWsSessionsForTab } from "./ws.js";
@@ -16,6 +16,8 @@ import type { BrowserPilotBridgeWebSocketLike, BrowserPilotTabSyncTransport, Bro
 
 let browserPilotTabSyncInstalled = false;
 let browserPilotTabSyncTransport: BrowserPilotTabSyncTransport | null = null;
+let tabSyncInFlight: Promise<void> | null = null;
+let tabSyncDirty = false;
 const MAX_REPLACEMENT_RECORDS = 20;
 const REPLACEMENT_TTL_MS = 5 * 60_000;
 const replacementRing: Array<{ from: number; to: number; at: number; kind?: "prerender-activation" }> = [];
@@ -103,7 +105,17 @@ function safeProbeAndConnectWS(reason: string) {
 }
 
 function safeSendTabsUpdate(reason: string) {
-  runTabSyncTask(reason, sendTabsUpdate);
+  tabSyncDirty = true;
+  if (tabSyncInFlight) return;
+  tabSyncInFlight = (async () => {
+    while (tabSyncDirty) {
+      tabSyncDirty = false;
+      await sendTabsUpdate();
+    }
+  })().catch((error: unknown) => logTabSyncError(reason, error)).finally(() => {
+    tabSyncInFlight = null;
+    if (tabSyncDirty) safeSendTabsUpdate(reason);
+  });
 }
 
 function cleanupBrowserPilotTab(tabId: number, reason?: string) {
@@ -118,7 +130,6 @@ function cleanupBrowserPilotTab(tabId: number, reason?: string) {
     console.warn("[BROWSER-PILOT] page listener cleanup failed", key, cleanupReason, runtimeErrorPreview(error));
   }
   browserPilotSessions.delete(key);
-  browserPilotTabQueues.delete(key);
   try { cleanupNetworkRecorderTab(tabId, cleanupReason); }
   catch (error) { console.warn("[BROWSER-PILOT-NET] recorder cleanup failed", key, runtimeErrorPreview(error)); }
   try { cleanupInterceptSessionTab(tabId, cleanupReason); }
@@ -144,14 +155,14 @@ function installBrowserPilotTabSync(deps: BrowserPilotTabSyncTransport | undefin
   chrome.tabs.onRemoved.addListener((tabId: number) => {
     forgetBrowserPilotPageIdentity(tabId);
     cleanupBrowserPilotTab(tabId, 'tab_removed');
-    runTabSyncTask('tabs.onRemoved.identity', async () => { await forgetBrowserPilotTabIdentity(tabId); await sendTabsUpdate(); });
+    runTabSyncTask('tabs.onRemoved.identity', async () => { await forgetBrowserPilotTabIdentity(tabId); safeSendTabsUpdate('tabs.onRemoved'); });
   });
   chrome.tabs.onCreated.addListener(() => { safeProbeAndConnectWS('tabs.onCreated.probe'); safeSendTabsUpdate('tabs.onCreated'); });
   chrome.tabs.onReplaced?.addListener((addedTabId: number, removedTabId: number) => {
     recordReplacement(removedTabId, addedTabId);
     replaceBrowserPilotPageIdentity(removedTabId, addedTabId);
     cleanupBrowserPilotTab(removedTabId, 'tab_replaced');
-    runTabSyncTask('tabs.onReplaced.identity', async () => { await replaceBrowserPilotTabIdentity(removedTabId, addedTabId); await sendTabsUpdate(); });
+    runTabSyncTask('tabs.onReplaced.identity', async () => { await replaceBrowserPilotTabIdentity(removedTabId, addedTabId); safeSendTabsUpdate('tabs.onReplaced'); });
   });
   chrome.tabs.onActivated?.addListener((activeInfo: { tabId: number; windowId: number }) => {
     recordActivation(activeInfo.tabId, activeInfo.windowId);

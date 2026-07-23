@@ -82,13 +82,6 @@ export type BridgeConnectionMetrics = {
 	lastReconnectLatencyMs?: number;
 };
 
-export type BridgeRequestMetrics = {
-	drained: number;
-	graceExpired: number;
-	reconciledNotDelivered: number;
-	reconciledInflightUnknown: number;
-};
-
 export type BrowserBridgeSnapshot = {
 	browserSessionId?: string;
 	host: string;
@@ -115,7 +108,6 @@ export type BrowserBridgeSnapshot = {
 		target?: BrowserBridgeTargetInfo;
 	}>;
 	connectionMetrics?: BridgeConnectionMetrics;
-	requestMetrics?: BridgeRequestMetrics;
 };
 
 export type ExecuteOptions = {
@@ -136,12 +128,6 @@ export type PendingRequest = {
 	code: unknown;
 	/** Effective per-request timeout. */
 	timeoutMs: number;
-	/** Owning extension instance, tagged when the request enters the draining state. */
-	instanceId?: string;
-	/** True while held after a client disconnect, awaiting reconnect or grace expiry. */
-	draining?: boolean;
-	/** Grace-window timer that fails the request if no reconnect reclaims it. */
-	graceTimer?: NodeJS.Timeout;
 	signal?: AbortSignal;
 	abortListener?: () => void;
 	createdAt: number;

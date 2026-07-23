@@ -3,7 +3,6 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { classifyDeadlinePressure } from "../../src/kernels/temporal/budget.ts";
 import { registerRefDescriptor, resolveRefUriDetailed } from "../../src/resources/resourceRefs.ts";
 
 function tempArtifact(name: string, value: unknown): string {
@@ -13,12 +12,6 @@ function tempArtifact(name: string, value: unknown): string {
 	return filePath;
 }
 
-test("deadline pressure classifies queue delay, saturation, and remaining budget", () => {
-	assert.equal(classifyDeadlinePressure({ remainingMs: 100, requiredMs: 10, queueDelayMs: 200 }).verdict.reasons[0], "queue_delay_budget_exceeded");
-	assert.equal(classifyDeadlinePressure({ remainingMs: 100, requiredMs: 10, queueDepthAtEnqueue: 3 }).verdict.reasons[0], "queue_saturated");
-	assert.equal(classifyDeadlinePressure({ remainingMs: 10, requiredMs: 100 }).frontier.next, "fail_closed");
-	assert.equal(classifyDeadlinePressure({ remainingMs: 100, requiredMs: 10 }).verdict.status, "fresh");
-});
 test("ref store resolves current refs, tracks artifact freshness, and expires stale refs", () => {
 	const artifactPath = tempArtifact("ref.json", { value: 1 });
 	const now = Date.now();

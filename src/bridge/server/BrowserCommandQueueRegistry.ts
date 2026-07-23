@@ -2,13 +2,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { BrowserBridgeError } from "../../utils/errors.js";
 
 const DEFAULT_MAX_QUEUE_DEPTH = 64;
-const WARNING_DEPTH_RATIO = 0.75;
-
-export type BrowserCommandQueuePressure = {
-	depth: number;
-	maxDepth: number;
-	warningThreshold: true;
-};
 
 export type BrowserCommandQueueInfo = {
 	key: string;
@@ -63,7 +56,7 @@ export class BrowserCommandQueueRegistry {
 		return context?.ownedKey === this.resolveKey(this.key(browserId, tabId));
 	}
 
-	enqueue<T>(browserId: string, tabId: number, run: () => Promise<T>, options: { signal?: AbortSignal } = {}): Promise<T> & { queuePressure?: BrowserCommandQueuePressure } {
+	enqueue<T>(browserId: string, tabId: number, run: () => Promise<T>, options: { signal?: AbortSignal } = {}): Promise<T> {
 		const key = this.resolveKey(this.key(browserId, tabId));
 		const activeContext = this.currentActiveTransactionContext();
 		if (activeContext && activeContext.ownedKey !== key) throw this.targetTransactionConflict(activeContext, browserId, tabId);
@@ -128,11 +121,7 @@ export class BrowserCommandQueueRegistry {
 		});
 		const stored = next.catch(() => undefined);
 		this.queues.set(key, stored);
-		const result: Promise<T> & { queuePressure?: BrowserCommandQueuePressure } = resultPromise;
-		if (newDepth >= WARNING_DEPTH_RATIO * this.maxDepth) {
-			result.queuePressure = { depth: newDepth, maxDepth: this.maxDepth, warningThreshold: true };
-		}
-		return result;
+		return resultPromise;
 	}
 
 	depth(browserId: string, tabId: number): number {

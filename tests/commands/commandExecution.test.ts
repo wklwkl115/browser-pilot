@@ -471,10 +471,10 @@ test("commands execution: read-only ref literals skip write lifecycle", async ()
 	});
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const script = "return 'bp-ref://control/not-a-binding'";
-	const result = parseResult(await command.execute({ script, readOnly: true }));
+	const result = parseResult(await command.execute({ script, readOnly: true, targetRef: "tab-7" }));
 	const execute = runtime.calls.find((call) => call.name === "executeJavaScript");
 	assert.equal(execute?.args[0], script);
-	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: undefined, tabId: undefined, timeoutMs: 15000, accessMode: "read", signal: undefined });
+	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: undefined, tabId: "tab-7", timeoutMs: 15000, accessMode: "read", signal: undefined });
 	assert.equal(result.effect, undefined);
 	assert.equal(runtime.calls.some((call) => call.name === "snapshot"), false);
 	assert.equal(transactions, 0);

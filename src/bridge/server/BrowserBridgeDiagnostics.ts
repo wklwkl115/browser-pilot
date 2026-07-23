@@ -2,7 +2,7 @@ import type { BrowserBridgeSnapshot, BrowserBridgeTargetInfo } from "./types.js"
 
 export function buildBridgeTimeoutDiagnostics(snapshot: BrowserBridgeSnapshot, tabId: number | undefined, timeoutMs: number, acked: boolean, target?: BrowserBridgeTargetInfo): Record<string, unknown> {
 	const queueEntry = tabId !== undefined && snapshot.queues
-		? snapshot.queues.find((q) => q.tabId === tabId)
+		? snapshot.queues.find((q) => q.tabId === tabId && (!target?.browserId || q.browserId === target.browserId))
 		: undefined;
 	return {
 		tabId,

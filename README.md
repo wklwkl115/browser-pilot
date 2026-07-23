@@ -65,7 +65,7 @@ State has one owner at each boundary:
 | --- | --- |
 | MCP protocol and project root | Per-agent MCP process |
 | Authentication and daemon lifecycle | User-local daemon |
-| Connections, pending requests, queues, and leases | `BrowserBridgeServer` |
+| Connections, pending requests, and target write queues | `BrowserBridgeServer` |
 | Selected browser and tab session | Session registry |
 | Chrome APIs and CDP sessions | MV3 service worker |
 | Captured evidence | Request-scoped project artifact root |

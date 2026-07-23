@@ -5,8 +5,8 @@
 // closed for volatile runtime data (buffers, transcripts, paused requests).
 
 import { chromeApi as chrome, BROWSER_PILOT_WORKER_BOOT_ID } from "./runtimeEnv.js";
-import { BROWSER_PILOT_ERROR_CODES, browserPilotError, runtimeRecord } from "./runtimeSupport.js";
-import type { BrowserPilotBridgeResponse, JsonRecord } from "./types.js";
+import { runtimeRecord } from "./runtimeSupport.js";
+import type { JsonRecord } from "./types.js";
 
 // --- Constants ---
 
@@ -14,7 +14,6 @@ const STORAGE_KEY = "browserPilotRuntimeStateV2";
 const SCHEMA_VERSION = "browser-pilot.runtime.state/v1" as const;
 const MAX_KIND_RECORDS = 50;
 const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const BROWSER_PILOT_QUEUE_MAX_DEPTH = 64;
 
 const RECOVERY_CODES = {
   RECOVERED: "RUNTIME_STATE_RECOVERED",
@@ -61,15 +60,7 @@ type BrowserPilotSessionRecord = JsonRecord & {
   installed_at?: string;
 };
 
-type BrowserPilotQueueRecord = {
-  tail: Promise<unknown>;
-  depth: number;
-  pending: boolean;
-  last_cmd: string | null;
-};
-
 const browserPilotSessions = new Map<number, BrowserPilotSessionRecord>();
-const browserPilotTabQueues = new Map<number, BrowserPilotQueueRecord>();
 
 type RecoveryResultEntry = {
   key: string;
@@ -180,38 +171,6 @@ function currentBootId(): string {
     : "unknown";
 }
 
-function getBrowserPilotQueueStats(tabId: unknown) {
-  const queue = browserPilotTabQueues.get(Number(tabId));
-  return queue
-    ? { pending: queue.pending, depth: queue.depth, last_cmd: queue.last_cmd || null }
-    : { pending: false, depth: 0, last_cmd: null };
-}
-
-function enqueueBrowserPilotCommand(tabId: unknown, command: string, task: () => Promise<BrowserPilotBridgeResponse> | BrowserPilotBridgeResponse): Promise<BrowserPilotBridgeResponse> {
-  const key = Number(tabId);
-  const queue = browserPilotTabQueues.get(key) || { tail: Promise.resolve(), depth: 0, pending: false, last_cmd: null } satisfies BrowserPilotQueueRecord;
-  if (queue.depth >= BROWSER_PILOT_QUEUE_MAX_DEPTH) {
-    return Promise.resolve(browserPilotError(BROWSER_PILOT_ERROR_CODES.TIMEOUT, "Browser Pilot command queue is full", { tabId: key, cmd: command, depth: queue.depth, max_depth: BROWSER_PILOT_QUEUE_MAX_DEPTH }));
-  }
-  queue.depth += 1;
-  queue.pending = true;
-  queue.last_cmd = command;
-  const run = queue.tail.catch(() => {}).then(async () => {
-    try { return await task(); }
-    finally {
-      const latest = browserPilotTabQueues.get(key);
-      if (latest) {
-        latest.depth = Math.max(0, latest.depth - 1);
-        latest.pending = latest.depth > 0;
-        if (latest.depth === 0) latest.last_cmd = null;
-      }
-    }
-  });
-  queue.tail = run.catch(() => {});
-  browserPilotTabQueues.set(key, queue);
-  return run;
-}
-
 async function findLostRuntimeSession(kind: RuntimeStateKind, tabId: number, sessionId: string): Promise<JsonRecord | undefined> {
   const record = await get(kind, `${Number(tabId)}:${String(sessionId || "default")}`);
   if (!record || record.workerBootId === currentBootId()) return undefined;
@@ -255,7 +214,7 @@ async function loadAll(): Promise<Record<string, RuntimeStateRecord>> {
   return {};
 }
 
-const writeChains = new Map<RuntimeStateKind, Promise<StateStoreWriteResult>>();
+let writeChain = Promise.resolve({ ok: true } as StateStoreWriteResult);
 
 async function saveAll(map: Record<string, RuntimeStateRecord>): Promise<StateStoreWriteResult> {
   const session = chrome.storage?.session;
@@ -332,14 +291,23 @@ function makeRecord<TConfig>(
   };
 }
 
-function enqueueKindWrite(kind: RuntimeStateKind, task: () => Promise<StateStoreWriteResult>): Promise<StateStoreWriteResult> {
-  const previous = writeChains.get(kind) || Promise.resolve({ ok: true } as StateStoreWriteResult);
-  const next = previous
+function enqueueWrite(task: () => Promise<StateStoreWriteResult>): Promise<StateStoreWriteResult> {
+  const next = writeChain
     .catch(() => ({ ok: true } as StateStoreWriteResult))
     .then(task);
-  writeChains.set(kind, next.catch(() => ({ ok: false } as StateStoreWriteResult)));
-  return next.finally(() => {
-    if (writeChains.get(kind) === next || writeChains.get(kind) === undefined) writeChains.delete(kind);
+  writeChain = next.catch(() => ({ ok: false } as StateStoreWriteResult));
+  return next;
+}
+
+function markRecovered(kind: RuntimeStateKind, key: string, bootId: string): Promise<StateStoreWriteResult> {
+  return enqueueWrite(async () => {
+    const map = await loadAll();
+    const existing = map[stateKey(kind, key)];
+    if (!existing) return { ok: true };
+    existing.workerBootId = bootId;
+    existing.recoveredAt = now();
+    existing.updatedAt = now();
+    return await saveAll(map);
   });
 }
 
@@ -355,7 +323,7 @@ async function persist<TConfig>(
     diagnostics?: Array<Record<string, unknown>>;
   } = {}
 ): Promise<StateStoreWriteResult> {
-  return await enqueueKindWrite(kind, async () => {
+  return await enqueueWrite(async () => {
     const map = await loadAll();
     const sk = stateKey(kind, key);
     const existing = map[sk];
@@ -372,7 +340,7 @@ async function persist<TConfig>(
 }
 
 async function forget(kind: RuntimeStateKind, key: string): Promise<StateStoreWriteResult> {
-  return await enqueueKindWrite(kind, async () => {
+  return await enqueueWrite(async () => {
     const map = await loadAll();
     const sk = stateKey(kind, key);
     if (!(sk in map)) return { ok: true };
@@ -413,7 +381,6 @@ async function recover(
 
   for (const record of records) {
     const key = record.key;
-    const sk = stateKey(kind, key);
 
     if (record.workerBootId === bootId) continue;
 
@@ -434,14 +401,7 @@ async function recover(
       try {
         const recovery = await opts.recover(record);
         if (recovery.recovered) {
-          const map = await loadAll();
-          const existing = map[sk];
-          if (existing) {
-            existing.workerBootId = bootId;
-            existing.recoveredAt = now();
-            existing.updatedAt = now();
-            await saveAll(map);
-          }
+          await markRecovered(kind, key, bootId);
           result.recovered.push({
             key,
             config: record.config,
@@ -469,14 +429,7 @@ async function recover(
         config: record.config,
         code: RECOVERY_CODES.RECOVERED_WITH_HISTORY_LOSS,
       });
-      const map = await loadAll();
-      const existing = map[sk];
-      if (existing) {
-        existing.workerBootId = bootId;
-        existing.recoveredAt = now();
-        existing.updatedAt = now();
-        await saveAll(map);
-      }
+      await markRecovered(kind, key, bootId);
     }
   }
 
@@ -561,10 +514,6 @@ export {
   redactConfig,
   currentBootId,
   browserPilotSessions,
-  browserPilotTabQueues,
-  BROWSER_PILOT_QUEUE_MAX_DEPTH,
-  getBrowserPilotQueueStats,
-  enqueueBrowserPilotCommand,
   findLostRuntimeSession,
   summarizeLostRuntimeSession,
   MAX_KIND_RECORDS,

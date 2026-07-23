@@ -7,7 +7,6 @@ import { BrowserBridgeHttpServer } from "./BrowserBridgeHttpServer.js";
 import { buildBridgeTimeoutDiagnostics } from "./BrowserBridgeDiagnostics.js";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
 import { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
-import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { BrowserBridgeSessionState } from "./BrowserBridgeSessionState.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
@@ -30,7 +29,6 @@ export class BrowserBridgeServer implements ConsentPort {
 	private readonly queues: BrowserCommandQueueRegistry;
 	private readonly tabs: BrowserTabSessionRouter;
 	private readonly pendingRequests: BrowserBridgePendingRequests;
-	private readonly runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
 	private readonly httpEndpoint: BrowserBridgeHttpServer;
 	private readonly heartbeat: BrowserBridgeClientHeartbeat;
 	private readonly commandService: BrowserBridgeCommandService;
@@ -54,14 +52,12 @@ export class BrowserBridgeServer implements ConsentPort {
 			(tabId, timeoutMs, acked, target) => this.timeoutDiagnostics(tabId, timeoutMs, acked, target),
 			(target) => this.tabs.resolvedTarget(target),
 		);
-		this.runtimeRecoveryArtifacts = new BrowserRuntimeRecoveryArtifacts();
 		this.commandService = new BrowserBridgeCommandService({
 			clients: this.clients,
 			browserSessions: this.state.browserSessions,
 			queues: this.queues,
 			tabs: this.tabs,
 			pendingRequests: this.pendingRequests,
-			runtimeRecoveryArtifacts: this.runtimeRecoveryArtifacts,
 			isRunning: () => this.running,
 			getPort: () => this.port,
 			getTabs: (opts) => this.getTabs(opts),
@@ -73,7 +69,6 @@ export class BrowserBridgeServer implements ConsentPort {
 			browserSessions: this.state.browserSessions,
 			tabs: this.tabs,
 			pendingRequests: this.pendingRequests,
-			runtimeRecoveryArtifacts: this.runtimeRecoveryArtifacts,
 			queues: this.queues,
 			consent: this.consentCoordinator,
 			migratePerceptionLedger: (fromTabId, toTabId, browserSessionId) => {
@@ -111,7 +106,6 @@ export class BrowserBridgeServer implements ConsentPort {
 		this.tabs.clear();
 		this.knownRecorderStates.clear();
 		await this.httpEndpoint.stop();
-		await this.runtimeRecoveryArtifacts.flush();
 	}
 
 	snapshot(options: { browserSessionId?: string } = {}): BrowserBridgeSnapshot {
@@ -137,7 +131,6 @@ export class BrowserBridgeServer implements ConsentPort {
 			queues: this.queues.snapshot(),
 			pending: this.pendingRequests.snapshot(),
 			connectionMetrics: this.clients.metrics(),
-			requestMetrics: this.pendingRequests.metrics(),
 		};
 	}
 

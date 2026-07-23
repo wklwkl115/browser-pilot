@@ -17,33 +17,11 @@ import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.
 import type { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
 import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import type { BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
-import type { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import type { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
-import { classifyDeadlinePressure } from "../../kernels/temporal/budget.js";
 
 type SendPayloadOptions = ExecuteOptions & { target?: BrowserBridgeTargetInfo };
 type CommandExecutionPlan = { target?: BrowserBridgeTargetInfo; tabId?: number; accessMode: "read" | "write" };
 type CreatedTabFields = Pick<BrowserBridgeExecutionResult, "createdTarget" | "createdTab">;
-type QueueTemporalProfile = {
-	queueDepthAtEnqueue?: number;
-	queueDepthAtStart?: number;
-	queueDelayMs?: number;
-	deadlineMs?: number;
-};
-type QueueTemporalDecision = Pick<ReturnType<typeof classifyDeadlinePressure>, "verdict" | "frontier">;
-
-function queueTemporalDiagnostics(input: QueueTemporalProfile): { temporal?: QueueTemporalDecision; temporalProfile: QueueTemporalProfile } {
-	const pressure = classifyDeadlinePressure({
-		remainingMs: input.deadlineMs ?? 0,
-		requiredMs: 0,
-		queueDelayMs: input.queueDelayMs,
-		queueDepthAtEnqueue: input.queueDepthAtEnqueue,
-	});
-	return {
-		...(pressure.verdict.status === "fresh" ? {} : { temporal: { verdict: pressure.verdict, frontier: pressure.frontier } }),
-		temporalProfile: { ...input },
-	};
-}
 
 /**
  * Grace window to let a not-yet-connected extension dial into the bridge before a
@@ -59,12 +37,6 @@ function extensionWaitMs(): number {
 	if (raw === undefined) return DEFAULT_EXTENSION_WAIT_MS;
 	const parsed = Number(raw);
 	return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_EXTENSION_WAIT_MS;
-}
-
-function commandName(code: unknown): string | undefined {
-	if (typeof code === "string") return "javascript";
-	const record = recordValue(code);
-	return typeof record?.cmd === "string" ? record.cmd : undefined;
 }
 
 function commandAbortError(message: string, dispatchStarted = false): BrowserBridgeError {
@@ -98,23 +70,12 @@ async function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined
 	});
 }
 
-function mergeDiagnostics(result: BrowserBridgeExecutionResult, diagnostics: Record<string, unknown>): BrowserBridgeExecutionResult {
-	return {
-		...result,
-		diagnostics: {
-			...(result.diagnostics || {}),
-			...diagnostics,
-		},
-	};
-}
-
 type BrowserBridgeCommandServiceDeps = {
 	clients: BrowserBridgeClientRegistry;
 	browserSessions: BrowserBridgeSessionRegistryPort;
 	queues: BrowserCommandQueueRegistry;
 	tabs: BrowserTabSessionRouter;
 	pendingRequests: BrowserBridgePendingRequests;
-	runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
 	isRunning: () => boolean;
 	getPort: () => number;
 	getTabs: (options?: { includeDisconnected?: boolean }) => BrowserTabInfo[];
@@ -293,20 +254,12 @@ export class BrowserBridgeCommandService {
 		if (options.signal?.aborted) throw commandAbortError("Browser command was cancelled before bridge dispatch");
 		const tabId = toTabId(options.tabId);
 		const target = options.target ?? this.deps.tabs.targetInfo(tabId !== undefined ? "explicit" : "none", tabId, this.browserSession(options.browserSessionId));
-		const recordResult = (promise: Promise<BrowserBridgeExecutionResult>) => promise.then((result) => {
-			this.deps.runtimeRecoveryArtifacts.recordCommandResult(code, result, { browserSessionId: options.browserSessionId, target, snapshot: this.deps.snapshot({ browserSessionId: options.browserSessionId }) });
-			return result;
-		});
 		if (tabId !== undefined) {
 			const browserSession = this.browserSession(options.browserSessionId);
 			const tab = this.requireLiveTabSession(tabId, browserSession.id, target);
 			if (options.accessMode === "write") {
-				const queuedAt = Date.now();
-				const queueDepthAtEnqueue = this.deps.queues.depth(tab.browserId, tabId);
 				const dispatchWrite = async () => {
 					if (options.signal?.aborted) throw commandAbortError("Browser command was cancelled before bridge dispatch");
-					const startedAt = Date.now();
-					const queueDepthAtStart = this.deps.queues.depth(tab.browserId, tabId);
 					const resolvedQueuedTarget = this.deps.tabs.resolveTargetRef(target.targetRef ?? target.tabHandle ?? target.tabId, browserSession.id, target.source);
 					const queuedTarget = resolvedQueuedTarget ? {
 						...resolvedQueuedTarget,
@@ -319,32 +272,15 @@ export class BrowserBridgeCommandService {
 					const queuedTab = this.requireLiveTabSession(queuedTabId, browserSession.id, queuedTarget);
 					const queuedCodeRecord = recordValue(code);
 					const queuedCode = queuedTabId !== tabId && queuedCodeRecord ? { ...queuedCodeRecord, tabId: queuedTabId } : code;
-					const result = await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, timeoutMs: options.timeoutMs, target: queuedTarget, signal: options.signal });
-					const completedAt = Date.now();
-					const queueDelayMs = Math.max(0, startedAt - queuedAt);
-					const temporalDiagnostics = queueTemporalDiagnostics({
-						queueDepthAtEnqueue,
-						queueDepthAtStart,
-						queueDelayMs,
-						deadlineMs: options.timeoutMs,
-					});
-					return mergeDiagnostics(result, {
-						...(temporalDiagnostics.temporal ? { temporal: temporalDiagnostics.temporal } : {}),
-						temporalProfile: {
-							...temporalDiagnostics.temporalProfile,
-							command: commandName(queuedCode),
-							deadlineMs: options.timeoutMs,
-							elapsedMs: Math.max(0, completedAt - queuedAt),
-						},
-					});
+					return await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, timeoutMs: options.timeoutMs, target: queuedTarget, signal: options.signal });
 				};
-				if (this.deps.queues.ownsCurrentTransaction(tab.browserId, tabId)) return recordResult(dispatchWrite());
-				return recordResult(this.deps.queues.enqueue(tab.browserId, tabId, dispatchWrite, { signal: options.signal }));
+				if (this.deps.queues.ownsCurrentTransaction(tab.browserId, tabId)) return dispatchWrite();
+				return this.deps.queues.enqueue(tab.browserId, tabId, dispatchWrite, { signal: options.signal });
 			}
-			return recordResult(this.deps.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
+			return this.deps.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal });
 		}
 		const socket = this.socketForBrowserSessionCommand(options.browserSessionId);
-		return recordResult(this.deps.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
+		return this.deps.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal });
 	}
 
 	private socketForBrowserSessionCommand(browserSessionId?: string): WebSocket {

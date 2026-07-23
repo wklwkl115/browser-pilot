@@ -165,7 +165,6 @@ function bridgeHealthPayload(snapshot: BrowserBridgeSnapshot | undefined, lastTa
 		lastDisconnectAt: snapshot?.lastDisconnectAt,
 		lastDisconnectAgeMs: ageMs(snapshot?.lastDisconnectAt, now),
 		connectionMetrics: snapshot?.connectionMetrics,
-		requestMetrics: snapshot?.requestMetrics,
 	};
 }
 

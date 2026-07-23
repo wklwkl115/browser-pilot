@@ -17,6 +17,7 @@ const SOCKET_OPEN = 1;
 const SOCKET_CLOSED = 3;
 let primaryPort = BROWSER_PILOT_BRIDGE_PORT;
 const sockets = new Map<number, SocketAdapter>();
+const outboundTails = new WeakMap<SocketAdapter, Promise<void>>();
 let startupRecoveryDone = false;
 let browserPilotTransportInstalled = false;
 let offscreenCreateInFlight: Promise<boolean> | null = null;
@@ -116,6 +117,25 @@ function logTransportAsyncError(reason: string, error: unknown): void {
 
 function runTransportTask(reason: string, task: () => Promise<unknown>): void { void task().catch((error: unknown) => logTransportAsyncError(reason, error)); }
 
+function enqueueOffscreenSend(socket: SocketAdapter, buildData: () => string | Promise<string>): Promise<void> {
+  const previous = outboundTails.get(socket) || Promise.resolve();
+  const next = previous.then(async () => {
+    if (socket.readyState !== SOCKET_OPEN || sockets.get(socket.port) !== socket) return;
+    const data = await buildData();
+    if (socket.readyState !== SOCKET_OPEN || sockets.get(socket.port) !== socket) return;
+    const response = await sendOffscreenMessage({ type: "browser-pilot-offscreen-send", port: socket.port, data });
+    const sent = response && typeof response === "object" ? (response as JsonRecord).sent : undefined;
+    if (sent === false) cleanupTransportSocket(socket, "offscreen-send-failed");
+  }).catch((error: unknown) => {
+    const message = offscreenTransportErrorMessage(error);
+    if (!isExpectedOffscreenTransientError(message)) console.warn("[BROWSER-PILOT-WS] offscreen send failed", message);
+    cleanupTransportSocket(socket, "offscreen-send-error");
+  });
+  outboundTails.set(socket, next);
+  void next.finally(() => { if (outboundTails.get(socket) === next) outboundTails.delete(socket); });
+  return next;
+}
+
 function ensureSocketAdapter(port: number): SocketAdapter {
   const current = sockets.get(port);
   if (current) {
@@ -126,15 +146,7 @@ function ensureSocketAdapter(port: number): SocketAdapter {
     port,
     readyState: SOCKET_OPEN,
     send(data: string) {
-      void sendOffscreenMessage({ type: "browser-pilot-offscreen-send", port, data }).then((response: unknown) => {
-        const sent = response && typeof response === "object" ? (response as JsonRecord).sent : undefined;
-        if (sent === false) cleanupTransportSocket(socket, "offscreen-send-failed");
-      }).catch((error: unknown) => {
-        const message = offscreenTransportErrorMessage(error);
-        if (isExpectedOffscreenTransientError(message)) return;
-        console.warn("[BROWSER-PILOT-WS] offscreen send failed", message);
-        cleanupTransportSocket(socket, "offscreen-send-error");
-      });
+      void enqueueOffscreenSend(socket, () => data);
     },
   };
   sockets.set(port, socket);
@@ -187,19 +199,21 @@ async function probeAndConnectWS(resetDelay: boolean): Promise<void> {
 
 async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> {
   primaryPort = port;
-  if (!startupRecoveryDone) {
-    startupRecoveryDone = true;
-    try { await runStartupRecovery(); } catch (error) { console.warn("[BROWSER-PILOT-WS] Startup recovery failed", error); }
-  }
-  const extensionInstanceId = await getExtensionInstanceId();
-  const tabs = (await chrome.tabs.query({}) as BrowserPilotChromeTab[]).filter((tab: BrowserPilotChromeTab) => isScriptable(tab.url));
-  const tabsWithIdentity = await Promise.all(tabs.map(async (tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId, ...browserPilotPageIdentityFields(tab), ...await browserPilotTabIdentityFields(tab) })));
-  socket.send(JSON.stringify({
-    type: "ext_ready",
-    consentCapable: true,
-    bridge: { ...browserPilotBridgeInfo(), bridgePort: port, primaryPort, ...(extensionInstanceId ? { extensionInstanceId } : {}) },
-    tabs: tabsWithIdentity,
-  }));
+  await enqueueOffscreenSend(socket, async () => {
+    if (!startupRecoveryDone) {
+      startupRecoveryDone = true;
+      try { await runStartupRecovery(); } catch (error) { console.warn("[BROWSER-PILOT-WS] Startup recovery failed", error); }
+    }
+    const extensionInstanceId = await getExtensionInstanceId();
+    const tabs = (await chrome.tabs.query({}) as BrowserPilotChromeTab[]).filter((tab: BrowserPilotChromeTab) => isScriptable(tab.url));
+    const tabsWithIdentity = await Promise.all(tabs.map(async (tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId, ...browserPilotPageIdentityFields(tab), ...await browserPilotTabIdentityFields(tab) })));
+    return JSON.stringify({
+      type: "ext_ready",
+      consentCapable: true,
+      bridge: { ...browserPilotBridgeInfo(), bridgePort: port, primaryPort, ...(extensionInstanceId ? { extensionInstanceId } : {}) },
+      tabs: tabsWithIdentity,
+    });
+  });
 }
 
 async function handleOffscreenConnected(port: number): Promise<void> {

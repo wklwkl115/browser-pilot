@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import type { WebSocket } from "ws";
 import { BrowserBridgePendingRequests } from "../../src/bridge/server/BrowserBridgePendingRequests.ts";
+import { buildBridgeTimeoutDiagnostics } from "../../src/bridge/server/BrowserBridgeDiagnostics.ts";
+import type { BrowserBridgeSnapshot } from "../../src/bridge/server/types.ts";
 
 type SentMessage = Record<string, unknown>;
 type FakeSocket = WebSocket & { sent: SentMessage[] };
@@ -23,7 +25,6 @@ function newPending(): BrowserBridgePendingRequests {
 	return new BrowserBridgePendingRequests(() => ({}), (target) => target);
 }
 
-const tick = () => new Promise((resolve) => setImmediate(resolve));
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const lastId = (ws: FakeSocket): string => String(ws.sent[ws.sent.length - 1].id);
 
@@ -108,35 +109,28 @@ test("rejectAllStopped clears every pending request with a bridge stopped error"
 	assert.equal(pr.snapshot().length, 0);
 });
 
-test("drainClient holds an in-flight request, then fails it after the grace window", async () => {
+test("client disconnect immediately fails requests without replay and preserves their ACK outcome", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();
 	const controller = new AbortController();
-	const promise = pr.send(ws, "code", { tabId: 1, timeoutMs: 5_000, signal: controller.signal });
+	const notAcked = pr.send(ws, "not-acked", { tabId: 1, timeoutMs: 5_000, signal: controller.signal });
+	const acked = pr.send(ws, "acked", { tabId: 2, timeoutMs: 5_000 });
+	pr.ack(lastId(ws));
 	assert.equal(getEventListeners(controller.signal, "abort").length, 1);
-	let settled: unknown = null;
-	void promise.then((value) => (settled = { value }), (error) => (settled = error));
-
-	pr.drainClient(ws, "inst-X", 30);
-	await tick();
-	assert.equal(settled, null, "request is held during the grace window, not failed immediately");
-
-	await delay(60);
-	assert.ok(Object(settled) instanceof Error, "request fails after grace expiry");
-	assert.equal((settled as unknown as { code: string }).code, "BRIDGE_CLIENT_DISCONNECTED");
+	assert.equal(pr.rejectClient(ws), 2);
+	await assert.rejects(notAcked, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+		assert.equal(error.code, "BRIDGE_CLIENT_DISCONNECTED");
+		assert.equal(error.details?.outcome, "not-delivered");
+		return true;
+	});
+	await assert.rejects(acked, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+		assert.equal(error.code, "BRIDGE_CLIENT_DISCONNECTED");
+		assert.equal(error.details?.outcome, "inflight-unknown");
+		return true;
+	});
 	assert.equal(getEventListeners(controller.signal, "abort").length, 0);
-});
-
-test("a result arriving during the grace window settles the request normally", async () => {
-	const pr = newPending();
-	const ws = fakeSocket();
-	const promise = pr.send(ws, "code", { tabId: 1, timeoutMs: 5_000 });
-	const id = lastId(ws);
-	pr.drainClient(ws, "inst-X", 1_000);
-
-	pr.resolve(id, { ok: true }, []);
-	const result = await promise;
-	assert.deepEqual(result.data, { ok: true });
+	assert.equal(pr.snapshot().length, 0);
+	assert.equal(pr.rejectClient(ws), 0);
 });
 
 test("resolved requests include bounded latency diagnostics without payload preview", async () => {
@@ -157,59 +151,22 @@ test("resolved requests include bounded latency diagnostics without payload prev
 	assert.equal(JSON.stringify(result.diagnostics).includes("secret.test"), false);
 });
 
-test("reconnect fails not-acked as not-delivered and acked as inflight-unknown", async () => {
-	const pr = newPending();
-	const ws = fakeSocket();
-	const newWs = fakeSocket();
-
-	const controller = new AbortController();
-	const notAcked = pr.send(ws, "c1", { tabId: 1, timeoutMs: 5_000, signal: controller.signal });
-	const acked = pr.send(ws, "c2", { tabId: 2, timeoutMs: 5_000 });
-	pr.ack(lastId(ws)); // ack the second request (c2)
-	pr.drainClient(ws, "inst-X", 1_000);
-
-	const reconciled = pr.reconnectInstance("inst-X");
-	assert.equal(reconciled, 2);
-
-	await assert.rejects(notAcked, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
-		assert.equal(error.code, "BRIDGE_CLIENT_DISCONNECTED");
-		assert.equal(error.details?.outcome, "not-delivered");
-		return true;
-	});
-	await assert.rejects(acked, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
-		assert.equal(error.code, "BRIDGE_CLIENT_DISCONNECTED");
-		assert.equal(error.details?.outcome, "inflight-unknown");
-		return true;
-	});
-	assert.equal(newWs.sent.length, 0, "reconnect never redelivers");
-	assert.equal(getEventListeners(controller.signal, "abort").length, 0);
-});
-
-test("reconnect with no instance id is a no-op; the request still fails at grace expiry", async () => {
-	const pr = newPending();
-	const ws = fakeSocket();
-	const promise = pr.send(ws, "code", { tabId: 1, timeoutMs: 5_000 });
-	pr.drainClient(ws, undefined, 30);
-
-	assert.equal(pr.reconnectInstance(undefined), 0, "cannot correlate without an instance id");
-
-	await assert.rejects(promise, (error: Error & { code?: string }) => error.code === "BRIDGE_CLIENT_DISCONNECTED");
-});
-
-test("request metrics tally drained and reconciliation outcomes", async () => {
-	const pr = newPending();
-	const ws = fakeSocket();
-
-	const notAcked = pr.send(ws, "c1", { tabId: 1, timeoutMs: 5_000 });
-	const acked = pr.send(ws, "c2", { tabId: 2, timeoutMs: 5_000 });
-	pr.ack(lastId(ws));
-	pr.drainClient(ws, "inst-X", 1_000);
-	pr.reconnectInstance("inst-X");
-	await assert.rejects(notAcked);
-	await assert.rejects(acked);
-
-	const afterNonDurable = pr.metrics();
-	assert.equal(afterNonDurable.drained, 2);
-	assert.equal(afterNonDurable.reconciledNotDelivered, 1);
-	assert.equal(afterNonDurable.reconciledInflightUnknown, 1);
+test("timeout diagnostics select queue depth by browser and tab", () => {
+	const snapshot = {
+		host: "127.0.0.1",
+		port: 0,
+		running: true,
+		extensionConnected: true,
+		connectedClients: 2,
+		clients: [],
+		selectionVersion: 1,
+		tabs: [],
+		pending: [],
+		queues: [
+			{ key: "browser-a:7", browserId: "browser-a", tabId: 7, depth: 1 },
+			{ key: "browser-b:7", browserId: "browser-b", tabId: 7, depth: 3 },
+		],
+	} as BrowserBridgeSnapshot;
+	const diagnostics = buildBridgeTimeoutDiagnostics(snapshot, 7, 1_000, false, { browserId: "browser-b", tabId: 7, browserSessionId: "default", source: "explicit", implicit: false, selectionVersionAtDispatch: 1 });
+	assert.equal(diagnostics.queueDepth, 3);
 });
