@@ -63,7 +63,7 @@ export type ActionabilityReport = {
 	hitTest?: { x: number; y: number; topNode?: string; matchedTarget: boolean };
 };
 
-export type VerificationStatus = "verified" | "failed" | "inconclusive";
+export type VerificationStatus = "verified" | "unmet" | "inconclusive";
 
 export type VerificationResult = {
 	status: VerificationStatus;

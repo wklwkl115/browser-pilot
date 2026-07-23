@@ -392,7 +392,7 @@ function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number 
 	return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
+export function mergeKnownDomAndAxEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 	const mergedState: EntityState = { ...base.state };
 	const stateSource: Record<string, "ax"> = {};
 	for (const key of AX_AUTHORITATIVE_STATE) {
@@ -620,7 +620,7 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 	}
 	const commit = (axIndex: number, domIndex: number): void => {
 		retireDomMatchCandidate(matchIndex, domIndex, merged[domIndex]!, domPrepared[domIndex]!);
-		merged[domIndex] = mergedEntity(merged[domIndex]!, axEntities[axIndex]!.entity);
+			merged[domIndex] = mergeKnownDomAndAxEntity(merged[domIndex]!, axEntities[axIndex]!.entity);
 		domPrepared[domIndex] = buildEntityMatchInfo(merged[domIndex]!);
 		usedAx[axIndex] = 1;
 		usedDom[domIndex] = 1;

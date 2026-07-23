@@ -1,12 +1,15 @@
 import { Type } from "typebox";
 import { prepareExecuteStdlib } from "../browser-command-runtime/executeStdlib.js";
-import { MAX_EXECUTION_REFS } from "../browser-command-runtime/executionRef.js";
+import { MAX_EXECUTION_REFS, resolveExecutionRef } from "../browser-command-runtime/executionRef.js";
+import { prepareAbmlVerification } from "../browser-command-runtime/abml/verification.js";
+import { isAbmlStateExpectation } from "../kernels/abml/verification.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { withBrowserOperation } from "./browserOperation.js";
 import { withCommandEffect } from "./commandEffect.js";
+import { commandExpectationSchema, javascriptVerificationResult, prepareCommandExpectation, type PreparedCommandExpectation } from "./commandExpectation.js";
 import { defineBrowserCommand, pinTabExecutionTarget, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
@@ -27,7 +30,7 @@ function detectCommandLikeScript(script: string): boolean {
 	return isRecord(parsed) && typeof parsed.cmd === "string";
 }
 
-function prepareExecute(params: ExecuteParams): { script: string; refs: Record<string, string>; readOnly: boolean; expect?: string } {
+function prepareExecute(params: ExecuteParams): { script: string; refs: Record<string, string>; readOnly: boolean; expect?: PreparedCommandExpectation } {
 	const script = typeof params.script === "string" && params.script.length ? params.script : undefined;
 	if (!script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script", { commandName: "browser_execute" });
 	if (detectCommandLikeScript(script)) throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { commandName: "browser_execute", recovery: { useTool: "browser_command" } });
@@ -39,8 +42,7 @@ function prepareExecute(params: ExecuteParams): { script: string; refs: Record<s
 			throw new BrowserBridgeError("INVALID_RULE", "browser_execute refs must map JavaScript identifiers to bp-ref URIs", { commandName: "browser_execute", name, ref });
 		}
 	}
-	const expect = typeof params.expect === "string" && params.expect.trim() ? params.expect.trim() : undefined;
-	if (params.expect !== undefined && !expect) throw new BrowserBridgeError("INVALID_RULE", "browser_execute expect must be a non-empty JavaScript expression", { commandName: "browser_execute" });
+	const expect = prepareCommandExpectation(params.expect, "browser_execute");
 	if (expect && params.readOnly === true) throw new BrowserBridgeError("INVALID_RULE", "browser_execute expect is only valid for writes", { commandName: "browser_execute" });
 	return { script, refs, readOnly: params.readOnly === true, expect };
 }
@@ -49,7 +51,7 @@ export function validateExecuteArguments(args: Record<string, unknown>): Validat
 	if (typeof args.script !== "string" || !args.script.length) return [{ code: "EXECUTE_SCRIPT_REQUIRED", path: "/script", message: "browser_execute requires script" }];
 	const script = args.script;
 	if (detectCommandLikeScript(script)) return [{ code: "EXECUTE_COMMAND_SHAPED_SCRIPT", path: "/script", message: "browser_execute only accepts JavaScript; use browser_command for bridge commands" }];
-	if (args.expect !== undefined && (typeof args.expect !== "string" || !args.expect.trim())) return [{ code: "EXECUTE_EXPECT_INVALID", path: "/expect", message: "browser_execute expect must be a non-empty JavaScript expression" }];
+	if (args.expect !== undefined && !(typeof args.expect === "string" && args.expect.trim()) && !isAbmlStateExpectation(args.expect)) return [{ code: "EXECUTE_EXPECT_INVALID", path: "/expect", message: "browser_execute expect must be a non-empty JavaScript expression or structured ABML postcondition" }];
 	if (args.expect !== undefined && args.readOnly === true) return [{ code: "EXECUTE_EXPECT_READ_ONLY", path: "/expect", message: "browser_execute expect is only valid for writes" }];
 	return [];
 }
@@ -72,7 +74,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 			TAB_SCOPED_TOOL_GUIDELINE,
 			"Pass observed bp-ref URIs through refs; each entry is available as browserPilot.refs.<name>, and its owner selects the tab automatically. Use browser_command input.ref for trusted native input.",
 			"The page runtime exposes browserPilot.refs, resolve(ref), box(ref), and setValue(target,value).",
-			"Use readOnly:true for queries. For writes, expect may declare a JavaScript truth expression; Browser Pilot owns waiting and reports effect.verification as verified, failed, or inconclusive.",
+			"Use readOnly:true for queries. For writes, expect may declare a JavaScript truth expression or structured ABML ref/state postcondition; Browser Pilot owns settlement and returns canonical verification evidence.",
 		],
 		parameters: strictCommandParameters({
 			script: Type.String({ description: "JavaScript to execute." }),
@@ -82,7 +84,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 				{ additionalProperties: false, maxProperties: MAX_EXECUTION_REFS, description: "Named observed refs to resolve, inject, and use for automatic tab/session routing." },
 			)),
 			readOnly: Type.Optional(Type.Boolean({ description: "Declare that the script does not mutate browser state." })),
-			expect: Type.Optional(Type.String({ minLength: 1, description: "Write postcondition as a JavaScript expression returning truthy when the intended state is reached." })),
+			expect: Type.Optional(commandExpectationSchema),
 			...sharedTabScopedToolParams(),
 		}),
 		validateArguments: validateExecuteArguments,
@@ -90,11 +92,13 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 			return await runCommandHandler(async () => {
 				const input = prepareExecute(params);
 				const prepared = prepareExecuteStdlib(input.script, { refs: input.refs });
-				const expected = input.expect ? prepareExecuteStdlib(`return Boolean(await (${input.expect}));`, { refs: input.refs }) : undefined;
+				const javascript = input.expect?.kind === "javascript" ? input.expect : undefined;
+				const expected = javascript ? prepareExecuteStdlib(`return Boolean(await (${javascript.expression}));`, { refs: input.refs }) : undefined;
 				const server = await ensureStarted();
 				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
 				const rawTarget = targetTabId(params as { targetRef?: string });
-				const resolvedTarget = resolveRefExecutionTarget(server, prepared.targetRefs, { rawTarget });
+				const expectationRefs = input.expect?.kind === "abml" ? [resolveExecutionRef(input.expect.expectation.ref).target] : [];
+				const resolvedTarget = resolveRefExecutionTarget(server, prepared.targetRefs, { rawTarget, observedRefs: expectationRefs });
 				const target = input.readOnly ? resolvedTarget : pinTabExecutionTarget(server, resolvedTarget);
 				const dispatch = (dispatchSignal?: AbortSignal) => executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: dispatchSignal });
 				const outcome = input.readOnly
@@ -106,15 +110,29 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 						targetRef: target.rawTarget,
 						timeoutMs,
 						signal,
-					}, async ({ signal: operationSignal, deadlineAt }) => await withCommandEffect(server, {
+					}, async ({ signal: operationSignal, deadlineAt }) => {
+						const structured = input.expect?.kind === "abml" ? input.expect.expectation : undefined;
+						const abmlVerification = structured ? await prepareAbmlVerification({ server, expectation: structured, verb: "browser_execute", browserSessionId: target.browserSessionId, tabId: target.tabId!, rawTarget: target.rawTarget!, timeoutMs, signal: operationSignal }) : undefined;
+						const initialVerification = abmlVerification?.initialVerification ?? (javascript ? javascriptVerificationResult("browser_execute") : undefined);
+						const effected = await withCommandEffect(server, {
 							browserSessionId: target.browserSessionId,
 							tabId: target.tabId,
 							timeoutMs,
 							deadlineAt,
 							signal: operationSignal,
-							...(expected ? { verify: async () => (await executePrepared({ script: expected.script, readOnly: true }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal })).data === true } : {}),
-						}, () => dispatch(operationSignal)));
-				const value = "effect" in outcome ? { ...outcome.result, effect: outcome.effect } : outcome.result;
+							...(initialVerification ? { initialVerification } : {}),
+							...(expected ? { verify: async () => javascriptVerificationResult("browser_execute", (await executePrepared({ script: expected.script, readOnly: true }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal })).data === true) } : {}),
+							...(abmlVerification ? { verify: abmlVerification.verify } : {}),
+						}, () => dispatch(operationSignal));
+						const diff = abmlVerification?.diff();
+						return { ...effected, ...(diff ? { diff } : {}) };
+					});
+				const value = "effect" in outcome ? {
+					...outcome.result,
+					effect: outcome.effect,
+					...(outcome.verification ? { verification: outcome.verification } : {}),
+					...("diff" in outcome && outcome.diff ? { diff: outcome.diff } : {}),
+				} : outcome.result;
 				return jsonResult(value, { mode: "javascript", refsBound: Object.keys(input.refs).length }, { preserveExecutionData: true });
 			});
 		},

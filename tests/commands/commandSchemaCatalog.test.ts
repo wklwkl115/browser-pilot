@@ -37,6 +37,9 @@ test("public schemas reject unknown tool inputs and enumerate canonical native c
 	assert.equal(execute.validateArguments?.({ script: "return 1", readOnly: true, expect: "document.title === 'Done'" })[0]?.code, "EXECUTE_EXPECT_READ_ONLY");
 	assert.deepEqual(execute.validateArguments?.({}), [{ code: "EXECUTE_SCRIPT_REQUIRED", path: "/script", message: "browser_execute requires script" }]);
 	assert.equal(validateCommandArgs(execute.parameters, { script: "browserPilot.refs.target.click()", refs: { target: "bp-ref://control/1" } }).ok, true);
+	assert.equal(validateCommandArgs(execute.parameters, { script: "browserPilot.refs.target.click()", refs: { target: "bp-ref://control/1" }, expect: { ref: "bp-ref://control/1", state: { pressed: true } } }).ok, true);
+	assert.equal(validateCommandArgs(execute.parameters, { script: "return 1", expect: { ref: "bp-ref://control/1", state: {} } }).ok, false);
+	assert.equal(validateCommandArgs(execute.parameters, { script: "return 1", expect: { ref: "bp-ref://control/1", value: "secret" } }).ok, false);
 	assert.equal(validateCommandArgs(execute.parameters, { script: "return 1", refs: { "not-valid-name": "bp-ref://control/1" } }).ok, false);
 
 	const invalid = validateCommandArgs(command("browser_command").parameters, { command: { cmd: "tabs" }, typo: true });

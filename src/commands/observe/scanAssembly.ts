@@ -25,13 +25,16 @@ function abmlAssemblyInputs(observation: CaptureObservation, ledgerFrame: Comman
 		abmlEntities: observation.abmlRead?.ok === true ? (observation.abmlRead.entities ?? []) : null,
 		abmlDiff: observation.abmlRead?.ok === true && baseline ? observation.abmlRead.diff : undefined,
 		ledgerDeltaFields: ledgerFrame && baseline?.snapshotId ? { delta: "session", baselineSnapshotId: baseline.snapshotId } : {},
+		action: ledgerFrame?.lastAction,
 	};
 }
 
-function attributedEntitiesForCausal(entities: Entity[] | null, causal: CausalSummary | undefined, focusedRef: string | undefined): Entity[] | null {
+function attributedEntitiesForCausal(entities: Entity[] | null, causal: CausalSummary | undefined, focusedRef: string | undefined, action?: CommandPerceptionLedgerFrame["lastAction"]): Entity[] | null {
 	if (!entities || !causal || !("requests" in causal)) return entities;
-	const actionEntityRef = causal.requests.length ? resolveActionEntityRef(undefined, focusedRef, entities) : undefined;
-	const requestTriggered = actionEntityRef ? buildTriggeredRelations(causal, { hasActionRef: false }) : [];
+	const actionEntityRef = causal.requests.length
+		? action ? resolveActionEntityRef(action.ref, undefined, entities) : resolveActionEntityRef(undefined, focusedRef, entities)
+		: undefined;
+	const requestTriggered = actionEntityRef ? buildTriggeredRelations(causal, { hasActionRef: action !== undefined, actionAt: action?.at }) : [];
 	const eventTriggers = eventTriggeredByEntity("events" in causal && Array.isArray(causal.events) ? causal.events : [], entities);
 	if (!actionEntityRef && eventTriggers.size === 0) return entities;
 	return entities.map((entity) => {
@@ -52,6 +55,7 @@ type ScanAssemblyOptions = {
 	abmlDiff: EntityDiff | undefined;
 	baseline: BaselineResolution | undefined;
 	causal: CausalSummary | undefined;
+	action?: CommandPerceptionLedgerFrame["lastAction"];
 	ledgerDeltaFields: Record<string, unknown>;
 };
 
@@ -111,13 +115,13 @@ function buildFallbackSummary(options: ScanAssemblyOptions, entities: Entity[], 
 }
 
 export function assembleScanSummary(options: ScanAssemblyOptions) {
-	const { scanEntityGroups, abmlEntities, abmlDiff, baseline, causal } = options;
+	const { scanEntityGroups, abmlEntities, abmlDiff, baseline, causal, action } = options;
 	const diffSummary = abmlDiff ? summarizeEntityDiff(abmlDiff, baseline?.entities, abmlEntities ?? []) : undefined;
 	const envelopeDiff = abmlDiff ? { ...abmlDiff, ...(diffSummary ? { summary: diffSummary } : {}) } : undefined;
 	const treeDiff = abmlEntities && baseline
 		? buildTreeDiff(baseline.entities, abmlEntities, { partialBaseline: baseline.partialBaseline })
 		: undefined;
-	const attributedEntities = attributedEntitiesForCausal(abmlEntities, causal, abmlDiff?.focusedRef);
+	const attributedEntities = attributedEntitiesForCausal(abmlEntities, causal, abmlDiff?.focusedRef, action);
 	const causalBlock = causal ? { causal } : {};
 	if (attributedEntities) {
 		const projection = buildIntegratedSummary(options, attributedEntities, envelopeDiff, treeDiff, causalBlock);
@@ -152,7 +156,7 @@ export function prepareScanAssembly(options: {
 		observationId: snapshotMeta.snapshotId,
 		capturedAt: snapshotMeta.capturedAt,
 	};
-	const { abmlEntities, abmlDiff, ledgerDeltaFields } = abmlAssemblyInputs(observation, ledgerFrame, baseline);
+	const { abmlEntities, abmlDiff, ledgerDeltaFields, action } = abmlAssemblyInputs(observation, ledgerFrame, baseline);
 	const summaryData = abmlEntities === null ? registerScanEntityRefs(data, scanEntityContext) : data;
 	const scanEntityGroups = abmlEntities === null ? buildScanEntities(summaryData, { entityContext: scanEntityContext }) : undefined;
 	return {
@@ -166,6 +170,7 @@ export function prepareScanAssembly(options: {
 			abmlDiff,
 			baseline,
 			causal,
+			action,
 			ledgerDeltaFields,
 		}),
 	};

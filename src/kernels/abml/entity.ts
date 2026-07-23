@@ -196,6 +196,8 @@ function actionEntityState(node: ScanActionableInput): EntityState {
 		disabled: node.disabled === true,
 		focused: node.focused === true,
 		...(typeof node.checked === "boolean" ? { checked: node.checked } : {}),
+		...(typeof node.selected === "boolean" ? { selected: node.selected } : {}),
+		...(typeof node.pressed === "boolean" ? { pressed: node.pressed } : {}),
 		...(typeof node.expanded === "boolean" ? { expanded: node.expanded } : {}),
 		...(current !== undefined && current !== false ? { current } : {}),
 		editable: node.editable === true,

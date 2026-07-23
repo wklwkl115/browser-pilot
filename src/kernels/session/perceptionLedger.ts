@@ -12,6 +12,11 @@ export type PerceptionLedgerFrame = {
 	snapshotId: string;
 	capturedAt: number;
 	facts: Record<string, PerceptionLedgerFactState>;
+	lastAction?: {
+		ref: string;
+		verb: string;
+		at: number;
+	};
 };
 
 export type PerceptionTraceTerm = {

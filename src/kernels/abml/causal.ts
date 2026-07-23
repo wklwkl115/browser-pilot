@@ -83,7 +83,7 @@ export function buildCausalRequest(record: Record<string, unknown>): CausalReque
 	const method = str(request.method) || str(record.method);
 	const status = num(response.status) ?? num(record.status);
 	const type = str(record.type) || str(record.resourceType);
-	const at = num(record.updatedAt) ?? num(record.createdAt) ?? num(record.wallTime);
+	const at = num(record.createdAt) ?? num(record.updatedAt) ?? num(record.wallTime);
 	const initiator = isRecord(record.initiator) ? record.initiator : {};
 	const initiatorType = str(initiator.type) || str(record.initiatorType);
 	const passive = initiatorType ? PASSIVE_INITIATOR_TYPES.has(initiatorType) : undefined;
@@ -188,10 +188,10 @@ export function latestSeq(records: Array<Record<string, unknown>>): number | und
 // (parser/preload initiated) are excluded — they are structural, not action-caused. When
 // hasActionRef is true AND the request has initiatorType "script", confidence is elevated to
 // "medium" (multi-signal: timing window + CDP initiator type confirmation).
-export function buildTriggeredRelations(causal: CausalSummary, options?: { hasActionRef?: boolean }): EntityRelation[] {
+export function buildTriggeredRelations(causal: CausalSummary, options?: { hasActionRef?: boolean; actionAt?: number }): EntityRelation[] {
 	if (!("requests" in causal)) return [];
 	return causal.requests
-		.filter((r) => !r.passive)
+		.filter((r) => !r.passive && (options?.actionAt === undefined || r.at !== undefined && r.at >= options.actionAt))
 		.map((request) => {
 			const initiatorConfirmed = request.initiatorType === "script" && options?.hasActionRef;
 			return {

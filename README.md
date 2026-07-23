@@ -43,7 +43,7 @@ The resulting token is stored owner-locally and scoped to the MCP client and pro
 
 1. Omit `targetRef` to use the selected active tab; call `browser_tabs` only to create, switch, close, or disambiguate tabs.
 2. Call `browser_observe` when the task needs a structured page model. Its `bp-ref` values route later actions back to their owning tab.
-3. Use `browser_execute` for page JavaScript or `browser_command` for native browser operations. For writes, pass `expect` only when a business postcondition matters; Browser Pilot owns waiting and reports `effect.verification`.
+3. Use `browser_execute` for page JavaScript or `browser_command` for native browser operations. For writes, pass `expect` only when a business postcondition matters; Browser Pilot owns settlement and returns top-level `verification` evidence.
 4. Read additional semantic page regions from the MCP resources returned by `browser_observe` only when the task needs them.
 
 ## Tools
@@ -52,6 +52,8 @@ The MCP `tools/list` response is the public syntax authority. Browser tools come
 `browser_command` publishes canonical command names in its schema. Read `browser-pilot://native-command/<cmd>` for the closed business fields of one command; `browser-pilot://native-commands` is the compact routing index. Targeting stays at the tool-level `targetRef`; runtime session, physical tab/target, timeout, attach, and cleanup state is not part of the public contract. Raw CDP is `command: { cmd: "cdp", method: "Domain.method", params: {...} }`.
 
 `browser_execute` keeps JavaScript as the general page language. Its injected `browserPilot` namespace provides `refs`, `resolve(ref)`, `box(ref)`, and `setValue(target, value)`; writes are target-serialized and automatically use the extension/CDP fallback path.
+
+`expect` accepts either a JavaScript truth expression or a structured ABML postcondition such as `{ "ref": "bp-ref://control/...", "state": { "pressed": true } }`. Structured verification reads the same ref before and after dispatch, fuses DOM with targeted AX state, and returns the canonical `verification` plus ABML `diff`; `effect` remains bounded page-change diagnostics rather than a business-success signal.
 
 ## Architecture
 

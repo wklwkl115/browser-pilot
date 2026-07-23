@@ -5,6 +5,7 @@ import { summarizeCommandEffect, withCommandEffect } from "../../src/commands/co
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
 import { readPageFingerprint, type PageFingerprint } from "../../src/commands/pageSignals.ts";
+import type { VerificationResult } from "../../src/kernels/abml/types.ts";
 
 function fingerprint(overrides: Partial<PageFingerprint> = {}): PageFingerprint {
 	return {
@@ -97,14 +98,16 @@ test("command effect samples and settles inside one caller-owned transaction", a
 test("command effect owns postcondition polling", async () => {
 	let attempts = 0;
 	const server = { async sendCommand() { return { id: "fingerprint", acknowledged: true, data: undefined }; } } as unknown as BrowserCommandRuntimePort;
+	const result = (verified: boolean): VerificationResult => ({ status: verified ? "verified" : "unmet", verb: "test", observed: { verified }, evidence: [], elapsedMs: 0 });
 	const outcome = await withCommandEffect(server, {
 		timeoutMs: 1_000,
 		deadlineAt: Date.now() + 1_000,
 		quietMs: 0,
 		settleMs: 0,
-		verify: async () => (attempts += 1) === 2,
+		verify: async () => result((attempts += 1) === 2),
 	}, async () => bridgeResult);
-	assert.equal(outcome.effect.verification, "verified");
+	assert.equal(outcome.verification?.status, "verified");
+	assert.equal(Object.hasOwn(outcome.effect, "verification"), false);
 	assert.equal(attempts, 2);
 });
 
@@ -113,9 +116,11 @@ test("command effect keeps an unreadable postcondition inconclusive", async () =
 	const outcome = await withCommandEffect(server, {
 		timeoutMs: 1_000,
 		deadlineAt: Date.now() + 1_000,
+		initialVerification: { status: "inconclusive", verb: "test", expected: { state: "ready" }, observed: {}, evidence: [], elapsedMs: 0 },
 		verify: async () => { throw new Error("page replaced"); },
 	}, async () => bridgeResult);
-	assert.equal(outcome.effect.verification, "inconclusive");
+	assert.equal(outcome.verification?.status, "inconclusive");
+	assert.deepEqual(outcome.verification?.expected, { state: "ready" });
 });
 
 test("page fingerprint fallback never swallows cancellation", async () => {

@@ -56,40 +56,41 @@ function soleRefOwner<T extends string | number>(refs: ExecutionRefTarget[], fie
 export function resolveRefExecutionTarget(
 	server: Pick<BrowserCommandRuntimePort, "resolveTargetTabId" | "snapshot">,
 	refs: ExecutionRefTarget[],
-	options: { browserSessionId?: string; rawTarget?: unknown },
+	options: { browserSessionId?: string; rawTarget?: unknown; observedRefs?: ExecutionRefTarget[] },
 ): { browserSessionId?: string; rawTarget?: string | number; tabId?: number } {
-	if (!refs.length) {
+	const allRefs = options.observedRefs?.length ? [...refs, ...options.observedRefs] : refs;
+	if (!allRefs.length) {
 		const tabId = resolveLocalTargetTabId(server, options.rawTarget, options.browserSessionId);
 		return { browserSessionId: options.browserSessionId, rawTarget: options.rawTarget as string | number | undefined, tabId };
 	}
-	const stale = refs.find((ref) => !ref.fresh);
+	const stale = allRefs.find((ref) => !ref.fresh);
 	if (stale) throw new BrowserBridgeError("REF_STALE", "Referenced browser state is stale", { ref: stale.refId });
 	const blocked = refs.find((ref) => ref.policy.liveActionsAllowed !== true);
 	if (blocked) throw new BrowserBridgeError("INVALID_RULE", "Referenced browser state does not allow live actions", { ref: blocked.refId });
-	const unowned = refs.find((ref) => ref.owner.tabId === undefined);
-	if (unowned) throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Executable refs must own a browser tab", { ref: unowned.refId });
+	const unowned = allRefs.find((ref) => ref.owner.tabId === undefined);
+	if (unowned) throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Referenced browser state must own a browser tab", { ref: unowned.refId });
 
-	const ownerSession = soleRefOwner<string>(refs, "browserSessionId");
-	const ownerTabId = soleRefOwner<number>(refs, "tabId");
+	const ownerSession = soleRefOwner<string>(allRefs, "browserSessionId");
+	const ownerTabId = soleRefOwner<number>(allRefs, "tabId");
 	if (options.browserSessionId && ownerSession && options.browserSessionId !== ownerSession) {
-		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit browserSessionId conflicts with ref ownership", { browserSessionId: options.browserSessionId, ownerBrowserSessionId: ownerSession, refs: refs.map((ref) => ref.refId) });
+		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit browserSessionId conflicts with ref ownership", { browserSessionId: options.browserSessionId, ownerBrowserSessionId: ownerSession, refs: allRefs.map((ref) => ref.refId) });
 	}
 	const browserSessionId = ownerSession ?? options.browserSessionId;
 	let canonicalOwnerTabId: number | undefined;
 	try {
 		canonicalOwnerTabId = ownerTabId === undefined ? undefined : resolveLocalTargetTabId(server, ownerTabId, browserSessionId);
 	} catch {
-		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab no longer exists", { ownerTabId, refs: refs.map((ref) => ref.refId) });
+		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab no longer exists", { ownerTabId, refs: allRefs.map((ref) => ref.refId) });
 	}
 	if (ownerTabId !== undefined && canonicalOwnerTabId !== ownerTabId) {
-		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab was replaced", { ownerTabId, canonicalOwnerTabId, refs: refs.map((ref) => ref.refId) });
+		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab was replaced", { ownerTabId, canonicalOwnerTabId, refs: allRefs.map((ref) => ref.refId) });
 	}
 	const explicitTabId = options.rawTarget === undefined ? undefined : resolveLocalTargetTabId(server, options.rawTarget, browserSessionId);
 	if (options.rawTarget !== undefined && (!Number.isInteger(explicitTabId) || explicitTabId! <= 0)) {
 		throw new BrowserBridgeError("INVALID_TAB_ID", "A valid targetRef is required", { targetRef: options.rawTarget });
 	}
 	if (explicitTabId !== undefined && canonicalOwnerTabId !== undefined && explicitTabId !== canonicalOwnerTabId) {
-		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit targetRef conflicts with ref ownership", { tabId: explicitTabId, ownerTabId: canonicalOwnerTabId, refs: refs.map((ref) => ref.refId) });
+		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit targetRef conflicts with ref ownership", { tabId: explicitTabId, ownerTabId: canonicalOwnerTabId, refs: allRefs.map((ref) => ref.refId) });
 	}
 	const tabId = canonicalOwnerTabId ?? explicitTabId;
 	const snapshot = server.snapshot({ browserSessionId });
@@ -97,7 +98,7 @@ export function resolveRefExecutionTarget(
 	const currentTab = snapshot.tabs.find((tab) => tab.tabId === tabId);
 	const currentOrigin = urlOrigin(currentTab?.url);
 	const currentIdentity = pageIdentityFromUnknown({ ...currentTab, browserSessionId: effectiveBrowserSessionId });
-	for (const ref of refs) {
+	for (const ref of allRefs) {
 		const scope = classifyRefScope(ref, { browserSessionId: effectiveBrowserSessionId, tabId, topLevelOrigin: currentOrigin });
 		if (!scope.ok) throw new BrowserBridgeError(scope.code, `Ref scope violation: ${scope.reason}`, { ref: ref.refId, browserSessionId: effectiveBrowserSessionId, tabId, topLevelOrigin: currentOrigin });
 		const reason = pageReanchorReason(ref.pageIdentity, currentIdentity);

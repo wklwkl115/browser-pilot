@@ -6,10 +6,11 @@ import test from "node:test";
 import { CommandManifestIndex, type CommandDefinition } from "../../src/commands/commandManifestIndex.ts";
 import { defineExecuteCommand } from "../../src/commands/executeCommand.ts";
 import { defineNativeCommand } from "../../src/commands/nativeCommand.ts";
+import { prepareAbmlVerification, readAbmlVerificationObservation } from "../../src/browser-command-runtime/abml/verification.ts";
 import { jsonResult } from "../../src/utils/toolResult.ts";
 import { defineScreenshotCommand } from "../../src/commands/screenshotCommand.ts";
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
-import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
+import type { BrowserCommandRuntimePort, CommandPerceptionLedgerFrame } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
 import { registerRefDescriptor } from "../../src/resources/resourceRefs.ts";
 import { BrowserBridgeError } from "../../src/utils/errors.ts";
@@ -250,8 +251,105 @@ test("commands execution: browser_command verifies a declared postcondition", as
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const outcome = parseResult(await command.execute({ command: { cmd: "network.start" }, expect: "document.body.dataset.ready === '1'" }));
 	assert.equal(outcome.active, true);
-	assert.equal((outcome.effect as Record<string, unknown>).verification, "verified");
+	assert.equal((outcome.verification as Record<string, unknown>).status, "verified");
+	assert.equal(JSON.stringify(outcome).includes("dataset.ready"), false);
+	assert.equal((outcome.effect as Record<string, unknown>).verification, undefined);
 	assert.equal(runtime.calls.filter((call) => call.name === "executeJavaScript").length, 1);
+});
+
+test("commands execution: input.ref returns canonical ABML verification and diff", async () => {
+	let dispatched = false;
+	let ledgerFrame: CommandPerceptionLedgerFrame = {
+		key: { browserSessionId: "session-1", tabId: 7, targetGeneration: 1, pageEpoch: "page-1" },
+		snapshotId: "baseline-1",
+		capturedAt: 1,
+		facts: {},
+	};
+	const ref = registerOwnedRef();
+	const runtime = createRuntime({
+		getPerceptionLedgerFrame() { return ledgerFrame; },
+		recordPerceptionLedgerFrame(frame) { ledgerFrame = frame; return frame; },
+		async sendCommand(command, options) {
+			runtime.calls.push({ name: "sendCommand", args: [command, options] });
+			if (command.cmd === "content.fingerprint") return { id: "fingerprint", acknowledged: true, data: undefined } as BrowserBridgeExecutionResult;
+			if (command.cmd === "persistent_cdp") {
+				return { id: "partial-ax", acknowledged: true, data: { result: { nodes: [{ role: { value: "button" }, name: { value: "Like" }, value: { value: "secret" }, backendDOMNodeId: 41, properties: [{ name: "pressed", value: { value: String(dispatched) } }] }] } } } as BrowserBridgeExecutionResult;
+			}
+			dispatched = true;
+			return { id: "input-ref", acknowledged: true, data: { input: { dispatchOnly: true, dispatched: 3 } } } as BrowserBridgeExecutionResult;
+		},
+		async executeJavaScript(script, options) {
+			runtime.calls.push({ name: "executeJavaScript", args: [script, options] });
+			return { id: "target-state", acknowledged: true, data: {
+				tag: "button", role: "button", label: "Like", text: "Like", value: "secret", editable: false,
+				disabled: false, focused: false, pressed: dispatched, visible: true, inViewport: true,
+				rect: { x: 0, y: 0, width: 20, height: 20 }, point: { x: 10, y: 10 }, hitOk: true,
+			} } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const outcome = parseResult(await command.execute({ command: { cmd: "input.ref", action: "click", ref }, expect: { ref, state: { pressed: true } } }));
+	assert.equal((outcome.input as Record<string, unknown>).dispatchOnly, true);
+	assert.equal((outcome.verification as Record<string, unknown>).status, "verified");
+	assert.deepEqual(((outcome.diff as Record<string, unknown>).changed as Array<Record<string, unknown>>)[0], {
+		ref,
+		kind: "state-changed",
+		before: { pressed: false },
+		after: { pressed: true },
+	});
+	assert.equal((outcome.effect as Record<string, unknown>).verification, undefined);
+	assert.equal(JSON.stringify(outcome).includes("secret"), false);
+	assert.deepEqual({ ...ledgerFrame.lastAction, at: 0 }, { ref, verb: "input.ref", at: 0 });
+});
+
+test("commands execution: structured postconditions may observe non-actionable ABML refs", async () => {
+	const ref = registerOwnedRef({ liveActionsAllowed: false });
+	const runtime = createRuntime({
+		async sendCommand(command, options) {
+			runtime.calls.push({ name: "sendCommand", args: [command, options] });
+			if (command.cmd === "content.fingerprint") return { id: "fingerprint", acknowledged: true, data: undefined } as BrowserBridgeExecutionResult;
+			if (command.cmd === "persistent_cdp") return { id: "partial-ax", acknowledged: true, data: { result: { nodes: [] } } } as BrowserBridgeExecutionResult;
+			return { id: "network-start", acknowledged: true, data: { active: true } } as BrowserBridgeExecutionResult;
+		},
+		async executeJavaScript(script, options) {
+			runtime.calls.push({ name: "executeJavaScript", args: [script, options] });
+			return { id: "target-state", acknowledged: true, data: {
+				tag: "div", role: "status", label: "Saved", editable: false,
+				disabled: false, focused: false, visible: true, inViewport: true,
+				rect: { x: 0, y: 0, width: 20, height: 20 }, point: { x: 10, y: 10 }, hitOk: true,
+			} } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const outcome = parseResult(await command.execute({ command: { cmd: "network.start" }, expect: { ref, state: { visible: true } } }));
+	assert.equal((outcome.verification as Record<string, unknown>).status, "verified");
+});
+
+test("ABML verification refuses to sample a ref after page replacement", async () => {
+	const ref = registerOwnedRef();
+	const runtime = createRuntime({ snapshot() { return { ...baseSnapshot(), tabs: [{ ...baseSnapshot().tabs[0]!, pageEpoch: "page-2" }] }; } });
+	const observation = await readAbmlVerificationObservation({ server: runtime, expectation: { ref, state: { visible: true } }, browserSessionId: "session-1", tabId: 7, rawTarget: "tab-7", timeoutMs: 1_000 });
+	assert.match(observation.reason ?? "", /stale/);
+	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), false);
+});
+
+test("ABML verification emits no diff before a post-action sample", async () => {
+	let reads = 0;
+	const ref = registerOwnedRef();
+	const runtime = createRuntime({
+		async executeJavaScript() {
+			reads += 1;
+			return { id: "target-state", acknowledged: true, data: {
+				tag: "button", role: "button", editable: false, pressed: reads > 1,
+				disabled: false, focused: false, visible: true, inViewport: true,
+				rect: { x: 0, y: 0, width: 20, height: 20 }, point: { x: 10, y: 10 }, hitOk: true,
+			} } as BrowserBridgeExecutionResult;
+		},
+	});
+	const verification = await prepareAbmlVerification({ server: runtime, expectation: { ref, state: { pressed: true } }, verb: "input.ref", browserSessionId: "session-1", tabId: 7, rawTarget: "tab-7", timeoutMs: 1_000 });
+	assert.equal(verification.diff(), undefined);
+	await verification.verify();
+	assert.deepEqual(verification.diff()?.changed, [{ ref, kind: "state-changed", before: { pressed: false }, after: { pressed: true } }]);
 });
 
 test("commands execution: browser-wide writes skip irrelevant page-effect sampling", async () => {
@@ -435,7 +533,8 @@ test("commands execution: browser_execute verifies a declared postcondition", as
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const result = parseResult(await command.execute({ script: "submit()", expect: "document.body.dataset.state === 'done'" }));
 	assert.equal(result.submitted, true);
-	assert.equal((result.effect as Record<string, unknown>).verification, "verified");
+	assert.equal((result.verification as Record<string, unknown>).status, "verified");
+	assert.equal((result.effect as Record<string, unknown>).verification, undefined);
 	assert.equal(checks, 2);
 });
 

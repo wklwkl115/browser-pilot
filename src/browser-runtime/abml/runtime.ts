@@ -36,8 +36,6 @@ export type BrowserAbmlRuntimeOptions = {
 	tabId?: number | string;
 	timeoutMs?: number;
 	maxChars?: number;
-	/** Internal low-latency profile used only for fenced post-action settlement. */
-	captureProfile?: "canonical" | "settlement";
 	signal?: AbortSignal;
 };
 
@@ -505,28 +503,22 @@ function structureAxFusionDiagnostics(fusion: { diagnostics: AxFusionDiagnostics
 	};
 }
 
-async function settlementPartialAxDiagnostics(server: AbmlBrowserRuntimeServer, descriptor: RefDescriptor | undefined, options: { browserSessionId?: string; tabId: number; timeoutMs: number; signal?: AbortSignal }, settlementCapture: boolean) {
-	if (settlementCapture) return undefined;
+async function structurePartialAxDiagnostics(server: AbmlBrowserRuntimeServer, descriptor: RefDescriptor | undefined, options: { browserSessionId?: string; tabId: number; timeoutMs: number; signal?: AbortSignal }) {
 	return await readLocalPartialAxDiagnostics(server, descriptor, options).catch(() => {
 		options.signal?.throwIfAborted();
 		return undefined;
 	});
 }
 
-async function settlementAxRead(server: AbmlBrowserRuntimeServer, options: Parameters<typeof readAxEntities>[1], settlementCapture: boolean): Promise<AxReadResult> {
-	if (settlementCapture) return { entities: [], anchors: [] };
+async function structureAxRead(server: AbmlBrowserRuntimeServer, options: Parameters<typeof readAxEntities>[1]): Promise<AxReadResult> {
 	return await readAxEntities(server, options).catch((): AxReadResult => {
 		options.signal?.throwIfAborted();
 		return { entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, cacheHit: false, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } };
 	});
 }
 
-async function settlementListenerHints(server: AbmlBrowserRuntimeServer, entities: Entity[], options: { browserSessionId?: string; tabId: number; timeoutMs: number; signal?: AbortSignal }, settlementCapture: boolean) {
-	if (!settlementCapture) return await annotateListenerHints(server, entities, options);
-	return {
-		entities,
-		stats: { candidateCount: 0, probedCount: 0, nodeWithListenersCount: 0, listenerCount: 0, truncated: false, failureCount: 0, elapsedMs: 0, maxCandidates: 0, maxListenersPerNode: 0 },
-	};
+async function structureListenerHints(server: AbmlBrowserRuntimeServer, entities: Entity[], options: { browserSessionId?: string; tabId: number; timeoutMs: number; signal?: AbortSignal }) {
+	return await annotateListenerHints(server, entities, options);
 }
 
 async function resolveBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions) {
@@ -543,7 +535,6 @@ async function resolveBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions, descriptor: RefDescriptor | undefined, target: { browserSessionId?: string; tabId: number }) {
 	options.signal?.throwIfAborted();
 	const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
-	const settlementCapture = options.captureProfile === "settlement";
 	const descriptorUrl = descriptor?.documentEpoch?.url;
 	const rawData = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS) }), {
 		browserSessionId: target.browserSessionId,
@@ -578,13 +569,13 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		observationId: snapshot.snapshotId,
 		capturedAt: snapshot.capturedAt,
 	};
-	const partialAxDiagnostics = await settlementPartialAxDiagnostics(server, descriptor, {
+	const partialAxDiagnostics = await structurePartialAxDiagnostics(server, descriptor, {
 		browserSessionId: target.browserSessionId,
 		tabId: target.tabId,
 		timeoutMs,
 		signal: options.signal,
-	}, settlementCapture);
-	const axRead = await settlementAxRead(server, {
+	});
+	const axRead = await structureAxRead(server, {
 		browserSessionId: target.browserSessionId,
 		tabId: target.tabId,
 		targetGeneration,
@@ -595,7 +586,7 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		timeoutMs,
 		cacheKey: input.axCacheKey,
 		signal: options.signal,
-	}, settlementCapture);
+	});
 	const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries ?? [], {
 		scanCapturedAt: snapshot.capturedAt,
 		scanCapturedAtIso: new Date(snapshot.capturedAt).toISOString(),
@@ -615,12 +606,12 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 		observationId: snapshot.snapshotId,
 		capturedAt: snapshot.capturedAt,
 	});
-	const listenerProbe = await settlementListenerHints(server, mergedEntities, {
+	const listenerProbe = await structureListenerHints(server, mergedEntities, {
 		browserSessionId: target.browserSessionId,
 		tabId: target.tabId,
 		timeoutMs,
 		signal: options.signal,
-	}, settlementCapture);
+	});
 	const entitiesWithListenerHints = listenerProbe.entities;
 	const relations = materializeStructureRelations(entitiesWithListenerHints, axRead, descriptor);
 	return {
@@ -636,7 +627,6 @@ async function readStandardStructurePlane(server: AbmlBrowserRuntimeServer, inpu
 			...(relations.relationGraph?.edgeCount ? { relationGraph: relations.relationGraph } : {}),
 			backendNodeIdBootstrap: bootstrapped.stats,
 			listenerOracle: listenerProbe.stats,
-			captureProfile: settlementCapture ? "settlement" : "canonical",
 			axDiagnostics: axRead.diagnostics,
 			...(partialAxDiagnostics ? { partialAx: partialAxDiagnostics } : {}),
 			axFusion: structureAxFusionDiagnostics(fusion, entities.length, axRead.entities.length),

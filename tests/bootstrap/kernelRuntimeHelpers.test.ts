@@ -328,6 +328,14 @@ test("ABML causal projection preserves complete redacted deltas", () => {
 	assert.equal("requests" in causal && causal.requests.length, 15);
 	assert.ok("requests" in causal && causal.requests[0]!.url!.length > 200);
 	assert.equal(buildTriggeredRelations(causal).length, 15);
+	const timed = buildCausalSummary([{ seq: 1, requestId: "timed", createdAt: 10, updatedAt: 30 }], 0);
+	assert.equal("requests" in timed && timed.requests[0]?.at, 10);
+	const actionScoped = buildTriggeredRelations({ sinceSeq: 0, requests: [
+		{ ref: "bp-ref://network/before", at: 10, initiatorType: "script" },
+		{ ref: "bp-ref://network/unknown", initiatorType: "script" },
+		{ ref: "bp-ref://network/after", at: 30, initiatorType: "script" },
+	] }, { hasActionRef: true, actionAt: 20 });
+	assert.deepEqual(actionScoped.map((relation) => [relation.targetRef, relation.confidence]), [["bp-ref://network/after", "medium"]]);
 	const events = buildCausalEvents(records.map((record) => ({ ...record, type: "console", data: { message: "x".repeat(300) } })), 0);
 	assert.equal(events.events.length, 15);
 	assert.equal(events.events[0]!.summary?.length, 300);
@@ -882,6 +890,7 @@ test("scan script builder clamps options and injects scan helper blocks determin
 	assert.match(script, /fingerprint: scanFingerprint/);
 	assert.doesNotMatch(script, /content\.tree|tree: content|function walk\(|iframeNotes|includeIframes/);
 	assert.match(script, /const growthProbe = undefined;/);
+	assert.match(script, /selected: selectedState.*pressed: pressedAttr === 'true'.*expanded: expandedAttr === 'true'/);
 	assert.doesNotMatch(script, /window\.scrollTo|\.scrollTop\s*=/);
 	assert.match(script, /documentRect: visible\.documentRect/);
 	assert.doesNotMatch(script, /list_hints|canvas_regions|media_candidates|node_count|iframe_notes|controls_pairs|text_only/);
