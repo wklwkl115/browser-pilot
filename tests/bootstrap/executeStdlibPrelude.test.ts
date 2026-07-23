@@ -44,7 +44,7 @@ function createContext() {
 		[visible, { display: "block", visibility: "visible", opacity: "1", pointerEvents: "auto" }],
 	]);
 	const context = {
-			console: { warn() {} },
+		console: { warn() {} },
 		Date,
 		Map,
 		Math,
@@ -58,12 +58,15 @@ function createContext() {
 			observe() {}
 			disconnect() {}
 		},
-			document: {
+		document: {
 			documentElement: { clientWidth: 800, clientHeight: 600 },
-				querySelector(selector: string) {
-					return selector === ".hidden-link" ? hidden : selector === ".visible-card" ? visible : null;
+			querySelector(selector: string) {
+				return selector === ".hidden-link" ? hidden : selector === ".visible-card" ? visible : null;
 			},
-			querySelectorAll() {
+			querySelectorAll(selector: string) {
+				if (selector === ".hidden-link") return [hidden];
+				if (selector === ".visible-card") return [visible];
+				if (selector === ".duplicate") return [hidden, visible];
 				return [];
 			},
 			evaluate() {
@@ -78,9 +81,9 @@ function createContext() {
 		},
 		window: undefined as unknown,
 		globalThis: undefined as unknown,
-			__result: undefined as unknown,
-			__bound: undefined as unknown,
-			__namespace: undefined as unknown,
+		__result: undefined as unknown,
+		__bound: undefined as unknown,
+		__namespace: undefined as unknown,
 	};
 	context.window = context;
 	context.globalThis = context;
@@ -116,6 +119,14 @@ test("browserPilot refs never resolve an element from stale coordinates", () => 
 	const registry = { [ref]: { ok: true, fresh: true, descriptor: { refId: ref, locators: [{ by: "point", x: 90, y: 60 }] } } };
 	vm.runInContext(`${stdlibPrelude(registry, { target: ref })}\nglobalThis.__bound = browserPilot.refs.target;`, vm.createContext(context));
 	assert.equal(context.__bound, null);
+});
+
+test("browserPilot.resolve disambiguates repeated selectors with captured geometry", () => {
+	const { context, visible } = createContext();
+	const ref = "bp-ref://control/repeated";
+	const registry = { [ref]: { ok: true, fresh: true, descriptor: { refId: ref, locators: [{ by: "css", value: ".duplicate" }], geometry: { point: { x: 100, y: 60 } } } } };
+	vm.runInContext(`${stdlibPrelude(registry)}\nglobalThis.__result = browserPilot.resolve(${JSON.stringify(ref)});`, vm.createContext(context));
+	assert.equal((context.__result as { el?: FakeElement }).el, visible);
 });
 
 test("browserPilot stdlib exposes its current helper namespace", () => {

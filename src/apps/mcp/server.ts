@@ -10,7 +10,7 @@ import { packageVersion } from "../daemon/packageInfo.js";
 import { invokeDaemonTool } from "./client.js";
 import { getJsonPath } from "../../utils/jsonPath.js";
 import { redactSensitiveText, redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
-import { PAGE_OBSERVATION_VIEW_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
+import { PAGE_OBSERVATION_VIEW_JSON_SCHEMA, type PageObservationV3 } from "../../kernels/abml/pageObservation.js";
 import { isPageObservationV3, isPageObservationView } from "../../validation/pageContracts.js";
 import { OBSERVATION_RESOURCE_SCHEMA, OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
 import { publicToolValue } from "../../utils/toolResult.js";
@@ -117,8 +117,31 @@ function validObservationResourceTarget(descriptor: ObservationResourceDescripto
 	if (descriptor.contentSection !== undefined || typeof descriptor.jsonPath !== "string") return false;
 	if (descriptor.kind === "template-instances") return /^snapshotProjection\.templates\[\d+\]\.instanceRefs$/.test(descriptor.jsonPath);
 	if (descriptor.kind === "collection-window") return /^collections\[\d+\]$/.test(descriptor.jsonPath);
-	if (descriptor.kind === "details") return /^(treeDiff|causal|relations)$/.test(descriptor.jsonPath);
+	if (descriptor.kind === "action-space") return descriptor.jsonPath === "actionSpace";
+	if (descriptor.kind === "details") return /^(treeDiff|causal|relations|snapshotProjection|collections|\$)$/.test(descriptor.jsonPath);
 	return false;
+}
+
+function completeSemanticObservation(observation: PageObservationV3): Record<string, unknown> {
+	return {
+		schema: observation.schema,
+		tool: observation.tool,
+		model: observation.model,
+		canonical: false,
+		target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
+		snapshot: { snapshotId: observation.snapshot.snapshotId, capturedAt: observation.snapshot.capturedAt, ttlMs: observation.snapshot.ttlMs },
+		...(observation.content ? { content: observation.content } : {}),
+		...(observation.gist ? { gist: observation.gist } : {}),
+		...(observation.outline ? { outline: observation.outline } : {}),
+		...(observation.actionSpace ? { actionSpace: observation.actionSpace } : {}),
+		...(observation.relations ? { relations: observation.relations } : {}),
+		...(observation.inference ? { inference: observation.inference } : {}),
+		...(observation.causal ? { causal: observation.causal } : {}),
+		...(observation.treeDiff ? { treeDiff: observation.treeDiff } : {}),
+		...(observation.snapshotProjection ? { snapshotProjection: observation.snapshotProjection } : {}),
+		...(observation.collections ? { collections: observation.collections } : {}),
+		providers: Object.fromEntries(Object.entries(observation.providers).map(([provider, item]) => [provider, { status: item.status, ...(item.reason ? { reason: item.reason } : {}) }])),
+	};
 }
 
 export function registerMcpObservationResources(details: Record<string, unknown> | undefined, projectRoot: string): McpContent[] {
@@ -139,7 +162,7 @@ export function registerMcpObservationResources(details: Record<string, unknown>
 			|| descriptor.mimeType !== "application/json" || typeof descriptor.name !== "string" || !descriptor.name.trim()
 			|| typeof descriptor.snapshotId !== "string" || !descriptor.snapshotId.trim() || typeof descriptor.ref !== "string" || !descriptor.ref.trim()
 			|| descriptor.label !== undefined && typeof descriptor.label !== "string"
-			|| !["template-instances", "collection-window", "content", "details"].includes(descriptor.kind)
+			|| !["action-space", "template-instances", "collection-window", "content", "details"].includes(descriptor.kind)
 			|| !Number.isFinite(descriptor.expiresAt) || descriptor.expiresAt <= now || !validObservationResourceTarget(descriptor)) continue;
 		observationResources.set(token, { ...descriptor, projectRoot: resolvedProjectRoot });
 		while (observationResources.size > MAX_OBSERVATION_RESOURCES) observationResources.delete(observationResources.keys().next().value!);
@@ -171,7 +194,7 @@ function observationSummary(value: Record<string, unknown>): string {
 	const target = record(value.target);
 	const content = record(value.content);
 	const title = record(value.gist).title;
-	const actionables = Array.isArray(value.actionables) ? value.actionables.length : 0;
+	const actionables = typeof record(record(value.actionSpace).coverage).returned === "number" ? Number(record(record(value.actionSpace).coverage).returned) : 0;
 	const frontier = Array.isArray(record(value.frontier).items) ? record(value.frontier).items as unknown[] : [];
 	return `Observed ${typeof title === "string" ? title : typeof target.url === "string" ? target.url : "page"}: ${actionables} actionables, ${frontier.length} expandable regions${content.complete === false ? ", additional content available" : ""}.`;
 }
@@ -286,6 +309,8 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 			const section = observation.content ? semanticContentSections(observation.content)[descriptor.contentSection] : undefined;
 			if (!section) throw new Error("Observation content region is unavailable");
 			value = { label: section.label, text: section.text };
+		} else if (descriptor.jsonPath === "$") {
+			value = completeSemanticObservation(observation);
 		} else if (descriptor.jsonPath) {
 			const selected = getJsonPath(observation, descriptor.jsonPath);
 			if (!selected.exists) throw new Error(`Observation resource path is unavailable: ${descriptor.ref}`);

@@ -3,8 +3,7 @@ import { redactSensitiveValue } from "../artifacts/artifactPrivacy.js";
 import { pruneObservationArtifacts, saveTextArtifact } from "../artifacts/artifactFiles.js";
 import type { PageObservationV3, PageObservationView } from "../kernels/abml/pageObservation.js";
 import { publicToolValue, type BrowserTextCommandResult } from "../utils/toolResult.js";
-import { OBSERVATION_RESOURCES_DETAIL_KEY, projectObservationResources } from "./observe/observationResources.js";
-import { createCodedError } from "../utils/codedError.js";
+import { OBSERVATION_RESOURCES_DETAIL_KEY, projectObservationOverflow, projectObservationResources } from "./observe/observationResources.js";
 
 type ArtifactContext = { cwd?: string } | undefined;
 
@@ -23,12 +22,13 @@ export async function pageObservationResult(options: PageObservationResultOption
 	const artifactText = stableJson(options.observation);
 	const saved = await saveTextArtifact(options.ctx, options.artifactPath, options.fallbackName, artifactText);
 	await pruneObservationArtifacts(saved.path);
-	const projected = projectObservationResources(options.observation, saved.path, options.intent);
-	const modelSafe = publicToolValue(redactSensitiveValue(projected.observation)) as PageObservationView;
-	const rendered = JSON.stringify(modelSafe);
-	const bytes = Buffer.byteLength(rendered, "utf8");
-	if (bytes > MAX_OBSERVATION_RESULT_BYTES) {
-		throw createCodedError({ name: "ObservationResultError", code: "OBSERVATION_TOO_LARGE", message: "PageObservation exceeds the agent response budget", details: { bytes, maxBytes: MAX_OBSERVATION_RESULT_BYTES } });
+	let projected = projectObservationResources(options.observation, saved.path, options.intent);
+	let modelSafe = publicToolValue(redactSensitiveValue(projected.observation)) as PageObservationView;
+	let rendered = JSON.stringify(modelSafe);
+	if (Buffer.byteLength(rendered, "utf8") > MAX_OBSERVATION_RESULT_BYTES) {
+		projected = projectObservationOverflow(options.observation, saved.path);
+		modelSafe = publicToolValue(redactSensitiveValue(projected.observation)) as PageObservationView;
+		rendered = JSON.stringify(modelSafe);
 	}
 	return {
 		content: [{ type: "text", text: rendered }],

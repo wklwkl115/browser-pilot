@@ -1,10 +1,10 @@
-import type { Entity } from "../../kernels/abml/entity.js";
+import type { Entity, EntityAction, EntityState } from "../../kernels/abml/entity.js";
 import type { EntityDiff } from "../../kernels/abml/diff.js";
 import type { TreeDiff } from "../../kernels/abml/treeDiff.js";
 import type { CausalSummary } from "../../kernels/abml/causal.js";
 import { causalFiredHint } from "../../kernels/abml/causal.js";
 import { isRecord } from "../../utils/params.js";
-import { PAGE_OBSERVATION_SCHEMA_V3, type CollectionSummary, type CompactActionable, type ObservationSnapshot, type PageObservationV3, type PageTarget, type ProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
+import { PAGE_OBSERVATION_SCHEMA_V3, type AgentActionSpace, type CollectionSummary, type CompactActionable, type ObservationSnapshot, type PageObservationV3, type PageTarget, type ProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
 import type { CollectionModel } from "../../kernels/abml/collections.js";
 import type { SnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 
@@ -14,6 +14,7 @@ type PageObservationInput = {
 	content: string;
 	headings?: string[];
 	contentComplete?: boolean;
+	actionCaptureComplete?: boolean;
 	url?: string;
 	activeTabId?: unknown;
 	snapshot: Record<string, unknown>;
@@ -35,16 +36,72 @@ type ProviderFailureReason = {
 	details?: Record<string, unknown>;
 };
 
-function compactActionables(entities: Entity[], focus: Record<string, unknown>): CompactActionable[] {
+const ACTION_STATE_DEFAULTS: EntityState = { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true };
+
+function actionStateDelta(state: EntityState): Partial<EntityState> | undefined {
+	const delta = Object.fromEntries(Object.entries(state).filter(([key, value]) => value !== (ACTION_STATE_DEFAULTS as unknown as Record<string, unknown>)[key])) as Partial<EntityState>;
+	return Object.keys(delta).length ? delta : undefined;
+}
+
+function fallbackActions(entity: Entity): EntityAction[] {
+	return entity.state.editable ? ["edit"] : ["click"];
+}
+
+function actionScope(entity: Entity): { key: string; name?: string; size?: number; position?: number } | undefined {
+	if (entity.scope?.key) return entity.scope;
+	const key = typeof entity.hints?.containerKey === "string"
+		? entity.hints.containerKey
+		: typeof entity.hints?.containerRole === "string"
+			? `${entity.hints.containerRole}\u0000${typeof entity.hints.containerName === "string" ? entity.hints.containerName : ""}\u0000${entity.structure?.setSize ?? ""}`
+			: undefined;
+	if (!key) return undefined;
+	return {
+		key,
+		...(typeof entity.hints?.containerName === "string" ? { name: entity.hints.containerName } : {}),
+		...(typeof entity.structure?.setSize === "number" ? { size: entity.structure.setSize } : {}),
+		...(typeof entity.structure?.posInSet === "number" ? { position: entity.structure.posInSet } : {}),
+	};
+}
+
+function compactActionSpace(entities: Entity[], focus: Record<string, unknown>, captureComplete: boolean): AgentActionSpace {
 	const primaryRefs = Array.isArray(focus.primary_entities)
 		? focus.primary_entities.flatMap((item) => typeof item === "string" ? [item] : isRecord(item) && typeof item.ref === "string" ? [item.ref] : [])
 		: [];
-	const byRef = new Map(entities.map((entity) => [entity.ref, entity]));
-	return primaryRefs.flatMap((ref) => {
-		const entity = byRef.get(ref);
-		if (!entity) return [];
-		return [{ ref, kind: entity.kind, ...(entity.name ? { name: entity.name } : {}), ...(entity.state && Object.keys(entity.state).length ? { state: entity.state } : {}) }];
+	const rank = new Map(primaryRefs.map((ref, index) => [ref, index]));
+	const candidates = entities
+		.map((entity, index) => ({ entity, index }))
+		.filter(({ entity }) => entity.actionability !== undefined || entity.kind === "control")
+		.sort((a, b) => (rank.get(a.entity.ref) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.entity.ref) ?? Number.MAX_SAFE_INTEGER)
+			|| (a.entity.actionability?.confidence === "high" ? 0 : 1) - (b.entity.actionability?.confidence === "high" ? 0 : 1)
+			|| a.index - b.index);
+	const scopeIds = new Map<string, string>();
+	const scopes: AgentActionSpace["scopes"] = [];
+	const items: CompactActionable[] = candidates.map(({ entity }) => {
+		const scope = actionScope(entity);
+		let compactScope: CompactActionable["scope"];
+		if (scope) {
+			let id = scopeIds.get(scope.key);
+			if (!id) {
+				id = `scope-${scopeIds.size + 1}`;
+				scopeIds.set(scope.key, id);
+				scopes.push({ id, ...(scope.name ? { name: scope.name } : {}), ...(scope.size ? { size: scope.size } : {}) });
+			}
+			compactScope = { id, ...(scope.position ? { position: scope.position } : {}) };
+		}
+		const state = actionStateDelta(entity.state);
+		return {
+			ref: entity.ref,
+			kind: entity.kind,
+			role: entity.role,
+			...(entity.name ? { name: entity.name } : {}),
+			actions: entity.actionability?.actions ?? fallbackActions(entity),
+			...(entity.actionability?.hint ? { hint: entity.actionability.hint } : {}),
+			confidence: entity.actionability?.confidence ?? "medium",
+			...(compactScope ? { scope: compactScope } : {}),
+			...(state ? { state } : {}),
+		};
 	});
+	return { defaults: { state: ACTION_STATE_DEFAULTS }, coverage: { captured: items.length, returned: items.length, captureComplete, projectionComplete: true }, scopes, items };
 }
 
 function collectionSummaries(collections: CollectionModel[]): CollectionSummary[] {
@@ -62,7 +119,6 @@ function collectionSummaries(collections: CollectionModel[]): CollectionSummary[
 			...(frontierNeeded ? { frontierRef: `frontier:collection:${collection.collectionId}` } : {}),
 			collectionId: collection.collectionId,
 			itemRefCount: collection.itemRefCount,
-			...(typeof collection.hiddenCount === "number" ? { hiddenCount: collection.hiddenCount } : {}),
 			...(collection.containerRole ? { containerRole: collection.containerRole } : {}),
 			...(collection.containerNameContext ? { containerNameContext: collection.containerNameContext } : {}),
 			...(collection.containerNameSource ? { containerNameSource: collection.containerNameSource } : {}),
@@ -139,7 +195,7 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 	const snapshot = observationSnapshot(input.snapshot);
 	const target = pageTarget(snapshot, input.url, input.activeTabId);
 	const reason = reanchorReason(input.summary.reanchorReason);
-	const actionables = compactActionables(input.entities, focus);
+	const actionSpace = compactActionSpace(input.entities, focus, input.actionCaptureComplete !== false);
 	return {
 		schema: PAGE_OBSERVATION_SCHEMA_V3,
 		tool: "browser_observe",
@@ -154,7 +210,7 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 		...(gist ? { gist } : {}),
 		...(outline ? { outline: outline.filter(isRecord) as Array<Record<string, unknown>> } : {}),
 		...(input.entities.length ? { entities: input.entities } : {}),
-		...(actionables.length ? { actionables } : {}),
+		actionSpace,
 		...(isRecord(focus.relations) ? { relations: focus.relations as PageObservationV3["relations"] } : {}),
 		...(isRecord(input.summary.identity) ? { identity: input.summary.identity } : {}),
 		...(isRecord(input.summary.inference) ? { inference: input.summary.inference as PageObservationV3["inference"] } : {}),

@@ -15,11 +15,11 @@ test("page-world scan bundle validates empty and fully populated v1 captures", (
 		content: { headings: ["Checkout"] },
 		structure: {
 			actionables: [
-				{ index: 0, selector: "#pay", tag: "button", role: "button", label: "Pay now", text: "Pay now", clickable: true, editable: false, disabled: false, focused: false, handlers: [], rect: { x: 1, y: 2, width: 90, height: 30 }, documentRect: { x: 1, y: 202, width: 90, height: 30 }, point: { x: 46, y: 17 }, hitOk: true, hitTarget: null, priority: 100 },
+				{ index: 0, selector: "#pay", tag: "button", role: "button", label: "Pay now", text: "Pay now", clickable: true, editable: false, actionConfidence: "high", disabled: false, focused: false, handlers: [], rect: { x: 1, y: 2, width: 90, height: 30 }, documentRect: { x: 1, y: 202, width: 90, height: 30 }, point: { x: 46, y: 17 }, hitOk: true, hitTarget: null, priority: 100 },
 				{ selector: "#dialog", role: "dialog", name: "Checkout", hidden: true, referenceOnly: true },
 				{ sourceSelector: "#open", sourceRole: "button", sourceName: "Open", controlsSelectors: ["#dialog"], relationOnly: true },
 			],
-			listHints: [{ selector: "#orders > li", itemCount: 10, hiddenCount: 7, firstItemPreview: "Order 1", sampleHidden: ["Order 4"] }],
+			listHints: [{ selector: "#orders > li", itemCount: 10, firstItemPreview: "Order 1" }],
 			canvasRegions: [{ index: 0, tag: "canvas", role: "img", action: "Chart", label: "Chart", selector: "#chart", point: { x: 10, y: 10 }, rect: { x: 0, y: 0, width: 20, height: 20 }, hitOk: true, clickable: false }],
 		},
 		signals: {

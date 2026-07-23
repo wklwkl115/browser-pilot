@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CollectionSummary, CompactCollection, ObservationFrontierItem, PageObservationContent, PageObservationV3, PageObservationView, PublicProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
+import type { AgentActionSpace, CollectionSummary, CompactCollection, ObservationFrontierItem, PageObservationContent, PageObservationV3, PageObservationView, PublicProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
 import type { SnapshotProjection, SnapshotProjectionTemplate } from "../../kernels/abml/snapshotProjection.js";
 import type { TreeDiffChangedBucket, TreeDiffInstanceBucket, TreeTemplateDiff } from "../../kernels/abml/treeDiff.js";
 import { computeRelevanceMap } from "../../kernels/evidence/distill/relevance.js";
@@ -12,6 +12,7 @@ const ROOT_HEADINGS_LIMIT = 16;
 const ROOT_OUTLINE_LIMIT = 8;
 const ROOT_FRONTIER_LIMIT = 12;
 const ROOT_STRUCTURE_LIMIT = 12;
+const ROOT_RESULT_TARGET_BYTES = 30 * 1024;
 
 export const OBSERVATION_RESOURCE_URI_PREFIX = "browser-pilot://observation/";
 export const OBSERVATION_RESOURCES_DETAIL_KEY = "browser-pilot/internal-observation-resources";
@@ -122,6 +123,22 @@ function descriptor(observation: PageObservationV3, path: string, input: Omit<Ob
 	};
 }
 
+function fullObservationResource(observation: PageObservationV3, path: string, ref: string, label: string): { resource: ObservationResourceDescriptor; item: ObservationFrontierItem } {
+	const resource = descriptor(observation, path, { name: label, ref, kind: "details", label, jsonPath: "$" });
+	return { resource, item: { ref, kind: "details", state: "folded", label, resourceUri: resource.uri } };
+}
+
+function actionSpaceWindow(actionSpace: AgentActionSpace, count: number): AgentActionSpace {
+	const items = actionSpace.items.slice(0, count);
+	const scopeIds = new Set(items.flatMap((item) => item.scope ? [item.scope.id] : []));
+	return {
+		...actionSpace,
+		coverage: { ...actionSpace.coverage, returned: items.length, projectionComplete: items.length === actionSpace.coverage.captured },
+		scopes: actionSpace.scopes.filter((scope) => scopeIds.has(scope.id)),
+		items,
+	};
+}
+
 function compactInstanceBucket(bucket: TreeDiffInstanceBucket): TreeDiffInstanceBucket {
 	return { count: bucket.count, instances: bucket.instances.slice(0, ROOT_SAMPLE_SIZE) };
 }
@@ -159,15 +176,13 @@ function projectTemplates(observation: PageObservationV3, path: string, resource
 	const available = deltaOnly ? projection.templates.filter((template) => template.delta || template.deltaOnly) : projection.templates;
 	if (!available.length) return undefined;
 	const selected = available.slice(0, ROOT_STRUCTURE_LIMIT);
-	if (available.length > selected.length) items.push({
-		ref: "frontier:templates:unavailable",
-		kind: "details",
-		state: "unavailable",
-		label: "Additional structure templates",
-		observed: selected.length,
-		total: available.length,
-		unavailableReason: `${available.length - selected.length} templates omitted from the root projection; read the full observation artifact only if necessary`,
-	});
+	if (available.length > selected.length) {
+		const ref = "frontier:templates:unavailable";
+		const label = "Complete structure templates";
+		const resource = descriptor(observation, path, { name: label, ref, kind: "details", label, jsonPath: "snapshotProjection" });
+		resources.push(resource);
+		items.push({ ref, kind: "details", state: "folded", label, observed: selected.length, total: available.length, resourceUri: resource.uri });
+	}
 	const templates = selected.map((template) => {
 		const index = projection.templates.indexOf(template);
 		const compact = compactTemplate(template);
@@ -182,22 +197,25 @@ function projectTemplates(observation: PageObservationV3, path: string, resource
 	return { summary: projection.summary, templates };
 }
 
-function limitedFrontier(resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]) {
-	const priority: Record<ObservationFrontierItem["kind"], number> = { details: 0, "collection-window": 1, content: 2, "template-instances": 3 };
-	const selected = items
+function limitedFrontier(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]) {
+	const priority: Record<ObservationFrontierItem["kind"], number> = { "action-space": 0, details: 1, "collection-window": 2, content: 3, "template-instances": 4 };
+	const itemPriority = (item: ObservationFrontierItem): number => item.kind === "action-space" ? -2 : item.ref === "frontier:content:root" || item.state === "unavailable" ? -1 : priority[item.kind];
+	const ranked = items
 		.map((item, index) => ({ item, index }))
-		.sort((a, b) => (a.item.ref === "frontier:content:root" || a.item.state === "unavailable" ? -1 : priority[a.item.kind]) - (b.item.ref === "frontier:content:root" || b.item.state === "unavailable" ? -1 : priority[b.item.kind]) || a.index - b.index)
-		.slice(0, ROOT_FRONTIER_LIMIT)
-		.map(({ item }) => item);
-	const omitted = items.length - selected.length;
+		.sort((a, b) => itemPriority(a.item) - itemPriority(b.item) || a.index - b.index);
+	const selectedCount = ranked.length > ROOT_FRONTIER_LIMIT ? ROOT_FRONTIER_LIMIT - 1 : ROOT_FRONTIER_LIMIT;
+	const selected = ranked.slice(0, selectedCount).map(({ item }) => item);
+	const omitted = ranked.length - selected.length;
+	let fallbackResource: ObservationResourceDescriptor | undefined;
 	if (omitted > 0) {
-		// ponytail: one bounded root window; add a cursor-backed frontier index only if narrower intents prove insufficient.
-		selected.push({ ref: "frontier:budget", kind: "details", state: "unavailable", label: "Additional semantic regions", unavailableReason: `${omitted} regions omitted by the response budget; call browser_observe with a narrower intent` });
+		const fallback = fullObservationResource(observation, path, "frontier:budget", "Complete semantic observation");
+		fallbackResource = fallback.resource;
+		selected.push({ ...fallback.item, observed: selected.length, total: ranked.length });
 	}
 	const visibleUris = new Set(selected.flatMap((item) => item.resourceUri ? [item.resourceUri] : []));
 	return {
 		items: selected,
-		resources: resources.filter((resource) => visibleUris.has(resource.uri)),
+		resources: [...resources.filter((resource) => visibleUris.has(resource.uri)), ...(fallbackResource ? [fallbackResource] : [])],
 		refs: new Set(selected.map((item) => item.ref)),
 	};
 }
@@ -245,15 +263,13 @@ function projectRelations(observation: PageObservationV3, path: string, resource
 function projectCollections(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): CompactCollection[] | undefined {
 	if (!observation.collections?.length) return undefined;
 	const selected = observation.collections.slice(0, ROOT_STRUCTURE_LIMIT);
-	if (observation.collections.length > selected.length) items.push({
-		ref: "frontier:collections:unavailable",
-		kind: "details",
-		state: "unavailable",
-		label: "Additional collections",
-		observed: selected.length,
-		total: observation.collections.length,
-		unavailableReason: `${observation.collections.length - selected.length} collections omitted from the root projection; read the full observation artifact only if necessary`,
-	});
+	if (observation.collections.length > selected.length) {
+		const ref = "frontier:collections:unavailable";
+		const label = "Complete collections";
+		const resource = descriptor(observation, path, { name: label, ref, kind: "details", label, jsonPath: "collections" });
+		resources.push(resource);
+		items.push({ ref, kind: "details", state: "folded", label, observed: selected.length, total: observation.collections.length, resourceUri: resource.uri });
+	}
 	return selected.map((collection: CollectionSummary, index) => {
 		const needsResource = collection.completeness !== "complete" || collection.itemRefs.length > ROOT_SAMPLE_SIZE || Boolean(collection.evidence?.length) || Boolean(collection.dataSources?.length);
 		const ref = collection.frontierRef ?? `frontier:collection:${collection.collectionId ?? index}`;
@@ -301,28 +317,27 @@ export function projectObservationResources(observation: PageObservationV3, path
 	const treeDiff = projectTreeDiff(observation, path, resources, items);
 	const causal = projectCausal(observation, path, resources, items);
 	const relations = projectRelations(observation, path, resources, items);
-	const frontier = limitedFrontier(resources, items);
-	const publicCollections = collections?.map((collection) => {
-		if (!collection.frontierRef || frontier.refs.has(collection.frontierRef)) return collection;
-		const { frontierRef: _frontierRef, ...withoutFrontier } = collection;
-		return withoutFrontier;
-	});
 	const headings = observation.content?.headings?.slice(0, ROOT_HEADINGS_LIMIT);
 	const title = headings?.[0];
 	const outline = compactOutline(observation.outline);
 	const diagnostics = compactDiagnostics(observation.diagnostics);
-	return {
-		observation: {
+	const buildView = (frontier: ReturnType<typeof limitedFrontier>, actionSpace?: AgentActionSpace): PageObservationView => {
+		const publicCollections = collections?.map((collection) => {
+			if (!collection.frontierRef || frontier.refs.has(collection.frontierRef)) return collection;
+			const { frontierRef: _frontierRef, ...withoutFrontier } = collection;
+			return withoutFrontier;
+		});
+		return {
 			schema: observation.schema,
 			tool: observation.tool,
 			model: observation.model,
-			canonical: observation.canonical,
+			canonical: false,
 			target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
 			snapshot: { snapshotId: observation.snapshot.snapshotId, capturedAt: observation.snapshot.capturedAt, ttlMs: observation.snapshot.ttlMs },
 			...(observation.gist || title ? { gist: { ...(observation.gist ?? {}), ...(title ? { title } : {}) } } : {}),
 			...(rootSection ? { content: { text: rootSection.text.slice(0, ROOT_CONTENT_MAX_CHARS), ...(headings?.length ? { headings } : {}), complete: observation.content?.complete !== false && sections.length <= 1 && rootSection.text.length <= ROOT_CONTENT_MAX_CHARS } } : {}),
 			...(outline?.length ? { outline } : {}),
-			...(observation.actionables?.length ? { actionables: observation.actionables.slice(0, 10) } : {}),
+			...(actionSpace ? { actionSpace } : {}),
 			...(snapshotProjection ? { snapshotProjection } : {}),
 			...(publicCollections?.length ? { collections: publicCollections } : {}),
 			...(treeDiff ? { treeDiff } : {}),
@@ -333,7 +348,59 @@ export function projectObservationResources(observation: PageObservationV3, path
 			...(diagnostics ? { diagnostics } : {}),
 			...(observation.nextActions?.length ? { nextActions: observation.nextActions.slice(0, 8) } : {}),
 			frontier: { items: frontier.items },
+		};
+	};
+
+	let frontier = limitedFrontier(observation, path, resources, items);
+	const fullActionSpace = observation.actionSpace && actionSpaceWindow(observation.actionSpace, observation.actionSpace.items.length);
+	let projected = buildView(frontier, fullActionSpace);
+	if (fullActionSpace && Buffer.byteLength(JSON.stringify(projected), "utf8") > ROOT_RESULT_TARGET_BYTES) {
+		const ref = "frontier:action-space";
+		const label = "Complete action space";
+		const resource = descriptor(observation, path, { name: label, ref, kind: "action-space", label, jsonPath: "actionSpace" });
+		resources.push(resource);
+		items.push({ ref, kind: "action-space", state: "folded", label, observed: 0, total: fullActionSpace.coverage.captured, resourceUri: resource.uri });
+		frontier = limitedFrontier(observation, path, resources, items);
+		let low = 0;
+		let high = fullActionSpace.items.length;
+		while (low < high) {
+			const mid = Math.ceil((low + high) / 2);
+			const candidate = buildView(frontier, actionSpaceWindow(fullActionSpace, mid));
+			if (Buffer.byteLength(JSON.stringify(candidate), "utf8") <= ROOT_RESULT_TARGET_BYTES - 128) low = mid;
+			else high = mid - 1;
+		}
+		const actionItem = frontier.items.find((item) => item.ref === ref);
+		if (actionItem) actionItem.observed = low;
+		projected = buildView(frontier, actionSpaceWindow(fullActionSpace, low));
+	}
+	return { observation: projected, resources: frontier.resources };
+}
+
+export function projectObservationOverflow(observation: PageObservationV3, path: string): { observation: PageObservationView; resources: ObservationResourceDescriptor[] } {
+	const full = fullObservationResource(observation, path, "frontier:observation", "Complete semantic observation");
+	const resources = [full.resource];
+	const items = [full.item];
+	let actionSpace: AgentActionSpace | undefined;
+	if (observation.actionSpace) {
+		const ref = "frontier:action-space";
+		const label = "Complete action space";
+		const resource = descriptor(observation, path, { name: label, ref, kind: "action-space", label, jsonPath: "actionSpace" });
+		resources.unshift(resource);
+		items.unshift({ ref, kind: "action-space", state: "folded", label, observed: 0, total: observation.actionSpace.coverage.captured, resourceUri: resource.uri });
+		actionSpace = actionSpaceWindow(observation.actionSpace, 0);
+	}
+	return {
+		observation: {
+			schema: observation.schema,
+			tool: observation.tool,
+			model: observation.model,
+			canonical: false,
+			target: {},
+			snapshot: { snapshotId: observation.snapshot.snapshotId, capturedAt: observation.snapshot.capturedAt, ttlMs: observation.snapshot.ttlMs },
+			...(actionSpace ? { actionSpace } : {}),
+			providers: Object.fromEntries(Object.entries(observation.providers).map(([provider, item]) => [provider, { status: item.status }])),
+			frontier: { items },
 		},
-		resources: frontier.resources,
+		resources,
 	};
 }

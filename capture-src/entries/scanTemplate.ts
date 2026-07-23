@@ -277,24 +277,24 @@ export function scanPage(config: any) {
     HANDLER_CACHE.set(el, out);
     return out;
   }
-  function clickable(el, style) {
+  function clickConfidence(el, style, handlers) {
     const tag = el.tagName;
     const role = String(roleOf(el) || '').toLowerCase();
-    if ((tag === 'A' && el.hasAttribute && el.hasAttribute('href')) || tag === 'BUTTON' || tag === 'SUMMARY' || tag === 'LABEL' || tag === 'VIDEO') return true;
-    if (tag === 'CANVAS' && (el.onclick || el.getAttribute('onclick') || el.getAttribute('aria-label') || el.getAttribute('title') || (style && style.cursor === 'pointer'))) return true;
-    if (['button','link','menuitem','tab','checkbox','radio','switch','option'].includes(role)) return true;
-    if (el.onclick || el.getAttribute('onclick') || el.getAttribute('tabindex') !== null) return true;
-    if (frameworkHandlers(el).some(name => FRAMEWORK_ACTION_RE.test(name))) return true;
-    if (style && style.cursor === 'pointer') return true;
+    if ((tag === 'A' && el.hasAttribute && el.hasAttribute('href')) || tag === 'BUTTON' || tag === 'SUMMARY' || tag === 'LABEL' || tag === 'VIDEO') return 'high';
+    if (['button','link','menuitem','tab','checkbox','radio','switch','option'].includes(role)) return 'high';
+    if (el.onclick || el.getAttribute('onclick') || handlers.some(name => FRAMEWORK_ACTION_RE.test(name))) return 'high';
+    if (tag === 'CANVAS' && (el.getAttribute('aria-label') || el.getAttribute('title'))) return 'medium';
+    if (el.getAttribute('tabindex') !== null || (style && style.cursor === 'pointer')) return 'medium';
     const cls = String(el.className && typeof el.className === 'object' ? el.className.baseVal || '' : el.className || '').toLowerCase();
     const attrsText = [cls, el.id, el.getAttribute && el.getAttribute('aria-label'), el.getAttribute && el.getAttribute('title'), el.getAttribute && el.getAttribute('data-e2e'), el.getAttribute && el.getAttribute('data-e2e-state')].join(' ').toLowerCase();
-    return ACTIONABLE_RE.test(attrsText);
+    return ACTIONABLE_RE.test(attrsText) ? 'medium' : undefined;
   }
   function cssEscape(value) {
     try { return CSS && CSS.escape ? CSS.escape(String(value)) : String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
     catch (_) { return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
   }
   const SIBLING_SELECTOR_CACHE = new WeakMap();
+  const SELECTOR_CACHE = new WeakMap();
   function siblingSelectorInfo(parent, el) {
     let cache = SIBLING_SELECTOR_CACHE.get(parent);
     if (!cache) {
@@ -313,22 +313,35 @@ export function scanPage(config: any) {
     return { index: cache.order.get(el) || 1, total: cache.counts.get(tag) || 1 };
   }
   function selectorFor(el) {
-    if (el.id) return '#' + cssEscape(el.id);
+    const cached = SELECTOR_CACHE.get(el);
+    if (cached) return cached;
+    if (el === document.body) return 'body';
+    if (el === document.documentElement) return 'html';
+    if (el.id) {
+      const byId = '#' + cssEscape(el.id);
+      try { if (document.querySelectorAll(byId).length === 1) { SELECTOR_CACHE.set(el, byId); return byId; } } catch (_) { /* Invalid ids fall through to a structural selector. */ }
+    }
     const parts = [];
     let cur = el;
-    while (cur && cur.nodeType === Node.ELEMENT_NODE && cur !== document.body && cur !== document.documentElement && parts.length < 6) {
-      let part = cur.tagName.toLowerCase();
-      const cls = cleanClassValue(cur.className && typeof cur.className === 'object' ? cur.className.baseVal || '' : cur.className || '').split(/\s+/).filter(Boolean).slice(0, 2);
-      if (cls.length) part += '.' + cls.map(cssEscape).join('.');
+    let selector = '';
+    while (cur && cur.nodeType === Node.ELEMENT_NODE && cur !== document.documentElement) {
+      let part = cur === document.body ? 'body' : cur.tagName.toLowerCase();
       const parent = cur.parentElement;
-      if (parent) {
-        const siblingInfo = siblingSelectorInfo(parent, cur);
-        if (siblingInfo.total > 1) part += ':nth-of-type(' + siblingInfo.index + ')';
+      if (cur !== document.body) {
+        const cls = cleanClassValue(cur.className && typeof cur.className === 'object' ? cur.className.baseVal || '' : cur.className || '').split(/\s+/).filter(Boolean).slice(0, 2);
+        if (cls.length) part += '.' + cls.map(cssEscape).join('.');
+        if (parent) {
+          const siblingInfo = siblingSelectorInfo(parent, cur);
+          if (siblingInfo.total > 1) part += ':nth-of-type(' + siblingInfo.index + ')';
+        }
       }
       parts.unshift(part);
+      selector = parts.join(' > ');
+      try { if (document.querySelectorAll(selector).length === 1) break; } catch (_) { /* Keep expanding invalid partial selectors. */ }
       cur = parent;
     }
-    return parts.join(' > ');
+    SELECTOR_CACHE.set(el, selector);
+    return selector;
   }
   // Resolve an aria-controls/aria-owns idref list to target selectors, recording each target (even
   // hidden/collapsed — e.g. a closed combobox listbox or accordion panel) so it can be emitted as a
@@ -417,20 +430,28 @@ export function scanPage(config: any) {
     const nearEdge = Number(r.x || 0) <= 32 || Number(r.y || 0) <= 32 || Number(r.x || 0) + Number(r.width || 0) >= vw - 32 || Number(r.y || 0) + Number(r.height || 0) >= vh - 32;
     return { position: pos, edgeUtility: (pos === 'fixed' || pos === 'sticky') && small && nearEdge };
   }
-  function collectActionables(root, refElements, elements) {
+  function repeatedItemScope(el, itemScopes, root) {
+    for (let cursor = el; cursor && cursor !== root; cursor = cursor.parentElement) {
+      const scope = itemScopes.get(cursor);
+      if (scope) return scope;
+    }
+    return undefined;
+  }
+  function collectActionables(root, elements, itemScopes) {
     if (!root) return [];
     const source = elements;
     const out = [];
     let scanned = 0;
     for (const el of source) {
-      if (++scanned > Math.min(options.maxNodes, 4000)) break;
+      if (++scanned > options.maxNodes) break;
       if (!el || el.nodeType !== Node.ELEMENT_NODE || (SKIP.has(el.tagName) && el.tagName !== 'CANVAS') || isIgnored(el) || isHidden(el)) continue;
-      if ((el.tagName === 'svg' || el.tagName === 'SVG') && !isSvgInteractive(el)) continue;
+      if (el instanceof SVGElement && !isSvgInteractive(el)) continue;
       const style = styleOf(el);
       const handlers = frameworkHandlers(el);
       const action = actionNameOf(el);
       const isEditable = editable(el);
-      const isClickable = clickable(el, style);
+      const confidence = clickConfidence(el, style, handlers);
+      const isClickable = confidence !== undefined;
       if (!isEditable && !isClickable) continue;
       const visible = visibleInfo(el);
       if (!visible.inViewport) continue;
@@ -440,8 +461,8 @@ export function scanPage(config: any) {
       const selectedState = typeof el.selected === 'boolean' ? el.selected : selectedAttr === 'true' ? true : selectedAttr === 'false' ? false : undefined;
       const pressedAttr = el.getAttribute && el.getAttribute('aria-pressed');
       const currentAttr = el.getAttribute && el.getAttribute('aria-current');
-      const controlsSelectors = refTargets(el, 'aria-controls', refElements);
-      const ownsSelectors = refTargets(el, 'aria-owns', refElements);
+      const controlsSelectors = refTargets(el, 'aria-controls');
+      const ownsSelectors = refTargets(el, 'aria-owns');
       const expandedAttr = el.getAttribute && el.getAttribute('aria-expanded');
       const edgeHint = edgeUtilityHint(visible, style);
       let label = labelOf(el);
@@ -455,23 +476,25 @@ export function scanPage(config: any) {
         }
       }
       const displayLabel = !label ? borrowedHitTargetLabel(visible) : '';
-      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label, ...(displayLabel ? { displayLabel } : {}), text: elText, clickable: isClickable, editable: isEditable, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', focused: document.activeElement === el, ...(checkedState === undefined ? {} : { checked: checkedState }), ...(selectedState === undefined ? {} : { selected: selectedState }), ...((pressedAttr === 'true' || pressedAttr === 'false') ? { pressed: pressedAttr === 'true' } : {}), ...((expandedAttr === 'true' || expandedAttr === 'false') ? { expanded: expandedAttr === 'true' } : {}), ...(currentAttr ? { current: currentAttr } : {}), ...(el.tagName === 'INPUT' && el.type ? { inputKind: String(el.type).toLowerCase() } : {}), ...(controlsSelectors.length ? { controlsSelectors } : {}), ...(ownsSelectors.length ? { ownsSelectors } : {}), ...((expandedAttr === 'true' || expandedAttr === 'false') && controlsSelectors.length ? { expandedTargetSelectors: controlsSelectors } : {}), ...(edgeHint.position ? { position: edgeHint.position } : {}), ...(edgeHint.edgeUtility ? { edgeUtility: true } : {}), handlers: handlers.slice(0, 6), rect: visible.rect, documentRect: visible.documentRect, point: visible.point, hitOk: visible.hitOk, hitTarget: visible.hitTarget, ...((el.tagName === 'A' || el.tagName === 'AREA') && el.href ? { href: String(el.href) } : {}), ...(visible.hitOk === false && visible.occluderSelector ? { occluderSelector: visible.occluderSelector } : {}) };
+      const scope = repeatedItemScope(el, itemScopes, root);
+      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label, ...(displayLabel ? { displayLabel } : {}), text: elText, clickable: isClickable, editable: isEditable, actionConfidence: isEditable ? 'high' : confidence, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', focused: document.activeElement === el, ...(checkedState === undefined ? {} : { checked: checkedState }), ...(selectedState === undefined ? {} : { selected: selectedState }), ...((pressedAttr === 'true' || pressedAttr === 'false') ? { pressed: pressedAttr === 'true' } : {}), ...((expandedAttr === 'true' || expandedAttr === 'false') ? { expanded: expandedAttr === 'true' } : {}), ...(currentAttr ? { current: currentAttr } : {}), ...(el.tagName === 'INPUT' && el.type ? { inputKind: String(el.type).toLowerCase() } : {}), ...(controlsSelectors.length ? { controlsSelectors } : {}), ...(ownsSelectors.length ? { ownsSelectors } : {}), ...((expandedAttr === 'true' || expandedAttr === 'false') && controlsSelectors.length ? { expandedTargetSelectors: controlsSelectors } : {}), ...(edgeHint.position ? { position: edgeHint.position } : {}), ...(edgeHint.edgeUtility ? { edgeUtility: true } : {}), handlers: handlers.slice(0, 6), rect: visible.rect, documentRect: visible.documentRect, point: visible.point, hitOk: visible.hitOk, hitTarget: visible.hitTarget, ...(scope ? { scope } : {}), ...((el.tagName === 'A' || el.tagName === 'AREA') && el.href ? { href: String(el.href) } : {}), ...(visible.hitOk === false && visible.occluderSelector ? { occluderSelector: visible.occluderSelector } : {}) };
       item.priority = scoreActionable(item);
       out.push(item);
     }
-    return out.sort((a, b) => b.priority - a.priority || a.rect.y - b.rect.y || a.rect.x - b.rect.x).slice(0, 80).map((item, index) => ({ ...item, index }));
+    return out.sort((a, b) => b.priority - a.priority || a.rect.y - b.rect.y || a.rect.x - b.rect.x).map((item, index) => ({ ...item, index }));
   }
   function collectListHints(root, elements) {
-    if (!root) return [];
+    if (!root) return { hints: [], itemScopes: new WeakMap() };
     const containers = elements;
     const hints = [];
+    const itemScopes = new WeakMap();
     let scanned = 0;
     for (const container of containers) {
-      if (++scanned > Math.min(options.maxNodes, 3000)) break;
-      if (!container.children || container.children.length < 5 || isIgnored(container) || isHidden(container)) continue;
+      if (++scanned > options.maxNodes) break;
+      if (container instanceof SVGElement || !container.children || container.children.length < 5 || isIgnored(container) || isHidden(container)) continue;
       const groups = new Map();
       for (const child of Array.from(container.children)) {
-        if (!child || child.nodeType !== Node.ELEMENT_NODE || isIgnored(child) || isHidden(child)) continue;
+        if (!child || child.nodeType !== Node.ELEMENT_NODE || child instanceof SVGElement || isIgnored(child) || isHidden(child)) continue;
         const cls = cleanClassValue(child.className && typeof child.className === 'object' ? child.className.baseVal || '' : child.className || '').split(/\s+/).filter(Boolean).slice(0, 2).map(cssEscape).join('.');
         const key = child.tagName.toLowerCase() + (cls ? '.' + cls : '');
         const arr = groups.get(key) || [];
@@ -481,13 +504,16 @@ export function scanPage(config: any) {
       for (const [key, items] of groups.entries()) {
         if (items.length < 5) continue;
         const totalText = items.reduce((sum, item) => sum + clean(item.innerText || item.textContent || '', 500).length, 0);
+        if (!totalText) continue;
         const avgText = totalText / Math.max(1, items.length);
         if (avgText < 20 && items.length < 8) continue;
         const containerLabel = containerLabelOf(container);
-        hints.push({ selector: selectorFor(container) + ' > ' + key, ...(containerLabel ? { containerLabel } : {}), itemCount: items.length, hiddenCount: Math.max(0, items.length - 3), firstItemPreview: safePreviewOf(items[0]), sampleHidden: items.slice(3, 8).map(item => clean(item.innerText || item.textContent || '', 80)).filter(Boolean) });
+        const selector = selectorFor(container) + ' > ' + key;
+        hints.push({ selector, ...(containerLabel ? { containerLabel } : {}), itemCount: items.length, firstItemPreview: safePreviewOf(items[0]) });
+        items.forEach((item, index) => itemScopes.set(item, { key: selector, ...(containerLabel ? { name: containerLabel } : {}), position: index + 1, size: items.length }));
       }
     }
-    return hints.sort((a, b) => b.hiddenCount - a.hiddenCount || b.itemCount - a.itemCount).slice(0, 12);
+    return { hints: hints.sort((a, b) => b.itemCount - a.itemCount), itemScopes };
   }
   function collectCanvasRegions(root) {
     if (!root || !root.querySelectorAll) return [];
@@ -498,7 +524,7 @@ export function scanPage(config: any) {
       const visible = visibleInfo(el);
       if (!visible.inViewport) continue;
       const label = clean(el.getAttribute('aria-label') || el.getAttribute('title') || el.id || 'canvas region', 120);
-      out.push({ index: out.length, tag: 'canvas', role: el.getAttribute('role') || 'img', action: label, label, selector: selectorFor(el), point: visible.point, rect: visible.rect, hitOk: visible.hitOk, clickable: clickable(el, styleOf(el)) });
+      out.push({ index: out.length, tag: 'canvas', role: el.getAttribute('role') || 'img', action: label, label, selector: selectorFor(el), point: visible.point, rect: visible.rect, hitOk: visible.hitOk, clickable: clickConfidence(el, styleOf(el), frameworkHandlers(el)) !== undefined });
     }
     return out.slice(0, 12);
   }
@@ -540,13 +566,13 @@ export function scanPage(config: any) {
     }
     return { targets: Array.from(targetMap.values()), pairs };
   }
-  const refElements = new Map();
   hitTestIndex = 0;
   pseudoCheckCount = 0;
-  const actionables = collectActionables(scanRoot, refElements, scanElements);
+  const repeatedItems = collectListHints(scanRoot, scanElements);
+  const actionables = collectActionables(scanRoot, scanElements, repeatedItems.itemScopes);
   const { targets: refTargetsList, pairs: controlsPairs } = collectControlsPairs(scanRoot);
   const references = refTargetsList;
-  const listHints = collectListHints(scanRoot, scanElements);
+  const listHints = repeatedItems.hints;
   const canvasRegions = collectCanvasRegions(scanRoot);
   const rawPageText = String(document.body && document.body.innerText || '').replace(/\s+/g, ' ').trim();
   const pageText = rawPageText.slice(0, options.maxChars);
@@ -591,7 +617,9 @@ export function scanPage(config: any) {
     stats: {
       nodeCount,
       outputChars: pageText.length,
-      truncated
+      truncated,
+      actionableCount: actionables.length,
+      actionablesComplete: scanNodes.length <= Math.max(0, nodeLimit - 1)
     }
   };
 }

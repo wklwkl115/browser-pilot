@@ -12,6 +12,20 @@ type ScanVisionInput = ScanActionable | ScanCanvasRegion | Record<string, unknow
 export type EntityKind = Extract<RefKind, "element" | "control" | "text" | "region" | "media" | "frame">;
 export type EntitySource = "dom" | "ax" | "vision";
 
+export type EntityAction = "click" | "edit";
+export type EntityActionability = {
+	actions: EntityAction[];
+	hint?: string;
+	confidence: "high" | "medium";
+};
+
+export type EntityScope = {
+	key: string;
+	name?: string;
+	position?: number;
+	size?: number;
+};
+
 export type EntityState = {
 	visible: boolean;
 	occluded: boolean;
@@ -80,13 +94,15 @@ export type Entity = {
 	name?: string;
 	value?: string;
 	state: EntityState;
+	actionability?: EntityActionability;
+	scope?: EntityScope;
 	structure?: EntityStructure;
 	relations?: EntityRelation[];
 	source: EntitySource;
 	locators?: Locator[];
 	geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } };
 	children?: Entity[] | { handle: string; count: number };
-	hints?: { listContainer?: boolean; hiddenCount?: number; jsonPath?: string; selector?: string; [key: string]: unknown };
+	hints?: { listContainer?: boolean; jsonPath?: string; selector?: string; [key: string]: unknown };
 };
 
 export type ScanEntityContext = {
@@ -244,12 +260,24 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 	const backendNodeId = numberValue(node.backendNodeId);
 	const targetId = stringValue(node.targetId ?? node.cdpTargetId) || context.targetId;
 	const backendNodeIdBootstrap = isRecord(node.backendNodeIdBootstrap) ? node.backendNodeIdBootstrap : undefined;
+	const scope = isRecord(node.scope) ? node.scope : undefined;
+	const scopeKey = stringValue(scope?.key);
+	const scopeName = sanitizeSemanticText(scope?.name, 80);
+	const scopePosition = numberValue(scope?.position);
+	const scopeSize = numberValue(scope?.size);
+	const actions = [node.clickable === true ? "click" as const : undefined, node.editable === true ? "edit" as const : undefined]
+		.filter((action): action is "click" | "edit" => action !== undefined);
+	const rawActionHint = stringValue(node.action);
+	const actionHint = sanitizeSemanticText(rawActionHint, 80)
+		?? (rawActionHint && /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,79}$/u.test(rawActionHint) ? rawActionHint : undefined);
 	const entity: Omit<Entity, "ref"> = {
 		kind,
 		role,
 		...(name ? { name } : {}),
 		...(value ? { value } : {}),
 		state: actionEntityState(node),
+		...(actions.length ? { actionability: { actions, ...(actionHint ? { hint: actionHint } : {}), confidence: node.actionConfidence === "high" ? "high" : "medium" } } : {}),
+		...(scopeKey ? { scope: { key: scopeKey, ...(scopeName ? { name: scopeName } : {}), ...(scopePosition !== undefined ? { position: scopePosition } : {}), ...(scopeSize !== undefined ? { size: scopeSize } : {}) } } : {}),
 		source: "dom",
 		locators,
 		...(Object.keys(geometry).length ? { geometry } : {}),
@@ -330,7 +358,6 @@ export function buildRegionEntityFromListHint(node: ScanListHintInput, context: 
 	const locators = buildListHintLocators(node);
 	const nameParts = listHintNameParts(node, index);
 	const name = duplicateNames?.has(normalizeNameKey(nameParts.name)) ? disambiguatedName(nameParts.name, nameParts.context) : nameParts.name;
-	const hiddenCount = numberValue(node.hiddenCount);
 	const entity: Omit<Entity, "ref"> = {
 		kind: "region",
 		role: "list",
@@ -347,7 +374,6 @@ export function buildRegionEntityFromListHint(node: ScanListHintInput, context: 
 		locators,
 		hints: {
 			listContainer: true,
-			...(hiddenCount !== undefined ? { hiddenCount } : {}),
 			jsonPath: `data.structure.listHints[${index}]`,
 			selector: stringValue(node.selector),
 			...(nameParts.context && name === nameParts.name ? { containerNameContext: nameParts.context } : {}),
@@ -498,6 +524,7 @@ export function buildVisionRegionFromCanvasActionable(node: ScanVisionInput, con
 			editable: false,
 			inViewport: Boolean(point || geometry.box),
 		},
+		...(node.clickable === true ? { actionability: { actions: ["click"], hint: name, confidence: "medium" } } : {}),
 		source: "vision",
 		locators,
 		...(Object.keys(geometry).length ? { geometry } : {}),

@@ -93,6 +93,7 @@ function buildCanonicalPageObservation(
 		content,
 		headings: data.content.headings,
 		contentComplete: data.stats.truncated !== true,
+		actionCaptureComplete: data.stats.actionablesComplete ?? data.stats.truncated !== true,
 		url: data.page.url,
 		activeTabId: bridge.defaultTabId,
 		snapshot: snapshotMeta,

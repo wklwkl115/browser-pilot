@@ -30,11 +30,11 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 	defineBrowserCommand(commands, {
 		name: "browser_observe",
 		label: "Browser Observe",
-		description: "Return the canonical ABML PageObservation for the current tab.",
-		promptSnippet: "Observe the current page as the canonical ABML page model with structure, actionables, refs, context, evidence, deltas, and diagnostics.",
+		description: "Return a decision-complete, semantically compressed ABML PageObservation for the current tab.",
+		promptSnippet: "Observe the current page as a compact ABML page model with a complete captured action space, refs, context, evidence, deltas, and expandable semantic resources.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
-			"Use browser_observe only for page understanding. It returns canonical page content directly and exposes additional semantic regions as MCP resources.",
+			"Use browser_observe only for page understanding. It returns a bounded semantic projection and exposes omitted captured actions and additional page regions as MCP resources.",
 		],
 		parameters: strictCommandParameters({
 			intent: Type.Optional(Type.String({ description: "Optional relevance hint" })),

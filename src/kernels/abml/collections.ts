@@ -49,7 +49,6 @@ export type CollectionModel = {
 	itemRefs: string[];
 	declaredTotal?: number;
 	estimatedTotal?: number;
-	hiddenCount?: number;
 
 	completeness: CollectionCompleteness;
 	confidence: CollectionConfidence;
@@ -94,9 +93,9 @@ type DraftCollection = {
 	observedCount: number;
 	itemRefs: string[];
 	itemRefCount?: number;
+	observedPositions?: number;
 	declaredTotal?: number;
 	estimatedTotal?: number;
-	hiddenCount?: number;
 	sourceRank: number;
 	preferredCompleteness?: CollectionCompleteness;
 	preferredConfidence?: CollectionConfidence;
@@ -249,7 +248,14 @@ function addDraft(map: Map<string, DraftCollection>, key: string, draft: DraftCo
 		map.set(key, draft);
 		return;
 	}
-	const refs = uniq([...existing.itemRefs, ...draft.itemRefs]);
+	const observedPositions = Math.max(existing.observedPositions ?? 0, draft.observedPositions ?? 0) || undefined;
+	const refs = existing.observedPositions && draft.observedPositions
+		? uniq([...existing.itemRefs, ...draft.itemRefs])
+		: draft.observedPositions
+			? draft.itemRefs
+			: existing.observedPositions
+				? existing.itemRefs
+				: uniq([...existing.itemRefs, ...draft.itemRefs]);
 	const evidence = [...existing.evidence, ...draft.evidence];
 	const dataSources = [...existing.dataSources, ...draft.dataSources];
 	map.set(key, {
@@ -261,12 +267,12 @@ function addDraft(map: Map<string, DraftCollection>, key: string, draft: DraftCo
 		containerNameContext: existing.containerNameContext ?? draft.containerNameContext,
 		containerNameSource: existing.containerNameSource ?? draft.containerNameSource,
 		itemRole: existing.itemRole ?? draft.itemRole,
-		observedCount: Math.max(existing.observedCount, draft.observedCount),
+		observedCount: observedPositions ?? Math.max(existing.observedCount, draft.observedCount),
 		itemRefs: refs,
-		itemRefCount: Math.max(existing.itemRefCount ?? existing.itemRefs.length, draft.itemRefCount ?? draft.itemRefs.length),
+		itemRefCount: observedPositions ?? Math.max(existing.itemRefCount ?? existing.itemRefs.length, draft.itemRefCount ?? draft.itemRefs.length),
+		observedPositions,
 		declaredTotal: existing.declaredTotal ?? draft.declaredTotal,
 		estimatedTotal: Math.max(existing.estimatedTotal ?? 0, draft.estimatedTotal ?? 0) || undefined,
-		hiddenCount: Math.max(existing.hiddenCount ?? 0, draft.hiddenCount ?? 0) || undefined,
 		sourceRank: Math.min(existing.sourceRank, draft.sourceRank),
 		preferredCompleteness: existing.preferredCompleteness ?? draft.preferredCompleteness,
 		preferredConfidence: existing.preferredConfidence ?? draft.preferredConfidence,
@@ -292,12 +298,12 @@ function templateDraft(template: StructureTemplate, sourceRank: number): DraftCo
 		...(folded ? { preferredCompleteness: "folded", preferredConfidence: "medium" } : {}),
 		dataSources: [{
 			source: "aria",
-			summary: template.setSize !== undefined ? `template count ${observedCount} with declared total ${template.setSize}` : `template count ${observedCount}`,
+			summary: template.setSize !== undefined ? `template has ${observedCount} entity instances across ${template.setSize} declared item positions` : `template has ${observedCount} entity instances`,
 			confidence: "medium",
 		}],
 		evidence: [{
 			source: "templates",
-			summary: `repeated ${template.role} template observed ${observedCount}`,
+			summary: `repeated ${template.role} template contains ${observedCount} entity instances`,
 			ref: template.sample?.ref,
 		}],
 	};
@@ -320,12 +326,12 @@ function snapshotDraft(template: SnapshotProjectionTemplate): DraftCollection {
 		...(folded ? { preferredCompleteness: "folded", preferredConfidence: "medium" } : {}),
 		dataSources: [{
 			source: "snapshot",
-			summary: template.setSize !== undefined ? `snapshot projection count ${observedCount} with declared total ${template.setSize}` : `snapshot projection count ${observedCount}`,
+			summary: template.setSize !== undefined ? `snapshot projection has ${observedCount} entity instances across ${template.setSize} declared item positions` : `snapshot projection has ${observedCount} entity instances`,
 			confidence: "medium",
 		}],
 		evidence: [{
 			source: "templates",
-			summary: `snapshot template ${template.templateKey} observed ${observedCount}`,
+			summary: `snapshot template ${template.templateKey} contains ${observedCount} entity instances`,
 			jsonPath: `envelope.snapshotProjection.templates[templateKey=${template.templateKey}]`,
 			ref: template.sample?.ref,
 		}],
@@ -349,15 +355,20 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 	const drafts = new Map<string, DraftCollection>();
 	for (const [key, members] of groups) {
 		const first = members[0]!;
+		const itemMembers = members.filter((entity) => entity.hints?.listContainer !== true);
 		const role = normalizeRole(first.role);
 		const containerRole = normalizeRole(first.hints?.containerRole) ?? (first.hints?.listContainer === true ? role : undefined);
 		const containerName = sanitizeSemanticText(first.hints?.containerName, 160) ?? sanitizeSemanticText(first.name, 160);
 		const declaredTotal = numberValue(first.structure?.setSize);
-		const positions = new Set(members.map((entity) => numberValue(entity.structure?.posInSet)).filter((item): item is number => item !== undefined && item > 0));
-		const hiddenCount = Math.max(...members.map((entity) => numberValue(entity.hints?.hiddenCount) ?? 0), 0);
+		const positioned = new Map<number, Entity>();
+		for (const entity of itemMembers) {
+			const position = numberValue(entity.structure?.posInSet);
+			if (position !== undefined && position > 0 && !positioned.has(position)) positioned.set(position, entity);
+		}
+		const positions = new Set(positioned.keys());
 		const skeletonCount = skeletonsByKey.get(key) || 0;
-		const observedCount = members.filter((entity) => entity.hints?.listContainer !== true).length || numberValue(first.hints?.itemCount) || 0;
-		const refs = uniq(members.filter((entity) => entity.hints?.listContainer !== true).map((entity) => entity.ref));
+		const observedCount = positions.size || itemMembers.length || numberValue(first.hints?.itemCount) || 0;
+		const refs = uniq((positions.size ? [...positioned.values()] : itemMembers).map((entity) => entity.ref));
 		const dataSources: NonNullable<CollectionModel["dataSources"]> = [];
 		if (declaredTotal !== undefined || positions.size) {
 			dataSources.push({
@@ -366,12 +377,12 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 				confidence: declaredTotal !== undefined ? "high" : "medium",
 			});
 		}
-		if (first.hints?.listContainer === true || hiddenCount > 0 || skeletonCount > 0) {
+		if (first.hints?.listContainer === true || skeletonCount > 0) {
 			dataSources.push({
 				source: "dom",
 				ref: first.ref,
-				summary: hiddenCount > 0 ? `list container reports ${hiddenCount} hidden items` : skeletonCount > 0 ? `list container has ${skeletonCount} loading placeholders` : "list container hint",
-				confidence: hiddenCount > 0 || skeletonCount > 0 ? "medium" : "low",
+				summary: skeletonCount > 0 ? `list container has ${skeletonCount} loading placeholders` : "list container hint",
+				confidence: skeletonCount > 0 ? "medium" : "low",
 			});
 		}
 		const evidence: CollectionModel["evidence"] = [{
@@ -394,10 +405,9 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 			itemRole: role,
 			observedCount,
 			itemRefs: refs,
-			itemRefCount: refs.length,
+			itemRefCount: observedCount,
+			...(positions.size ? { observedPositions: positions.size } : {}),
 			declaredTotal,
-			estimatedTotal: hiddenCount > 0 ? observedCount + hiddenCount : undefined,
-			hiddenCount: hiddenCount || undefined,
 			sourceRank: 1,
 			...(skeletonCount > 0 ? { preferredCompleteness: "lazy", preferredConfidence: "medium" } : {}),
 			dataSources,
@@ -427,7 +437,6 @@ function listHintKey(hint: ListHintInput, index: number): string {
 
 function listHintDraft(hint: ListHintInput, index: number): DraftCollection {
 	const observedCount = numberValue(hint.itemCount) ?? 0;
-	const hiddenCount = numberValue(hint.hiddenCount) ?? 0;
 	const firstItem = sanitizeSemanticText(hint.firstItemPreview, 160);
 	const nameParts = listHintNameParts(hint, index);
 	return {
@@ -439,15 +448,13 @@ function listHintDraft(hint: ListHintInput, index: number): DraftCollection {
 		observedCount,
 		itemRefs: [],
 		itemRefCount: 0,
-		estimatedTotal: hiddenCount > 0 ? observedCount + hiddenCount : undefined,
-		hiddenCount: hiddenCount || undefined,
 		sourceRank: 3,
-		preferredCompleteness: hiddenCount > 0 ? "lazy" : "viewport-window",
-		preferredConfidence: hiddenCount > 0 ? "medium" : "low",
+		preferredCompleteness: "viewport-window",
+		preferredConfidence: "low",
 		dataSources: [{
 			source: "dom",
-			summary: hiddenCount > 0 ? `scan list hint observed ${observedCount} plus ${hiddenCount} hidden` : `scan list hint observed ${observedCount}`,
-			confidence: hiddenCount > 0 ? "medium" : "low",
+			summary: `scan list hint observed ${observedCount}`,
+			confidence: "low",
 		}],
 		evidence: [{
 			source: "listHints",
@@ -520,13 +527,6 @@ function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof p
 			return { completeness: "complete", confidence: "high", reason: `observed ${draft.observedCount} covers declared total ${draft.declaredTotal}` };
 		}
 	}
-	if ((draft.hiddenCount ?? 0) > 0) {
-		return {
-			completeness: draft.preferredCompleteness ?? "lazy",
-			confidence: draft.preferredConfidence ?? "medium",
-			reason: `scan evidence reports ${draft.hiddenCount} hidden items`,
-		};
-	}
 	if (draft.preferredCompleteness === "lazy") {
 		return {
 			completeness: "lazy",
@@ -585,7 +585,6 @@ function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType
 		itemRefs: uniq(draft.itemRefs),
 		...(draft.declaredTotal !== undefined ? { declaredTotal: draft.declaredTotal } : {}),
 		...(estimatedTotal !== undefined && estimatedTotal > 0 ? { estimatedTotal } : {}),
-		...(draft.hiddenCount !== undefined ? { hiddenCount: draft.hiddenCount } : {}),
 		completeness: classified.completeness,
 		confidence: classified.confidence,
 		...(draft.dataSources.length ? { dataSources: draft.dataSources } : {}),
@@ -648,7 +647,7 @@ export function buildCollectionModels(input: BuildCollectionModelsInput): Collec
 		addDraft(drafts, listHintKey(hint, index), listHintDraft(hint, index));
 	}
 	const sortedDrafts = [...drafts.values()]
-		.filter((draft) => draft.observedCount > 0 || (draft.hiddenCount ?? 0) > 0 || draft.itemRefs.length > 0)
+		.filter((draft) => draft.observedCount > 0 || draft.itemRefs.length > 0)
 		.sort((a, b) => a.sourceRank - b.sourceRank || b.observedCount - a.observedCount || (b.declaredTotal ?? 0) - (a.declaredTotal ?? 0));
 	const edge = sortedDrafts.length === 1 ? paginationEdge(input.scanEvidence?.actionables) : undefined;
 	const outputAmbiguousNames = ambiguousContainerNames(sortedDrafts);

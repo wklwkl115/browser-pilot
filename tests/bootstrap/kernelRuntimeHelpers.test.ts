@@ -347,28 +347,40 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	assert.equal(collections[0]!.declaredTotal, 100);
 	assert.equal(collections[0]!.itemRefs.length, 25);
 	assert.equal(buildCollectionModels({ entities: rows, snapshotProjection: buildSnapshotProjection(rows) }).length, 1);
+
+	const duplicatedPositions = Array.from({ length: 24 }, (_, index) => entity(`bp-ref://fragment/${index}`, {
+		role: "div",
+		structure: { setSize: 12, posInSet: index % 12 + 1 },
+		hints: { containerRole: "list", containerKey: "feed" },
+	}));
+	const positionalCollection = buildCollectionModels({ entities: duplicatedPositions, snapshotProjection: buildSnapshotProjection(duplicatedPositions) })[0]!;
+	assert.equal(positionalCollection.observedCount, 12);
+	assert.equal(positionalCollection.itemRefCount, 12);
+	assert.equal(positionalCollection.itemRefs.length, 12);
+	assert.equal(positionalCollection.declaredTotal, 12);
+	assert.equal(positionalCollection.completeness, "complete");
 });
 
 test("ABML collections absorb malformed scan evidence and pagination edges", () => {
 	const models = buildCollectionModels({
-		entities: [entity("bp-ref://list/container", { role: "list", kind: "region", name: "Results", hints: { listContainer: true, itemCount: "4" as unknown as number, hiddenCount: "3" as unknown as number } })],
+		entities: [entity("bp-ref://list/container", { role: "list", kind: "region", name: "Results", hints: { listContainer: true, itemCount: "4" as unknown as number } })],
 		scanEvidence: {
-			listHints: [{ itemCount: "bad", hiddenCount: -1, selector: "  ", firstItemPreview: "  " }],
+			listHints: [{ itemCount: "bad", selector: "  ", firstItemPreview: "  " }],
 			actionables: [{ text: "Next page", ref: "bp-ref://control/next" }, { text: "Load more" }],
 		},
 	});
 	assert.equal(models.length, 1);
 	assert.equal(models[0]!.containerRef, "bp-ref://list/container");
-	assert.equal(models[0]!.hiddenCount, 3);
-	assert.equal(models[0]!.completeness, "lazy");
+	assert.equal(models[0]!.estimatedTotal, undefined);
+	assert.equal(models[0]!.completeness, "paginated");
 	assert.equal(models[0]!.paginationControl?.kind, "next");
 	assert.equal(models[0]!.paginationControl?.ref, "bp-ref://control/next");
 	const independent = buildCollectionModels({
 		entities: [],
 		scanEvidence: {
 			listHints: [
-				{ itemCount: 2, hiddenCount: 0, selector: "#a > li", firstItemPreview: "A" },
-				{ itemCount: 3, hiddenCount: 0, selector: "#b > li", firstItemPreview: "B" },
+				{ itemCount: 2, selector: "#a > li", firstItemPreview: "A" },
+				{ itemCount: 3, selector: "#b > li", firstItemPreview: "B" },
 			],
 			actionables: [{ text: "Next page", ref: "bp-ref://control/next" }],
 		},
@@ -376,9 +388,11 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	assert.deepEqual(independent.map((item) => item.paginationControl), [undefined, undefined]);
 	const labelled = buildCollectionModels({
 		entities: [],
-		scanEvidence: { listHints: [{ itemCount: 6, hiddenCount: 2, containerLabel: "Orders", selector: "#orders > li", firstItemPreview: "<svg><path d=\"M0 0\" /></svg>" }] },
+		scanEvidence: { listHints: [{ itemCount: 6, containerLabel: "Orders", selector: "#orders > li", firstItemPreview: "<svg><path d=\"M0 0\" /></svg>" }] },
 	});
 	assert.equal(labelled[0]!.containerName, "Orders");
+	assert.equal(labelled[0]!.estimatedTotal, undefined);
+	assert.equal(labelled[0]!.completeness, "viewport-window");
 	assert.equal(labelled[0]!.evidence[0]!.summary, "scan list hint");
 	const fallback = buildCollectionModels({
 		entities: [],
@@ -388,7 +402,7 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	const pricingPreview = "Kimi K2 Turbo model billing per 1M tokens input $0.60 output $2.50 cache write $0.15 cache read $0.05 context 128k";
 	const pricing = buildCollectionModels({
 		entities: [],
-		scanEvidence: { listHints: [{ itemCount: 8, hiddenCount: 5, firstItemPreview: pricingPreview }] },
+		scanEvidence: { listHints: [{ itemCount: 8, firstItemPreview: pricingPreview }] },
 	});
 	assert.equal(pricing[0]!.containerName, "list-0");
 	assert.equal(pricing[0]!.evidence[0]!.summary.includes("Kimi K2 Turbo"), true);
@@ -408,10 +422,16 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	assert.deepEqual(duplicateCollections.map((collection) => collection.containerName), ["Cards (archived cards)", "Cards (featured cards)"]);
 	assert.deepEqual(duplicateCollections.map((collection) => collection.containerNameSource), ["disambiguated", "disambiguated"]);
 	const duplicateListRegions = buildScanEntities(pageWorldScanBundle({ structure: { listHints: [
-		{ itemCount: 2, hiddenCount: 0, containerLabel: "Cards", selector: "#featured-cards > li", firstItemPreview: "Alpha", sampleHidden: [] },
-		{ itemCount: 2, hiddenCount: 0, containerLabel: "Cards", selector: "#archived-cards > li", firstItemPreview: "Beta", sampleHidden: [] },
+		{ itemCount: 2, containerLabel: "Cards", selector: "#featured-cards > li", firstItemPreview: "Alpha" },
+		{ itemCount: 2, containerLabel: "Cards", selector: "#archived-cards > li", firstItemPreview: "Beta" },
 	] } }), { entityContext: { observationId: "obs-dup", capturedAt: 10 } }).listEntities;
 	assert.deepEqual(duplicateListRegions.map((region) => region.name), ["Cards (featured cards)", "Cards (archived cards)"]);
+	const duplicateSelectorActions = buildScanEntities(pageWorldScanBundle({ structure: { actionables: [
+		{ index: 0, selector: ".item", tag: "span", clickable: true, actionConfidence: "medium", point: { x: 10, y: 10 }, entityRefs: { domAction: "bp-ref://element/item-1" } },
+		{ index: 1, selector: ".item", tag: "span", clickable: true, actionConfidence: "medium", point: { x: 20, y: 20 }, entityRefs: { domAction: "bp-ref://element/item-2" } },
+	] } }), { entityContext: { observationId: "obs-actions", capturedAt: 10 } }).entities;
+	assert.equal(duplicateSelectorActions.length, 2);
+	assert.equal(new Set(duplicateSelectorActions.map((item) => item.ref)).size, 2);
 	const unsafeDuplicate = buildCollectionModels({
 		entities: [],
 		scanEvidence: { listHints: [
@@ -492,9 +512,15 @@ test("ABML entity builders handle malformed inputs, fallback roles, refs, and de
 	assert.equal(editable.entity.value, undefined);
 	assert.equal(editable.entity.state.current, undefined);
 	assert.equal(editable.descriptor.owner.topLevelOrigin, "https://example.test");
-	const list = buildRegionEntityFromListHint({ selector: "#items", firstItemPreview: " First ", hiddenCount: "5" }, context, 4);
+	const scopedLike = buildDomEntityFromScanActionable({ tag: "span", clickable: true, action: "Like", actionConfidence: "high", label: "380", hitOk: true, scope: { key: "#feed > article", name: "Feed", position: 1, size: 20 } }, context);
+	assert.equal(scopedLike.entity.kind, "element");
+	assert.equal(scopedLike.entity.role, "span");
+	assert.deepEqual(scopedLike.entity.actionability, { actions: ["click"], hint: "Like", confidence: "high" });
+	assert.deepEqual(scopedLike.entity.scope, { key: "#feed > article", name: "Feed", position: 1, size: 20 });
+	assert.equal(scopedLike.entity.structure, undefined);
+	assert.equal(scopedLike.entity.hints?.containerKey, undefined);
+	const list = buildRegionEntityFromListHint({ selector: "#items", firstItemPreview: " First " }, context, 4);
 	assert.equal(list.entity.name, "First");
-	assert.equal(list.entity.hints?.hiddenCount, 5);
 	assert.equal(buildRegionEntityFromListHint({}, context, 8).entity.name, "list-8");
 	assert.equal(sanitizeSemanticText("<path d=\"M10 10 L20 20\"></path>"), undefined);
 	assert.equal(firstSafeSemanticText(["<svg><path d=\"M0 0\" /></svg>", "Upload file"]), "Upload file");
@@ -681,6 +707,7 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 	assert.equal(built.entity.structure?.setSize, 4);
 	assert.equal(built.entity.structure?.posInSet, 1);
 	assert.equal(built.entity.structure?.sort, "ascending");
+	assert.deepEqual(built.entity.actionability, { actions: ["click"], confidence: "high" });
 	assert.equal(built.descriptor.owner.topLevelOrigin, "https://example.test");
 	const dom = [entity("bp-ref://dom/1", { role: "button", name: "Save", geometry: { point: { x: 100, y: 100 } } }), entity("bp-ref://dom/2", { role: "button", name: "Save", geometry: { point: { x: 101, y: 101 } } })];
 	const ambiguousAx = buildAxEntityFromNode({ role: "button", name: "Save" }, { observationId: "obs-ax", capturedAt: 10 });
@@ -702,11 +729,14 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 	assert.equal(ambiguousGeometryMerge.diagnostics.skipped.ambiguousGeometry, 1);
 	assert.equal(ambiguousGeometryMerge.diagnostics.axOnly, 1);
 	assert.equal(ambiguousGeometryMerge.diagnostics.degraded, true);
-	const backendMerged = mergeDomAndAxEntities([entity("bp-ref://dom/backend", { role: "button", name: "Old", locators: [{ by: "backendNodeId", value: 99 }, { by: "css", value: "#save" }], hints: { selector: "#save" }, state: { ...entity("x").state, pressed: false } })], [buildAxEntityFromNode({ role: "button", name: "New", backendDOMNodeId: 99, properties: [{ name: "pressed", value: { value: "true" } }] }, { observationId: "obs-ax", capturedAt: 10 })]);
+	const backendMerged = mergeDomAndAxEntities([entity("bp-ref://dom/backend", { role: "button", name: "Old", actionability: { actions: ["click"], confidence: "medium" }, scope: { key: "#feed > article", position: 2, size: 10 }, locators: [{ by: "backendNodeId", value: 99 }, { by: "css", value: "#save" }], hints: { selector: "#save" }, state: { ...entity("x").state, pressed: false } })], [buildAxEntityFromNode({ role: "button", name: "New", backendDOMNodeId: 99, properties: [{ name: "pressed", value: { value: "true" } }, { name: "setsize", value: { value: 6 } }] }, { observationId: "obs-ax", capturedAt: 10 })]);
 	assert.equal(backendMerged.merged[0]!.name, "New");
 	assert.equal(backendMerged.merged[0]!.state.pressed, true);
 	assert.deepEqual(backendMerged.merged[0]!.locators, [{ by: "backendNodeId", value: 99 }, { by: "css", value: "#save" }]);
 	assert.deepEqual(backendMerged.merged[0]!.hints?.stateSource, { pressed: "ax" });
+	assert.deepEqual(backendMerged.merged[0]!.actionability, { actions: ["click"], confidence: "high" });
+	assert.deepEqual(backendMerged.merged[0]!.scope, { key: "#feed > article", position: 2, size: 10 });
+	assert.deepEqual(backendMerged.merged[0]!.structure, { setSize: 6 });
 	assert.equal(backendMerged.diagnostics.axEnriched, 1);
 	assert.deepEqual(backendMerged.diagnostics, {
 		scanBacked: 1,

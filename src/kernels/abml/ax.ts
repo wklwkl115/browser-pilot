@@ -312,6 +312,8 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 		editable: EDITABLE_AX_ROLES.has(roleLower),
 		inViewport: Boolean(geometry?.point || geometry?.box),
 	};
+	const actions = [CONTROL_AX_ROLES.has(roleLower) ? "click" as const : undefined, EDITABLE_AX_ROLES.has(roleLower) ? "edit" as const : undefined]
+		.filter((action): action is "click" | "edit" => action !== undefined);
 	return {
 		entity: {
 			kind,
@@ -319,6 +321,7 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 			...(name ? { name } : {}),
 			...(value ? { value } : {}),
 			state,
+			...(actions.length ? { actionability: { actions, confidence: "high" } } : {}),
 			...(structure ? { structure } : {}),
 			source: "ax",
 			locators,
@@ -395,6 +398,12 @@ function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number 
 export function mergeKnownDomAndAxEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 	const mergedState: EntityState = { ...base.state };
 	const stateSource: Record<string, "ax"> = {};
+	const actions = [...new Set([...(base.actionability?.actions ?? []), ...(ax.actionability?.actions ?? [])])];
+	const actionability = actions.length ? {
+		actions,
+		...(base.actionability?.hint || ax.actionability?.hint ? { hint: base.actionability?.hint ?? ax.actionability?.hint } : {}),
+		confidence: base.actionability?.confidence === "high" || ax.actionability?.confidence === "high" ? "high" as const : "medium" as const,
+	} : undefined;
 	for (const key of AX_AUTHORITATIVE_STATE) {
 		const axStateValue = (ax.state as Record<string, unknown>)[key];
 		if (axStateValue !== undefined) {
@@ -408,6 +417,7 @@ export function mergeKnownDomAndAxEntity(base: Entity, ax: BuiltEntity["entity"]
 		name: ax.name || base.name,
 		value: ax.value ?? base.value,
 		state: mergedState,
+		...(actionability ? { actionability } : {}),
 		...(ax.structure || base.structure ? { structure: { ...(base.structure || {}), ...(ax.structure || {}) } } : {}),
 		locators: base.locators,
 		geometry: base.geometry || ax.geometry,

@@ -60,10 +60,10 @@ export function buildScanEntities(item: PageWorldScanBundleV1, options: ScanEnti
 	const actionables = item.structure.actionables.filter((node) => node.referenceOnly !== true && node.relationOnly !== true);
 	const references = item.structure.actionables.filter((node) => node.referenceOnly === true);
 	const controlsPairs = item.structure.actionables.filter((node) => node.relationOnly === true);
-	const actionEntities = dedupeEntities(actionables.map((node) => {
+	const actionEntities = actionables.map((node) => {
 		const built = buildDomEntityFromScanActionable(node, context);
 		return withRegisteredRef(built.entity, nodeRefId(node, built, "domAction"));
-	}));
+	});
 	const referencedEntities = references.map((node) => {
 		const built = buildReferencedTargetEntity(node, context);
 		return withRegisteredRef(built.entity, nodeRefId(node, built, "referencedTarget"));
@@ -84,7 +84,7 @@ export function buildScanEntities(item: PageWorldScanBundleV1, options: ScanEnti
 	const actionableSelectors = new Set(actionEntities.map((entity) => typeof entity.hints?.selector === "string" ? entity.hints.selector : null).filter(Boolean));
 	const referencedOnly = referencedEntities.filter((entity) => typeof entity.hints?.selector !== "string" || !actionableSelectors.has(entity.hints.selector));
 	const controlsSourceOnly = controlsSourceEntities.filter((entity) => typeof entity.hints?.selector !== "string" || !actionableSelectors.has(entity.hints.selector));
-	const entities = dedupeEntities([...actionEntities, ...referencedOnly, ...controlsSourceOnly, ...listEntities, ...visualRegions]);
+	const entities = dedupeEntitiesByRef([...actionEntities, ...referencedOnly, ...controlsSourceOnly, ...listEntities, ...visualRegions]);
 	const referencedSurvivors = [...referencedOnly, ...controlsSourceOnly].filter((entity) => entities.includes(entity));
 	const actionableCandidates = actionEntities.filter((entity) => String(entity.hints?.jsonPath || "").startsWith("data.structure.actionables["));
 	const highSignal = (entity: Entity) => entity.state?.current !== undefined && entity.state.current !== false || entity.state?.checked === true || entity.state?.selected === true || entity.state?.pressed === true;

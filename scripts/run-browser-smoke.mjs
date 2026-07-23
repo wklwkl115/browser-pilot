@@ -270,11 +270,11 @@ try {
 
 	const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef }), "browser_observe");
 	if (observed.schema !== "browser-page-observation/v3" || typeof observed.content?.text !== "string") {
-		throw new Error(`browser_observe did not return canonical PageObservation: ${JSON.stringify(observed)}`);
+		throw new Error(`browser_observe did not return a PageObservation view: ${JSON.stringify(observed)}`);
 	}
 	if (!observed.content.text.includes("Browser Pilot Smoke")) throw new Error(`browser_observe did not return page content: ${JSON.stringify(observed.content)}`);
-	const actionRef = Array.isArray(observed.actionables) ? observed.actionables.find((entity) => entity?.name === "Run smoke")?.ref : undefined;
-	if (typeof actionRef !== "string") throw new Error(`browser_observe did not mint the smoke action ref: ${JSON.stringify(observed.actionables)}`);
+	const actionRef = Array.isArray(observed.actionSpace?.items) ? observed.actionSpace.items.find((entity) => entity?.name === "Run smoke")?.ref : undefined;
+	if (typeof actionRef !== "string") throw new Error(`browser_observe did not mint the smoke action ref: ${JSON.stringify(observed.actionSpace)}`);
 	const bound = resultEnvelope(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "({id:browserPilot.refs.action?.id,tag:browserPilot.refs.action?.tagName})" }), "browser_execute refs");
 	if (bound.result?.id !== "smoke-action" || bound.result?.tag !== "BUTTON") throw new Error(`browser_execute did not bind the observed ref: ${JSON.stringify(bound)}`);
 	const input = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "browser_command input.ref");

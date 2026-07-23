@@ -10,7 +10,7 @@ import { OBSERVATION_RESOURCES_DETAIL_KEY, type ObservationResourceDescriptor } 
 import type { Entity } from "../../src/kernels/abml/entity.ts";
 import { pruneObservationArtifacts } from "../../src/artifacts/artifactFiles.ts";
 
-test("canonical PageObservation returns its first semantic region and opaque MCP resources", async () => {
+test("PageObservation returns a bounded view and keeps its canonical artifact", async () => {
 	const built = buildPageObservation({
 		summary: { focus: { gist: { title: "Example" } } },
 		entities: [],
@@ -34,6 +34,8 @@ test("canonical PageObservation returns its first semantic region and opaque MCP
 
 	assert.equal(isPageObservationView(inline), true);
 	assert.equal(isPageObservationV3(artifact), true);
+	assert.equal(inline.canonical, false);
+	assert.equal(artifact.canonical, true);
 	assert.deepEqual(inline.target, { url: "https://example.test/" });
 	assert.deepEqual(inline.snapshot, { snapshotId: "snapshot-1", capturedAt: 1, ttlMs: 300_000 });
 	assert.equal((artifact.snapshot as Record<string, unknown>).browserSessionId, "session-1");
@@ -96,7 +98,7 @@ test("agent PageObservation view hides internal baseline and re-anchor bookkeepi
 	assert.equal(artifact.reanchorReason, "session_changed");
 });
 
-test("canonical PageObservation keeps the full entity graph in its artifact and bounds the agent projection", async () => {
+test("canonical PageObservation keeps the full entity graph and returns every captured action when it fits", async () => {
 	const state = { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true };
 	const entities: Entity[] = Array.from({ length: 500 }, (_, index) => ({
 		ref: `bp-ref://element/${index}`,
@@ -131,7 +133,84 @@ test("canonical PageObservation keeps the full entity graph in its artifact and 
 	assert.equal(artifact.entities?.length, 500);
 	assert.ok(Buffer.byteLength(result.content[0]?.text ?? "", "utf8") <= 32 * 1024);
 	assert.deepEqual(inline.diagnostics, { warnings: ["degraded"] });
-	assert.equal((inline.actionables as unknown[]).length, 10);
+	assert.equal(((inline.actionSpace as { items: unknown[] }).items).length, 20);
+	assert.deepEqual((inline.actionSpace as { coverage: unknown }).coverage, { captured: 20, returned: 20, captureComplete: true, projectionComplete: true });
+});
+
+test("action coverage preserves an incomplete empty capture", () => {
+	const observation = buildPageObservation({
+		summary: { focus: {} },
+		entities: [],
+		content: "",
+		actionCaptureComplete: false,
+		snapshot: { snapshotId: "empty-actions", sourceMode: "scan", capturedAt: 1, ttlMs: 300_000 },
+		abmlIntegrated: true,
+		diagnostics: {},
+	});
+
+	assert.deepEqual(observation.actionSpace?.coverage, { captured: 0, returned: 0, captureComplete: false, projectionComplete: true });
+	assert.deepEqual(observation.actionSpace?.items, []);
+});
+
+test("every captured action is inline or reachable through the action-space frontier", async () => {
+	const state = { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true };
+	const entities: Entity[] = Array.from({ length: 320 }, (_, index) => ({
+		ref: `bp-ref://element/action-${index}`,
+		kind: "element",
+		role: "span",
+		name: `Action ${index} ${"decision context ".repeat(8)}`,
+		state,
+		actionability: { actions: ["click"], hint: `activate item ${index}`, confidence: "high" },
+		source: "dom",
+	}));
+	const built = buildPageObservation({
+		summary: { focus: { primary_entities: entities.slice(0, 10).map((entity) => entity.ref) } },
+		entities,
+		content: "Large action space",
+		actionCaptureComplete: false,
+		url: "https://example.test/actions",
+		snapshot: { snapshotId: "snapshot-actions", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 300_000 },
+		abmlIntegrated: true,
+		diagnostics: {},
+	});
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-actions-"));
+	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
+	await mkdir(path.dirname(outputPath), { recursive: true });
+	const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observation.json" });
+	const inline = JSON.parse(result.content[0]?.text ?? "{}") as { actionSpace: { coverage: { captured: number; returned: number; captureComplete: boolean; projectionComplete: boolean }; items: Array<{ ref: string }> }; frontier: { items: Array<{ ref: string; resourceUri?: string }> } };
+	const artifact = JSON.parse(await readFile(outputPath, "utf8")) as { actionSpace: { items: Array<{ ref: string }> } };
+	const resources = result.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
+	const continuation = resources.find((resource) => resource.kind === "action-space" && resource.jsonPath === "actionSpace");
+	const inlineRefs = new Set(inline.actionSpace.items.map((item) => item.ref));
+	const artifactRefs = new Set(artifact.actionSpace.items.map((item) => item.ref));
+
+	assert.equal(inline.actionSpace.coverage.captured, entities.length);
+	assert.equal(inline.actionSpace.coverage.captureComplete, false);
+	assert.equal(inline.actionSpace.coverage.returned, inline.actionSpace.items.length);
+	assert.equal(inline.actionSpace.coverage.projectionComplete, false);
+	assert.equal(artifact.actionSpace.items.length, entities.length);
+	assert.ok(continuation);
+	assert.ok(inline.frontier.items.some((item) => item.ref === "frontier:action-space" && item.resourceUri === continuation?.uri));
+	for (const entity of entities) assert.ok(inlineRefs.has(entity.ref) || artifactRefs.has(entity.ref), `unreachable action: ${entity.ref}`);
+	assert.ok(Buffer.byteLength(result.content[0]?.text ?? "", "utf8") <= 32 * 1024);
+});
+
+test("action projection prefers DOM scope while preserving independent AX structure", () => {
+	const entity: Entity = {
+		ref: "bp-ref://element/like",
+		kind: "element",
+		role: "span",
+		state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true },
+		actionability: { actions: ["click"], confidence: "medium" },
+		scope: { key: "#feed > article", name: "Feed", position: 1, size: 20 },
+		structure: { posInSet: 5, setSize: 100 },
+		hints: { containerKey: "ax:list", containerRole: "list", containerName: "AX list" },
+		source: "dom",
+	};
+	const observation = buildPageObservation({ summary: { focus: {} }, entities: [entity], content: "Feed", url: "https://example.test/", snapshot: { snapshotId: "scope", sourceMode: "scan", capturedAt: 1, ttlMs: 300_000 }, abmlIntegrated: true, diagnostics: {} });
+	assert.deepEqual(observation.actionSpace?.scopes, [{ id: "scope-1", name: "Feed", size: 20 }]);
+	assert.deepEqual(observation.actionSpace?.items[0]?.scope, { id: "scope-1", position: 1 });
+	assert.deepEqual(observation.entities?.[0]?.structure, { posInSet: 5, setSize: 100 });
 });
 
 test("canonical PageObservation bounds repeated structure summaries", async () => {

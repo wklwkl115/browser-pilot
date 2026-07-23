@@ -32,7 +32,7 @@ For a source checkout, build once and point the MCP client at `dist/src/apps/mcp
 ## Core Workflow
 
 1. Omit `targetRef` to use the selected active tab; call `browser_tabs` only to create, switch, close, or disambiguate tabs.
-2. Call `browser_observe` when the task needs a structured page model. Its `bp-ref` values route later actions back to their owning tab.
+2. Call `browser_observe` when the task needs a structured page model. Its `actionSpace` returns every captured action that fits, uses explicit state defaults plus per-item deltas, and exposes a deterministic frontier when the complete action space exceeds the response budget. Its `bp-ref` values route later actions back to their owning tab.
 3. Use `browser_execute` for page JavaScript or `browser_command` for native browser operations. Both return command data under `result`; writes add `effect`, and an explicit `expect` adds `verification`.
 4. Read additional semantic page regions from the MCP resources returned by `browser_observe` only when the task needs them.
 

@@ -30,6 +30,7 @@ export interface ScanActionable {
 	value?: string;
 	clickable?: boolean;
 	editable?: boolean;
+	actionConfidence?: "high" | "medium";
 	disabled?: boolean;
 	focused?: boolean;
 	checked?: boolean;
@@ -68,14 +69,13 @@ export interface ScanActionable {
 	backendNodeId?: number;
 	backendNodeIdBootstrap?: Record<string, unknown>;
 	entityRefs?: Record<string, string>;
+	scope?: { key: string; name?: string; position: number; size: number };
 }
 
 export interface ScanListHint {
 	selector: string;
 	itemCount: number;
-	hiddenCount: number;
 	firstItemPreview: string;
-	sampleHidden: string[];
 	containerLabel?: string;
 	entityRefs?: Record<string, string>;
 }
@@ -118,7 +118,7 @@ export interface PageWorldScanBundleV1 {
 		canvasRegions: ScanCanvasRegion[];
 	};
 	signals: { fingerprint: ScanPageFingerprint };
-	stats: { nodeCount: number; outputChars: number; truncated: boolean };
+	stats: { nodeCount: number; outputChars: number; truncated: boolean; actionableCount?: number; actionablesComplete?: boolean };
 }
 
 export type ScanBundleValidation =
@@ -152,7 +152,7 @@ const hitTargetSchema = {
 
 const actionableProperties = {
 	index: numberSchema, selector: stringSchema, tag: stringSchema, kind: stringSchema, role: nullableStringSchema, action: stringSchema,
-	label: stringSchema, displayLabel: stringSchema, text: stringSchema, value: stringSchema, clickable: booleanSchema, editable: booleanSchema,
+	label: stringSchema, displayLabel: stringSchema, text: stringSchema, value: stringSchema, clickable: booleanSchema, editable: booleanSchema, actionConfidence: { enum: ["high", "medium"] },
 	disabled: booleanSchema, focused: booleanSchema, checked: booleanSchema, selected: booleanSchema, pressed: booleanSchema,
 	expanded: booleanSchema, visible: booleanSchema, inViewport: booleanSchema, current: stringSchema, inputKind: stringSchema,
 	controlsSelectors: stringArraySchema, ownsSelectors: stringArraySchema, expandedTargetSelectors: stringArraySchema,
@@ -161,6 +161,7 @@ const actionableProperties = {
 	occluderSelector: stringSchema, priority: numberSchema, name: stringSchema, ariaLabel: stringSchema, ref: stringSchema, hidden: booleanSchema, referenceOnly: booleanSchema,
 	relationOnly: booleanSchema, sourceSelector: stringSchema, sourceRole: nullableStringSchema, sourceName: stringSchema,
 	targetId: stringSchema, cdpTargetId: stringSchema,
+	scope: { type: "object", properties: { key: stringSchema, name: stringSchema, position: numberSchema, size: numberSchema }, required: ["key", "position", "size"], additionalProperties: false },
 } as const;
 
 export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
@@ -184,7 +185,7 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 			type: "object",
 			properties: {
 				actionables: { type: "array", items: { type: "object", properties: actionableProperties, anyOf: [{ required: ["selector"] }, { required: ["sourceSelector"] }], additionalProperties: false } },
-					listHints: { type: "array", items: { type: "object", properties: { selector: stringSchema, itemCount: numberSchema, hiddenCount: numberSchema, firstItemPreview: stringSchema, sampleHidden: stringArraySchema, containerLabel: stringSchema }, required: ["selector", "itemCount", "hiddenCount", "firstItemPreview", "sampleHidden"], additionalProperties: false } },
+				listHints: { type: "array", items: { type: "object", properties: { selector: stringSchema, itemCount: numberSchema, firstItemPreview: stringSchema, containerLabel: stringSchema }, required: ["selector", "itemCount", "firstItemPreview"], additionalProperties: false } },
 				canvasRegions: { type: "array", items: { type: "object", properties: { index: numberSchema, tag: stringSchema, role: stringSchema, action: stringSchema, label: stringSchema, selector: stringSchema, point: pointSchema, rect: rectSchema, hitOk: nullableBooleanSchema, clickable: booleanSchema, text: stringSchema, visible: booleanSchema }, required: ["index", "tag", "role", "action", "label", "selector", "point", "rect", "hitOk", "clickable"], additionalProperties: false } },
 			},
 			required: ["actionables", "listHints", "canvasRegions"],
@@ -198,7 +199,7 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 			required: ["fingerprint"],
 			additionalProperties: false,
 		},
-		stats: { type: "object", properties: { nodeCount: numberSchema, outputChars: numberSchema, truncated: booleanSchema }, required: ["nodeCount", "outputChars", "truncated"], additionalProperties: false },
+		stats: { type: "object", properties: { nodeCount: numberSchema, outputChars: numberSchema, truncated: booleanSchema, actionableCount: numberSchema, actionablesComplete: booleanSchema }, required: ["nodeCount", "outputChars", "truncated"], additionalProperties: false },
 	},
 	required: ["schema", "page", "content", "structure", "signals", "stats"],
 	additionalProperties: false,

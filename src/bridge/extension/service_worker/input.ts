@@ -116,7 +116,7 @@ const REF_POINT_FUNCTION = `function(input) {
 	if (!el || el.nodeType !== 1) return { ok: false, reason: "not_found" };
 	const inputRoles = { checkbox: "checkbox", radio: "radio", button: "button", submit: "button", reset: "button", search: "searchbox", range: "slider", number: "spinbutton" };
 	const implicitRoles = { A: "link", BUTTON: "button", TEXTAREA: "textbox", SELECT: "combobox", CANVAS: "region", IMG: "img" };
-	const actualRole = normalize(el.getAttribute("role") || (el.tagName === "INPUT" ? inputRoles[String(el.type || "").toLowerCase()] || "textbox" : implicitRoles[el.tagName] || ""));
+	const actualRole = normalize(el.getAttribute("role") || (el.tagName === "INPUT" ? inputRoles[String(el.type || "").toLowerCase()] || "textbox" : implicitRoles[el.tagName] || String(el.tagName || "").toLowerCase()));
 	const labelledBy = String(el.getAttribute("aria-labelledby") || "").split(/\\s+/).filter(Boolean).map(id => document.getElementById(id)?.textContent || "").join(" ");
 	const labels = el.labels ? Array.from(el.labels).map(label => label.textContent || "").join(" ") : "";
 	const actualName = normalize(el.getAttribute("aria-label") || labelledBy || labels || el.getAttribute("alt") || el.innerText || el.textContent || el.value || el.getAttribute("title") || "");
@@ -144,9 +144,15 @@ async function liveRefPoint(tabId: number, msg: BrowserPilotBridgeCommand, targe
 	const name = cleanString(semantic.name);
 	if (!selectors.length && (!fallback || !["region", "media"].includes(kind || "") || (!role && !name))) return failRef("INVALID_REF_TARGET", "Point-only input.ref targets require region/media semantic identity", startedAt, target);
 	const expression = `(() => {
-	  const input = ${JSON.stringify({ selectors, point: selectors.length ? undefined : fallback, role, name })};
+	  const input = ${JSON.stringify({ selectors, point: fallback, role, name })};
 	  let el = null;
-	  for (const selector of input.selectors) { try { el = document.querySelector(selector); } catch (_) {} if (el) break; }
+	  const closest = nodes => {
+	    if (nodes.length === 1) return nodes[0];
+	    if (!input.point || !nodes.length) return null;
+	    const ranked = nodes.map(node => { const rect = node.getBoundingClientRect(); return { node, distance: Math.hypot(rect.left + rect.width / 2 - input.point.x, rect.top + rect.height / 2 - input.point.y) }; }).sort((a, b) => a.distance - b.distance);
+	    return ranked[0] && ranked[0].distance < (ranked[1] ? ranked[1].distance : Number.POSITIVE_INFINITY) ? ranked[0].node : null;
+	  };
+	  for (const selector of input.selectors) { try { el = closest(Array.from(document.querySelectorAll(selector))); } catch (_) {} if (el) break; }
 	  if (!el && input.point) el = document.elementFromPoint(Number(input.point.x), Number(input.point.y));
 	  return (${REF_POINT_FUNCTION}).call(el, input);
 	})()`;

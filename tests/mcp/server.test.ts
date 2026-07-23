@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import os from "node:os";
@@ -11,6 +12,7 @@ import { publicNativeCommandNames } from "../../src/commands/nativeCommandAccess
 import { buildPageObservation } from "../../src/commands/observe/scanProjection.ts";
 import { pageObservationResult } from "../../src/commands/resultMiddleware.ts";
 import { OBSERVATION_RESOURCES_DETAIL_KEY, type ObservationResourceDescriptor } from "../../src/commands/observe/observationResources.ts";
+import type { Entity } from "../../src/kernels/abml/entity.ts";
 
 function firstText(result: Awaited<ReturnType<typeof callMcpTool>>): string {
 	return result.content.find((item) => item.type === "text")?.text ?? "";
@@ -117,6 +119,50 @@ test("MCP resources expose a compact native index, per-command schemas, and proj
 		const causal = descriptors.find((item) => item.kind === "details")!;
 		const expandedCausal = await readMcpResource(causal.uri, root);
 		assert.equal(((JSON.parse(resourceText(expandedCausal)) as { value: { requests: unknown[] } }).value.requests).length, 4);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("MCP action-space resources are reachable without exposing the internal entity graph", async () => {
+	const root = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-mcp-actions-"));
+	try {
+		const artifacts = path.join(root, ".browser-pilot", "artifacts");
+		await mkdir(artifacts, { recursive: true });
+		const state = { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true };
+		const entities: Entity[] = Array.from({ length: 320 }, (_, index) => ({
+			ref: `bp-ref://element/action-${index}`,
+			kind: "element",
+			role: "span",
+			name: `Action ${index} ${"decision context ".repeat(8)}`,
+			state,
+			actionability: { actions: ["click"], confidence: "high" },
+			source: "dom",
+		}));
+		const observation = buildPageObservation({
+			summary: {}, entities, content: "Actions", url: "https://example.test/actions",
+			snapshot: { snapshotId: "snapshot-action-resource", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 60_000 },
+			abmlIntegrated: true, diagnostics: {},
+		});
+		const observed = await pageObservationResult({ observation, artifactPath: path.join(artifacts, "actions.json"), fallbackName: "actions.json" });
+		const descriptors = observed.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
+		const actionDescriptor = descriptors.find((item) => item.kind === "action-space")!;
+		const links = registerMcpObservationResources(observed.details, root);
+		assert.ok(links.some((link) => link.type === "resource_link" && link.uri === actionDescriptor.uri));
+		const expanded = JSON.parse(resourceText(await readMcpResource(actionDescriptor.uri, root))) as { value: { items: unknown[] } };
+		assert.equal(expanded.value.items.length, entities.length);
+
+		const semanticDescriptor: ObservationResourceDescriptor = {
+			...actionDescriptor,
+			uri: `browser-pilot://observation/${randomUUID()}`,
+			ref: "frontier:observation",
+			kind: "details",
+			jsonPath: "$",
+		};
+		registerMcpObservationResources({ [OBSERVATION_RESOURCES_DETAIL_KEY]: [semanticDescriptor] }, root);
+		const semantic = JSON.parse(resourceText(await readMcpResource(semanticDescriptor.uri, root))) as { value: { entities?: unknown; actionSpace?: { items: unknown[] } } };
+		assert.equal(semantic.value.entities, undefined);
+		assert.equal(semantic.value.actionSpace?.items.length, entities.length);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

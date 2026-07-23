@@ -43,10 +43,22 @@ export function stdlibPrelude(registry: Record<string, unknown>, bindings: Recor
     }
     return undefined;
   }
-  function __resolveLocator(locator) {
+  function __closestByGeometry(nodes, descriptor) {
+    if (nodes.length === 1) return nodes[0];
+    const target = __geometryBox(descriptor);
+    if (!target || !nodes.length) return null;
+    const tx = target.x + target.width / 2;
+    const ty = target.y + target.height / 2;
+    const ranked = nodes.map(el => {
+      const rect = __rect(el);
+      return { el, distance: rect ? Math.hypot(rect.left + rect.width / 2 - tx, rect.top + rect.height / 2 - ty) : Number.POSITIVE_INFINITY };
+    }).sort((a, b) => a.distance - b.distance);
+    return ranked[0] && ranked[0].distance < (ranked[1] ? ranked[1].distance : Number.POSITIVE_INFINITY) ? ranked[0].el : null;
+  }
+  function __resolveLocator(locator, descriptor) {
     if (!locator || typeof locator !== "object") return null;
     try {
-      if (locator.by === "css" && locator.value) return document.querySelector(String(locator.value));
+      if (locator.by === "css" && locator.value) return __closestByGeometry(Array.from(document.querySelectorAll(String(locator.value))), descriptor);
       if (locator.by === "xpath" && locator.value) return document.evaluate(String(locator.value), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
       if (locator.by === "attrSignature" && locator.value && typeof locator.value === "object") {
         const attrs = locator.value;
@@ -76,7 +88,7 @@ export function stdlibPrelude(registry: Record<string, unknown>, bindings: Recor
     let fallback = null;
     for (const locator of Array.isArray(descriptor.locators) ? descriptor.locators : []) {
       tried.push(locator.by || "unknown");
-      const el = __resolveLocator(locator);
+      const el = __resolveLocator(locator, descriptor);
       if (!fallback && el) fallback = el;
       if (__actionablePoint(el)) return { el, freshness: entry.fresh === false ? "stale" : "fresh", tried };
     }

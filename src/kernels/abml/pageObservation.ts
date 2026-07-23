@@ -1,4 +1,4 @@
-import type { Entity } from "./entity.js";
+import type { Entity, EntityAction, EntityState } from "./entity.js";
 import type { EntityDiff } from "./diff.js";
 import type { CausalSummary } from "./causal.js";
 import type { TreeDiff } from "./treeDiff.js";
@@ -10,7 +10,7 @@ import type { PageReanchorReason } from "../session/pageIdentity.js";
 export const PAGE_OBSERVATION_SCHEMA_V3 = "browser-page-observation/v3" as const;
 
 export type ObservationFrontierState = "folded" | "viewport-window" | "virtualized" | "paginated" | "lazy" | "unavailable";
-export type ObservationFrontierKind = "template-instances" | "collection-window" | "content" | "details";
+export type ObservationFrontierKind = "action-space" | "template-instances" | "collection-window" | "content" | "details";
 
 export interface ObservationFrontierItem {
 	ref: string;
@@ -42,8 +42,20 @@ export type PublicProviderExecutionReport = Record<string, PublicProviderExecuti
 export interface CompactActionable {
 	ref: string;
 	kind: string;
+	role: string;
 	name?: string;
-	state?: Record<string, unknown>;
+	actions: EntityAction[];
+	hint?: string;
+	confidence: "high" | "medium";
+	scope?: { id: string; position?: number };
+	state?: Partial<EntityState>;
+}
+
+export interface AgentActionSpace {
+	defaults: { state: EntityState };
+	coverage: { captured: number; returned: number; captureComplete: boolean; projectionComplete: boolean };
+	scopes: Array<{ id: string; name?: string; size?: number }>;
+	items: CompactActionable[];
 }
 
 export interface CompactCollection {
@@ -68,7 +80,6 @@ export interface PageObservationContent {
 export interface CollectionSummary extends CompactCollection {
 	collectionId?: string;
 	itemRefCount?: number;
-	hiddenCount?: number;
 	containerRole?: string;
 	containerNameContext?: string;
 	containerNameSource?: string;
@@ -119,7 +130,7 @@ export interface PageObservationV3 {
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
 	entities?: Entity[];
-	actionables?: CompactActionable[];
+	actionSpace?: AgentActionSpace;
 	relations?: RelationSummary;
 	identity?: Record<string, unknown>;
 	inference?: InferenceSummary;
@@ -138,13 +149,13 @@ export interface PageObservationView {
 	schema: typeof PAGE_OBSERVATION_SCHEMA_V3;
 	tool: "browser_observe";
 	model: "PageObservation";
-	canonical: true;
+	canonical: false;
 	target: Pick<PageTarget, "url">;
 	snapshot: Pick<ObservationSnapshot, "snapshotId" | "capturedAt" | "ttlMs">;
 	content?: PageObservationContent;
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
-	actionables?: CompactActionable[];
+	actionSpace?: AgentActionSpace;
 	relations?: RelationSummary;
 	inference?: InferenceSummary;
 	causal?: CausalSummary;
@@ -161,7 +172,7 @@ const FRONTIER_ITEM_SCHEMA = {
 	type: "object",
 	properties: {
 		ref: { type: "string", minLength: 1 },
-		kind: { enum: ["template-instances", "collection-window", "content", "details"] },
+		kind: { enum: ["action-space", "template-instances", "collection-window", "content", "details"] },
 		state: { enum: ["folded", "viewport-window", "virtualized", "paginated", "lazy", "unavailable"] },
 		label: { type: "string", minLength: 1 },
 		observed: { type: "integer", minimum: 0 },
@@ -172,6 +183,29 @@ const FRONTIER_ITEM_SCHEMA = {
 	},
 	required: ["ref", "kind", "state"],
 	anyOf: [{ required: ["resourceUri"] }, { required: ["unavailableReason"] }, { required: ["controlRef"] }],
+	additionalProperties: false,
+} as const;
+
+const ENTITY_STATE_PROPERTIES = {
+	visible: { type: "boolean" }, occluded: { type: "boolean" }, disabled: { type: "boolean" }, focused: { type: "boolean" },
+	checked: { type: "boolean" }, selected: { type: "boolean" }, pressed: { type: "boolean" }, expanded: { type: "boolean" },
+	current: { anyOf: [{ type: "boolean" }, { type: "string" }] }, editable: { type: "boolean" }, inViewport: { type: "boolean" },
+} as const;
+
+const ACTION_SPACE_SCHEMA = {
+	type: "object",
+	properties: {
+		defaults: { type: "object", properties: { state: { type: "object", properties: ENTITY_STATE_PROPERTIES, required: ["visible", "occluded", "disabled", "focused", "editable", "inViewport"], additionalProperties: false } }, required: ["state"], additionalProperties: false },
+		coverage: { type: "object", properties: { captured: { type: "integer", minimum: 0 }, returned: { type: "integer", minimum: 0 }, captureComplete: { type: "boolean" }, projectionComplete: { type: "boolean" } }, required: ["captured", "returned", "captureComplete", "projectionComplete"], additionalProperties: false },
+		scopes: { type: "array", items: { type: "object", properties: { id: { type: "string", minLength: 1 }, name: { type: "string" }, size: { type: "integer", minimum: 1 } }, required: ["id"], additionalProperties: false } },
+		items: { type: "array", items: { type: "object", properties: {
+			ref: { type: "string", minLength: 1 }, kind: { type: "string", minLength: 1 }, role: { type: "string", minLength: 1 }, name: { type: "string" },
+			actions: { type: "array", minItems: 1, items: { enum: ["click", "edit"] } }, hint: { type: "string" }, confidence: { enum: ["high", "medium"] },
+			scope: { type: "object", properties: { id: { type: "string", minLength: 1 }, position: { type: "integer", minimum: 1 } }, required: ["id"], additionalProperties: false },
+			state: { type: "object", properties: ENTITY_STATE_PROPERTIES, additionalProperties: false },
+		}, required: ["ref", "kind", "role", "actions", "confidence"], additionalProperties: false } },
+	},
+	required: ["defaults", "coverage", "scopes", "items"],
 	additionalProperties: false,
 } as const;
 
@@ -194,7 +228,7 @@ const COLLECTION_SCHEMA = {
 	properties: {
 		ref: { type: "string", minLength: 1 }, kind: { type: "string", minLength: 1 }, name: { type: "string" },
 		observed: { type: "integer", minimum: 0 }, total: { type: "integer", minimum: 0 }, completeness: { type: "string" }, confidence: { type: "string" },
-		itemRefs: { type: "array", items: { type: "string" } }, frontierRef: { type: "string" }, collectionId: { type: "string" }, itemRefCount: { type: "integer", minimum: 0 }, hiddenCount: { type: "integer", minimum: 0 },
+		itemRefs: { type: "array", items: { type: "string" } }, frontierRef: { type: "string" }, collectionId: { type: "string" }, itemRefCount: { type: "integer", minimum: 0 },
 		containerRole: { type: "string" }, containerNameContext: { type: "string" }, containerNameSource: { type: "string" }, itemRole: { type: "string" },
 		paginationControl: { type: "object" },
 		dataSources: { type: "array", items: { type: "object" } }, evidence: { type: "array", items: { type: "object" } },
@@ -224,7 +258,7 @@ export const PAGE_OBSERVATION_V3_JSON_SCHEMA = {
 		reanchorReason: { enum: ["document_changed", "target_replaced", "session_changed", "identity_unproven", "baseline_missing"] }, delta: { const: "session" }, baselineSnapshotId: { type: "string" },
 		content: { type: "object", properties: { text: { type: "string" }, headings: { type: "array", items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
 		gist: { type: "object" }, outline: { type: "array", items: { type: "object" } }, entities: { type: "array", items: { type: "object" } },
-		actionables: { type: "array", items: { type: "object", properties: { ref: { type: "string" }, kind: { type: "string" }, name: { type: "string" }, state: { type: "object" } }, required: ["ref", "kind"], additionalProperties: false } },
+		actionSpace: ACTION_SPACE_SCHEMA,
 		relations: { type: "object" }, identity: { type: "object" }, inference: { type: "object" }, diff: { type: "object" }, causal: { type: "object" }, treeDiff: { type: "object" }, snapshotProjection: { type: "object" }, collections: { type: "array", items: COLLECTION_SCHEMA },
 		providers: { type: "object", additionalProperties: PROVIDER_ITEM_SCHEMA },
 		frontier: { type: "object", properties: { items: { type: "array", items: FRONTIER_ITEM_SCHEMA } }, required: ["items"], additionalProperties: false },
@@ -269,7 +303,7 @@ export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
 		schema: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.schema,
 		tool: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.tool,
 		model: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.model,
-		canonical: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.canonical,
+		canonical: { const: false },
 		target: { type: "object", properties: { url: { type: "string" } }, additionalProperties: false },
 		snapshot: {
 			type: "object",
@@ -280,7 +314,7 @@ export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
 		content: { type: "object", properties: { text: { type: "string", maxLength: 6_000 }, headings: { type: "array", maxItems: 16, items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
 		gist: { type: "object" },
 		outline: { type: "array", maxItems: 8, items: { type: "object" } },
-		actionables: { type: "array", maxItems: 10, items: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.actionables.items },
+		actionSpace: ACTION_SPACE_SCHEMA,
 		relations: { type: "object" },
 		inference: { type: "object" },
 		causal: { type: "object" },
