@@ -6,9 +6,9 @@ import { handleBrowserPilotNativeCommand, isBrowserPilotNativeCommand } from "./
 import { BROWSER_PILOT_ERROR_CODES, bridgeError, normalizeBridgeResponse, normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp, runtimeErrorMessage as coreErrorMessage, runtimeRecord as coreRecord } from "./runtimeSupport.js";
 import { browserPilotPageIdentityForTab } from "./page_identity";
 import { browserPilotTabIdentityFields } from "./tab_identity";
-import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeSender, BrowserPilotChromeCookie, BrowserPilotNativeProtocolRuntime } from "./types";
+import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeSender, BrowserPilotNativeProtocolRuntime } from "./types";
 
-// core_commands.js - non-native bridge commands: tabs, cookies, management, content settings, batch, CDP.
+// core_commands.js - non-native bridge commands: tabs, extension reload, batch, CDP.
 
 type BridgeWakeProbe = (resetDelay: boolean) => unknown;
 type ValidatedBridgeCommand = { ok: true; command: BrowserPilotBridgeCommand } | { ok: false; error?: string; details?: JsonRecord };
@@ -183,20 +183,8 @@ async function handleTabsCommand(msg: BrowserPilotBridgeCommand): Promise<Browse
 
 async function handleManagementCommand(msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
   try {
-    if (msg.method === 'list') {
-      const all = await chrome.management.getAll();
-      return { ok: true, data: all.map(e => ({ id: e.id, name: e.name, enabled: e.enabled, type: e.type, version: e.version })) };
-    }
     if (msg.method === 'reload') {
       chrome.alarms.create('browser-pilot-self-reload', { when: Date.now() + 200 });
-      return { ok: true };
-    }
-    if (msg.method === 'disable') {
-      await chrome.management.setEnabled(String(msg.extId || ''), false);
-      return { ok: true };
-    }
-    if (msg.method === 'enable') {
-      await chrome.management.setEnabled(String(msg.extId || ''), true);
       return { ok: true };
     }
     return bridgeError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unknown management method: ' + String(msg.method), { cmd: msg.cmd, method: msg.method });
@@ -205,29 +193,12 @@ async function handleManagementCommand(msg: BrowserPilotBridgeCommand): Promise<
   }
 }
 
-async function handleContentSettingsCommand(msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
-  try {
-    const type = String(msg.type || 'automaticDownloads');
-    const setting = String(msg.setting || 'allow');
-    const pattern = String(msg.pattern || '<all_urls>');
-    const settings = chrome.contentSettings || {};
-    const target = settings[type];
-    if (!target || typeof target.set !== 'function') {
-      return bridgeError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'Unsupported contentSettings type: ' + type, { cmd: msg.cmd, type });
-    }
-    await target.set({ primaryPattern: pattern, setting });
-    return { ok: true };
-  } catch (e) {
-    return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, coreErrorMessage(e), { cmd: msg.cmd, type: msg.type, setting: msg.setting, pattern: msg.pattern });
-  }
-}
-
 async function handleContentFingerprintCommand(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender): Promise<BrowserPilotBridgeResponse> {
   const tabId = Number(msg.tabId || sender.tab?.id || 0);
   if (!tabId) return bridgeError(BROWSER_PILOT_ERROR_CODES.NO_SESSION, 'content.fingerprint requires a tabId', { cmd: msg.cmd, tabId: msg.tabId });
   let messageError: unknown;
   try {
-    const response = coreRecord(await chrome.tabs.sendMessage(tabId, msg.drainDirty === true ? { cmd: 'browserPilot.contentFingerprint', drainDirty: true } : { cmd: 'browserPilot.contentFingerprint' }));
+    const response = coreRecord(await chrome.tabs.sendMessage(tabId, msg.drainDirty === true ? { cmd: 'browserPilot.contentFingerprint', drainDirty: true } : { cmd: 'browserPilot.contentFingerprint' }, { frameId: 0 }));
     if (response.ok !== false) {
       const data = coreRecord(response.data ?? response);
       const identity = browserPilotPageIdentityForTab(tabId, typeof data.url === 'string' ? data.url : sender.tab?.url);
@@ -243,61 +214,6 @@ async function handleContentFingerprintCommand(msg: BrowserPilotBridgeCommand, s
     return { ok: true, data: { ...data, ...(identity ? { pageEpoch: identity.pageEpoch, ...(identity.documentId ? { documentId: identity.documentId } : {}) } : {}) } };
   } catch (scriptError) {
     return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, 'content fingerprint unavailable', { cmd: msg.cmd, tabId, error: coreErrorDetails(messageError), fallbackError: coreErrorDetails(scriptError) });
-  }
-}
-
-function browserPilotCookiePartitionIdentity(cookie: BrowserPilotChromeCookie | null | undefined): string {
-  const key = cookie && cookie.partitionKey;
-  if (!key || typeof key !== 'object') return '';
-  return [key.topLevelSite || '', key.hasCrossSiteAncestor === undefined ? '' : String(key.hasCrossSiteAncestor)].join('\u0000');
-}
-
-function browserPilotCookieIdentity(cookie: BrowserPilotChromeCookie | null | undefined): string {
-  const item: BrowserPilotChromeCookie = cookie || {};
-  return [item.name || '', item.domain || '', item.path || '', item.storeId || '', browserPilotCookiePartitionIdentity(item)].join('\u0000');
-}
-
-function mergeBrowserPilotCookies(cookieLists: unknown[]): BrowserPilotChromeCookie[] {
-  const merged: BrowserPilotChromeCookie[] = [];
-  const seen = new Set<string>();
-  for (const list of cookieLists) {
-    for (const cookie of Array.isArray(list) ? list : []) {
-      const key = browserPilotCookieIdentity(cookie as BrowserPilotChromeCookie);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(cookie as BrowserPilotChromeCookie);
-    }
-  }
-  return merged;
-}
-
-function normalizeBrowserPilotCookieUrl(value: unknown): { ok: true; url: string; origin?: string; protocol: string; unsupported?: boolean } | { ok: false; error: string; details: JsonRecord } {
-  const raw = typeof value === 'string' ? value.trim() : '';
-  if (!raw) return { ok: false, error: 'cookies requires an http(s) URL or a tab with an http(s) URL', details: { url: value } };
-  let parsed: URL;
-  try { parsed = new URL(raw); }
-  catch (_) { return { ok: false, error: 'cookies requires a valid absolute URL', details: { url: value } }; }
-  const protocol = parsed.protocol.toLowerCase();
-  if (protocol !== 'http:' && protocol !== 'https:') return { ok: true, url: parsed.href, protocol, unsupported: true };
-  return { ok: true, url: parsed.href, origin: parsed.origin, protocol };
-}
-
-async function handleCookies(msg: BrowserPilotBridgeCommand, sender: BrowserPilotBridgeSender): Promise<BrowserPilotBridgeResponse> {
-  try {
-    let url: unknown = msg.url || sender.tab?.url;
-    if (!url && msg.tabId) {
-      const tab = await chrome.tabs.get(Number(msg.tabId));
-      url = tab.url;
-    }
-    const normalized = normalizeBrowserPilotCookieUrl(url);
-    if (!normalized.ok) return bridgeError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, normalized.error, { cmd: msg.cmd, tabId: msg.tabId, ...normalized.details });
-    if (normalized.unsupported) return { ok: true, data: [], details: { reason: 'unsupported_cookie_url_scheme', url: normalized.url, protocol: normalized.protocol } };
-    const all = await chrome.cookies.getAll({ url: normalized.url });
-    const part = await chrome.cookies.getAll({ url: normalized.url, partitionKey: { topLevelSite: normalized.origin || normalized.url } }).catch((): BrowserPilotChromeCookie[] => []);
-    const merged = mergeBrowserPilotCookies([all, part]);
-    return { ok: true, data: merged };
-  } catch (e) {
-    return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, coreErrorMessage(e), { cmd: msg.cmd, tabId: msg.tabId });
   }
 }
 
@@ -329,12 +245,10 @@ function validateBrowserPilotBridgeProtocolMessage(msg: BrowserPilotBridgeComman
 const BROWSER_PILOT_CORE_COMMAND_HANDLERS: Record<string, BrowserPilotCoreCommandHandler> = {
   bridge_wake: (msg, sender) => handleBridgeWake(msg, sender),
   'content.fingerprint': (msg, sender) => handleContentFingerprintCommand(msg, sender),
-  cookies: (msg, sender) => handleCookies(msg, sender),
   cdp: (msg, sender, context) => handleCDP(msg, sender, context),
   persistent_cdp: (msg, sender) => handlePersistentCDP(msg, sender),
   tabs: (msg) => handleTabsCommand(msg),
   management: (msg) => handleManagementCommand(msg),
-  contentSettings: (msg) => handleContentSettingsCommand(msg),
 };
 
 function resolveBrowserPilotCoreCommandHandler(cmd: unknown): BrowserPilotCoreCommandHandler | undefined {
@@ -353,7 +267,6 @@ async function handleBatch(msg: BrowserPilotBridgeCommand, sender: BrowserPilotB
   const R: BrowserPilotBridgeResponse[] = [];
   const resolve$N = (params: unknown): JsonRecord => JSON.parse(JSON.stringify(params || {}).replace(/"\$(\d+)\.([^"]+)"/g,
     (_: string, i: string, path: string) => { let v: unknown = R[Number(i)]; for (const k of path.split('.')) v = coreRecord(v)[k]; return JSON.stringify(v === undefined ? null : v); }));
-  const detachCurrent = async () => {};
   try {
     const commands = Array.isArray(msg.commands) ? msg.commands as BrowserPilotBridgeCommand[] : [];
     for (const c of commands) {
@@ -375,17 +288,11 @@ async function handleBatch(msg: BrowserPilotBridgeCommand, sender: BrowserPilotB
         }
       } catch (e) {
         R.push(bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, coreErrorMessage(e), { cmd: c && c.cmd, method: c && c.method, tabId: c && c.tabId, raw: coreErrorDetails(e) }));
-        try {
-          await detachCurrent();
-        } catch (_error) {
-          /* best-effort detach after batch command failure */
-        }
       }
     }
-    await detachCurrent();
     return { ok: true, results: R };
   } catch (e) {
     return bridgeError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, coreErrorMessage(e), { cmd: msg.cmd, results: R, raw: coreErrorDetails(e) });
   }
 }
-export { setBridgeWakeProbe, handleBridgeWake, normalizeBrowserPilotCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, browserPilotCookiePartitionIdentity, browserPilotCookieIdentity, mergeBrowserPilotCookies, normalizeBrowserPilotCookieUrl, handleCookies, handleCDP, handlePersistentCDP, validateBrowserPilotBridgeProtocolMessage, resolveBrowserPilotCoreCommandHandler, dispatchBrowserPilotBridgeCommand, handleBatch };
+export { setBridgeWakeProbe, handleBridgeWake, normalizeBrowserPilotCreateTabUrl, handleTabsCommand, handleManagementCommand, handleCDP, handlePersistentCDP, validateBrowserPilotBridgeProtocolMessage, resolveBrowserPilotCoreCommandHandler, dispatchBrowserPilotBridgeCommand, handleBatch };

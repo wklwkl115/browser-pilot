@@ -3,7 +3,6 @@ import { prepareExecuteStdlib } from "../browser-command-runtime/executeStdlib.j
 import { MAX_EXECUTION_REFS } from "../browser-command-runtime/executionRef.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
-import { redactSensitiveValue } from "../utils/redaction.js";
 import { isRecord } from "../utils/records.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { withBrowserOperation } from "./browserOperation.js";
@@ -87,7 +86,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 			...sharedTabScopedToolParams(),
 		}),
 		validateArguments: validateExecuteArguments,
-		async execute(_toolCallId, params: ExecuteParams, signal) {
+		async execute(params: ExecuteParams, signal) {
 			return await runCommandHandler(async () => {
 				const input = prepareExecute(params);
 				const prepared = prepareExecuteStdlib(input.script, { refs: input.refs });
@@ -101,6 +100,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 					server,
 					browserSessionId: target.browserSessionId,
 					tabId: target.tabId,
+					targetRef: target.rawTarget,
 					timeoutMs,
 					signal,
 				}, async ({ signal: operationSignal, deadlineAt }) => {
@@ -117,7 +117,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 						}, dispatch);
 				});
 				const value = "effect" in outcome ? { ...outcome.result, effect: outcome.effect } : outcome.result;
-				return jsonResult(redactSensitiveValue(value), { mode: "javascript", refsBound: Object.keys(input.refs).length }, { preserveExecutionData: true });
+				return jsonResult(value, { mode: "javascript", refsBound: Object.keys(input.refs).length }, { preserveExecutionData: true });
 			});
 		},
 	});

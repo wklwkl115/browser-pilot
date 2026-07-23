@@ -44,7 +44,6 @@
     "sync:config": "node scripts/sync-bridge-config.mjs",
     "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json",
     "build:bridge": "node scripts/build-bridge.mjs",
-    "prepare": "tsc -p tsconfig.build.json && node scripts/build-bridge.mjs --quiet",
     "mcp": "tsx src/apps/mcp/bin.ts",
     "test": "node scripts/run-tests.mjs all",
     "typecheck": "tsc -p tsconfig.json",
@@ -78,15 +77,6 @@
     "LICENSE",
     "SECURITY.md",
     "bridge/",
-    "capture-src/",
-    "scripts/build-bridge.mjs",
-    "scripts/clean-build.mjs",
-    "scripts/sync-bridge-config.mjs",
-    "src/",
-    "dist/",
-    "tsconfig.json",
-    "tsconfig.base.json",
-    "tsconfig.build.json",
-    "tsconfig.bridge-src.json"
+    "dist/"
   ]
 }

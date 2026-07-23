@@ -3,7 +3,7 @@ import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { BrowserBridgePendingRequests, requestGraceMs } from "./BrowserBridgePendingRequests.js";
-import type { BrowserBridgeLeaseRegistryPort, BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
+import type { BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
 import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import { errorToPlain } from "../../utils/errors.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
@@ -32,12 +32,10 @@ type BrowserBridgeClientMessageServiceDeps = {
 	tabs: BrowserTabSessionRouter;
 	pendingRequests: BrowserBridgePendingRequests;
 	runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
-	leases: BrowserBridgeLeaseRegistryPort;
 	queues: BrowserCommandQueueRegistry;
 	consent: BrowserBridgeConsentCoordinator;
-	migratePerceptionLedger?: (fromTabId: number, toTabId: number, browserSessionIds?: string[]) => void;
-	clearRecorderStateForReplacement?: (fromTabId: number, toTabId: number, browserSessionIds?: string[]) => void;
-	logLeaseCleanup?: (details: { reason: "disconnect"; releasedLeases: unknown[]; releasedUiLocks: unknown[]; disconnectedTabSessionIds: string[]; affectedBrowserSessionIds: string[] }) => void;
+	migratePerceptionLedger?: (fromTabId: number, toTabId: number, browserSessionId: string) => void;
+	clearRecorderStateForReplacement?: (fromTabId: number, toTabId: number, browserSessionId: string) => void;
 	notifyExtensionReady?: () => void;
 	handshakeTimeoutMs?: number;
 };
@@ -72,8 +70,6 @@ export class BrowserBridgeClientMessageService {
 
 	unregisterClient(ws: WebSocket, reason?: string): void {
 		this.clearHandshakeTimeout(ws);
-		const disconnectedTabSessionIds = Array.from(this.deps.tabs.sessions.values()).filter((session) => session.client === ws && !session.disconnectedAt).map((session) => session.id);
-		const affectedBrowserSessionIds = this.deps.browserSessions.list().filter((session) => session.selectedClient === ws).map((session) => session.id);
 		// Hold in-flight requests in a grace window instead of failing them outright: a fast
 		// reconnect (offscreen re-dial / SW restart) can still complete or reclaim them. Capture
 		// the owning instance before unregister so a same-instance reconnect can correlate.
@@ -82,22 +78,15 @@ export class BrowserBridgeClientMessageService {
 		if (reason) this.deps.clients.recordDisconnect(reason, instanceId, !this.deps.clients.hasOpenInstanceClient(instanceId, ws));
 		this.deps.clients.unregister(ws);
 		this.deps.tabs.markClientDisconnected(ws);
-		const releasedLeases = this.deps.leases.releaseLeasesForTabSessions(disconnectedTabSessionIds, "disconnect");
-		const releasedUiLocks = this.deps.leases.releaseUiLocksForBrowserSessions(affectedBrowserSessionIds, "disconnect");
-		if ((releasedLeases.length || releasedUiLocks.length) && this.deps.logLeaseCleanup) {
-			this.deps.logLeaseCleanup({ reason: "disconnect", releasedLeases, releasedUiLocks, disconnectedTabSessionIds, affectedBrowserSessionIds });
-		}
 	}
 
-	private applyReplacementSideEffects(replacements: AppliedTabReplacement[], affectedBrowserSessionIds: string[]): void {
+	private applyReplacementSideEffects(replacements: AppliedTabReplacement[], browserSessionId?: string): void {
 		for (const replacement of replacements) {
-			const next = this.deps.tabs.sessions.get(replacement.toSessionId);
-			if (next && !replacement.sameTab) this.deps.leases.migrateTabLeaseForReplacement(replacement.fromSessionId, next);
 			if (!replacement.sameTab) {
-				for (const session of this.deps.browserSessions.list()) this.deps.queues.migrateTabQueue(session.id, replacement.from, replacement.to);
-				this.deps.migratePerceptionLedger?.(replacement.from, replacement.to, affectedBrowserSessionIds);
+				this.deps.queues.migrateTabQueue(replacement.browserId, replacement.from, replacement.to);
+				if (browserSessionId) this.deps.migratePerceptionLedger?.(replacement.from, replacement.to, browserSessionId);
 			}
-			this.deps.clearRecorderStateForReplacement?.(replacement.from, replacement.to, affectedBrowserSessionIds);
+			if (browserSessionId) this.deps.clearRecorderStateForReplacement?.(replacement.from, replacement.to, browserSessionId);
 		}
 	}
 
@@ -169,10 +158,8 @@ export class BrowserBridgeClientMessageService {
 			const replacements = Array.isArray(message.replaced) ? this.deps.tabs.applyTabReplacements(message.replaced, ws) : [];
 			this.deps.tabs.updateTabs(Array.isArray(message.tabs) ? message.tabs : [], ws);
 			this.deps.tabs.recordTabActivation(message.activation, ws);
-			const affectedBrowserSessionIds = this.deps.browserSessions.list()
-				.filter((session) => this.deps.browserSessions.selectedOpenClient(session) === ws)
-				.map((session) => session.id);
-			this.applyReplacementSideEffects(replacements, affectedBrowserSessionIds);
+			const affectedBrowserSessionId = this.deps.browserSessions.selectedOpenClient(defaultSession) === ws ? defaultSession.id : undefined;
+			this.applyReplacementSideEffects(replacements, affectedBrowserSessionId);
 			this.deps.notifyExtensionReady?.();
 			if (type === "ext_ready") this.deps.runtimeRecoveryArtifacts.recordRuntimeRecovery(this.deps.clients.info(ws), recordValue(message.bridge));
 			return;

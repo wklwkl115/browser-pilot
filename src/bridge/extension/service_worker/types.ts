@@ -451,16 +451,6 @@ export type BrowserPilotChromeDownloadItem = {
   [key: string]: unknown;
 };
 
-export type BrowserPilotChromeCookie = {
-  name?: string;
-  value?: string;
-  domain?: string;
-  path?: string;
-  storeId?: string;
-  partitionKey?: { topLevelSite?: string; hasCrossSiteAncestor?: boolean };
-  [key: string]: unknown;
-};
-
 export type BrowserPilotWebSocketLike = {
   readyState: number;
   send(data: string): void;
@@ -530,15 +520,12 @@ export type BrowserPilotChromeApi = {
   extension?: { isAllowedIncognitoAccess(callback: (allowed: boolean) => void): void };
   scripting: { executeScript(options: JsonRecord): Promise<unknown[]> };
   downloads: BrowserPilotChromeDownloads;
-  cookies: { getAll(details: JsonRecord): Promise<BrowserPilotChromeCookie[]> };
-  management: { getAll(): Promise<Array<JsonRecord & { id?: string; name?: string; enabled?: boolean; type?: string; version?: string }>>; setEnabled(id: string, enabled: boolean): Promise<void> };
   offscreen?: BrowserPilotChromeOffscreen;
   alarms: { create(name: string, alarmInfo: JsonRecord): void; clear?(name: string): Promise<boolean> | boolean; onAlarm: BrowserPilotChromeEvent<(alarm: { name: string }) => void | Promise<void>> };
   storage?: {
     session?: { get(keys?: string | string[] | JsonRecord): Promise<JsonRecord>; set(items: JsonRecord): Promise<void>; remove(keys: string | string[]): Promise<void> };
     local?: { get(keys?: string | string[] | JsonRecord): Promise<JsonRecord>; set(items: JsonRecord): Promise<void>; remove(keys: string | string[]): Promise<void> };
   };
-  contentSettings?: Record<string, { set(details: JsonRecord): Promise<void> }>;
   webNavigation: Record<string, BrowserPilotChromeEvent<(details: JsonRecord & { tabId?: number; frameId?: number; url?: string }) => void>>;
 };
 

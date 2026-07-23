@@ -3,9 +3,9 @@ import { WebSocket } from "ws";
 import { targetHandleNotFoundError } from "../errors.js";
 import { BrowserBridgeError } from "../../utils/errors.js";
 import { browserTabInfo, isOpen, recordValue, tabSessionSummary, toTabId } from "./bridgeUtils.js";
-import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types.js";
+import type { BrowserAutomationSession, BrowserBridgeClientInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types.js";
 import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
-import { DEFAULT_BROWSER_SESSION_ID, type SessionRegistry } from "../../kernels/session/sessionRegistry.js";
+import type { SessionRegistry } from "../../kernels/session/sessionRegistry.js";
 
 const DISCONNECTED_SESSION_RETENTION_MS = 5 * 60_000;
 const MAX_DISCONNECTED_SESSION_HISTORY = 128;
@@ -162,6 +162,11 @@ export class BrowserTabSessionRouter {
 			if (session.client === ws && !session.disconnectedAt) session.disconnectedAt = Date.now();
 		}
 		this.browserSessions.markClientDisconnected(ws);
+		const browserSession = this.browserSession();
+		if (!this.browserSessions.selectedOpenClient(browserSession)) {
+			const fallback = this.sessions.get(this.firstActiveSessionId() || "");
+			if (fallback && isOpen(fallback.client)) this.browserSessions.selectClient(browserSession, fallback.client);
+		}
 		this.refreshSelectedSessionRefs();
 	}
 
@@ -226,10 +231,9 @@ export class BrowserTabSessionRouter {
 			const replacement: ReplacementRecord = { browserId, from, to, at, fromSessionId, toSessionId, ...(identity?.tabHandle ? { tabHandle: identity.tabHandle } : {}) };
 			this.replacements.set(this.replacementKey(browserId, from), replacement);
 			applied.push(replacement);
-			for (const browserSession of this.browserSessions.list()) {
-				if (browserSession.defaultSessionId === fromSessionId) this.setDefaultSessionId(browserSession, toSessionId);
-				if (browserSession.latestSessionId === fromSessionId) this.setLatestSessionId(browserSession, toSessionId);
-			}
+			const browserSession = this.browserSession();
+			if (browserSession.defaultSessionId === fromSessionId) this.setDefaultSessionId(browserSession, toSessionId);
+			if (browserSession.latestSessionId === fromSessionId) this.setLatestSessionId(browserSession, toSessionId);
 		}
 		this.pruneReplacements(now);
 		this.refreshSelectedSessionRefs(now);
@@ -306,20 +310,18 @@ export class BrowserTabSessionRouter {
 			const previous = this.sessions.get(reconnect.previousSessionId);
 			if (previous && !previous.disconnectedAt) previous.disconnectedAt = context.now;
 		}
-		for (const browserSession of this.browserSessions.list()) {
-			if (browserSession.selectedClient === reconnect.previousClient) this.browserSessions.selectClient(browserSession, context.ws);
-			if (browserSession.defaultSessionId === reconnect.previousSessionId) this.setDefaultSessionId(browserSession, id);
-			if (browserSession.latestSessionId === reconnect.previousSessionId) this.setLatestSessionId(browserSession, id);
-		}
+		const browserSession = this.browserSession();
+		if (browserSession.selectedClient === reconnect.previousClient) this.browserSessions.selectClient(browserSession, context.ws);
+		if (browserSession.defaultSessionId === reconnect.previousSessionId) this.setDefaultSessionId(browserSession, id);
+		if (browserSession.latestSessionId === reconnect.previousSessionId) this.setLatestSessionId(browserSession, id);
 	}
 
 	private updateBrowserSessionSelection(ws: WebSocket, id: string, active: boolean): void {
-		for (const browserSession of this.browserSessions.list()) {
-			const selected = this.browserSessions.selectedOpenClient(browserSession);
-			if (selected && selected !== ws) continue;
-			if (active || !browserSession.defaultSessionId) this.setDefaultSessionId(browserSession, id);
-			this.setLatestSessionId(browserSession, id);
-		}
+		const browserSession = this.browserSession();
+		const selected = this.browserSessions.selectedOpenClient(browserSession);
+		if (selected && selected !== ws) return;
+		if (active || !browserSession.defaultSessionId) this.setDefaultSessionId(browserSession, id);
+		this.setLatestSessionId(browserSession, id);
 	}
 
 	private disconnectMissingTabs(current: Set<string>, ws: WebSocket, now: number): void {
@@ -358,24 +360,6 @@ export class BrowserTabSessionRouter {
 		if (selectedSession) this.setDefaultSessionId(this.browserSession(browserSessionId), selectedSession.id);
 	}
 
-	attachTab(tabId: number, browserSessionId: string | undefined, browserId?: string): BrowserTabSession | undefined {
-		const selectedSession = browserId ? this.liveSessionForTabRef(tabId, browserId) : this.liveSessionForTabId(tabId, browserSessionId);
-		if (!selectedSession) return undefined;
-		const browserSession = this.browserSession(browserSessionId);
-		this.browserSessions.selectClient(browserSession, selectedSession.client);
-		this.setDefaultSessionId(browserSession, selectedSession.id);
-		this.setLatestSessionId(browserSession, selectedSession.id);
-		return selectedSession;
-	}
-
-	detachTab(tabId: number, browserSessionId?: string): void {
-		const browserSession = this.browserSession(browserSessionId);
-		const live = this.liveSessionForTabId(tabId, browserSessionId);
-		if (live?.id && browserSession.defaultSessionId === live.id) this.setDefaultSessionId(browserSession, undefined);
-		if (live?.id && browserSession.latestSessionId === live.id) this.setLatestSessionId(browserSession, undefined);
-		if (live?.client && this.browserSessions.selectedOpenClient(browserSession) === live.client) this.browserSessions.selectClient(browserSession, undefined);
-	}
-
 	previousDefaultTabId(browserSessionId?: string): number | undefined {
 		return this.tabIdForSessionId(this.browserSession(browserSessionId).defaultSessionId);
 	}
@@ -397,21 +381,6 @@ export class BrowserTabSessionRouter {
 		if (tabHandle) return this.liveSessionForHandle(tabHandle, browserSessionId);
 		if (target?.tabId !== undefined && target.browserId) return this.liveSessionForTabRef(target.tabId, target.browserId);
 		return target?.tabId !== undefined ? this.liveSessionForTabId(target.tabId, browserSessionId) : undefined;
-	}
-
-	describeBrowserSession(session: BrowserAutomationSession, selectedBrowser?: BrowserAutomationSessionInfo["selectedBrowser"]): BrowserAutomationSessionInfo {
-		return {
-			id: session.id,
-			name: session.name,
-			defaultTabId: this.tabIdForSessionId(session.defaultSessionId),
-			defaultTabHandle: this.tabHandleForSessionId(session.defaultSessionId),
-			latestTabId: this.tabIdForSessionId(session.latestSessionId),
-			latestTabHandle: this.tabHandleForSessionId(session.latestSessionId),
-			selectionVersion: session.selectionVersion,
-			createdAt: session.createdAt,
-			lastSeenAt: session.lastSeenAt,
-			selectedBrowser,
-		};
 	}
 
 	resolveTargetRef(value: unknown, browserSessionId?: string, source: BrowserBridgeTargetSource = "explicit"): BrowserBridgeTargetInfo | undefined {
@@ -474,7 +443,7 @@ export class BrowserTabSessionRouter {
 		this.pruneDisconnectedSessions(now);
 		const browserSession = this.browserSession(browserSessionId);
 		const scopeClient = this.browserSessions.selectedOpenClient(browserSession);
-		const firstActive = scopeClient ? this.firstActiveSessionIdForClient(scopeClient, browserSessionId) : browserSession.id === DEFAULT_BROWSER_SESSION_ID ? this.firstActiveSessionId(browserSessionId) : undefined;
+		const firstActive = scopeClient ? this.firstActiveSessionIdForClient(scopeClient, browserSessionId) : this.firstActiveSessionId(browserSessionId);
 		const isDefaultValid = (session: BrowserTabSession | undefined) => !!session && !session.disconnectedAt && (!scopeClient || session.client === scopeClient);
 		const isLatestValid = (session: BrowserTabSession | undefined) => !!session && !session.disconnectedAt;
 		const defaultSession = browserSession.defaultSessionId ? this.sessions.get(browserSession.defaultSessionId) : undefined;
@@ -640,7 +609,7 @@ export class BrowserTabSessionRouter {
 	}
 
 	private browserSession(browserSessionId?: string): BrowserAutomationSession {
-		return browserSessionId ? this.browserSessions.require(browserSessionId) : this.browserSessions.selectedSession();
+		return browserSessionId ? this.browserSessions.require(browserSessionId) : this.browserSessions.defaultSession();
 	}
 
 	private firstActiveSessionId(browserSessionId?: string): string | undefined {

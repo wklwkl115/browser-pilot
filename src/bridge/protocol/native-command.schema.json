@@ -32,12 +32,10 @@
       "bridge_wake",
       "tabs",
       "management",
-      "cookies",
       "cdp",
       "persistent_cdp",
       "batch",
-      "content.fingerprint",
-      "contentSettings"
+      "content.fingerprint"
     ],
     "input": [
       "input.pointer",
@@ -193,48 +191,22 @@
     "management": {
       "domain": "core",
       "tabScoped": false,
-      "accessMode": "read",
+      "accessMode": "write",
       "methods": [
-        "list",
-        "reload",
-        "disable",
-        "enable"
+        "reload"
       ],
       "methodRequired": true,
       "methodSpecs": {
         "reload": {
-          "accessMode": "write"
-        },
-        "disable": {
-          "required": [
-            "extId"
-          ],
-          "accessMode": "write"
-        },
-        "enable": {
-          "required": [
-            "extId"
-          ],
           "accessMode": "write"
         }
       },
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "method": { "enum": ["list", "reload", "disable", "enable"] },
-          "extId": { "type": "string" }
+          "method": { "const": "reload" }
         },
         "required": ["method"],
-        "additionalProperties": false
-      }
-    },
-    "cookies": {
-      "domain": "core",
-      "tabScoped": false,
-      "accessMode": "read",
-      "paramsSchema": {
-        "type": "object",
-        "properties": { "url": { "type": "string" } },
         "additionalProperties": false
       }
     },
@@ -423,20 +395,6 @@
       "required": [
         "commands"
       ]
-    },
-    "contentSettings": {
-      "domain": "core",
-      "tabScoped": false,
-      "accessMode": "write",
-      "paramsSchema": {
-        "type": "object",
-        "properties": {
-          "type": { "type": "string" },
-          "setting": { "type": "string" },
-          "pattern": { "type": "string" }
-        },
-        "additionalProperties": false
-      }
     },
     "wait.navigate": {
       "domain": "wait",
@@ -1253,15 +1211,10 @@
       "retryable": false,
       "summary": "Multiple connected browsers expose the same numeric tabId."
     },
-    "TAB_LEASE_CONFLICT": {
-      "category": "driver.lease",
-      "retryable": false,
-      "summary": "Target tab is leased by another browser session."
-    },
-    "UI_LOCK_CONFLICT": {
-      "category": "driver.lease",
-      "retryable": false,
-      "summary": "Browser UI is locked by another browser session."
+    "TARGET_TRANSACTION_CONFLICT": {
+      "category": "driver.transaction",
+      "retryable": true,
+      "summary": "An active target transaction attempted to acquire a different browser tab."
     },
     "BACKGROUND_THROTTLED": {
       "category": "runtime.page",

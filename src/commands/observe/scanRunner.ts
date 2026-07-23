@@ -2,7 +2,7 @@ import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntim
 import { BrowserBridgeError, compactError } from "../../utils/errors.js";
 import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
-import { artifactFallbackName, bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
+import { artifactFallbackName, bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, type CommandResultContext } from "../commandRuntime.js";
 import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, type ObserveToolParams } from "./common.js";
 import { runObserveProviders } from "./scanProviders.js";
@@ -78,7 +78,7 @@ async function prepareObservationRequest(
 	};
 }
 
-export async function runScanObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, onUpdate?: CommandOnUpdate, signal?: AbortSignal) {
+export async function runScanObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, signal?: AbortSignal) {
 	const startedAt = Date.now();
 	const extension = server.snapshot({ browserSessionId: params.browserSessionId }).extension;
 	if (extension && extension.captureContractVersion !== 1) {
@@ -113,7 +113,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		pageIdentity,
 		reanchorReason: sessionReanchorReason,
 		timings: observeTimings,
-		onUpdate,
 		signal,
 	});
 	const { observation, fusedPageFingerprint } = capture;

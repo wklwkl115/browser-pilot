@@ -8,13 +8,13 @@ export function withRelevanceTraceTap(delegate: BrowserCommandSink, server: Brow
 		define(definition: BrowserCommandDefinition) {
 			delegate.define({
 				...definition,
-				async execute(toolCallId, params, signal, onUpdate, ctx) {
+				async execute(params, signal, ctx) {
 					const terms = extractToolRelevanceTerms(definition.name, params);
 					if (terms.length) {
 						const browserSessionId = isRecord(params) && typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 						server.recordPerceptionTraceTerms?.(browserSessionId, terms);
 					}
-					return await definition.execute(toolCallId, params, signal, onUpdate, ctx);
+					return await definition.execute(params, signal, ctx);
 				},
 			});
 		},

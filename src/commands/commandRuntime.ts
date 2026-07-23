@@ -1,12 +1,10 @@
-import { randomUUID } from "node:crypto";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
-import { BrowserBridgeError, errorToPlain } from "../utils/errors.js";
+import { BrowserBridgeError } from "../utils/errors.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import { normalizeTabId } from "../utils/params.js";
 import { isRecord } from "../utils/records.js";
 import { urlOrigin } from "../utils/url.js";
 import { errorResult, type BrowserTextCommandResult } from "../utils/toolResult.js";
-import { stableJson } from "../utils/json.js";
 import { classifyRefScope } from "../kernels/refs/refPolicy.js";
 import { pageReanchorReason } from "../kernels/session/pageIdentity.js";
 import type { ExecutionRefTarget } from "../browser-command-runtime/executionRef.js";
@@ -18,35 +16,6 @@ import type { BrowserCommandDefinition, BrowserCommandSink } from "./commandDefi
 const MAX_COMMAND_TIMEOUT_MS = 300_000;
 
 export type CommandResultContext = { cwd?: string; omitTransportDetails?: boolean } | undefined;
-
-export type CommandOnUpdate = ((result: BrowserTextCommandResult) => void | Promise<void>) | undefined;
-
-export type TrackedOperationInfo = {
-	operationId: string;
-	commandName: string;
-	command?: string;
-	browserSessionId?: string;
-	tabId?: number;
-	phase: string;
-	progress?: number;
-	queueDepth?: number;
-	leaseOwnerHash?: string;
-	conflictReason?: string;
-	snapshotId?: string;
-	sourceMode?: string;
-	details?: Record<string, unknown>;
-	state: "active" | "terminal";
-	startedAt: number;
-	updatedAt: number;
-};
-
-type TrackedOperationInput = Omit<TrackedOperationInfo, "operationId" | "state" | "startedAt" | "updatedAt"> & { operationId?: string };
-
-export type TrackedOperationHandle = {
-	operation: TrackedOperationInfo;
-	update: (patch: Partial<Omit<TrackedOperationInfo, "operationId" | "startedAt">>, options?: { content?: boolean }) => Promise<TrackedOperationInfo>;
-	finish: () => TrackedOperationInfo;
-};
 
 export function defineBrowserCommand(commands: BrowserCommandSink, spec: BrowserCommandDefinition) {
 	commands.define(spec);
@@ -173,84 +142,4 @@ export function bridgeNestedErrorResult(error: unknown, options: { command?: str
 		}
 	}
 	return errorResult(error);
-}
-
-function compactOperationForEnvelope(operation: TrackedOperationInfo): Record<string, unknown> {
-	return {
-		operationId: operation.operationId,
-		commandName: operation.commandName,
-		command: operation.command,
-		browserSessionId: operation.browserSessionId,
-		tabId: operation.tabId,
-		phase: operation.phase,
-		progress: operation.progress,
-		queueDepth: operation.queueDepth,
-		leaseOwnerHash: operation.leaseOwnerHash,
-		conflictReason: operation.conflictReason,
-		snapshotId: operation.snapshotId,
-		sourceMode: operation.sourceMode,
-		details: operation.details,
-		state: operation.state,
-		startedAt: operation.startedAt,
-		updatedAt: operation.updatedAt,
-	};
-}
-
-async function emitTrackedProgress(onUpdate: CommandOnUpdate, operation: TrackedOperationInfo, options: { content?: boolean } = {}): Promise<void> {
-	if (!onUpdate) return;
-	const payload = compactOperationForEnvelope(operation);
-	if (options.content === false) {
-		await onUpdate({ content: [], details: { progress: payload } });
-		return;
-	}
-	await onUpdate({ content: [{ type: "text", text: stableJson({ progress: payload }) }], details: { progress: payload } });
-}
-
-function attachOperationToError(error: unknown, operation: TrackedOperationInfo): unknown {
-	const operationDetails = { operation: compactOperationForEnvelope(operation) };
-	if (error instanceof BrowserBridgeError) {
-		return new BrowserBridgeError(error.code, error.message, { ...error.details, ...operationDetails });
-	}
-	if (error instanceof Error) {
-		const details = isRecord((error as Error & { details?: unknown }).details) ? ((error as Error & { details?: Record<string, unknown> }).details || {}) : {};
-		const plain = errorToPlain(error);
-		const code = typeof plain.code === "string" && plain.code ? normalizeNativeErrorCode(plain.code) : "INTERNAL_ERROR";
-		return new BrowserBridgeError(code, error.message, { ...details, ...operationDetails, causeName: error.name });
-	}
-	return error;
-}
-
-export async function startTrackedOperation(meta: TrackedOperationInput, onUpdate?: CommandOnUpdate): Promise<TrackedOperationHandle> {
-	const startedAt = Date.now();
-	let current: TrackedOperationInfo = { ...meta, operationId: meta.operationId ?? randomUUID(), state: "active", startedAt, updatedAt: startedAt };
-	await emitTrackedProgress(onUpdate, current);
-	return {
-		get operation() { return current; },
-		update: async (patch, options) => {
-			current = { ...current, ...patch, operationId: current.operationId, startedAt: current.startedAt, updatedAt: Date.now() };
-			await emitTrackedProgress(onUpdate, current, options);
-			return current;
-		},
-		finish: () => (current = { ...current, state: "terminal", updatedAt: Date.now() }),
-	};
-}
-
-export async function withTrackedOperation<T>(meta: TrackedOperationInput, onUpdate: CommandOnUpdate, run: (handle: TrackedOperationHandle) => Promise<T>): Promise<{ result: T; operation: TrackedOperationInfo }> {
-	const handle = await startTrackedOperation(meta, onUpdate);
-	let heartbeat: NodeJS.Timeout | undefined;
-	try {
-		heartbeat = setInterval(() => {
-			void handle.update({ details: { heartbeatAt: Date.now() } }, { content: false });
-		}, 1_000);
-		heartbeat.unref?.();
-		const result = await run(handle);
-		await handle.update({ phase: "completed", progress: 100 });
-		return { result, operation: handle.finish() };
-	} catch (error) {
-		const failed = await handle.update({ phase: "failed", conflictReason: error instanceof Error ? error.message : String(error) });
-		handle.finish();
-		throw attachOperationToError(error, failed);
-	} finally {
-		if (heartbeat) clearInterval(heartbeat);
-	}
 }

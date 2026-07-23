@@ -29,7 +29,7 @@ const DEFAULT_RECOVERIES: Record<AbmlErrorCode, AbmlRecovery> = {
 	CROSS_ORIGIN_BLOCKED: { retryable: false, kind: "use-visual-floor", nextActions: ["switch to a reachable frame or use a visual fallback if allowed"] },
 	VERIFY_FAILED: { retryable: true, kind: "manual-review", nextActions: ["inspect observed state and retry with tighter expectations"] },
 	VERIFY_INCONCLUSIVE: { retryable: true, kind: "manual-review", nextActions: ["inspect evidence and perform a follow-up read to confirm state"] },
-	TAB_LEASE_CONFLICT: { retryable: true, kind: "switch-session-or-tab", nextActions: ["release or switch the conflicting tab lease before retrying"] },
+	TARGET_TRANSACTION_CONFLICT: { retryable: true, kind: "wait-and-retry", nextActions: ["finish the current target operation before using another browser tab"] },
 	INVALID_INPUT: { retryable: false, kind: "manual-review", nextActions: ["fix invalid selectors/params before retrying"] },
 	INTERNAL_ERROR: { retryable: false, kind: "none", nextActions: ["inspect the cause and runtime diagnostics"] },
 };
@@ -52,7 +52,7 @@ const CODE_CATEGORY: Record<AbmlErrorCode, AbmlErrorCategory> = {
 	CROSS_ORIGIN_BLOCKED: "backend",
 	VERIFY_FAILED: "verification",
 	VERIFY_INCONCLUSIVE: "verification",
-	TAB_LEASE_CONFLICT: "session",
+	TARGET_TRANSACTION_CONFLICT: "session",
 	INVALID_INPUT: "input",
 	INTERNAL_ERROR: "internal",
 };
@@ -62,7 +62,7 @@ const CODE_TO_ABML: Partial<Record<string, AbmlErrorCode>> = {
 	HANDLE_EXPIRED: "HANDLE_EXPIRED",
 	HANDLE_KIND_MISMATCH: "HANDLE_KIND_MISMATCH",
 	HANDLE_ETAG_MISMATCH: "HANDLE_ETAG_MISMATCH",
-	TAB_LEASE_CONFLICT: "TAB_LEASE_CONFLICT",
+	TARGET_TRANSACTION_CONFLICT: "TARGET_TRANSACTION_CONFLICT",
 	NO_SESSION: "REF_SCOPE_VIOLATION",
 	SESSION_NOT_FOUND: "REF_SCOPE_VIOLATION",
 	SELECTOR_NOT_FOUND: "REF_STALE",
@@ -97,7 +97,7 @@ function defaultMessageForCode(code: AbmlErrorCode): string {
 		case "CROSS_ORIGIN_BLOCKED": return "Requested operation is blocked by cross-origin frame boundaries.";
 		case "VERIFY_FAILED": return "Post-action verification failed.";
 		case "VERIFY_INCONCLUSIVE": return "Post-action verification was inconclusive.";
-		case "TAB_LEASE_CONFLICT": return "Target tab lease conflicts with another browser session.";
+		case "TARGET_TRANSACTION_CONFLICT": return "The active target transaction cannot acquire another browser tab.";
 		case "INVALID_INPUT": return "Input is invalid.";
 		case "INTERNAL_ERROR": return "Unexpected ABML internal error.";
 	}

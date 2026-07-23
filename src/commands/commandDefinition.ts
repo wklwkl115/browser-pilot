@@ -5,8 +5,6 @@ export type BrowserCommandResult = {
 	terminate?: boolean;
 };
 
-export type BrowserCommandUpdate = BrowserCommandResult;
-
 export type BrowserCommandExecuteContext = {
 	cwd?: string;
 	omitTransportDetails?: boolean;
@@ -27,10 +25,8 @@ export type BrowserCommandDefinition = {
 	parameters?: unknown;
 	validateArguments?: (args: Record<string, unknown>) => ValidationIssue[];
 	execute: (
-		toolCallId: string,
-		params: any,
+		params: Record<string, unknown>,
 		signal?: AbortSignal,
-		onUpdate?: (update: BrowserCommandUpdate) => void | Promise<void>,
 		ctx?: BrowserCommandExecuteContext,
 	) => Promise<BrowserCommandResult> | BrowserCommandResult;
 };

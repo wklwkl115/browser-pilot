@@ -43,7 +43,7 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 			...sharedTabScopedToolParams(),
 		}),
 		validateArguments: validateObserveArguments,
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		async execute(params, signal, ctx) {
 			return await runCommandHandler(async (): Promise<import("../utils/toolResult.js").BrowserTextCommandResult> => {
 				const toolCtx = ctx ?? {};
 				const server = await ensureStarted();
@@ -54,7 +54,7 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 					const latestSnapshotId = selectDiffBaselineSnapshot(server, observeParams);
 					if (latestSnapshotId) observeParams.baseline = latestSnapshotId;
 				}
-				return await runScanObservation(server, observeParams, toolCtx, _onUpdate, signal);
+				return await runScanObservation(server, observeParams, toolCtx, signal);
 			}, observeErrorResult);
 		},
 	});

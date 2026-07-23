@@ -1,7 +1,7 @@
 /**
  * Persistent token store for connection-authorization.
  *
- * Agents are persisted as AgentRecord entries in a JSON file. All writes go
+ * The single paired agent is persisted in the existing JSON envelope. All writes go
  * through an in-process async mutex (a module-level promise chain) because the
  * daemon is a single-process singleton — no cross-process locking needed.
  */
@@ -128,7 +128,7 @@ function loadFromDisk(filePath: string): AuthStore {
 	try {
 		const parsed = JSON.parse(raw) as Partial<AuthStore>;
 		if (parsed.version === AUTH_STORE_VERSION && Array.isArray(parsed.agents) && parsed.agents.every(isAgentRecord)) {
-			return { version: AUTH_STORE_VERSION, agents: parsed.agents };
+			return { version: AUTH_STORE_VERSION, agents: parsed.agents.slice(-1) };
 		}
 	} catch (error) {
 		throw new Error(`Browser Pilot auth store is malformed: ${filePath}; move or delete it and pair again`, { cause: error });
@@ -166,8 +166,8 @@ export function mintPending(label: string): { pairingId: string; code: string } 
 		pairingCode: code,
 		pendingExpiresAt: new Date(Date.now() + PAIR_PENDING_TTL_MS).toISOString(),
 	};
-	// Update in-memory cache synchronously so approve() can find the record immediately.
-	getCache().agents.push(record);
+	// Starting a new pairing replaces the previous agent immediately.
+	getCache().agents = [record];
 	// Write to disk asynchronously for persistence.
 	persistEventually();
 	return { pairingId, code };

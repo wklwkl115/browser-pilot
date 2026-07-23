@@ -2,7 +2,6 @@ import { createBrowserAbmlIntegration } from "../../browser-command-runtime/abml
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { normalizePageFingerprint, readPageFingerprint, type PageFingerprint } from "../pageSignals.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
-import { withTrackedOperation, type CommandOnUpdate } from "../commandRuntime.js";
 import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import type { BaselineResolution } from "./baseline.js";
 import type { ObserveToolParams } from "./common.js";
@@ -36,7 +35,6 @@ type ScanCaptureOptions = {
 	pageIdentity: PageIdentity | undefined;
 	reanchorReason: PageReanchorReason | undefined;
 	timings: ObserveTimingMetrics;
-	onUpdate?: CommandOnUpdate;
 	signal?: AbortSignal;
 };
 
@@ -93,42 +91,25 @@ async function readScanAbml(
 }
 
 export async function executeScanCapture(options: ScanCaptureOptions) {
-	const { server, params, rawTargetRef, browserSessionId, tabId, timeoutMs, captureMaxChars, scanScript, baseline, timings, onUpdate } = options;
+	const { server, params, rawTargetRef, browserSessionId, tabId, timeoutMs, captureMaxChars, scanScript, baseline, timings } = options;
 	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, signal: options.signal });
 	let fusedPageFingerprint: PageFingerprint | undefined;
-	let capturedPageIdentity: PageIdentity | undefined;
 	let effectiveBaseline = baseline;
 	let reanchorReason = options.reanchorReason;
-	const { result: observation, operation } = await withTrackedOperation({
-		commandName: "browser_observe",
-		command: "scan",
-		browserSessionId,
-		tabId,
-		phase: "running",
-		progress: 10,
-		queueDepth: server.queueDepth(browserSessionId, tabId),
-		leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
-		sourceMode: "scan",
-	}, onUpdate, async (handle) => {
-		await handle.update({ progress: 40 });
-		const pageScriptStartedAt = Date.now();
-		const evaluated = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract", signal: options.signal });
-		const result = { ...evaluated, data: validatedScanBundle(evaluated.data) };
-		timings.pageScriptMs = elapsedMs(pageScriptStartedAt);
-		addBridgeRoundTrips(timings, 1);
-		fusedPageFingerprint = scanResultFingerprint(result.data);
-		if (fusedPageFingerprint) timings.fusedFingerprint = true;
-		const capturedIdentity = await readCapturedPageIdentity(options, fusedPageFingerprint, result.target);
-		fusedPageFingerprint = capturedIdentity.fingerprint;
-		capturedPageIdentity = capturedIdentity.identity;
-		if (capturedIdentity.reanchorReason) {
-			reanchorReason = capturedIdentity.reanchorReason;
-			effectiveBaseline = undefined;
-		}
-		await handle.update({ progress: 70, details: { acknowledged: result.acknowledged, target: result.target } });
-		const abmlRead = await readScanAbml(options, abml, result, effectiveBaseline, fusedPageFingerprint);
-		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target, abml: abmlRead?.ok === true ? { entityCount: abmlRead.entities?.length ?? 0 } : { ok: false } } });
-		return { result, abmlRead };
-	});
-	return { observation, operation, fusedPageFingerprint, pageIdentity: capturedPageIdentity, baseline: effectiveBaseline, reanchorReason };
+	const pageScriptStartedAt = Date.now();
+	const evaluated = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract", signal: options.signal });
+	const result = { ...evaluated, data: validatedScanBundle(evaluated.data) };
+	timings.pageScriptMs = elapsedMs(pageScriptStartedAt);
+	addBridgeRoundTrips(timings, 1);
+	fusedPageFingerprint = scanResultFingerprint(result.data);
+	if (fusedPageFingerprint) timings.fusedFingerprint = true;
+	const capturedIdentity = await readCapturedPageIdentity(options, fusedPageFingerprint, result.target);
+	fusedPageFingerprint = capturedIdentity.fingerprint;
+	const capturedPageIdentity = capturedIdentity.identity;
+	if (capturedIdentity.reanchorReason) {
+		reanchorReason = capturedIdentity.reanchorReason;
+		effectiveBaseline = undefined;
+	}
+	const abmlRead = await readScanAbml(options, abml, result, effectiveBaseline, fusedPageFingerprint);
+	return { observation: { result, abmlRead }, fusedPageFingerprint, pageIdentity: capturedPageIdentity, baseline: effectiveBaseline, reanchorReason };
 }

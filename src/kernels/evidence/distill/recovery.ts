@@ -107,7 +107,7 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 		["BODY_UNAVAILABLE", "REQUEST_NOT_FOUND", "NETWORK_RECORDER_NOT_STARTED"].includes(code) ? "use browser_command network.start on the intended tab, then network.list or network.body" : undefined,
 		["NO_SESSION", "NOT_INSTALLED"].includes(code) ? "use browser_command hook.install on the intended tab before collecting hook events" : undefined,
 		["INVALID_TIMEOUT", "TIMEOUT", "BRIDGE_TIMEOUT", "NAVIGATION_TIMEOUT", "NETWORK_IDLE_TIMEOUT", "SELECTOR_TIMEOUT"].includes(code) ? "retry once with the current targetRef; Browser Pilot owns the execution deadline" : undefined,
-		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=list to target an unleased tab, or retry after the lease's remainingMs elapses" : undefined,
+		code === "TARGET_TRANSACTION_CONFLICT" ? "finish the current target operation before starting work on another browser tab" : undefined,
 		code === "INVALID_BROWSER_COMMAND" ? "use browser_command with a validated command object" : undefined,
 		code === "BROWSER_COMMAND_FAILED" ? "use browser_command with a validated command object" : undefined,
 		code === "BROWSER_EXECUTION_ERROR" ? "inspect the page error in this result; if selectors targeted stale DOM, refresh with browser_observe" : undefined,

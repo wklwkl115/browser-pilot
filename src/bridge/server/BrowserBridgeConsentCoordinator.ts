@@ -13,13 +13,14 @@ export interface BrowserBridgeConsentCoordinatorDeps {
 }
 
 type PendingConsentEntry = {
+  pairingId: string;
   resolve: (decision: ConsentDecision) => void;
   timer: ReturnType<typeof setTimeout>;
 };
 
 export class BrowserBridgeConsentCoordinator {
   private readonly deps: BrowserBridgeConsentCoordinatorDeps;
-  private readonly pending = new Map<string, PendingConsentEntry>();
+  private pending?: PendingConsentEntry;
   private revokeHandler: ((pairingId: string) => void) | undefined;
 
   constructor(deps: BrowserBridgeConsentCoordinatorDeps) {
@@ -44,13 +45,17 @@ export class BrowserBridgeConsentCoordinator {
 
     return new Promise<ConsentDecision>((resolve) => {
       const { pairingId, label, code, expiresAt, timeoutMs } = input;
+      if (this.pending) {
+        clearTimeout(this.pending.timer);
+        this.pending.resolve("timeout");
+      }
 
       const timer = setTimeout(() => {
-        this.pending.delete(pairingId);
+        if (this.pending?.pairingId === pairingId) this.pending = undefined;
         resolve("timeout");
       }, Math.max(0, Math.floor(timeoutMs)));
 
-      this.pending.set(pairingId, { resolve, timer });
+      this.pending = { pairingId, resolve, timer };
 
       const envelope: ConsentRequestEnvelope = {
         type: CONSENT_MESSAGE_TYPES.request,
@@ -64,17 +69,17 @@ export class BrowserBridgeConsentCoordinator {
         socket.send(JSON.stringify(envelope));
       } catch {
         clearTimeout(timer);
-        this.pending.delete(pairingId);
+        if (this.pending?.pairingId === pairingId) this.pending = undefined;
         resolve("timeout");
       }
     });
   }
 
   resolveConsent(pairingId: string, decision: "approve" | "deny"): void {
-    const entry = this.pending.get(pairingId);
-    if (!entry) return;
+    const entry = this.pending;
+    if (!entry || entry.pairingId !== pairingId) return;
     clearTimeout(entry.timer);
-    this.pending.delete(pairingId);
+    this.pending = undefined;
     entry.resolve(decision);
   }
 

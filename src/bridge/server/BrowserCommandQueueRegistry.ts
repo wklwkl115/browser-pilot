@@ -12,14 +12,14 @@ export type BrowserCommandQueuePressure = {
 
 export type BrowserCommandQueueInfo = {
 	key: string;
-	browserSessionId: string;
+	browserId: string;
 	tabId: number;
 	depth: number;
 };
 
 type BrowserCommandTransactionContext = {
 	token: symbol;
-	leaseGeneration: number;
+	generation: number;
 	ownedKey: string;
 };
 
@@ -29,47 +29,47 @@ export class BrowserCommandQueueRegistry {
 	private readonly aliases = new Map<string, string>();
 	private readonly displayKeys = new Map<string, string>();
 	private readonly transactionContext = new AsyncLocalStorage<BrowserCommandTransactionContext>();
-	private readonly activeTransactionLeases = new Map<symbol, number>();
-	private nextTransactionLeaseGeneration = 0;
+	private readonly activeTransactions = new Map<symbol, number>();
+	private nextTransactionGeneration = 0;
 	private readonly maxDepth: number;
 
 	constructor(maxDepth = DEFAULT_MAX_QUEUE_DEPTH) {
 		this.maxDepth = Math.max(1, Math.floor(maxDepth));
 	}
 
-	async withTransaction<T>(browserSessionId: string, tabId: number, run: () => Promise<T>, options: { signal?: AbortSignal } = {}): Promise<T> {
+	async withTransaction<T>(browserId: string, tabId: number, run: () => Promise<T>, options: { signal?: AbortSignal } = {}): Promise<T> {
 		const activeContext = this.currentActiveTransactionContext();
-		const requestedKey = this.resolveKey(this.key(browserSessionId, tabId));
+		const requestedKey = this.resolveKey(this.key(browserId, tabId));
 		if (activeContext) {
-			if (activeContext.ownedKey !== requestedKey) throw this.targetTransactionConflict(activeContext, browserSessionId, tabId);
-			if (options.signal?.aborted) throw this.cancelledBeforeDispatch(browserSessionId, tabId);
+			if (activeContext.ownedKey !== requestedKey) throw this.targetTransactionConflict(activeContext, browserId, tabId);
+			if (options.signal?.aborted) throw this.cancelledBeforeDispatch(browserId, tabId);
 			return await run();
 		}
-		return await this.enqueue(browserSessionId, tabId, async () => {
+		return await this.enqueue(browserId, tabId, async () => {
 			const token = Symbol("browser-command-transaction");
-			const leaseGeneration = ++this.nextTransactionLeaseGeneration;
-			const context = { token, leaseGeneration, ownedKey: this.resolveKey(requestedKey) };
-			this.activeTransactionLeases.set(token, leaseGeneration);
+			const generation = ++this.nextTransactionGeneration;
+			const context = { token, generation, ownedKey: this.resolveKey(requestedKey) };
+			this.activeTransactions.set(token, generation);
 			try {
 				return await this.transactionContext.run(context, run);
 			} finally {
-				if (this.activeTransactionLeases.get(token) === leaseGeneration) this.activeTransactionLeases.delete(token);
+				if (this.activeTransactions.get(token) === generation) this.activeTransactions.delete(token);
 			}
 		}, options);
 	}
 
-	ownsCurrentTransaction(browserSessionId: string, tabId: number): boolean {
+	ownsCurrentTransaction(browserId: string, tabId: number): boolean {
 		const context = this.currentActiveTransactionContext();
-		return context?.ownedKey === this.resolveKey(this.key(browserSessionId, tabId));
+		return context?.ownedKey === this.resolveKey(this.key(browserId, tabId));
 	}
 
-	enqueue<T>(browserSessionId: string, tabId: number, run: () => Promise<T>, options: { signal?: AbortSignal } = {}): Promise<T> & { queuePressure?: BrowserCommandQueuePressure } {
-		const key = this.resolveKey(this.key(browserSessionId, tabId));
+	enqueue<T>(browserId: string, tabId: number, run: () => Promise<T>, options: { signal?: AbortSignal } = {}): Promise<T> & { queuePressure?: BrowserCommandQueuePressure } {
+		const key = this.resolveKey(this.key(browserId, tabId));
 		const activeContext = this.currentActiveTransactionContext();
-		if (activeContext && activeContext.ownedKey !== key) throw this.targetTransactionConflict(activeContext, browserSessionId, tabId);
+		if (activeContext && activeContext.ownedKey !== key) throw this.targetTransactionConflict(activeContext, browserId, tabId);
 		const currentDepth = this.depths.get(key) || 0;
 		if (currentDepth >= this.maxDepth) {
-			return Promise.reject(new BrowserBridgeError("QUEUE_FULL", "Browser command queue is full", { browserSessionId, tabId, depth: currentDepth, maxDepth: this.maxDepth }));
+			return Promise.reject(new BrowserBridgeError("QUEUE_FULL", "Browser command queue is full", { browserId, tabId, depth: currentDepth, maxDepth: this.maxDepth }));
 		}
 		const newDepth = currentDepth + 1;
 		this.depths.set(key, newDepth);
@@ -97,7 +97,7 @@ export class BrowserCommandQueueRegistry {
 			if (settled || started) return;
 			settled = true;
 			releaseDepth();
-			rejectResult(this.cancelledBeforeDispatch(browserSessionId, tabId));
+			rejectResult(this.cancelledBeforeDispatch(browserId, tabId));
 		};
 		options.signal?.addEventListener("abort", abortBeforeDispatch, { once: true });
 		if (options.signal?.aborted) abortBeforeDispatch();
@@ -135,15 +135,15 @@ export class BrowserCommandQueueRegistry {
 		return result;
 	}
 
-	depth(browserSessionId: string, tabId: number): number {
-		return this.depths.get(this.resolveKey(this.key(browserSessionId, tabId))) || 0;
+	depth(browserId: string, tabId: number): number {
+		return this.depths.get(this.resolveKey(this.key(browserId, tabId))) || 0;
 	}
 
-	migrateTabQueue(browserSessionId: string, fromTabId: number, toTabId: number): BrowserCommandQueueInfo | undefined {
+	migrateTabQueue(browserId: string, fromTabId: number, toTabId: number): BrowserCommandQueueInfo | undefined {
 		if (!Number.isInteger(fromTabId) || !Number.isInteger(toTabId) || fromTabId === toTabId) return undefined;
-		const fromKey = this.resolveKey(this.key(browserSessionId, fromTabId));
+		const fromKey = this.resolveKey(this.key(browserId, fromTabId));
 		if (!this.depths.has(fromKey)) return undefined;
-		const toKey = this.key(browserSessionId, toTabId);
+		const toKey = this.key(browserId, toTabId);
 		this.aliases.set(toKey, fromKey);
 		this.displayKeys.set(fromKey, toKey);
 		const depth = this.depths.get(fromKey) || 0;
@@ -161,11 +161,11 @@ export class BrowserCommandQueueRegistry {
 		this.depths.clear();
 		this.aliases.clear();
 		this.displayKeys.clear();
-		this.activeTransactionLeases.clear();
+		this.activeTransactions.clear();
 	}
 
-	private key(browserSessionId: string, tabId: number): string {
-		return `${browserSessionId}:${tabId}`;
+	private key(browserId: string, tabId: number): string {
+		return `${browserId}:${tabId}`;
 	}
 
 	private resolveKey(key: string): string {
@@ -179,21 +179,21 @@ export class BrowserCommandQueueRegistry {
 	}
 
 	private infoFromKey(key: string, depth: number): BrowserCommandQueueInfo {
-		const [browserSessionId, tabIdRaw] = key.split(":", 2);
-		return { key, browserSessionId, tabId: Number(tabIdRaw), depth };
+		const [browserId, tabIdRaw] = key.split(":", 2);
+		return { key, browserId, tabId: Number(tabIdRaw), depth };
 	}
 
 	private currentActiveTransactionContext(): BrowserCommandTransactionContext | undefined {
 		const context = this.transactionContext.getStore();
 		if (!context) return undefined;
-		return this.activeTransactionLeases.get(context.token) === context.leaseGeneration ? context : undefined;
+		return this.activeTransactions.get(context.token) === context.generation ? context : undefined;
 	}
 
-	private targetTransactionConflict(context: BrowserCommandTransactionContext, browserSessionId: string, tabId: number): BrowserBridgeError {
-		return new BrowserBridgeError("TAB_LEASE_CONFLICT", "An active target transaction cannot acquire a different target", {
-			browserSessionId,
+	private targetTransactionConflict(context: BrowserCommandTransactionContext, browserId: string, tabId: number): BrowserBridgeError {
+		return new BrowserBridgeError("TARGET_TRANSACTION_CONFLICT", "An active target transaction cannot acquire a different target", {
+			browserId,
 			tabId,
-			requestedQueueKey: this.resolveKey(this.key(browserSessionId, tabId)),
+			requestedQueueKey: this.resolveKey(this.key(browserId, tabId)),
 			ownedQueueKey: context.ownedKey,
 			acked: false,
 			dispatchStarted: false,
@@ -201,9 +201,9 @@ export class BrowserCommandQueueRegistry {
 		});
 	}
 
-	private cancelledBeforeDispatch(browserSessionId: string, tabId: number): BrowserBridgeError {
+	private cancelledBeforeDispatch(browserId: string, tabId: number): BrowserBridgeError {
 		return new BrowserBridgeError("BRIDGE_TIMEOUT", "Browser command was cancelled while waiting in the tab queue", {
-			browserSessionId,
+			browserId,
 			tabId,
 			acked: false,
 			dispatchStarted: false,

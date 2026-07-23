@@ -5,6 +5,7 @@ type BrowserOperationOptions = {
 	server: BrowserCommandRuntimePort;
 	browserSessionId?: string;
 	tabId?: number;
+	targetRef?: string | number;
 	timeoutMs: number;
 	signal?: AbortSignal;
 };
@@ -31,7 +32,7 @@ export async function withBrowserOperation<T>(
 	const run = () => dispatch({ signal: controller.signal, deadlineAt });
 	try {
 		return options.server.withTargetTransaction && options.tabId !== undefined
-			? await options.server.withTargetTransaction({ browserSessionId: options.browserSessionId, tabId: options.tabId, signal: controller.signal }, run)
+				? await options.server.withTargetTransaction({ browserSessionId: options.browserSessionId, tabId: options.tabId, targetRef: options.targetRef, signal: controller.signal }, run)
 			: await run();
 	} finally {
 		clearTimeout(timer);

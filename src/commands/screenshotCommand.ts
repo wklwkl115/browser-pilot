@@ -31,7 +31,7 @@ export function defineScreenshotCommand({ commands, ensureStarted }: CommandRegi
 			...sharedTabScopedToolParams(),
 			fullPage: Type.Optional(Type.Boolean({ description: "Capture beyond the visible viewport." })),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(params, _signal, ctx) {
 			return await runCommandHandler(async () => {
 				const server = await ensureStarted();
 				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;

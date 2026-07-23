@@ -6,7 +6,6 @@ import type { BridgeCommand } from "../../types/nativeProtocol.js";
 import { bridgeResultFailure, recordValue, toTabId } from "./bridgeUtils.js";
 import type {
 	BrowserAutomationSession,
-	BrowserAutomationSessionInfo,
 	BrowserBridgeExecutionResult,
 	BrowserBridgeSnapshot,
 	BrowserBridgeTargetInfo,
@@ -17,7 +16,7 @@ import type {
 import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import type { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
 import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
-import type { BrowserBridgeLeaseRegistryPort, BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
+import type { BrowserBridgeSessionRegistryPort } from "./BrowserBridgeSessionPorts.js";
 import type { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import type { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { classifyDeadlinePressure } from "../../kernels/temporal/budget.js";
@@ -113,14 +112,12 @@ type BrowserBridgeCommandServiceDeps = {
 	clients: BrowserBridgeClientRegistry;
 	browserSessions: BrowserBridgeSessionRegistryPort;
 	queues: BrowserCommandQueueRegistry;
-	leases: BrowserBridgeLeaseRegistryPort;
 	tabs: BrowserTabSessionRouter;
 	pendingRequests: BrowserBridgePendingRequests;
 	runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
 	isRunning: () => boolean;
 	getPort: () => number;
 	getTabs: (options?: { includeDisconnected?: boolean }) => BrowserTabInfo[];
-	listBrowserSessions: () => BrowserAutomationSessionInfo[];
 	snapshot: (options?: { browserSessionId?: string }) => BrowserBridgeSnapshot;
 	/** Resolve once an extension is connected for the session, or after timeoutMs — never throws. */
 	waitForExtensionReady: (browserSessionId: string | undefined, timeoutMs: number) => Promise<boolean>;
@@ -143,23 +140,17 @@ export class BrowserBridgeCommandService {
 	}
 
 	async switchTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
-		const browserSession = this.browserSession(options.browserSessionId);
 		const target = this.requireTargetRef(tabId, options.browserSessionId);
 		const id = this.requireTargetTabId(target, tabId);
-		await this.deps.leases.acquireUiLock(browserSession.id, "browser_tabs.switch");
-		try {
-			const previousDefaultTabId = this.deps.tabs.previousDefaultTabId(options.browserSessionId);
-			const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId, browserSessionId: options.browserSessionId, signal: options.signal });
-			const failure = bridgeResultFailure(result.data);
-			if (failure) throw new BrowserBridgeError("BROWSER_COMMAND_FAILED", failure.message, { cmd: "tabs", method: "switch", tabId: id, ...failure.details });
-			this.deps.tabs.selectTab(id, options.browserSessionId);
-			const selection = { selectedTabId: id, selectedTabHandle: target.tabHandle, previousDefaultTabId, selectionVersion: this.deps.tabs.selectionVersion };
-			const dataRecord = recordValue(result.data);
-			const data = dataRecord ? { ...dataRecord, ...selection } : selection;
-			return { ...result, data };
-		} finally {
-			this.deps.leases.releaseUiLock(browserSession.id);
-		}
+		const previousDefaultTabId = this.deps.tabs.previousDefaultTabId(options.browserSessionId);
+		const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId, browserSessionId: options.browserSessionId, signal: options.signal });
+		const failure = bridgeResultFailure(result.data);
+		if (failure) throw new BrowserBridgeError("BROWSER_COMMAND_FAILED", failure.message, { cmd: "tabs", method: "switch", tabId: id, ...failure.details });
+		this.deps.tabs.selectTab(id, options.browserSessionId);
+		const selection = { selectedTabId: id, selectedTabHandle: target.tabHandle, previousDefaultTabId, selectionVersion: this.deps.tabs.selectionVersion };
+		const dataRecord = recordValue(result.data);
+		const data = dataRecord ? { ...dataRecord, ...selection } : selection;
+		return { ...result, data };
 	}
 
 	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string; incognito?: boolean; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
@@ -310,13 +301,12 @@ export class BrowserBridgeCommandService {
 			const browserSession = this.browserSession(options.browserSessionId);
 			const tab = this.requireLiveTabSession(tabId, browserSession.id, target);
 			if (options.accessMode === "write") {
-				this.assertWriteInvariants(browserSession.id, tab, target);
 				const queuedAt = Date.now();
-				const queueDepthAtEnqueue = this.deps.queues.depth(browserSession.id, tabId);
+				const queueDepthAtEnqueue = this.deps.queues.depth(tab.browserId, tabId);
 				const dispatchWrite = async () => {
 					if (options.signal?.aborted) throw commandAbortError("Browser command was cancelled before bridge dispatch");
 					const startedAt = Date.now();
-					const queueDepthAtStart = this.deps.queues.depth(browserSession.id, tabId);
+					const queueDepthAtStart = this.deps.queues.depth(tab.browserId, tabId);
 					const resolvedQueuedTarget = this.deps.tabs.resolveTargetRef(target.targetRef ?? target.tabHandle ?? target.tabId, browserSession.id, target.source);
 					const queuedTarget = resolvedQueuedTarget ? {
 						...resolvedQueuedTarget,
@@ -324,16 +314,12 @@ export class BrowserBridgeCommandService {
 						...(target.replacedFrom !== undefined ? { replacedFrom: target.replacedFrom } : {}),
 						...(target.replacedByTabId !== undefined ? { replacedByTabId: target.replacedByTabId } : {}),
 						...(target.replacementHops !== undefined ? { replacementHops: target.replacementHops } : {}),
-						} : target;
-							const queuedTabId = queuedTarget.tabId ?? tabId;
+					} : target;
+					const queuedTabId = queuedTarget.tabId ?? tabId;
 					const queuedTab = this.requireLiveTabSession(queuedTabId, browserSession.id, queuedTarget);
-					this.assertWriteInvariants(browserSession.id, queuedTab, queuedTarget);
 					const queuedCodeRecord = recordValue(code);
 					const queuedCode = queuedTabId !== tabId && queuedCodeRecord ? { ...queuedCodeRecord, tabId: queuedTabId } : code;
-					const result = await this.deps.leases.withAutoTabLease(browserSession.id, queuedTab, async () => {
-						this.deps.leases.touchTabLease(browserSession.id, queuedTab);
-							return await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, timeoutMs: options.timeoutMs, target: queuedTarget, signal: options.signal });
-					});
+					const result = await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, timeoutMs: options.timeoutMs, target: queuedTarget, signal: options.signal });
 					const completedAt = Date.now();
 					const queueDelayMs = Math.max(0, startedAt - queuedAt);
 					const temporalDiagnostics = queueTemporalDiagnostics({
@@ -352,14 +338,13 @@ export class BrowserBridgeCommandService {
 						},
 					});
 				};
-				if (this.deps.queues.ownsCurrentTransaction(browserSession.id, tabId)) return recordResult(dispatchWrite());
-				return recordResult(this.deps.queues.enqueue(browserSession.id, tabId, dispatchWrite, { signal: options.signal }));
+				if (this.deps.queues.ownsCurrentTransaction(tab.browserId, tabId)) return recordResult(dispatchWrite());
+				return recordResult(this.deps.queues.enqueue(tab.browserId, tabId, dispatchWrite, { signal: options.signal }));
 			}
-			this.deps.leases.touchTabLease(browserSession.id, tab);
-				return recordResult(this.deps.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
+			return recordResult(this.deps.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
 		}
 		const socket = this.socketForBrowserSessionCommand(options.browserSessionId);
-			return recordResult(this.deps.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
+		return recordResult(this.deps.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target, signal: options.signal }));
 	}
 
 	private socketForBrowserSessionCommand(browserSessionId?: string): WebSocket {
@@ -375,7 +360,6 @@ export class BrowserBridgeCommandService {
 			negativeCacheActive: Date.now() < this.extensionUnavailableUntil,
 			negativeCacheRemainingMs: Math.max(0, this.extensionUnavailableUntil - Date.now()),
 			browserSessionId: browserSession.id,
-			sessions: this.deps.listBrowserSessions(),
 		});
 	}
 
@@ -438,25 +422,6 @@ export class BrowserBridgeCommandService {
 		return spec.accessMode === "write" ? "write" : "read";
 	}
 
-	private assertWriteInvariants(browserSessionId: string, tab: BrowserTabSession, target?: BrowserBridgeTargetInfo): void {
-		const lease = this.deps.leases.peekTabLease(tab);
-		if (lease && lease.browserSessionId !== browserSessionId) {
-			throw new BrowserBridgeError("TAB_LEASE_CONFLICT", "Target tab is leased by another browser session", {
-				requestedBrowserSessionId: browserSessionId,
-				lease: this.deps.leases.describeTabLease(lease),
-				target,
-				invariant: "write_target_foreign_lease",
-			});
-		}
-		if (target?.browserSessionId && target.browserSessionId !== browserSessionId) {
-			throw new BrowserBridgeError("TAB_LEASE_CONFLICT", "Write target browser session is inconsistent with resolved target", {
-				requestedBrowserSessionId: browserSessionId,
-				target,
-				invariant: "write_target_session_mismatch",
-			});
-		}
-	}
-
 	private requireTargetRef(value: unknown, browserSessionId?: string): BrowserBridgeTargetInfo {
 		const target = this.deps.tabs.resolveTargetRef(value, browserSessionId, "explicit");
 		if (!target) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId or targetRef is required", { tabId: value });
@@ -469,6 +434,6 @@ export class BrowserBridgeCommandService {
 	}
 
 	private browserSession(browserSessionId?: string): BrowserAutomationSession {
-		return browserSessionId ? this.deps.browserSessions.require(browserSessionId) : this.deps.browserSessions.selectedSession();
+		return browserSessionId ? this.deps.browserSessions.require(browserSessionId) : this.deps.browserSessions.defaultSession();
 	}
 }

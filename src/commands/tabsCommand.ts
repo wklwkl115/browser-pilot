@@ -1,10 +1,9 @@
 import { Type } from "typebox";
 import { type NativeErrorCode } from "../types/nativeErrorCodes.js";
 import { BrowserBridgeError } from "../utils/errors.js";
-import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { defineBrowserCommand, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams } from "./commandRuntime.js";
-import { compactBridgeForTabsList, compactTabForList, publicSnapshot } from "./tabsProjection.js";
+import { compactBridgeForTabsList, compactTabForList } from "./tabsProjection.js";
 import { strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { withBrowserOperation } from "./browserOperation.js";
@@ -66,10 +65,6 @@ export function validateTabsArguments(args: Record<string, unknown>): Validation
 	return issues;
 }
 
-function publicTabsSnapshot(server: BrowserCommandRuntimePort): Record<string, unknown> {
-	return publicSnapshot(server.snapshot() as unknown as Record<string, unknown>);
-}
-
 export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_tabs",
@@ -90,7 +85,7 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 			incognito: Type.Optional(Type.Boolean({ description: "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint." })),
 		}),
 		validateArguments: validateTabsArguments,
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		async execute(params, signal, ctx) {
 			return await runCommandHandler(async () => {
 				const action = String(params.action || "").trim().toLowerCase();
 				const timeoutMs = 5_000;
@@ -107,13 +102,14 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 				}
 				if (action === "selectbrowser") {
 					const browserId = String(params.browserId || "");
-					return jsonResult({ selected: server.selectBrowser(browserId), snapshot: publicTabsSnapshot(server) }, { action });
+					return jsonResult({ selected: server.selectBrowser(browserId), snapshot: server.snapshot() }, { action });
 				}
 				if (["switch", "create", "close"].includes(action)) {
 					const trackedTabId = action === "create" ? undefined : resolveLocalTargetTabId(server, tabRef);
 					const result = await withBrowserOperation({
 						server,
 						tabId: trackedTabId,
+						targetRef: tabRef,
 						timeoutMs,
 						signal,
 					}, async ({ signal: operationSignal }) => {

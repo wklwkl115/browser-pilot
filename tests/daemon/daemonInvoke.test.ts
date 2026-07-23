@@ -61,7 +61,7 @@ function tools() {
 	const success: CommandDefinition = {
 		name: "browser_success",
 		parameters: strictCommandParameters({ message: Type.String() }),
-		async execute(_id, params, _signal, _onUpdate, ctx) {
+		async execute(params, _signal, ctx) {
 			return {
 				content: [{ type: "text", text: String(params.message) }],
 				details: { cwd: ctx?.cwd, omitTransportDetails: ctx?.omitTransportDetails },
@@ -228,7 +228,7 @@ test("daemon aborts an active invocation when the control client disconnects", a
 	const slow: CommandDefinition = {
 		name: "browser_slow",
 		parameters: strictCommandParameters({}),
-		async execute(_id, _params, signal) {
+		async execute(_params, signal) {
 			assert.ok(signal);
 			markStarted();
 			await new Promise<void>((resolve) => signal.addEventListener("abort", () => { markAborted(); resolve(); }, { once: true }));
@@ -262,6 +262,32 @@ test("daemon auth store sweeps expired pending pairings before pairing summaries
 	record.pendingExpiresAt = new Date(Date.now() - 1_000).toISOString();
 	authStore.sweepExpiredPending();
 	assert.equal(authStore.listAgents().some((agent) => agent.pairingId === pairingId), false);
+});
+
+test("daemon auth store replaces the previous agent when pairing restarts", async () => {
+	isolateAuthStore();
+	const first = authStore.mintPending("first-agent");
+	const approved = await authStore.approve(first.pairingId);
+	assert.ok(approved);
+	const second = authStore.mintPending("second-agent");
+	assert.deepEqual(authStore.listAgents().map(({ pairingId, status }) => ({ pairingId, status })), [{ pairingId: second.pairingId, status: "pending" }]);
+	assert.equal(authStore.findByToken(approved.token), null);
+	assert.equal(await authStore.approve(first.pairingId), null);
+});
+
+test("daemon auth store collapses legacy multi-agent state on load", () => {
+	isolateAuthStore();
+	const record = {
+		label: "agent",
+		tokenHash: "a".repeat(64),
+		status: "active",
+		createdAt: new Date(0).toISOString(),
+		approvedAt: new Date(0).toISOString(),
+		revokedAt: null,
+		lastSeenAt: null,
+	};
+	writeFileSync(authStore.authStorePath(), JSON.stringify({ version: AUTH_STORE_VERSION, agents: [{ ...record, pairingId: "old" }, { ...record, pairingId: "current" }] }), "utf8");
+	assert.deepEqual(authStore.listAgents().map((agent) => agent.pairingId), ["current"]);
 });
 
 test("daemon auth store denies approval for revoked or missing pending pairing", async () => {

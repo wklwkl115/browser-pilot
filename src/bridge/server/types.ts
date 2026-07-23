@@ -1,5 +1,4 @@
 import type { WebSocket } from "ws";
-import type { SessionReleasedTabLeaseInfo, SessionReleasedUiLockInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../../kernels/session/leaseRegistry.js";
 import type { SessionObservationSnapshotInfo } from "../../kernels/session/observationSnapshotRegistry.js";
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../../ports/BrowserRuntimeTypes.js";
 import type { BrowserCommandQueueInfo } from "./BrowserCommandQueueRegistry.js";
@@ -72,24 +71,6 @@ export type BrowserAutomationSession = {
 	lastSeenAt: number;
 };
 
-export type BrowserAutomationSessionInfo = {
-	id: string;
-	name?: string;
-	defaultTabId?: number;
-	defaultTabHandle?: string;
-	latestTabId?: number;
-	latestTabHandle?: string;
-	selectionVersion: number;
-	createdAt: number;
-	lastSeenAt: number;
-	selectedBrowser?: BrowserBridgeClientInfo;
-};
-
-export type BrowserTabLeaseInfo = SessionTabLeaseInfo;
-export type BrowserReleasedTabLeaseInfo = SessionReleasedTabLeaseInfo;
-export type BrowserUiLockInfo = SessionUiLockInfo;
-export type BrowserReleasedUiLockInfo = SessionReleasedUiLockInfo;
-
 export type BrowserObservationSnapshotInfo = SessionObservationSnapshotInfo;
 
 export type BridgeConnectionMetrics = {
@@ -125,8 +106,6 @@ export type BrowserBridgeSnapshot = {
 	latestTabHandle?: string;
 	selectionVersion: number;
 	tabs: BrowserTabInfo[];
-	leases?: BrowserTabLeaseInfo[];
-	uiLock?: BrowserUiLockInfo;
 	queues?: BrowserCommandQueueInfo[];
 	pending: Array<{
 		id: string;

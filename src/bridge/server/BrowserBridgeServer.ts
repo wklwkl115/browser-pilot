@@ -1,6 +1,5 @@
 import { WebSocket } from "ws";
 import { DEFAULT_BROWSER_BRIDGE_HOST, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } from "./browserBridgeConfig.js";
-import { tabNotFoundError } from "../errors.js";
 import { BrowserBridgeError, errorToPlain } from "../../utils/errors.js";
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import { BrowserBridgeClientHeartbeat } from "./BrowserBridgeClientHeartbeat.js";
@@ -11,13 +10,13 @@ import { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { BrowserBridgeSessionState } from "./BrowserBridgeSessionState.js";
-import { browserTabInfo, delay, normalizePort } from "./bridgeUtils.js";
+import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
 import { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
 import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "../protocol/consentTypes.js";
 import type { BrowserCommandTargetTransactionInput, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot } from "../../ports/BrowserCommandRuntimePort.js";
-import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo, ExecuteOptions } from "./types.js";
+import type { BrowserAutomationSession, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, ExecuteOptions } from "./types.js";
 
 const MAX_KNOWN_RECORDER_STATES = 128;
 
@@ -60,14 +59,12 @@ export class BrowserBridgeServer implements ConsentPort {
 			clients: this.clients,
 			browserSessions: this.state.browserSessions,
 			queues: this.queues,
-			leases: this.state.leases,
 			tabs: this.tabs,
 			pendingRequests: this.pendingRequests,
 			runtimeRecoveryArtifacts: this.runtimeRecoveryArtifacts,
 			isRunning: () => this.running,
 			getPort: () => this.port,
 			getTabs: (opts) => this.getTabs(opts),
-			listBrowserSessions: () => this.listBrowserSessions(),
 			snapshot: (opts) => this.snapshot(opts),
 			waitForExtensionReady: (browserSessionId, timeoutMs) => this.waitForExtensionReady(browserSessionId, timeoutMs),
 		});
@@ -77,20 +74,18 @@ export class BrowserBridgeServer implements ConsentPort {
 			tabs: this.tabs,
 			pendingRequests: this.pendingRequests,
 			runtimeRecoveryArtifacts: this.runtimeRecoveryArtifacts,
-			leases: this.state.leases,
-				queues: this.queues,
-				consent: this.consentCoordinator,
-			migratePerceptionLedger: (fromTabId, toTabId, browserSessionIds) => {
-				this.state.perceptionLedger.migrateTabId(fromTabId, toTabId, { browserSessionIds });
+			queues: this.queues,
+			consent: this.consentCoordinator,
+			migratePerceptionLedger: (fromTabId, toTabId, browserSessionId) => {
+				this.state.perceptionLedger.migrateTabId(fromTabId, toTabId, { browserSessionIds: [browserSessionId] });
 			},
-			clearRecorderStateForReplacement: (fromTabId, toTabId, browserSessionIds) => {
-				this.clearKnownRecorderStatesForReplacement(fromTabId, toTabId, browserSessionIds);
+			clearRecorderStateForReplacement: (fromTabId, toTabId, browserSessionId) => {
+				this.clearKnownRecorderStatesForReplacement(fromTabId, toTabId, browserSessionId);
 			},
-				logLeaseCleanup: (details) => this.logLeaseCleanup(details),
-				notifyExtensionReady: () => this.notifyExtensionReady(),
-				handshakeTimeoutMs: options.handshakeTimeoutMs,
-			});
-		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws, reason) => this.unregisterClient(ws, reason), { onTick: (now) => this.sweepLeases(now) });
+			notifyExtensionReady: () => this.notifyExtensionReady(),
+			handshakeTimeoutMs: options.handshakeTimeoutMs,
+		});
+		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws, reason) => this.unregisterClient(ws, reason));
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd, maxPayloadBytes: options.maxPayloadBytes });
 	}
 
@@ -139,8 +134,6 @@ export class BrowserBridgeServer implements ConsentPort {
 			latestTabHandle: this.tabs.latestTabHandle(options.browserSessionId),
 			selectionVersion: this.tabs.selectionVersion,
 			tabs: this.getTabs({ includeDisconnected: true }),
-			leases: this.state.leases.listTabLeases(),
-			uiLock: this.state.leases.uiLockInfo(),
 			queues: this.queues.snapshot(),
 			pending: this.pendingRequests.snapshot(),
 			connectionMetrics: this.clients.metrics(),
@@ -152,76 +145,8 @@ export class BrowserBridgeServer implements ConsentPort {
 		return this.tabs.getTabs(options);
 	}
 
-	listBrowserSessions(): BrowserAutomationSessionInfo[] {
-		return this.state.browserSessions.list().map((session) => this.browserSessionInfo(session));
-	}
-
 	getLastTabSyncAt(): number | undefined {
 		return this.tabs.lastTabSyncAt;
-	}
-
-	createBrowserSession(name?: string): BrowserAutomationSessionInfo {
-		return this.browserSessionInfo(this.state.browserSessions.create(name));
-	}
-
-	selectBrowserSession(browserSessionId: string): BrowserAutomationSessionInfo {
-		return this.browserSessionInfo(this.state.browserSessions.selectSession(browserSessionId));
-	}
-
-	closeBrowserSession(browserSessionId: string): BrowserAutomationSessionInfo | undefined {
-		const closed = this.state.browserSessions.close(browserSessionId);
-		return closed ? this.browserSessionInfo(closed) : undefined;
-	}
-
-	attachTabToBrowserSession(tabId: number | string, options: { browserSessionId?: string; browserId?: string } = {}): BrowserTabInfo {
-		const id = this.resolveAttachTargetTabId(tabId, options);
-		const attached = this.tabs.attachTab(id, options.browserSessionId, options.browserId);
-		if (!attached) {
-			const resolution = this.tabs.replacementResolution(id, options.browserSessionId);
-			throw tabNotFoundError({ tabId: id, browserSessionId: options.browserSessionId, tabs: this.getTabs(), latestTabId: this.tabs.latestTabId(options.browserSessionId), replacedByTabId: resolution.tabId !== id ? resolution.tabId : undefined, replacementChainFailure: resolution.replacementChainFailure, replacementHops: resolution.replacementHops, replacementChainAge: resolution.replacementChainAge });
-		}
-		return browserTabInfo(attached);
-	}
-
-	detachTabFromBrowserSession(tabId: number | string, options: { browserSessionId?: string } = {}): BrowserAutomationSessionInfo {
-		const id = this.resolveTargetTabId(tabId, options.browserSessionId);
-		this.tabs.detachTab(id, options.browserSessionId);
-		return this.browserSessionInfo(this.browserSession(options.browserSessionId));
-	}
-
-	leaseTab(tabId: number | string, options: { browserSessionId?: string } = {}): BrowserTabLeaseInfo {
-		const id = this.resolveTargetTabId(tabId, options.browserSessionId);
-		const browserSession = this.browserSession(options.browserSessionId);
-		const tab = this.requireLiveTabSession(id, browserSession.id);
-		return this.state.leases.leaseTab(browserSession.id, tab, true);
-	}
-
-	releaseTab(tabId: number | string, options: { browserSessionId?: string } = {}): BrowserTabLeaseInfo | undefined {
-		const id = this.resolveTargetTabId(tabId, options.browserSessionId);
-		const browserSession = this.browserSession(options.browserSessionId);
-		const tab = this.requireLiveTabSession(id, browserSession.id);
-		return this.state.leases.releaseTab(browserSession.id, tab);
-	}
-
-	async acquireUiLock(browserSessionId: string | undefined, commandName: string): Promise<BrowserUiLockInfo> {
-		const resolvedId = this.browserSession(browserSessionId).id;
-		const maxRetries = 5;
-		const retryDelayMs = 100;
-		for (let attempt = 0; attempt <= maxRetries; attempt++) {
-			try {
-				return this.state.leases.acquireUiLock(resolvedId, commandName);
-			} catch (err: unknown) {
-				const isLockConflict = err instanceof Error && "code" in err && (err as { code: string }).code === "UI_LOCK_CONFLICT";
-				if (!isLockConflict || attempt === maxRetries) throw err;
-				await delay(retryDelayMs);
-			}
-		}
-		/* istanbul ignore next — unreachable; loop always returns or throws */
-		return this.state.leases.acquireUiLock(resolvedId, commandName);
-	}
-
-	releaseUiLock(browserSessionId: string | undefined): BrowserUiLockInfo | undefined {
-		return this.state.leases.releaseUiLock(this.browserSession(browserSessionId).id);
 	}
 
 	async refreshTabs(timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserTabInfo[]> {
@@ -306,7 +231,8 @@ export class BrowserBridgeServer implements ConsentPort {
 
 	async withTargetTransaction<T>(input: BrowserCommandTargetTransactionInput, run: () => Promise<T>): Promise<T> {
 		const browserSession = this.browserSession(input.browserSessionId);
-		return await this.queues.withTransaction(browserSession.id, input.tabId, run, { signal: input.signal });
+		const target = this.tabs.resolveTargetRef(input.targetRef ?? input.tabId, browserSession.id);
+		return await this.queues.withTransaction(target?.browserId ?? browserSession.id, input.tabId, run, { signal: input.signal });
 	}
 
 	resolveTargetTabId(value: unknown, browserSessionId?: string): number {
@@ -331,25 +257,11 @@ export class BrowserBridgeServer implements ConsentPort {
 		while (this.knownRecorderStates.size > MAX_KNOWN_RECORDER_STATES) this.knownRecorderStates.delete(this.knownRecorderStates.keys().next().value!);
 	}
 
-	clearKnownRecorderStatesForReplacement(fromTabId: number, toTabId: number, browserSessionIds: string[] = []): void {
-		const sessions = browserSessionIds.length ? browserSessionIds : [undefined];
+	clearKnownRecorderStatesForReplacement(fromTabId: number, toTabId: number, browserSessionId: string): void {
 		for (const kind of ["network", "hook"] as const) {
-			for (const browserSessionId of sessions) {
-				this.knownRecorderStates.delete(this.recorderStateKey(kind, browserSessionId, fromTabId));
-				this.knownRecorderStates.delete(this.recorderStateKey(kind, browserSessionId, toTabId));
-			}
+			this.knownRecorderStates.delete(this.recorderStateKey(kind, browserSessionId, fromTabId));
+			this.knownRecorderStates.delete(this.recorderStateKey(kind, browserSessionId, toTabId));
 		}
-	}
-
-	queueDepth(browserSessionId: string | undefined, tabId: number | undefined): number | undefined {
-		if (!browserSessionId || !tabId) return undefined;
-		return this.queues.depth(browserSessionId, tabId);
-	}
-
-	leaseOwnerHash(browserSessionId: string | undefined, tabId: number | undefined): string | undefined {
-		if (!browserSessionId || !tabId) return undefined;
-		const lease = this.state.leases.listTabLeases().find((item) => item.browserSessionId === browserSessionId && item.tabId === tabId);
-		return lease?.browserSessionId;
 	}
 
 	createObservationSnapshot(snapshot: Omit<BrowserObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): BrowserObservationSnapshotInfo {
@@ -417,54 +329,12 @@ export class BrowserBridgeServer implements ConsentPort {
 		for (const resolve of Array.from(this.extensionReadyWaiters)) resolve();
 	}
 
-	private sweepLeases(now: number): void {
-		const sweep = this.state.leases.sweepExpired(now);
-		if (!sweep.releasedLeases.length && !sweep.releasedUiLocks.length) return;
-		console.warn("[browser-pilot-bridge] Released expired lease/UI lock state", {
-			reason: "ttl",
-			releasedLeases: sweep.releasedLeases,
-			releasedUiLocks: sweep.releasedUiLocks,
-		});
-	}
-
-	private logLeaseCleanup(details: { reason: "disconnect"; releasedLeases: unknown[]; releasedUiLocks: unknown[]; disconnectedTabSessionIds: string[]; affectedBrowserSessionIds: string[] }): void {
-		if (process.env.BROWSER_PILOT_LEASE_CLEANUP_LOG !== "1") return;
-		console.warn("[browser-pilot-bridge] Released lease/UI lock state after client disconnect", details);
-	}
-
-	private browserSessionInfo(session: BrowserAutomationSession): BrowserAutomationSessionInfo {
-		return this.tabs.describeBrowserSession(session, this.state.browserSessions.selectedInfo(session, (client) => this.clients.info(client)));
-	}
-
 	private startHeartbeat(): void {
 		this.heartbeat.start();
 	}
 
 	private stopHeartbeat(): void {
 		this.heartbeat.stop();
-	}
-
-	private resolveAttachTargetTabId(value: unknown, options: { browserSessionId?: string; browserId?: string }): number {
-		const numeric = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
-		if (options.browserId && Number.isInteger(numeric) && numeric > 0) return numeric;
-		return this.resolveTargetTabId(value, options.browserSessionId);
-	}
-
-	private requireLiveTabSession(tabId: number, browserSessionId?: string): BrowserTabSession {
-		const session = this.tabs.liveSessionForTabId(tabId, browserSessionId);
-		if (session) return session;
-		const resolution = this.tabs.replacementResolution(tabId, browserSessionId);
-		throw tabNotFoundError({
-			tabId,
-			browserSessionId,
-			selectedBrowser: this.state.browserSessions.selectedInfo(this.browserSession(browserSessionId), (client) => this.clients.info(client)),
-			tabs: this.getTabs(),
-			latestTabId: this.tabs.latestTabId(browserSessionId),
-			replacedByTabId: resolution.tabId !== tabId ? resolution.tabId : undefined,
-			replacementChainFailure: resolution.replacementChainFailure,
-			replacementHops: resolution.replacementHops,
-			replacementChainAge: resolution.replacementChainAge,
-		});
 	}
 
 	private browserSession(browserSessionId?: string): BrowserAutomationSession {

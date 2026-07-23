@@ -29,6 +29,13 @@ function setup() {
 	return { clients, browserSessions, router };
 }
 
+test("session registry exposes exactly one default browser session", () => {
+	const registry = new SessionRegistry<WebSocket>();
+	assert.equal(registry.defaultSession().id, "default");
+	assert.equal(registry.require(), registry.defaultSession());
+	assert.throws(() => registry.require("secondary"), (error: Error & { code?: string }) => error.code === "SESSION_NOT_FOUND");
+});
+
 test("tab session sync normalizes tabs, preserves partial fields, and disconnects stale entries", () => {
 	const { clients, browserSessions, router } = setup();
 	const ws = connect(clients);
@@ -102,7 +109,7 @@ test("Prerender2 same-tab activation advances target generation exactly once", (
 	assert.equal(after?.replacedFromTabId, 11);
 });
 
-test("same-extension reconnect adopts identity and migrates secondary session selection", () => {
+test("same-extension reconnect adopts identity and migrates session selection", () => {
 	const { clients, browserSessions, router } = setup();
 	const previous = connect(clients);
 	const defaultSession = browserSessions.defaultSession();
@@ -110,11 +117,6 @@ test("same-extension reconnect adopts identity and migrates secondary session se
 	router.updateTabs([{ id: 7, url: "https://reconnect.test/", title: "Page", active: true, windowId: 3, pageEpoch: "worker-1:page:1" }], previous);
 	const previousTab = router.getTabs()[0];
 	assert.ok(previousTab);
-
-	const secondary = browserSessions.create("secondary");
-	browserSessions.selectClient(secondary, previous);
-	browserSessions.setDefaultTabSessionId(secondary, previousTab.id);
-	browserSessions.setLatestTabSessionId(secondary, previousTab.id);
 
 	const reconnected = connect(clients);
 	browserSessions.selectClient(defaultSession, reconnected);
@@ -127,9 +129,9 @@ test("same-extension reconnect adopts identity and migrates secondary session se
 	assert.notEqual(adopted.pageEpoch, previousTab.pageEpoch);
 	assert.equal(router.sessions.get(previousTab.id)?.client, reconnected);
 	assert.equal(router.sessions.get(previousTab.id)?.disconnectedAt, undefined);
-	assert.equal(secondary.selectedClient, reconnected);
-	assert.equal(secondary.defaultSessionId, adopted.id);
-	assert.equal(secondary.latestSessionId, adopted.id);
+	assert.equal(defaultSession.selectedClient, reconnected);
+	assert.equal(defaultSession.defaultSessionId, adopted.id);
+	assert.equal(defaultSession.latestSessionId, adopted.id);
 });
 
 test("extension-owned tab identity changes invalidate the old handle immediately on reconnect", () => {

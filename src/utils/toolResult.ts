@@ -13,7 +13,7 @@ const RUNTIME_RESULT_KEYS = new Set([
 	"browserSessionId", "tabSessionId", "sessionId", "session_id", "networkSessionId",
 	"tabId", "targetId", "target_id", "tabHandle", "defaultTabHandle", "latestTabHandle",
 	"targetGeneration", "pageEpoch", "documentId", "selectionVersion", "operationId",
-	"waitId", "leaseOwnerHash", "host", "port",
+	"waitId", "host", "port",
 ]);
 
 function isExecutionEnvelope(value: Record<string, unknown>): boolean {
@@ -59,7 +59,7 @@ function normalizeDetails(details: Record<string, unknown>): Record<string, unkn
 
 export function jsonResult(value: unknown, details: Record<string, unknown> = {}, options: PublicToolValueOptions = {}): BrowserTextCommandResult {
 	return {
-		content: [{ type: "text", text: stableJson(publicToolValue(value, options)) }],
+		content: [{ type: "text", text: stableJson(publicToolValue(redactSensitiveValue(value), options)) }],
 		details: normalizeDetails(details),
 	};
 }

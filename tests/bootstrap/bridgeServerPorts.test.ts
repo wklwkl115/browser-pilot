@@ -226,7 +226,7 @@ test("BrowserBridgeServer fails with diagnostics when the configured port range 
 	}
 });
 
-test("BrowserBridgeServer command runtime port exposes snapshot, tabs, sessions, leases and perception state", async () => {
+test("BrowserBridgeServer command runtime port exposes snapshot, tabs and perception state", async () => {
 	await withServer(async (server) => {
 		const port: BrowserCommandRuntimePort = server;
 		const ws = await connectExtension(server);
@@ -234,34 +234,25 @@ test("BrowserBridgeServer command runtime port exposes snapshot, tabs, sessions,
 		const snapshot = port.snapshot();
 		assert.equal(snapshot.running, true);
 		assert.equal(snapshot.extensionConnected, true);
-		assert.equal(snapshot.defaultTabId, 7);
-		assert.equal(snapshot.tabs.length, 1);
-		assert.equal(port.getTabs()[0].targetRef, snapshot.defaultTabHandle);
-		assert.equal(port.resolveTargetTabId(snapshot.defaultTabHandle, snapshot.browserSessionId), 7);
+			assert.equal(snapshot.defaultTabId, 7);
+			assert.equal(snapshot.tabs.length, 1);
+			assert.equal(port.getTabs()[0].targetRef, snapshot.defaultTabHandle);
+			assert.equal(port.resolveTargetTabId(snapshot.defaultTabHandle, snapshot.browserSessionId), 7);
+			assert.ok(snapshot.browserSessionId);
 
-		const browserSession = port.createBrowserSession("secondary") as { id: string };
-		port.selectBrowserSession(browserSession.id);
-		port.attachTabToBrowserSession(7, { browserSessionId: browserSession.id });
-		assert.equal((port.listBrowserSessions() as Array<{ id: string }>).some((session) => session.id === browserSession.id), true);
+			const observation = port.createObservationSnapshot({ browserSessionId: snapshot.browserSessionId, tabId: 7, sourceMode: "scan", capturedAt: Date.now() });
+			assert.equal(port.getObservationSnapshot(observation.snapshotId)?.sourceMode, "scan");
+			assert.equal(port.listObservationSnapshots().some((item) => item.snapshotId === observation.snapshotId), true);
 
-		const lease = port.leaseTab(7, { browserSessionId: browserSession.id });
-		assert.equal(lease.tabId, 7);
-		assert.equal(port.leaseOwnerHash(browserSession.id, 7), browserSession.id);
-		assert.equal(port.releaseTab(7, { browserSessionId: browserSession.id })?.id, lease.id);
+			port.recordPerceptionTraceTerms?.(snapshot.browserSessionId, [{ term: "checkout", kind: "intent", weight: 1 }]);
+			assert.equal(port.perceptionTraceSnapshot?.(snapshot.browserSessionId).terms[0].term, "checkout");
 
-		const observation = port.createObservationSnapshot({ browserSessionId: browserSession.id, tabId: 7, sourceMode: "scan", capturedAt: Date.now() });
-		assert.equal(port.getObservationSnapshot(observation.snapshotId)?.sourceMode, "scan");
-		assert.equal(port.listObservationSnapshots().some((item) => item.snapshotId === observation.snapshotId), true);
-
-		port.recordPerceptionTraceTerms?.(browserSession.id, [{ term: "checkout", kind: "intent", weight: 1 }]);
-		assert.equal(port.perceptionTraceSnapshot?.(browserSession.id).terms[0].term, "checkout");
-
-		port.recordKnownRecorderState?.("network", browserSession.id, 7, { active: true, lastSeq: 9 });
-		port.recordKnownRecorderState?.("hook", browserSession.id, 8, { active: true, lastSeq: 4 });
-		ws.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 8, url: "https://example.test/replaced", active: true }], replaced: [{ from: 7, to: 8 }] }));
-		await new Promise((resolve) => setImmediate(resolve));
-		assert.equal(port.getKnownRecorderState?.("network", browserSession.id, 7), undefined);
-		assert.equal(port.getKnownRecorderState?.("hook", browserSession.id, 8), undefined);
+			port.recordKnownRecorderState?.("network", snapshot.browserSessionId, 7, { active: true, lastSeq: 9 });
+			port.recordKnownRecorderState?.("hook", snapshot.browserSessionId, 8, { active: true, lastSeq: 4 });
+			ws.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 8, url: "https://example.test/replaced", active: true }], replaced: [{ from: 7, to: 8 }] }));
+			await new Promise((resolve) => setImmediate(resolve));
+			assert.equal(port.getKnownRecorderState?.("network", snapshot.browserSessionId, 7), undefined);
+			assert.equal(port.getKnownRecorderState?.("hook", snapshot.browserSessionId, 8), undefined);
 
 		ws.close();
 	});
@@ -315,18 +306,23 @@ test("BrowserBridgeServer keeps explicit browser selection stable and routes tar
 		const tabs = server.getTabs();
 		const userTab = tabs.find((tab) => tab.url === "https://user.test/");
 		const isolatedTab = tabs.find((tab) => tab.url === "https://isolated.test/");
-		assert.ok(userTab?.browserId);
-		assert.ok(isolatedTab?.browserId);
-		assert.ok(isolatedTab.targetRef);
+			assert.ok(userTab?.browserId);
+			assert.ok(isolatedTab?.browserId);
+			assert.ok(userTab.targetRef);
+			assert.ok(isolatedTab.targetRef);
+			await assert.rejects(
+				server.withTargetTransaction({ tabId: 7, targetRef: isolatedTab.targetRef }, () => server.withTargetTransaction({ tabId: 7, targetRef: userTab.targetRef }, async () => undefined)),
+				(error: Error & { code?: string }) => error.code === "TARGET_TRANSACTION_CONFLICT",
+			);
 
-		server.selectBrowser(isolatedTab.browserId);
+			server.selectBrowser(isolatedTab.browserId);
 		user.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 7, url: "https://user.test/updated", title: "User updated", active: true }] }));
 		const updateDeadlineAt = Date.now() + 1_000;
 		while (!server.getTabs().some((tab) => tab.url === "https://user.test/updated")) {
 			if (Date.now() >= updateDeadlineAt) throw new Error("user tabs update was not applied");
 			await new Promise((resolve) => setImmediate(resolve));
 		}
-		assert.equal(server.listBrowserSessions()[0]?.selectedBrowser?.id, isolatedTab.browserId);
+			assert.equal(server.snapshot().extension?.id, isolatedTab.browserId);
 
 		server.selectBrowser(userTab.browserId);
 		const target = server.snapshot().tabs.find((tab) => tab.targetRef === isolatedTab.targetRef);
@@ -343,8 +339,13 @@ test("BrowserBridgeServer keeps explicit browser selection stable and routes tar
 		assert.equal(firstCommand.owner, "isolated");
 		assert.equal(userMessages.length, 0);
 
-		user.close();
-		isolated.close();
+			user.close();
+			const failoverDeadlineAt = Date.now() + 1_000;
+			while (server.snapshot().extension?.id !== isolatedTab.browserId) {
+				if (Date.now() >= failoverDeadlineAt) throw new Error("remaining browser was not selected after disconnect");
+				await new Promise((resolve) => setImmediate(resolve));
+			}
+			isolated.close();
 	});
 });
 
@@ -355,7 +356,9 @@ test("BrowserBridgeServer consent port sends requests, resolves decisions and br
 		ws.on("message", (raw) => messages.push(JSON.parse(String(raw)) as Record<string, unknown>));
 		assert.equal(server.hasConsentSurface(), true);
 
-		const decisionPromise = server.sendConsentRequest({ pairingId: "pair-1", label: "agent", code: "123456", expiresAt: new Date(Date.now() + 1_000).toISOString(), timeoutMs: 1_000 });
+			const superseded = server.sendConsentRequest({ pairingId: "pair-old", label: "old-agent", code: "654321", expiresAt: new Date(Date.now() + 1_000).toISOString(), timeoutMs: 1_000 });
+			const decisionPromise = server.sendConsentRequest({ pairingId: "pair-1", label: "agent", code: "123456", expiresAt: new Date(Date.now() + 1_000).toISOString(), timeoutMs: 1_000 });
+			assert.equal(await superseded, "timeout");
 		await new Promise<void>((resolve) => {
 			const poll = () => messages.some((message) => message.type === CONSENT_MESSAGE_TYPES.request) ? resolve() : setImmediate(poll);
 			poll();

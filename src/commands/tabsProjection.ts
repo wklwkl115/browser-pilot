@@ -1,6 +1,3 @@
-import { defaultLeaseIdRedactor } from "../kernels/session/leaseRegistry.js";
-import type { CommandTabLeaseInfo as BrowserTabLeaseInfo, CommandUiLockInfo as BrowserUiLockInfo } from "../ports/BrowserCommandRuntimePort.js";
-
 function firstString(...values: unknown[]): string | undefined {
 	for (const value of values) {
 		if (typeof value === "string" && value.trim()) return value.trim();
@@ -28,15 +25,4 @@ export function compactTabForList(tab: Record<string, unknown>): Record<string, 
 
 export function compactBridgeForTabsList(snapshot: Record<string, unknown>): Record<string, unknown> {
 	return copyDefined(snapshot, ["browserSessionId", "host", "port", "running", "connectedClients", "extensionConnected", "extension", "defaultTabId", "defaultTabHandle", "latestTabId", "latestTabHandle", "selectionVersion"]);
-}
-
-export function publicSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
-	const now = Date.now();
-	const leases = Array.isArray(snapshot.leases) ? snapshot.leases.map((lease) => defaultLeaseIdRedactor.tabLease(lease as BrowserTabLeaseInfo, undefined, now)) : undefined;
-	const uiLock = snapshot.uiLock && typeof snapshot.uiLock === "object" ? defaultLeaseIdRedactor.uiLock(snapshot.uiLock as BrowserUiLockInfo, undefined, now) : undefined;
-	return {
-		...snapshot,
-		...(leases ? { leases } : {}),
-		...(uiLock ? { uiLock } : {}),
-	};
 }

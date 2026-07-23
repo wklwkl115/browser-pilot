@@ -1,5 +1,4 @@
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
-import type { SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/leaseRegistry.js";
 import type { SessionObservationSnapshotInfo } from "../kernels/session/observationSnapshotRegistry.js";
 import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../kernels/session/perceptionLedger.js";
 
@@ -9,9 +8,6 @@ export type CommandPerceptionLedgerFrame = PerceptionLedgerFrame;
 export type CommandPerceptionTraceSnapshot = PerceptionTraceSnapshot;
 
 export type CommandObservationSnapshotInfo = SessionObservationSnapshotInfo;
-export type CommandTabLeaseInfo = SessionTabLeaseInfo;
-export type CommandUiLockInfo = SessionUiLockInfo;
-
 export type BrowserCommandRuntimeSnapshot = {
 	browserSessionId?: string;
 	host: string;
@@ -27,8 +23,6 @@ export type BrowserCommandRuntimeSnapshot = {
 	latestTabHandle?: string;
 	selectionVersion: number;
 	tabs: Array<Record<string, unknown>>;
-	leases?: CommandTabLeaseInfo[];
-	uiLock?: CommandUiLockInfo;
 	queues?: Array<Record<string, unknown>>;
 	pending: Array<Record<string, unknown>>;
 };
@@ -44,6 +38,7 @@ export type BrowserTabLike = Record<string, unknown> & {
 export type BrowserCommandTargetTransactionInput = {
 	browserSessionId?: string;
 	tabId: number;
+	targetRef?: string | number;
 	signal?: AbortSignal;
 };
 
@@ -71,22 +66,7 @@ export interface BrowserCommandTabControlPort {
 }
 
 export interface BrowserCommandSessionPort {
-	listBrowserSessions(): unknown[];
-	createBrowserSession(name?: string): unknown;
-	selectBrowserSession(browserSessionId: string): unknown;
-	closeBrowserSession(browserSessionId: string): unknown;
-	attachTabToBrowserSession(tabId: number | string, options?: { browserSessionId?: string; browserId?: string }): BrowserTabLike;
-	detachTabFromBrowserSession(tabId: number | string, options?: { browserSessionId?: string }): unknown;
 	selectBrowser(browserId: string, options?: { browserSessionId?: string }): unknown;
-}
-
-export interface BrowserCommandLeasePort {
-	leaseTab(tabId: number | string, options?: { browserSessionId?: string }): CommandTabLeaseInfo;
-	releaseTab(tabId: number | string, options?: { browserSessionId?: string }): CommandTabLeaseInfo | undefined;
-	acquireUiLock(browserSessionId: string | undefined, commandName: string): CommandUiLockInfo | Promise<CommandUiLockInfo>;
-	releaseUiLock(browserSessionId: string | undefined): CommandUiLockInfo | undefined;
-	queueDepth(browserSessionId: string | undefined, tabId: number | undefined): number | undefined;
-	leaseOwnerHash(browserSessionId: string | undefined, tabId: number | undefined): string | undefined;
 }
 
 export interface BrowserCommandObservationPort {
@@ -112,7 +92,6 @@ export interface BrowserCommandRuntimePort extends
 	BrowserCommandDispatchPort,
 	BrowserCommandTabControlPort,
 	BrowserCommandSessionPort,
-	BrowserCommandLeasePort,
 	BrowserCommandObservationPort,
 	BrowserCommandRecorderStatePort,
 	BrowserCommandPerceptionPort {

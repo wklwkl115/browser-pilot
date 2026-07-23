@@ -43,23 +43,23 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 			expect: Type.Optional(Type.String({ minLength: 1, description: "Write postcondition as a JavaScript expression returning truthy when the intended state is reached." })),
 			...sharedTabScopedToolParams(),
 		}),
-		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+		async execute(params, signal) {
 			return await runCommandHandler(async () => {
 				if (!params.command || typeof params.command !== "object" || Array.isArray(params.command)) throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", { commandName: "browser_command" });
 				const protocol = validateBridgeCommand(params.command, { allowMissingTabId: true, publicCall: true });
 				if (!protocol.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", protocol.error, protocol.details);
 				const owner = nativeCommandOwner(protocol.command);
 				if (owner) throw new BrowserBridgeError("INVALID_RULE", `${String(protocol.command.cmd)} must be invoked through ${owner}`, { commandName: "browser_command", useTool: owner });
-					if (!isPublicNativeCommand(protocol.command)) throw new BrowserBridgeError("INVALID_RULE", `${String(protocol.command.cmd)} is not a public native command`, { commandName: "browser_command", catalog: "browser-pilot://native-commands" });
-					const prepared = prepareNativeRef(protocol.command);
-					const command = prepared.command;
-					const write = isNativeWriteCommand(command);
-					const expect = typeof params.expect === "string" && params.expect.trim() ? params.expect.trim() : undefined;
-					if (params.expect !== undefined && !expect) throw new BrowserBridgeError("INVALID_RULE", "browser_command expect must be a non-empty JavaScript expression", { commandName: "browser_command" });
-					if (expect && !write) throw new BrowserBridgeError("INVALID_RULE", "browser_command expect is only valid for writes", { commandName: "browser_command" });
-					const server = await ensureStarted();
-					const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
-					const rawTarget = targetTabId(params, command);
+				if (!isPublicNativeCommand(protocol.command)) throw new BrowserBridgeError("INVALID_RULE", `${String(protocol.command.cmd)} is not a public native command`, { commandName: "browser_command", catalog: "browser-pilot://native-commands" });
+				const prepared = prepareNativeRef(protocol.command);
+				const command = prepared.command;
+				const write = isNativeWriteCommand(command);
+				const expect = typeof params.expect === "string" && params.expect.trim() ? params.expect.trim() : undefined;
+				if (params.expect !== undefined && !expect) throw new BrowserBridgeError("INVALID_RULE", "browser_command expect must be a non-empty JavaScript expression", { commandName: "browser_command" });
+				if (expect && !write) throw new BrowserBridgeError("INVALID_RULE", "browser_command expect is only valid for writes", { commandName: "browser_command" });
+				const server = await ensureStarted();
+				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
+				const rawTarget = targetTabId(params, command);
 				const resolvedTarget = resolveRefExecutionTarget(server, prepared.refs, { rawTarget });
 				const target = isNativeTabScopedCommand(command) ? pinTabExecutionTarget(server, resolvedTarget) : resolvedTarget;
 				if (expect && target.tabId === undefined) throw new BrowserBridgeError("INVALID_RULE", "browser_command expect requires a tab-scoped write", { commandName: "browser_command" });
@@ -85,7 +85,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 						}, run);
 				};
 				const outcome = write
-					? await withBrowserOperation({ server, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, signal }, dispatchWrite)
+					? await withBrowserOperation({ server, browserSessionId: target.browserSessionId, tabId: target.tabId, targetRef: target.rawTarget, timeoutMs, signal }, dispatchWrite)
 					: { result: await dispatch({ signal }) };
 				const value = "effect" in outcome ? { ...outcome.result, effect: outcome.effect } : outcome.result;
 				return jsonResult(value, { mode: "command", command: commandName });

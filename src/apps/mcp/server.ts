@@ -10,7 +10,7 @@ import { packageVersion } from "../daemon/packageInfo.js";
 import { invokeDaemonTool } from "./client.js";
 import { runMcpPairing } from "./auth.js";
 import { getJsonPath } from "../../utils/jsonPath.js";
-import { redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
+import { redactSensitiveText, redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
 import { isPageObservationV3, isPageObservationView, PAGE_OBSERVATION_VIEW_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
 import { OBSERVATION_RESOURCE_SCHEMA, OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
 import { publicToolValue } from "../../utils/toolResult.js";
@@ -179,8 +179,8 @@ function publicContent(content: McpContent[]): McpContent[] {
 }
 
 function publicJsonText(value: string): string {
-	try { return JSON.stringify(publicToolValue(JSON.parse(value) as unknown)); }
-	catch { return value; }
+	try { return JSON.stringify(publicToolValue(redactSensitiveValue(JSON.parse(value) as unknown))); }
+	catch { return redactSensitiveText(value); }
 }
 
 function jsonToolResult(value: Record<string, unknown>): McpToolResult {
@@ -334,7 +334,7 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 	return mimeType === "application/json"
 		? { contents: [{ uri, mimeType, text: publicJsonText(data.toString("utf8")) }] }
 		: mimeType.startsWith("text/")
-			? { contents: [{ uri, mimeType, text: data.toString("utf8") }] }
+			? { contents: [{ uri, mimeType, text: redactSensitiveText(data.toString("utf8")) }] }
 			: { contents: [{ uri, mimeType, blob: data.toString("base64") }] };
 }
 

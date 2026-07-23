@@ -26,12 +26,10 @@ export class BrowserBridgeClientHeartbeat {
 	private timer?: NodeJS.Timeout;
 	private readonly clients: BrowserBridgeClientRegistry;
 	private readonly onStale: (ws: WebSocket, reason: string) => void;
-	private readonly onTick?: (now: number) => void;
 
-	constructor(clients: BrowserBridgeClientRegistry, onStale: (ws: WebSocket, reason: string) => void, options: { onTick?: (now: number) => void } = {}) {
+	constructor(clients: BrowserBridgeClientRegistry, onStale: (ws: WebSocket, reason: string) => void) {
 		this.clients = clients;
 		this.onStale = onStale;
-		this.onTick = options.onTick;
 	}
 
 	start(): void {
@@ -47,7 +45,6 @@ export class BrowserBridgeClientHeartbeat {
 	}
 
 	probe(now = Date.now()): void {
-		this.onTick?.(now);
 		const timeout = staleTimeoutMs();
 		for (const { ws, info, idleMs } of this.clients.staleClients(timeout, now)) {
 			console.warn("[browser-pilot-bridge] Closing stale WebSocket client", { clientId: info.id, extensionId: info.extensionId, idleMs, staleTimeoutMs: timeout });
