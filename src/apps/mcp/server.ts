@@ -8,7 +8,6 @@ import { publicNativeCommandNames } from "../../commands/nativeCommandAccess.js"
 import { getNativeCommandProtocolSchema } from "../../types/nativeProtocol.js";
 import { packageVersion } from "../daemon/packageInfo.js";
 import { invokeDaemonTool } from "./client.js";
-import { runMcpPairing } from "./auth.js";
 import { getJsonPath } from "../../utils/jsonPath.js";
 import { redactSensitiveText, redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
 import { PAGE_OBSERVATION_VIEW_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
@@ -21,12 +20,11 @@ type JsonRpcMessage = { jsonrpc?: unknown; id?: unknown; method?: unknown; param
 type McpContent = { type: "text"; text: string } | { type: "resource_link"; uri: string; name: string; mimeType?: string };
 type McpTool = { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; annotations?: Record<string, boolean> };
 type McpToolResult = { content: McpContent[]; structuredContent?: Record<string, unknown>; isError?: boolean; _meta?: Record<string, unknown> };
-type McpServerState = { initialized: boolean; projectRoot: string; clientName: string; supportsRoots: boolean; rootRefresh?: Promise<void> };
+type McpServerState = { initialized: boolean; projectRoot: string; supportsRoots: boolean; rootRefresh?: Promise<void> };
 type PendingServerRequest = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
 
 const LATEST_PROTOCOL_VERSION = "2025-11-25";
 const PROTOCOL_VERSIONS = new Set([LATEST_PROTOCOL_VERSION]);
-const PAIR_TOOL_NAME = "browser_pair";
 const NATIVE_COMMANDS_URI = "browser-pilot://native-commands";
 const NATIVE_COMMAND_URI_PREFIX = "browser-pilot://native-command/";
 const definitions = browserCommandDefinitions();
@@ -34,21 +32,6 @@ const byName = new Map(definitions.map((definition) => [definition.name, definit
 const observationResources = new Map<string, ObservationResourceDescriptor & { projectRoot: string }>();
 const MAX_OBSERVATION_RESOURCES = 1024;
 const OBSERVATION_RESOURCE_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const pairingTool: McpTool = {
-	name: PAIR_TOOL_NAME,
-	description: "Pair this MCP agent with the connected Browser Pilot extension.",
-	inputSchema: {
-		type: "object",
-		additionalProperties: false,
-		properties: {
-			action: { type: "string", enum: ["start", "wait"] },
-			label: { type: "string", description: "Agent label for action=start." },
-			pairingId: { type: "string", description: "Pairing ID returned by action=start, required for action=wait." },
-		},
-		required: ["action"],
-	},
-};
-
 function toolDescription(definition: CommandDefinition): string | undefined {
 	const parts = [definition.description, definition.promptSnippet, ...(definition.promptGuidelines ?? [])]
 		.filter((value): value is string => typeof value === "string" && !!value.trim());
@@ -61,7 +44,7 @@ function toolAnnotations(name: string): Record<string, boolean> | undefined {
 }
 
 export function mcpTools(): McpTool[] {
-	return [...definitions.map((definition) => ({
+	return definitions.map((definition) => ({
 		name: definition.name,
 		description: toolDescription(definition),
 		inputSchema: definition.parameters && typeof definition.parameters === "object"
@@ -69,7 +52,7 @@ export function mcpTools(): McpTool[] {
 			: { type: "object", properties: {} },
 		...(definition.name === "browser_observe" ? { outputSchema: PAGE_OBSERVATION_VIEW_JSON_SCHEMA as unknown as Record<string, unknown> } : {}),
 		...(toolAnnotations(definition.name) ? { annotations: toolAnnotations(definition.name) } : {}),
-	})), pairingTool];
+	}));
 }
 
 export function mcpProjectRoot(): string {
@@ -184,10 +167,6 @@ function publicJsonText(value: string): string {
 	catch { return redactSensitiveText(value); }
 }
 
-function jsonToolResult(value: Record<string, unknown>): McpToolResult {
-	return { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value };
-}
-
 function observationSummary(value: Record<string, unknown>): string {
 	const target = record(value.target);
 	const content = record(value.content);
@@ -197,17 +176,10 @@ function observationSummary(value: Record<string, unknown>): string {
 	return `Observed ${typeof title === "string" ? title : typeof target.url === "string" ? target.url : "page"}: ${actionables} actionables, ${frontier.length} expandable regions${content.complete === false ? ", additional content available" : ""}.`;
 }
 
-export async function callMcpTool(name: string, args: Record<string, unknown>, signal?: AbortSignal, projectRoot = mcpProjectRoot(), clientName = ""): Promise<McpToolResult> {
-	if (name === PAIR_TOOL_NAME) {
-		try {
-			return jsonToolResult(await runMcpPairing(args, signal, projectRoot, clientName));
-		} catch (error) {
-			return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
-		}
-	}
+export async function callMcpTool(name: string, args: Record<string, unknown>, signal?: AbortSignal, projectRoot = mcpProjectRoot()): Promise<McpToolResult> {
 	if (!byName.has(name)) return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
 	try {
-		const result = await invokeDaemonTool(name, args, projectRoot, signal, clientName);
+		const result = await invokeDaemonTool(name, args, projectRoot, signal);
 		const resourceLinks = registerMcpObservationResources(result.details, projectRoot);
 		const details = publicResultDetails(result.details);
 		const link = resourceLink(details, projectRoot);
@@ -412,8 +384,7 @@ async function handleRequest(message: JsonRpcMessage, active: Map<JsonRpcId, Abo
 			serverInfo: { name: "browser-pilot", version: packageVersion() },
 		});
 		state.initialized = true;
-		state.clientName = record(clientInfo).name as string;
-		state.supportsRoots = !!record(capabilities).roots;
+			state.supportsRoots = !!record(capabilities).roots;
 		return;
 	}
 	if (!state.initialized) return error(id, -32002, "Server not initialized");
@@ -450,7 +421,7 @@ async function handleRequest(message: JsonRpcMessage, active: Map<JsonRpcId, Abo
 	}
 	active.set(id, controller);
 	try {
-		result(id, await callMcpTool(name, args, controller.signal, state.projectRoot, state.clientName));
+			result(id, await callMcpTool(name, args, controller.signal, state.projectRoot));
 	} finally {
 		if (heartbeat) clearInterval(heartbeat);
 		active.delete(id);
@@ -461,7 +432,7 @@ export async function runMcpServer(): Promise<void> {
 	const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 	const active = new Map<JsonRpcId, AbortController>();
 	const pending = new Map<JsonRpcId, PendingServerRequest>();
-	const state: McpServerState = { initialized: false, projectRoot: mcpProjectRoot(), clientName: "", supportsRoots: false };
+	const state: McpServerState = { initialized: false, projectRoot: mcpProjectRoot(), supportsRoots: false };
 	lines.on("line", (line) => {
 		let message: JsonRpcMessage;
 		try {

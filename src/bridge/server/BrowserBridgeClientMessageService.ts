@@ -7,8 +7,6 @@ import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.
 import { errorToPlain } from "../../utils/errors.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
 import { recordValue } from "./bridgeUtils.js";
-import { CONSENT_MESSAGE_TYPES } from "../protocol/consentTypes.js";
-import type { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
 
 type IncomingMessage = {
 	type?: unknown;
@@ -20,8 +18,6 @@ type IncomingMessage = {
 	tabs?: unknown;
 	bridge?: unknown;
 	extension?: unknown;
-	pairingId?: unknown;
-	decision?: unknown;
 	[key: string]: unknown;
 };
 
@@ -31,7 +27,6 @@ type BrowserBridgeClientMessageServiceDeps = {
 	tabs: BrowserTabSessionRouter;
 	pendingRequests: BrowserBridgePendingRequests;
 	queues: BrowserCommandQueueRegistry;
-	consent: BrowserBridgeConsentCoordinator;
 	migratePerceptionLedger?: (fromTabId: number, toTabId: number, browserSessionId: string) => void;
 	clearRecorderStateForReplacement?: (fromTabId: number, toTabId: number, browserSessionId: string) => void;
 	notifyExtensionReady?: () => void;
@@ -97,19 +92,11 @@ export class BrowserBridgeClientMessageService {
 		}
 
 		this.deps.clients.markSeen(ws);
+		if (!this.deps.clients.info(ws)) return;
 		const type = String(message.type || "");
 		if (type === "ping") return;
-		if (type === CONSENT_MESSAGE_TYPES.response) {
-			this.deps.consent.resolveConsent(String(message.pairingId || ""), message.decision as "approve" | "deny");
-			return;
-		}
-		if (type === CONSENT_MESSAGE_TYPES.revoke) {
-			this.deps.consent.fireRevoke(String(message.pairingId || ""));
-			return;
-		}
 		if (type === "ext_ready" && !this.isValidExtensionReady(message)) return;
 		if (type === "ext_ready" || type === "tabs_update") {
-			if (type === "ext_ready") this.clearHandshakeTimeout(ws);
 			const defaultSession = this.deps.browserSessions.defaultSession();
 			const selectedClient = this.deps.browserSessions.selectedOpenClient(defaultSession);
 			const selectedInfo = selectedClient ? this.deps.clients.info(selectedClient) : undefined;
@@ -120,16 +107,20 @@ export class BrowserBridgeClientMessageService {
 			this.deps.clients.updateClientInfo(ws, message.bridge || message.extension);
 			const incomingInfo = this.deps.clients.info(ws);
 			const incomingInstanceId = incomingInfo?.extensionInstanceId;
-			const replacesSelectedInstance = type === "ext_ready"
-				&& selectedClient !== undefined
+			const replacesSelectedInstance = selectedClient !== undefined
 				&& selectedInstanceId !== undefined
 				&& selectedInstanceId === incomingInstanceId;
-			const upgradesStaleSelection = type === "ext_ready" && selectedInfo?.extensionStale === true && incomingInfo?.extensionStale === false;
-			if (!selectedClient || selectedClient === ws || replacesSelectedInstance || upgradesStaleSelection) this.deps.browserSessions.selectClient(defaultSession, ws);
 			if (type === "ext_ready") {
-				// Classify against peers BEFORE collapsing, then enforce one live socket per
-				// extension instance. Idempotent: a repeat ext_ready on the same socket finds
-				// no peer to supersede and just refreshes selection/info.
+				this.clearHandshakeTimeout(ws);
+				const upgradesStaleSelection = selectedInfo?.extensionStale === true && incomingInfo?.extensionStale === false;
+				const downgradesCurrentSelection = selectedInfo?.extensionStale === false && incomingInfo?.extensionStale === true;
+				if (selectedClient && selectedClient !== ws && (downgradesCurrentSelection || (!replacesSelectedInstance && !upgradesStaleSelection))) {
+					this.unregisterClient(ws);
+					if (ws.readyState === WebSocket.OPEN) ws.close(1008, "Another browser is already connected");
+					return;
+				}
+				this.deps.browserSessions.selectClient(defaultSession, ws);
+				// Classify before removing the previous owner so reconnect metrics retain context.
 				const info = this.deps.clients.info(ws);
 				const sameSocketRestart = previousInstanceId !== undefined
 					&& previousInstanceId === info?.extensionInstanceId
@@ -144,8 +135,8 @@ export class BrowserBridgeClientMessageService {
 				if (info) info.connectKind = connectKind;
 				this.deps.clients.recordConnect(connectKind, info?.extensionInstanceId, info?.workerBootId);
 				this.deps.clients.recordHandshake();
-				const superseded = this.deps.clients.supersedeInstanceClients(info?.extensionInstanceId, ws);
-				for (const stale of superseded) this.deps.pendingRequests.rejectClient(stale);
+				const superseded = this.deps.clients.supersedeClients(ws);
+				for (const stale of superseded) this.unregisterClient(stale, "superseded");
 			}
 			const replacements = Array.isArray(message.replaced) ? this.deps.tabs.applyTabReplacements(message.replaced, ws) : [];
 			this.deps.tabs.updateTabs(Array.isArray(message.tabs) ? message.tabs : [], ws);

@@ -29,16 +29,6 @@ args = ["--yes", "--package", "browser-pilot", "browser-pilot-mcp"]
 
 For a source checkout, build once and point the MCP client at `dist/src/apps/mcp/bin.js`. The MCP process starts or reuses the local daemon automatically. Set `BROWSER_PILOT_PROJECT_ROOT` when a global MCP configuration must write artifacts into a specific project.
 
-## Pair the Agent
-
-Browser control is denied until the agent is approved in the extension:
-
-1. Call `browser_pair` with `{ "action": "start", "label": "your agent" }`.
-2. Approve the matching code in the Browser Pilot extension.
-3. Call `browser_pair` with `{ "action": "wait", "pairingId": "..." }`.
-
-The resulting token is stored owner-locally and scoped to the MCP client and project root.
-
 ## Core Workflow
 
 1. Omit `targetRef` to use the selected active tab; call `browser_tabs` only to create, switch, close, or disambiguate tabs.
@@ -48,7 +38,7 @@ The resulting token is stored owner-locally and scoped to the MCP client and pro
 
 ## Tools
 
-The MCP `tools/list` response is the public syntax authority. Browser tools come from `src/commands/commandCatalog.ts`; `browser_pair` provides the local pairing flow.
+The MCP `tools/list` response is the public syntax authority. Browser tools come from `src/commands/commandCatalog.ts`.
 `browser_command` publishes canonical command names in its schema. Read `browser-pilot://native-command/<cmd>` for the closed business fields of one command; `browser-pilot://native-commands` is the compact routing index. Targeting stays at the tool-level `targetRef`; runtime session, physical tab/target, timeout, attach, and cleanup state is not part of the public contract. Raw CDP is `command: { cmd: "cdp", method: "Domain.method", params: {...} }`.
 
 `browser_execute` keeps JavaScript as the general page language. Its injected `browserPilot` namespace provides `refs`, `resolve(ref)`, `box(ref)`, and `setValue(target, value)`; writes are target-serialized and automatically use the extension/CDP fallback path. The stable success envelope is `{ "result": ..., "effect"?: ..., "verification"?: ... }`, so page-owned data cannot collide with Browser Pilot metadata.
@@ -66,13 +56,13 @@ State has one owner at each boundary:
 | State | Owner |
 | --- | --- |
 | MCP protocol and project root | Per-agent MCP process |
-| Authentication and daemon lifecycle | User-local daemon |
+| Daemon lifecycle | User-local daemon |
 | Connections, pending requests, and target write queues | `BrowserBridgeServer` |
 | Selected browser and tab session | Session registry |
 | Chrome APIs and CDP sessions | MV3 service worker |
 | Captured evidence | Request-scoped project artifact root |
 
-Trust boundaries are fail-closed: daemon calls require pairing, WebSocket upgrades require the packaged extension origin, and page content is always untrusted. Browser Pilot does not suppress page dialogs or remove page CSP headers.
+The browser bridge accepts WebSocket upgrades only from the packaged extension, and page content is always untrusted. Browser Pilot does not suppress page dialogs or remove page CSP headers.
 
 Source is organized under:
 

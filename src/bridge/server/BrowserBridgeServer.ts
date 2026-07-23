@@ -12,14 +12,12 @@ import { BrowserBridgeSessionState } from "./BrowserBridgeSessionState.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
-import { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
-import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "../protocol/consentTypes.js";
 import type { BrowserCommandTargetTransactionInput, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot } from "../../ports/BrowserCommandRuntimePort.js";
-import type { BrowserAutomationSession, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, ExecuteOptions } from "./types.js";
+import type { BrowserAutomationSession, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, ExecuteOptions } from "./types.js";
 
 const MAX_KNOWN_RECORDER_STATES = 128;
 
-export class BrowserBridgeServer implements ConsentPort {
+export class BrowserBridgeServer {
 	readonly host: string;
 	readonly requestedPort: number;
 	readonly portRangeEnd: number;
@@ -35,7 +33,6 @@ export class BrowserBridgeServer implements ConsentPort {
 	private readonly clientMessageService: BrowserBridgeClientMessageService;
 	private readonly extensionReadyWaiters = new Set<() => void>();
 	private readonly knownRecorderStates = new Map<string, { active: boolean; lastSeq?: number }>();
-	private readonly consentCoordinator: BrowserBridgeConsentCoordinator;
 
 	constructor(options: { host?: string; port?: number; portRangeEnd?: number; maxPayloadBytes?: number; handshakeTimeoutMs?: number } = {}) {
 		this.host = options.host || process.env.BROWSER_PILOT_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
@@ -43,9 +40,6 @@ export class BrowserBridgeServer implements ConsentPort {
 		this.portRangeEnd = Math.max(this.requestedPort, options.portRangeEnd || normalizePort(process.env.BROWSER_PILOT_BRIDGE_PORT_RANGE_END, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END));
 		this.clients = new BrowserBridgeClientRegistry(() => this.port);
 		this.state = new BrowserBridgeSessionState();
-		this.consentCoordinator = new BrowserBridgeConsentCoordinator({
-			getExtensionSocket: () => this.state.browserSessions.selectedOpenClient(this.state.browserSessions.defaultSession()),
-		});
 		this.queues = new BrowserCommandQueueRegistry();
 		this.tabs = new BrowserTabSessionRouter(this.clients, this.state.browserSessions);
 		this.pendingRequests = new BrowserBridgePendingRequests(
@@ -70,7 +64,6 @@ export class BrowserBridgeServer implements ConsentPort {
 			tabs: this.tabs,
 			pendingRequests: this.pendingRequests,
 			queues: this.queues,
-			consent: this.consentCoordinator,
 			migratePerceptionLedger: (fromTabId, toTabId, browserSessionId) => {
 				this.state.perceptionLedger.migrateTabId(fromTabId, toTabId, { browserSessionIds: [browserSessionId] });
 			},
@@ -192,16 +185,6 @@ export class BrowserBridgeServer implements ConsentPort {
 		throw new BrowserBridgeError("BROWSER_EXTENSION_RECONNECT_TIMEOUT", `Browser extension did not reconnect in ${timeoutMs}ms`, { previousClientId, snapshot: last });
 	}
 
-	selectBrowser(browserId: string, options: { browserSessionId?: string } = {}): BrowserBridgeClientInfo {
-		const id = String(browserId || "").trim();
-		if (!id) throw new BrowserBridgeError("INVALID_BROWSER_ID", "A browser client id is required", { browserId });
-		const selected = this.clients.findClient(id);
-		if (!selected) throw new BrowserBridgeError("BROWSER_NOT_FOUND", "No connected browser bridge client matches browserId", { browserId: id, clients: this.snapshot().clients });
-		const sessionId = this.tabs.selectBrowser(selected.ws, options.browserSessionId);
-		if (!sessionId) throw new BrowserBridgeError("NO_TAB", "Selected browser has no active tabs", { browserId: id, selected: selected.info, clients: this.snapshot().clients });
-		return selected.info;
-	}
-
 	async switchTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.switchTab(tabId, timeoutMs, options);
 	}
@@ -283,23 +266,6 @@ export class BrowserBridgeServer implements ConsentPort {
 
 	perceptionTraceSnapshot(browserSessionId?: string): CommandPerceptionTraceSnapshot {
 		return this.state.perceptionLedger.traceSnapshot(browserSessionId);
-	}
-
-	// ConsentPort implementation — delegated to the coordinator
-	hasConsentSurface(): boolean {
-		return this.consentCoordinator.hasConsentSurface();
-	}
-
-	sendConsentRequest(input: { pairingId: string; label: string; code: string; expiresAt: string; timeoutMs: number }): Promise<ConsentDecision> {
-		return this.consentCoordinator.sendConsentRequest(input);
-	}
-
-	onRevokeRequest(handler: (pairingId: string) => void): void {
-		this.consentCoordinator.onRevokeRequest(handler);
-	}
-
-	broadcastPairedAgents(agents: PairedAgentSummary[]): void {
-		this.consentCoordinator.broadcastPairedAgents(agents);
 	}
 
 	formatError(error: unknown): string {

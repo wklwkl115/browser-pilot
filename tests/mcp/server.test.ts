@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { agentTokenPath, resolvePairingToken } from "../../src/apps/mcp/auth.ts";
 import { callMcpTool, mcpProjectRoot, mcpResources, mcpResourceTemplates, mcpTools, readMcpResource, registerMcpObservationResources } from "../../src/apps/mcp/server.ts";
-import { ENV_AUTH_STATE_DIR, ENV_PAIRING_TOKEN } from "../../src/apps/daemon/authTypes.ts";
 import { publicNativeCommandNames } from "../../src/commands/nativeCommandAccess.ts";
 import { buildPageObservation } from "../../src/commands/observe/scanProjection.ts";
 import { pageObservationResult } from "../../src/commands/resultMiddleware.ts";
@@ -28,7 +26,6 @@ test("MCP publishes the command catalog as tools", () => {
 	assert.deepEqual(tools.map((tool) => tool.name), [
 		"browser_tabs", "browser_command", "browser_execute", "browser_observe",
 		"browser_screenshot",
-		"browser_pair",
 	]);
 	assert.ok(tools.every((tool) => tool.inputSchema.type === "object"));
 	const observeSchema = tools.find((tool) => tool.name === "browser_observe")?.outputSchema;
@@ -36,56 +33,15 @@ test("MCP publishes the command catalog as tools", () => {
 	assert.doesNotMatch(JSON.stringify(observeSchema), /browserSessionId|tabId|targetGeneration|pageEpoch|documentId|frameScope|selectionVersion|sourceMode|networkSeq|hookSeq|reanchorReason|baselineSnapshotId|reservedMs|actualMs|bridgeRoundTrips|planned/);
 	const observeProperties = observeSchema?.properties as Record<string, unknown>;
 	for (const internal of ["delta", "baselineSnapshotId", "reanchorReason", "entities", "diff", "identity"]) assert.equal(internal in observeProperties, false);
-	const pair = tools.find((tool) => tool.name === "browser_pair")!;
-	assert.deepEqual(Object.keys(pair.inputSchema.properties as Record<string, unknown>), ["action", "label", "pairingId"]);
 	const tabs = tools.find((tool) => tool.name === "browser_tabs")!;
 	const tabProperties = tabs.inputSchema.properties as Record<string, Record<string, unknown>>;
-	assert.deepEqual(tabProperties.action.enum, ["list", "switch", "create", "close", "selectBrowser"]);
+	assert.deepEqual(tabProperties.action.enum, ["list", "switch", "create", "close"]);
 	assert.equal("browserSessionId" in tabProperties, false);
 	assert.match(tabs.description ?? "", /Omit browser_tabs when the selected active tab is already the intended target/);
 	const native = tools.find((tool) => tool.name === "browser_command")!;
 	const nativeProperties = native.inputSchema.properties as Record<string, Record<string, unknown>>;
 	const commandProperties = nativeProperties.command.properties as Record<string, Record<string, unknown>>;
 	assert.deepEqual(commandProperties.cmd.enum, publicNativeCommandNames());
-});
-
-test("MCP pairing tokens are client/project-scoped and pinned for the process", async () => {
-	const previousStateDir = process.env[ENV_AUTH_STATE_DIR];
-	const previousToken = process.env[ENV_PAIRING_TOKEN];
-	const root = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-mcp-auth-"));
-	process.env[ENV_AUTH_STATE_DIR] = path.join(root, "auth");
-	delete process.env[ENV_PAIRING_TOKEN];
-	try {
-		const projectA = path.join(root, "project-a");
-		const projectB = path.join(root, "project-b");
-		const tokenA = agentTokenPath(projectA, "client-a");
-		const tokenB = agentTokenPath(projectB, "client-a");
-		assert.notEqual(tokenA, tokenB);
-		assert.notEqual(tokenA, agentTokenPath(projectA, "client-b"));
-		await mkdir(path.dirname(tokenA), { recursive: true });
-		await writeFile(tokenA, JSON.stringify({ token: "token-a" }));
-		await writeFile(tokenB, JSON.stringify({ token: "token-b" }));
-		assert.equal(resolvePairingToken(projectA, "client-a"), "token-a");
-		if (process.platform !== "win32") assert.equal((await stat(tokenA)).mode & 0o777, 0o600);
-		assert.equal(resolvePairingToken(projectB, "client-a"), "token-b");
-		await writeFile(tokenA, JSON.stringify({ token: "overwritten" }));
-		assert.equal(resolvePairingToken(projectA, "client-a"), "token-a");
-	} finally {
-		if (previousStateDir === undefined) delete process.env[ENV_AUTH_STATE_DIR];
-		else process.env[ENV_AUTH_STATE_DIR] = previousStateDir;
-		if (previousToken === undefined) delete process.env[ENV_PAIRING_TOKEN];
-		else process.env[ENV_PAIRING_TOKEN] = previousToken;
-		await rm(root, { recursive: true, force: true });
-	}
-});
-
-test("MCP pairing rejects invalid actions without starting the daemon", async () => {
-	const result = await callMcpTool("browser_pair", { action: "invalid" });
-	assert.equal(result.isError, true);
-	assert.match(firstText(result), /action must be start or wait/);
-	const mechanical = await callMcpTool("browser_pair", { action: "wait", pairingId: "pair-1", timeoutMs: 1 });
-	assert.equal(mechanical.isError, true);
-	assert.match(firstText(mechanical), /unknown parameter: timeoutMs/);
 });
 
 test("MCP uses the configured project root", () => {

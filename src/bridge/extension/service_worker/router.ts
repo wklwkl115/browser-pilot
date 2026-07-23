@@ -8,28 +8,13 @@ import { recordBrowserPilotPrerenderActivation } from "./tab_sync";
 
 // router.js - protocol validation and command dispatch for Browser Pilot Bridge messages.
 
-type StorageLocalArea = { get(keys: string[]): Promise<JsonRecord>; set(items: JsonRecord): Promise<void>; remove(keys: string | string[]): Promise<void> };
-
-function getStorageLocal(): StorageLocalArea | null {
-  const s = chrome.storage as unknown as Record<string, StorageLocalArea> | undefined;
-  return s?.local ?? null;
-}
-
-// Injected by transport.ts to avoid circular import: transport→router→transport.
-let getTransportSocket: (() => BrowserPilotBridgeWebSocketLike | null) | null = null;
-function setTransportSocketGetter(getter: () => BrowserPilotBridgeWebSocketLike | null): void { getTransportSocket = getter; }
-
-// Module-level consent state cache (in-memory, mirrors chrome.storage.local)
-let cachedConsentPending: JsonRecord | null = null;
-let cachedPairedAgents: JsonRecord[] = [];
-
 let browserPilotBridgeRouterInstalled = false;
 
 function handleBrowserPilotRuntimeEventMessage(msgType: string, sender: BrowserPilotChromeMessageSender, sendResponse: (response: unknown) => void): boolean {
-		if (msgType === "browser-pilot-prerender-activated") {
-			const tabId = Number(sender.tab?.id ?? 0);
-			const activated = recordBrowserPilotPrerenderActivation(tabId);
-			sendResponse({ ok: activated, tabId });
+	if (msgType === "browser-pilot-prerender-activated") {
+		const tabId = Number(sender.tab?.id ?? 0);
+		const activated = recordBrowserPilotPrerenderActivation(tabId);
+		sendResponse({ ok: activated, tabId });
 		return true;
 	}
 	return false;
@@ -44,42 +29,14 @@ async function handleBrowserPilotBridgeMessage(msg: BrowserPilotBridgeCommand, s
 
 function installBrowserPilotBridgeRouter() {
   if (browserPilotBridgeRouterInstalled) return false;
+	const local = chrome.storage?.local;
+	if (local) void local.remove(["browser_pilot_consent_pending", "browser_pilot_paired_agents"]).catch(() => {});
   chrome.runtime.onMessage.addListener((msg: unknown, sender: BrowserPilotChromeMessageSender, sendResponse: (response: unknown) => void) => {
     // Pass-through guard: let transport.ts handle offscreen-prefixed messages.
-		if (msg && typeof msg === 'object' && typeof (msg as JsonRecord).type === 'string' && String((msg as JsonRecord).type).startsWith('browser-pilot-offscreen-')) return false;
-		const msgType = msg && typeof msg === 'object' ? String((msg as JsonRecord).type ?? '') : '';
-			if (handleBrowserPilotRuntimeEventMessage(msgType, sender, sendResponse)) return false;
-    // Popup→SW consent messages
-    if (msgType === 'browser-pilot-consent-poll') {
-      const storage = getStorageLocal();
-      if (cachedConsentPending !== null || cachedPairedAgents.length > 0 || !storage) {
-        sendResponse({ pending: cachedConsentPending, agents: cachedPairedAgents });
-      } else {
-        void storage.get(['browser_pilot_consent_pending', 'browser_pilot_paired_agents']).then((stored) => {
-          const pending = (stored.browser_pilot_consent_pending as JsonRecord | undefined) ?? null;
-          const agents = (stored.browser_pilot_paired_agents as JsonRecord[] | undefined) ?? [];
-          if (cachedConsentPending === null && pending !== null) cachedConsentPending = pending;
-          if (cachedPairedAgents.length === 0 && agents.length > 0) cachedPairedAgents = agents;
-          sendResponse({ pending: cachedConsentPending, agents: cachedPairedAgents });
-        });
-      }
-      return true;
-    }
-    if (msgType === 'browser-pilot-consent-decide') {
-      const { pairingId, decision } = msg as JsonRecord & { pairingId?: string; decision?: string };
-      getTransportSocket?.()?.send(JSON.stringify({ type: 'consent-response', pairingId, decision }));
-      cachedConsentPending = null;
-      void getStorageLocal()?.remove('browser_pilot_consent_pending');
-      sendResponse({ ok: true });
-      return true;
-    }
-    if (msgType === 'browser-pilot-consent-revoke') {
-      const { pairingId } = msg as JsonRecord & { pairingId?: string };
-      getTransportSocket?.()?.send(JSON.stringify({ type: 'revoke-request', pairingId }));
-      sendResponse({ ok: true });
-      return true;
-    }
-    void handleBrowserPilotBridgeMessage(msg as BrowserPilotBridgeCommand, sender).then(sendResponse);
+	if (msg && typeof msg === 'object' && typeof (msg as JsonRecord).type === 'string' && String((msg as JsonRecord).type).startsWith('browser-pilot-offscreen-')) return false;
+	const msgType = msg && typeof msg === 'object' ? String((msg as JsonRecord).type ?? '') : '';
+	if (handleBrowserPilotRuntimeEventMessage(msgType, sender, sendResponse)) return false;
+	void handleBrowserPilotBridgeMessage(msg as BrowserPilotBridgeCommand, sender).then(sendResponse);
     return true;
   });
   browserPilotBridgeRouterInstalled = true;
@@ -99,22 +56,6 @@ function sendBrowserPilotBridgeWsInputError(socket: BrowserPilotBridgeWebSocketL
 }
 
 type RoutedBrowserPilotBridgeWsEnvelope = BrowserPilotBridgeWsEnvelope & { id: string | number; code: unknown };
-
-function handleBrowserPilotBridgeWsControlEnvelope(data: BrowserPilotBridgeWsEnvelope): boolean {
-	if (data.type === "consent-request") {
-		const pending = data as JsonRecord;
-		cachedConsentPending = pending;
-		void getStorageLocal()?.set({ browser_pilot_consent_pending: pending });
-		void chrome.runtime.sendMessage({ type: "browser-pilot-consent-pending", pending }).catch(() => { /* no popup open */ });
-		return true;
-	}
-	if (data.type !== "paired-agents") return false;
-	const agents = Array.isArray(data.agents) ? data.agents as JsonRecord[] : [];
-	cachedPairedAgents = agents;
-	void getStorageLocal()?.set({ browser_pilot_paired_agents: agents });
-	void chrome.runtime.sendMessage({ type: "browser-pilot-consent-agents", agents }).catch(() => { /* no popup open */ });
-	return true;
-}
 
 function isRoutedBrowserPilotBridgeWsEnvelope(data: BrowserPilotBridgeWsEnvelope): data is RoutedBrowserPilotBridgeWsEnvelope {
 	return data.id !== undefined && data.id !== null && data.code !== undefined && data.code !== null;
@@ -161,12 +102,10 @@ async function handleBrowserPilotBridgeWsCommand(data: RoutedBrowserPilotBridgeW
 
 /** @param {BrowserPilotBridgeWsEnvelope} data @param {BrowserPilotBridgeWebSocketLike} socket */
 async function handleBrowserPilotBridgeWsMessage(data: BrowserPilotBridgeWsEnvelope, socket: BrowserPilotBridgeWebSocketLike) {
-  // Intercept daemon→ext consent/pairing envelopes BEFORE the id/code guard — these carry
-  // `type` but no `id` or `code`, so they must be handled here first.
-	if (handleBrowserPilotBridgeWsControlEnvelope(data) || !isRoutedBrowserPilotBridgeWsEnvelope(data)) return;
+	if (!isRoutedBrowserPilotBridgeWsEnvelope(data)) return;
 	const code = parseBrowserPilotBridgeWsCode(data.code);
 	if (typeof code === "object" && code !== null) return await handleBrowserPilotBridgeWsCommand(data, code, socket);
 	if (typeof code === "string") return await handleWsExec({ ...data, code }, socket);
 	sendBrowserPilotBridgeWsInputError(socket, data.id, `Unsupported message code type: ${typeof code}`, { codeType: typeof code });
 }
-export { installBrowserPilotBridgeRouter, handleBrowserPilotBridgeMessage, sendBrowserPilotBridgeWsCommandResult, sendBrowserPilotBridgeWsInputError, handleBrowserPilotBridgeWsMessage, setTransportSocketGetter };
+export { installBrowserPilotBridgeRouter, handleBrowserPilotBridgeMessage, sendBrowserPilotBridgeWsCommandResult, sendBrowserPilotBridgeWsInputError, handleBrowserPilotBridgeWsMessage };

@@ -48,25 +48,16 @@ test("classifyConnect distinguishes duplicate (same boot) from sw-restart (new b
 	assert.equal(registry.classifyConnect(c, "X", "boot-2"), "sw-restart");
 });
 
-test("supersedeInstanceClients closes other sockets of the same instance, keeps the newest", () => {
+test("supersedeClients closes every other socket and keeps the owner", () => {
 	const registry = new BrowserBridgeClientRegistry(18765);
 	const a = connect(registry, "X", "boot-1");
 	const b = connect(registry, "X", "boot-2");
 	const other = connect(registry, "Z", "boot-1");
-	const superseded = registry.supersedeInstanceClients("X", b);
-	assert.deepEqual(superseded, [a]);
+	const superseded = registry.supersedeClients(b);
+	assert.deepEqual(superseded, [a, other]);
 	assert.equal((a as unknown as { readyState: number }).readyState, 3, "stale same-instance socket is closed");
 	assert.equal((b as unknown as { readyState: number }).readyState, 1, "kept socket stays open");
-	assert.equal((other as unknown as { readyState: number }).readyState, 1, "different-instance socket is untouched");
-});
-
-test("supersedeInstanceClients is a no-op without an instance id", () => {
-	const registry = new BrowserBridgeClientRegistry(18765);
-	const a = connect(registry, "X", "boot-1");
-	const b = fakeSocket();
-	registry.register(b);
-	assert.deepEqual(registry.supersedeInstanceClients(undefined, b), []);
-	assert.equal((a as unknown as { readyState: number }).readyState, 1);
+	assert.equal((other as unknown as { readyState: number }).readyState, 3, "different-instance socket is closed");
 });
 
 test("connection metrics tally connects, disconnects, sw-restarts, and reconnect latency", () => {

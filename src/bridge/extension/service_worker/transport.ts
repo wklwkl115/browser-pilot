@@ -2,7 +2,7 @@ import { BROWSER_PILOT_BRIDGE_PORT } from "./config";
 import { chromeApi as chrome } from "./runtimeEnv";
 import { isScriptable, browserPilotBridgeInfo, getExtensionInstanceId, registerOffscreenUnreachableGetter } from "./bridge_info";
 import { setBridgeWakeProbe } from "./core_commands";
-import { handleBrowserPilotBridgeWsMessage, setTransportSocketGetter } from "./router";
+import { handleBrowserPilotBridgeWsMessage } from "./router";
 import { runStartupRecovery } from "./state_store";
 import { installBrowserPilotTabSync } from "./tab_sync";
 import { browserPilotPageIdentityFields } from "./page_identity";
@@ -223,7 +223,6 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
     const tabsWithIdentity = await Promise.all(tabs.map(async (tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId, ...browserPilotPageIdentityFields(tab), ...await browserPilotTabIdentityFields(tab) })));
     return JSON.stringify({
       type: "ext_ready",
-      consentCapable: true,
       bridge: { ...browserPilotBridgeInfo(), bridgePort: port, primaryPort, ...(extensionInstanceId ? { extensionInstanceId } : {}) },
       tabs: tabsWithIdentity,
     });
@@ -272,7 +271,6 @@ function installBrowserPilotTransport(): boolean {
   chrome.runtime.onInstalled.addListener(() => { runTransportTask("install probe", async () => { await probeAndConnectWS(true); }); });
   chrome.alarms.onAlarm.addListener((alarm: BrowserPilotChromeAlarm) => { runTransportTask("transport alarm", async () => { await handleBrowserPilotTransportAlarm(alarm); }); });
   setBridgeWakeProbe(probeAndConnectWS);
-  setTransportSocketGetter(getBrowserPilotTransportSocket);
   runTransportTask("initial probe", async () => { await probeAndConnectWS(true); });
   chrome.runtime.onStartup.addListener(() => { runTransportTask("startup probe", async () => { await probeAndConnectWS(true); }); });
   installBrowserPilotTabSync({ getSocket: getBrowserPilotTransportSocket, getSockets: getBrowserPilotTransportSockets, probe: probeAndConnectWS });

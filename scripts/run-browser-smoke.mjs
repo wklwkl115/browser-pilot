@@ -69,7 +69,6 @@ async function daemonJson(daemon, pathname, init = {}, timeoutMs = 10_000) {
 		...init,
 		headers: {
 			"x-browser-pilot-daemon-token": daemon.token,
-			...(pairingToken ? { "x-browser-pilot-pairing-token": pairingToken } : {}),
 			...(init.body ? { "content-type": "application/json" } : {}),
 			...init.headers,
 		},
@@ -221,13 +220,7 @@ async function launchConnectedBrowser(daemon, fixtureUrl, profileRoot) {
 
 await import("./build-bridge.mjs");
 const profileDir = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-smoke-"));
-process.env.BROWSER_PILOT_AUTH_STATE_DIR = path.join(profileDir, "auth");
 const { startDaemon } = await import("../src/apps/daemon/server.ts");
-const authStore = await import("../src/apps/daemon/authStore.ts");
-const pendingPairing = authStore.mintPending("browser-smoke");
-const approvedPairing = await authStore.approve(pendingPairing.pairingId);
-if (!approvedPairing) throw new Error("smoke pairing setup failed");
-const pairingToken = approvedPairing.token;
 const fixture = await startFixtureServer();
 const daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true });
 let browser;
@@ -239,11 +232,6 @@ try {
 	if (!Number.isInteger(tabId) || tabId <= 0) throw new Error(`fixture tab was not routable: ${JSON.stringify(tab)}`);
 	const targetRef = typeof tab?.targetRef === "string" ? tab.targetRef : typeof tab?.tabHandle === "string" ? tab.tabHandle : "";
 	if (!targetRef) throw new Error(`fixture tab had no stable targetRef: ${JSON.stringify(tab)}`);
-	const browserId = typeof tab?.browserId === "string" ? tab.browserId : "";
-	if (!browserId) throw new Error(`fixture browser client was not identifiable: ${JSON.stringify(tab)}`);
-	const selectedBrowser = await invoke(daemon, "browser_tabs", { action: "selectBrowser", browserId });
-	if (!resultText(selectedBrowser).includes(browserId)) throw new Error(`fixture browser client was not selected: ${resultText(selectedBrowser)}`);
-
 	const tabs = await invoke(daemon, "browser_tabs", { action: "list" });
 	if (!resultText(tabs).includes("Browser Pilot Smoke")) throw new Error(`browser_tabs did not expose the fixture tab: ${resultText(tabs)}`);
 	const executed = await invoke(daemon, "browser_execute", {

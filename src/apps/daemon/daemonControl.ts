@@ -248,8 +248,6 @@ export function isPidAlive(pid: number): boolean {
 }
 
 export interface ControlRequestOptions {
-	/** If provided, adds the x-browser-pilot-pairing-token header on the request. */
-	pairingToken?: string;
 	signal?: AbortSignal;
 }
 
@@ -275,19 +273,18 @@ export function controlRequest(
 			reject(error);
 		};
 		const data = body !== undefined ? JSON.stringify(body) : undefined;
-			const req = http.request(
+		const req = http.request(
 			{
-				host: info.controlHost,
-				port: info.controlPort,
+					host: info.controlHost,
+					port: info.controlPort,
 					method,
 					path: pathname,
 					signal: opts?.signal,
 					headers: {
-					"x-browser-pilot-daemon-token": info.token,
-					...(opts?.pairingToken ? { "x-browser-pilot-pairing-token": opts.pairingToken } : {}),
-					...(data ? { "content-type": "application/json", "content-length": Buffer.byteLength(data) } : {}),
+						"x-browser-pilot-daemon-token": info.token,
+						...(data ? { "content-type": "application/json", "content-length": Buffer.byteLength(data) } : {}),
+					},
 				},
-			},
 			(res) => {
 				let buf = "";
 				let responseBytes = 0;

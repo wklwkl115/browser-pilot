@@ -25,15 +25,6 @@ import { validateBrowserCommandArguments } from "../../commands/commandValidatio
 import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
 import { daemonVersion } from "./packageInfo.js";
 import { createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
-import * as authStore from "./authStore.js";
-import {
-	AUTH_ERROR_CODES,
-	PAIRING_TOKEN_HEADER,
-	PAIR_PENDING_TTL_MS,
-	type AgentRecord,
-	type PairingSummary,
-} from "./authTypes.js";
-import type { ConsentDecision } from "./authTypes.js";
 
 export const DAEMON_VERSION = daemonVersion();
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
@@ -65,10 +56,8 @@ export interface StartDaemonOptions {
 }
 
 type JsonSender = (status: number, obj: Record<string, unknown>) => void;
-type PendingPairResult = { pairingId: string; result: Promise<PairResult>; expiry: NodeJS.Timeout };
 
 export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName"> & {
-	req: http.IncomingMessage;
 	send: JsonSender;
 	body: Record<string, unknown>;
 	signal?: AbortSignal;
@@ -81,10 +70,6 @@ type PreparedInvoke = {
 	args: Record<string, unknown>;
 };
 
-type PairResult = { decision: ConsentDecision; token?: string };
-type PairingAuthorization =
-	| { ok: true; record: AgentRecord }
-	| { ok: false; status: number; body: Record<string, unknown> };
 type DaemonControlContext = {
 	token: string;
 	bridgeServer: BrowserBridgeServer;
@@ -92,8 +77,6 @@ type DaemonControlContext = {
 	toolByName: Map<string, CommandDefinition>;
 	toolCount: number;
 	contractIdentity: DaemonContractIdentity;
-	pendingPairResult?: PendingPairResult;
-	composeSummaries: () => PairingSummary[];
 	draining: boolean;
 	close: () => Promise<void>;
 	onShutdown: StartDaemonOptions["onShutdown"];
@@ -197,22 +180,6 @@ function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, con
 	};
 }
 
-function authorizePairing(req: http.IncomingMessage): PairingAuthorization {
-	const ptoken = req.headers[PAIRING_TOKEN_HEADER];
-	const rec = authStore.findByToken(typeof ptoken === "string" ? ptoken : undefined);
-	if (!rec) return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid, error: "Browser pairing required; call browser_pair with action=start." } };
-	if (rec.status === "revoked") return { ok: false, status: 403, body: { ok: false, code: AUTH_ERROR_CODES.pairingRevoked, error: "Browser pairing was revoked; pair this agent again." } };
-	if (rec.status !== "active") return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid, error: "Browser pairing is not active; complete browser_pair before invoking tools." } };
-	return { ok: true, record: rec };
-}
-
-function authorizeInvoke(req: http.IncomingMessage): { ok: true } | { ok: false; status: number; body: Record<string, unknown> } {
-	const auth = authorizePairing(req);
-	if (!auth.ok) return auth;
-	authStore.touch(auth.record.pairingId);
-	return { ok: true };
-}
-
 /** Pure daemon pre-execution validator, exported for contract tests. */
 export function validateDaemonCommandArguments(definition: CommandDefinition, args: unknown) {
 	return validateBrowserCommandArguments(definition, args);
@@ -244,9 +211,7 @@ async function executeInvoke(invocation: PreparedInvoke, signal?: AbortSignal): 
 	}
 }
 
-export async function handleInvokeRoute({ req, send, body, toolByName, signal }: InvokePipelineContext): Promise<void> {
-	const auth = authorizeInvoke(req);
-	if (!auth.ok) return send(auth.status, auth.body);
+export async function handleInvokeRoute({ send, body, toolByName, signal }: InvokePipelineContext): Promise<void> {
 	const prepared = prepareInvoke(body, toolByName);
 	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
 	return send(200, await executeInvoke(prepared, signal));
@@ -285,54 +250,9 @@ async function handleConnectRoute(context: DaemonControlContext, req: http.Incom
 			status: bridgeStatusPayload(context.bridgeServer, context.toolCount, context.contractIdentity, includeTabs),
 		});
 	}
-	if (wait) {
-		await context.bridgeServer.waitForExtensionReady(undefined, timeoutMs);
-		try { context.bridgeServer.broadcastPairedAgents(context.composeSummaries()); } catch { /* best-effort */ }
-	}
+	if (wait) await context.bridgeServer.waitForExtensionReady(undefined, timeoutMs);
 	const status = bridgeStatusPayload(context.bridgeServer, context.toolCount, context.contractIdentity, includeTabs);
 	return send(200, { ok: true, startedBridge: !wasRunning && context.bridgeServer.running, status });
-}
-
-async function handlePairStartRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {
-	const { label } = await readBody(req);
-	if (!context.bridgeServer.hasConsentSurface()) return send(409, { ok: false, code: AUTH_ERROR_CODES.pairNoExtension });
-	authStore.sweepExpiredPending();
-	if (context.pendingPairResult) clearTimeout(context.pendingPairResult.expiry);
-	context.pendingPairResult = undefined;
-	const { pairingId, code } = authStore.mintPending(String(label ?? "agent"));
-	const result = context.bridgeServer.sendConsentRequest({ pairingId, label: String(label ?? "agent"), code, expiresAt: new Date(Date.now() + PAIR_PENDING_TTL_MS).toISOString(), timeoutMs: PAIR_PENDING_TTL_MS })
-		.then(async (decision: ConsentDecision): Promise<PairResult> => {
-			if (decision !== "approve") {
-				await authStore.deny(pairingId);
-				return { decision };
-			}
-			const approved = await authStore.approve(pairingId);
-			context.bridgeServer.broadcastPairedAgents(context.composeSummaries());
-			return { decision, token: approved?.token };
-		})
-		.catch(async (): Promise<PairResult> => {
-			await authStore.deny(pairingId);
-			return { decision: "timeout" };
-		});
-	const expiry = setTimeout(() => {
-		if (context.pendingPairResult?.pairingId === pairingId) context.pendingPairResult = undefined;
-	}, PAIR_PENDING_TTL_MS);
-	expiry.unref();
-	context.pendingPairResult = { pairingId, result, expiry };
-	return send(200, { ok: true, pairingId, code });
-}
-
-async function handlePairWaitRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {
-	const { pairingId } = await readBody(req);
-	const key = String(pairingId);
-	const pending = context.pendingPairResult?.pairingId === key ? context.pendingPairResult : undefined;
-	if (!pending) return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
-	const result = await pending.result;
-	clearTimeout(pending.expiry);
-	if (context.pendingPairResult === pending) context.pendingPairResult = undefined;
-	if (result.decision === "approve" && result.token) return send(200, { ok: true, token: result.token });
-	if (result.decision === "deny") return send(403, { ok: false, code: AUTH_ERROR_CODES.pairDenied });
-	return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
 }
 
 function scheduleShutdown(context: DaemonControlContext): void {
@@ -379,24 +299,11 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 					const body = await readBody(req);
 					const invocation = invocationAbortController(req, res);
 					try {
-						return await handleInvokeRoute({ req, send, body, toolByName: context.toolByName, signal: invocation.signal });
+						return await handleInvokeRoute({ send, body, toolByName: context.toolByName, signal: invocation.signal });
 					} finally {
 						invocation.cleanup();
 					}
 				}
-			case "POST /pair/start":
-				return await handlePairStartRoute(context, req, send);
-			case "POST /pair/wait":
-				return await handlePairWaitRoute(context, req, send);
-			case "POST /revoke": {
-				const { pairingId } = await readBody(req);
-				if (!await authStore.revoke(String(pairingId))) return send(404, { ok: false, code: AUTH_ERROR_CODES.pairingNotFound });
-				context.bridgeServer.broadcastPairedAgents(context.composeSummaries());
-				return send(200, { ok: true, revoked: pairingId });
-			}
-			case "GET /pairings":
-				authStore.sweepExpiredPending();
-				return send(200, { ok: true, agents: context.composeSummaries() });
 			default:
 				return send(404, { ok: false, error: `not found: ${req.method} ${url.pathname}` });
 		}
@@ -409,21 +316,6 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 export async function startDaemon(options: StartDaemonOptions = {}): Promise<DaemonHandle> {
 	const writeLock = options.writeLock ?? true;
 	const bridgeServer = new BrowserBridgeServer();
-
-	function composeSummaries(): PairingSummary[] {
-		return authStore.listAgents().map((r) => ({
-			pairingId: r.pairingId,
-			label: r.label,
-			status: r.status,
-			lastSeenAt: r.lastSeenAt,
-		}));
-	}
-
-	bridgeServer.onRevokeRequest((pairingId: string) => {
-		void authStore.revoke(pairingId)
-			.then((revoked) => { if (revoked) bridgeServer.broadcastPairedAgents(composeSummaries()); })
-			.catch((error: unknown) => console.error(`[browser-pilot] revoke persistence failed: ${error instanceof Error ? error.message : String(error)}`));
-	});
 
 	let startPromise: Promise<void> | undefined;
 	const ensureStarted: EnsureStarted = async () => {
@@ -454,8 +346,6 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	const close = async (): Promise<void> => {
 		if (closing) return;
 		closing = true;
-		if (controlContext.pendingPairResult) clearTimeout(controlContext.pendingPairResult.expiry);
-		controlContext.pendingPairResult = undefined;
 		await new Promise<void>((resolve) => {
 			server.close(() => resolve());
 			server.closeIdleConnections?.();
@@ -470,7 +360,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		if (writeLock) removeLockfile();
 	};
 
-	const controlContext: DaemonControlContext = { token, bridgeServer, ensureStarted, toolByName, toolCount, contractIdentity, composeSummaries, draining: false, close, onShutdown: options.onShutdown };
+	const controlContext: DaemonControlContext = { token, bridgeServer, ensureStarted, toolByName, toolCount, contractIdentity, draining: false, close, onShutdown: options.onShutdown };
 	const server = http.createServer((req, res) => void handleControlRequest(controlContext, req, res));
 
 	await new Promise<void>((resolve, reject) => {

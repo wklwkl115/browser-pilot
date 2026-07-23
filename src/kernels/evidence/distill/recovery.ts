@@ -101,8 +101,7 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 	const actions = uniqueRecoveryActions([
 		...abmlRecoveryActions(code, details),
 		...websocketRecoveryActions(code),
-		["NO_TAB", "TAB_NOT_FOUND", "INVALID_TAB_ID", "TAB_ID_REQUIRED", "BROWSER_NOT_FOUND"].includes(code) ? "browser_tabs action=list" : undefined,
-		code === "AMBIGUOUS_TAB_ID" ? "browser_tabs action=selectBrowser then retry with targetRef" : undefined,
+		["NO_TAB", "TAB_NOT_FOUND", "INVALID_TAB_ID", "TAB_ID_REQUIRED"].includes(code) ? "browser_tabs action=list" : undefined,
 		["SELECTOR_NOT_FOUND", "INVALID_SELECTOR", "ELEMENT_NOT_FOUND"].includes(code) ? "browser_observe to refresh the page model; use browser_command html.get for exact DOM evidence" : undefined,
 		["BODY_UNAVAILABLE", "REQUEST_NOT_FOUND", "NETWORK_RECORDER_NOT_STARTED"].includes(code) ? "use browser_command network.start on the intended tab, then network.list or network.body" : undefined,
 		["NO_SESSION", "NOT_INSTALLED"].includes(code) ? "use browser_command hook.install on the intended tab before collecting hook events" : undefined,

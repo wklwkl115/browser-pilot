@@ -51,7 +51,6 @@ test("public recovery guidance keeps runtime lifecycle controls internal", () =>
 	const recovery = [
 		recoveryForNormalized("TIMEOUT", {}, { retryable: true }),
 		recoveryForNormalized("WEBSOCKET_WAIT_TIMEOUT", {}, { retryable: true }),
-		recoveryForNormalized("AMBIGUOUS_TAB_ID", {}, { retryable: true }),
 	];
 	assert.doesNotMatch(JSON.stringify(recovery), /timeoutMs|sessionId|tabHandle/);
 });

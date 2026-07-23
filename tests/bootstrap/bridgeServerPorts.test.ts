@@ -7,7 +7,6 @@ import path from "node:path";
 import { WebSocket } from "ws";
 import { BrowserBridgeServer } from "../../src/bridge/server/BrowserBridgeServer.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
-import { CONSENT_MESSAGE_TYPES } from "../../src/bridge/protocol/consentTypes.ts";
 import { readExpectedExtensionBuild } from "../../src/bridge/server/extensionBuild.ts";
 import { BROWSER_PILOT_EXTENSION_ID } from "../../src/bridge/server/browserBridgeConfig.ts";
 
@@ -18,8 +17,7 @@ function bridgeUrl(server: BrowserBridgeServer): string {
 }
 
 async function withServer<T>(fn: (server: BrowserBridgeServer) => Promise<T>): Promise<T> {
-	const server = new BrowserBridgeServer({ port: 0 });
-	await server.start();
+	const server = await startIsolatedServer();
 	try {
 		return await fn(server);
 	} finally {
@@ -28,6 +26,7 @@ async function withServer<T>(fn: (server: BrowserBridgeServer) => Promise<T>): P
 }
 
 type PortBlocker = { port: number; close: () => Promise<void> };
+type BrowserBridgeServerOptions = NonNullable<ConstructorParameters<typeof BrowserBridgeServer>[0]>;
 
 async function listenBlocker(host = "127.0.0.1", port = 0): Promise<PortBlocker> {
 	const server = http.createServer((_req, res) => {
@@ -49,6 +48,14 @@ async function listenBlocker(host = "127.0.0.1", port = 0): Promise<PortBlocker>
 	};
 }
 
+async function startIsolatedServer(options: BrowserBridgeServerOptions = {}): Promise<BrowserBridgeServer> {
+	const reservation = await listenBlocker();
+	await reservation.close();
+	const server = new BrowserBridgeServer({ ...options, port: reservation.port, portRangeEnd: reservation.port });
+	await server.start();
+	return server;
+}
+
 async function reserveConsecutivePorts(host = "127.0.0.1"): Promise<{ blocker: PortBlocker; successor: PortBlocker }> {
 	const firstCandidate = 20_000 + (process.pid % 10_000);
 	for (let offset = 0; offset < 512; offset += 2) {
@@ -66,16 +73,17 @@ async function reserveConsecutivePorts(host = "127.0.0.1"): Promise<{ blocker: P
 	throw new Error("could not reserve consecutive test ports");
 }
 
-async function connectExtension(
+async function openExtension(
 	server: BrowserBridgeServer,
 	tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }],
 	identity: { extensionId?: string; extensionInstanceId?: string; workerBootId?: string; buildId?: string } = {},
-): Promise<WebSocket> {
+): Promise<{ ws: WebSocket; closed: Promise<{ code: number; reason: string }> }> {
 	const ws = new WebSocket(bridgeUrl(server), { origin: EXTENSION_ORIGIN });
 	await new Promise<void>((resolve, reject) => {
 		ws.once("open", resolve);
 		ws.once("error", reject);
 	});
+	const closed = new Promise<{ code: number; reason: string }>((resolve) => ws.once("close", (code, reason) => resolve({ code, reason: reason.toString() })));
 	ws.send(JSON.stringify({
 		type: "ext_ready",
 		bridge: {
@@ -87,9 +95,19 @@ async function connectExtension(
 		extension: { id: identity.extensionId ?? "extension-1" },
 		tabs,
 	}));
+	return { ws, closed };
+}
+
+async function connectExtension(
+	server: BrowserBridgeServer,
+	tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }],
+	identity: { extensionId?: string; extensionInstanceId?: string; workerBootId?: string; buildId?: string } = {},
+): Promise<WebSocket> {
+	const { ws } = await openExtension(server, tabs, identity);
 	const expectedInstanceId = identity.extensionInstanceId ?? "instance-1";
+	const expectedWorkerBootId = identity.workerBootId ?? "worker-1";
 	const deadlineAt = Date.now() + 1_000;
-	while (!server.snapshot().clients.some((client) => client.extensionInstanceId === expectedInstanceId)) {
+	while (!server.snapshot().clients.some((client) => client.extensionInstanceId === expectedInstanceId && client.workerBootId === expectedWorkerBootId)) {
 		if (Date.now() >= deadlineAt) throw new Error(`extension fixture did not become ready: ${expectedInstanceId}`);
 		await new Promise((resolve) => setImmediate(resolve));
 	}
@@ -109,6 +127,7 @@ test("current extension readiness waits past a stale peer and promotes the curre
 	});
 	await withServer(async (server) => {
 		const stale = await connectExtension(server, [{ id: 7, url: "https://stale.test/", active: true }], { extensionInstanceId: "stale-instance", buildId: "stale-build" });
+		const staleClosed = new Promise<number>((resolve) => stale.once("close", resolve));
 		assert.equal(server.snapshot().extension?.extensionStale, true);
 		let settled = false;
 		const ready = server.waitForExtensionReady(undefined, 1_000).then((value) => { settled = true; return value; });
@@ -119,20 +138,11 @@ test("current extension readiness waits past a stale peer and promotes the curre
 		assert.equal(await ready, true);
 		assert.equal(server.snapshot().extension?.extensionInstanceId, "current-instance");
 		assert.equal(server.snapshot().extension?.extensionStale, false);
-		stale.close();
+		assert.equal(await staleClosed, 1000);
+		assert.equal(server.snapshot().connectedClients, 1);
 		current.close();
 	});
 });
-
-async function waitForCommand(messages: Array<Record<string, unknown>>): Promise<Record<string, unknown>> {
-	const deadlineAt = Date.now() + 1_000;
-	while (true) {
-		const message = messages.find((candidate) => candidate.id !== undefined && candidate.code !== undefined);
-		if (message) return message;
-		if (Date.now() >= deadlineAt) throw new Error("bridge command fixture did not receive a request");
-		await new Promise((resolve) => setImmediate(resolve));
-	}
-}
 
 test("BrowserBridgeServer advances to the next configured port when the requested port is busy", async () => {
 	const { blocker, successor } = await reserveConsecutivePorts();
@@ -154,8 +164,7 @@ test("BrowserBridgeServer advances to the next configured port when the requeste
 
 test("BrowserBridgeServer reports and enforces the configured websocket payload limit", async () => {
 	const maxPayloadBytes = 512;
-	const server = new BrowserBridgeServer({ port: 0, maxPayloadBytes });
-	await server.start();
+	const server = await startIsolatedServer({ maxPayloadBytes });
 	try {
 		const health = await fetch(`http://${server.host}:${server.port}/health`).then((res) => res.json() as Promise<Record<string, unknown>>);
 		assert.equal(health.maxPayloadBytes, maxPayloadBytes);
@@ -188,8 +197,7 @@ test("BrowserBridgeServer rejects websocket clients outside the packaged extensi
 });
 
 test("BrowserBridgeServer closes clients that do not complete ext_ready", async () => {
-	const server = new BrowserBridgeServer({ port: 0, handshakeTimeoutMs: 50 });
-	await server.start();
+	const server = await startIsolatedServer({ handshakeTimeoutMs: 50 });
 	try {
 		const ws = new WebSocket(bridgeUrl(server), { origin: EXTENSION_ORIGIN });
 		await new Promise<void>((resolve, reject) => {
@@ -286,95 +294,38 @@ test("BrowserBridgeServer pending request surface records ack/result lifecycle i
 	});
 });
 
-test("BrowserBridgeServer keeps explicit browser selection stable and routes targeted commands to the owning client", async () => {
+test("BrowserBridgeServer rejects a different browser instance after ownership is established", async () => {
 	await withServer(async (server) => {
-		const user = await connectExtension(
+		const owner = await connectExtension(
 			server,
-			[{ id: 7, url: "https://user.test/", title: "User", active: true }],
-			{ extensionId: "shared-extension", extensionInstanceId: "user-instance", workerBootId: "user-worker" },
+			[{ id: 7, url: "https://owner.test/", active: true }],
+			{ extensionInstanceId: "owner-instance", workerBootId: "owner-worker" },
 		);
-		const isolated = await connectExtension(
+		const contender = await openExtension(
 			server,
-			[{ id: 7, url: "https://isolated.test/", title: "Isolated", active: true }],
-			{ extensionId: "shared-extension", extensionInstanceId: "isolated-instance", workerBootId: "isolated-worker" },
+			[{ id: 9, url: "https://contender.test/", active: true }],
+			{ extensionInstanceId: "contender-instance", workerBootId: "contender-worker" },
 		);
-		const userMessages: Array<Record<string, unknown>> = [];
-		const isolatedMessages: Array<Record<string, unknown>> = [];
-		user.on("message", (raw) => userMessages.push(JSON.parse(String(raw)) as Record<string, unknown>));
-		isolated.on("message", (raw) => isolatedMessages.push(JSON.parse(String(raw)) as Record<string, unknown>));
-
-		const tabs = server.getTabs();
-		const userTab = tabs.find((tab) => tab.url === "https://user.test/");
-		const isolatedTab = tabs.find((tab) => tab.url === "https://isolated.test/");
-			assert.ok(userTab?.browserId);
-			assert.ok(isolatedTab?.browserId);
-			assert.ok(userTab.targetRef);
-			assert.ok(isolatedTab.targetRef);
-			await assert.rejects(
-				server.withTargetTransaction({ tabId: 7, targetRef: isolatedTab.targetRef }, () => server.withTargetTransaction({ tabId: 7, targetRef: userTab.targetRef }, async () => undefined)),
-				(error: Error & { code?: string }) => error.code === "TARGET_TRANSACTION_CONFLICT",
-			);
-
-			server.selectBrowser(isolatedTab.browserId);
-		user.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 7, url: "https://user.test/updated", title: "User updated", active: true }] }));
-		const updateDeadlineAt = Date.now() + 1_000;
-		while (!server.getTabs().some((tab) => tab.url === "https://user.test/updated")) {
-			if (Date.now() >= updateDeadlineAt) throw new Error("user tabs update was not applied");
-			await new Promise((resolve) => setImmediate(resolve));
-		}
-			assert.equal(server.snapshot().extension?.id, isolatedTab.browserId);
-
-		server.selectBrowser(userTab.browserId);
-		const target = server.snapshot().tabs.find((tab) => tab.targetRef === isolatedTab.targetRef);
-		assert.equal(target?.browserId, isolatedTab.browserId);
-		assert.equal(target?.url, "https://isolated.test/");
-		const commandPromise = server.executeJavaScript("document.title", { targetRef: isolatedTab.targetRef, timeoutMs: 1_000, accessMode: "read" });
-		const firstCommand = await Promise.race([
-			waitForCommand(isolatedMessages).then((message) => ({ owner: "isolated", message, socket: isolated })),
-			waitForCommand(userMessages).then((message) => ({ owner: "user", message, socket: user })),
-		]);
-		firstCommand.socket.send(JSON.stringify({ type: "ack", id: firstCommand.message.id }));
-		firstCommand.socket.send(JSON.stringify({ type: "result", id: firstCommand.message.id, result: { armed: true } }));
-		await commandPromise;
-		assert.equal(firstCommand.owner, "isolated");
-		assert.equal(userMessages.length, 0);
-
-			user.close();
-			const failoverDeadlineAt = Date.now() + 1_000;
-			while (server.snapshot().extension?.id !== isolatedTab.browserId) {
-				if (Date.now() >= failoverDeadlineAt) throw new Error("remaining browser was not selected after disconnect");
-				await new Promise((resolve) => setImmediate(resolve));
-			}
-			isolated.close();
+		assert.deepEqual(await contender.closed, { code: 1008, reason: "Another browser is already connected" });
+		assert.equal(server.snapshot().connectedClients, 1);
+		assert.equal(server.snapshot().extension?.extensionInstanceId, "owner-instance");
+		assert.equal(server.getTabs().some((tab) => tab.url === "https://contender.test/"), false);
+			owner.close();
+		});
 	});
-});
 
-test("BrowserBridgeServer consent port sends requests, resolves decisions and broadcasts agents", async () => {
+test("BrowserBridgeServer lets a new worker socket replace the same browser instance", async () => {
 	await withServer(async (server) => {
-		const ws = await connectExtension(server);
-		const messages: Array<Record<string, unknown>> = [];
-		ws.on("message", (raw) => messages.push(JSON.parse(String(raw)) as Record<string, unknown>));
-		assert.equal(server.hasConsentSurface(), true);
-
-			const superseded = server.sendConsentRequest({ pairingId: "pair-old", label: "old-agent", code: "654321", expiresAt: new Date(Date.now() + 1_000).toISOString(), timeoutMs: 1_000 });
-			const decisionPromise = server.sendConsentRequest({ pairingId: "pair-1", label: "agent", code: "123456", expiresAt: new Date(Date.now() + 1_000).toISOString(), timeoutMs: 1_000 });
-			assert.equal(await superseded, "timeout");
-		await new Promise<void>((resolve) => {
-			const poll = () => messages.some((message) => message.type === CONSENT_MESSAGE_TYPES.request) ? resolve() : setImmediate(poll);
-			poll();
-		});
-		assert.equal(messages.some((message) => message.type === CONSENT_MESSAGE_TYPES.request && message.pairingId === "pair-1"), true);
-
-		ws.send(JSON.stringify({ type: CONSENT_MESSAGE_TYPES.response, pairingId: "pair-1", decision: "approve" }));
-		assert.equal(await decisionPromise, "approve");
-
-		server.broadcastPairedAgents([{ pairingId: "pair-1", label: "agent", status: "active", lastSeenAt: "now" }]);
-		await new Promise<void>((resolve) => {
-			const poll = () => messages.some((message) => message.type === CONSENT_MESSAGE_TYPES.pairedAgents) ? resolve() : setImmediate(poll);
-			poll();
-		});
-		assert.equal(messages.some((message) => message.type === CONSENT_MESSAGE_TYPES.pairedAgents), true);
-
-		ws.close();
+		const first = await connectExtension(server, [{ id: 7, url: "https://before.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-1" });
+		const firstClosed = new Promise<number>((resolve) => first.once("close", resolve));
+		const replacement = await connectExtension(server, [{ id: 8, url: "https://after.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-2" });
+		assert.equal(await firstClosed, 1000);
+		assert.equal(server.snapshot().connectedClients, 1);
+		assert.equal(server.snapshot().extension?.workerBootId, "worker-2");
+		assert.equal(server.getTabs().some((tab) => tab.url === "https://after.test/"), true);
+		const stale = await openExtension(server, [], { extensionInstanceId: "same-instance", workerBootId: "worker-old", buildId: "stale-build" });
+		assert.equal((await stale.closed).code, 1008);
+		assert.equal(server.snapshot().extension?.workerBootId, "worker-2");
+		replacement.close();
 	});
 });

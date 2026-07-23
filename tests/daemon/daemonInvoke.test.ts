@@ -1,26 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
 import { handleInvokeRoute, startDaemon } from "../../src/apps/daemon/server.ts";
 import { controlRequest, lockfilePath, readLockfile, removeLockfile, writeLockfile, type DaemonInfo } from "../../src/apps/daemon/daemonControl.ts";
-import { AUTH_ERROR_CODES, AUTH_STORE_VERSION, ENV_AUTH_STATE_DIR, PAIRING_TOKEN_HEADER } from "../../src/apps/daemon/authTypes.ts";
-import * as authStore from "../../src/apps/daemon/authStore.ts";
 import { strictCommandParameters } from "../../src/commands/commandShared.ts";
 import type { CommandDefinition } from "../../src/commands/commandManifestIndex.ts";
 import { errorResult } from "../../src/utils/toolResult.ts";
 
-const originalAuthStateDir = process.env[ENV_AUTH_STATE_DIR];
 const originalDaemonStateDir = process.env.BROWSER_PILOT_DAEMON_STATE_DIR;
-
-function isolateAuthStore() {
-	const dir = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-invoke-auth-"));
-	process.env[ENV_AUTH_STATE_DIR] = dir;
-	return dir;
-}
 
 function isolateDaemonState() {
 	const dir = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-daemon-state-"));
@@ -29,24 +20,16 @@ function isolateDaemonState() {
 }
 
 function restoreEnv() {
-	if (originalAuthStateDir === undefined) delete process.env[ENV_AUTH_STATE_DIR];
-	else process.env[ENV_AUTH_STATE_DIR] = originalAuthStateDir;
 	if (originalDaemonStateDir === undefined) delete process.env.BROWSER_PILOT_DAEMON_STATE_DIR;
 	else process.env.BROWSER_PILOT_DAEMON_STATE_DIR = originalDaemonStateDir;
-}
-
-function request(headers: Record<string, string> = {}) {
-	return { headers } as any;
 }
 
 async function invoke(options: {
 	body: Record<string, unknown>;
 	toolByName: Map<string, CommandDefinition>;
-	headers?: Record<string, string>;
 }) {
 	let response: { status: number; json: Record<string, unknown> } | undefined;
 	await handleInvokeRoute({
-		req: request(options.headers),
 		send(status, obj) {
 			response = { status, json: JSON.parse(JSON.stringify(obj)) as Record<string, unknown> };
 		},
@@ -85,13 +68,6 @@ function tools() {
 	return new Map<string, CommandDefinition>([[success.name, success], [throwing.name, throwing], [failing.name, failing]]);
 }
 
-async function activePairing(label: string) {
-	const pending = authStore.mintPending(label);
-	const approved = await authStore.approve(pending.pairingId);
-	assert.ok(approved);
-	return { pairingId: pending.pairingId, token: approved.token };
-}
-
 function daemonInfo(overrides: Partial<DaemonInfo> = {}): DaemonInfo {
 	return {
 		pid: process.pid,
@@ -115,7 +91,7 @@ async function rawControlRequest(handle: Awaited<ReturnType<typeof startDaemonFo
 			port: handle.controlPort,
 			path: route,
 			method: "POST",
-			headers: { "x-browser-pilot-daemon-token": handle.token, "content-type": "application/json" },
+				headers: { "x-browser-pilot-daemon-token": handle.token, "content-type": "application/json" },
 		}, (res) => {
 			let response = "";
 			res.setEncoding("utf8");
@@ -128,80 +104,32 @@ async function rawControlRequest(handle: Awaited<ReturnType<typeof startDaemonFo
 }
 
 test.afterEach(() => {
-	authStore.listAgents().splice(0);
 	restoreEnv();
 });
 
-test("daemon invoke requires pairing by default", async () => {
-	isolateAuthStore();
+test("daemon invoke executes directly without browser approval", async () => {
 	const res = await invoke({ body: { tool: "browser_success", params: { message: "ok" }, cwd: "project" }, toolByName: tools() });
-	assert.equal(res.status, 401);
-	assert.equal(res.json.code, AUTH_ERROR_CODES.pairingInvalid);
-});
-
-test("daemon invoke accepts an active pairing token", async () => {
-	isolateAuthStore();
-	const pair = await activePairing("agent-a");
-	const res = await invoke({ body: { tool: "browser_success", params: { message: "ok" }, cwd: "project" }, toolByName: tools(), headers: { [PAIRING_TOKEN_HEADER]: pair.token } });
 	assert.equal(res.status, 200);
 	assert.deepEqual(res.json.content, [{ type: "text", text: "ok" }]);
 	assert.deepEqual(res.json.details, { cwd: "project" });
 });
 
-test("daemon invoke rejects invalid pairing token", async () => {
-	isolateAuthStore();
-	const res = await invoke({ body: { tool: "browser_success", params: { message: "ok" } }, toolByName: tools(), headers: { [PAIRING_TOKEN_HEADER]: "not-a-token" } });
-	assert.equal(res.status, 401);
-	assert.equal(res.json.code, AUTH_ERROR_CODES.pairingInvalid);
-});
-
-test("daemon invoke rejects revoked pairing token", async () => {
-	isolateAuthStore();
-	const pair = await activePairing("agent-a");
-	await authStore.revoke(pair.pairingId);
-	const res = await invoke({ body: { tool: "browser_success", params: { message: "ok" } }, toolByName: tools(), headers: { [PAIRING_TOKEN_HEADER]: pair.token } });
-	assert.equal(res.status, 403);
-	assert.equal(res.json.code, AUTH_ERROR_CODES.pairingRevoked);
-});
-
-test("daemon invoke authenticates before resolving tools", async () => {
-	isolateAuthStore();
-	const pair = await activePairing("agent-a");
+test("daemon invoke rejects unknown tools", async () => {
 	const res = await invoke({ body: { tool: "browser_missing", params: {} }, toolByName: tools() });
-	assert.equal(res.status, 401);
-	assert.equal(res.json.code, AUTH_ERROR_CODES.pairingInvalid);
-	const authorized = await invoke({ body: { tool: "browser_missing", params: {} }, toolByName: tools(), headers: { [PAIRING_TOKEN_HEADER]: pair.token } });
-	assert.equal(authorized.status, 404);
-	assert.equal(authorized.json.error, "unknown tool: browser_missing");
+	assert.equal(res.status, 404);
+	assert.equal(res.json.error, "unknown tool: browser_missing");
 });
 
-test("daemon invoke does not echo pairing tokens in controlled error responses", async () => {
-	isolateAuthStore();
-	const secret = "not-a-token-secret-value";
-	const res = await invoke({ body: { tool: "browser_success", params: { message: "ok" } }, toolByName: tools(), headers: { [PAIRING_TOKEN_HEADER]: secret } });
-	const raw = JSON.stringify(res.json);
-	assert.equal(res.status, 401);
-	assert.equal(raw.includes(secret), false);
-	assert.deepEqual(res.json, { ok: false, code: AUTH_ERROR_CODES.pairingInvalid, error: "Browser pairing required; call browser_pair with action=start." });
-});
-
-test("daemon invoke authenticates before validating parameters", async () => {
-	isolateAuthStore();
-	const pair = await activePairing("agent-a");
+test("daemon invoke validates parameters", async () => {
 	const res = await invoke({ body: { tool: "browser_success", params: {} }, toolByName: tools() });
-	assert.equal(res.status, 401);
-	assert.equal(res.json.code, AUTH_ERROR_CODES.pairingInvalid);
-	const authorized = await invoke({ body: { tool: "browser_success", params: {} }, toolByName: tools(), headers: { [PAIRING_TOKEN_HEADER]: pair.token } });
-	assert.equal(authorized.status, 400);
-	assert.equal(authorized.json.code, "COMMAND_VALIDATION_FAILED");
-	assert.match(String(authorized.json.error), /Invalid parameters/);
-	assert.ok(Array.isArray(authorized.json.issues));
+	assert.equal(res.status, 400);
+	assert.equal(res.json.code, "COMMAND_VALIDATION_FAILED");
+	assert.match(String(res.json.error), /Invalid parameters/);
+	assert.ok(Array.isArray(res.json.issues));
 });
 
 test("daemon invoke wraps command throws as terminating success envelope", async () => {
-	isolateAuthStore();
-	const pair = await activePairing("agent-a");
-	const res = await invoke({ body: { tool: "browser_throw", params: {} }, toolByName: tools(), headers: { [PAIRING_TOKEN_HEADER]: pair.token } });
+	const res = await invoke({ body: { tool: "browser_throw", params: {} }, toolByName: tools() });
 	assert.equal(res.status, 200);
 	assert.equal(res.json.ok, true);
 	assert.deepEqual(res.json.content, [{ type: "text", text: "boom from command" }]);
@@ -210,17 +138,13 @@ test("daemon invoke wraps command throws as terminating success envelope", async
 });
 
 test("daemon invoke preserves non-terminating command error semantics", async () => {
-	isolateAuthStore();
-	const pair = await activePairing("agent-a");
-	const res = await invoke({ body: { tool: "browser_error", params: {} }, toolByName: tools(), headers: { [PAIRING_TOKEN_HEADER]: pair.token } });
+	const res = await invoke({ body: { tool: "browser_error", params: {} }, toolByName: tools() });
 	assert.equal(res.status, 200);
 	assert.equal(res.json.isError, true);
 	assert.equal(res.json.terminate, false);
 });
 
 test("daemon aborts an active invocation when the control client disconnects", async () => {
-	isolateAuthStore();
-	const pair = await activePairing("agent-a");
 	let markStarted!: () => void;
 	let markAborted!: () => void;
 	const started = new Promise<void>((resolve) => { markStarted = resolve; });
@@ -242,7 +166,7 @@ test("daemon aborts an active invocation when the control client disconnects", a
 			port: handle.controlPort,
 			path: "/invoke",
 			method: "POST",
-			headers: { "x-browser-pilot-daemon-token": handle.token, [PAIRING_TOKEN_HEADER]: pair.token, "content-type": "application/json" },
+				headers: { "x-browser-pilot-daemon-token": handle.token, "content-type": "application/json" },
 		});
 		req.on("error", () => undefined);
 		req.end(JSON.stringify({ tool: "browser_slow", params: {} }));
@@ -252,59 +176,6 @@ test("daemon aborts an active invocation when the control client disconnects", a
 	} finally {
 		await handle.close();
 	}
-});
-
-test("daemon auth store sweeps expired pending pairings before pairing summaries", () => {
-	isolateAuthStore();
-	const { pairingId } = authStore.mintPending("expired-agent");
-	const record = authStore.listAgents().find((agent) => agent.pairingId === pairingId);
-	assert.ok(record);
-	record.pendingExpiresAt = new Date(Date.now() - 1_000).toISOString();
-	authStore.sweepExpiredPending();
-	assert.equal(authStore.listAgents().some((agent) => agent.pairingId === pairingId), false);
-});
-
-test("daemon auth store replaces the previous agent when pairing restarts", async () => {
-	isolateAuthStore();
-	const first = authStore.mintPending("first-agent");
-	const approved = await authStore.approve(first.pairingId);
-	assert.ok(approved);
-	const second = authStore.mintPending("second-agent");
-	assert.deepEqual(authStore.listAgents().map(({ pairingId, status }) => ({ pairingId, status })), [{ pairingId: second.pairingId, status: "pending" }]);
-	assert.equal(authStore.findByToken(approved.token), null);
-	assert.equal(await authStore.approve(first.pairingId), null);
-});
-
-test("daemon auth store collapses legacy multi-agent state on load", () => {
-	isolateAuthStore();
-	const record = {
-		label: "agent",
-		tokenHash: "a".repeat(64),
-		status: "active",
-		createdAt: new Date(0).toISOString(),
-		approvedAt: new Date(0).toISOString(),
-		revokedAt: null,
-		lastSeenAt: null,
-	};
-	writeFileSync(authStore.authStorePath(), JSON.stringify({ version: AUTH_STORE_VERSION, agents: [{ ...record, pairingId: "old" }, { ...record, pairingId: "current" }] }), "utf8");
-	assert.deepEqual(authStore.listAgents().map((agent) => agent.pairingId), ["current"]);
-});
-
-test("daemon auth store denies approval for revoked or missing pending pairing", async () => {
-	isolateAuthStore();
-	const { pairingId } = authStore.mintPending("revoked-before-approve");
-	await authStore.revoke(pairingId);
-	assert.equal(await authStore.approve(pairingId), null);
-	assert.equal(await authStore.approve("missing-pairing"), null);
-});
-
-test("daemon auth store fails closed on damage and recovers after operator reset", () => {
-	const dir = isolateAuthStore();
-	writeFileSync(authStore.authStorePath(), JSON.stringify({ version: AUTH_STORE_VERSION, agents: "damaged" }), "utf8");
-	assert.throws(() => authStore.listAgents(), /auth store is malformed/);
-	rmSync(authStore.authStorePath());
-	assert.equal(authStore.mintPending("recovery").code.length, 6);
-	assert.equal(authStore.authStorePath().startsWith(dir), true);
 });
 
 test("daemon control lockfile treats missing and malformed state as absent", () => {
@@ -330,7 +201,6 @@ test("daemon control lockfile writes and removes token-bearing singleton state",
 });
 
 test("daemon status, connect, and unknown routes preserve control contracts", async () => {
-	isolateAuthStore();
 	const handle = await startDaemonForRouteTest();
 	try {
 		const unauthorized = await controlRequest({ ...handle, token: "wrong-token" }, "GET", "/status", undefined, 1_000);
@@ -355,57 +225,6 @@ test("daemon status, connect, and unknown routes preserve control contracts", as
 	} finally {
 		await handle.close();
 	}
-});
-
-test("daemon pairing routes preserve pending, listing, and revoke contracts", async () => {
-	isolateAuthStore();
-	const pair = await activePairing("route-agent");
-	const handle = await startDaemonForRouteTest();
-	try {
-		const unavailable = await controlRequest(handle, "POST", "/pair/start", { label: "new-agent" }, 1_000);
-		assert.equal(unavailable.status, 409);
-		assert.equal(unavailable.json?.code, AUTH_ERROR_CODES.pairNoExtension);
-
-		const pending = await controlRequest(handle, "POST", "/pair/wait", { pairingId: "missing" }, 1_000);
-		assert.equal(pending.status, 408);
-		assert.equal(pending.json?.code, AUTH_ERROR_CODES.pairTimeout);
-
-		const before = await controlRequest(handle, "GET", "/pairings", undefined, 1_000);
-		assert.equal(before.status, 200);
-		assert.deepEqual((before.json?.agents as Array<Record<string, unknown>>).map(({ pairingId, status }) => ({ pairingId, status })), [{ pairingId: pair.pairingId, status: "active" }]);
-
-		const missing = await controlRequest(handle, "POST", "/revoke", { pairingId: "missing" }, 1_000);
-		assert.equal(missing.status, 404);
-		assert.equal(missing.json?.code, AUTH_ERROR_CODES.pairingNotFound);
-
-		const revoked = await controlRequest(handle, "POST", "/revoke", { pairingId: pair.pairingId }, 1_000);
-		assert.deepEqual(revoked, { status: 200, json: { ok: true, revoked: pair.pairingId } });
-		assert.equal(authStore.listAgents().find((agent) => agent.pairingId === pair.pairingId)?.status, "revoked");
-	} finally {
-		await handle.close();
-	}
-});
-
-test("daemon control request sends pairing token header", async () => {
-	const seen = await new Promise<string | undefined>((resolve, reject) => {
-		const server = http.createServer((req, res) => {
-			resolve(req.headers[PAIRING_TOKEN_HEADER] as string | undefined);
-			res.writeHead(200, { "content-type": "application/json" });
-			res.end(JSON.stringify({ ok: true }));
-		});
-		server.listen(0, "127.0.0.1", async () => {
-			try {
-				const address = server.address();
-				if (!address || typeof address === "string") throw new Error("expected TCP listener address");
-				await controlRequest({ controlHost: "127.0.0.1", controlPort: address.port, token: "daemon-token" }, "POST", "/invoke", {}, 1_000, { pairingToken: "pair-token" });
-			} catch (error) {
-				reject(error);
-			} finally {
-				server.close();
-			}
-		});
-	});
-	assert.equal(seen, "pair-token");
 });
 
 test("daemon control request does not send a pre-aborted invocation", async () => {

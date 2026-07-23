@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { targetHandleNotFoundError } from "../errors.js";
-import { BrowserBridgeError } from "../../utils/errors.js";
-import { browserTabInfo, isOpen, recordValue, tabSessionSummary, toTabId } from "./bridgeUtils.js";
+import { browserTabInfo, isOpen, recordValue, toTabId } from "./bridgeUtils.js";
 import type { BrowserAutomationSession, BrowserBridgeClientInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types.js";
 import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import type { SessionRegistry } from "../../kernels/session/sessionRegistry.js";
@@ -273,7 +272,7 @@ export class BrowserTabSessionRouter {
 			previousSessionId: prior.id,
 			previousClient: prior.client,
 		} : undefined;
-		const reconnect = !existing && !replacement ? sameIdReconnect ?? this.findReconnectIdentity(tabId, context.bridge?.extensionId, tab, context.now) : undefined;
+		const reconnect = !existing && !replacement ? sameIdReconnect ?? this.findReconnectIdentity(tabId, context.browserId, tab, context.now) : undefined;
 		const retainedIdentity = replacement ?? existing ?? reconnect;
 		const identity = this.identityForTabSync(context.bridge?.extensionInstanceId ?? context.browserId, tab.tabIdentity, retainedIdentity);
 		this.pendingReplacementIdentities.delete(id);
@@ -346,15 +345,6 @@ export class BrowserTabSessionRouter {
 		this.updateBrowserSessionSelection(ws, session.id, true);
 	}
 
-	selectBrowser(ws: WebSocket, browserSessionId?: string): string | undefined {
-		const browserSession = this.browserSession(browserSessionId);
-		this.browserSessions.selectClient(browserSession, ws);
-		const sessionId = this.firstActiveSessionIdForClient(ws, browserSessionId);
-		this.setDefaultSessionId(browserSession, sessionId);
-		this.setLatestSessionId(browserSession, sessionId);
-		return sessionId;
-	}
-
 	selectTab(tabId: number, browserSessionId?: string): void {
 		const selectedSession = this.liveSessionForTabId(tabId, browserSessionId);
 		if (selectedSession) this.setDefaultSessionId(this.browserSession(browserSessionId), selectedSession.id);
@@ -368,12 +358,7 @@ export class BrowserTabSessionRouter {
 		const live = Array.from(this.sessions.values()).filter((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client));
 		const scopeClient = this.browserSessions.selectedOpenClient(this.browserSession(browserSessionId));
 		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
-		if (scoped) return scoped;
-		if (live.length <= 1) return live[0];
-		throw new BrowserBridgeError("AMBIGUOUS_TAB_ID", "Multiple connected browsers expose the same tabId; call browser_tabs selectBrowser before using this tabId", {
-			tabId,
-			tabs: live.map(tabSessionSummary),
-		});
+		return scoped ?? live[0];
 	}
 
 	liveSessionForTarget(target: BrowserBridgeTargetInfo | undefined, browserSessionId?: string): BrowserTabSession | undefined {
@@ -501,9 +486,9 @@ export class BrowserTabSessionRouter {
 	}
 
 	/**
-	 * When an extension reconnects (new browserId, same extensionId, same numeric tabId),
+	 * When an extension instance reconnects (same browserId and numeric tabId),
 	 * attempt to rebind the logical identity from previous sessions that match
-	 * the same extensionId and tabId. The previous socket may still be open when the new
+	 * the same browserId and tabId. The previous socket may still be open when the new
 	 * ready message wins the race; in that overlap case require matching tab facts before
 	 * updateTabs marks it disconnected after adopting its handle. Returns undefined when
 	 * extensionId is unknown, or when candidates disagree on the logical handle — mint
@@ -511,15 +496,14 @@ export class BrowserTabSessionRouter {
 	 */
 	private findReconnectIdentity(
 		tabId: number,
-		extensionId: string | undefined,
+		browserId: string,
 		tab: Record<string, unknown>,
 		now = Date.now(),
 	): ReconnectIdentity | undefined {
-		if (!extensionId) return undefined;
 		const candidates = Array.from(this.sessions.values()).filter(
 			(session) =>
 				session.tabId === tabId &&
-				session.bridge?.extensionId === extensionId,
+				session.browserId === browserId,
 		).filter((session) => this.reconnectCandidateMatches(session, tab, now));
 		if (!candidates.length) return undefined;
 		if (new Set(candidates.map((session) => session.tabHandle)).size !== 1) return undefined;
@@ -578,12 +562,7 @@ export class BrowserTabSessionRouter {
 		const live = Array.from(this.sessions.values()).filter((session) => session.tabHandle === tabHandle && !session.disconnectedAt && isOpen(session.client));
 		const scopeClient = this.browserSessions.selectedOpenClient(this.browserSession(browserSessionId));
 		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
-		if (scoped) return scoped;
-		if (live.length <= 1) return live[0];
-		throw new BrowserBridgeError("AMBIGUOUS_TAB_ID", "Multiple connected browsers expose the same tabHandle; call browser_tabs selectBrowser before using this target reference", {
-			tabHandle,
-			tabs: live.map(tabSessionSummary),
-		});
+		return scoped ?? live[0];
 	}
 
 	private liveSessionForTabSessionId(tabSessionId: string, browserSessionId?: string): BrowserTabSession | undefined {
@@ -598,7 +577,7 @@ export class BrowserTabSessionRouter {
 		const live = Array.from(this.sessions.values()).filter((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client));
 		const scopeClient = this.browserSessions.selectedOpenClient(browserSession);
 		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
-		return scoped ?? (live.length === 1 ? live[0] : undefined);
+		return scoped ?? live[0];
 	}
 
 	private preferredImplicitSessionId(candidates: BrowserTabSession[], browserSession: BrowserAutomationSession): string | undefined {

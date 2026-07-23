@@ -65,10 +65,6 @@ export interface BrowserCommandTabControlPort {
 	closeTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
 }
 
-export interface BrowserCommandSessionPort {
-	selectBrowser(browserId: string, options?: { browserSessionId?: string }): unknown;
-}
-
 export interface BrowserCommandObservationPort {
 	createObservationSnapshot(snapshot: Omit<CommandObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): CommandObservationSnapshotInfo;
 	getObservationSnapshot(snapshotId: string): CommandObservationSnapshotInfo | undefined;
@@ -88,11 +84,10 @@ export interface BrowserCommandPerceptionPort {
 }
 
 export interface BrowserCommandRuntimePort extends
-	BrowserCommandSnapshotPort,
-	BrowserCommandDispatchPort,
-	BrowserCommandTabControlPort,
-	BrowserCommandSessionPort,
-	BrowserCommandObservationPort,
+		BrowserCommandSnapshotPort,
+		BrowserCommandDispatchPort,
+		BrowserCommandTabControlPort,
+		BrowserCommandObservationPort,
 	BrowserCommandRecorderStatePort,
 	BrowserCommandPerceptionPort {
 }

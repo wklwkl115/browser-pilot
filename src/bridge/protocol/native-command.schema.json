@@ -1206,11 +1206,6 @@
       "retryable": false,
       "summary": "Download click produced multiple possible download events without a precise match."
     },
-    "AMBIGUOUS_TAB_ID": {
-      "category": "driver.tab",
-      "retryable": false,
-      "summary": "Multiple connected browsers expose the same numeric tabId."
-    },
     "TARGET_TRANSACTION_CONFLICT": {
       "category": "driver.transaction",
       "retryable": true,
@@ -1276,11 +1271,6 @@
       "retryable": true,
       "summary": "Extension reload did not reconnect before the deadline."
     },
-    "BROWSER_NOT_FOUND": {
-      "category": "driver.selection",
-      "retryable": false,
-      "summary": "Requested browser client was not found."
-    },
     "QUEUE_FULL": {
       "category": "driver.queue",
       "retryable": true,
@@ -1345,11 +1335,6 @@
       "category": "driver.command",
       "retryable": false,
       "summary": "Command payload failed native protocol validation."
-    },
-    "INVALID_BROWSER_ID": {
-      "category": "driver.selection",
-      "retryable": false,
-      "summary": "Browser id is malformed or unsupported."
     },
     "INVALID_RULE": {
       "category": "tool.validation",

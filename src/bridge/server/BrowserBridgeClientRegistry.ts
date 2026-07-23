@@ -190,23 +190,16 @@ export class BrowserBridgeClientRegistry {
 		this.everHandshaked = true;
 	}
 
-	/**
-	 * Enforce one live socket per extension instance: close any *other* open client
-	 * reporting the same extensionInstanceId, keeping the newest socket. A reconnect
-	 * (SW restart / offscreen re-dial) can briefly leave the stale socket registered;
-	 * collapsing avoids split-brain selection and double delivery. Returns the
-		 * superseded sockets (already told to close). No-op when instanceId is absent.
-	 */
-	supersedeInstanceClients(instanceId: string | undefined, keep: WebSocket): WebSocket[] {
-		if (!instanceId) return [];
+	/** Close every other client after a browser connection acquires ownership. */
+	supersedeClients(keep: WebSocket): WebSocket[] {
 		const superseded: WebSocket[] = [];
-		for (const [ws, info] of this.clientInfo.entries()) {
-			if (ws === keep || info.extensionInstanceId !== instanceId) continue;
+		for (const ws of this.clientInfo.keys()) {
+			if (ws === keep) continue;
 			superseded.push(ws);
 		}
 		for (const ws of superseded) {
 			try {
-				ws.close();
+				ws.close(1000, "Superseded by browser connection");
 			} catch {
 				/* best-effort supersede close — the close handler still unregisters it */
 			}
@@ -228,14 +221,6 @@ export class BrowserBridgeClientRegistry {
 
 	entries(): IterableIterator<[WebSocket, BrowserBridgeClientInfo]> {
 		return this.clientInfo.entries();
-	}
-
-	findClient(id: string): { ws: WebSocket; info: BrowserBridgeClientInfo } | undefined {
-		for (const [ws, info] of this.clientInfo.entries()) {
-			if (CLOSED_STATES.has(ws.readyState as 2 | 3)) continue;
-			if (info.id === id || info.extensionId === id) return { ws, info };
-		}
-		return undefined;
 	}
 
 	browserIdForClient(client: WebSocket): string {

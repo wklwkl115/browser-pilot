@@ -36,7 +36,7 @@ function normalizeCreateTabUrl(value: unknown): string {
 	return parsed.href;
 }
 
-const TAB_ACTIONS = ["list", "switch", "create", "close", "selectBrowser"] as const;
+const TAB_ACTIONS = ["list", "switch", "create", "close"] as const;
 
 function validateCreateTabArgument(args: Record<string, unknown>): ValidationIssue[] {
 	if (args.action !== "create") return [];
@@ -56,12 +56,10 @@ export function validateTabsArguments(args: Record<string, unknown>): Validation
 	issues.push(...validateCreateTabArgument(args));
 	const allowedByAction: Record<string, Set<string>> = {
 		create: new Set(["url", "active", "incognito"]),
-		selectBrowser: new Set(["browserId"]),
 	};
-	const actionOnly = ["url", "active", "incognito", "browserId"];
+	const actionOnly = ["url", "active", "incognito"];
 	const allowed = allowedByAction[action] ?? new Set<string>();
 	for (const key of actionOnly) if (args[key] !== undefined && !allowed.has(key)) issues.push({ code: "TABS_ARGUMENT_NOT_ALLOWED", path: `/${key}`, message: `Argument "${key}" is not valid for browser_tabs action ${action}` });
-	if (action === "selectBrowser" && (typeof args.browserId !== "string" || !args.browserId.trim())) issues.push({ code: "TABS_BROWSER_ID_REQUIRED", path: "/browserId", message: "browser_tabs selectBrowser requires browserId" });
 	return issues;
 }
 
@@ -69,17 +67,15 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 	defineBrowserCommand(commands, {
 		name: "browser_tabs",
 		label: "Browser Tabs",
-		description: "List, switch, create, close, or select the browser that owns a tab.",
-		promptSnippet: "Control connected browser tabs and select among connected browser instances.",
+		description: "List, switch, create, or close connected browser tabs.",
+		promptSnippet: "Control connected browser tabs.",
 		promptGuidelines: [
 			"Omit browser_tabs when the selected active tab is already the intended target; use list only to inspect or disambiguate tabs, and switch only to intentionally change the browser active tab.",
 			"Reuse the returned targetRef for later tab-scoped browser_* calls.",
-			"Use selectBrowser only when multiple connected browser instances make tab ownership ambiguous.",
 		],
 		parameters: strictCommandParameters({
-			action: Type.String({ enum: [...TAB_ACTIONS], description: "list | switch | create | close | selectBrowser" }),
+			action: Type.String({ enum: [...TAB_ACTIONS], description: "list | switch | create | close" }),
 			...sharedTabScopedToolParams("Stable tabHandle for switch or close."),
-			browserId: Type.Optional(Type.String({ description: "Browser client id or extension id for selectBrowser" })),
 			url: Type.Optional(Type.String({ description: "URL for create" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether created tab should be active" })),
 			incognito: Type.Optional(Type.Boolean({ description: "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint." })),
@@ -99,10 +95,6 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 					const snapshot = server.snapshot();
 					const compactTabs = tabs.map((tab) => compactTabForList(tab as Record<string, unknown>));
 					return jsonResult({ tabs: compactTabs, tabCount: tabs.length, bridge: compactBridgeForTabsList(snapshot as Record<string, unknown>) }, detailsForTransport(() => ({ action, snapshot, observationSnapshots: server.listObservationSnapshots().length })));
-				}
-				if (action === "selectbrowser") {
-					const browserId = String(params.browserId || "");
-					return jsonResult({ selected: server.selectBrowser(browserId), snapshot: server.snapshot() }, { action });
 				}
 				if (["switch", "create", "close"].includes(action)) {
 					const trackedTabId = action === "create" ? undefined : resolveLocalTargetTabId(server, tabRef);

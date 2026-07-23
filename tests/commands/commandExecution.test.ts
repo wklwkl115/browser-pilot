@@ -93,7 +93,6 @@ function createRuntime(overrides: Partial<BrowserCommandRuntimePort> = {}): Mock
 			calls.push({ name: "closeTab", args });
 			return { id: "close-1", acknowledged: true, tabId: 7, data: { closed: true, tabId: 7 } } as BrowserBridgeExecutionResult;
 		},
-			selectBrowser(browserId, options) { calls.push({ name: "selectBrowser", args: [browserId, options] }); return { browserId }; },
 			createObservationSnapshot(snapshot) { return { snapshotId: snapshot.snapshotId || "snap-1", ttlMs: snapshot.ttlMs || 1_000, expired: false, ...snapshot }; },
 		getObservationSnapshot() { return undefined; },
 		listObservationSnapshots() { return []; },
@@ -166,8 +165,6 @@ test("commands execution: browser_tabs actions preserve runtime dispatch", async
 		assert.deepEqual(args?.slice(0, 2), prefix);
 		assert.ok((args?.[2] as { signal?: unknown }).signal instanceof AbortSignal);
 	}
-	const selected = parseResult(await command.execute({ action: "selectBrowser", browserId: "browser-1" }));
-	assert.deepEqual(selected.selected, { browserId: "browser-1" });
 });
 
 test("commands execution: browser_tabs rejects invalid targets, URLs, and actions before dispatch", async () => {

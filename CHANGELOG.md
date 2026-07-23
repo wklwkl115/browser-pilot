@@ -6,9 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Breaking
 
-- Daemon invocation now always requires a browser-approved pairing token; the fail-open `BROWSER_PILOT_REQUIRE_PAIRING` mode was removed.
+- The bridge now accepts exactly one browser instance at a time. Same-instance reconnects and current-build replacement of a stale extension remain automatic; `browser_tabs selectBrowser` and its `browserId` parameter were removed.
+- Removed browser approval, agent pairing tokens, `browser_pair`, consent messages, and pairing persistence; MCP clients now invoke the user-local daemon directly.
 - Removed runtime-control fields and lifecycle/discovery commands from the public native surface: `tabId`, `sessionId`, `timeoutMs`, `bridge_wake`, `persistent_cdp`, `hook.list_sessions`, `hook.list_targets`, and `hook.install_targets`. `hook.install` now requires and publishes its target ids directly. Raw CDP remains available as `cdp { method, params }`; Browser Pilot owns targeting, attach/recovery, and cleanup.
-- Removed `browser_observe.browserSessionId` and `browser_pair.timeoutMs`; browser selection and pairing deadlines are runtime-owned.
+- Removed `browser_observe.browserSessionId`; browser selection is runtime-owned.
 - Replaced the per-command CLI with a persistent stdio MCP server. `browser-pilot-mcp` is now the Agent entrypoint, and the daemon starts through its own private executable.
 - Removed dormant durable request redelivery. Disconnects now report `delivery-unknown` or `inflight-unknown` instead of claiming an unacknowledged browser write is safe to retry.
 - Removed the Web Security product line: `browser_crawl`, `browser_fuzz`, `browser_sqli`, `browser_template`, `browser_callback_oast`, `browser_cookie_analyze`, and `browser_http_replay` no longer exist.

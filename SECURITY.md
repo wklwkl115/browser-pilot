@@ -5,8 +5,7 @@ traffic, local files selected for upload, and local-only artifacts.
 
 ## Local Trust Model
 
-- Every daemon invocation requires a browser-approved pairing token.
-- Daemon and pairing tokens use restrictive POSIX file modes; Windows relies on the user-profile ACL.
+- Daemon control requests use a user-local token with restrictive POSIX file modes; Windows relies on the user-profile ACL.
 - The browser bridge accepts WebSocket upgrades only from the packaged extension.
 - Page content is untrusted; the extension does not suppress dialogs or remove CSP headers.
 
