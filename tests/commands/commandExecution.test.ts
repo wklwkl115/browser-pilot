@@ -192,7 +192,7 @@ test("commands execution: browser_command read commands return immediately", asy
 	const envelope = parseResult(result);
 	const send = runtime.calls.find((call) => (call.args[0] as Record<string, unknown>)?.cmd === "network.list");
 	assert.deepEqual(send?.args[0], { cmd: "network.list", limit: 20 });
-	assert.deepEqual(envelope.echoed, { cmd: "network.list", limit: 20 });
+	assert.deepEqual((envelope.result as Record<string, unknown>).echoed, { cmd: "network.list", limit: 20 });
 	assert.equal(result.details?.mode, "command");
 });
 
@@ -205,7 +205,7 @@ test("commands execution: browser_command preserves large JSON results", async (
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const result = parseResult(await command.execute({ command: { cmd: "network.list", limit: 20 } }));
-	assert.equal((result.largeText as string).length, payload.length);
+	assert.equal(((result.result as Record<string, unknown>).largeText as string).length, payload.length);
 });
 
 test("tool results preserve complete metadata", () => {
@@ -233,7 +233,7 @@ test("commands execution: browser_command writes return domain data and effect",
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const outcome = parseResult(await command.execute({ command: { cmd: "network.start" } }));
-	assert.equal(outcome.active, true);
+	assert.equal((outcome.result as Record<string, unknown>).active, true);
 	assert.deepEqual({ ...(outcome.effect as Record<string, unknown>), elapsedMs: 0 }, { observed: false, changed: null, settled: false, elapsedMs: 0 });
 });
 
@@ -250,14 +250,14 @@ test("commands execution: browser_command verifies a declared postcondition", as
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const outcome = parseResult(await command.execute({ command: { cmd: "network.start" }, expect: "document.body.dataset.ready === '1'" }));
-	assert.equal(outcome.active, true);
+	assert.equal((outcome.result as Record<string, unknown>).active, true);
 	assert.equal((outcome.verification as Record<string, unknown>).status, "verified");
 	assert.equal(JSON.stringify(outcome).includes("dataset.ready"), false);
 	assert.equal((outcome.effect as Record<string, unknown>).verification, undefined);
 	assert.equal(runtime.calls.filter((call) => call.name === "executeJavaScript").length, 1);
 });
 
-test("commands execution: input.ref returns canonical ABML verification and diff", async () => {
+test("commands execution: input.ref nests canonical ABML diff under verification", async () => {
 	let dispatched = false;
 	let ledgerFrame: CommandPerceptionLedgerFrame = {
 		key: { browserSessionId: "session-1", tabId: 7, targetGeneration: 1, pageEpoch: "page-1" },
@@ -289,14 +289,15 @@ test("commands execution: input.ref returns canonical ABML verification and diff
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const outcome = parseResult(await command.execute({ command: { cmd: "input.ref", action: "click", ref }, expect: { ref, state: { pressed: true } } }));
-	assert.equal((outcome.input as Record<string, unknown>).dispatchOnly, true);
+	assert.equal(((outcome.result as Record<string, unknown>).input as Record<string, unknown>).dispatchOnly, true);
 	assert.equal((outcome.verification as Record<string, unknown>).status, "verified");
-	assert.deepEqual(((outcome.diff as Record<string, unknown>).changed as Array<Record<string, unknown>>)[0], {
+	assert.deepEqual((((outcome.verification as Record<string, unknown>).diff as Record<string, unknown>).changed as Array<Record<string, unknown>>)[0], {
 		ref,
 		kind: "state-changed",
 		before: { pressed: false },
 		after: { pressed: true },
 	});
+	assert.equal(outcome.diff, undefined);
 	assert.equal((outcome.effect as Record<string, unknown>).verification, undefined);
 	assert.equal(JSON.stringify(outcome).includes("secret"), false);
 	assert.deepEqual({ ...ledgerFrame.lastAction, at: 0 }, { ref, verb: "input.ref", at: 0 });
@@ -333,7 +334,7 @@ test("ABML verification refuses to sample a ref after page replacement", async (
 	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), false);
 });
 
-test("ABML verification emits no diff before a post-action sample", async () => {
+test("ABML verification nests diff after a post-action sample", async () => {
 	let reads = 0;
 	const ref = registerOwnedRef();
 	const runtime = createRuntime({
@@ -347,9 +348,9 @@ test("ABML verification emits no diff before a post-action sample", async () => 
 		},
 	});
 	const verification = await prepareAbmlVerification({ server: runtime, expectation: { ref, state: { pressed: true } }, verb: "input.ref", browserSessionId: "session-1", tabId: 7, rawTarget: "tab-7", timeoutMs: 1_000 });
-	assert.equal(verification.diff(), undefined);
-	await verification.verify();
-	assert.deepEqual(verification.diff()?.changed, [{ ref, kind: "state-changed", before: { pressed: false }, after: { pressed: true } }]);
+	assert.equal(verification.initialVerification.diff, undefined);
+	const result = await verification.verify();
+	assert.deepEqual(result.diff?.changed, [{ ref, kind: "state-changed", before: { pressed: false }, after: { pressed: true } }]);
 });
 
 test("commands execution: browser-wide writes skip irrelevant page-effect sampling", async () => {
@@ -466,7 +467,7 @@ test("commands execution: browser_command write failures return the error", asyn
 	assert.match(String(body.message), /bridge send failed/);
 });
 
-test("commands execution: browser_execute returns only script data and effect", async () => {
+test("commands execution: browser_execute separates script result and effect", async () => {
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const result = await command.execute({ script: "return 42", targetRef: "tab-7" });
@@ -475,18 +476,17 @@ test("commands execution: browser_execute returns only script data and effect", 
 	assert.equal(execute?.args[0], "return 42");
 	assert.deepEqual({ ...(execute?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", tabId: "tab-7", timeoutMs: 15000, accessMode: "write", signal: undefined });
 	assert.ok((execute?.args[1] as { signal?: unknown }).signal instanceof AbortSignal);
-	assert.equal(envelope.answer, 42);
-	assert.equal(envelope.script, "return 42");
+	assert.deepEqual(envelope.result, { answer: 42, script: "return 42" });
 	assert.deepEqual({ ...(envelope.effect as Record<string, unknown>), elapsedMs: 0 }, { observed: false, changed: null, settled: false, elapsedMs: 0 });
 });
 
-test("commands execution: browser_execute preserves application-owned identity fields", async () => {
+test("commands execution: browser_execute preserves application fields inside result", async () => {
 	const runtime = createRuntime({
-		async executeJavaScript() { return { id: "exec", acknowledged: true, tabId: 7, data: { sessionId: "application-session", tabId: "application-tab" } } as BrowserBridgeExecutionResult; },
+		async executeJavaScript() { return { id: "exec", acknowledged: true, tabId: 7, data: { sessionId: "application-session", tabId: "application-tab", effect: "application-effect", verification: "application-verification", diff: "application-diff" } } as BrowserBridgeExecutionResult; },
 	});
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const result = parseResult(await command.execute({ script: "return app.state", readOnly: true }));
-	assert.deepEqual(result, { sessionId: "application-session", tabId: "application-tab" });
+	assert.deepEqual(result, { result: { sessionId: "application-session", tabId: "application-tab", effect: "application-effect", verification: "application-verification", diff: "application-diff" } });
 });
 
 test("commands execution: browser_execute keeps effect sampling inside the pinned target transaction", async () => {
@@ -516,7 +516,7 @@ test("commands execution: browser_execute keeps effect sampling inside the pinne
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const envelope = parseResult(await command.execute({ script: "document.body.dataset.ready = '1'" }));
 	assert.deepEqual(order, ["lock:7", "fingerprint:1", "dispatch", "fingerprint:2", "fingerprint:3", "unlock:7"]);
-	assert.equal(envelope.script, "document.body.dataset.ready = '1'");
+	assert.equal((envelope.result as Record<string, unknown>).script, "document.body.dataset.ready = '1'");
 	assert.equal((envelope.effect as Record<string, unknown>).changed, true);
 	assert.equal((envelope.effect as Record<string, unknown>).settled, true);
 });
@@ -532,7 +532,7 @@ test("commands execution: browser_execute verifies a declared postcondition", as
 	});
 	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
 	const result = parseResult(await command.execute({ script: "submit()", expect: "document.body.dataset.state === 'done'" }));
-	assert.equal(result.submitted, true);
+	assert.equal((result.result as Record<string, unknown>).submitted, true);
 	assert.equal((result.verification as Record<string, unknown>).status, "verified");
 	assert.equal((result.effect as Record<string, unknown>).verification, undefined);
 	assert.equal(checks, 2);

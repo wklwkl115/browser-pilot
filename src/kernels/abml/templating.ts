@@ -20,6 +20,7 @@ const VARY_FIELDS: TemplateVaryField[] = ["name", "value", "checked", "selected"
 export type StructureTemplate = {
 	container?: string; // AX containerRole (list/grid/menu/group/…) when grouped by container
 	containerName?: string;
+	containerKey?: string;
 	role: string; // members' shared role
 	kind: EntityKind; // members' shared kind
 	count: number; // number of folded instances (the true size)
@@ -67,6 +68,7 @@ export function buildTemplate(members: Entity[]): StructureTemplate {
 	return {
 		...(descriptor?.container ? { container: descriptor.container } : {}),
 		...(descriptor?.containerName ? { containerName: descriptor.containerName } : {}),
+		...(descriptor?.containerKey ? { containerKey: descriptor.containerKey } : {}),
 		role,
 		kind,
 		count: members.length,

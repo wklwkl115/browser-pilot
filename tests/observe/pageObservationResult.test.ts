@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { buildPageObservation } from "../../src/commands/observe/scanProjection.ts";
 import { pageObservationResult } from "../../src/commands/resultMiddleware.ts";
-import { isPageObservationV3, isPageObservationView } from "../../src/kernels/abml/pageObservation.ts";
+import { isPageObservationV3, isPageObservationView } from "../../src/validation/pageContracts.ts";
 import { OBSERVATION_RESOURCES_DETAIL_KEY, type ObservationResourceDescriptor } from "../../src/commands/observe/observationResources.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
 import { pruneObservationArtifacts } from "../../src/artifacts/artifactFiles.ts";
@@ -206,4 +206,18 @@ test("canonical PageObservation keeps truncated root content expandable", async 
 	assert.equal(inline.content?.complete, false);
 	assert.deepEqual(inline.frontier?.items?.find((item) => item.ref === "frontier:content:root"), { ref: "frontier:content:root", kind: "content", state: "folded", label: "Page content", observed: 6_000, total: content.trim().length, resourceUri: resources.find((resource) => resource.ref === "frontier:content:root")?.uri });
 	assert.equal(resources.find((resource) => resource.ref === "frontier:content:root")?.contentSection, 0);
+});
+
+test("PageObservation schema guards reject incomplete frontiers and negative collection counts", () => {
+	const base = {
+		schema: "browser-page-observation/v3",
+		tool: "browser_observe",
+		model: "PageObservation",
+		canonical: true,
+		target: {},
+		snapshot: { snapshotId: "snapshot-contract", sourceMode: "scan", capturedAt: 1, ttlMs: 1 },
+		providers: {},
+	};
+	assert.equal(isPageObservationV3({ ...base, frontier: { items: [{ ref: "content", kind: "content", state: "folded" }] } }), false);
+	assert.equal(isPageObservationV3({ ...base, frontier: { items: [] }, collections: [{ ref: "c", kind: "list", observed: -1, completeness: "complete", confidence: "high", itemRefs: [] }] }), false);
 });

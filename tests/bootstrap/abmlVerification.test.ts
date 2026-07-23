@@ -25,6 +25,7 @@ test("ABML verification validates and evaluates structured state postconditions"
 	assert.equal(verifyAbmlState("input.ref", expectation, { entity: entity(false), sources: ["dom"] }, 12).status, "unmet");
 	assert.equal(verifyAbmlState("input.ref", expectation, { entity: entity(), sources: ["dom"] }, 12).status, "inconclusive");
 	assert.equal(verifyAbmlState("input.ref", { ref: expectation.ref, state: { pressed: true, checked: true } }, { entity: entity(false), sources: ["dom"] }, 12).status, "unmet");
+	assert.equal(verifyAbmlState("input.ref", { ref: expectation.ref, state: { current: false } }, { entity: entity(), sources: ["dom"] }, 12).status, "verified");
 });
 
 test("ABML verification emits the same entity diff used by observe", () => {

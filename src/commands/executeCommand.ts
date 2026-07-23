@@ -68,7 +68,7 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 	defineBrowserCommand(commands, {
 		name: "browser_execute",
 		label: "Browser Execute",
-		description: "Execute JavaScript in the selected or ref-owning tab. Browser Pilot resolves bp-ref bindings, serializes writes, handles CSP/CDP fallback, and can verify a declared postcondition.",
+		description: "Execute JavaScript in the selected or ref-owning tab. Returns result plus write effect and optional verification; structured ABML verification owns its target-state diff.",
 		promptSnippet: "Execute JavaScript directly; omit targetRef for the selected tab and bind observed elements through refs when available.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
@@ -124,15 +124,13 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 							...(expected ? { verify: async () => javascriptVerificationResult("browser_execute", (await executePrepared({ script: expected.script, readOnly: true }, server, { browserSessionId: target.browserSessionId, rawTarget: target.rawTarget, timeoutMs, signal: operationSignal })).data === true) } : {}),
 							...(abmlVerification ? { verify: abmlVerification.verify } : {}),
 						}, () => dispatch(operationSignal));
-						const diff = abmlVerification?.diff();
-						return { ...effected, ...(diff ? { diff } : {}) };
+						return effected;
 					});
-				const value = "effect" in outcome ? {
-					...outcome.result,
-					effect: outcome.effect,
-					...(outcome.verification ? { verification: outcome.verification } : {}),
-					...("diff" in outcome && outcome.diff ? { diff: outcome.diff } : {}),
-				} : outcome.result;
+				const value = {
+					result: outcome.result.data ?? null,
+					...("effect" in outcome ? { effect: outcome.effect } : {}),
+					...("verification" in outcome && outcome.verification ? { verification: outcome.verification } : {}),
+				};
 				return jsonResult(value, { mode: "javascript", refsBound: Object.keys(input.refs).length }, { preserveExecutionData: true });
 			});
 		},

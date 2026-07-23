@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 - Replaced the per-command CLI with a persistent stdio MCP server. `browser-pilot-mcp` is now the Agent entrypoint, and the daemon starts through its own private executable.
 - Removed dormant durable request redelivery. Disconnects now report `delivery-unknown` or `inflight-unknown` instead of claiming an unacknowledged browser write is safe to retry.
 - Removed the Web Security product line: `browser_crawl`, `browser_fuzz`, `browser_sqli`, `browser_template`, `browser_callback_oast`, `browser_cookie_analyze`, and `browser_http_replay` no longer exist.
-- Removed `browser-operation/v2`, including semantic settlement, postconditions, intent replay, continuation decisions, operation events, the global operation registry, fences, and completion evidence. State-changing commands now return their bridge result directly while retaining target serialization, hard timeout, and caller cancellation.
+- Removed `browser-operation/v2`, including semantic settlement, intent replay, continuation decisions, operation events, the global operation registry, fences, and completion evidence. State-changing commands retain target serialization, hard timeout, caller cancellation, bounded effect diagnostics, and explicit postcondition verification.
 - Removed the public `browser_network`, `browser_hook`, `browser_frame`, and `browser_evidence` wrappers. Native operations now have one public entry point: `browser_command`.
 - Removed `browser_execute` Program DSL. `browser_execute` now accepts JavaScript only; trusted input uses native commands through `browser_command`.
 - Removed all explicit `browser_observe` modes, navigation, Readability, axe diagnostics, and provider telemetry. `browser_observe` now has one canonical `PageObservation` result.
@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - Removed the public `browser_artifact` tool and its path/mode/query/offset reader stack. Internal artifacts remain private snapshot and binary-resource storage.
 - Replaced generic result distillation with direct JSON and mandatory model-facing redaction.
 - Removed compatibility-only public surfaces: top-level `tabId` targeting, `includeBridgePerTab`, the `browser-result://` resource store, and obsolete negative contract tests. Public targeting now uses `targetRef`; ABML references use `bp-ref://`.
+- `browser_execute` and `browser_command` success values now use the stable `{ result, effect?, verification? }` envelope instead of flattening command data into Browser Pilot metadata. Target-scoped ABML differences moved from top-level `diff` to `verification.diff`.
 - Write verification is now a top-level canonical ABML `VerificationResult`; the former `effect.verification` string is removed, and a deadline-unmet postcondition is reported as `unmet` rather than the over-strong `failed`.
 
 ### Changed
@@ -38,7 +39,7 @@ All notable changes to this project will be documented in this file.
 - `browser_observe` now reuses one bounded page census, omits unconsumed pseudo-DOM and frame-note scan fields, keeps truncated root content expandable, reads independent AX inputs concurrently, and runs structural diffs in-process instead of spawning a native helper.
 - Daemon/bridge shutdown now closes lingering loopback keep-alive connections, terminates live extension sockets, waits for both WebSocket and HTTP listeners to close, and gives the foreground daemon a bounded terminal-exit fallback, so MCP or offscreen reconnects cannot hold a draining stale daemon past the managed replacement deadline.
 - Browser identities now derive from stable extension-instance ids, while extension-owned tab identities persist in `chrome.storage.session` and transfer across `tabs.onReplaced`, keeping `targetRef` stable through daemon replacement and extension reconnect within the current browser runtime.
-- `browser_execute` and tab-scoped `browser_command` accept structured ABML postconditions. Targeted DOM+Partial AX settlement returns the same entity-state diff used by observation, and successful `input.ref` actions feed their action context into the perception ledger for later causal attribution.
+- `browser_execute` and tab-scoped `browser_command` accept structured ABML postconditions. Targeted DOM+Partial AX settlement returns the same entity-state diff used by observation under `verification.diff`, and successful `input.ref` actions feed their action context into the perception ledger for later causal attribution.
 
 ## [0.4.0] - 2026-07-12
 

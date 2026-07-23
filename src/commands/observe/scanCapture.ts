@@ -1,4 +1,4 @@
-import { createBrowserAbmlIntegration } from "../../browser-command-runtime/abml/integration.js";
+import { readBrowserAbmlStructure } from "../../browser-runtime/abml/runtime.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { normalizePageFingerprint, readPageFingerprint, type PageFingerprint } from "../pageSignals.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
@@ -8,7 +8,8 @@ import type { ObserveToolParams } from "./common.js";
 import type { PageIdentity, PageReanchorReason } from "../../kernels/session/pageIdentity.js";
 import { pageReanchorReason, samePageIdentity } from "../../kernels/session/pageIdentity.js";
 import { currentPageIdentity, pageIdentityFromUnknown } from "./pageIdentity.js";
-import { validatePageWorldScanBundle, type PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
+import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
+import { validatePageWorldScanBundle } from "../../validation/pageContracts.js";
 import { BrowserBridgeError } from "../../utils/errors.js";
 
 function scanResultFingerprint(value: PageWorldScanBundleV1): PageFingerprint | undefined {
@@ -60,39 +61,36 @@ async function readCapturedPageIdentity(options: ScanCaptureOptions, fingerprint
 	};
 }
 
-type ScanAbmlIntegration = ReturnType<typeof createBrowserAbmlIntegration>;
 type ScanEvaluationResult = Omit<Awaited<ReturnType<typeof evaluatePageScriptDirect>>, "data"> & { data: PageWorldScanBundleV1 };
+
+export function axCacheKeyForPage(fingerprint: PageFingerprint | undefined): string | undefined {
+	return fingerprint?.pageEpoch
+		? JSON.stringify(["content", fingerprint.pageEpoch, fingerprint.documentId ?? "", fingerprint.changeSeq, fingerprint.url ?? ""])
+		: undefined;
+}
 
 async function readScanAbml(
 	options: ScanCaptureOptions,
-	abml: ScanAbmlIntegration,
 	result: ScanEvaluationResult,
 	effectiveBaseline: BaselineResolution | undefined,
 	fusedPageFingerprint: PageFingerprint | undefined,
 ) {
 	const { browserSessionId, tabId, timeoutMs, captureMaxChars, pageFingerprint, timings } = options;
-	const canReuseScanForAbml = true;
-	timings.abmlPrefetchedScan = canReuseScanForAbml;
+	timings.abmlPrefetchedScan = true;
 	const cacheFingerprint = fusedPageFingerprint ?? pageFingerprint;
 	const abmlStartedAt = Date.now();
-	const abmlRead = await abml.readStructure({
-		browserSessionId,
-		tabId,
-		timeoutMs,
-		maxChars: captureMaxChars,
+	const abmlRead = await readBrowserAbmlStructure(options.server, {
 		baseline: effectiveBaseline?.entities,
 		diffOptions: effectiveBaseline?.partialBaseline ? { partialBaseline: true } : undefined,
-		prefetchedScan: canReuseScanForAbml ? result.data : undefined,
-		axCacheKey: cacheFingerprint ? `content:${cacheFingerprint.changeSeq}:${cacheFingerprint.url || ""}` : undefined,
-	});
+		prefetchedScan: result.data,
+		axCacheKey: axCacheKeyForPage(cacheFingerprint),
+	}, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, signal: options.signal });
 	timings.abmlMs = elapsedMs(abmlStartedAt);
-	if (!canReuseScanForAbml) addBridgeRoundTrips(timings, 1);
 	return abmlRead;
 }
 
 export async function executeScanCapture(options: ScanCaptureOptions) {
-	const { server, params, rawTargetRef, browserSessionId, tabId, timeoutMs, captureMaxChars, scanScript, baseline, timings } = options;
-	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, signal: options.signal });
+	const { server, params, rawTargetRef, timeoutMs, scanScript, baseline, timings } = options;
 	let fusedPageFingerprint: PageFingerprint | undefined;
 	let effectiveBaseline = baseline;
 	let reanchorReason = options.reanchorReason;
@@ -110,6 +108,6 @@ export async function executeScanCapture(options: ScanCaptureOptions) {
 		reanchorReason = capturedIdentity.reanchorReason;
 		effectiveBaseline = undefined;
 	}
-	const abmlRead = await readScanAbml(options, abml, result, effectiveBaseline, fusedPageFingerprint);
+	const abmlRead = await readScanAbml(options, result, effectiveBaseline, fusedPageFingerprint);
 	return { observation: { result, abmlRead }, fusedPageFingerprint, pageIdentity: capturedPageIdentity, baseline: effectiveBaseline, reanchorReason };
 }

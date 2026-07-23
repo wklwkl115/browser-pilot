@@ -5,14 +5,12 @@
 import type { Entity, EntityKind } from "./entity.js";
 import type { SnapshotProjection, SnapshotProjectionTemplate } from "./snapshotProjection.js";
 import type { StructureTemplate } from "./templating.js";
-import type { TreeDiff } from "./treeDiff.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
-import type { ScanActionable, ScanGrowthProbe, ScanListHint, ScanRow } from "./pageWorldScan.js";
+import type { ScanActionable, ScanListHint } from "./pageWorldScan.js";
 import { nonEmptyString as stringValue } from "../../utils/records.js";
 
 type ListHintInput = ScanListHint | Record<string, unknown>;
 type ActionableInput = ScanActionable | Record<string, unknown>;
-type GrowthProbeInput = ScanGrowthProbe | Record<string, unknown>;
 
 export type CollectionCompleteness =
 	| "complete"
@@ -25,8 +23,8 @@ export type CollectionCompleteness =
 
 export type CollectionKind = "list" | "table" | "grid" | "feed" | "menu" | "tree" | "region";
 export type CollectionConfidence = "high" | "medium" | "low";
-export type CollectionDataSource = "aria" | "dom" | "network" | "snapshot" | "runtime-probe";
-export type CollectionEvidenceSource = "templates" | "itemEntities" | "listHints" | "rows" | "relations" | "causal" | "growthProbe";
+export type CollectionDataSource = "aria" | "dom" | "snapshot";
+export type CollectionEvidenceSource = "templates" | "itemEntities" | "listHints" | "relations";
 
 export type PaginationControlKind = "next" | "previous" | "load-more" | "show-more" | "other";
 
@@ -35,8 +33,6 @@ export type PaginationControl = {
 	label?: string;
 	kind: PaginationControlKind;
 };
-
-export type ScrollDirection = "vertical" | "horizontal" | "both";
 
 export type CollectionModel = {
 	collectionId: string;
@@ -58,9 +54,7 @@ export type CollectionModel = {
 	completeness: CollectionCompleteness;
 	confidence: CollectionConfidence;
 
-	pageSize?: number;
 	paginationControl?: PaginationControl;
-	scrollDirection?: ScrollDirection;
 
 	dataSources?: Array<{
 		source: CollectionDataSource;
@@ -79,15 +73,12 @@ export type CollectionModel = {
 
 export type CollectionScanEvidence = {
 	listHints?: ListHintInput[];
-	rows?: Array<ScanRow | Record<string, unknown>>;
 	actionables?: ActionableInput[];
-	growthProbe?: GrowthProbeInput;
 };
 
 export type BuildCollectionModelsInput = {
 	entities: Entity[];
 	templates?: StructureTemplate[];
-	treeDiff?: TreeDiff;
 	snapshotProjection?: SnapshotProjection;
 	scanEvidence?: CollectionScanEvidence;
 };
@@ -163,11 +154,12 @@ function collectionKind(containerRole?: string, itemRole?: string, entityKind?: 
 	return entityKind === "region" ? "region" : "list";
 }
 
-function collectionKey(parts: { containerRef?: string; containerRole?: string; containerName?: string; itemRole?: string; declaredTotal?: number; jsonPath?: string }): string {
+function collectionKey(parts: { containerRef?: string; containerRole?: string; containerName?: string; containerKey?: string; itemRole?: string; declaredTotal?: number; jsonPath?: string }): string {
 	return [
 		parts.containerRef,
 		parts.containerRole,
 		parts.containerName,
+		parts.containerKey,
 		parts.itemRole,
 		parts.declaredTotal === undefined ? undefined : `total:${parts.declaredTotal}`,
 		parts.jsonPath,
@@ -178,16 +170,12 @@ function normalizeNameKey(value: string | undefined): string {
 	return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function collectionNameContext(parts: Array<string | undefined>): string | undefined {
-	const text = sanitizeSemanticText(parts.filter(Boolean).join(" "), 80);
-	return text && text.length >= 2 ? text : undefined;
-}
-
 function selectorContext(value: unknown): string | undefined {
 	const selector = stringValue(value);
 	if (!selector) return undefined;
 	const match = selector.match(/(?:#([A-Za-z0-9_-]{2,})|\.([A-Za-z0-9_-]{2,}))/);
-	return match ? collectionNameContext([(match[1] ?? match[2])?.replace(/[-_]+/g, " ")]) : undefined;
+	const context = match ? sanitizeSemanticText((match[1] ?? match[2])?.replace(/[-_]+/g, " "), 80) : undefined;
+	return context && context.length >= 2 ? context : undefined;
 }
 
 type ListHintNameParts = {
@@ -201,22 +189,23 @@ function disambiguatedCollectionName(name: string | undefined, context: string |
 	return normalizeNameKey(name) === normalizeNameKey(context) ? name : `${name} (${context})`;
 }
 
-function templateKey(template: Pick<StructureTemplate, "container" | "containerName" | "role" | "setSize">): string {
+function templateKey(template: Pick<StructureTemplate, "container" | "containerName" | "containerKey" | "role" | "setSize">): string {
 	return collectionKey({
 		containerRole: template.container,
 		containerName: template.containerName,
+		containerKey: template.containerKey,
 		itemRole: template.role,
 		declaredTotal: template.setSize,
 	});
 }
 
-function snapshotTemplateKey(template: Pick<SnapshotProjectionTemplate, "container" | "containerName" | "role" | "setSize" | "templateKey">): string {
+function snapshotTemplateKey(template: Pick<SnapshotProjectionTemplate, "container" | "containerName" | "containerKey" | "role" | "setSize">): string {
 	return collectionKey({
 		containerRole: template.container,
 		containerName: template.containerName,
+		containerKey: template.containerKey,
 		itemRole: template.role,
 		declaredTotal: template.setSize,
-		jsonPath: template.templateKey,
 	});
 }
 
@@ -225,9 +214,10 @@ function entityCollectionKey(entity: Entity): string | undefined {
 	const setSize = numberValue(entity.structure?.setSize);
 	const containerRole = normalizeRole(entity.hints?.containerRole);
 	const containerName = sanitizeSemanticText(entity.hints?.containerName, 160);
+	const containerKey = stringValue(entity.hints?.containerKey);
 	const listContainer = entity.hints?.listContainer === true;
 	if (containerRole || setSize !== undefined) {
-		return collectionKey({ containerRole, containerName, itemRole: role, declaredTotal: setSize });
+		return collectionKey({ containerRole, containerName, containerKey, itemRole: role, declaredTotal: setSize });
 	}
 	if (listContainer) return collectionKey({ containerRole: role, containerName: entity.name, jsonPath: stringValue(entity.hints?.jsonPath) });
 	return undefined;
@@ -418,29 +408,19 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 }
 
 function listHintNameParts(hint: ListHintInput, index: number): ListHintNameParts {
-	const label = firstSafeSemanticText([hint.containerLabel, hint.containerName, hint.label], 80);
+	const label = firstSafeSemanticText([hint.containerLabel], 80);
 	const preview = safeContainerLabelText(hint.firstItemPreview, 80);
 	const fallback = `list-${index}`;
-	const context = collectionNameContext([
-		selectorContext(hint.selector),
-		sanitizeSemanticText(hint.heading, 40),
-		sanitizeSemanticText(hint.nearestHeading, 40),
-		sanitizeSemanticText(hint.landmarkName, 40),
-		sanitizeSemanticText(hint.parentLabel, 40),
-	]);
+	const context = selectorContext(hint.selector);
 	if (label) return { name: label, ...(context ? { context } : {}), source: "safe-label" };
 	if (preview) return { name: preview, ...(context ? { context } : {}), source: "safe-preview" };
 	return { name: fallback, ...(context ? { context } : {}), source: "fallback" };
 }
 
-function listHintName(hint: ListHintInput, index: number): string {
-	return listHintNameParts(hint, index).name;
-}
-
 function listHintKey(hint: ListHintInput, index: number): string {
 	return collectionKey({
 		containerRole: "list",
-		containerName: listHintName(hint, index),
+		containerName: listHintNameParts(hint, index).name,
 		jsonPath: `data.structure.listHints[${index}]`,
 	});
 }
@@ -518,34 +498,7 @@ function paginationEdge(actionables: ActionableInput[] | undefined): { completen
 	return undefined;
 }
 
-function growthProbeEvidence(probe: GrowthProbeInput | undefined): { confidence: CollectionConfidence; summary: string } | undefined {
-	if (!probe) return undefined;
-	const beforeCount = numberValue(probe.beforeCount);
-	const afterCount = numberValue(probe.afterCount);
-	const beforeHeight = numberValue(probe.beforeScrollHeight);
-	const afterHeight = numberValue(probe.afterScrollHeight);
-	const beforeFirstText = stringValue(probe.beforeFirstText);
-	const afterFirstText = stringValue(probe.afterFirstText);
-	const countGrew = beforeCount !== undefined && afterCount !== undefined && afterCount > beforeCount;
-	const heightGrew = beforeHeight !== undefined && afterHeight !== undefined && afterHeight > beforeHeight;
-	const windowShifted = (beforeFirstText !== undefined && afterFirstText !== undefined && beforeFirstText !== afterFirstText) || probe.windowShifted === true;
-	if (!countGrew && !heightGrew && !windowShifted && probe.countGrew !== true && probe.heightGrew !== true) return undefined;
-	const parts = [
-		countGrew ? `count ${beforeCount}->${afterCount}` : undefined,
-		heightGrew ? `scrollHeight ${beforeHeight}->${afterHeight}` : undefined,
-		windowShifted ? "visible item window shifted" : undefined,
-	].filter((item): item is string => !!item);
-	return { confidence: countGrew || windowShifted ? "high" : "medium", summary: parts.join(", ") || "growth probe increased collection window" };
-}
-
-function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>): { completeness: CollectionCompleteness; confidence: CollectionConfidence; reason: string } {
-	if (growth) {
-		return {
-			completeness: "virtualized",
-			confidence: growth.confidence,
-			reason: `generic growth probe changed the observed window (${growth.summary})`,
-		};
-	}
+function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>): { completeness: CollectionCompleteness; confidence: CollectionConfidence; reason: string } {
 	if (draft.declaredTotal !== undefined && draft.declaredTotal > 0) {
 		if (draft.observedCount < draft.declaredTotal) {
 			return {
@@ -605,45 +558,18 @@ function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof p
 	return { completeness: "unknown", confidence: "low", reason: "not enough collection evidence" };
 }
 
-function inferPageSize(draft: DraftCollection, probe: GrowthProbeInput | undefined): number | undefined {
-	if (probe) {
-		const beforeCount = numberValue(probe.beforeCount);
-		const afterCount = numberValue(probe.afterCount);
-		if (beforeCount !== undefined && afterCount !== undefined && afterCount > beforeCount) {
-			const size = afterCount - beforeCount;
-			if (size > 0 && (draft.declaredTotal === undefined || size < draft.declaredTotal)) {
-				return size;
-			}
-		}
-	}
-	return undefined;
-}
-
-function inferScrollDirection(probe: GrowthProbeInput | undefined): ScrollDirection | undefined {
-	if (!probe) return undefined;
-	const beforeHeight = numberValue(probe.beforeScrollHeight);
-	const afterHeight = numberValue(probe.afterScrollHeight);
-	if (beforeHeight !== undefined && afterHeight !== undefined && beforeHeight !== afterHeight) {
-		return "vertical";
-	}
-	return undefined;
-}
-
-function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>, rawGrowthProbe?: GrowthProbeInput, ambiguousNames?: Set<string>): CollectionModel {
+function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, ambiguousNames?: Set<string>): CollectionModel {
 	const collectionId = `c${index + 1}`;
-	const classified = completenessForDraft(draft, edge, growth);
+	const classified = completenessForDraft(draft, edge);
 	const evidence = [...draft.evidence];
 	if (edge) evidence.push({ source: "relations", summary: edge.summary, jsonPath: edge.jsonPath });
-	if (growth) evidence.push({ source: "growthProbe", summary: growth.summary, jsonPath: "scanEvidence.growthProbe" });
 	const estimatedTotal = draft.estimatedTotal ?? (draft.declaredTotal !== undefined ? draft.declaredTotal : undefined);
 	const hasAmbiguousName = !!draft.containerName && ambiguousNames?.has(normalizeNameKey(draft.containerName));
 	const safeContext = hasAmbiguousName ? draft.containerNameContext : undefined;
 	const containerName = hasAmbiguousName ? disambiguatedCollectionName(draft.containerName, safeContext) : draft.containerName;
 	const containerNameSource = hasAmbiguousName && containerName !== draft.containerName ? "disambiguated" : draft.containerNameSource;
 
-	const pageSize = inferPageSize(draft, rawGrowthProbe);
 	const paginationControl = edge?.control;
-	const scrollDirection = inferScrollDirection(rawGrowthProbe);
 
 	const model: CollectionModel = {
 		collectionId,
@@ -666,9 +592,7 @@ function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType
 		evidence,
 	};
 
-	if (pageSize !== undefined) model.pageSize = pageSize;
 	if (paginationControl !== undefined) model.paginationControl = paginationControl;
-	if (scrollDirection !== undefined) model.scrollDirection = scrollDirection;
 
 	return model;
 }
@@ -723,13 +647,11 @@ export function buildCollectionModels(input: BuildCollectionModelsInput): Collec
 	for (const [index, hint] of (input.scanEvidence?.listHints ?? []).entries()) {
 		addDraft(drafts, listHintKey(hint, index), listHintDraft(hint, index));
 	}
-	const edge = paginationEdge(input.scanEvidence?.actionables);
-	const rawGrowthProbe = input.scanEvidence?.growthProbe;
-	const growth = growthProbeEvidence(rawGrowthProbe);
 	const sortedDrafts = [...drafts.values()]
 		.filter((draft) => draft.observedCount > 0 || (draft.hiddenCount ?? 0) > 0 || draft.itemRefs.length > 0)
 		.sort((a, b) => a.sourceRank - b.sourceRank || b.observedCount - a.observedCount || (b.declaredTotal ?? 0) - (a.declaredTotal ?? 0));
+	const edge = sortedDrafts.length === 1 ? paginationEdge(input.scanEvidence?.actionables) : undefined;
 	const outputAmbiguousNames = ambiguousContainerNames(sortedDrafts);
 	const inputAmbiguousNames = ambiguousContainerNames([...drafts.values()]);
-	return uniqueCollectionNames(sortedDrafts.map((draft, index) => modelFromDraft(index, draft, edge, growth, rawGrowthProbe, outputAmbiguousNames.has(normalizeNameKey(draft.containerName)) ? outputAmbiguousNames : inputAmbiguousNames)));
+	return uniqueCollectionNames(sortedDrafts.map((draft, index) => modelFromDraft(index, draft, edge, outputAmbiguousNames.has(normalizeNameKey(draft.containerName)) ? outputAmbiguousNames : inputAmbiguousNames)));
 }

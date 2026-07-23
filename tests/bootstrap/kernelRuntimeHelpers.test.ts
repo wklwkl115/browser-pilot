@@ -11,16 +11,15 @@ import { buildCollectionModels } from "../../src/kernels/abml/collections.ts";
 import { firstSafeSemanticText, isItemLikePreview, safeContainerLabelText, sanitizeSemanticText } from "../../src/kernels/abml/semanticText.ts";
 import { buildSnapshotProjection } from "../../src/kernels/abml/snapshotProjection.ts";
 import { buildIdentityGraph, identityGraphSummary } from "../../src/kernels/abml/identityGraph.ts";
-import { buildEventEntity, buildNetworkEntryEntity, createCaptureRef } from "../../src/kernels/abml/stream.ts";
 import { buildCausalEvents, buildCausalSummary, buildTriggeredRelations } from "../../src/kernels/abml/causal.ts";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../src/capture/inject.ts";
 import { buildScanEntities } from "../../src/scan/summary.ts";
 import { stableRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
+import { deriveSemanticRefAnchors } from "../../src/kernels/abml/semanticRefAnchor.ts";
 import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
-import type { ResourceRefDescriptor } from "../../src/resources/resourceRefs.ts";
 import { readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
-import { pierceRefEntities } from "../../src/browser-runtime/abml/pierceRuntime.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
+import { scanPage } from "../../capture-src/entries/scanTemplate.ts";
 import { pageWorldScanBundle } from "../helpers/pageWorldScan.ts";
 
 function entity(ref: string, overrides: Partial<Entity> = {}): Entity {
@@ -91,21 +90,6 @@ function createCdpServer(responses: Record<string, MockCdpResponse>) {
 
 function bridgeFailure(message: string, code = "BROWSER_COMMAND_FAILED"): Record<string, unknown> {
 	return { ok: false, error: { code, message } };
-}
-
-function descriptorWithBackend(backendNodeId: number): ResourceRefDescriptor {
-	return {
-		refId: "bp-ref://control/target",
-		kind: "control",
-		locators: [{ by: "css", value: "#target" }, { by: "backendNodeId", value: backendNodeId }],
-		owner: { browserSessionId: "session-1", tabId: 7, topLevelOrigin: "https://example.test" },
-		policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
-		semantic: { role: "button", name: "Target" },
-		geometry: { point: { x: 50, y: 20 }, box: { x: 10, y: 10, w: 80, h: 20 } },
-		observationId: "obs-1",
-		createdAt: 1_000,
-		ttlMs: 300_000,
-	};
 }
 
 test("partial AX helper returns bounded successful enrichment diagnostics", async () => {
@@ -232,39 +216,6 @@ test("full AX reader degrades from paint snapshot and falls back to bounded box 
 	assert.equal(boxFallback.diagnostics?.geometryCdpCalls, 1);
 });
 
-test("pierce runtime prefers scoped partial AX enrichment and falls back without expanding page-wide output", async () => {
-	const descriptor = descriptorWithBackend(42);
-	const partialServer = createCdpServer({
-		"Accessibility.getPartialAXTree": { nodes: [axNode(42, "button", "Save changes"), axNode(77, "button", "Outside scope")] },
-		"DOM.getBoxModel": { result: boxModel(10, 10, 80, 20) },
-	});
-	const partial = await pierceRefEntities(partialServer, descriptor, { browserSessionId: "session-1", tabId: 7, observationId: "obs-1", capturedAt: 1_000, timeoutMs: 3_000 });
-	assert.equal(partial.ok, true);
-	if (!partial.ok) return;
-	assert.equal(partial.data.source, "partial-ax");
-	assert.equal(partial.data.transport, "cdp-partial-ax");
-	assert.equal(partial.entities.length, 1);
-	assert.equal(partial.entities[0]!.name, "Save changes");
-	assert.equal(partial.entities[0]!.hints?.axRefinement, "partial-ax");
-	assert.equal(partialServer.calls.some((call) => call.method === "Accessibility.getFullAXTree"), false);
-
-	const fallbackServer = createCdpServer({
-		"Accessibility.getPartialAXTree": { nodes: [] },
-		"Accessibility.getFullAXTree": { nodes: [axNode(42, "button", "Save changes"), axNode(77, "button", "Outside scope")] },
-		"DOM.getBoxModel": (command: BrowserRuntimeCommand) => {
-			const params = command.params as Record<string, unknown> | undefined;
-			return { result: Number(params?.backendNodeId) === 42 ? boxModel(10, 10, 80, 20) : boxModel(500, 500, 80, 20) };
-		},
-	});
-	const fallback = await pierceRefEntities(fallbackServer, descriptor, { browserSessionId: "session-1", tabId: 7, observationId: "obs-1", capturedAt: 1_000, timeoutMs: 3_000 });
-	assert.equal(fallback.ok, true);
-	if (!fallback.ok) return;
-	assert.equal(fallback.data.source, "ax");
-	assert.equal((fallback.data.partialAx as { status?: string; reason?: string }).status, "degraded");
-	assert.equal((fallback.data.partialAx as { status?: string; reason?: string }).reason, "empty");
-	assert.deepEqual(fallback.entities.map((item) => item.name), ["Save changes"]);
-});
-
 test("ABML grouping helpers normalize descriptors and suppress nested non-control groups", () => {
 	const controls = Array.from({ length: 4 }, (_, index) => entity(`bp-ref://control/${index}`, {
 		name: `Row ${index + 1}`,
@@ -285,6 +236,20 @@ test("ABML grouping helpers normalize descriptors and suppress nested non-contro
 	assert.equal(suppressNestedNonControlGroups(groups).length, 1);
 	assert.equal(suppressNestedNonControlGroups(groups)[0]!.descriptor.kind, "control");
 	assert.deepEqual(groupEntities([]), []);
+	const duplicateEntities = [
+		...Array.from({ length: 4 }, (_, index) => entity(`bp-ref://a/${index}`, { role: "listitem", kind: "element", name: index ? `A${index}` : "Approve", hints: { containerRole: "list", containerName: "Results", containerKey: "b:1" } })),
+		...Array.from({ length: 4 }, (_, index) => entity(`bp-ref://b/${index}`, { role: "listitem", kind: "element", name: index ? `B${index}` : "Approve", hints: { containerRole: "list", containerName: "Results", containerKey: "b:2" } })),
+	];
+	const duplicateContainers = groupEntities(duplicateEntities);
+	assert.equal(duplicateContainers.length, 2);
+	assert.equal(buildCollectionModels({ entities: duplicateEntities, snapshotProjection: buildSnapshotProjection(duplicateEntities) }).length, 2);
+	const anchors = deriveSemanticRefAnchors(duplicateEntities);
+	assert.deepEqual(anchors.anchors
+		.filter((item) => item.anchor.normalizedName === "approve")
+		.map((item) => [item.anchor.confidence, item.anchor.reason, item.anchor.mintingEligible]), [
+		["low", "duplicate-container", false],
+		["low", "duplicate-container", false],
+	]);
 });
 
 test("ABML grouping text helpers handle normal, empty, malformed, and boundary-sized values", () => {
@@ -296,30 +261,6 @@ test("ABML grouping text helpers handle normal, empty, malformed, and boundary-s
 	assert.equal(isPureTextLeaf({ role: "button", kind: "text" }), true);
 	assert.equal(isActionableOrStructural({ role: "button", kind: "control" }), true);
 	assert.equal(isActionableOrStructural({ role: "InlineTextBox", kind: "element" }), false);
-});
-
-test("ABML stream helpers normalize capture, network, and event boundary inputs", () => {
-	const context = { observationId: "obs-1", capturedAt: 1_000, url: "https://example.test/app", browserSessionId: "session-1", tabId: 7 };
-	const capture = createCaptureRef({ refId: "cap-1", state: "active", startedAt: 900, expiresAt: 900, lastSeq: 3, context });
-	assert.equal(capture.ttlMs, 1);
-	assert.equal(capture.owner.topLevelOrigin, "https://example.test");
-	assert.equal(capture.streamState.lastSeq, 3);
-
-	const network = buildNetworkEntryEntity({ request: { url: "https://api.example.test/items", method: "POST" }, response: { status: "201" }, _bodyRef: "artifact://body", _requestId: "req-1", updatedAt: "1234" }, context);
-	assert.equal(network.entity.name, "POST https://api.example.test/items");
-	assert.deepEqual(network.entity.stream, { at: 1234, method: "POST", url: "https://api.example.test/items", status: 201, payloadHandle: "artifact://body" });
-	assert.equal(network.descriptor.owner.topLevelOrigin, "https://api.example.test");
-	assert.deepEqual(network.descriptor.snapshot, { observationId: "obs-1", resourceUri: "artifact://body", immutable: true });
-
-	const fallbackNetwork = buildNetworkEntryEntity({ request: null, response: null, status: "not-a-number", id: "fallback" }, { observationId: "obs-2", capturedAt: 5, url: "notaurl" });
-	assert.equal(fallbackNetwork.entity.name, "GET fallback");
-	assert.equal(fallbackNetwork.descriptor.owner.topLevelOrigin, undefined);
-	assert.equal(fallbackNetwork.entity.stream?.status, undefined);
-
-	const event = buildEventEntity({ eventType: "dom-sink", phase: "after", handle: "artifact://event", message: "innerHTML assigned", timestamp: "42", originRef: "bp-ref://control/button" }, context);
-	assert.equal(event.entity.value, "innerHTML assigned");
-	assert.deepEqual(event.entity.stream, { at: 42, eventType: "dom-sink", phase: "after", payloadHandle: "artifact://event" });
-	assert.equal(event.descriptor.semantic?.value, "innerHTML assigned");
 });
 
 test("ABML causal projection preserves complete redacted deltas", () => {
@@ -400,14 +341,12 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	assert.equal(deltaOnly.delta?.appeared.count, 2);
 	assert.equal(deltaOnly.delta?.changed.instances[0]?.fields[0]?.field, "name");
 
-	const collections = buildCollectionModels({ entities: rows, snapshotProjection: projection, scanEvidence: { growthProbe: { beforeCount: 25, afterCount: 35, beforeScrollHeight: 1000, afterScrollHeight: 1400 } } });
+	const collections = buildCollectionModels({ entities: rows, snapshotProjection: projection });
 	assert.equal(collections[0]!.kind, "table");
 	assert.equal(collections[0]!.completeness, "virtualized");
 	assert.equal(collections[0]!.declaredTotal, 100);
 	assert.equal(collections[0]!.itemRefs.length, 25);
-	assert.equal(collections[0]!.pageSize, 10);
-	assert.equal(collections[0]!.scrollDirection, "vertical");
-	assert.equal(collections[0]!.completeness, "virtualized");
+	assert.equal(buildCollectionModels({ entities: rows, snapshotProjection: buildSnapshotProjection(rows) }).length, 1);
 });
 
 test("ABML collections absorb malformed scan evidence and pagination edges", () => {
@@ -416,7 +355,6 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 		scanEvidence: {
 			listHints: [{ itemCount: "bad", hiddenCount: -1, selector: "  ", firstItemPreview: "  " }],
 			actionables: [{ text: "Next page", ref: "bp-ref://control/next" }, { text: "Load more" }],
-			growthProbe: { beforeCount: "bad" as unknown as number, afterCount: 1, windowShifted: false },
 		},
 	});
 	assert.equal(models.length, 1);
@@ -425,6 +363,17 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	assert.equal(models[0]!.completeness, "lazy");
 	assert.equal(models[0]!.paginationControl?.kind, "next");
 	assert.equal(models[0]!.paginationControl?.ref, "bp-ref://control/next");
+	const independent = buildCollectionModels({
+		entities: [],
+		scanEvidence: {
+			listHints: [
+				{ itemCount: 2, hiddenCount: 0, selector: "#a > li", firstItemPreview: "A" },
+				{ itemCount: 3, hiddenCount: 0, selector: "#b > li", firstItemPreview: "B" },
+			],
+			actionables: [{ text: "Next page", ref: "bp-ref://control/next" }],
+		},
+	});
+	assert.deepEqual(independent.map((item) => item.paginationControl), [undefined, undefined]);
 	const labelled = buildCollectionModels({
 		entities: [],
 		scanEvidence: { listHints: [{ itemCount: 6, hiddenCount: 2, containerLabel: "Orders", selector: "#orders > li", firstItemPreview: "<svg><path d=\"M0 0\" /></svg>" }] },
@@ -885,51 +834,41 @@ test("capture template helpers escape inline JSON and fail closed for missing pl
 
 test("scan script builder clamps options and injects scan helper blocks deterministically", () => {
 	const script = buildScanScript({ maxChars: 1, maxNodes: Number.POSITIVE_INFINITY });
-	assert.match(script, /const options = \{"maxChars":1000,"maxNodes":4000\};/);
-	assert.match(script, /schema: "browser-page-scan\/v1"/);
-	assert.match(script, /fingerprint: scanFingerprint/);
-	assert.doesNotMatch(script, /content\.tree|tree: content|function walk\(|iframeNotes|includeIframes/);
-	assert.match(script, /const growthProbe = undefined;/);
-	assert.match(script, /selected: selectedState.*pressed: pressedAttr === 'true'.*expanded: expandedAttr === 'true'/);
-	assert.doesNotMatch(script, /window\.scrollTo|\.scrollTop\s*=/);
-	assert.match(script, /documentRect: visible\.documentRect/);
-	assert.doesNotMatch(script, /list_hints|canvas_regions|media_candidates|node_count|iframe_notes|controls_pairs|text_only/);
-	assert.match(script, /function safePreviewOf\(el\) \{/);
-	assert.match(script, /function conciseContainerLabel\(text\) \{/);
-	assert.match(script, /function headingLabelNear\(el\) \{/);
-	assert.match(script, /function containerLabelOf\(el\) \{/);
-	assert.match(script, /getAttribute\('aria-labelledby'\)/);
-	assert.match(script, /\[aria-selected="true"\]/);
-	assert.match(script, /computeAccessibleName/);
-	assert.match(script, /getRole/);
-	assert.match(script, /function computedAccessibleName\(el, max = 160\) \{/);
-	assert.match(script, /accessibleNameCount >= ACCESSIBLE_NAME_LIMIT/);
-	assert.match(script, /function roleProviderRole\(el\) \{/);
-	assert.match(script, /LOW_VALUE_PROVIDER_ROLES/);
-	assert.match(script, /function explicitRoleOf\(el\) \{/);
-	assert.match(script, /function nativeRoleOf\(el\) \{/);
-	assert.match(script, /return explicitRoleOf\(el\) \|\| roleProviderRole\(el\) \|\| nativeRoleOf\(el\)/);
-	assert.match(script, /catch \(_\) \{ return ''; \}/);
-	assert.match(script, /catch \(_\) \{ return null; \}/);
-	assert.match(script, /function safeSemanticLabel\(text, max = 160\) \{/);
-	assert.match(script, /moneyTokens >= 2/);
-	assert.match(script, /const computedName = computedAccessibleName\(el, 160\)/);
-	assert.match(script, /const computedName = computedAccessibleName\(el, 120\)/);
-	assert.match(script, /\['button','link','menuitem','tab','checkbox','radio','switch','option'\]\.includes\(role\)/);
-	assert.doesNotMatch(script, /tag === 'A' \|\| tag === 'BUTTON'/);
-	assert.match(script, /tag === 'A' && el\.hasAttribute && el\.hasAttribute\('href'\)/);
-	assert.match(script, /\.sr-only,\.visually-hidden,\.screen-reader-text/);
-	assert.match(script, /const containerLabel = containerLabelOf\(container\)/);
-	assert.match(script, /\.\.\.\(containerLabel \? \{ containerLabel \} : \{\}\)/);
-	assert.match(script, /firstItemPreview: safePreviewOf\(items\[0\]\)/);
+	const source = scanPage.toString();
+	assert.match(script, /^\(\(\) => \{/);
+	assert.match(script, /function scanPage\(config\)/);
+	assert.match(script, /const __name = \(target\) => target;/);
+	assert.match(script, /const BrowserPilotDomAccessibilityApi = \(\(\) => \{/);
+	assert.match(script, /catch \{\s*return null;/);
+	assert.match(script, /"options":\{"maxChars":1000,"maxNodes":4000\}/);
+	assert.match(script, /"pageWorldScanSchema":"browser-page-scan\/v1"/);
+	assert.match(source, /fingerprint\s*:\s*scanFingerprint/);
+	assert.doesNotMatch(source, /content\.tree|tree\s*:\s*content|function walk\(|iframeNotes|includeIframes|growthProbe|collectVisibleRows|collectMediaCandidates|mediaCandidates|\binteractive\s*:|window\.scrollTo|\.scrollTop\s*=/);
+	assert.match(source, /selected\s*:\s*selectedState.*pressed\s*:\s*pressedAttr===?["']true["'].*expanded\s*:\s*expandedAttr===?["']true["']/);
+	assert.match(source, /documentRect\s*:\s*visible\.documentRect/);
+	assert.doesNotMatch(source, /list_hints|canvas_regions|media_candidates|node_count|iframe_notes|controls_pairs|text_only/);
+	for (const helper of ["safePreviewOf", "conciseContainerLabel", "headingLabelNear", "containerLabelOf", "computedAccessibleName", "roleProviderRole", "explicitRoleOf", "nativeRoleOf"]) {
+		assert.match(source, new RegExp(`function ${helper}\\(`));
+	}
+	assert.match(source, /computeAccessibleName/);
+	assert.match(source, /getRole/);
+	assert.match(source, /accessibleNameCount\s*>=\s*ACCESSIBLE_NAME_LIMIT/);
+	assert.match(source, /LOW_VALUE_PROVIDER_ROLES/);
+	assert.match(source, /moneyTokens\s*>=\s*2/);
+	assert.match(source, /aria-labelledby/);
+	assert.match(source, /aria-selected/);
+	assert.match(source, /sr-only/);
+	const transformHelpers = [...new Set(source.match(/\b__[A-Za-z_$][\w$]*/g) ?? [])].filter((name) => name !== "__browserPilotScanFingerprintSeq");
+	assert.equal(transformHelpers.every((name) => name === "__name"), true);
+	assert.doesNotThrow(() => Function(`return ${script};`));
 });
 
 function scanRoleOf(provider: unknown): (el: { tagName: string; type?: string; multiple?: boolean; size?: number; attrs?: Record<string, string> }) => string | null {
-	const script = buildScanScript();
-	const start = script.indexOf("  function clean(");
-	const end = script.indexOf("  function actionNameOf(");
+	const source = scanPage.toString();
+	const start = source.indexOf("function clean(");
+	const end = source.indexOf("function actionNameOf(");
 	assert.ok(start >= 0 && end > start);
-	return Function("BrowserPilotDomAccessibilityApi", `${script.slice(start, end)}\nreturn roleOf;`)(provider) as (el: { tagName: string; type?: string; multiple?: boolean; size?: number; attrs?: Record<string, string> }) => string | null;
+	return Function("BrowserPilotDomAccessibilityApi", "__name", `${source.slice(start, end)}\nreturn roleOf;`)(provider, (value: unknown) => value) as (el: { tagName: string; type?: string; multiple?: boolean; size?: number; attrs?: Record<string, string> }) => string | null;
 }
 
 function roleFixture(tagName: string, attrs: Record<string, string> = {}, extras: Record<string, unknown> = {}): { tagName: string; attrs: Record<string, string>; getAttribute: (name: string) => string | null; hasAttribute: (name: string) => boolean } & Record<string, unknown> {

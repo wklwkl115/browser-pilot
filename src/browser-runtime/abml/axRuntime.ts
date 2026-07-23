@@ -48,7 +48,7 @@ const CELL_ROLES = new Set(["cell", "gridcell", "columnheader", "rowheader"]);
 const CURRENT_CONTAINER_ROLES = new Set(["navigation", "menu", "menubar", "list", "listbox", "tablist", "tree", "radiogroup"]);
 
 type AncestorContainerContext = {
-	nearest?: { role: string; name: string | undefined };
+	nearest?: { role: string; name: string | undefined; key?: string };
 	currentContainerKeys: string[];
 };
 
@@ -69,7 +69,7 @@ function ancestorContainerContext(node: Record<string, unknown>, parentByChildId
 		const parent = parentByChildId.get(id);
 		if (!parent) break;
 		const role = axRole(parent).toLowerCase();
-		if (!nearest && CONTAINER_ROLES.has(role)) nearest = { role, name: axName(parent) };
+		if (!nearest && CONTAINER_ROLES.has(role)) nearest = { role, name: axName(parent), key: nodeRelationKey(parent) };
 		if (CURRENT_CONTAINER_ROLES.has(role)) {
 			const key = nodeRelationKey(parent);
 			if (key && !currentContainerKeys.includes(key)) currentContainerKeys.push(key);
@@ -510,7 +510,7 @@ function assembleAxEntities(nodes: Array<Record<string, unknown>>, interestingNo
 	for (const node of interestingNodes) {
 		const built = buildAxEntityFromNode(node, context, geometryByNode.get(node));
 		const ancestors = ancestorContainerContext(node, indexes.parentByChildId);
-		if (ancestors.nearest) built.entity.hints = { ...(built.entity.hints || {}), containerRole: ancestors.nearest.role, ...(ancestors.nearest.name ? { containerName: ancestors.nearest.name } : {}) };
+		if (ancestors.nearest) built.entity.hints = { ...(built.entity.hints || {}), containerRole: ancestors.nearest.role, ...(ancestors.nearest.name ? { containerName: ancestors.nearest.name } : {}), ...(ancestors.nearest.key ? { containerKey: ancestors.nearest.key } : {}) };
 		entities.push(built);
 		const sourceKey = nodeRelationKey(node);
 		if (!sourceKey) continue;

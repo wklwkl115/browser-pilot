@@ -6,7 +6,6 @@ import type { SnapshotProjection } from "./snapshotProjection.js";
 import type { RelationSummary } from "./relations.js";
 import type { InferenceSummary } from "./inference.js";
 import type { PageReanchorReason } from "../session/pageIdentity.js";
-import { isRecord } from "../../utils/records.js";
 
 export const PAGE_OBSERVATION_SCHEMA_V3 = "browser-page-observation/v3" as const;
 
@@ -74,9 +73,7 @@ export interface CollectionSummary extends CompactCollection {
 	containerNameContext?: string;
 	containerNameSource?: string;
 	itemRole?: string;
-	pageSize?: number;
 	paginationControl?: Record<string, unknown>;
-	scrollDirection?: string;
 	dataSources?: Array<Record<string, unknown>>;
 	evidence?: Array<Record<string, unknown>>;
 }
@@ -164,7 +161,7 @@ const FRONTIER_ITEM_SCHEMA = {
 	type: "object",
 	properties: {
 		ref: { type: "string", minLength: 1 },
-			kind: { enum: ["template-instances", "collection-window", "content", "details"] },
+		kind: { enum: ["template-instances", "collection-window", "content", "details"] },
 		state: { enum: ["folded", "viewport-window", "virtualized", "paginated", "lazy", "unavailable"] },
 		label: { type: "string", minLength: 1 },
 		observed: { type: "integer", minimum: 0 },
@@ -174,6 +171,7 @@ const FRONTIER_ITEM_SCHEMA = {
 		unavailableReason: { type: "string", minLength: 1 },
 	},
 	required: ["ref", "kind", "state"],
+	anyOf: [{ required: ["resourceUri"] }, { required: ["unavailableReason"] }, { required: ["controlRef"] }],
 	additionalProperties: false,
 } as const;
 
@@ -198,7 +196,7 @@ const COLLECTION_SCHEMA = {
 		observed: { type: "integer", minimum: 0 }, total: { type: "integer", minimum: 0 }, completeness: { type: "string" }, confidence: { type: "string" },
 		itemRefs: { type: "array", items: { type: "string" } }, frontierRef: { type: "string" }, collectionId: { type: "string" }, itemRefCount: { type: "integer", minimum: 0 }, hiddenCount: { type: "integer", minimum: 0 },
 		containerRole: { type: "string" }, containerNameContext: { type: "string" }, containerNameSource: { type: "string" }, itemRole: { type: "string" },
-		pageSize: { type: "integer", minimum: 0 }, paginationControl: { type: "object" }, scrollDirection: { type: "string" },
+		paginationControl: { type: "object" },
 		dataSources: { type: "array", items: { type: "object" } }, evidence: { type: "array", items: { type: "object" } },
 	},
 	required: ["ref", "kind", "observed", "completeness", "confidence", "itemRefs"],
@@ -297,101 +295,3 @@ export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
 	required: ["schema", "tool", "model", "canonical", "target", "snapshot", "providers", "frontier"],
 	additionalProperties: false,
 } as const;
-
-const PAGE_OBSERVATION_ROOT_KEYS = new Set(Object.keys(PAGE_OBSERVATION_V3_JSON_SCHEMA.properties));
-const TARGET_KEYS = new Set(["browserSessionId", "tabId", "targetGeneration", "pageEpoch", "url"]);
-const SNAPSHOT_KEYS = new Set(["snapshotId", "browserSessionId", "tabId", "url", "targetGeneration", "pageEpoch", "documentId", "frameScope", "selectionVersion", "sourceMode", "capturedAt", "ttlMs", "networkSeq", "hookSeq", "invalidatedReason", "expired"]);
-const PROVIDER_KEYS = new Set(["planned", "status", "reason", "reservedMs", "actualMs", "bridgeRoundTrips"]);
-const FRONTIER_KEYS = new Set(["ref", "kind", "state", "label", "observed", "total", "controlRef", "resourceUri", "unavailableReason"]);
-const ACTIONABLE_KEYS = new Set(["ref", "kind", "name", "state"]);
-const COLLECTION_KEYS = new Set(Object.keys(COLLECTION_SCHEMA.properties));
-const PAGE_OBSERVATION_VIEW_ROOT_KEYS = new Set(Object.keys(PAGE_OBSERVATION_VIEW_JSON_SCHEMA.properties));
-const PUBLIC_PROVIDER_KEYS = new Set(["status", "reason"]);
-const PUBLIC_COLLECTION_KEYS = new Set(Object.keys(PUBLIC_COLLECTION_SCHEMA.properties));
-
-function exactKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
-	return Object.keys(value).every((key) => allowed.has(key));
-}
-
-function validFrontier(value: unknown): value is ObservationFrontier {
-	if (!isRecord(value) || !exactKeys(value, new Set(["items"])) || !Array.isArray(value.items)) return false;
-	return value.items.every((raw) => {
-		if (!isRecord(raw) || !exactKeys(raw, FRONTIER_KEYS)) return false;
-			if (typeof raw.ref !== "string" || !["template-instances", "collection-window", "content", "details"].includes(String(raw.kind))) return false;
-		if (!["folded", "viewport-window", "virtualized", "paginated", "lazy", "unavailable"].includes(String(raw.state))) return false;
-		return typeof raw.resourceUri === "string" && raw.resourceUri.length > 0
-			|| typeof raw.unavailableReason === "string" && raw.unavailableReason.length > 0
-			|| typeof raw.controlRef === "string" && raw.controlRef.length > 0;
-	});
-}
-
-function validOptionalString(value: unknown): boolean {
-	return value === undefined || typeof value === "string";
-}
-
-function validOptionalInteger(value: unknown): boolean {
-	return value === undefined || typeof value === "number" && Number.isInteger(value);
-}
-
-function validTarget(value: unknown): value is PageTarget {
-	return isRecord(value)
-		&& exactKeys(value, TARGET_KEYS)
-		&& validOptionalString(value.browserSessionId) && validOptionalInteger(value.tabId)
-		&& validOptionalInteger(value.targetGeneration) && validOptionalString(value.pageEpoch) && validOptionalString(value.url);
-}
-
-function validSnapshot(value: unknown): value is ObservationSnapshot {
-	if (!isRecord(value) || !exactKeys(value, SNAPSHOT_KEYS)) return false;
-	if (typeof value.snapshotId !== "string" || typeof value.sourceMode !== "string" || typeof value.capturedAt !== "number" || typeof value.ttlMs !== "number") return false;
-	if (![value.capturedAt, value.ttlMs].every((item) => Number.isFinite(item))) return false;
-	if (![value.tabId, value.targetGeneration, value.selectionVersion, value.networkSeq, value.hookSeq].every(validOptionalInteger)) return false;
-	if (![value.browserSessionId, value.url, value.pageEpoch, value.documentId, value.frameScope, value.invalidatedReason].every(validOptionalString)) return false;
-	if (value.expired !== undefined && typeof value.expired !== "boolean") return false;
-	return true;
-}
-
-function validProvider(value: unknown): value is ProviderExecutionItem {
-	if (!isRecord(value) || !exactKeys(value, PROVIDER_KEYS) || typeof value.planned !== "boolean") return false;
-	if (!["executed", "scan-backed", "skipped", "failed", "degraded"].includes(String(value.status))) return false;
-	if (!validOptionalString(value.reason)) return false;
-	if (![value.reservedMs, value.actualMs].every((item) => item === undefined || typeof item === "number" && Number.isFinite(item) && item >= 0)) return false;
-	if (value.bridgeRoundTrips !== undefined && (!Number.isInteger(value.bridgeRoundTrips) || Number(value.bridgeRoundTrips) < 0)) return false;
-	return true;
-}
-
-function validActionables(value: unknown): boolean {
-	return value === undefined || Array.isArray(value) && value.every((item) => isRecord(item) && exactKeys(item, ACTIONABLE_KEYS) && typeof item.ref === "string" && typeof item.kind === "string" && validOptionalString(item.name) && (item.state === undefined || isRecord(item.state)));
-}
-
-function validCollections(value: unknown): boolean {
-	return value === undefined || Array.isArray(value) && value.every((item) => isRecord(item) && exactKeys(item, COLLECTION_KEYS)
-		&& typeof item.ref === "string" && typeof item.kind === "string" && typeof item.observed === "number" && Number.isInteger(item.observed)
-		&& typeof item.completeness === "string" && typeof item.confidence === "string" && Array.isArray(item.itemRefs) && item.itemRefs.every((ref) => typeof ref === "string"));
-}
-
-/** Strict runtime guard used at artifact boundaries. */
-export function isPageObservationV3(value: unknown): value is PageObservationV3 {
-	if (!isRecord(value) || !exactKeys(value, PAGE_OBSERVATION_ROOT_KEYS)) return false;
-	if (value.schema !== PAGE_OBSERVATION_SCHEMA_V3 || value.tool !== "browser_observe" || value.model !== "PageObservation" || value.canonical !== true) return false;
-	if (!validTarget(value.target) || !validSnapshot(value.snapshot) || !isRecord(value.providers) || !validFrontier(value.frontier)) return false;
-	if (!Object.values(value.providers).every(validProvider) || !validActionables(value.actionables) || !validCollections(value.collections)) return false;
-	if (value.content !== undefined && (!isRecord(value.content) || typeof value.content.text !== "string" || typeof value.content.complete !== "boolean" || value.content.headings !== undefined && (!Array.isArray(value.content.headings) || !value.content.headings.every((item) => typeof item === "string")))) return false;
-	if (value.nextActions !== undefined && (!Array.isArray(value.nextActions) || !value.nextActions.every((item) => typeof item === "string"))) return false;
-	return true;
-}
-
-export function isPageObservationView(value: unknown): value is PageObservationView {
-	if (!isRecord(value) || !exactKeys(value, PAGE_OBSERVATION_VIEW_ROOT_KEYS)) return false;
-	if (value.schema !== PAGE_OBSERVATION_SCHEMA_V3 || value.tool !== "browser_observe" || value.model !== "PageObservation" || value.canonical !== true) return false;
-	if (!isRecord(value.target) || !exactKeys(value.target, new Set(["url"])) || !validOptionalString(value.target.url)) return false;
-	if (!isRecord(value.snapshot) || !exactKeys(value.snapshot, new Set(["snapshotId", "capturedAt", "ttlMs"]))) return false;
-	if (typeof value.snapshot.snapshotId !== "string" || typeof value.snapshot.capturedAt !== "number" || !Number.isFinite(value.snapshot.capturedAt) || typeof value.snapshot.ttlMs !== "number" || !Number.isFinite(value.snapshot.ttlMs) || value.snapshot.ttlMs < 0) return false;
-	if (!isRecord(value.providers) || !Object.values(value.providers).every((provider) => isRecord(provider) && exactKeys(provider, PUBLIC_PROVIDER_KEYS) && typeof provider.status === "string" && ["executed", "scan-backed", "skipped", "failed", "degraded"].includes(provider.status) && validOptionalString(provider.reason))) return false;
-	if (!validFrontier(value.frontier) || value.frontier.items.length > 13 || !validActionables(value.actionables) || (Array.isArray(value.actionables) && value.actionables.length > 10)) return false;
-	if (value.content !== undefined && (!isRecord(value.content) || typeof value.content.text !== "string" || value.content.text.length > 6_000 || typeof value.content.complete !== "boolean" || value.content.headings !== undefined && (!Array.isArray(value.content.headings) || value.content.headings.length > 16 || !value.content.headings.every((item) => typeof item === "string")))) return false;
-	if (value.outline !== undefined && (!Array.isArray(value.outline) || value.outline.length > 8)) return false;
-	if (value.collections !== undefined && (!Array.isArray(value.collections) || value.collections.length > 12 || !value.collections.every((item) => isRecord(item) && exactKeys(item, PUBLIC_COLLECTION_KEYS) && typeof item.ref === "string" && typeof item.kind === "string" && Number.isInteger(item.observed) && typeof item.completeness === "string" && typeof item.confidence === "string" && Array.isArray(item.itemRefs) && item.itemRefs.length <= 3 && item.itemRefs.every((ref) => typeof ref === "string")))) return false;
-	if (value.snapshotProjection !== undefined && (!isRecord(value.snapshotProjection) || !exactKeys(value.snapshotProjection, new Set(["summary", "templates"])) || !isRecord(value.snapshotProjection.summary) || !Array.isArray(value.snapshotProjection.templates) || value.snapshotProjection.templates.length > 12)) return false;
-	if (value.nextActions !== undefined && (!Array.isArray(value.nextActions) || value.nextActions.length > 8 || !value.nextActions.every((item) => typeof item === "string"))) return false;
-	return true;
-}

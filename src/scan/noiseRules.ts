@@ -48,20 +48,6 @@ export const BROWSER_NOISE_SELECTORS = [
 	...TRANSLATION_NOISE_SELECTORS,
 ] as const;
 
-export const BROWSER_NOISE_ATTRIBUTE_PREFIXES = [
-	"data-read-frog",
-	"data-immersive-translate",
-	"data-google-translate",
-	"data-mate-translate",
-] as const;
-
-export const BROWSER_NOISE_ATTRIBUTE_NAMES = [
-	"data-read-frog-walked",
-	"data-read-frog-paragraph",
-	"data-read-frog-block-node",
-	"data-read-frog-inline-node",
-] as const;
-
 export const BROWSER_NOISE_CLASS_PATTERNS = [
 	"read-frog-translated",
 	"goog-te",

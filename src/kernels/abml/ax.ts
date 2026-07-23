@@ -417,6 +417,7 @@ export function mergeKnownDomAndAxEntity(base: Entity, ax: BuiltEntity["entity"]
 			axBackendNodeId: ax.hints?.backendNodeId,
 			...(ax.hints?.containerRole ? { containerRole: ax.hints.containerRole } : {}),
 			...(ax.hints?.containerName ? { containerName: ax.hints.containerName } : {}),
+			...(ax.hints?.containerKey ? { containerKey: ax.hints.containerKey } : {}),
 			...(ax.hints?.currentContainerKeys ? { currentContainerKeys: ax.hints.currentContainerKeys } : {}),
 			mergedSources: ["dom", "ax"],
 			...(Object.keys(stateSource).length ? { stateSource } : {}),

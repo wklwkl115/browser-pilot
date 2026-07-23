@@ -64,6 +64,7 @@ export type TreeTemplateDiff = {
 	templateKey: string;
 	container?: string;
 	containerName?: string;
+	containerKey?: string;
 	role: string;
 	kind: EntityKind;
 	beforeCount: number;
@@ -214,6 +215,7 @@ function buildTemplateDiff(beforeGroup: TemplateGroup | undefined, afterGroup: T
 		templateKey: descriptor.key,
 		...(descriptor.container ? { container: descriptor.container } : {}),
 		...(descriptor.containerName ? { containerName: descriptor.containerName } : {}),
+		...(descriptor.containerKey ? { containerKey: descriptor.containerKey } : {}),
 		role: descriptor.role,
 		kind: descriptor.kind,
 		beforeCount: before.length,

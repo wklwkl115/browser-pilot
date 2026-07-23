@@ -1,9 +1,8 @@
 # `@browser-pilot/abml-kernel` — the ABML pure-core kernel
 
 This folder is the **pure-core kernel** of ABML, the perception substrate under the `browser_*`
-tools. It models a web page as a trustworthy, actionable, focusable semantic graph — entities,
-refs, the DOM↔AX merge, DOM identity bootstrap, actionability rules, verb decisions, error shaping,
-collection completeness, and mechanism-arm structure projection.
+tools. It models a web page as a trustworthy semantic graph: entities, refs, DOM↔AX fusion,
+identity, relations, diffs, collection completeness, projections, and verification results.
 
 **The one rule:** everything here is **pure** — zero browser, zero Node, zero npm dependencies.
 Pure functions and types only. The browser-facing **runtime** lives in
@@ -41,11 +40,11 @@ The modules below make up the kernel's public surface — consumers import them 
 
 | Module | Role |
 | --- | --- |
-| `types.ts` | Foundational types — locators, refs, actionability, errors, captures. |
+| `types.ts` | Shared ref aliases and structured verification results. |
 | `entity.ts` | `Entity` / `EntityState` / `EntityStructure` model + builders. |
 | `ax.ts` | **DOM↔AX merge** — box-IoU/role/name scoring, AX-authoritative state/structure fusion. |
-| `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |
+| `identityGraph.ts`, `nodeKey.ts` | Cross-provider identity evidence and stable node keys. |
 | `identityBootstrap.ts` | Best-effort scan rect ↔ DOMSnapshot backendNodeId bootstrap with fail-open diagnostics. |
 | `spatialIndex.ts` | Shared bounded spatial candidate index with correctness-preserving overflow fallback. |
 | `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
@@ -53,18 +52,16 @@ The modules below make up the kernel's public surface — consumers import them 
 | `semanticRefAnchor.ts` | Semantic ref-anchor candidate derivation for repeated structures. |
 | `snapshotProjection.ts` | M2c living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
 | `collections.ts` | Collection completeness evidence for long, virtualized, lazy, and paginated structures. |
-| `actionabilityModel.ts` | Actionability blocker diagnostics and failure-reason shaping. |
-| `errors.ts` | `normalizeAbmlError` + recovery shaping. |
-| `verbs/router.ts` | Verb input/result/runtime types shared by pure decisions and browser runtime. |
-| `verbs/{read,frame,pierce}.ts` | Per-verb **decision** logic (no browser call). |
+| `relations.ts`, `causal.ts`, `inference.ts` | Semantic relations, causal evidence, and bounded inference. |
+| `diff.ts`, `verification.ts` | Entity-level changes and post-action verification. |
+| `pageWorldScan.ts`, `pageObservation.ts` | Page-world input and assembled observation contracts. |
 
 Generic ref descriptor types, URI minting, stable IDs, and ref-access policy live in
 [`../refs/`](../refs) so resource storage and ABML share one ref owner without
 making resource ports depend on ABML.
 
-The matching browser I/O for each verb lives in `../../browser-runtime/abml/*Runtime.ts`
-(e.g. `ax.ts`'s merge is fed by `../../browser-runtime/abml/axRuntime.ts`, which reads the
-live AX tree).
+Browser I/O lives in `../../browser-runtime/abml/runtime.ts`; AX capture lives in
+`../../browser-runtime/abml/axRuntime.ts` and feeds the pure merge kernel.
 
 ## The boundary is CI-enforced
 
@@ -74,13 +71,11 @@ runtime, Node-only, or npm dependency import is a boundary violation.
 
 ## Extending the kernel
 
-- **New verb decision** → add `verbs/<verb>.ts` (pure: input → decision/verification result),
-  wire it in `verbs/router.ts`, and put the browser I/O in
-  `../../browser-runtime/abml/<verb>Runtime.ts`. Keep the decision and the I/O on opposite
-  sides of the line.
 - **Improve perception** (new ARIA state/relationship/structure) → it almost always belongs in
   `ax.ts` (the merge), `entity.ts` (the model), `grouping.ts`, `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, `snapshotProjection.ts`, or `collections.ts`. Stay generic —
 	ABML models ARIA patterns, never per-site/per-framework branches.
+- **Improve verification** → keep browser reads in runtime code and put deterministic evidence
+  evaluation in `verification.ts`.
 
 ## Consumers
 

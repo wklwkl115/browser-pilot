@@ -12,7 +12,7 @@ import {
 } from "./grouping.js";
 
 export type SemanticRefAnchorConfidence = "high" | "low";
-export type SemanticRefAnchorReason = "unique-name" | "duplicate-name" | "missing-name";
+export type SemanticRefAnchorReason = "unique-name" | "duplicate-name" | "duplicate-container" | "missing-name";
 
 export type SemanticRefAnchor = {
 	scope: "abml-template";
@@ -92,6 +92,18 @@ export function deriveSemanticRefAnchors(entities: Entity[]): SemanticRefAnchorS
 			const anchor = anchorFor(group, item, counts);
 			if (anchor) anchors.push({ ref: item.entity.ref, anchor });
 		}
+	}
+	const signatures = new Map<string, number>();
+	for (const { anchor } of anchors) {
+		if (!anchor.mintingEligible) continue;
+		const key = JSON.stringify([anchor.containerRole, anchor.containerName ?? "", anchor.role, anchor.kind, anchor.normalizedName]);
+		signatures.set(key, (signatures.get(key) ?? 0) + 1);
+	}
+	for (const item of anchors) {
+		const anchor = item.anchor;
+		if (!anchor.mintingEligible) continue;
+		const key = JSON.stringify([anchor.containerRole, anchor.containerName ?? "", anchor.role, anchor.kind, anchor.normalizedName]);
+		if ((signatures.get(key) ?? 0) > 1) item.anchor = { ...anchor, confidence: "low", reason: "duplicate-container", mintingEligible: false };
 	}
 	return {
 		anchors,

@@ -7,6 +7,7 @@ export type TemplateGroupDescriptor = {
 	key: string;
 	container?: string;
 	containerName?: string;
+	containerKey?: string;
 	role: string;
 	kind: EntityKind;
 	setSize?: number;
@@ -23,9 +24,9 @@ function containerNameOf(entity: Entity): string | undefined {
 	return isRecord(entity.hints) ? str(entity.hints.containerName) : undefined;
 }
 
-function groupSignalOf(entity: Entity): ["c", string, string] | ["s", number] | undefined {
+function groupSignalOf(entity: Entity): ["c", string, string, string] | ["s", number] | undefined {
 	const containerRole = containerRoleOf(entity);
-	if (containerRole) return ["c", containerRole, containerNameOf(entity) ?? ""];
+	if (containerRole) return ["c", containerRole, containerNameOf(entity) ?? "", str(entity.hints?.containerKey) ?? ""];
 	const setSize = entity.structure?.setSize;
 	if (typeof setSize === "number" && setSize >= MIN_TEMPLATE_INSTANCES) return ["s", setSize];
 	return undefined;
@@ -36,12 +37,13 @@ export function templateGroupDescriptorForEntity(entity: Entity): TemplateGroupD
 	if (!signal) return undefined;
 	const key = JSON.stringify([signal, entity.role, entity.kind]);
 	if (signal[0] === "c") {
-		const [, container, containerName] = signal;
+		const [, container, containerName, containerKey] = signal;
 		const setSize = entity.structure?.setSize;
 		return {
 			key,
 			...(container ? { container } : {}),
 			...(containerName ? { containerName } : {}),
+			...(containerKey ? { containerKey } : {}),
 			role: entity.role,
 			kind: entity.kind,
 			...(typeof setSize === "number" ? { setSize } : {}),
@@ -51,9 +53,11 @@ export function templateGroupDescriptorForEntity(entity: Entity): TemplateGroupD
 	return { key, role: entity.role, kind: entity.kind, setSize };
 }
 
-export function structureScopeKey(descriptor: Pick<TemplateGroupDescriptor, "container" | "containerName" | "setSize">): string {
+export function structureScopeKey(descriptor: Pick<TemplateGroupDescriptor, "container" | "containerName" | "containerKey" | "setSize">): string {
 	return descriptor.container
-		? JSON.stringify(["c", descriptor.container, descriptor.containerName || ""])
+		? JSON.stringify(descriptor.containerKey
+			? ["c", descriptor.container, descriptor.containerName || "", descriptor.containerKey]
+			: ["c", descriptor.container, descriptor.containerName || ""])
 		: JSON.stringify(["s", descriptor.setSize ?? ""]);
 }
 

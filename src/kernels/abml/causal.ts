@@ -38,7 +38,7 @@ export type CausalEvent = {
 // hook events since baseline alongside the network `requests`.
 export type CausalSummary =
 	| { sinceSeq: number; requests: CausalRequest[]; requestCount?: number; events?: CausalEvent[]; eventCount?: number }
-	| { unavailable: string };
+	| { unavailable: string; events?: CausalEvent[]; eventCount?: number };
 
 export function causalRequestsFiredCount(causal: CausalSummary): number {
 	if (!("requests" in causal)) return 0;

@@ -28,6 +28,7 @@ export type SnapshotProjectionTemplate = {
 	templateKey: string;
 	container?: string;
 	containerName?: string;
+	containerKey?: string;
 	role: string;
 	kind: EntityKind;
 	count: number;
@@ -107,6 +108,7 @@ function templateFromGroup(group: TemplateGroup, delta?: SnapshotProjectionDelta
 		templateKey: group.descriptor.key,
 		...(template.container ? { container: template.container } : {}),
 		...(template.containerName ? { containerName: template.containerName } : {}),
+		...(template.containerKey ? { containerKey: template.containerKey } : {}),
 		role: template.role,
 		kind: template.kind,
 		count: template.count,
@@ -125,6 +127,7 @@ function deltaOnlyTemplate(diff: TreeTemplateDiff, delta: SnapshotProjectionDelt
 		templateKey: diff.templateKey,
 		...(diff.container ? { container: diff.container } : {}),
 		...(diff.containerName ? { containerName: diff.containerName } : {}),
+		...(diff.containerKey ? { containerKey: diff.containerKey } : {}),
 		role: diff.role,
 		kind: diff.kind,
 		count: diff.afterCount,

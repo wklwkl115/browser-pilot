@@ -30,8 +30,9 @@ function abmlAssemblyInputs(observation: CaptureObservation, ledgerFrame: Comman
 }
 
 function attributedEntitiesForCausal(entities: Entity[] | null, causal: CausalSummary | undefined, focusedRef: string | undefined, action?: CommandPerceptionLedgerFrame["lastAction"]): Entity[] | null {
-	if (!entities || !causal || !("requests" in causal)) return entities;
-	const actionEntityRef = causal.requests.length
+	if (!entities || !causal) return entities;
+	const requests = "requests" in causal ? causal.requests : [];
+	const actionEntityRef = requests.length
 		? action ? resolveActionEntityRef(action.ref, undefined, entities) : resolveActionEntityRef(undefined, focusedRef, entities)
 		: undefined;
 	const requestTriggered = actionEntityRef ? buildTriggeredRelations(causal, { hasActionRef: action !== undefined, actionAt: action?.at }) : [];
@@ -73,7 +74,7 @@ function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[]
 	const inference = buildInferenceSummary(entities, relations, abmlDiff);
 	const relevance = buildObserveRelevance(server, params, browserSessionId, pageUrl, entities, inference);
 	const snapshotProjection = buildSnapshotProjection(entities, { treeDiff });
-	const collections = buildCollectionModels({ entities, treeDiff, snapshotProjection, scanEvidence: scanCollectionEvidence(summaryData) });
+	const collections = buildCollectionModels({ entities, snapshotProjection, scanEvidence: scanCollectionEvidence(summaryData) });
 	const identityGraph = buildIdentityGraph(entities);
 	const referencedEntities = mergeEntitiesByRef(entitiesForInferenceEvidence(entities, inference)).slice(0, 12);
 	const primaryEntities = sortEntitiesBySalience(entities.filter((entity) => entity.kind !== "region"), relevance).slice(0, 10);
@@ -179,8 +180,6 @@ export function prepareScanAssembly(options: {
 function scanCollectionEvidence(data: PageWorldScanBundleV1) {
 	return {
 		listHints: data.structure.listHints,
-		rows: data.structure.rows,
 		actionables: data.structure.actionables,
-		...(data.signals.growthProbe ? { growthProbe: data.signals.growthProbe } : {}),
 	};
 }

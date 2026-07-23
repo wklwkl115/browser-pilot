@@ -52,7 +52,8 @@ function expectationComparison(expectation: AbmlStateExpectation, entity: Entity
 	const missing: string[] = [];
 	const mismatched: string[] = [];
 	for (const [key, expected] of Object.entries(expectation.state)) {
-		const observed = (entity.state as Record<string, unknown>)[key];
+		const raw = (entity.state as Record<string, unknown>)[key];
+		const observed = key === "current" && raw === undefined ? false : raw;
 		if (observed === undefined) missing.push(`state.${key}`);
 		else if (observed !== expected) mismatched.push(`state.${key}`);
 	}

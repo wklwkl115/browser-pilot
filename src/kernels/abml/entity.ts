@@ -9,8 +9,8 @@ type ScanActionableInput = ScanActionable | Record<string, unknown>;
 type ScanListHintInput = ScanListHint | Record<string, unknown>;
 type ScanVisionInput = ScanActionable | ScanCanvasRegion | Record<string, unknown>;
 
-export type EntityKind = Extract<RefKind, "element" | "control" | "text" | "region" | "media" | "frame" | "network-entry" | "event" | "signal">;
-export type EntitySource = "dom" | "ax" | "vision" | "network" | "hook" | "evidence";
+export type EntityKind = Extract<RefKind, "element" | "control" | "text" | "region" | "media" | "frame">;
+export type EntitySource = "dom" | "ax" | "vision";
 
 export type EntityState = {
 	visible: boolean;
@@ -85,7 +85,6 @@ export type Entity = {
 	source: EntitySource;
 	locators?: Locator[];
 	geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } };
-	stream?: { at: number; method?: string; url?: string; status?: number; eventType?: string; phase?: string; payloadHandle?: string };
 	children?: Entity[] | { handle: string; count: number };
 	hints?: { listContainer?: boolean; hiddenCount?: number; jsonPath?: string; selector?: string; [key: string]: unknown };
 };
@@ -303,9 +302,9 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 }
 
 function listHintNameParts(node: ScanListHintInput, index: number): { name: string; context?: string; source: "safe-label" | "safe-preview" | "fallback" } {
-	const name = firstSafeSemanticText([node.containerLabel, node.containerName, node.label], 80);
+	const name = firstSafeSemanticText([node.containerLabel], 80);
 	const preview = safeContainerLabelText(node.firstItemPreview, 80);
-	const context = safeContainerLabelText(selectorContext(node.selector), 40) ?? firstSafeSemanticText([node.heading, node.nearestHeading, node.landmarkName, node.parentLabel], 40);
+	const context = safeContainerLabelText(selectorContext(node.selector), 40);
 	if (name) return { name, ...(context ? { context } : {}), source: "safe-label" };
 	if (preview) return { name: preview, ...(context ? { context } : {}), source: "safe-preview" };
 	return { name: `list-${index}`, ...(context ? { context } : {}), source: "fallback" };

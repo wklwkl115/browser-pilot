@@ -29,7 +29,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 	defineBrowserCommand(commands, {
 		name: "browser_command",
 		label: "Browser Command",
-		description: "Send one validated native browser command through the selected or explicit target. Runtime routing, serialization, cancellation, and page-effect feedback require no extra control fields.",
+		description: "Send one validated native browser command through the selected or explicit target. Returns result plus write effect and optional verification; structured ABML verification owns its target-state diff.",
 		promptSnippet: "Use one native command for browser/CDP capabilities outside page JavaScript; read its resource only when command-specific fields are needed.",
 		promptGuidelines: [
 			TAB_SCOPED_TOOL_GUIDELINE,
@@ -96,18 +96,16 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 					if (command.cmd === "input.ref" && typeof command.ref === "string") {
 						recordAbmlActionContext({ server, browserSessionId: target.browserSessionId, tabId: target.tabId, ref: command.ref, verb: commandName, at: actionAt ?? Date.now() });
 					}
-					const diff = abmlVerification?.diff();
-					return { ...effected, ...(diff ? { diff } : {}) };
+					return effected;
 				};
 				const outcome = write
 					? await withBrowserOperation({ server, browserSessionId: target.browserSessionId, tabId: target.tabId, targetRef: target.rawTarget, timeoutMs, signal }, dispatchWrite)
 					: { result: await dispatch({ signal }) };
-				const value = "effect" in outcome ? {
-					...outcome.result,
-					effect: outcome.effect,
+				const value = {
+					result: outcome.result.data ?? null,
+					...("effect" in outcome ? { effect: outcome.effect } : {}),
 					...("verification" in outcome && outcome.verification ? { verification: outcome.verification } : {}),
-					...("diff" in outcome && outcome.diff ? { diff: outcome.diff } : {}),
-				} : outcome.result;
+				};
 				return jsonResult(value, { mode: "command", command: commandName });
 			});
 		},

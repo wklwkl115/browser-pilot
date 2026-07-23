@@ -161,14 +161,14 @@ export async function readAbmlVerificationObservation(options: AbmlVerificationR
 
 export async function prepareAbmlVerification(options: AbmlVerificationRuntimeOptions & { verb: string }) {
 	const before = await readAbmlVerificationObservation(options);
-	let after: AbmlVerificationObservation | undefined;
 	return {
 		initialVerification: verifyAbmlState(options.verb, options.expectation, { reason: "Postcondition observation did not complete" }, 0),
 		verify: async () => {
-			after = await readAbmlVerificationObservation(options);
-			return verifyAbmlState(options.verb, options.expectation, after, 0);
+			const after = await readAbmlVerificationObservation(options);
+			const result = verifyAbmlState(options.verb, options.expectation, after, 0);
+			const diff = verificationDiff(before.entity, after.entity);
+			return { ...result, ...(diff ? { diff } : {}) };
 		},
-		diff: () => verificationDiff(before.entity, after?.entity),
 	};
 }
 

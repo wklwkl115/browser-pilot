@@ -67,9 +67,7 @@ function collectionSummaries(collections: CollectionModel[]): CollectionSummary[
 			...(collection.containerNameContext ? { containerNameContext: collection.containerNameContext } : {}),
 			...(collection.containerNameSource ? { containerNameSource: collection.containerNameSource } : {}),
 			...(collection.itemRole ? { itemRole: collection.itemRole } : {}),
-			...(typeof collection.pageSize === "number" ? { pageSize: collection.pageSize } : {}),
 			...(collection.paginationControl ? { paginationControl: collection.paginationControl } : {}),
-			...(collection.scrollDirection ? { scrollDirection: collection.scrollDirection } : {}),
 			...(collection.dataSources?.length ? { dataSources: collection.dataSources } : {}),
 			...(collection.evidence.length ? { evidence: collection.evidence.map((item) => ({ source: item.source, summary: item.summary, ...(item.ref ? { ref: item.ref } : {}) })) } : {}),
 		};

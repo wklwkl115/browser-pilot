@@ -11,7 +11,8 @@ import { invokeDaemonTool } from "./client.js";
 import { runMcpPairing } from "./auth.js";
 import { getJsonPath } from "../../utils/jsonPath.js";
 import { redactSensitiveText, redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
-import { isPageObservationV3, isPageObservationView, PAGE_OBSERVATION_VIEW_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
+import { PAGE_OBSERVATION_VIEW_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
+import { isPageObservationV3, isPageObservationView } from "../../validation/pageContracts.js";
 import { OBSERVATION_RESOURCE_SCHEMA, OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
 import { publicToolValue } from "../../utils/toolResult.js";
 

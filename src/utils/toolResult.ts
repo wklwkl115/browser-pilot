@@ -44,7 +44,7 @@ function projectRecord(value: Record<string, unknown>, options: PublicToolValueO
 	const errorEnvelope = typeof value.code === "string" && typeof value.message === "string";
 	return Object.fromEntries(Object.entries(value)
 		.filter(([key]) => !isRuntimeResultKey(key) && !(errorEnvelope && key === "diagnostics"))
-		.map(([key, item]) => [key, publicToolValue(item, options)]));
+		.map(([key, item]) => [key, options.preserveExecutionData && key === "result" ? item : publicToolValue(item, options)]));
 }
 
 /** Keep private routing/lifecycle state out of every agent-facing JSON value. */

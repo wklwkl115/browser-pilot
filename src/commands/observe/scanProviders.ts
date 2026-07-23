@@ -144,7 +144,7 @@ async function appendCausalHookEvents(
 	remainingMs: () => number,
 ): Promise<{ causal: CausalSummary; hook?: RecorderState; bridgeRoundTrips: number }> {
 	const hookSeq = options.baseline?.hookSeq;
-	if (!("requests" in causal) || hookSeq === undefined || knownHook?.active !== true || remainingMs() <= 0) {
+	if (hookSeq === undefined || knownHook?.active !== true || remainingMs() <= 0) {
 		return { causal, hook: knownHook, bridgeRoundTrips: 0 };
 	}
 	try {

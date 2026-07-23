@@ -5,7 +5,7 @@ import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntim
 import { parseJsonOrThrow } from "../../utils/json.js";
 import { isRecord } from "../../utils/records.js";
 import type { PageIdentity } from "../../kernels/session/pageIdentity.js";
-import { isPageObservationV3 } from "../../kernels/abml/pageObservation.js";
+import { isPageObservationV3 } from "../../validation/pageContracts.js";
 import { pageIdentityFromUnknown } from "./pageIdentity.js";
 
 export function mergeEntitiesByRef(...groups: unknown[][]): Entity[] {
