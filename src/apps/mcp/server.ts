@@ -31,6 +31,7 @@ const NATIVE_COMMAND_URI_PREFIX = "browser-pilot://native-command/";
 const definitions = browserCommandDefinitions();
 const byName = new Map(definitions.map((definition) => [definition.name, definition]));
 const observationResources = new Map<string, ObservationResourceDescriptor & { projectRoot: string }>();
+const MAX_OBSERVATION_RESOURCES = 1024;
 const OBSERVATION_RESOURCE_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const pairingTool: McpTool = {
 	name: PAIR_TOOL_NAME,
@@ -157,6 +158,7 @@ export function registerMcpObservationResources(details: Record<string, unknown>
 			|| !["template-instances", "collection-window", "content", "details"].includes(descriptor.kind)
 			|| !Number.isFinite(descriptor.expiresAt) || descriptor.expiresAt <= now || !validObservationResourceTarget(descriptor)) continue;
 		observationResources.set(token, { ...descriptor, projectRoot: resolvedProjectRoot });
+		while (observationResources.size > MAX_OBSERVATION_RESOURCES) observationResources.delete(observationResources.keys().next().value!);
 		links.push({ type: "resource_link", uri: descriptor.uri, name: descriptor.name, mimeType: "application/json" });
 	}
 	return links;

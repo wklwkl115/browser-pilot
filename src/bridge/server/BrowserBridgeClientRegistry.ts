@@ -5,6 +5,14 @@ import { CLOSED_STATES, isOpen } from "./bridgeUtils.js";
 import { compareExtensionBuild, readExpectedExtensionBuild, type ExpectedExtensionBuild } from "./extensionBuild.js";
 import type { BridgeConnectionMetrics, BrowserBridgeClientInfo } from "./types.js";
 
+const MAX_INSTANCE_HISTORY = 64;
+
+function rememberInstance<T>(map: Map<string, T>, instanceId: string, value: T): void {
+	map.delete(instanceId);
+	map.set(instanceId, value);
+	while (map.size > MAX_INSTANCE_HISTORY) map.delete(map.keys().next().value!);
+}
+
 function stableBrowserId(extensionInstanceId: string): string {
 	return `browser_${createHash("sha256").update(extensionInstanceId).digest("hex").slice(0, 16)}`;
 }
@@ -59,7 +67,7 @@ export class BrowserBridgeClientRegistry {
 		this._lastDisconnectAt = now;
 		this._metrics.disconnects += 1;
 		if (!reconnectEligible) return;
-		if (instanceId) this.pendingReconnectAtByInstance.set(instanceId, now);
+		if (instanceId) rememberInstance(this.pendingReconnectAtByInstance, instanceId, now);
 		else this.pendingReconnectAt = now;
 	}
 
@@ -75,7 +83,7 @@ export class BrowserBridgeClientRegistry {
 		}
 		if (kind === "sw-restart") this._metrics.swRestarts += 1;
 		if (kind === "duplicate") this._metrics.duplicates += 1;
-		if (instanceId && workerBootId) this.lastWorkerBootByInstance.set(instanceId, workerBootId);
+		if (instanceId && workerBootId) rememberInstance(this.lastWorkerBootByInstance, instanceId, workerBootId);
 	}
 
 	metrics(): BridgeConnectionMetrics {

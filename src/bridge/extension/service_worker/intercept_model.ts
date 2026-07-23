@@ -59,6 +59,7 @@ export type InterceptSession = JsonRecord & {
 export const browserPilotInterceptSessions = new Map<string, InterceptSession>();
 
 const BROWSER_PILOT_INTERCEPT_DEFAULT_MAX_TRANSCRIPT = 200;
+export const BROWSER_PILOT_INTERCEPT_MAX_RULES = 100;
 
 function asString(value: unknown): string | undefined {
 	const text = typeof value === "string" ? value.trim() : "";

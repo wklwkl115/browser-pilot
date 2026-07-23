@@ -765,6 +765,9 @@ export class BrowserTabSessionRouter {
 		for (const [key, identity] of this.pendingReplacementIdentities) {
 			if (now - identity.replacedAt >= REPLACEMENT_TTL_MS) this.pendingReplacementIdentities.delete(key);
 		}
+		for (const [key, at] of this.sameTabReplacementAt) {
+			if (now - at >= REPLACEMENT_TTL_MS) this.sameTabReplacementAt.delete(key);
+		}
 		const overflow = this.replacements.size - MAX_REPLACEMENT_RECORDS;
 		if (overflow > 0) {
 			Array.from(this.replacements.entries())
@@ -778,6 +781,13 @@ export class BrowserTabSessionRouter {
 				.sort((a, b) => a[1].replacedAt - b[1].replacedAt || a[0].localeCompare(b[0]))
 				.slice(0, pendingOverflow)
 				.forEach(([key]) => this.pendingReplacementIdentities.delete(key));
+		}
+		const sameTabOverflow = this.sameTabReplacementAt.size - MAX_REPLACEMENT_RECORDS;
+		if (sameTabOverflow > 0) {
+			Array.from(this.sameTabReplacementAt.entries())
+				.sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+				.slice(0, sameTabOverflow)
+				.forEach(([key]) => this.sameTabReplacementAt.delete(key));
 		}
 	}
 }

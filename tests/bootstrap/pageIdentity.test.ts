@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { pageReanchorReason, samePageIdentity, type PageIdentity } from "../../src/kernels/session/pageIdentity.ts";
 import { PerceptionLedger } from "../../src/kernels/session/perceptionLedger.ts";
+import { SessionObservationSnapshotRegistry } from "../../src/kernels/session/observationSnapshotRegistry.ts";
 import { currentPageIdentity } from "../../src/commands/observe/pageIdentity.ts";
 import {
 	ensureBrowserPilotPageIdentity,
@@ -61,6 +62,17 @@ test("perception ledger isolates session, target generation, and document epoch 
 	assert.equal(ledger.get({ ...key, browserSessionId: "session-2" }), undefined);
 	assert.equal(ledger.get({ ...key, targetGeneration: 2 }), undefined);
 	assert.equal(ledger.get({ ...key, pageEpoch: "page-2" }), undefined);
+	ledger.record({ key: { ...key, pageEpoch: "page-2" }, snapshotId: "snap-2", capturedAt: 2, facts: {} });
+	assert.equal(ledger.get(key), undefined);
+	assert.equal(ledger.get({ ...key, pageEpoch: "page-2" })?.snapshotId, "snap-2");
+});
+
+test("observation snapshot registry keeps a bounded recent window", () => {
+	const registry = new SessionObservationSnapshotRegistry();
+	for (let index = 0; index < 300; index += 1) registry.create({ snapshotId: `snapshot-${index}`, sourceMode: "scan", capturedAt: Date.now(), ttlMs: 300_000 });
+	assert.equal(registry.list().length, 256);
+	assert.equal(registry.get("snapshot-0"), undefined);
+	assert.equal(registry.get("snapshot-299")?.snapshotId, "snapshot-299");
 });
 
 test("a live fingerprint that disagrees with the tab epoch makes identity unproven", () => {

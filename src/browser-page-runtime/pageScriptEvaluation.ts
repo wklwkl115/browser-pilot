@@ -17,7 +17,6 @@ export async function evaluatePageScriptDirect(server: Pick<BrowserCommandRuntim
 		cdpMethod: "Runtime.evaluate",
 		name: "browser-pilot-script-eval",
 		persistent: true,
-		precompile: true,
 		timeoutMs: options.timeoutMs,
 		params: { expression: script, awaitPromise: true, returnByValue: true },
 	}, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs, internal: true, signal: options.signal });

@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { isRecord } from "../../utils/records.js";
 import type { BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo } from "./types.js";
@@ -14,12 +14,37 @@ type RuntimeRecoveryBridgeInfo = {
 	version?: unknown;
 };
 
+const MAX_LOG_BYTES = 5 * 1024 * 1024;
+const MAX_EVENT_BYTES = 1024 * 1024;
+const MAX_PENDING_WRITES = 16;
+
 function artifactRoot(cwd = process.cwd()): string {
 	return path.resolve(cwd, ".browser-pilot", "artifacts", "runtime-recovery");
 }
 
 function jsonLine(value: unknown): string {
 	return `${JSON.stringify(value)}\n`;
+}
+
+function boundedJsonLine(event: Record<string, unknown>): string {
+	const line = jsonLine(event);
+	const bytes = Buffer.byteLength(line, "utf8");
+	if (bytes <= MAX_EVENT_BYTES) return line;
+	const summary: Record<string, unknown> = { omitted: true, omittedBytes: bytes };
+	for (const key of ["type", "ts", "domain", "command", "action", "method", "browserSessionId", "tabId", "browserId", "extensionId"]) {
+		if (event[key] !== undefined) summary[key] = event[key];
+	}
+	return jsonLine(summary);
+}
+
+async function appendRotating(outputPath: string, line: string): Promise<void> {
+	const size = (await stat(outputPath).catch(() => undefined))?.size ?? 0;
+	if (size > 0 && size + Buffer.byteLength(line, "utf8") > MAX_LOG_BYTES) {
+		const rotatedPath = `${outputPath}.1`;
+		await rm(rotatedPath, { force: true });
+		await rename(outputPath, rotatedPath);
+	}
+	await appendFile(outputPath, line, "utf8");
 }
 
 function domainForCommand(command: unknown): "network" | "intercept" | null {
@@ -32,20 +57,41 @@ function domainForCommand(command: unknown): "network" | "intercept" | null {
 export class BrowserRuntimeRecoveryArtifacts {
 	private tail: Promise<void> = Promise.resolve();
 	private readonly cwd: string;
+	private pendingWrites = 0;
+	private droppedEvents = 0;
 
 	constructor(cwd = process.cwd()) {
 		this.cwd = cwd;
 	}
 
 	private enqueue(fileName: string, event: Record<string, unknown>): void {
+		if (this.pendingWrites >= MAX_PENDING_WRITES) {
+			this.droppedEvents += 1;
+			return;
+		}
+		const payload = this.droppedEvents > 0 ? { ...event, droppedEvents: this.droppedEvents } : event;
+		let line: string;
+		try {
+			line = boundedJsonLine(payload);
+		} catch {
+			this.droppedEvents += 1;
+			return;
+		}
+		this.droppedEvents = 0;
+		this.pendingWrites += 1;
 		const root = artifactRoot(this.cwd);
 		const outputPath = path.join(root, fileName);
 		this.tail = this.tail
 			.then(async () => {
 				await mkdir(root, { recursive: true });
-				await appendFile(outputPath, jsonLine(event), "utf8");
+				await appendRotating(outputPath, line);
 			})
-			.catch(() => {});
+			.catch(() => {})
+			.finally(() => { this.pendingWrites -= 1; });
+	}
+
+	async flush(): Promise<void> {
+		await this.tail;
 	}
 
 	recordRuntimeRecovery(client: BrowserBridgeClientInfo | undefined, bridge: RuntimeRecoveryBridgeInfo | undefined): void {

@@ -19,6 +19,8 @@ import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "../protoc
 import type { BrowserCommandTargetTransactionInput, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot } from "../../ports/BrowserCommandRuntimePort.js";
 import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo, ExecuteOptions } from "./types.js";
 
+const MAX_KNOWN_RECORDER_STATES = 128;
+
 export class BrowserBridgeServer implements ConsentPort {
 	readonly host: string;
 	readonly requestedPort: number;
@@ -114,6 +116,7 @@ export class BrowserBridgeServer implements ConsentPort {
 		this.tabs.clear();
 		this.knownRecorderStates.clear();
 		await this.httpEndpoint.stop();
+		await this.runtimeRecoveryArtifacts.flush();
 	}
 
 	snapshot(options: { browserSessionId?: string } = {}): BrowserBridgeSnapshot {
@@ -322,7 +325,10 @@ export class BrowserBridgeServer implements ConsentPort {
 	}
 
 	recordKnownRecorderState(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined, state: { active: boolean; lastSeq?: number }): void {
-		this.knownRecorderStates.set(this.recorderStateKey(kind, browserSessionId, tabId), { ...state });
+		const key = this.recorderStateKey(kind, browserSessionId, tabId);
+		this.knownRecorderStates.delete(key);
+		this.knownRecorderStates.set(key, { ...state });
+		while (this.knownRecorderStates.size > MAX_KNOWN_RECORDER_STATES) this.knownRecorderStates.delete(this.knownRecorderStates.keys().next().value!);
 	}
 
 	clearKnownRecorderStatesForReplacement(fromTabId: number, toTabId: number, browserSessionIds: string[] = []): void {

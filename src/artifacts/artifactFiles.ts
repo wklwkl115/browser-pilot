@@ -1,6 +1,12 @@
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { browserArtifactPrivacyMetadata } from "./artifactPrivacy.js";
+
+const OBSERVATION_ARTIFACT = /^observe-[a-z0-9-]+-\d+\.json$/i;
+const OBSERVATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const OBSERVATION_MAX_FILES = 256;
+const OBSERVATION_MAX_BYTES = 64 * 1024 * 1024;
+let observationPruneTail = Promise.resolve();
 
 export function resolveArtifactPath(ctx: { cwd?: string } | undefined, requested: string | undefined, fallbackName: string): string {
 	const base = ctx?.cwd || process.cwd();
@@ -21,6 +27,39 @@ export async function saveTextArtifact(ctx: { cwd?: string } | undefined, reques
 		throw error;
 	}
 	return { path: outputPath, chars: content.length, bytes: Buffer.byteLength(content, "utf8"), privacy: browserArtifactPrivacyMetadata() };
+}
+
+async function pruneObservationArtifactDirectory(outputPath: string): Promise<void> {
+	if (!OBSERVATION_ARTIFACT.test(path.basename(outputPath))) return;
+	const dir = path.dirname(outputPath);
+	const currentPath = path.resolve(outputPath);
+	const entries = await readdir(dir, { withFileTypes: true });
+	const files = (await Promise.all(entries
+		.filter((entry) => entry.isFile() && OBSERVATION_ARTIFACT.test(entry.name))
+		.map(async (entry) => {
+			const filePath = path.join(dir, entry.name);
+			const metadata = await stat(filePath).catch(() => undefined);
+			return metadata ? { filePath, size: metadata.size, mtimeMs: metadata.mtimeMs } : undefined;
+		})))
+		.filter((file): file is { filePath: string; size: number; mtimeMs: number } => file !== undefined)
+		.sort((a, b) => Number(path.resolve(b.filePath) === currentPath) - Number(path.resolve(a.filePath) === currentPath) || b.mtimeMs - a.mtimeMs);
+	let keptFiles = 0;
+	let keptBytes = 0;
+	const cutoff = Date.now() - OBSERVATION_MAX_AGE_MS;
+	for (const file of files) {
+		const current = path.resolve(file.filePath) === currentPath;
+		if (!current && (file.mtimeMs < cutoff || keptFiles >= OBSERVATION_MAX_FILES || keptBytes + file.size > OBSERVATION_MAX_BYTES)) {
+			await rm(file.filePath, { force: true });
+			continue;
+		}
+		keptFiles += 1;
+		keptBytes += file.size;
+	}
+}
+
+export function pruneObservationArtifacts(outputPath: string): Promise<void> {
+	observationPruneTail = observationPruneTail.then(() => pruneObservationArtifactDirectory(outputPath)).catch(() => {});
+	return observationPruneTail;
 }
 
 function decodeStrictBase64Payload(payload: string): Buffer {

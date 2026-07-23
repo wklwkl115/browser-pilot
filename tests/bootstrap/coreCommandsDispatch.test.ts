@@ -23,6 +23,7 @@ let failRunScriptOnce = false;
 let failNotAttachedOnce = false;
 let failAlreadyAttachedOnce = false;
 let domainEnableConcurrency: { active: number; max: number } | undefined;
+let newDocumentScriptSeq = 0;
 
 async function debuggerCommandResult(_debuggee: Debuggee, method: string): Promise<unknown> {
 	if (domainEnableConcurrency && ["Page.enable", "Network.enable", "Runtime.enable"].includes(method)) {
@@ -40,6 +41,7 @@ async function debuggerCommandResult(_debuggee: Debuggee, method: string): Promi
 		return { result: { type: "number", value: 42 } };
 	}
 	if (method === "Runtime.evaluate") return { result: { type: "number", value: 42 } };
+	if (method === "Page.addScriptToEvaluateOnNewDocument") return { identifier: `new-document-${++newDocumentScriptSeq}` };
 	if (method === "Network.enable" && failNotAttachedOnce) {
 		failNotAttachedOnce = false;
 		throw new Error("Debugger is not attached");
@@ -166,6 +168,7 @@ function resetCdpFixtures(): void {
 	failNotAttachedOnce = false;
 	failAlreadyAttachedOnce = false;
 	domainEnableConcurrency = undefined;
+	newDocumentScriptSeq = 0;
 }
 
 function sender(tabId = 7) {
@@ -422,6 +425,22 @@ test("persistent CDP coalesces concurrent compilation after a script becomes hot
 	assert.equal(results.every((result) => result.ok), true);
 	assert.equal(debuggerCommands.filter((call) => call.method === "Runtime.compileScript").length, 1);
 	assert.equal(debuggerCommands.filter((call) => call.method === "Runtime.runScript").length, 3);
+});
+
+test("new-document scripts are bounded and forgotten on debugger detach", async () => {
+	resetCdpFixtures();
+	for (let index = 0; index < 32; index += 1) {
+		const added = await cdpCommands.browserPilotPersistentCdpBridge.addNewDocumentScript(72, `globalThis.fixture${index} = true`, { persistent: true, name: "new_document" });
+		assert.equal(added.ok, true);
+	}
+	const limited = await cdpCommands.browserPilotPersistentCdpBridge.addNewDocumentScript(72, "globalThis.overflow = true", { persistent: true, name: "new_document" });
+	assert.equal(limited.ok, false);
+	assert.equal((limited.error as { code?: string }).code, "SCRIPT_LIMIT");
+	const oversized = await cdpCommands.browserPilotPersistentCdpBridge.addNewDocumentScript(73, "x".repeat(256 * 1024 + 1), { persistent: true, name: "new_document" });
+	assert.equal((oversized.error as { code?: string }).code, "SCRIPT_TOO_LARGE");
+	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.newDocumentScripts.size, 32);
+	for (const listener of debuggerDetachListeners) listener({ tabId: 72 }, "target_closed");
+	assert.equal(cdpCommands.browserPilotPersistentCdpBridge.newDocumentScripts.size, 0);
 });
 
 test("persistent CDP coalesces concurrent tab attaches without eager domain round trips", async () => {

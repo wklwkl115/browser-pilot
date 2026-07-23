@@ -180,10 +180,13 @@ function normalizeWaitState(value: unknown, fallback = 'complete'): string {
 }
 function registerWait(tabId: number, kind: string, criteria: BrowserPilotBridgeCommand = {}): BrowserPilotWaitRecord {
   const waitId = (criteria && (criteria.waitId || criteria.wait_id)) || makeWaitId(tabId, kind);
+  const key = waitKey(tabId, waitId);
+  const previous = browserPilotWaits.get(key);
+  if (previous) cleanupBrowserPilotWait(previous, 'replaced');
   const requestId = criteria && (criteria.requestId || criteria.request_id);
   const abortController = criteria?.abortController || new AbortController();
   const record: BrowserPilotWaitRecord = { waitId: String(waitId), wait_id: String(waitId), requestId: requestId ? String(requestId) : '', request_id: requestId ? String(requestId) : '', tabId: Number(tabId), kind, criteria, createdAt: Date.now(), status: 'pending', listeners: [], timers: [], cdpAttached: false, cdpDomains: new Set<string>(), cdpSubscriptions: [], cdpEvents: [], diagnostics: [], lastEventAt: 0, lastError: null, abortController, key: '' };
-  record.key = waitKey(tabId, record.waitId);
+  record.key = key;
   // lifecycle identity: key: waitKey(tabId, record.waitId)
   browserPilotWaits.register(record);
   const onAbort = () => { record.status = 'cancelled'; };

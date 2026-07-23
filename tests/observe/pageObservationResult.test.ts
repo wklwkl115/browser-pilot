@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +8,7 @@ import { pageObservationResult } from "../../src/commands/resultMiddleware.ts";
 import { isPageObservationV3, isPageObservationView } from "../../src/kernels/abml/pageObservation.ts";
 import { OBSERVATION_RESOURCES_DETAIL_KEY, type ObservationResourceDescriptor } from "../../src/commands/observe/observationResources.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
+import { pruneObservationArtifacts } from "../../src/artifacts/artifactFiles.ts";
 
 test("canonical PageObservation returns its first semantic region and opaque MCP resources", async () => {
 	const built = buildPageObservation({
@@ -49,6 +50,26 @@ test("canonical PageObservation returns its first semantic region and opaque MCP
 	assert.equal("limits" in inline, false);
 	assert.equal("continuation" in inline, false);
 	assert.equal(result.content[0]?.text.includes("\n"), false);
+});
+
+test("observation artifacts retain only a recent bounded window", async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-retention-"));
+	try {
+		const artifacts = path.join(dir, ".browser-pilot", "artifacts");
+		await mkdir(artifacts, { recursive: true });
+		const files = Array.from({ length: 258 }, (_, index) => path.join(artifacts, `observe-scan-${index}.json`));
+		await Promise.all(files.map((file) => writeFile(file, "{}")));
+		const old = files[0]!;
+		const oldTime = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+		await utimes(old, oldTime, oldTime);
+		const current = files.at(-1)!;
+		await pruneObservationArtifacts(current);
+		assert.equal((await readdir(artifacts)).filter((name) => name.startsWith("observe-")).length, 256);
+		await assert.rejects(() => access(old));
+		await access(current);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
 });
 
 test("agent PageObservation view hides internal baseline and re-anchor bookkeeping", async () => {

@@ -197,9 +197,10 @@ export class BrowserBridgePendingRequests {
 			pending.draining = true;
 			pending.instanceId = instanceId;
 			pending.graceTimer = setTimeout(() => {
-				this.pending.delete(pending.id);
+				const expired = this.take(pending.id);
+				if (!expired) return;
 				this._metrics.graceExpired += 1;
-				pending.reject(new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", "Browser bridge client disconnected before request completed", { id: pending.id, tabId: pending.tabId, acked: pending.acked, target: this.resolvedTarget(pending.target), draining: true }));
+				expired.reject(new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", "Browser bridge client disconnected before request completed", { id: expired.id, tabId: expired.tabId, acked: expired.acked, target: this.resolvedTarget(expired.target), draining: true }));
 			}, Math.max(0, graceMs));
 			drained += 1;
 		}
@@ -219,10 +220,7 @@ export class BrowserBridgePendingRequests {
 		let reconciled = 0;
 		for (const pending of Array.from(this.pending.values())) {
 			if (!pending.draining || pending.instanceId !== instanceId) continue;
-			if (pending.graceTimer) {
-				clearTimeout(pending.graceTimer);
-				pending.graceTimer = undefined;
-			}
+			this.clearTimers(pending);
 			reconciled += 1;
 			this.pending.delete(pending.id);
 			if (pending.acked) this._metrics.reconciledInflightUnknown += 1;

@@ -122,7 +122,7 @@ async function stopNetworkRecorder(tabId: number, msg: BrowserPilotBridgeCommand
   const sessionId = defaultNetworkSessionId(msg || {});
   const recorder = getNetworkRecorder(tabId, sessionId);
   if (!recorder) return browserPilotError(BROWSER_PILOT_ERROR_CODES.NETWORK_RECORDER_NOT_STARTED, 'network recorder is not started', { tabId, sessionId });
-  const keepBuffer = msg.keepBuffer !== false && msg.keep_buffer !== false && msg.clear !== true;
+  const keepBuffer = (msg.keepBuffer === true || msg.keep_buffer === true) && msg.clear !== true;
   const result = cleanupNetworkRecorder(recorder, String(msg.reason || 'stop'), { keepBuffer });
   if (!keepBuffer || msg.remove === true) browserPilotNetworkRecorders.delete(recorder.key);
   // Forget persisted state on explicit stop
@@ -421,6 +421,8 @@ async function waitNetworkRecorder(tabId: number, msg: BrowserPilotBridgeCommand
       const m = immediateMatch();
       if (m) finishNetworkRecorderWait(recorder, wait, true, null, null, m);
     }, Math.min(250, Math.max(50, wait.idleMs || 250)));
+    const previous = recorder.waits.get(waitId);
+    if (previous) finishNetworkRecorderWait(recorder, previous, false, BROWSER_PILOT_ERROR_CODES.CANCELLED, 'network wait replaced', { waitId });
     recorder.waits.set(waitId, wait);
   });
 }

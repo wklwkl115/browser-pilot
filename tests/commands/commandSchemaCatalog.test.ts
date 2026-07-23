@@ -74,6 +74,8 @@ test("every public native command has one closed canonical parameter schema", ()
 	assert.equal(validateBridgeCommand({ cmd: "hook.install" }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "hook.install", targets: [] }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "hook.install", targets: ["console"] }, { allowMissingTabId: true }).ok, true);
+	assert.equal(validateBridgeCommand({ cmd: "hook.install", targets: ["console"], bufferSize: 10_001 }, { allowMissingTabId: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "hook.install", targets: ["console"], bufferSize: 1.5 }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "network.list", typo: true }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "transfer.download", url: "https://example.test/file", mode: "click" }, { allowMissingTabId: true }).ok, false);
 });

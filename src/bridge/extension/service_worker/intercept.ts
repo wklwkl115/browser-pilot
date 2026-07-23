@@ -3,6 +3,7 @@ import { findLostRuntimeSession, persist as persistState, forget as forgetState,
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 import {
+	BROWSER_PILOT_INTERCEPT_MAX_RULES,
 	classifyInterceptStage,
 	createInterceptSession,
 	defaultInterceptSessionId,
@@ -131,9 +132,11 @@ async function disableInterceptSession(tabId: number, msg: BrowserPilotBridgeCom
 		session.active = false;
 		session.paused.clear();
 		rememberInterceptDiagnostic(session, { action: "uninstall" });
+		const summary = interceptSessionSummary(session);
 		// Forget persisted state on explicit uninstall
 		try { await forgetState('intercept', `${Number(tabId)}:${session.sessionId}`); } catch (error) { console.warn('[BROWSER-PILOT-INTERCEPT] Failed to forget intercept session state', session.sessionId, error); }
-		return { ok: true, data: { ...interceptSessionSummary(session), uninstalled: true } };
+		browserPilotInterceptSessions.delete(session.key);
+		return { ok: true, data: { ...summary, uninstalled: true } };
 	} catch (error) {
 		rememberInterceptDiagnostic(session, { action: "uninstall_failed", error: errorText(error) });
 		return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, errorText(error), { cmd: msg.cmd, tabId, sessionId: session.sessionId });
@@ -169,7 +172,10 @@ async function handleInterceptAddRule(tabId: number, msg: BrowserPilotBridgeComm
 	if (resolved.error) return resolved.error;
 	const session = resolved.session!;
 	const rule = normalizeInterceptRule(msg || {});
-	session.rules.push(rule);
+	const existingIndex = session.rules.findIndex((item) => item.ruleId === rule.ruleId);
+	if (existingIndex >= 0) session.rules[existingIndex] = rule;
+	else if (session.rules.length >= BROWSER_PILOT_INTERCEPT_MAX_RULES) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, "intercept rule limit reached", { cmd: msg.cmd, tabId, sessionId: session.sessionId, maxRules: BROWSER_PILOT_INTERCEPT_MAX_RULES });
+	else session.rules.push(rule);
 	rememberInterceptDiagnostic(session, { action: "add_rule", ruleId: rule.ruleId, actionType: rule.action, matcher: rule.matcher });
 	try {
 		const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
@@ -416,7 +422,7 @@ registerRecovery(async (results) => {
 			if (browserPilotInterceptSessions.has(key)) return { recovered: false, historyLost: true, reason: 'session already exists' };
 			try {
 				const session = createInterceptSession(tabId, { sessionId, maxTranscript: config.maxTranscript ?? 200, stages: config.stages ?? ['request'] });
-				if (config.rules) session.rules = config.rules;
+					if (config.rules) session.rules = config.rules.slice(0, BROWSER_PILOT_INTERCEPT_MAX_RULES);
 				session.recoveredAt = Date.now();
 				session.historyLost = true;
 				session.pausedLost = true;

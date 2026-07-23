@@ -28,6 +28,8 @@ export type PerceptionTraceSnapshot = {
 };
 
 const MAX_TRACE_TERMS_PER_SESSION = 32;
+const MAX_LEDGER_FRAMES = 128;
+const MAX_TRACE_SESSIONS = 64;
 
 function keyString(key: PerceptionLedgerKey): string {
 	return [key.browserSessionId, key.tabId, key.targetGeneration, key.pageEpoch].join("\u0000");
@@ -47,7 +49,13 @@ export class PerceptionLedger {
 	}
 
 	record(frame: PerceptionLedgerFrame): PerceptionLedgerFrame {
-		this.frames.set(keyString(frame.key), frame);
+		const key = keyString(frame.key);
+		for (const [existingKey, existing] of this.frames) {
+			if (existingKey !== key && existing.key.browserSessionId === frame.key.browserSessionId && existing.key.tabId === frame.key.tabId) this.frames.delete(existingKey);
+		}
+		this.frames.delete(key);
+		this.frames.set(key, frame);
+		while (this.frames.size > MAX_LEDGER_FRAMES) this.frames.delete(this.frames.keys().next().value!);
 		return frame;
 	}
 
@@ -79,7 +87,9 @@ export class PerceptionLedger {
 			next.push({ term: text, kind: term.kind, weight: term.weight, at, seq: this.traceSeq });
 		}
 		const retained = next.slice(-MAX_TRACE_TERMS_PER_SESSION);
+		this.traces.delete(key);
 		this.traces.set(key, retained);
+		while (this.traces.size > MAX_TRACE_SESSIONS) this.traces.delete(this.traces.keys().next().value!);
 		return { terms: [...retained].reverse(), latestSeq: this.traceSeq };
 	}
 

@@ -542,6 +542,7 @@
       "domain": "network",
       "tabScoped": true,
       "accessMode": "write",
+      "notes": "Stops and clears the recorder by default; set keepBuffer=true only when post-stop inspection is required.",
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -842,7 +843,7 @@
         "type": "object",
         "properties": {
           "targets": { "anyOf": [{ "type": "array", "minItems": 1, "items": { "enum": ["console", "error", "networkApi", "websocket", "storage", "crypto", "dom", "domSinks", "cookies"] } }, { "type": "object", "minProperties": 1 }] },
-          "options": { "type": "object" }, "bufferSize": { "type": "number" }
+          "options": { "type": "object" }, "bufferSize": { "type": "integer", "minimum": 1, "maximum": 10000 }
         },
         "required": ["targets"],
         "additionalProperties": false
@@ -999,7 +1000,7 @@
       ],
       "paramsSchema": {
         "type": "object",
-        "properties": { "source": { "type": "string" }, "runImmediately": { "type": "boolean" }, "worldName": { "type": "string" }, "includeCommandLineAPI": { "type": "boolean" } },
+        "properties": { "source": { "type": "string", "maxLength": 262144 }, "runImmediately": { "type": "boolean" }, "worldName": { "type": "string" }, "includeCommandLineAPI": { "type": "boolean" } },
         "required": ["source"], "additionalProperties": false
       }
     },

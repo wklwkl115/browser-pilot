@@ -37,6 +37,7 @@ import type { ConsentDecision } from "./authTypes.js";
 
 export const DAEMON_VERSION = daemonVersion();
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
+const MAX_PENDING_PAIR_RESULTS = 64;
 
 export interface DaemonHandle {
 	controlHost: string;
@@ -65,6 +66,7 @@ export interface StartDaemonOptions {
 }
 
 type JsonSender = (status: number, obj: Record<string, unknown>) => void;
+type PendingPairResult = { result: Promise<PairResult>; expiry: NodeJS.Timeout };
 
 export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName"> & {
 	req: http.IncomingMessage;
@@ -91,7 +93,7 @@ type DaemonControlContext = {
 	toolByName: Map<string, CommandDefinition>;
 	toolCount: number;
 	contractIdentity: DaemonContractIdentity;
-	pendingPairResults: Map<string, Promise<PairResult>>;
+	pendingPairResults: Map<string, PendingPairResult>;
 	composeSummaries: () => PairingSummary[];
 	draining: boolean;
 	close: () => Promise<void>;
@@ -297,6 +299,7 @@ async function handlePairStartRoute(context: DaemonControlContext, req: http.Inc
 	const { label } = await readBody(req);
 	if (!context.bridgeServer.hasConsentSurface()) return send(409, { ok: false, code: AUTH_ERROR_CODES.pairNoExtension });
 	authStore.sweepExpiredPending();
+	if (context.pendingPairResults.size >= MAX_PENDING_PAIR_RESULTS) return send(429, { ok: false, code: "PAIRING_BUSY" });
 	const { pairingId, code } = authStore.mintPending(String(label ?? "agent"));
 	const result = context.bridgeServer.sendConsentRequest({ pairingId, label: String(label ?? "agent"), code, expiresAt: new Date(Date.now() + PAIR_PENDING_TTL_MS).toISOString(), timeoutMs: PAIR_PENDING_TTL_MS })
 		.then(async (decision: ConsentDecision): Promise<PairResult> => {
@@ -312,7 +315,9 @@ async function handlePairStartRoute(context: DaemonControlContext, req: http.Inc
 			await authStore.deny(pairingId);
 			return { decision: "timeout" };
 		});
-	context.pendingPairResults.set(pairingId, result);
+	const expiry = setTimeout(() => context.pendingPairResults.delete(pairingId), PAIR_PENDING_TTL_MS);
+	expiry.unref();
+	context.pendingPairResults.set(pairingId, { result, expiry });
 	return send(200, { ok: true, pairingId, code });
 }
 
@@ -321,7 +326,8 @@ async function handlePairWaitRoute(context: DaemonControlContext, req: http.Inco
 	const key = String(pairingId);
 	const pending = context.pendingPairResults.get(key);
 	if (!pending) return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
-	const result = await pending;
+	const result = await pending.result;
+	clearTimeout(pending.expiry);
 	context.pendingPairResults.delete(key);
 	if (result.decision === "approve" && result.token) return send(200, { ok: true, token: result.token });
 	if (result.decision === "deny") return send(403, { ok: false, code: AUTH_ERROR_CODES.pairDenied });
@@ -418,7 +424,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 			.catch((error: unknown) => console.error(`[browser-pilot] revoke persistence failed: ${error instanceof Error ? error.message : String(error)}`));
 	});
 
-	const pendingPairResults = new Map<string, Promise<PairResult>>();
+	const pendingPairResults = new Map<string, PendingPairResult>();
 
 	let startPromise: Promise<void> | undefined;
 	const ensureStarted: EnsureStarted = async () => {
@@ -449,6 +455,8 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	const close = async (): Promise<void> => {
 		if (closing) return;
 		closing = true;
+		for (const pending of pendingPairResults.values()) clearTimeout(pending.expiry);
+		pendingPairResults.clear();
 		await new Promise<void>((resolve) => {
 			server.close(() => resolve());
 			server.closeIdleConnections?.();

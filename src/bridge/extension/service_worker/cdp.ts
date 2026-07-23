@@ -24,6 +24,8 @@ const BROWSER_PILOT_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS = 15000;
 const BROWSER_PILOT_PERSISTENT_CDP_MAX_SESSIONS = 16;
 const BROWSER_PILOT_CDP_MAX_COMPILED_SCRIPTS = 32;
 const BROWSER_PILOT_CDP_MAX_SCRIPT_HITS = 64;
+const BROWSER_PILOT_CDP_MAX_NEW_DOCUMENT_SCRIPTS = 32;
+const BROWSER_PILOT_CDP_MAX_NEW_DOCUMENT_SCRIPT_CHARS = 256 * 1024;
 
 const browserPilotPersistentCdpSessions = new Map<string, BrowserPilotCdpSession>();
 const browserPilotPersistentCdpChildSessions = new Map<string, BrowserPilotCdpChildSession>();
@@ -637,11 +639,20 @@ async function browserPilotPersistentCdpEvaluateInFrame(tabId: number, expressio
   }
 }
 
+function browserPilotCdpNewDocumentScriptLimitError(tabId: number, name: string, source: string): BrowserPilotCdpResponse | undefined {
+  if (source.length > BROWSER_PILOT_CDP_MAX_NEW_DOCUMENT_SCRIPT_CHARS) return browserPilotCdpError('SCRIPT_TOO_LARGE', 'new document script source is too large', { maxChars:BROWSER_PILOT_CDP_MAX_NEW_DOCUMENT_SCRIPT_CHARS, chars:source.length });
+  if (browserPilotCdpKnownNewDocumentIdentifiers(tabId, name).length >= BROWSER_PILOT_CDP_MAX_NEW_DOCUMENT_SCRIPTS) return browserPilotCdpError('SCRIPT_LIMIT', 'too many new document scripts', { tabId:Number(tabId), cdpSessionName:name, max:BROWSER_PILOT_CDP_MAX_NEW_DOCUMENT_SCRIPTS });
+  return undefined;
+}
+
 async function browserPilotPersistentCdpAddNewDocumentScript(tabId: number, source: unknown, options: BrowserPilotCdpOptions = {}): Promise<BrowserPilotCdpResponse> {
   if (!source) return browserPilotCdpError('NO_SOURCE', 'script source is required');
   const cdpOptions = { ...(options || {}), persistent: options?.persistent === true, name: options?.name || 'new_document' };
+  const scriptSource = String(source);
+  const limitError = browserPilotCdpNewDocumentScriptLimitError(tabId, cdpOptions.name, scriptSource);
+  if (limitError) return limitError;
   const params = {
-    source: String(source),
+    source: scriptSource,
     includeCommandLineAPI: Boolean(options?.includeCommandLineAPI),
     runImmediately: Boolean(options?.runImmediately)
   };
@@ -749,7 +760,10 @@ function cleanupPersistentCdpForTab(tabId: number, _reason?: string): JsonRecord
     if (rec && Number(rec.tabId) === target) browserPilotPersistentCdpChildSessions.delete(key);
   }
   for (const [key, rec] of Array.from(browserPilotPersistentCdpNewDocumentScripts.entries())) {
-    if (rec && Number(rec.tabId) === target) browserPilotPersistentCdpNewDocumentScripts.delete(key);
+    if (rec && Number(rec.tabId) === target) {
+      browserPilotPersistentCdpNewDocumentScripts.delete(key);
+      void browserPilotCdpForgetNewDocumentScriptState(rec.tabId, rec.cdpSessionName, rec.identifier).catch(() => {});
+    }
   }
   return { tabId: target, released: removed.length, sessionKeys: removed };
 }
@@ -787,6 +801,12 @@ chrome.debugger.onDetach.addListener((source, _reason) => {
   }
   for (const [key, rec] of Array.from(browserPilotPersistentCdpChildSessions.entries())) {
     if (rec.tabId === source.tabId) browserPilotPersistentCdpChildSessions.delete(key);
+  }
+  for (const [key, rec] of Array.from(browserPilotPersistentCdpNewDocumentScripts.entries())) {
+    if (rec.tabId === source.tabId) {
+      browserPilotPersistentCdpNewDocumentScripts.delete(key);
+      void browserPilotCdpForgetNewDocumentScriptState(rec.tabId, rec.cdpSessionName, rec.identifier).catch(() => {});
+    }
   }
 });
 

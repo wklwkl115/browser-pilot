@@ -52,6 +52,7 @@ declare global {
     }
   }
   const DEFAULT_BUFFER_SIZE = 1000;
+  const MAX_BUFFER_SIZE = 10000;
   const ERROR_CODES = {
     NO_SESSION: 'NO_SESSION', ALREADY_INSTALLED: 'ALREADY_INSTALLED', NOT_INSTALLED: 'NOT_INSTALLED',
     SESSION_NOT_FOUND: 'SESSION_NOT_FOUND', INVALID_SESSION: 'INVALID_SESSION',
@@ -767,7 +768,7 @@ declare global {
     const requestedSessionId = String(opts.session_id || ('browser-pilot-hook-' + Date.now() + '-' + Math.random().toString(16).slice(2)));
     const requestedTargets = Object.assign({}, DEFAULT_TARGETS, asRecord(opts.targets)) as HookTargets;
     const requestedOptions = Object.assign({}, asRecord(opts.options)) as HookOptions;
-    const requestedBufferSize = Math.max(1, Number(opts.buffer_size || requestedOptions.buffer_size || DEFAULT_BUFFER_SIZE));
+    const requestedBufferSize = Math.min(MAX_BUFFER_SIZE, Math.max(1, Math.trunc(Number(opts.buffer_size || requestedOptions.buffer_size || DEFAULT_BUFFER_SIZE) || DEFAULT_BUFFER_SIZE)));
     const requestedFingerprint = buildInstallFingerprint(requestedSessionId, requestedTargets, requestedOptions, requestedBufferSize, opts.install_fingerprint);
     const sameSession = session_id === requestedSessionId;
     const sameFingerprint = install_fingerprint === requestedFingerprint;

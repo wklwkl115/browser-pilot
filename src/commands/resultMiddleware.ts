@@ -1,6 +1,6 @@
 import { stableJson } from "../utils/json.js";
 import { redactSensitiveValue } from "../artifacts/artifactPrivacy.js";
-import { saveTextArtifact } from "../artifacts/artifactFiles.js";
+import { pruneObservationArtifacts, saveTextArtifact } from "../artifacts/artifactFiles.js";
 import type { PageObservationV3, PageObservationView } from "../kernels/abml/pageObservation.js";
 import { publicToolValue, type BrowserTextCommandResult } from "../utils/toolResult.js";
 import { OBSERVATION_RESOURCES_DETAIL_KEY, projectObservationResources } from "./observe/observationResources.js";
@@ -22,6 +22,7 @@ const MAX_OBSERVATION_RESULT_BYTES = 32 * 1024;
 export async function pageObservationResult(options: PageObservationResultOptions): Promise<BrowserTextCommandResult> {
 	const artifactText = stableJson(options.observation);
 	const saved = await saveTextArtifact(options.ctx, options.artifactPath, options.fallbackName, artifactText);
+	await pruneObservationArtifacts(saved.path);
 	const projected = projectObservationResources(options.observation, saved.path, options.intent);
 	const modelSafe = publicToolValue(redactSensitiveValue(projected.observation)) as PageObservationView;
 	const rendered = JSON.stringify(modelSafe);

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import type { WebSocket } from "ws";
 import { BrowserBridgePendingRequests } from "../../src/bridge/server/BrowserBridgePendingRequests.ts";
 
@@ -110,7 +111,9 @@ test("rejectAllStopped clears every pending request with a bridge stopped error"
 test("drainClient holds an in-flight request, then fails it after the grace window", async () => {
 	const pr = newPending();
 	const ws = fakeSocket();
-	const promise = pr.send(ws, "code", { tabId: 1, timeoutMs: 5_000 });
+	const controller = new AbortController();
+	const promise = pr.send(ws, "code", { tabId: 1, timeoutMs: 5_000, signal: controller.signal });
+	assert.equal(getEventListeners(controller.signal, "abort").length, 1);
 	let settled: unknown = null;
 	void promise.then((value) => (settled = { value }), (error) => (settled = error));
 
@@ -121,6 +124,7 @@ test("drainClient holds an in-flight request, then fails it after the grace wind
 	await delay(60);
 	assert.ok(Object(settled) instanceof Error, "request fails after grace expiry");
 	assert.equal((settled as unknown as { code: string }).code, "BRIDGE_CLIENT_DISCONNECTED");
+	assert.equal(getEventListeners(controller.signal, "abort").length, 0);
 });
 
 test("a result arriving during the grace window settles the request normally", async () => {
@@ -158,7 +162,8 @@ test("reconnect fails not-acked as not-delivered and acked as inflight-unknown",
 	const ws = fakeSocket();
 	const newWs = fakeSocket();
 
-	const notAcked = pr.send(ws, "c1", { tabId: 1, timeoutMs: 5_000 });
+	const controller = new AbortController();
+	const notAcked = pr.send(ws, "c1", { tabId: 1, timeoutMs: 5_000, signal: controller.signal });
 	const acked = pr.send(ws, "c2", { tabId: 2, timeoutMs: 5_000 });
 	pr.ack(lastId(ws)); // ack the second request (c2)
 	pr.drainClient(ws, "inst-X", 1_000);
@@ -177,6 +182,7 @@ test("reconnect fails not-acked as not-delivered and acked as inflight-unknown",
 		return true;
 	});
 	assert.equal(newWs.sent.length, 0, "reconnect never redelivers");
+	assert.equal(getEventListeners(controller.signal, "abort").length, 0);
 });
 
 test("reconnect with no instance id is a no-op; the request still fails at grace expiry", async () => {

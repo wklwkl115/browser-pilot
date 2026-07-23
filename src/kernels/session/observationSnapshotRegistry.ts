@@ -29,6 +29,7 @@ export type SessionBridgeSnapshotView = {
 };
 
 const DEFAULT_SNAPSHOT_TTL_MS = 5 * 60_000;
+const MAX_SNAPSHOTS = 256;
 
 export class SessionObservationSnapshotRegistry {
 	private readonly snapshots = new Map<string, SessionObservationSnapshotInfo>();
@@ -58,6 +59,7 @@ export class SessionObservationSnapshotRegistry {
 			saved: snapshot.saved,
 		};
 		this.snapshots.set(record.snapshotId, record);
+		while (this.snapshots.size > MAX_SNAPSHOTS) this.snapshots.delete(this.snapshots.keys().next().value!);
 		return { ...record, expired: false };
 	}
 

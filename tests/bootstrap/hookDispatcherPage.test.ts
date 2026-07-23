@@ -119,6 +119,13 @@ test("page hook owns install, bounded collection, pause, redaction, and console 
 	assert.deepEqual(plain(removed.data?.cleanup_warnings), []);
 });
 
+test("page hook clamps direct buffer allocation", () => {
+	const page = pageHarness();
+	assert.equal(page.api.install({ session_id: "bounded", buffer_size: Number.MAX_SAFE_INTEGER }).ok, true);
+	assert.equal((page.api.status({ session_id: "bounded" }).data?.stats as JsonRecord).buffer_size, 10_000);
+	assert.equal(page.api.uninstall({ session_id: "bounded" }).ok, true);
+});
+
 test("page hook records fetch request/response data and restores the original fetch", async () => {
 	const originalFetch = async () => new Response("ok", { status: 201 });
 	const page = pageHarness({ fetch: originalFetch });
