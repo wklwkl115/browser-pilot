@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import os from "node:os";
 import path from "node:path";
@@ -66,6 +66,7 @@ test("MCP pairing tokens are client/project-scoped and pinned for the process", 
 		await writeFile(tokenA, JSON.stringify({ token: "token-a" }));
 		await writeFile(tokenB, JSON.stringify({ token: "token-b" }));
 		assert.equal(resolvePairingToken(projectA, "client-a"), "token-a");
+		if (process.platform !== "win32") assert.equal((await stat(tokenA)).mode & 0o777, 0o600);
 		assert.equal(resolvePairingToken(projectB, "client-a"), "token-b");
 		await writeFile(tokenA, JSON.stringify({ token: "overwritten" }));
 		assert.equal(resolvePairingToken(projectA, "client-a"), "token-a");

@@ -2,7 +2,6 @@
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
-import { enableCspBypassForTab } from "./bridge_info";
 import type { JsonRecord, BrowserPilotChromeTab, BrowserPilotWebSocketLike } from "./types";
 
 const NEW_TAB_OBSERVE_WAIT_MS = 50;
@@ -314,7 +313,6 @@ async function handleWsExec(data: ExecRequest, socket: BrowserPilotWebSocketLike
 	}
 	// ACK now means validation and the exact semantic action boundary both succeeded.
 	sendExecMessage(socket, { type:'ack', id:data.id });
-	enableCspBypassForTab(tabId);
   if (await handleExecShortcut(data, codeText, socket)) return;
   const newTabIds = new Set<number>();
   const onCreated = (tab: BrowserPilotChromeTab) => { if (tab.id !== undefined) newTabIds.add(tab.id); };

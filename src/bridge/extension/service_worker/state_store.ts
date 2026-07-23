@@ -31,8 +31,7 @@ type RuntimeStateKind =
   | "ws"
   | "cdp"
   | "wait"
-  | "queue"
-  | "cspBypass";
+  | "queue";
 
 type RecoveryPolicy = "auto" | "manual" | "diagnosticOnly";
 

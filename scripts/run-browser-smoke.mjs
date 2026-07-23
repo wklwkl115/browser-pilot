@@ -69,6 +69,7 @@ async function daemonJson(daemon, pathname, init = {}, timeoutMs = 10_000) {
 		...init,
 		headers: {
 			"x-browser-pilot-daemon-token": daemon.token,
+			...(pairingToken ? { "x-browser-pilot-pairing-token": pairingToken } : {}),
 			...(init.body ? { "content-type": "application/json" } : {}),
 			...init.headers,
 		},
@@ -219,8 +220,14 @@ async function launchConnectedBrowser(daemon, fixtureUrl, profileRoot) {
 }
 
 await import("./build-bridge.mjs");
-const { startDaemon } = await import("../src/apps/daemon/server.ts");
 const profileDir = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-smoke-"));
+process.env.BROWSER_PILOT_AUTH_STATE_DIR = path.join(profileDir, "auth");
+const { startDaemon } = await import("../src/apps/daemon/server.ts");
+const authStore = await import("../src/apps/daemon/authStore.ts");
+const pendingPairing = authStore.mintPending("browser-smoke");
+const approvedPairing = await authStore.approve(pendingPairing.pairingId);
+if (!approvedPairing) throw new Error("smoke pairing setup failed");
+const pairingToken = approvedPairing.token;
 const fixture = await startFixtureServer();
 const daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true });
 let browser;

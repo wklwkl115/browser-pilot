@@ -1,7 +1,6 @@
 import { chromeApi as chrome } from "./runtimeEnv";
 import { isBrowserPilotNativeCommand } from "./runtime.js";
 import { BROWSER_PILOT_ERROR_CODES, bridgeError } from "./runtimeSupport.js";
-import { enableCspBypassForTab } from "./bridge_info";
 import { dispatchBrowserPilotBridgeCommand, validateBrowserPilotBridgeProtocolMessage } from "./core_commands";
 import { handleWsExec } from "./exec";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeMessageSender } from "./types";
@@ -136,7 +135,6 @@ async function dispatchValidatedBrowserPilotBridgeWsCommand(data: RoutedBrowserP
 	// From this point an ACK means the exact operation/action boundary is established and the
 	// validated handler is about to run, rather than merely that the envelope was received.
 	socket.send(JSON.stringify({ type: "ack", id: data.id }));
-	enableCspBypassForTab(msg.tabId);
 	const res = await dispatchBrowserPilotBridgeCommand(msg, {});
 	sendBrowserPilotBridgeWsCommandResult(socket, data.id, msg, res);
 }

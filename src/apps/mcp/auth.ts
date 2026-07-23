@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { chmodSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { ENV_AUTH_STATE_DIR, ENV_PAIRING_TOKEN, PAIR_WAIT_DEFAULT_MS } from "../daemon/authTypes.js";
@@ -19,6 +19,7 @@ export function resolvePairingToken(projectRoot = process.cwd(), clientName = ""
 	const tokenPath = agentTokenPath(projectRoot, clientName);
 	if (pairingTokens.has(tokenPath)) return pairingTokens.get(tokenPath);
 	try {
+		if (process.platform !== "win32") chmodSync(tokenPath, 0o600);
 		const parsed = JSON.parse(readFileSync(tokenPath, "utf8")) as { token?: unknown };
 		const token = typeof parsed.token === "string" && parsed.token ? parsed.token : undefined;
 		pairingTokens.set(tokenPath, token);

@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import { noBrowserExtensionError } from "../errors.js";
 import { BrowserBridgeError } from "../../utils/errors.js";
 import { CLOSED_STATES, isOpen } from "./bridgeUtils.js";
 import { compareExtensionBuild, readExpectedExtensionBuild, type ExpectedExtensionBuild } from "./extensionBuild.js";
@@ -19,7 +18,6 @@ function updateExtensionInstanceIdentity(current: BrowserBridgeClientInfo, value
 export class BrowserBridgeClientRegistry {
 	private readonly clients = new Set<WebSocket>();
 	private readonly clientInfo = new Map<WebSocket, BrowserBridgeClientInfo>();
-	private extensionClient?: WebSocket;
 	private everConnected = false;
 	private everHandshaked = false;
 	private _lastDisconnectReason?: string;
@@ -53,7 +51,6 @@ export class BrowserBridgeClientRegistry {
 	unregister(ws: WebSocket): void {
 		this.clients.delete(ws);
 		this.clientInfo.delete(ws);
-		if (this.extensionClient === ws) this.extensionClient = undefined;
 	}
 
 	recordDisconnect(reason: string, instanceId?: string, reconnectEligible = true): void {
@@ -103,7 +100,6 @@ export class BrowserBridgeClientRegistry {
 		}
 		this.clients.clear();
 		this.clientInfo.clear();
-		this.extensionClient = undefined;
 		this.pendingReconnectAt = undefined;
 		this.pendingReconnectAtByInstance.clear();
 		this.lastWorkerBootByInstance.clear();
@@ -210,22 +206,6 @@ export class BrowserBridgeClientRegistry {
 		return superseded;
 	}
 
-	select(ws: WebSocket | undefined): void {
-		this.extensionClient = ws;
-	}
-
-	selectedClient(): WebSocket | undefined {
-		return this.extensionClient;
-	}
-
-	selectedOpenClient(): WebSocket | undefined {
-		return isOpen(this.extensionClient) ? this.extensionClient : undefined;
-	}
-
-	selectedInfo(): BrowserBridgeClientInfo | undefined {
-		return this.extensionClient ? this.clientInfo.get(this.extensionClient) : undefined;
-	}
-
 	connectedClientsCount(): number {
 		return Array.from(this.clients).filter((ws) => !CLOSED_STATES.has(ws.readyState as 2 | 3)).length;
 	}
@@ -248,13 +228,6 @@ export class BrowserBridgeClientRegistry {
 			if (info.id === id || info.extensionId === id) return { ws, info };
 		}
 		return undefined;
-	}
-
-	requireExtensionClient(): WebSocket {
-		if (isOpen(this.extensionClient)) return this.extensionClient;
-		const open = Array.from(this.clients).find(isOpen);
-		if (open) return open;
-		throw noBrowserExtensionError({ port: this.getPort(), everConnected: this.everConnected, extensionConnected: false });
 	}
 
 	browserIdForClient(client: WebSocket): string {

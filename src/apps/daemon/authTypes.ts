@@ -37,7 +37,6 @@ export const PAIR_WAIT_DEFAULT_MS = 120_000;
 // ---- Headers / environment variables ----
 export const PAIRING_TOKEN_HEADER = "x-browser-pilot-pairing-token";
 export const ENV_PAIRING_TOKEN = "BROWSER_PILOT_PAIRING_TOKEN";
-export const ENV_REQUIRE_PAIRING = "BROWSER_PILOT_REQUIRE_PAIRING";
 export const ENV_AUTH_STATE_DIR = "BROWSER_PILOT_AUTH_STATE_DIR";
 
 // ---- Error codes (returned in HTTP body { ok:false, code }) ----

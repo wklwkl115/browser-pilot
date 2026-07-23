@@ -43,9 +43,6 @@ const chromeStub = {
 		create() {},
 		async clear() { return true; },
 	},
-	declarativeNetRequest: {
-		async updateSessionRules() {},
-	},
 	debugger: { onDetach: { addListener() {} }, onEvent: { addListener() {} } },
 };
 

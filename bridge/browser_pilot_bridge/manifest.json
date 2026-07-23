@@ -13,7 +13,6 @@
     "debugger",
     "scripting",
     "alarms",
-    "declarativeNetRequest",
     "management",
     "contentSettings",
     "downloads",
@@ -35,17 +34,6 @@
     "type": "module"
   },
   "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "dist/disable_dialogs.js"
-      ],
-      "run_at": "document_start",
-      "all_frames": true,
-      "world": "MAIN"
-    },
     {
       "matches": [
         "<all_urls>"

@@ -46,10 +46,14 @@
     "build:bridge": "node scripts/build-bridge.mjs",
     "prepare": "tsc -p tsconfig.build.json && node scripts/build-bridge.mjs --quiet",
     "mcp": "tsx src/apps/mcp/bin.ts",
+    "test": "node scripts/run-tests.mjs all",
     "typecheck": "tsc -p tsconfig.json",
+    "typecheck:bridge": "tsc -p tsconfig.bridge-src.json",
     "typecheck:tests": "tsc -p tsconfig.tests.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "verify": "npm run typecheck && npm run typecheck:bridge && npm run typecheck:tests && npm run lint && npm test && npm run build:bridge",
+    "smoke:browser": "node --import tsx scripts/run-browser-smoke.mjs --quiet",
     "prepack": "npm run build && node scripts/build-bridge.mjs --quiet"
   },
   "dependencies": {

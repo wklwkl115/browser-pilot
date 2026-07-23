@@ -30,7 +30,6 @@ import {
 	AUTH_ERROR_CODES,
 	PAIRING_TOKEN_HEADER,
 	PAIR_PENDING_TTL_MS,
-	ENV_REQUIRE_PAIRING,
 	type AgentRecord,
 	type PairingSummary,
 } from "./authTypes.js";
@@ -201,14 +200,13 @@ function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, con
 function authorizePairing(req: http.IncomingMessage): PairingAuthorization {
 	const ptoken = req.headers[PAIRING_TOKEN_HEADER];
 	const rec = authStore.findByToken(typeof ptoken === "string" ? ptoken : undefined);
-	if (!rec) return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid } };
-	if (rec.status === "revoked") return { ok: false, status: 403, body: { ok: false, code: AUTH_ERROR_CODES.pairingRevoked } };
-	if (rec.status !== "active") return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid } };
+	if (!rec) return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid, error: "Browser pairing required; call browser_pair with action=start." } };
+	if (rec.status === "revoked") return { ok: false, status: 403, body: { ok: false, code: AUTH_ERROR_CODES.pairingRevoked, error: "Browser pairing was revoked; pair this agent again." } };
+	if (rec.status !== "active") return { ok: false, status: 401, body: { ok: false, code: AUTH_ERROR_CODES.pairingInvalid, error: "Browser pairing is not active; complete browser_pair before invoking tools." } };
 	return { ok: true, record: rec };
 }
 
 function authorizeInvoke(req: http.IncomingMessage): { ok: true; ownerId: string } | { ok: false; status: number; body: Record<string, unknown> } {
-	if (process.env[ENV_REQUIRE_PAIRING] !== "1" && !authStore.hasActiveAgents()) return { ok: true, ownerId: "local-mcp" };
 	const auth = authorizePairing(req);
 	if (!auth.ok) return auth;
 	authStore.touch(auth.record.pairingId);
@@ -247,10 +245,10 @@ async function executeInvoke(invocation: PreparedInvoke, signal?: AbortSignal): 
 }
 
 export async function handleInvokeRoute({ req, send, body, toolByName, signal }: InvokePipelineContext): Promise<void> {
-	const prepared = prepareInvoke(body, toolByName);
-	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
 	const auth = authorizeInvoke(req);
 	if (!auth.ok) return send(auth.status, auth.body);
+	const prepared = prepareInvoke(body, toolByName);
+	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
 	return send(200, await executeInvoke(prepared, signal));
 }
 
@@ -385,7 +383,7 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 				return await handlePairWaitRoute(context, req, send);
 			case "POST /revoke": {
 				const { pairingId } = await readBody(req);
-				if (!authStore.revoke(String(pairingId))) return send(404, { ok: false, code: AUTH_ERROR_CODES.pairingNotFound });
+				if (!await authStore.revoke(String(pairingId))) return send(404, { ok: false, code: AUTH_ERROR_CODES.pairingNotFound });
 				context.bridgeServer.broadcastPairedAgents(context.composeSummaries());
 				return send(200, { ok: true, revoked: pairingId });
 			}
@@ -415,8 +413,9 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	}
 
 	bridgeServer.onRevokeRequest((pairingId: string) => {
-		authStore.revoke(pairingId);
-		bridgeServer.broadcastPairedAgents(composeSummaries());
+		void authStore.revoke(pairingId)
+			.then((revoked) => { if (revoked) bridgeServer.broadcastPairedAgents(composeSummaries()); })
+			.catch((error: unknown) => console.error(`[browser-pilot] revoke persistence failed: ${error instanceof Error ? error.message : String(error)}`));
 	});
 
 	const pendingPairResults = new Map<string, Promise<PairResult>>();

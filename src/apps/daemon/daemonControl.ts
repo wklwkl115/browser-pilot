@@ -15,7 +15,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { packageRoot } from "./packageInfo.js";
@@ -93,8 +93,9 @@ export function readLockfile(): DaemonInfo | undefined {
 }
 
 export function writeLockfile(info: DaemonInfo): void {
-	mkdirSync(path.dirname(lockfilePath()), { recursive: true });
-	writeFileSync(lockfilePath(), `${JSON.stringify(info, null, 2)}\n`, "utf8");
+	mkdirSync(path.dirname(lockfilePath()), { recursive: true, mode: 0o700 });
+	writeFileSync(lockfilePath(), `${JSON.stringify(info, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+	if (process.platform !== "win32") chmodSync(lockfilePath(), 0o600);
 }
 
 export function removeLockfile(): void {
@@ -163,9 +164,9 @@ function releaseOwnedStartLock(token: string): void {
 }
 
 function tryAcquireStartLock(): { release: () => void } | undefined {
-	mkdirSync(path.dirname(startLockfilePath()), { recursive: true });
+	mkdirSync(path.dirname(startLockfilePath()), { recursive: true, mode: 0o700 });
 	try {
-		const fd = openSync(startLockfilePath(), "wx");
+		const fd = openSync(startLockfilePath(), "wx", 0o600);
 		const token = randomUUID();
 		try {
 			writeFileSync(fd, `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString(), token })}\n`, "utf8");

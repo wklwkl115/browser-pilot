@@ -28,18 +28,30 @@ jobs:
     name: produce npm tarball
     needs: tag-check
     runs-on: ubuntu-latest
+    outputs:
+      sha256: ${{ steps.artifact.outputs.sha256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify
+        run: npm run verify
 
       - name: Pack tarball
         run: npm pack --pack-destination release-artifact
 
       - name: Check retained tarball name
-        run: node scripts/verify-release-artifact.mjs --artifact-dir release-artifact
+        id: artifact
+        run: node scripts/verify-release-artifact.mjs --artifact-dir release-artifact --github-output "$GITHUB_OUTPUT"
 
       - name: Upload the only publishable artifact
         uses: actions/upload-artifact@v4
@@ -49,9 +61,29 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  smoke-browser:
+    name: real browser smoke (Windows)
+    needs: tag-check
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run browser smoke
+        run: npm run smoke:browser
+
   publish:
     name: npm trusted publish
-    needs: package
+    needs: [package, smoke-browser]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -76,7 +108,7 @@ jobs:
 
       - name: Verify tag, version, and downloaded tarball
         id: artifact
-        run: node scripts/verify-release-artifact.mjs --artifact-dir release-artifact --github-output "$GITHUB_OUTPUT"
+        run: node scripts/verify-release-artifact.mjs --artifact-dir release-artifact --expected-sha256 "${{ needs.package.outputs.sha256 }}" --github-output "$GITHUB_OUTPUT"
 
       - name: Publish the exact verified tarball
         run: npm publish "${{ steps.artifact.outputs.tarball }}" --access public --provenance

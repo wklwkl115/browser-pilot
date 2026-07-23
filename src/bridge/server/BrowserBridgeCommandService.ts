@@ -366,20 +366,17 @@ export class BrowserBridgeCommandService {
 		const browserSession = this.browserSession(browserSessionId);
 		const selected = this.deps.browserSessions.selectedOpenClient(browserSession);
 		if (selected) return selected;
-		if (browserSession.id !== "default") {
-			throw noBrowserExtensionError({
-				port: this.deps.getPort(),
-				everConnected: this.deps.clients.hasEverConnected(),
-				extensionConnected: false,
-				extensionWaitMs: extensionWaitMs(),
-				connectionWaitMs: this.lastConnectionWaitMs,
-				negativeCacheActive: Date.now() < this.extensionUnavailableUntil,
-				negativeCacheRemainingMs: Math.max(0, this.extensionUnavailableUntil - Date.now()),
-				browserSessionId: browserSession.id,
-				sessions: this.deps.listBrowserSessions(),
-			});
-		}
-		return this.deps.clients.requireExtensionClient();
+		throw noBrowserExtensionError({
+			port: this.deps.getPort(),
+			everConnected: this.deps.clients.hasEverConnected(),
+			extensionConnected: false,
+			extensionWaitMs: extensionWaitMs(),
+			connectionWaitMs: this.lastConnectionWaitMs,
+			negativeCacheActive: Date.now() < this.extensionUnavailableUntil,
+			negativeCacheRemainingMs: Math.max(0, this.extensionUnavailableUntil - Date.now()),
+			browserSessionId: browserSession.id,
+			sessions: this.deps.listBrowserSessions(),
+		});
 	}
 
 	private requireLiveTabSession(tabId: number, browserSessionId?: string, target?: BrowserBridgeTargetInfo): BrowserTabSession {

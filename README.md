@@ -29,6 +29,16 @@ args = ["--yes", "--package", "browser-pilot", "browser-pilot-mcp"]
 
 For a source checkout, build once and point the MCP client at `dist/src/apps/mcp/bin.js`. The MCP process starts or reuses the local daemon automatically. Set `BROWSER_PILOT_PROJECT_ROOT` when a global MCP configuration must write artifacts into a specific project.
 
+## Pair the Agent
+
+Browser control is denied until the agent is approved in the extension:
+
+1. Call `browser_pair` with `{ "action": "start", "label": "your agent" }`.
+2. Approve the matching code in the Browser Pilot extension.
+3. Call `browser_pair` with `{ "action": "wait", "pairingId": "..." }`.
+
+The resulting token is stored owner-locally and scoped to the MCP client and project root.
+
 ## Core Workflow
 
 1. Omit `targetRef` to use the selected active tab; call `browser_tabs` only to create, switch, close, or disambiguate tabs.
@@ -49,6 +59,19 @@ The MCP `tools/list` response is the public syntax authority. Browser tools come
 Agent -> MCP stdio -> local daemon -> WebSocket bridge -> offscreen transport -> MV3 service worker -> Chrome/Edge tab
 ```
 
+State has one owner at each boundary:
+
+| State | Owner |
+| --- | --- |
+| MCP protocol and project root | Per-agent MCP process |
+| Authentication and daemon lifecycle | User-local daemon |
+| Connections, pending requests, queues, and leases | `BrowserBridgeServer` |
+| Selected browser and tab session | Session registry |
+| Chrome APIs and CDP sessions | MV3 service worker |
+| Captured evidence | Request-scoped project artifact root |
+
+Trust boundaries are fail-closed: daemon calls require pairing, WebSocket upgrades require the packaged extension origin, and page content is always untrusted. Browser Pilot does not suppress page dialogs or remove page CSP headers.
+
 Source is organized under:
 
 - `src/apps`: MCP server and daemon
@@ -61,7 +84,7 @@ Source is organized under:
 ## Development
 
 ```bash
-mise run test
+mise run verify
 mise run smoke-browser
 ```
 

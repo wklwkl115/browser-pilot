@@ -45,10 +45,6 @@ export class BrowserBridgeServer implements ConsentPort {
 		this.clients = new BrowserBridgeClientRegistry(() => this.port);
 		this.state = new BrowserBridgeSessionState();
 		this.consentCoordinator = new BrowserBridgeConsentCoordinator({
-			// Use the browser-session's selected client, which is set when ext_ready
-			// arrives in BrowserBridgeClientMessageService. BrowserBridgeClientRegistry
-			// .selectedOpenClient() tracks a separate `extensionClient` field that is
-			// never populated by the message handler, so we must go through browserSessions.
 			getExtensionSocket: () => this.state.browserSessions.selectedOpenClient(this.state.browserSessions.defaultSession()),
 		});
 		this.queues = new BrowserCommandQueueRegistry();

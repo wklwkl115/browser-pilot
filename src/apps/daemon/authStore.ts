@@ -7,7 +7,7 @@
  */
 import path from "node:path";
 import os from "node:os";
-import { randomBytes, randomUUID, createHash } from "node:crypto";
+import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
 	AUTH_STORE_VERSION,
@@ -75,6 +75,12 @@ function serialized(fn: () => Promise<void>): Promise<void> {
 	return writeChain;
 }
 
+function persistEventually(): void {
+	void persistCurrentStore().catch((error: unknown) => {
+		console.error(`[browser-pilot] auth store persistence failed: ${error instanceof Error ? error.message : String(error)}`);
+	});
+}
+
 // ---------------------------------------------------------------------------
 // In-memory cache — avoids disk-read/write races in the single-process daemon.
 // All mutations update _cache synchronously; disk writes are still async for
@@ -82,28 +88,56 @@ function serialized(fn: () => Promise<void>): Promise<void> {
 // ---------------------------------------------------------------------------
 
 let _cache: AuthStore | null = null;
+let _cachePath: string | null = null;
 
 function getCache(): AuthStore {
-	if (_cache) return _cache;
-	_cache = loadFromDisk();
+	const currentPath = authStorePath();
+	if (_cache && _cachePath === currentPath) return _cache;
+	_cache = loadFromDisk(currentPath);
+	_cachePath = currentPath;
 	return _cache;
 }
 
-function loadFromDisk(): AuthStore {
+function isNullableString(value: unknown): boolean {
+	return value === null || typeof value === "string";
+}
+
+function isAgentRecord(value: unknown): value is AgentRecord {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const record = value as Record<string, unknown>;
+	return typeof record.pairingId === "string"
+		&& typeof record.label === "string"
+		&& typeof record.tokenHash === "string"
+		&& ["pending", "active", "revoked"].includes(String(record.status))
+		&& typeof record.createdAt === "string"
+		&& isNullableString(record.approvedAt)
+		&& isNullableString(record.revokedAt)
+		&& isNullableString(record.lastSeenAt)
+		&& (record.pairingCode === undefined || typeof record.pairingCode === "string")
+		&& (record.pendingExpiresAt === undefined || isNullableString(record.pendingExpiresAt));
+}
+
+function loadFromDisk(filePath: string): AuthStore {
+	let raw: string;
 	try {
-		const raw = readFileSync(authStorePath(), "utf8");
-		const parsed = JSON.parse(raw) as Partial<AuthStore>;
-		if (parsed && typeof parsed === "object" && Array.isArray(parsed.agents)) {
-			return { version: AUTH_STORE_VERSION, agents: parsed.agents as AgentRecord[] };
-		}
-	} catch {
-		/* parse/IO error — start fresh */
+		raw = readFileSync(filePath, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: AUTH_STORE_VERSION, agents: [] };
+		throw new Error(`Unable to read Browser Pilot auth store: ${filePath}`, { cause: error });
 	}
-	return { version: AUTH_STORE_VERSION, agents: [] };
+	try {
+		const parsed = JSON.parse(raw) as Partial<AuthStore>;
+		if (parsed.version === AUTH_STORE_VERSION && Array.isArray(parsed.agents) && parsed.agents.every(isAgentRecord)) {
+			return { version: AUTH_STORE_VERSION, agents: parsed.agents };
+		}
+	} catch (error) {
+		throw new Error(`Browser Pilot auth store is malformed: ${filePath}; move or delete it and pair again`, { cause: error });
+	}
+	throw new Error(`Browser Pilot auth store is malformed: ${filePath}; move or delete it and pair again`);
 }
 
 // ---------------------------------------------------------------------------
-// Lenient read (also warms the cache)
+// Fail-closed read (also warms the cache)
 // ---------------------------------------------------------------------------
 
 export function loadStore(): AuthStore {
@@ -114,18 +148,15 @@ export function loadStore(): AuthStore {
 // Persist (always persists the current cache to disk)
 // ---------------------------------------------------------------------------
 
-async function persistStore(_store?: AuthStore): Promise<void> {
-	const store = _store ?? getCache();
-	await atomicWriteText(authStorePath(), JSON.stringify(store, null, 2) + "\n");
+function persistCurrentStore(): Promise<void> {
+	const filePath = authStorePath();
+	const content = JSON.stringify(getCache(), null, 2) + "\n";
+	return serialized(() => atomicWriteText(filePath, content));
 }
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
-
-export function hasActiveAgents(): boolean {
-	return getCache().agents.some((a) => a.status === "active");
-}
 
 export function mintPending(label: string): { pairingId: string; code: string } {
 	const pairingId = randomUUID();
@@ -146,7 +177,7 @@ export function mintPending(label: string): { pairingId: string; code: string } 
 	// Update in-memory cache synchronously so approve() can find the record immediately.
 	getCache().agents.push(record);
 	// Write to disk asynchronously for persistence.
-	void serialized(() => persistStore());
+	persistEventually();
 	return { pairingId, code };
 }
 
@@ -172,7 +203,7 @@ export async function approve(pairingId: string): Promise<{ token: string } | nu
 	// Persist to disk — await so the write completes before the caller responds.
 	// If the write fails the exception propagates, ensuring the caller knows the
 	// approval was not durably persisted.
-	await serialized(() => persistStore());
+	await persistCurrentStore();
 
 	return { token: rawToken };
 }
@@ -184,17 +215,20 @@ export async function deny(pairingId: string): Promise<void> {
 	if (idx !== -1) {
 		cache.agents.splice(idx, 1);
 		// Persist to disk — await so the removal is durable before returning.
-		await serialized(() => persistStore());
+		await persistCurrentStore();
 	}
 }
 
 export function findByToken(rawToken: string | undefined): AgentRecord | null {
 	if (!rawToken) return null;
-	const hash = sha256hex(rawToken);
-	return getCache().agents.find((a) => a.tokenHash === hash) ?? null;
+	const hash = Buffer.from(sha256hex(rawToken));
+	return getCache().agents.find((agent) => {
+		const candidate = Buffer.from(agent.tokenHash);
+		return candidate.length === hash.length && timingSafeEqual(candidate, hash);
+	}) ?? null;
 }
 
-export function revoke(pairingId: string): boolean {
+export async function revoke(pairingId: string): Promise<boolean> {
 	const cache = getCache();
 	const record = cache.agents.find((a) => a.pairingId === pairingId);
 	if (!record) return false;
@@ -204,8 +238,7 @@ export function revoke(pairingId: string): boolean {
 	record.status = "revoked";
 	record.revokedAt = now;
 
-	// Persist to disk asynchronously.
-	void serialized(() => persistStore());
+	await persistCurrentStore();
 
 	return true;
 }
@@ -216,7 +249,7 @@ export function touch(pairingId: string): void {
 	const record = cache.agents.find((a) => a.pairingId === pairingId);
 	if (record) {
 		record.lastSeenAt = now;
-		void serialized(() => persistStore());
+		persistEventually();
 	}
 }
 
@@ -230,7 +263,7 @@ export function sweepExpiredPending(): void {
 		return Date.parse(a.pendingExpiresAt) > now;
 	});
 	if (cache.agents.length !== before) {
-		void serialized(() => persistStore());
+		persistEventually();
 	}
 }
 

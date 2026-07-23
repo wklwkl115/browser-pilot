@@ -134,6 +134,28 @@ export default tseslint.config(
 			"@typescript-eslint/no-misused-promises": "off",
 		},
 	},
+	{
+		files: ["src/kernels/**/*.ts"],
+		rules: {
+			"no-restricted-imports": ["error", {
+				patterns: [
+					{ regex: "^(?!node:)(?!\\.{1,2}/)", message: "Kernel code cannot depend on npm runtime packages." },
+					{ group: ["**/apps/**", "**/bridge/**", "**/browser-runtime/**", "**/commands/**"], message: "Kernel code cannot depend on application or runtime layers." },
+				],
+			}],
+		},
+	},
+	{
+		files: ["src/kernels/abml/**/*.ts"],
+		rules: {
+			"no-restricted-imports": ["error", {
+				patterns: [
+					{ regex: "^(?!\\.{1,2}/)", message: "The ABML kernel cannot depend on Node or npm runtime packages." },
+					{ group: ["**/apps/**", "**/bridge/**", "**/browser-runtime/**", "**/commands/**"], message: "The ABML kernel cannot depend on application or runtime layers." },
+				],
+			}],
+		},
+	},
 	// Refactored orchestration paths keep explicit complexity budgets so their former
 	// monolithic control flow cannot silently accumulate again.
 	{

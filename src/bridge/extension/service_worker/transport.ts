@@ -1,6 +1,6 @@
 import { BROWSER_PILOT_BRIDGE_PORT } from "./config";
 import { chromeApi as chrome } from "./runtimeEnv";
-import { installCspBypassRule, isScriptable, browserPilotBridgeInfo, getExtensionInstanceId, validateCspBypassRule, registerOffscreenUnreachableGetter } from "./bridge_info";
+import { isScriptable, browserPilotBridgeInfo, getExtensionInstanceId, registerOffscreenUnreachableGetter } from "./bridge_info";
 import { setBridgeWakeProbe } from "./core_commands";
 import { handleBrowserPilotBridgeWsMessage, setTransportSocketGetter } from "./router";
 import { runStartupRecovery } from "./state_store";
@@ -191,7 +191,6 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
     startupRecoveryDone = true;
     try { await runStartupRecovery(); } catch (error) { console.warn("[BROWSER-PILOT-WS] Startup recovery failed", error); }
   }
-  try { await validateCspBypassRule(); } catch (_e) { /* best-effort */ }
   const extensionInstanceId = await getExtensionInstanceId();
   const tabs = (await chrome.tabs.query({}) as BrowserPilotChromeTab[]).filter((tab: BrowserPilotChromeTab) => isScriptable(tab.url));
   const tabsWithIdentity = await Promise.all(tabs.map(async (tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId, ...browserPilotPageIdentityFields(tab), ...await browserPilotTabIdentityFields(tab) })));
@@ -242,11 +241,7 @@ function installBrowserPilotTransport(): boolean {
     void handleBrowserPilotOffscreenMessage(message).then(sendResponse);
     return true;
   });
-  chrome.runtime.onInstalled.addListener(() => {
-    installCspBypassRule();
-    runTransportTask("install probe", async () => { await probeAndConnectWS(true); });
-  });
-  installCspBypassRule();
+  chrome.runtime.onInstalled.addListener(() => { runTransportTask("install probe", async () => { await probeAndConnectWS(true); }); });
   chrome.alarms.onAlarm.addListener((alarm: BrowserPilotChromeAlarm) => { runTransportTask("transport alarm", async () => { await handleBrowserPilotTransportAlarm(alarm); }); });
   setBridgeWakeProbe(probeAndConnectWS);
   setTransportSocketGetter(getBrowserPilotTransportSocket);

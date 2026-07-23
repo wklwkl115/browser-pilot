@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Breaking
 
+- Daemon invocation now always requires a browser-approved pairing token; the fail-open `BROWSER_PILOT_REQUIRE_PAIRING` mode was removed.
 - Removed runtime-control fields and lifecycle/discovery commands from the public native surface: `tabId`, `sessionId`, `timeoutMs`, `bridge_wake`, `persistent_cdp`, `hook.list_sessions`, `hook.list_targets`, and `hook.install_targets`. `hook.install` now requires and publishes its target ids directly. Raw CDP remains available as `cdp { method, params }`; Browser Pilot owns targeting, attach/recovery, and cleanup.
 - Removed `browser_observe.browserSessionId` and `browser_pair.timeoutMs`; browser selection and pairing deadlines are runtime-owned.
 - Replaced the per-command CLI with a persistent stdio MCP server. `browser-pilot-mcp` is now the Agent entrypoint, and the daemon starts through its own private executable.
@@ -23,6 +24,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Removed the all-page dialog override and CSP-stripping rule; the extension no longer changes normal page confirmation behavior or removes page security headers.
+- Added one deterministic `verify` gate for Node, extension, tests, lint, and unit contracts; pull requests run it on Ubuntu and Windows, while tagged releases additionally require a real Windows browser smoke and SHA-256 identity verification of the exact published tarball.
 - `browser_execute` and tab-scoped `browser_command` writes now pin the selected target before dispatch and return bounded best-effort page-effect feedback from the same target transaction. Read-only execution remains zero-overhead, and unavailable page signals are reported as `changed:null` instead of false certainty.
 - Closed every public `browser_command` command schema, enforced the shared protocol before browser startup and extension dispatch, published canonical command names only, and split native discovery into a compact index plus per-command detail resources.
 - Observation frontiers now expose opaque `browser-pilot://observation/<token>` resources instead of artifact paths and JSON read instructions.

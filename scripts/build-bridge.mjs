@@ -12,7 +12,6 @@ const buildIdPlaceholder = "__BROWSER_PILOT_BRIDGE_BUILD_ID_PLACEHOLDER__";
 const staticDir = path.join(root, "src", "bridge", "extension", "static");
 const fingerprintInputs = [
 	"bridge/browser_pilot_bridge/dist/content.js",
-	"bridge/browser_pilot_bridge/dist/disable_dialogs.js",
 	"bridge/browser_pilot_bridge/dist/hook_dispatcher.js",
 	"bridge/browser_pilot_bridge/dist/offscreen.js",
 	"bridge/browser_pilot_bridge/dist/service-worker.js",
@@ -40,20 +39,19 @@ const entries = [
 		source: "src/bridge/extension/page_scripts/hook_dispatcher.ts",
 		outfile: "bridge/browser_pilot_bridge/dist/hook_dispatcher.js",
 	},
-	{
-		name: "disable-dialogs",
-		source: "src/bridge/extension/page_scripts/disable_dialogs.ts",
-		outfile: "bridge/browser_pilot_bridge/dist/disable_dialogs.js",
-	},
 ];
 
 const iconSizes = [16, 32, 48, 128];
 const onePixelPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9s6Nwl8AAAAASUVORK5CYII=";
 
 async function writeStaticBridgeShell() {
+	const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+	const manifest = JSON.parse(await readFile(path.join(staticDir, "manifest.json"), "utf8"));
+	manifest.version = packageJson.version;
+	manifest.version_name = `${packageJson.version}-browser-pilot`;
 	await writeFile(
 		path.join(root, "bridge", "browser_pilot_bridge", "manifest.json"),
-		await readFile(path.join(staticDir, "manifest.json"), "utf8"),
+		`${JSON.stringify(manifest, null, 2)}\n`,
 		"utf8",
 	);
 	await writeFile(
@@ -87,7 +85,6 @@ export async function computeBuildId(distDir) {
 
 async function main() {
 	await rm(path.join(root, "bridge", "browser_pilot_bridge"), { recursive: true, force: true });
-	await rm(defaultDistDir, { recursive: true, force: true });
 	await mkdir(defaultDistDir, { recursive: true });
 	await writeStaticBridgeShell();
 	await writeFile(path.join(defaultDistDir, ".gitignore"), "*\n!.gitignore\n", "utf8");

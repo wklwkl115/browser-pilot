@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const sentRuntimeMessages: unknown[] = [];
-const cspRuleUpdates: unknown[] = [];
 type Debuggee = { tabId: number; sessionId?: string };
 type DebuggerCommand = { debuggee: Debuggee; method: string; params?: Record<string, unknown> };
 const debuggerAttachments: number[] = [];
@@ -82,14 +81,6 @@ const chromeStub = {
 		create() {},
 		async clear() { return true; },
 		onAlarm: { addListener() {} },
-	},
-	declarativeNetRequest: {
-		async updateSessionRules(update: unknown) {
-			cspRuleUpdates.push(update);
-		},
-		async getSessionRules() {
-			return [];
-		},
 	},
 	debugger: {
 		async attach(debuggee: Debuggee) {
@@ -271,7 +262,6 @@ test("core command batch cdp preserves result parameter substitution", async () 
 });
 
 test("extension websocket router rejects malformed command envelopes without browser", async () => {
-	cspRuleUpdates.length = 0;
 	const socket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
 
 	await router.handleBrowserPilotBridgeWsMessage({ id: "empty-cmd", tabId: 7, code: { cmd: "   " } }, socket);
@@ -283,11 +273,9 @@ test("extension websocket router rejects malformed command envelopes without bro
 		{ type: "error", id: "empty-cmd", error: "Message object must contain a non-empty \"cmd\" field", details: { codeType: "object", dispatchStarted: false, acked: false } },
 		{ type: "error", id: "bad-code", error: "Unsupported message code type: number", details: { codeType: "number", dispatchStarted: false, acked: false } },
 	]);
-	assert.equal(cspRuleUpdates.length, 0);
 });
 
 test("extension websocket router rejects native command validation errors before ACK", async () => {
-	cspRuleUpdates.length = 0;
 	const socket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
 
 	await router.handleBrowserPilotBridgeWsMessage({ id: "native-invalid", tabId: 7, code: JSON.stringify({ cmd: "input.pointer" }) }, socket);
@@ -303,7 +291,6 @@ test("extension websocket router rejects native command validation errors before
 		details: { cmd: "input.pointer", missing: ["gesture", "x", "y"], dispatchStarted: false, acked: false },
 	});
 	assert.match(String(messages[0]?.error), /input\.pointer missing required fields/);
-	assert.equal(cspRuleUpdates.length, 0);
 });
 
 test("extension runtime helpers redact and normalize malformed error responses", () => {

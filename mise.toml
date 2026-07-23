@@ -5,7 +5,11 @@ node = "22"
 
 [tasks.test]
 description = "Run deterministic Node tests for all bootstrap and refactor scopes"
-run = "node scripts/run-tests.mjs all"
+run = "npm test"
+
+[tasks.verify]
+description = "Run the complete deterministic quality gate"
+run = "npm run verify"
 
 [tasks.test-mcp]
 description = "Run bootstrap + MCP tests"
@@ -17,4 +21,4 @@ run = "node scripts/run-tests.mjs observe"
 
 [tasks.smoke-browser]
 description = "Launch Chrome/Edge and verify the core browser workflow"
-run = "node --import tsx scripts/run-browser-smoke.mjs --quiet"
+run = "npm run smoke:browser"

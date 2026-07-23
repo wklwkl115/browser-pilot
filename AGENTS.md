@@ -8,5 +8,6 @@ Browser Pilot connects AI agents to real Chrome or Edge tabs through a Manifest 
 - `src/commands/commandCatalog.ts` owns the public tool list.
 - `src/kernels/*` stays pure: no browser, bridge, command, or npm runtime dependencies.
 - Page actions use `browser_execute` or `browser_command`; there are no click/type tools.
+- Never install all-page scripts that change page semantics or remove page security headers.
 - Prefer the smallest change that follows nearby code.
-- Run `mise run test` or `mise run smoke-browser` only when the change needs that diagnostic.
+- Run `mise run verify` as the canonical gate, or `mise run smoke-browser` when browser integration needs validation.
