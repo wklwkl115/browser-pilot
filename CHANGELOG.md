@@ -28,6 +28,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Renamed the npm distribution to `browser-pilot-mcp` because the unscoped `browser-pilot` package is owned by another project; the Browser Pilot product name and `browser-pilot-mcp` executable are unchanged.
+- Superseded extension WebSockets now fall back to bounded termination when a peer never completes the close handshake.
 - Removed the all-page dialog override and CSP-stripping rule; the extension no longer changes normal page confirmation behavior or removes page security headers.
 - Added one deterministic `verify` gate for Node, extension, tests, lint, and unit contracts; pull requests run it on Ubuntu and Windows, while tagged releases additionally require a real Windows browser smoke and SHA-256 identity verification of the exact published tarball.
 - `browser_execute` and tab-scoped `browser_command` writes now pin the selected target before dispatch and return bounded best-effort page-effect feedback from the same target transaction. Read-only execution remains zero-overhead, and unavailable page signals are reported as `changed:null` instead of false certainty.
