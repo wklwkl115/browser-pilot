@@ -873,6 +873,7 @@ test("scan script builder clamps options and injects scan helper blocks determin
 	assert.match(script, /"options":\{"maxChars":1000,"maxNodes":4000\}/);
 	assert.match(script, /"pageWorldScanSchema":"browser-page-scan\/v1"/);
 	assert.match(source, /fingerprint\s*:\s*scanFingerprint/);
+	assert.match(source, /devicePixelRatio\s*:\s*Number\(window\.devicePixelRatio\s*\|\|\s*1\)/);
 	assert.doesNotMatch(source, /content\.tree|tree\s*:\s*content|function walk\(|iframeNotes|includeIframes|growthProbe|collectVisibleRows|collectMediaCandidates|mediaCandidates|\binteractive\s*:|window\.scrollTo|\.scrollTop\s*=/);
 	assert.match(source, /selected\s*:\s*selectedState.*pressed\s*:\s*pressedAttr===?["']true["'].*expanded\s*:\s*expandedAttr===?["']true["']/);
 	assert.match(source, /documentRect\s*:\s*visible\.documentRect/);

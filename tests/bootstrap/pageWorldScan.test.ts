@@ -23,7 +23,7 @@ test("page-world scan bundle validates empty and fully populated v1 captures", (
 			canvasRegions: [{ index: 0, tag: "canvas", role: "img", action: "Chart", label: "Chart", selector: "#chart", point: { x: 10, y: 10 }, rect: { x: 0, y: 0, width: 20, height: 20 }, hitOk: true, clickable: false }],
 		},
 		signals: {
-			fingerprint: { changeSeq: 9, url: "https://example.test/", title: "Example", readyState: "complete", visibleCount: 1, interactiveCount: 1, capturedAt: 42 },
+			fingerprint: { changeSeq: 9, url: "https://example.test/", title: "Example", readyState: "complete", devicePixelRatio: 2, visibleCount: 1, interactiveCount: 1, capturedAt: 42 },
 		},
 		stats: { nodeCount: 40, outputChars: 400, truncated: true },
 	});

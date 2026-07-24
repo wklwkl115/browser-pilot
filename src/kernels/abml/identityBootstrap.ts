@@ -58,14 +58,14 @@ const MATCH_IOU_THRESHOLD = 0.9;
 const GEOMETRY_BUCKET_SIZE = 64;
 const MAX_GEOMETRY_BUCKETS_PER_RECT = 256;
 
-function rectFromScan(value: unknown, scrollX: number, scrollY: number): Rect | undefined {
+function rectFromScan(value: unknown): Rect | undefined {
 	if (!isRecord(value)) return undefined;
 	const x = num(value.x);
 	const y = num(value.y);
 	const w = num(value.width ?? value.w);
 	const h = num(value.height ?? value.h);
 	if (x === undefined || y === undefined || w === undefined || h === undefined || w <= 0 || h <= 0) return undefined;
-	return { x: x + scrollX, y: y + scrollY, w, h };
+	return { x, y, w, h };
 }
 
 function scaledRect(rect: Rect, scale: number): Rect {
@@ -172,10 +172,10 @@ function buildStats(records: BackendNodeIdBootstrapRecord[], scale: number, view
 	};
 }
 
-function bootstrapActionable(item: ScanActionable, index: number, geometryIndex: GeometryIndex, scrollX: number, scrollY: number) {
+function bootstrapActionable(item: ScanActionable, index: number, geometryIndex: GeometryIndex) {
 	const jsonPath = actionableJsonPath(item, index);
 	const selector = typeof item.selector === "string" ? item.selector : undefined;
-	const scanRect = rectFromScan(item.documentRect ?? item.rect, scrollX, scrollY);
+	const scanRect = rectFromScan(item.documentRect ?? item.rect);
 	if (!scanRect || !geometryIndex.entries.length) return { item, record: { jsonPath, selector, status: "unsupported" as const, reason: !scanRect ? "scan-rect-unavailable" : "snapshot-geometry-unavailable" } };
 	const summary = highIouSummary(scanRect, geometryIndex);
 	if (summary.count > 1) return { item: { ...item, backendNodeIdBootstrap: { status: "ambiguous", reason: "multiple-high-iou-candidates", candidateCount: summary.count } }, record: { jsonPath, selector, status: "ambiguous" as const, reason: "multiple-high-iou-candidates", candidateCount: summary.count, scanRect, iou: Number(summary.bestIou.toFixed(3)) } };
@@ -190,16 +190,15 @@ function bootstrapActionable(item: ScanActionable, index: number, geometryIndex:
 }
 
 export function bootstrapScanBackendNodeIds(data: PageWorldScanBundleV1, entries: SnapshotGeometryEntry[], options: BootstrapOptions = {}): BackendNodeIdBootstrapResult {
-	const scrollX = 0;
-	const scrollY = 0;
-	const scale = 1;
+	const capturedScale = num(data.signals.fingerprint.devicePixelRatio);
+	const scale = capturedScale !== undefined && capturedScale > 0 ? capturedScale : 1;
 	const viewportKnown = data.structure.actionables.some((item) => item.documentRect !== undefined);
 	const indexedEntries = indexEntries(entries, scale);
 	const geometryIndex = buildGeometryIndex(indexedEntries);
 	const actionables = data.structure.actionables;
 	const records: BackendNodeIdBootstrapRecord[] = [];
 	const nextActionables = actionables.map((item, index) => {
-		const resolved = bootstrapActionable(item, index, geometryIndex, scrollX, scrollY);
+		const resolved = bootstrapActionable(item, index, geometryIndex);
 		records.push(resolved.record);
 		return resolved.item as ScanActionable;
 	});

@@ -586,6 +586,7 @@ export function scanPage(config: any) {
     url: location.href,
     title: document.title,
     readyState: document.readyState,
+    devicePixelRatio: Number(window.devicePixelRatio || 1),
     visibleCount: actionables.length,
     interactiveCount: document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length,
     capturedAt: Date.now()

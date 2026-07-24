@@ -103,6 +103,7 @@ export interface ScanPageFingerprint {
 	url?: string;
 	title?: string;
 	readyState?: string;
+	devicePixelRatio?: number;
 	visibleCount?: number;
 	interactiveCount?: number;
 	capturedAt?: number;
@@ -194,7 +195,7 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 		signals: {
 			type: "object",
 			properties: {
-				fingerprint: { type: "object", properties: { changeSeq: numberSchema, pageEpoch: stringSchema, documentId: stringSchema, url: stringSchema, title: stringSchema, readyState: stringSchema, visibleCount: numberSchema, interactiveCount: numberSchema, capturedAt: numberSchema }, required: ["changeSeq"], additionalProperties: false },
+				fingerprint: { type: "object", properties: { changeSeq: numberSchema, pageEpoch: stringSchema, documentId: stringSchema, url: stringSchema, title: stringSchema, readyState: stringSchema, devicePixelRatio: numberSchema, visibleCount: numberSchema, interactiveCount: numberSchema, capturedAt: numberSchema }, required: ["changeSeq"], additionalProperties: false },
 			},
 			required: ["fingerprint"],
 			additionalProperties: false,
