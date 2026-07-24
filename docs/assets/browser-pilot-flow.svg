@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Browser Pilot signal flow</title>
+  <desc id="desc">An AI agent sends an MCP request through the local daemon and browser extension to a real Chrome or Edge tab, then receives structured evidence.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#111C31"/>
+    </linearGradient>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style>
+      .label { fill: #F8FAFC; font: 600 22px ui-monospace, SFMono-Regular, Consolas, monospace; }
+      .meta { fill: #94A3B8; font: 15px ui-monospace, SFMono-Regular, Consolas, monospace; }
+      .eyebrow { fill: #22D3EE; font: 700 13px ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: 0; }
+      .node { fill: #111C31; stroke: #334155; stroke-width: 2; }
+      .rail { fill: none; stroke: #334155; stroke-width: 4; stroke-linecap: round; }
+      .signal { filter: url(#glow); }
+      @media (prefers-reduced-motion: reduce) { .moving { display: none; } }
+    </style>
+  </defs>
+
+  <rect width="1200" height="420" rx="8" fill="url(#panel)"/>
+  <path d="M 110 215 H 1090" class="rail"/>
+
+  <g transform="translate(50 142)">
+    <rect width="180" height="146" rx="8" class="node"/>
+    <rect x="1" y="1" width="178" height="5" rx="3" fill="#2563EB"/>
+    <text x="22" y="38" class="eyebrow">01 / INTENT</text>
+    <text x="22" y="78" class="label">AI Agent</text>
+    <text x="22" y="108" class="meta">MCP client</text>
+  </g>
+
+  <g transform="translate(280 142)">
+    <rect width="180" height="146" rx="8" class="node"/>
+    <rect x="1" y="1" width="178" height="5" rx="3" fill="#22D3EE"/>
+    <text x="22" y="38" class="eyebrow">02 / PROTOCOL</text>
+    <text x="22" y="78" class="label">MCP</text>
+    <text x="22" y="108" class="meta">stdio tools</text>
+  </g>
+
+  <g transform="translate(510 142)">
+    <rect width="180" height="146" rx="8" class="node"/>
+    <rect x="1" y="1" width="178" height="5" rx="3" fill="#64748B"/>
+    <text x="22" y="38" class="eyebrow">03 / ROUTE</text>
+    <text x="22" y="78" class="label">Daemon</text>
+    <text x="22" y="108" class="meta">local bridge</text>
+  </g>
+
+  <g transform="translate(740 142)">
+    <rect width="180" height="146" rx="8" class="node"/>
+    <rect x="1" y="1" width="178" height="5" rx="3" fill="#F59E0B"/>
+    <text x="22" y="38" class="eyebrow">04 / DISPATCH</text>
+    <text x="22" y="78" class="label">Extension</text>
+    <text x="22" y="108" class="meta">Manifest V3</text>
+  </g>
+
+  <g transform="translate(970 142)">
+    <rect width="180" height="146" rx="8" class="node"/>
+    <rect x="1" y="1" width="178" height="5" rx="3" fill="#2563EB"/>
+    <text x="22" y="38" class="eyebrow">05 / REAL TAB</text>
+    <text x="22" y="78" class="label">Browser</text>
+    <text x="22" y="108" class="meta">Chrome / Edge</text>
+  </g>
+
+  <g class="moving signal">
+    <circle r="7" fill="#22D3EE">
+      <animateMotion dur="4s" repeatCount="indefinite" path="M 110 215 H 1090"/>
+    </circle>
+    <circle r="7" fill="#F59E0B">
+      <animateMotion dur="4s" begin="2s" repeatCount="indefinite" path="M 1090 215 H 110"/>
+    </circle>
+  </g>
+
+  <text x="50" y="55" class="label">CONTROL THE TAB. OBSERVE THE EFFECT.</text>
+  <text x="50" y="86" class="meta">Request -> action -> bounded evidence, across explicit ownership boundaries.</text>
+  <circle cx="50" cy="354" r="5" fill="#22D3EE"/>
+  <text x="67" y="360" class="meta">command</text>
+  <circle cx="184" cy="354" r="5" fill="#F59E0B"/>
+  <text x="201" y="360" class="meta">evidence</text>
+</svg>
