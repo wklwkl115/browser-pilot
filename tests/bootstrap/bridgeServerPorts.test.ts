@@ -138,7 +138,7 @@ test("current extension readiness waits past a stale peer and promotes the curre
 		assert.equal(await ready, true);
 		assert.equal(server.snapshot().extension?.extensionInstanceId, "current-instance");
 		assert.equal(server.snapshot().extension?.extensionStale, false);
-		assert.equal(await staleClosed, 1000);
+		assert.equal(await staleClosed, 1006);
 		assert.equal(server.snapshot().connectedClients, 1);
 		current.close();
 	});
@@ -319,7 +319,7 @@ test("BrowserBridgeServer lets a new worker socket replace the same browser inst
 		const first = await connectExtension(server, [{ id: 7, url: "https://before.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-1" });
 		const firstClosed = new Promise<number>((resolve) => first.once("close", resolve));
 		const replacement = await connectExtension(server, [{ id: 8, url: "https://after.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-2" });
-		assert.ok([1000, 1006].includes(await firstClosed));
+		assert.equal(await firstClosed, 1006);
 		assert.equal(server.snapshot().connectedClients, 1);
 		assert.equal(server.snapshot().extension?.workerBootId, "worker-2");
 		assert.equal(server.getTabs().some((tab) => tab.url === "https://after.test/"), true);

@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import type { WebSocket } from "ws";
 import { BrowserBridgeClientRegistry } from "../../src/bridge/server/BrowserBridgeClientRegistry.ts";
 
-// Minimal WebSocket stand-in: the registry only touches readyState + close().
+// Minimal WebSocket stand-in for registry lifecycle tests.
 function fakeSocket(): WebSocket {
 	const ws = {
 		readyState: 1, // WebSocket.OPEN
 		close() {
 			ws.readyState = 3; // WebSocket.CLOSED
+		},
+		terminate() {
+			ws.readyState = 3;
 		},
 	};
 	return ws as unknown as WebSocket;
@@ -55,9 +58,9 @@ test("supersedeClients closes every other socket and keeps the owner", () => {
 	const other = connect(registry, "Z", "boot-1");
 	const superseded = registry.supersedeClients(b);
 	assert.deepEqual(superseded, [a, other]);
-	assert.equal((a as unknown as { readyState: number }).readyState, 3, "stale same-instance socket is closed");
+	assert.equal((a as unknown as { readyState: number }).readyState, 3, "stale same-instance socket is terminated");
 	assert.equal((b as unknown as { readyState: number }).readyState, 1, "kept socket stays open");
-	assert.equal((other as unknown as { readyState: number }).readyState, 3, "different-instance socket is closed");
+	assert.equal((other as unknown as { readyState: number }).readyState, 3, "different-instance socket is terminated");
 });
 
 test("connection metrics tally connects, disconnects, sw-restarts, and reconnect latency", () => {

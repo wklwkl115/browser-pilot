@@ -199,16 +199,9 @@ export class BrowserBridgeClientRegistry {
 		}
 		for (const ws of superseded) {
 			try {
-				ws.close(1000, "Superseded by browser connection");
-				if (ws.readyState !== WebSocket.CLOSED) {
-					const timer = setTimeout(() => {
-						if (ws.readyState !== WebSocket.CLOSED) ws.terminate();
-					}, 1_000);
-					timer.unref();
-					ws.once("close", () => clearTimeout(timer));
-				}
+				ws.terminate();
 			} catch {
-				/* best-effort supersede close — the close handler still unregisters it */
+				/* best-effort termination — the caller unregisters it immediately */
 			}
 		}
 		return superseded;
