@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
@@ -31,6 +31,19 @@ async function within<T>(promise: Promise<T>, label: string): Promise<T> {
 		promise,
 		delay(1_000, undefined, { ref: false }).then(() => { throw new Error(`${label} timed out`); }),
 	]);
+}
+
+async function useExpectedExtensionBuild(t: TestContext, buildId = "current-build"): Promise<void> {
+	const directory = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-extension-build-"));
+	const manifestPath = path.join(directory, "build-manifest.json");
+	await writeFile(manifestPath, JSON.stringify({ buildId }));
+	const previousManifest = process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST;
+	process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST = manifestPath;
+	t.after(async () => {
+		if (previousManifest === undefined) delete process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST;
+		else process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST = previousManifest;
+		await rm(directory, { recursive: true, force: true });
+	});
 }
 
 type PortBlocker = { port: number; close: () => Promise<void> };
@@ -123,16 +136,7 @@ async function connectExtension(
 }
 
 test("current extension readiness waits past a stale peer and promotes the current build", async (t) => {
-	const directory = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-extension-build-"));
-	const manifestPath = path.join(directory, "build-manifest.json");
-	await writeFile(manifestPath, JSON.stringify({ buildId: "current-build" }));
-	const previousManifest = process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST;
-	process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST = manifestPath;
-	t.after(async () => {
-		if (previousManifest === undefined) delete process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST;
-		else process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST = previousManifest;
-		await rm(directory, { recursive: true, force: true });
-	});
+	await useExpectedExtensionBuild(t);
 	await withServer(async (server) => {
 		const stale = await connectExtension(server, [{ id: 7, url: "https://stale.test/", active: true }], { extensionInstanceId: "stale-instance", buildId: "stale-build" });
 		const staleClosed = new Promise<number>((resolve) => stale.once("close", resolve));
@@ -146,7 +150,7 @@ test("current extension readiness waits past a stale peer and promotes the curre
 		assert.equal(await ready, true);
 		assert.equal(server.snapshot().extension?.extensionInstanceId, "current-instance");
 		assert.equal(server.snapshot().extension?.extensionStale, false);
-		assert.equal(await staleClosed, 1006);
+		assert.equal(await staleClosed, 1000);
 		assert.equal(server.snapshot().connectedClients, 1);
 		current.close();
 	});
@@ -322,17 +326,18 @@ test("BrowserBridgeServer rejects a different browser instance after ownership i
 		});
 	});
 
-test("BrowserBridgeServer lets a new worker socket replace the same browser instance", { timeout: 7_000 }, async () => {
+test("BrowserBridgeServer lets a new worker socket replace the same browser instance", { timeout: 7_000 }, async (t) => {
+	await useExpectedExtensionBuild(t);
 	await withServer(async (server) => {
 		const first = await within(connectExtension(server, [{ id: 7, url: "https://before.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-1" }), "first extension connect");
 		const firstClosed = new Promise<number>((resolve) => first.once("close", resolve));
 		const replacement = await within(connectExtension(server, [{ id: 8, url: "https://after.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-2" }), "replacement extension connect");
-		assert.equal(await within(firstClosed, "superseded extension close"), 1006);
+		assert.equal(await within(firstClosed, "superseded extension close"), 1000);
 		assert.equal(server.snapshot().connectedClients, 1);
 		assert.equal(server.snapshot().extension?.workerBootId, "worker-2");
 		assert.equal(server.getTabs().some((tab) => tab.url === "https://after.test/"), true);
 		const stale = await within(openExtension(server, [], { extensionInstanceId: "same-instance", workerBootId: "worker-old", buildId: "stale-build" }), "stale extension connect");
-		assert.ok([1008, 1006].includes((await within(stale.closed, "stale extension rejection")).code));
+		assert.equal((await within(stale.closed, "stale extension rejection")).code, 1008);
 		assert.equal(server.snapshot().extension?.workerBootId, "worker-2");
 		replacement.close();
 	});

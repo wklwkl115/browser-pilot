@@ -116,14 +116,7 @@ export class BrowserBridgeClientMessageService {
 				const downgradesCurrentSelection = selectedInfo?.extensionStale === false && incomingInfo?.extensionStale === true;
 				if (selectedClient && selectedClient !== ws && (downgradesCurrentSelection || (!replacesSelectedInstance && !upgradesStaleSelection))) {
 					this.unregisterClient(ws);
-					if (ws.readyState === WebSocket.OPEN) {
-						ws.close(1008, "Another browser is already connected");
-						const timer = setTimeout(() => {
-							if (ws.readyState !== WebSocket.CLOSED) ws.terminate();
-						}, 100);
-						timer.unref();
-						ws.once("close", () => clearTimeout(timer));
-					}
+					if (ws.readyState === WebSocket.OPEN) ws.close(1008, "Another browser is already connected");
 					return;
 				}
 				this.deps.browserSessions.selectClient(defaultSession, ws);

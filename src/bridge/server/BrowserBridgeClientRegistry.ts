@@ -199,9 +199,9 @@ export class BrowserBridgeClientRegistry {
 		}
 		for (const ws of superseded) {
 			try {
-				ws.terminate();
+				ws.close(1000, "Superseded by browser connection");
 			} catch {
-				/* best-effort termination — the caller unregisters it immediately */
+				/* best-effort supersede close — the close handler still unregisters it */
 			}
 		}
 		return superseded;
