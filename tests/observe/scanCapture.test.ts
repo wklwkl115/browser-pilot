@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { axCacheKeyForPage, executeScanCapture } from "../../src/commands/observe/scanCapture.ts";
+import { finalizedObserveTimings } from "../../src/commands/observe/timings.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
 import { pageWorldScanBundle } from "../helpers/pageWorldScan.ts";
@@ -17,6 +18,15 @@ test("AX cache identity requires page epoch and includes every change discrimina
 		{ ...base, scrollY: 100 },
 		{ ...base, viewportWidth: 1024 },
 	]) assert.notEqual(key, axCacheKeyForPage(changed));
+});
+
+test("observe transport timing includes visual capture and its coherence fingerprints once", () => {
+	const data = pageWorldScanBundle();
+	const timings = finalizedObserveTimings({ fingerprintMs: 3, pageScriptMs: 5, abmlMs: 7, visualMs: 11, screenshotTransportMs: 8, visualDecodeHashMs: 2, visualWriteMs: 1 }, data, undefined);
+	assert.equal(timings.transportMs, 26);
+	assert.equal(timings.screenshotTransportMs, 8);
+	assert.equal(timings.visualDecodeHashMs, 2);
+	assert.equal(timings.visualWriteMs, 1);
 });
 
 function scanCaptureRuntime(sequences: number[]) {
@@ -62,6 +72,7 @@ test("scan capture retries one torn DOM+AX observation and accepts the stable re
 	assert.deepEqual(result.observation.abmlRead.ok ? result.observation.abmlRead.data.observationCoherence : undefined, { status: "stable", attempts: 2 });
 	assert.equal(server.calls.filter((call) => call === "Runtime.evaluate").length, 2);
 	assert.equal(options.timings.abmlCoherenceRetries, 1);
+	assert.equal(options.timings.observationAttempts, 2);
 	assert.deepEqual(server.calls, [
 		"content.fingerprint", "Runtime.evaluate", "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "content.fingerprint",
 		"content.fingerprint", "Runtime.evaluate", "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "content.fingerprint",
@@ -94,5 +105,11 @@ test("scan capture brackets an explicitly requested visual observation with the 
 	assert.equal(result.visualRequested, true);
 	assert.equal(result.visualCapture?.actionableGrounding, true);
 	assert.equal(result.visualCapture?.width, 1);
+	assert.equal(result.visualCapture?.mime, "image/png");
+	assert.equal(Buffer.isBuffer(result.visualCapture?.buffer), true);
+	assert.equal(options.timings.observationAttempts, 1);
+	assert.equal(options.timings.screenshotBytes, result.visualCapture?.buffer.length);
+	assert.equal(typeof options.timings.screenshotTransportMs, "number");
+	assert.equal(typeof options.timings.visualDecodeHashMs, "number");
 	assert.deepEqual(server.calls, ["content.fingerprint", "Runtime.evaluate", "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "screenshot.capture", "content.fingerprint"]);
 });

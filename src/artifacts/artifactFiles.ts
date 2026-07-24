@@ -89,8 +89,7 @@ export function decodeDataUrl(dataUrl: string): { buffer: Buffer; mime: string }
 	return { buffer: decodeStrictBase64Payload(match[2]), mime: match[1] };
 }
 
-export async function saveDataUrl(dataUrl: string, outputPath: string): Promise<{ path: string; bytes: number; mime: string }> {
-	const { buffer, mime } = decodeDataUrl(dataUrl);
+export async function saveBuffer(buffer: Buffer, outputPath: string, mime: string): Promise<{ path: string; bytes: number; mime: string }> {
 	await mkdir(path.dirname(outputPath), { recursive: true });
 	await writeFile(outputPath, buffer);
 	return { path: outputPath, bytes: buffer.length, mime };

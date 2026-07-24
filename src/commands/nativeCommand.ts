@@ -15,7 +15,7 @@ import { isRecord } from "../utils/records.js";
 import { registerVisualTargetRef } from "./visualEvidence.js";
 import { captureVisualScreenshot, visualFingerprintMatches, type VisualScreenshotCapture } from "./visualEvidence.js";
 import { readPageFingerprint } from "./pageSignals.js";
-import { artifactResourceUri, pruneObservationArtifacts, resolveArtifactPath, saveDataUrl } from "../artifacts/artifactFiles.js";
+import { artifactResourceUri, pruneObservationArtifacts, resolveArtifactPath, saveBuffer } from "../artifacts/artifactFiles.js";
 import type { RefVisualBinding } from "../kernels/refs/types.js";
 import type { VerificationResult } from "../kernels/abml/types.js";
 import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
@@ -177,7 +177,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 					? await withBrowserOperation({ server, browserSessionId: target.browserSessionId, tabId: target.tabId, targetRef: target.rawTarget, timeoutMs, signal }, dispatchWrite)
 					: { result: await dispatch({ signal }) };
 				const visualSaved = outcome.visualCapture
-					? await saveDataUrl(outcome.visualCapture.dataUrl, resolveArtifactPath(ctx, undefined, `visual-effect-${Date.now()}.png`))
+					? await saveBuffer(outcome.visualCapture.buffer, resolveArtifactPath(ctx, undefined, `visual-effect-${Date.now()}.png`), outcome.visualCapture.mime)
 					: undefined;
 				if (visualSaved) await pruneObservationArtifacts(visualSaved.path);
 				const visualResourceUri = visualSaved ? artifactResourceUri(visualSaved.path, ctx?.cwd ?? process.cwd()) : undefined;

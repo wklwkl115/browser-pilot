@@ -35,7 +35,7 @@ export function finalizedObserveTimings(metrics: ObserveTimingMetrics, data: Pag
 	if (axEnriched !== undefined) out.axEnriched = axEnriched;
 	if (axOnly !== undefined) out.axOnly = axOnly;
 	if (typeof axFusion?.degraded === "boolean") out.axFusionDegraded = axFusion.degraded;
-	const transportMs = ["navigationMs", "pageScriptMs", "abmlMs", "recorderMs", "causalMs", "eventCausalMs"]
+	const transportMs = ["navigationMs", "fingerprintMs", "pageScriptMs", "abmlMs", "visualMs", "recorderMs", "causalMs", "eventCausalMs"]
 		.reduce((sum, key) => sum + (numericMetric(out[key]) ?? 0), 0);
 	if (transportMs > 0) out.transportMs = transportMs;
 	return Object.fromEntries(Object.entries(out).filter(([, value]) => value !== undefined));

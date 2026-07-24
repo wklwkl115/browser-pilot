@@ -163,6 +163,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 				projectRoot: ctx?.cwd ?? process.cwd(),
 				url: data.page.url,
 			});
+			observeTimings.visualWriteMs = Number(observeTimings.visualWriteMs ?? 0) + visual.writeMs;
 		} catch (error) {
 			providerFailures.push(providerFailureFromError("visual", error, "VISUAL_MATERIALIZATION_FAILED"));
 		}

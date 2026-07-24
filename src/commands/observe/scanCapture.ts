@@ -127,6 +127,11 @@ async function executeScanCaptureAttempt(options: ScanCaptureOptions) {
 	if (visualRequested) {
 		timings.visualMs = Number(timings.visualMs ?? 0) + elapsedMs(visualStartedAt);
 		addBridgeRoundTrips(timings, 1);
+		if (visualCapture) {
+			timings.screenshotTransportMs = Number(timings.screenshotTransportMs ?? 0) + visualCapture.transportMs;
+			timings.visualDecodeHashMs = Number(timings.visualDecodeHashMs ?? 0) + visualCapture.decodeHashMs;
+			timings.screenshotBytes = Number(timings.screenshotBytes ?? 0) + visualCapture.buffer.length;
+		}
 	}
 	const finalFingerprint = await readCaptureFingerprint(options);
 	const coherence = initialFingerprint?.pageEpoch && finalFingerprint?.pageEpoch
@@ -139,6 +144,7 @@ export async function executeScanCapture(options: ScanCaptureOptions) {
 	let last: Awaited<ReturnType<typeof executeScanCaptureAttempt>> | undefined;
 	for (let attempt = 1; attempt <= 2; attempt += 1) {
 		last = await executeScanCaptureAttempt(options);
+		options.timings.observationAttempts = attempt;
 		if (last.coherence === "stable") {
 			options.timings.fusedFingerprint = true;
 			return {

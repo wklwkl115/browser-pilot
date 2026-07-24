@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
-import { artifactResourceUri, decodeDataUrl, saveDataUrl } from "../artifacts/artifactFiles.js";
+import { artifactResourceUri, decodeDataUrl, saveBuffer } from "../artifacts/artifactFiles.js";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import type { Entity } from "../kernels/abml/entity.js";
 import type { PageWorldScanBundleV1 } from "../kernels/abml/pageWorldScan.js";
@@ -18,13 +18,16 @@ import type { ObserveToolParams } from "./observe/common.js";
 const VISUAL_REF_TTL_MS = 30_000;
 
 export type VisualScreenshotCapture = {
-	dataUrl: string;
+	buffer: Buffer;
+	mime: string;
 	sha256: string;
 	width: number;
 	height: number;
 	captureMethod: string;
 	actionableGrounding: boolean;
 	capturedAt: number;
+	transportMs: number;
+	decodeHashMs: number;
 };
 
 export function screenshotSha256(dataUrl: string): string {
@@ -38,6 +41,7 @@ export function shouldCaptureVisual(params: Pick<ObserveToolParams, "visual">, d
 }
 
 export async function captureVisualScreenshot(server: BrowserCommandRuntimePort, options: { browserSessionId?: string; tabId: string | number | undefined; timeoutMs: number; signal?: AbortSignal }): Promise<VisualScreenshotCapture | undefined> {
+	const transportStartedAt = Date.now();
 	const result = await server.sendCommand({ cmd: "screenshot.capture", format: "png", captureBeyondViewport: false, fallback: true, timeoutMs: options.timeoutMs }, {
 		browserSessionId: options.browserSessionId,
 		tabId: options.tabId,
@@ -45,19 +49,29 @@ export async function captureVisualScreenshot(server: BrowserCommandRuntimePort,
 		internal: true,
 		signal: options.signal,
 	});
+	const transportMs = Math.max(0, Date.now() - transportStartedAt);
+	const capturedAt = Date.now();
 	const data = isRecord(result.data) ? result.data : {};
 	const dataUrl = typeof data.screenshot === "string" ? data.screenshot : undefined;
-	const dimensions = dataUrl ? imageDimensions(dataUrl) : undefined;
-	if (!dataUrl || !dimensions) return undefined;
+	if (!dataUrl) return undefined;
+	const decodeStartedAt = Date.now();
+	const decoded = decodeDataUrl(dataUrl);
+	const dimensions = imageDimensions(decoded.buffer);
+	if (!dimensions) return undefined;
+	const sha256 = createHash("sha256").update(decoded.buffer).digest("hex");
+	const decodeHashMs = Math.max(0, Date.now() - decodeStartedAt);
 	const captureMethod = typeof data.method === "string" ? data.method : typeof data.fallback === "string" ? data.fallback : "unknown";
 	return {
-		dataUrl,
-		sha256: screenshotSha256(dataUrl),
+		buffer: decoded.buffer,
+		mime: decoded.mime,
+		sha256,
 		width: dimensions.width,
 		height: dimensions.height,
 		captureMethod,
 		actionableGrounding: captureMethod === "persistent_cdp" || captureMethod === "chrome.debugger",
-		capturedAt: Date.now(),
+		capturedAt,
+		transportMs,
+		decodeHashMs,
 	};
 }
 
@@ -98,13 +112,15 @@ export async function materializeVisualObservation(options: {
 	outputPath: string;
 	projectRoot: string;
 	url?: string;
-}): Promise<{ visual: VisualObservation; saved: { path: string; bytes: number; mime: string } }> {
+}): Promise<{ visual: VisualObservation; saved: { path: string; bytes: number; mime: string }; writeMs: number }> {
 	if (!completeVisualFingerprint(options.fingerprint)) throw new Error("visual screenshot has no coherent viewport fingerprint");
 	const fingerprint = options.fingerprint;
 	const screenshotPath = path.join(path.dirname(options.outputPath), `${path.parse(options.outputPath).name}.png`);
 	const resourceUri = artifactResourceUri(screenshotPath, options.projectRoot);
 	if (!resourceUri) throw new Error("visual screenshot is outside the Browser Pilot artifact root");
-	const saved = await saveDataUrl(options.capture.dataUrl, screenshotPath);
+	const writeStartedAt = Date.now();
+	const saved = await saveBuffer(options.capture.buffer, screenshotPath, options.capture.mime);
+	const writeMs = Math.max(0, Date.now() - writeStartedAt);
 	const imageToCss: RefVisualBinding["imageToCss"] = [
 		fingerprint.viewportWidth / options.capture.width, 0, 0,
 		fingerprint.viewportHeight / options.capture.height, 0, 0,
@@ -174,6 +190,7 @@ export async function materializeVisualObservation(options: {
 			targets: fingerprint.viewportWidth > 0 && fingerprint.viewportHeight > 0 ? visualTargets(options.entities, fingerprint.viewportWidth, fingerprint.viewportHeight) : [],
 		},
 		saved,
+		writeMs,
 	};
 }
 

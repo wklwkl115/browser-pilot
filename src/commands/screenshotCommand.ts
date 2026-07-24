@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { resolveArtifactPath, saveDataUrl } from "../artifacts/artifactFiles.js";
+import { decodeDataUrl, resolveArtifactPath, saveBuffer } from "../artifacts/artifactFiles.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
@@ -7,12 +7,8 @@ import type { CommandRegistrarContext } from "./commandShared.js";
 
 const SCREENSHOT_COMMAND = "screenshot.capture";
 
-// Decode PNG dimensions without reading the saved image.
-export function imageDimensions(dataUrl: string): { width: number; height: number } | undefined {
-	const comma = dataUrl.indexOf(",");
-	if (comma < 0) return undefined;
-	let buf: Buffer;
-	try { buf = Buffer.from(dataUrl.slice(comma + 1), "base64"); } catch { return undefined; }
+// Read PNG dimensions without reading the saved image.
+export function imageDimensions(buf: Buffer): { width: number; height: number } | undefined {
 	if (buf.length < 24) return undefined;
 	if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
 		return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
@@ -42,8 +38,9 @@ export function defineScreenshotCommand({ commands, ensureStarted }: CommandRegi
 				let saved: Record<string, unknown> | undefined;
 				if (screenshot) {
 					const outputPath = resolveArtifactPath(ctx, undefined, `screenshot-${Date.now()}.png`);
-					const dims = imageDimensions(screenshot);
-					saved = await saveDataUrl(screenshot, outputPath);
+					const decoded = decodeDataUrl(screenshot);
+					const dims = imageDimensions(decoded.buffer);
+					saved = await saveBuffer(decoded.buffer, outputPath, decoded.mime);
 					if (data) {
 						data.screenshot = `[saved to ${outputPath}]`;
 						if (dims && data.width === undefined) data.width = dims.width;

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -468,13 +468,14 @@ test("commands execution: browser_command rejects postconditions on reads", asyn
 	assert.equal(runtime.calls.some((call) => call.name === "sendCommand"), false);
 });
 
-test("dedicated screenshot and browser_command dispatch their native commands", async () => {
+test("dedicated screenshot and browser_command dispatch their native commands", async (t) => {
 	const directory = await mkdtemp(path.join(tmpdir(), "browser-pilot-owned-tools-"));
+	t.after(() => rm(directory, { recursive: true, force: true }));
 	const runtime = createRuntime({
 		async sendCommand(command, options) {
 			runtime.calls.push({ name: "sendCommand", args: [command, options] });
 			const data = command.cmd === "screenshot.capture"
-				? { screenshot: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9s6Nwl8AAAAASUVORK5CYII=", format: "png" }
+				? { screenshot: VISUAL_PNG, format: "png" }
 				: { echoed: command };
 			return { id: String(command.cmd), acknowledged: true, tabId: 7, data } as BrowserBridgeExecutionResult;
 		},
@@ -482,7 +483,14 @@ test("dedicated screenshot and browser_command dispatch their native commands", 
 
 	const screenshot = defineCommand((context) => defineScreenshotCommand(context), runtime);
 	const screenshotResult = parseResult(await screenshot.execute({ targetRef: "tab-7" }, undefined, { cwd: directory }));
-	assert.match(String((screenshotResult.saved as Record<string, unknown>).path), /screenshot-\d+\.png$/);
+	const saved = screenshotResult.saved as Record<string, unknown>;
+	const screenshotBytes = await readFile(String(saved.path));
+	assert.match(String(saved.path), /screenshot-\d+\.png$/);
+	assert.equal(saved.bytes, screenshotBytes.length);
+	assert.equal(screenshotBytes.toString("base64"), VISUAL_PNG.slice(VISUAL_PNG.indexOf(",") + 1));
+	assert.equal(screenshotResult.format, "png");
+	assert.equal(screenshotResult.width, 1);
+	assert.equal(screenshotResult.height, 1);
 
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	await command.execute({ targetRef: "tab-7", command: { cmd: "transfer.download", url: "https://example.test/file.txt" } });
@@ -677,8 +685,9 @@ test("commands execution: input.ref expands its private native target and routes
 	assert.deepEqual({ ...(send?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", tabId: 7, timeoutMs: 15000, accessMode: "write", signal: undefined });
 });
 
-test("commands execution: visual input.ref derives an ephemeral region, validates drift, and returns pixel evidence", async () => {
+test("commands execution: visual input.ref derives an ephemeral region, validates drift, and returns pixel evidence", async (t) => {
 	const directory = await mkdtemp(path.join(tmpdir(), "browser-pilot-visual-input-"));
+	t.after(() => rm(directory, { recursive: true, force: true }));
 	const baseRef = registerVisualRef();
 	const runtime = createRuntime({
 		async sendCommand(command, options) {
