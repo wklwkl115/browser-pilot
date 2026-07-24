@@ -119,7 +119,7 @@ async function requirePngResource(resourceUri, label) {
 async function invoke(daemon, tool, params, transportTimeoutMs = 10_000) {
 	const result = await daemonJson(daemon, "/invoke", {
 		method: "POST",
-			body: JSON.stringify({ tool, params, cwd: root }),
+		body: JSON.stringify({ tool, params, cwd: root, contractIdentity: daemon.contractIdentity }),
 	}, transportTimeoutMs);
 	if (result.ok !== true || result.terminate === true) throw new Error(`${tool} failed: ${resultText(result) || JSON.stringify(result)}`);
 	return result;

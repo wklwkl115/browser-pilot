@@ -22,8 +22,9 @@ test("AX cache identity requires page epoch and includes every change discrimina
 
 test("observe transport timing includes visual capture and its coherence fingerprints once", () => {
 	const data = pageWorldScanBundle();
-	const timings = finalizedObserveTimings({ fingerprintMs: 3, pageScriptMs: 5, abmlMs: 7, visualMs: 11, screenshotTransportMs: 8, visualDecodeHashMs: 2, visualWriteMs: 1 }, data, undefined);
-	assert.equal(timings.transportMs, 26);
+	const timings = finalizedObserveTimings({ tabRefreshMs: 2, fingerprintMs: 3, pageScriptMs: 5, abmlMs: 7, visualMs: 11, bridgeRoundTrips: 4, screenshotTransportMs: 8, visualDecodeHashMs: 2, visualWriteMs: 1 }, data, undefined);
+	assert.equal(timings.transportMs, 28);
+	assert.equal(timings.bridgeRoundTrips, 4);
 	assert.equal(timings.screenshotTransportMs, 8);
 	assert.equal(timings.visualDecodeHashMs, 2);
 	assert.equal(timings.visualWriteMs, 1);
@@ -65,16 +66,18 @@ function captureOptions(server: BrowserCommandRuntimePort) {
 }
 
 test("scan capture retries one torn DOM+AX observation and accepts the stable retry", async () => {
-	const server = scanCaptureRuntime([1, 2, 3, 3]);
-	const options = captureOptions(server);
+	const server = scanCaptureRuntime([2, 3, 3]);
+	const options = { ...captureOptions(server), pageFingerprint: { changeSeq: 1, pageEpoch: "page-1", documentId: "doc-1", url: "https://example.test/", title: "Example", readyState: "complete", scrollX: 0, scrollY: 0, viewportWidth: 1280, viewportHeight: 720, devicePixelRatio: 1, visibleCount: 0, interactiveCount: 0 } };
 	const result = await executeScanCapture(options);
 	assert.equal(result.observation.abmlRead.ok, true);
 	assert.deepEqual(result.observation.abmlRead.ok ? result.observation.abmlRead.data.observationCoherence : undefined, { status: "stable", attempts: 2 });
 	assert.equal(server.calls.filter((call) => call === "Runtime.evaluate").length, 2);
 	assert.equal(options.timings.abmlCoherenceRetries, 1);
 	assert.equal(options.timings.observationAttempts, 2);
+	assert.equal(options.timings.axCdpCalls, 4);
+	assert.equal(options.timings.bridgeRoundTrips, 9);
 	assert.deepEqual(server.calls, [
-		"content.fingerprint", "Runtime.evaluate", "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "content.fingerprint",
+		"Runtime.evaluate", "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "content.fingerprint",
 		"content.fingerprint", "Runtime.evaluate", "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "content.fingerprint",
 	]);
 });
@@ -108,6 +111,7 @@ test("scan capture brackets an explicitly requested visual observation with the 
 	assert.equal(result.visualCapture?.mime, "image/png");
 	assert.equal(Buffer.isBuffer(result.visualCapture?.buffer), true);
 	assert.equal(options.timings.observationAttempts, 1);
+	assert.equal(options.timings.bridgeRoundTrips, 6);
 	assert.equal(options.timings.screenshotBytes, result.visualCapture?.buffer.length);
 	assert.equal(typeof options.timings.screenshotTransportMs, "number");
 	assert.equal(typeof options.timings.visualDecodeHashMs, "number");

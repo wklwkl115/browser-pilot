@@ -3,7 +3,7 @@ import { BrowserBridgeError, compactError } from "../../utils/errors.js";
 import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
 import { artifactFallbackName, bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, type CommandResultContext } from "../commandRuntime.js";
-import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
+import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, type ObserveToolParams } from "./common.js";
 import { runObserveProviders } from "./scanProviders.js";
 import { prepareScanAssembly } from "./scanAssembly.js";
@@ -54,18 +54,28 @@ async function prepareObservationRequest(
 	signal?: AbortSignal,
 ) {
 	const providerFailures: ObservationProviderFailure[] = [];
-	const startedAt = Date.now();
 	signal?.throwIfAborted();
-	const tabs = await server.refreshTabs(5_000, { browserSessionId: params.browserSessionId, signal }).catch((error: unknown) => {
-		signal?.throwIfAborted();
-		providerFailures.push(providerFailureFromError("tabs-refresh", error, "TABS_REFRESH_FAILED"));
-		return server.getTabs();
-	});
-	signal?.throwIfAborted();
-	timings.tabRefreshMs = elapsedMs(startedAt);
 	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 	const rawTargetRef = targetTabId(params);
-	const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
+	let tabs = server.getTabs();
+	let tabId: number | undefined;
+	let refreshTabs = tabs.length === 0;
+	if (rawTargetRef !== undefined) {
+		try { tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId); }
+		catch { refreshTabs = true; }
+	}
+	if (refreshTabs) {
+		const refreshStartedAt = Date.now();
+		tabs = await server.refreshTabs(5_000, { browserSessionId: params.browserSessionId, signal }).catch((error: unknown) => {
+			signal?.throwIfAborted();
+			providerFailures.push(providerFailureFromError("tabs-refresh", error, "TABS_REFRESH_FAILED"));
+			return server.getTabs();
+		});
+		timings.tabRefreshMs = elapsedMs(refreshStartedAt);
+		addBridgeRoundTrips(timings, 1);
+		if (rawTargetRef !== undefined) tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
+	}
+	signal?.throwIfAborted();
 	const fallbackName = artifactFallbackName("observe-scan");
 	const outputPath = resolveArtifactPath(ctx, undefined, fallbackName);
 	return {

@@ -139,8 +139,7 @@ async function handleTabsCommand(msg: BrowserPilotBridgeCommand): Promise<Browse
       const tabId = Number(msg.tabId || 0);
       const tab = await chrome.tabs.update(tabId, { active: true });
       if (tab.windowId !== undefined) await chrome.windows.update(Number(tab.windowId), { focused: true });
-      const current = await chrome.tabs.get(tabId);
-      const capability = await probeTabCapabilities(tabId, current, Math.max(100, Number(msg.timeoutMs ?? msg.timeout_ms ?? 5000)));
+      const capability = await probeTabCapabilities(tabId, tab, Math.max(100, Number(msg.timeoutMs ?? msg.timeout_ms ?? 5000)));
       return capability.ok === false ? capability : { ok: true, data: { active: true, ...coreRecord(capability.data) } };
     }
     if (msg.method === 'create') {

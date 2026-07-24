@@ -200,11 +200,12 @@ export class BrowserBridgeCommandService {
 	private async withCreatedTabTarget(result: BrowserBridgeExecutionResult, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
 		const createdTabId = this.createdTabId(result);
 		if (createdTabId === undefined) return result;
-		// A newly created tab only becomes a live router session when the extension's ASYNC `tabs_update`
-		// event arrives (chrome.tabs.onCreated -> sendTabsUpdate). Eagerly refresh (tabs.list ->
-		// updateTabs) so follow-up tab-scoped calls can use the created targetRef without an extra list.
+		// A newly created tab becomes a live router session through the extension's ASYNC `tabs_update`.
+		// Refresh only when that event has not arrived before the command response.
 		// Best-effort: a refresh/resolution failure must not turn a successful create into a failure.
-		try { await this.refreshTabs(options.timeoutMs ?? 5_000, { browserSessionId: options.browserSessionId, signal: options.signal }); } catch { /* keep the bridge create result usable by numeric tabId */ }
+		if (!this.deps.tabs.liveSessionForTabId(createdTabId, options.browserSessionId)) {
+			try { await this.refreshTabs(options.timeoutMs ?? 5_000, { browserSessionId: options.browserSessionId, signal: options.signal }); } catch { /* keep the bridge create result usable by numeric tabId */ }
+		}
 		return this.attachCreatedTabFields(result, createdTabId, options.browserSessionId);
 	}
 

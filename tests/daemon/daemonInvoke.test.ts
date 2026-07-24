@@ -6,7 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
 import { handleInvokeRoute, startDaemon } from "../../src/apps/daemon/server.ts";
+import { invokeDaemonTool } from "../../src/apps/mcp/client.ts";
 import { controlRequest, lockfilePath, readLockfile, removeLockfile, writeLockfile, type DaemonInfo } from "../../src/apps/daemon/daemonControl.ts";
+import { createDaemonContractIdentity, localDaemonContractIdentity } from "../../src/apps/daemon/contractIdentity.ts";
 import { strictCommandParameters } from "../../src/commands/commandShared.ts";
 import type { CommandDefinition } from "../../src/commands/commandManifestIndex.ts";
 import { errorResult } from "../../src/utils/toolResult.ts";
@@ -29,12 +31,14 @@ async function invoke(options: {
 	toolByName: Map<string, CommandDefinition>;
 }) {
 	let response: { status: number; json: Record<string, unknown> } | undefined;
+	const contractIdentity = createDaemonContractIdentity([...options.toolByName.values()]);
 	await handleInvokeRoute({
 		send(status, obj) {
 			response = { status, json: JSON.parse(JSON.stringify(obj)) as Record<string, unknown> };
 		},
-		body: options.body,
+		body: { contractIdentity, ...options.body },
 		toolByName: options.toolByName,
+		contractIdentity,
 	});
 	assert.ok(response);
 	return response;
@@ -128,6 +132,19 @@ test("daemon invoke validates parameters", async () => {
 	assert.ok(Array.isArray(res.json.issues));
 });
 
+test("daemon invoke rejects a mismatched contract before command dispatch", async () => {
+	let dispatched = false;
+	const command: CommandDefinition = {
+		name: "browser_never",
+		parameters: strictCommandParameters({}),
+		execute() { dispatched = true; return { content: [] }; },
+	};
+	const res = await invoke({ body: { tool: command.name, params: {}, contractIdentity: {} }, toolByName: new Map([[command.name, command]]) });
+	assert.equal(res.status, 409);
+	assert.equal(res.json.code, "DAEMON_CONTRACT_MISMATCH");
+	assert.equal(dispatched, false);
+});
+
 test("daemon invoke wraps command throws as terminating success envelope", async () => {
 	const res = await invoke({ body: { tool: "browser_throw", params: {} }, toolByName: tools() });
 	assert.equal(res.status, 200);
@@ -169,7 +186,7 @@ test("daemon aborts an active invocation when the control client disconnects", a
 				headers: { "x-browser-pilot-daemon-token": handle.token, "content-type": "application/json" },
 		});
 		req.on("error", () => undefined);
-		req.end(JSON.stringify({ tool: "browser_slow", params: {} }));
+		req.end(JSON.stringify({ tool: "browser_slow", params: {}, contractIdentity: handle.contractIdentity }));
 		await started;
 		req.destroy();
 		await Promise.race([aborted, new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("invoke signal was not aborted")), 1_000))]);
@@ -224,6 +241,55 @@ test("daemon status, connect, and unknown routes preserve control contracts", as
 		assert.deepEqual(missing, { status: 404, json: { ok: false, error: "not found: GET /missing" } });
 	} finally {
 		await handle.close();
+	}
+});
+
+test("MCP client reuses one validated daemon and never replays an uncertain invoke", async () => {
+	isolateDaemonState();
+	const contractIdentity = localDaemonContractIdentity();
+	let statusRequests = 0;
+	let invokeRequests = 0;
+	let resetNextInvoke = false;
+	const invokeBodies: Record<string, unknown>[] = [];
+	const server = http.createServer(async (req, res) => {
+		const send = (status: number, body: Record<string, unknown>) => {
+			const json = JSON.stringify(body);
+			res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(json) });
+			res.end(json);
+		};
+		if (req.headers["x-browser-pilot-daemon-token"] !== "cached-daemon-token") return send(401, { ok: false });
+		if (req.method === "GET" && req.url === "/status") {
+			statusRequests += 1;
+			return send(200, { ok: true, contractIdentity });
+		}
+		if (req.method === "POST" && req.url === "/invoke") {
+			invokeRequests += 1;
+			let raw = "";
+			for await (const chunk of req) raw += String(chunk);
+			invokeBodies.push(JSON.parse(raw) as Record<string, unknown>);
+			if (resetNextInvoke) {
+				req.socket.destroy();
+				return;
+			}
+			return send(200, { ok: true, content: [{ type: "text", text: "{}" }] });
+		}
+		return send(404, { ok: false });
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	try {
+		const address = server.address();
+		if (!address || typeof address === "string") throw new Error("expected TCP listener address");
+		writeLockfile(daemonInfo({ controlPort: address.port, token: "cached-daemon-token", contractIdentity }));
+		await invokeDaemonTool("browser_tabs", { action: "list" }, process.cwd());
+		await invokeDaemonTool("browser_tabs", { action: "list" }, process.cwd());
+		resetNextInvoke = true;
+		await assert.rejects(invokeDaemonTool("browser_tabs", { action: "list" }, process.cwd()));
+		assert.equal(statusRequests, 1);
+		assert.equal(invokeRequests, 3);
+		assert.deepEqual(invokeBodies.map((body) => body.contractIdentity), [contractIdentity, contractIdentity, contractIdentity]);
+	} finally {
+		removeLockfile();
+		await new Promise<void>((resolve) => server.close(() => resolve()));
 	}
 });
 

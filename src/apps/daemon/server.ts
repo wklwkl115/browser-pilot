@@ -24,7 +24,7 @@ import { CommandManifestIndex, type CommandDefinition } from "../../commands/com
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
 import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
 import { daemonVersion } from "./packageInfo.js";
-import { createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
+import { compareDaemonContractIdentity, createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
 
 export const DAEMON_VERSION = daemonVersion();
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
@@ -57,7 +57,7 @@ export interface StartDaemonOptions {
 
 type JsonSender = (status: number, obj: Record<string, unknown>) => void;
 
-export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName"> & {
+export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName" | "contractIdentity"> & {
 	send: JsonSender;
 	body: Record<string, unknown>;
 	signal?: AbortSignal;
@@ -211,7 +211,9 @@ async function executeInvoke(invocation: PreparedInvoke, signal?: AbortSignal): 
 	}
 }
 
-export async function handleInvokeRoute({ send, body, toolByName, signal }: InvokePipelineContext): Promise<void> {
+export async function handleInvokeRoute({ send, body, toolByName, contractIdentity, signal }: InvokePipelineContext): Promise<void> {
+	const contract = compareDaemonContractIdentity(contractIdentity, body.contractIdentity);
+	if (!contract.ok) return send(409, { ok: false, code: contract.code, error: "daemon command contract does not match the MCP client", reason: contract.reason, mismatches: contract.mismatches });
 	const prepared = prepareInvoke(body, toolByName);
 	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
 	return send(200, await executeInvoke(prepared, signal));
@@ -299,7 +301,7 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 					const body = await readBody(req);
 					const invocation = invocationAbortController(req, res);
 					try {
-						return await handleInvokeRoute({ send, body, toolByName: context.toolByName, signal: invocation.signal });
+						return await handleInvokeRoute({ send, body, toolByName: context.toolByName, contractIdentity: context.contractIdentity, signal: invocation.signal });
 					} finally {
 						invocation.cleanup();
 					}

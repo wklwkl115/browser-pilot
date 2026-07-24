@@ -13,6 +13,7 @@ import { validatePageWorldScanBundle } from "../../validation/pageContracts.js";
 import { invalidateAxRawCache } from "../../browser-runtime/abml/axRuntime.js";
 import { BrowserBridgeError, normalizeError } from "../../utils/errors.js";
 import { captureVisualScreenshot, shouldCaptureVisual } from "../visualEvidence.js";
+import { finiteNumber, isRecord } from "../../utils/records.js";
 
 function validatedScanBundle(value: unknown): PageWorldScanBundleV1 {
 	const validation = validatePageWorldScanBundle(value);
@@ -88,6 +89,14 @@ async function readScanAbml(
 		pageFingerprint: fusedPageFingerprint,
 	}, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, signal: options.signal });
 	timings.abmlMs = Number(timings.abmlMs ?? 0) + elapsedMs(abmlStartedAt);
+	const axDiagnostics = abmlRead.ok && isRecord(abmlRead.data.axDiagnostics) ? abmlRead.data.axDiagnostics : undefined;
+	const axCdpCalls = finiteNumber(axDiagnostics?.cdpCalls);
+	const axGeometryCdpCalls = finiteNumber(axDiagnostics?.geometryCdpCalls);
+	if (axCdpCalls !== undefined) {
+		timings.axCdpCalls = Number(timings.axCdpCalls ?? 0) + axCdpCalls;
+		addBridgeRoundTrips(timings, axCdpCalls);
+	}
+	if (axGeometryCdpCalls !== undefined) timings.axGeometryCdpCalls = Number(timings.axGeometryCdpCalls ?? 0) + axGeometryCdpCalls;
 	return { abmlRead, cacheKey };
 }
 
@@ -97,11 +106,11 @@ function withCoherenceDiagnostics(abmlRead: BrowserAbmlStructureResult, attempts
 		: abmlRead;
 }
 
-async function executeScanCaptureAttempt(options: ScanCaptureOptions) {
+async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFingerprint: PageFingerprint | undefined) {
 	const { server, params, rawTargetRef, timeoutMs, scanScript, baseline, timings } = options;
 	let effectiveBaseline = baseline;
 	let reanchorReason = options.reanchorReason;
-	const initialFingerprint = await readCaptureFingerprint(options);
+	const initialFingerprint = seededFingerprint ?? await readCaptureFingerprint(options);
 	const pageScriptStartedAt = Date.now();
 	const evaluated = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract", signal: options.signal });
 	const result = { ...evaluated, data: validatedScanBundle(evaluated.data) };
@@ -142,8 +151,10 @@ async function executeScanCaptureAttempt(options: ScanCaptureOptions) {
 
 export async function executeScanCapture(options: ScanCaptureOptions) {
 	let last: Awaited<ReturnType<typeof executeScanCaptureAttempt>> | undefined;
+	let seededFingerprint = options.pageFingerprint;
 	for (let attempt = 1; attempt <= 2; attempt += 1) {
-		last = await executeScanCaptureAttempt(options);
+		last = await executeScanCaptureAttempt(options, seededFingerprint);
+		seededFingerprint = undefined;
 		options.timings.observationAttempts = attempt;
 		if (last.coherence === "stable") {
 			options.timings.fusedFingerprint = true;

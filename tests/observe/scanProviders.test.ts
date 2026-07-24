@@ -51,4 +51,5 @@ test("observe providers retain hook events when network capture is unavailable",
 	});
 	assert.equal(result.causal && "unavailable" in result.causal, true);
 	assert.equal(result.causal?.events?.[0]?.summary, "saved");
+	assert.equal(result.report.causal?.bridgeRoundTrips, 1);
 });
