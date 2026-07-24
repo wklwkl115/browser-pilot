@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const PACKAGE_NAME = "browser-pilot";
+export const PACKAGE_NAME = "browser-pilot-mcp";
 export const DAEMON_PROTOCOL_VERSION = 6;
 export const COMMAND_CONTRACT_VERSION = 4 as const;
 

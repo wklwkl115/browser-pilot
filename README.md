@@ -24,7 +24,7 @@ Load `bridge/browser_pilot_bridge` as an unpacked extension from `chrome://exten
 ```toml
 [mcp_servers.browser-pilot]
 command = "npx"
-args = ["--yes", "--package", "browser-pilot", "browser-pilot-mcp"]
+args = ["--yes", "--package", "browser-pilot-mcp", "browser-pilot-mcp"]
 ```
 
 For a source checkout, build once and point the MCP client at `dist/src/apps/mcp/bin.js`. The MCP process starts or reuses the local daemon automatically. Set `BROWSER_PILOT_PROJECT_ROOT` when a global MCP configuration must write artifacts into a specific project.
@@ -81,6 +81,10 @@ mise run smoke-browser
 ```
 
 `dist/` and `bridge/browser_pilot_bridge/` are generated outputs.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report security issues through the process in [SECURITY.md](SECURITY.md), not a public issue.
 
 ## License
 

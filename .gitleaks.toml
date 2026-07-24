@@ -1,0 +1,15 @@
+title = "Browser Pilot gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Non-secret test fixtures and public Chrome extension keys"
+targetRules = ["generic-api-key", "jwt", "private-key"]
+paths = [
+  '''(^|/)bridge/(browser_pilot_bridge|pi_browser_bridge)/manifest\.json$''',
+  '''(^|/)evals/browser-workflows/fixtures/cookies\.json$''',
+  '''(^|/)src/bridge/extension/static/manifest\.json$''',
+  '''(^|/)src/tools/webSecurity/browserNative/callbackOastWorker\.mjs$''',
+  '''(^|/)tests/(contracts/check-web-security-tools\.mjs|fixtures/https-sni-certs\.mjs|smoke/smoke-cli-full\.mjs|unit/webSecurity/shared/cookieTokens\.test\.ts|web-security/webSecuritySharedBridge\.test\.ts)$''',
+]
