@@ -17,7 +17,8 @@ import { buildScanEntities } from "../../src/scan/summary.ts";
 import { stableRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
 import { deriveSemanticRefAnchors } from "../../src/kernels/abml/semanticRefAnchor.ts";
 import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
-import { readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
+import { invalidateAxRawCache, mergeAxIntoDomEntities, readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
+import { registerRefDescriptor, resolveRefUriDetailed } from "../../src/resources/resourceRefs.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 import { scanPage } from "../../capture-src/entries/scanTemplate.ts";
 import { pageWorldScanBundle } from "../helpers/pageWorldScan.ts";
@@ -41,7 +42,7 @@ function entity(ref: string, overrides: Partial<Entity> = {}): Entity {
 	};
 }
 
-type CdpCall = { method: string; params?: Record<string, unknown>; timeoutMs?: number };
+type CdpCall = { method: string; params?: Record<string, unknown>; targetId?: string; timeoutMs?: number };
 
 type MockCdpResponse = unknown | ((command: BrowserRuntimeCommand) => unknown);
 
@@ -79,7 +80,7 @@ function createCdpServer(responses: Record<string, MockCdpResponse>) {
 		calls,
 		async sendCommand(command: BrowserRuntimeCommand): Promise<BrowserBridgeExecutionResult> {
 			const method = typeof command.cdpMethod === "string" ? command.cdpMethod : "";
-			calls.push({ method, params: command.params as Record<string, unknown> | undefined, timeoutMs: typeof command.timeoutMs === "number" ? command.timeoutMs : undefined });
+			calls.push({ method, params: command.params as Record<string, unknown> | undefined, ...(typeof command.targetId === "string" ? { targetId: command.targetId } : {}), timeoutMs: typeof command.timeoutMs === "number" ? command.timeoutMs : undefined });
 			const response = responses[method];
 			if (response instanceof Error) throw response;
 			const data = typeof response === "function" ? response(command) : response;
@@ -96,13 +97,14 @@ test("partial AX helper returns bounded successful enrichment diagnostics", asyn
 	const server = createCdpServer({
 		"Accessibility.getPartialAXTree": { nodes: [axNode(42, "button", "Save changes")] },
 	});
-	const result = await readPartialAxTree(server, { browserSessionId: "session-1", tabId: 7, backendNodeId: 42, timeoutMs: 2_000, maxNodes: 5, fetchRelatives: false });
+	const result = await readPartialAxTree(server, { browserSessionId: "session-1", tabId: 7, targetId: "target-a", backendNodeId: 42, timeoutMs: 2_000, maxNodes: 5, fetchRelatives: false });
 	assert.equal(result.nodes.length, 1);
 	assert.equal(result.nodes[0]!.backendDOMNodeId, 42);
 	assert.deepEqual(result.diagnostics, {
 		provider: "partial-ax",
 		status: "ok",
 		backendNodeId: 42,
+		targetId: "target-a",
 		fetchRelatives: false,
 		timeoutMs: 2_000,
 		maxNodes: 5,
@@ -111,6 +113,7 @@ test("partial AX helper returns bounded successful enrichment diagnostics", asyn
 		elapsedMs: result.diagnostics.elapsedMs,
 	});
 	assert.equal(server.calls[0]!.method, "Accessibility.getPartialAXTree");
+	assert.equal(server.calls[0]!.targetId, "target-a");
 	assert.deepEqual(server.calls[0]!.params, { backendNodeId: 42, fetchRelatives: false });
 });
 
@@ -166,11 +169,104 @@ test("full AX reader projects snapshot geometry, paint order, relations, and raw
 	assert.equal(first.diagnostics?.cdpCalls, 2);
 	assert.equal(first.diagnostics?.geometryCdpCalls, 0);
 	assert.equal(first.diagnostics?.cacheHit, false);
+	assert.equal(first.diagnostics?.snapshotDocumentCount, 1);
+	assert.equal(first.diagnostics?.snapshotDocumentsSkipped, undefined);
 
 	const cached = await readAxEntities(server, options);
 	assert.equal(cached.diagnostics?.cacheHit, true);
 	assert.equal(cached.diagnostics?.cdpCalls, 0);
+	assert.equal(cached.diagnostics?.snapshotDocumentCount, 1);
 	assert.equal(server.calls.length, 2);
+	assert.equal(invalidateAxRawCache(options), true);
+	const refreshed = await readAxEntities(server, options);
+	assert.equal(refreshed.diagnostics?.cacheHit, false);
+	assert.equal(server.calls.length, 4);
+});
+
+test("full AX reader redacts password values from AX-only entities and refs", async () => {
+	const server = createCdpServer({
+		"Accessibility.getFullAXTree": { nodes: [axNode(556, "textbox", "Password", { value: { type: "string", value: "secret" } })] },
+		"DOMSnapshot.captureSnapshot": {
+			strings: ["type", "password"],
+			documents: [{ nodes: { backendNodeId: [556], attributes: [[0, 1]] }, layout: { nodeIndex: [], bounds: [] } }],
+		},
+	});
+	const options = { tabId: 7, observationId: "obs-password", cacheKey: "password-cache" };
+	const result = await readAxEntities(server, options);
+	const built = result.entities[0]!;
+	assert.equal(built.entity.value, undefined);
+	assert.equal(built.entity.hints?.valueRedacted, true);
+	assert.equal(built.descriptor.semantic?.value, undefined);
+
+	const appended = mergeAxIntoDomEntities([], result.entities).entities[0]!;
+	const resolved = resolveRefUriDetailed(appended.ref);
+	assert.equal(resolved.ok ? resolved.ref.descriptor.semantic?.value : "missing", undefined);
+	const cached = await readAxEntities(server, options);
+	assert.equal(cached.entities[0]?.entity.value, undefined);
+	assert.equal(cached.entities[0]?.entity.hints?.valueRedacted, true);
+	assert.equal(cached.diagnostics?.cacheHit, true);
+});
+
+test("full AX reader consumes only the main DOMSnapshot document", async () => {
+	const snapshot = domSnapshot();
+	(snapshot.strings as unknown[]).push("type", "password");
+	(snapshot.documents as Array<Record<string, unknown>>).push({
+		nodes: { backendNodeId: [999], attributes: [[4, 5]] },
+		layout: { nodeIndex: [0], bounds: [[900, 800, 50, 20]], paintOrders: [99] },
+	});
+	const server = createCdpServer({
+		"Accessibility.getFullAXTree": { nodes: [axNode(42, "button", "Save"), axNode(999, "textbox", "Child password", { value: { type: "string", value: "secret" } })] },
+		"DOMSnapshot.captureSnapshot": snapshot,
+		"DOM.getBoxModel": { result: {} },
+	});
+	const options = { tabId: 7, observationId: "obs-multi-document", cacheKey: "multi-document-cache" };
+	const result = await readAxEntities(server, options);
+
+	assert.deepEqual(result.snapshotGeometryEntries?.map((entry) => entry.backendNodeId), [42, 77]);
+	assert.deepEqual(result.paintOrderEntries?.map((entry) => entry.backendNodeId), [42, 77]);
+	assert.equal(result.entities[1]?.entity.geometry, undefined);
+	assert.equal(result.entities[1]?.entity.value, undefined);
+	assert.equal(result.entities[1]?.entity.hints?.valueRedacted, true);
+	assert.equal(result.diagnostics?.snapshotDocumentCount, 2);
+	assert.equal(result.diagnostics?.snapshotDocumentsSkipped, 1);
+	const cached = await readAxEntities(server, options);
+	assert.equal(cached.diagnostics?.snapshotDocumentCount, 2);
+	assert.equal(cached.diagnostics?.snapshotDocumentsSkipped, 1);
+});
+
+test("full AX reader keeps snapshot document geometry while projecting viewport state", async () => {
+	const snapshot = domSnapshot();
+	const document = (snapshot.documents as Array<Record<string, unknown>>)[0]!;
+	(document.layout as Record<string, unknown>).bounds = [[10, 120, 80, 30], [120, 400, 40, 30]];
+	const result = await readAxEntities(createCdpServer({
+		"Accessibility.getFullAXTree": { nodes: [axNode(42, "button", "Visible"), axNode(77, "button", "Far")] },
+		"DOMSnapshot.captureSnapshot": snapshot,
+	}), { tabId: 7, observationId: "obs-scrolled", scrollY: 100, viewportWidth: 300, viewportHeight: 200 });
+	assert.deepEqual(result.snapshotGeometryEntries?.map((entry) => entry.bounds.y), [120, 400]);
+	assert.deepEqual(result.entities.map((item) => item.entity.geometry?.box?.y), [20, 300]);
+	assert.deepEqual(result.entities.map((item) => item.entity.state.inViewport), [true, false]);
+});
+
+test("runtime fusion refreshes refs only from exact backend identity and redacts password values", () => {
+	const context = { browserSessionId: "session-1", tabId: 7, observationId: "obs-ref-refresh", capturedAt: Date.now(), url: "https://example.test/" };
+	const dom = buildDomEntityFromScanActionable({ tag: "button", selector: "#fusion", label: "DOM label", clickable: true, backendNodeId: 555, rect: { x: 0, y: 0, width: 100, height: 30 } }, context);
+	const ref = registerRefDescriptor({ descriptor: dom.descriptor });
+	const ax = buildAxEntityFromNode({ role: "button", name: "Accessible label", backendDOMNodeId: 555 }, context, { box: { x: 0, y: 0, w: 100, h: 30 } });
+	const fused = mergeAxIntoDomEntities([{ ...dom.entity, ref }], [ax]).entities[0]!;
+	const resolved = resolveRefUriDetailed(ref);
+	assert.equal(fused.hints?.backendNodeId, 555);
+	assert.equal(resolved.ok, true);
+	if (!resolved.ok) return;
+	assert.deepEqual(resolved.ref.descriptor.locators.slice(0, 2), [{ by: "backendNodeId", value: 555 }, { by: "css", value: "#fusion" }]);
+	assert.equal(resolved.ref.descriptor.semantic?.name, "Accessible label");
+
+	const passwordDom = buildDomEntityFromScanActionable({ tag: "input", role: "textbox", selector: "#password", label: "Password", editable: true, inputKind: "password", backendNodeId: 556, rect: { x: 0, y: 40, width: 100, height: 30 } }, context);
+	const passwordRef = registerRefDescriptor({ descriptor: passwordDom.descriptor });
+	const passwordAx = buildAxEntityFromNode({ role: "textbox", name: "Password", value: "secret", backendDOMNodeId: 556 }, context);
+	const passwordFused = mergeAxIntoDomEntities([{ ...passwordDom.entity, ref: passwordRef }], [passwordAx]).entities[0]!;
+	const passwordResolved = resolveRefUriDetailed(passwordRef);
+	assert.equal(passwordFused.value, undefined);
+	assert.equal(passwordResolved.ok ? passwordResolved.ref.descriptor.semantic?.value : "missing", undefined);
 });
 
 test("full AX reader preserves fragmented snapshot projection semantics", async () => {
@@ -209,7 +305,7 @@ test("full AX reader degrades from paint snapshot and falls back to bounded box 
 		"DOMSnapshot.captureSnapshot": bridgeFailure("snapshot unavailable"),
 		"DOM.getBoxModel": { result: boxModel(5, 6, 70, 20) },
 	});
-	const boxFallback = await readAxEntities(boxFallbackServer, { tabId: 7, observationId: "obs-box-fallback" });
+	const boxFallback = await readAxEntities(boxFallbackServer, { tabId: 7, observationId: "obs-box-fallback", scrollY: 100 });
 	assert.deepEqual(boxFallback.entities[0]?.entity.geometry?.box, { x: 5, y: 6, w: 70, h: 20 });
 	assert.equal(boxFallback.diagnostics?.snapshotGeometryUnavailable, true);
 	assert.equal(boxFallback.diagnostics?.cdpCalls, 4);
@@ -707,13 +803,13 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 	assert.equal(built.entity.structure?.setSize, 4);
 	assert.equal(built.entity.structure?.posInSet, 1);
 	assert.equal(built.entity.structure?.sort, "ascending");
-	assert.deepEqual(built.entity.actionability, { actions: ["click"], confidence: "high" });
+	assert.deepEqual(built.entity.actionability, { actions: ["click"], confidence: "medium" });
 	assert.equal(built.descriptor.owner.topLevelOrigin, "https://example.test");
 	const dom = [entity("bp-ref://dom/1", { role: "button", name: "Save", geometry: { point: { x: 100, y: 100 } } }), entity("bp-ref://dom/2", { role: "button", name: "Save", geometry: { point: { x: 101, y: 101 } } })];
 	const ambiguousAx = buildAxEntityFromNode({ role: "button", name: "Save" }, { observationId: "obs-ax", capturedAt: 10 });
 	const ambiguousSemanticMerge = mergeDomAndAxEntities(dom, [ambiguousAx]);
 	assert.equal(ambiguousSemanticMerge.unmatchedAx.length, 1);
-	assert.deepEqual(ambiguousSemanticMerge.diagnostics.skipped, { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 1, unsafeSemantic: 0 });
+	assert.deepEqual(ambiguousSemanticMerge.diagnostics.skipped, { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 1, targetScopeMismatch: 0, unsafeSemantic: 0 });
 	assert.equal(ambiguousSemanticMerge.diagnostics.degraded, true);
 	const ambiguousBackendMerge = mergeDomAndAxEntities([
 		entity("bp-ref://dom/backend-a", { locators: [{ by: "backendNodeId", value: 88 }] }),
@@ -729,12 +825,14 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 	assert.equal(ambiguousGeometryMerge.diagnostics.skipped.ambiguousGeometry, 1);
 	assert.equal(ambiguousGeometryMerge.diagnostics.axOnly, 1);
 	assert.equal(ambiguousGeometryMerge.diagnostics.degraded, true);
-	const backendMerged = mergeDomAndAxEntities([entity("bp-ref://dom/backend", { role: "button", name: "Old", actionability: { actions: ["click"], confidence: "medium" }, scope: { key: "#feed > article", position: 2, size: 10 }, locators: [{ by: "backendNodeId", value: 99 }, { by: "css", value: "#save" }], hints: { selector: "#save" }, state: { ...entity("x").state, pressed: false } })], [buildAxEntityFromNode({ role: "button", name: "New", backendDOMNodeId: 99, properties: [{ name: "pressed", value: { value: "true" } }, { name: "setsize", value: { value: 6 } }] }, { observationId: "obs-ax", capturedAt: 10 })]);
+	const backendMerged = mergeDomAndAxEntities([entity("bp-ref://dom/backend", { role: "button", name: "Old", actionability: { actions: ["click"], confidence: "medium" }, scope: { key: "#feed > article", position: 2, size: 10 }, locators: [{ by: "backendNodeId", value: 99 }, { by: "css", value: "#save" }], hints: { selector: "#save" }, state: { ...entity("x").state, pressed: false, current: "page" } })], [buildAxEntityFromNode({ role: "button", name: "New", backendDOMNodeId: 99, properties: [{ name: "pressed", value: { value: "true" } }, { name: "current", value: { value: "step" } }, { name: "setsize", value: { value: 6 } }] }, { observationId: "obs-ax", capturedAt: 10 })]);
 	assert.equal(backendMerged.merged[0]!.name, "New");
 	assert.equal(backendMerged.merged[0]!.state.pressed, true);
+	assert.equal(backendMerged.merged[0]!.state.current, "page");
 	assert.deepEqual(backendMerged.merged[0]!.locators, [{ by: "backendNodeId", value: 99 }, { by: "css", value: "#save" }]);
 	assert.deepEqual(backendMerged.merged[0]!.hints?.stateSource, { pressed: "ax" });
-	assert.deepEqual(backendMerged.merged[0]!.actionability, { actions: ["click"], confidence: "high" });
+	assert.deepEqual(backendMerged.merged[0]!.hints?.fusionConflicts, ["state.pressed", "name"]);
+	assert.deepEqual(backendMerged.merged[0]!.actionability, { actions: ["click"], confidence: "medium" });
 	assert.deepEqual(backendMerged.merged[0]!.scope, { key: "#feed > article", position: 2, size: 10 });
 	assert.deepEqual(backendMerged.merged[0]!.structure, { setSize: 6 });
 	assert.equal(backendMerged.diagnostics.axEnriched, 1);
@@ -742,8 +840,9 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 		scanBacked: 1,
 		axEnriched: 1,
 		axOnly: 0,
+		matched: { backend: 1, geometry: 0, semantic: 0 },
 		degraded: false,
-		skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, unsafeSemantic: 0 },
+		skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, targetScopeMismatch: 0, unsafeSemantic: 0 },
 	});
 	const stateNode = buildAxEntityFromNode({ role: "option", name: "Filter", backendDOMNodeId: 101, properties: [{ name: "selected", value: { value: "true" } }, { name: "disabled", value: { value: "true" } }, { name: "checked", value: { value: "false" } }, { name: "level", value: { value: "3" } }, { name: "posinset", value: { value: 2 } }, { name: "setsize", value: { value: 6 } }, { name: "expanded", value: { value: true } }, { name: "current", value: { value: "page" } }] }, { observationId: "obs-ax", capturedAt: 10 });
 	assert.equal(stateNode.entity.state.selected, true);
@@ -757,6 +856,8 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 	assert.equal(unsafeNode.entity.hints?.unsafeNameSkipped, true);
 	const unsafeMerge = mergeDomAndAxEntities([entity("bp-ref://dom/unsafe", { locators: [{ by: "backendNodeId", value: 102 }], hints: { selector: "#unsafe" } })], [unsafeNode]);
 	assert.equal(unsafeMerge.merged[0]!.hints?.selector, "#unsafe");
+	assert.deepEqual(unsafeMerge.merged[0]!.hints?.mergedSources, ["dom", "ax"]);
+	assert.deepEqual(unsafeMerge.merged[0]!.hints?.fusionMatch, { tier: "backend", confidence: "high" });
 	assert.equal(unsafeMerge.diagnostics.skipped.unsafeSemantic, 1);
 	assert.equal(unsafeMerge.diagnostics.axOnly, 0);
 	assert.equal(unsafeMerge.diagnostics.degraded, true);
@@ -874,6 +975,8 @@ test("scan script builder clamps options and injects scan helper blocks determin
 	assert.match(script, /"pageWorldScanSchema":"browser-page-scan\/v1"/);
 	assert.match(source, /fingerprint\s*:\s*scanFingerprint/);
 	assert.match(source, /devicePixelRatio\s*:\s*Number\(window\.devicePixelRatio\s*\|\|\s*1\)/);
+	assert.match(source, /scrollY\s*:\s*Number\(window\.scrollY\s*\|\|\s*0\)/);
+	assert.match(source, /viewportHeight\s*:\s*Math\.max\(/);
 	assert.doesNotMatch(source, /content\.tree|tree\s*:\s*content|function walk\(|iframeNotes|includeIframes|growthProbe|collectVisibleRows|collectMediaCandidates|mediaCandidates|\binteractive\s*:|window\.scrollTo|\.scrollTop\s*=/);
 	assert.match(source, /selected\s*:\s*selectedState.*pressed\s*:\s*pressedAttr===?["']true["'].*expanded\s*:\s*expandedAttr===?["']true["']/);
 	assert.match(source, /documentRect\s*:\s*visible\.documentRect/);
@@ -889,7 +992,8 @@ test("scan script builder clamps options and injects scan helper blocks determin
 	assert.match(source, /aria-labelledby/);
 	assert.match(source, /aria-selected/);
 	assert.match(source, /sr-only/);
-	const transformHelpers = [...new Set(source.match(/\b__[A-Za-z_$][\w$]*/g) ?? [])].filter((name) => name !== "__browserPilotScanFingerprintSeq");
+	assert.doesNotMatch(source, /__browserPilotScanFingerprintSeq/);
+	const transformHelpers = [...new Set(source.match(/\b__[A-Za-z_$][\w$]*/g) ?? [])];
 	assert.equal(transformHelpers.every((name) => name === "__name"), true);
 	assert.doesNotThrow(() => Function(`return ${script};`));
 });

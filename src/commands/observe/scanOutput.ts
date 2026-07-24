@@ -14,6 +14,7 @@ import { pageIdentityFromUnknown, perceptionLedgerKey } from "./pageIdentity.js"
 import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
 import { pageObservationResult } from "../resultMiddleware.js";
 import type { PageObservationBuild } from "./scanProjection.js";
+import type { VisualObservation } from "../../kernels/abml/pageObservation.js";
 
 export type ObservationProviderFailure = {
 	provider: string;
@@ -62,6 +63,8 @@ type FinalizeScanObservationOptions = {
 	scanPageFingerprint: PageFingerprint | undefined;
 	renderStartedAt: number;
 	intent?: string;
+	visual?: VisualObservation;
+	visualSaved?: { path: string; bytes: number; mime: string };
 };
 
 function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summary: Record<string, unknown>) {
@@ -70,11 +73,15 @@ function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summar
 	const baseline = buildBaselineDiagnostics(options);
 	const summaryWarnings = Array.isArray(summary.warnings) ? summary.warnings.filter((warning): warning is string => typeof warning === "string") : [];
 	const warnings = [...baseline.warnings, ...summaryWarnings];
+	const abmlFailure = observation.abmlRead?.ok === false
+		? { code: observation.abmlRead.error.code, message: observation.abmlRead.error.message }
+		: undefined;
 	return {
 		observeTimings: finalizedObserveTimings(timings, data, observation.abmlRead),
 		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axFusion) ? { axFusion: observation.abmlRead.data.axFusion } : {}),
 		...(baseline.diagnostics ? { baseline: baseline.diagnostics } : {}),
 		...(providerFailures.length ? { providerFailures } : {}),
+		...(abmlFailure ? { abmlFailure } : {}),
 		...(warnings.length ? { warnings } : {}),
 	};
 }
@@ -104,6 +111,7 @@ function buildCanonicalPageObservation(
 		providerFailures,
 		diagnostics,
 		providerExecution: options.providers.report,
+		visual: options.visual,
 	});
 }
 
@@ -126,6 +134,7 @@ function buildResultDetails(
 		...(scanPageFingerprint ? { signals: { fingerprint: scanPageFingerprint } } : {}),
 		...(reanchorReason ? { reanchorReason } : {}),
 		diagnostics,
+		...(options.visualSaved ? { visualSaved: options.visualSaved } : {}),
 	};
 }
 

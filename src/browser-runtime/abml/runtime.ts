@@ -16,7 +16,7 @@ import { materializeRelationGraph, derivePaintOrderRelationAnchors, deriveStateR
 import type { AxFusionDiagnostics } from "../../kernels/abml/ax.js";
 import { defaultRefPolicyForKind } from "../../kernels/refs/refPolicy.js";
 import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
-import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
+import type { PageWorldScanBundleV1, ScanPageFingerprint } from "../../kernels/abml/pageWorldScan.js";
 import { validatePageWorldScanBundle } from "../../validation/pageContracts.js";
 
 export type AbmlBrowserRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand" | "snapshot" | "createObservationSnapshot">;
@@ -34,6 +34,7 @@ export type BrowserAbmlStructureInput = {
 	diffOptions?: EntityDiffOptions;
 	prefetchedScan?: PageWorldScanBundleV1;
 	axCacheKey?: string;
+	pageFingerprint?: ScanPageFingerprint;
 };
 
 export type BrowserAbmlStructureResult =
@@ -51,7 +52,7 @@ function tabPageIdentity(tabs: Array<Record<string, unknown>>, tabId: number): {
 	};
 }
 
-function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessionId?: string; tabId?: number; targetGeneration?: number; pageEpoch?: string; url?: string; observationId: string; capturedAt: number }): Entity[] {
+function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessionId?: string; tabId?: number; targetGeneration?: number; pageEpoch?: string; documentId?: string; changeSeq?: number; url?: string; observationId: string; capturedAt: number }): Entity[] {
 	const anchors = deriveSemanticRefAnchors(entities).anchors.filter((item) => item.anchor.mintingEligible && item.anchor.confidence === "high");
 	if (!anchors.length) return entities;
 	const anchorByRef = new Map(anchors.map((item) => [item.ref, item.anchor]));
@@ -74,6 +75,8 @@ function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessio
 				documentEpoch: {
 					...(context.targetGeneration !== undefined ? { targetGeneration: context.targetGeneration } : {}),
 					...(context.pageEpoch ? { pageEpoch: context.pageEpoch } : {}),
+					...(context.documentId ? { documentId: context.documentId } : {}),
+					...(context.changeSeq !== undefined ? { changeSeq: context.changeSeq, mutationEpoch: context.changeSeq } : {}),
 					url: context.url,
 					capturedAt: context.capturedAt,
 				},
@@ -105,8 +108,9 @@ function structureAxFusionDiagnostics(fusion: { diagnostics: AxFusionDiagnostics
 		scanBacked,
 		axEnriched: 0,
 		axOnly: 0,
+		matched: { backend: 0, geometry: 0, semantic: 0 },
 		degraded: axEntityCount > 0,
-		skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, unsafeSemantic: 0 },
+		skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, targetScopeMismatch: 0, unsafeSemantic: 0 },
 	};
 }
 
@@ -134,28 +138,35 @@ async function readStructure(server: AbmlBrowserRuntimeServer, input: BrowserAbm
 	const bundle = validatePageWorldScanBundle(rawData);
 	if (!bundle.ok) throw new BrowserBridgeError("SCAN_BUNDLE_INVALID", "ABML structure read received an invalid browser-page-scan/v1 bundle", { issues: bundle.issues.slice(0, 20) });
 	const data = bundle.value;
+	const pageFingerprint = input.pageFingerprint ?? data.signals.fingerprint;
 	const { targetGeneration, pageEpoch } = tabPageIdentity(bridge.tabs, tabId);
+	const scanCapturedAt = numberValue(data.signals.fingerprint.capturedAt) ?? Date.now();
 	const snapshot = server.createObservationSnapshot({
 		browserSessionId: bridge.browserSessionId,
 		tabId,
 		url: data.page.url,
 		targetGeneration,
 		pageEpoch,
+		documentId: pageFingerprint.documentId,
 		frameScope: "tab",
 		selectionVersion: bridge.selectionVersion,
 		sourceMode: "scan",
-		capturedAt: Date.now(),
+		capturedAt: scanCapturedAt,
 	});
-	const entityContext = { browserSessionId: bridge.browserSessionId, tabId, targetGeneration, pageEpoch, url: data.page.url, observationId: snapshot.snapshotId, capturedAt: snapshot.capturedAt };
+	const entityContext = { browserSessionId: bridge.browserSessionId, tabId, targetGeneration, pageEpoch, documentId: pageFingerprint.documentId, changeSeq: pageFingerprint.changeSeq, url: data.page.url, observationId: snapshot.snapshotId, capturedAt: snapshot.capturedAt };
 	const axRead = await structureAxRead(server, {
 		...entityContext,
 		timeoutMs,
 		cacheKey: input.axCacheKey,
+		scrollX: data.signals.fingerprint.scrollX,
+		scrollY: data.signals.fingerprint.scrollY,
+		viewportWidth: data.signals.fingerprint.viewportWidth,
+		viewportHeight: data.signals.fingerprint.viewportHeight,
 		signal: options.signal,
 	});
 	const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries ?? [], {
-		scanCapturedAt: snapshot.capturedAt,
-		scanCapturedAtIso: new Date(snapshot.capturedAt).toISOString(),
+		scanCapturedAt,
+		scanCapturedAtIso: new Date(scanCapturedAt).toISOString(),
 		snapshotStartedAt: axRead.diagnostics?.snapshotStartedAt,
 		snapshotEndedAt: axRead.diagnostics?.snapshotEndedAt,
 	});

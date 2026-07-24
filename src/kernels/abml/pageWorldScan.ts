@@ -104,6 +104,10 @@ export interface ScanPageFingerprint {
 	title?: string;
 	readyState?: string;
 	devicePixelRatio?: number;
+	scrollX?: number;
+	scrollY?: number;
+	viewportWidth?: number;
+	viewportHeight?: number;
 	visibleCount?: number;
 	interactiveCount?: number;
 	capturedAt?: number;
@@ -119,7 +123,7 @@ export interface PageWorldScanBundleV1 {
 		canvasRegions: ScanCanvasRegion[];
 	};
 	signals: { fingerprint: ScanPageFingerprint };
-	stats: { nodeCount: number; outputChars: number; truncated: boolean; actionableCount?: number; actionablesComplete?: boolean };
+	stats: { nodeCount: number; outputChars: number; truncated: boolean; actionableCount?: number; actionablesComplete?: boolean; visualSurfaceCount?: number; unnamedActionableCount?: number };
 }
 
 export type ScanBundleValidation =
@@ -195,12 +199,12 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 		signals: {
 			type: "object",
 			properties: {
-				fingerprint: { type: "object", properties: { changeSeq: numberSchema, pageEpoch: stringSchema, documentId: stringSchema, url: stringSchema, title: stringSchema, readyState: stringSchema, devicePixelRatio: numberSchema, visibleCount: numberSchema, interactiveCount: numberSchema, capturedAt: numberSchema }, required: ["changeSeq"], additionalProperties: false },
+				fingerprint: { type: "object", properties: { changeSeq: numberSchema, pageEpoch: stringSchema, documentId: stringSchema, url: stringSchema, title: stringSchema, readyState: stringSchema, devicePixelRatio: numberSchema, scrollX: numberSchema, scrollY: numberSchema, viewportWidth: numberSchema, viewportHeight: numberSchema, visibleCount: numberSchema, interactiveCount: numberSchema, capturedAt: numberSchema }, required: ["changeSeq"], additionalProperties: false },
 			},
 			required: ["fingerprint"],
 			additionalProperties: false,
 		},
-		stats: { type: "object", properties: { nodeCount: numberSchema, outputChars: numberSchema, truncated: booleanSchema, actionableCount: numberSchema, actionablesComplete: booleanSchema }, required: ["nodeCount", "outputChars", "truncated"], additionalProperties: false },
+		stats: { type: "object", properties: { nodeCount: numberSchema, outputChars: numberSchema, truncated: booleanSchema, actionableCount: numberSchema, actionablesComplete: booleanSchema, visualSurfaceCount: numberSchema, unnamedActionableCount: numberSchema }, required: ["nodeCount", "outputChars", "truncated"], additionalProperties: false },
 	},
 	required: ["schema", "page", "content", "structure", "signals", "stats"],
 	additionalProperties: false,

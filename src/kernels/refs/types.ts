@@ -50,12 +50,41 @@ export type RefDocumentEpoch = {
 	pageEpoch?: string;
 	url?: string;
 	mutationEpoch?: number;
+	changeSeq?: number;
+	documentId?: string;
 	capturedAt: number;
+};
+
+export type RefVisualBinding = {
+	resourceUri: string;
+	sha256: string;
+	width: number;
+	height: number;
+	captureMethod: string;
+	actionableGrounding: boolean;
+	fingerprint: {
+		changeSeq: number;
+		pageEpoch?: string;
+		documentId?: string;
+		url?: string;
+		scrollX: number;
+		scrollY: number;
+		viewportWidth: number;
+		viewportHeight: number;
+		devicePixelRatio: number;
+	};
+	imageToCss: [number, number, number, number, number, number];
+	anchor?: {
+		hostRef: string;
+		point: { x: number; y: number };
+		to?: { x: number; y: number };
+	};
 };
 
 export type RefSemanticState = Record<string, boolean>;
 
 export type RefGeometry = {
+	/** Viewport-relative CSS pixels. */
 	box?: { x: number; y: number; w: number; h: number };
 	point?: { x: number; y: number };
 };
@@ -67,6 +96,7 @@ export type RefDescriptor = {
 	owner: RefOwner;
 	policy: RefPolicy;
 	snapshot?: RefSnapshotBinding;
+	visual?: RefVisualBinding;
 	semantic?: {
 		role?: string;
 		name?: string;

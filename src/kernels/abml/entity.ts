@@ -11,6 +11,9 @@ type ScanVisionInput = ScanActionable | ScanCanvasRegion | Record<string, unknow
 
 export type EntityKind = Extract<RefKind, "element" | "control" | "text" | "region" | "media" | "frame">;
 export type EntitySource = "dom" | "ax" | "vision";
+// Public entity geometry is always viewport-relative CSS pixels. DOMSnapshot document coordinates
+// are kept in SnapshotGeometryEntry and converted at the browser-runtime boundary.
+export type EntityGeometry = { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } };
 
 export type EntityAction = "click" | "edit";
 export type EntityActionability = {
@@ -100,7 +103,7 @@ export type Entity = {
 	relations?: EntityRelation[];
 	source: EntitySource;
 	locators?: Locator[];
-	geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } };
+	geometry?: EntityGeometry;
 	children?: Entity[] | { handle: string; count: number };
 	hints?: { listContainer?: boolean; jsonPath?: string; selector?: string; [key: string]: unknown };
 };
@@ -111,6 +114,8 @@ export type ScanEntityContext = {
 	targetId?: string;
 	targetGeneration?: number;
 	pageEpoch?: string;
+	documentId?: string;
+	changeSeq?: number;
 	url?: string;
 	observationId: string;
 	capturedAt: number;
@@ -120,6 +125,8 @@ function documentEpoch(context: ScanEntityContext): NonNullable<RefDescriptor["d
 	return {
 		...(context.targetGeneration ? { targetGeneration: context.targetGeneration } : {}),
 		...(context.pageEpoch ? { pageEpoch: context.pageEpoch } : {}),
+		...(context.documentId ? { documentId: context.documentId } : {}),
+		...(context.changeSeq !== undefined ? { changeSeq: context.changeSeq, mutationEpoch: context.changeSeq } : {}),
 		url: context.url,
 		capturedAt: context.capturedAt,
 	};
@@ -525,11 +532,12 @@ export function buildVisionRegionFromCanvasActionable(node: ScanVisionInput, con
 			inViewport: Boolean(point || geometry.box),
 		},
 		...(node.clickable === true ? { actionability: { actions: ["click"], hint: name, confidence: "medium" } } : {}),
-		source: "vision",
+		source: "dom",
 		locators,
 		...(Object.keys(geometry).length ? { geometry } : {}),
 		hints: {
 			visualFloor: true,
+			visualSurface: true,
 			canvasRegion: true,
 			jsonPath: `data.structure.actionables[${Number(node.index ?? 0)}]`,
 			selector: stringValue(node.selector),

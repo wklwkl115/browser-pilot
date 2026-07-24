@@ -4,7 +4,7 @@ import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse 
 const INPUT_CDP_SESSION_NAME = "browser-pilot-input";
 const TIMEOUT_MS = 15000;
 type Sent = { method: string; type?: string };
-type RefPoint = { x: number; y: number; cdpRoute?: JsonRecord };
+type RefPoint = { x: number; y: number; to?: { x: number; y: number }; grounded?: JsonRecord; cdpRoute?: JsonRecord };
 type BackendTarget = { backendNodeId: number; targetId?: string };
 
 function rec(v: unknown): JsonRecord { return v && typeof v === "object" && !Array.isArray(v) ? v as JsonRecord : {}; }
@@ -79,7 +79,8 @@ function refTargetSummary(target: JsonRecord, backendNodeId?: number): JsonRecor
 	return { ...(refId ? { refId } : {}), ...(backendNodeId !== undefined ? { backendNodeId } : {}), ...(targetId ? { targetId } : {}) };
 }
 function failRef(code: "BACKEND_NODE_STALE" | "OOPIF_SESSION_UNSUPPORTED" | "INVALID_REF_TARGET", message: string, startedAt: number, target: JsonRecord, backendNodeId?: number, extra: JsonRecord = {}): BrowserPilotBridgeResponse {
-	return err(code, message, { input: { command: "input.ref", action: "click", dispatchOnly: true, dispatched: 0, events: [], cdpSessionName: INPUT_CDP_SESSION_NAME, target: refTargetSummary(target, backendNodeId), elapsedMs: Date.now() - startedAt, ...extra } });
+	const action = cleanString(extra.action) ?? "click";
+	return err(code, message, { input: { command: "input.ref", dispatchOnly: true, dispatched: 0, events: [], cdpSessionName: INPUT_CDP_SESSION_NAME, target: refTargetSummary(target, backendNodeId), elapsedMs: Date.now() - startedAt, ...extra, action } });
 }
 function backendTarget(target: JsonRecord): BackendTarget | undefined {
 	const targetId = targetIdFor(target);
@@ -135,6 +136,53 @@ const REF_POINT_FUNCTION = `function(input) {
 	return { ok: false, reason: "occluded" };
 }`;
 
+const VISUAL_POINT_FUNCTION = `function(input) {
+	const basis = input.basis || {};
+	const anchor = input.anchor || {};
+	const point = anchor.point || {};
+	const to = anchor.to || null;
+	const vw = Math.max(document.documentElement.clientWidth || 0, innerWidth || 0);
+	const vh = Math.max(document.documentElement.clientHeight || 0, innerHeight || 0);
+	const close = (a, b) => Math.abs(Number(a) - Number(b)) < 0.5;
+	if (!vw || !vh || !close(vw, basis.viewportWidth) || !close(vh, basis.viewportHeight)) return { ok: false, reason: "viewport_changed", vw, vh };
+	if (!close(scrollX || 0, basis.scrollX) || !close(scrollY || 0, basis.scrollY)) return { ok: false, reason: "scroll_changed" };
+	if (!close(devicePixelRatio || 1, basis.devicePixelRatio)) return { ok: false, reason: "device_scale_changed" };
+	if (basis.url && location.href !== basis.url) return { ok: false, reason: "url_changed" };
+	if (![point.x, point.y].every(value => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1)) return { ok: false, reason: "invalid_point" };
+	const map = value => ({ x: Math.max(0, Math.min(vw - 1, Math.round(Number(value.x) * vw))), y: Math.max(0, Math.min(vh - 1, Math.round(Number(value.y) * vh))) });
+	const mapped = map(point);
+	const hit = document.elementFromPoint(mapped.x, mapped.y);
+	if (!hit) return { ok: false, reason: "not_found" };
+	const style = getComputedStyle(hit);
+	if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0" || style.pointerEvents === "none") return { ok: false, reason: "not_hittable" };
+	const normalized = value => String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
+	const role = normalized(hit.getAttribute && hit.getAttribute("role") || hit.tagName || "");
+	const name = normalized(hit.getAttribute && (hit.getAttribute("aria-label") || hit.getAttribute("title") || hit.getAttribute("alt")) || hit.textContent || "").slice(0, 160);
+	const rect = hit.getBoundingClientRect();
+	return { ok: true, x: mapped.x, y: mapped.y, ...(to ? { to: map(to) } : {}), grounded: { tag: String(hit.tagName || "").toLowerCase(), role, name, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } } };
+}`;
+
+async function visualRefPoint(tabId: number, msg: BrowserPilotBridgeCommand, target: JsonRecord, startedAt: number): Promise<RefPoint | BrowserPilotBridgeResponse> {
+	const visual = rec(target.visual), anchor = rec(visual.anchor), basis = rec(visual.fingerprint);
+	const action = String(msg.action || "click").toLowerCase();
+	if (!visual.actionableGrounding || !Object.keys(anchor).length) return failRef("INVALID_REF_TARGET", "Visual input.ref requires an actionable observation-bound anchor", startedAt, target, undefined, { action });
+	const response = await cdp(tabId, msg, "Runtime.evaluate", { expression: `(${VISUAL_POINT_FUNCTION})(${JSON.stringify({ basis, anchor })})`, returnByValue: true, awaitPromise: true }, targetIdFor(target));
+	if (!response.ok) return failRef(backendFailure(response), cdpErrorText(response), startedAt, target, undefined, { action, resolution: "visualPoint", phase: "resolve" });
+	const value = runtimeValue(response), x = opt(value.x), y = opt(value.y), toValue = rec(value.to);
+	if (value.ok !== true || x === undefined || y === undefined) return failRef("BACKEND_NODE_STALE", `input.ref visual target failed: ${String(value.reason || "not_found")}`, startedAt, target, undefined, { action, resolution: "visualPoint", phase: "resolve" });
+	const located = await cdp(tabId, msg, "DOM.getNodeForLocation", { x, y, includeUserAgentShadowDOM: true }, targetIdFor(target));
+	if (!located.ok) return failRef(backendFailure(located), cdpErrorText(located), startedAt, target, undefined, { action, resolution: "visualPoint", phase: "ground" });
+	const locatedValue = rec(rec(located.data).result), backendNodeId = opt(locatedValue.backendNodeId);
+	if (backendNodeId === undefined) return failRef("BACKEND_NODE_STALE", "input.ref visual target could not be grounded to a live browser node", startedAt, target, undefined, { action, resolution: "visualPoint", phase: "ground" });
+	const toX = opt(toValue.x), toY = opt(toValue.y);
+	return {
+		x,
+		y,
+		...(toX !== undefined && toY !== undefined ? { to: { x: toX, y: toY } } : {}),
+		grounded: { ...rec(value.grounded), backendNodeId, ...(typeof locatedValue.frameId === "string" ? { frameId: locatedValue.frameId } : {}) },
+	};
+}
+
 async function liveRefPoint(tabId: number, msg: BrowserPilotBridgeCommand, target: JsonRecord, startedAt: number): Promise<RefPoint | BrowserPilotBridgeResponse> {
 	const selectors = cssSelectors(target);
 	const fallback = refPoint(target);
@@ -188,21 +236,36 @@ async function backendPoint(tabId: number, msg: BrowserPilotBridgeCommand, targe
 async function handleBrowserPilotRefInputCommand(cmd: string, tabId: number, msg: BrowserPilotBridgeCommand, startedAt = Date.now()): Promise<BrowserPilotBridgeResponse> {
 	if (cmd !== "input.ref") return err("INVALID_RULE", "Unknown ref input command: " + cmd, { cmd });
 	const action = String(msg.action || "").toLowerCase();
-	if (action !== "click") return err("INVALID_RULE", "input.ref action must be click", { action });
+	if (!["click", "hover", "wheel", "drag", "type"].includes(action)) return err("INVALID_RULE", "input.ref action must be click, hover, wheel, drag, or type", { action });
 	const target = rec(msg.target), backend = backendTarget(target);
-	const point = backend ? await backendPoint(tabId, msg, target, backend, startedAt) : await liveRefPoint(tabId, msg, target, startedAt);
+	const visual = Object.keys(rec(target.visual)).length > 0;
+	if (!visual && action !== "click") return err("INVALID_RULE", "Non-visual input.ref targets support click only", { action });
+	const point = visual ? await visualRefPoint(tabId, msg, target, startedAt) : backend ? await backendPoint(tabId, msg, target, backend, startedAt) : await liveRefPoint(tabId, msg, target, startedAt);
 	if (point && "ok" in point) {
 		return point;
 	}
-	if (!point) return failRef("INVALID_REF_TARGET", "input.ref target requires backendNodeId or point", startedAt, target, backend?.backendNodeId);
-	const resolution = backend ? "backendNodeId" : "liveLocator";
-	const sent: Sent[] = [], focusEmulation = await focus(tabId, msg), base = { x: point.x, y: point.y, modifiers: 0 };
-	for (const p of [{ ...base, type: "mouseMoved", button: "none" }, { ...base, type: "mousePressed", button: "left", clickCount: 1 }, { ...base, type: "mouseReleased", button: "left", clickCount: 1 }]) {
-		const failed = await emit(tabId, msg, "Input.dispatchMouseEvent", p, sent, backend?.targetId);
-		if (failed) return failRef("BACKEND_NODE_STALE", cdpErrorText(failed), startedAt, target, backend?.backendNodeId, { resolution, phase: "dispatchMouseEvent", attemptedEvents: sent.map((item) => item.type).filter(Boolean), ...(backend?.targetId ? { targetId: backend.targetId, targetScoped: true } : {}) });
+	if (!point) return failRef("INVALID_REF_TARGET", "input.ref target requires backendNodeId or point", startedAt, target, backend?.backendNodeId, { action });
+	const resolution = visual ? "visualPoint" : backend ? "backendNodeId" : "liveLocator";
+	const sent: Sent[] = [], focusEmulation = await focus(tabId, msg), modifiers = mods(msg.modifiers), b = button(msg.button), clickCount = Math.max(1, Math.trunc(Number(msg.count || 1))), base = { x: point.x, y: point.y, modifiers };
+	const events: JsonRecord[] = action === "hover"
+		? [{ ...base, type: "mouseMoved", button: "none" }]
+		: action === "wheel"
+			? [{ ...base, type: "mouseWheel", button: "none", deltaX: opt(msg.deltaX) ?? 0, deltaY: opt(msg.deltaY) ?? 0 }]
+			: action === "drag"
+				? point.to ? [{ ...base, type: "mouseMoved", button: "none" }, { ...base, type: "mousePressed", button: b, clickCount }, ...line({ x: point.x, y: point.y }, point.to).map(p => ({ type: "mouseMoved", x: p.x, y: p.y, button: b, modifiers })), { type: "mouseReleased", x: point.to.x, y: point.to.y, button: b, clickCount, modifiers }] : []
+				: [{ ...base, type: "mouseMoved", button: "none" }, { ...base, type: "mousePressed", button: b, clickCount }, { ...base, type: "mouseReleased", button: b, clickCount }];
+	if (action === "drag" && !events.length) return failRef("INVALID_REF_TARGET", "input.ref drag requires a visual destination", startedAt, target, undefined, { action });
+	for (const p of events) {
+			const failed = await emit(tabId, msg, "Input.dispatchMouseEvent", p, sent, backend?.targetId);
+			if (failed) return failRef("BACKEND_NODE_STALE", cdpErrorText(failed), startedAt, target, backend?.backendNodeId, { action, resolution, phase: "dispatchMouseEvent", attemptedEvents: sent.map((item) => item.type).filter(Boolean), ...(backend?.targetId ? { targetId: backend.targetId, targetScoped: true } : {}) });
+		}
+	if (action === "type") {
+		if (typeof msg.text !== "string") return err("INVALID_RULE", "input.ref type requires text", { action });
+		const failed = await emit(tabId, msg, "Input.insertText", { text: msg.text }, sent, backend?.targetId);
+		if (failed) return failRef("BACKEND_NODE_STALE", cdpErrorText(failed), startedAt, target, backend?.backendNodeId, { action, resolution, phase: "insertText" });
 	}
 	const pointRoute = "cdpRoute" in point ? point.cdpRoute : undefined;
-	return done("input.ref", startedAt, sent, focusEmulation, { action: "click", resolution, dispatchOnly: true, target: refTargetSummary(target, backend?.backendNodeId), ...(backend?.targetId ? { targetId: backend.targetId, targetScoped: true, attachRouteUsed: pointRoute?.attachRouteUsed === true, ...(pointRoute ? { cdpRoute: pointRoute } : {}) } : {}), coordinates: { x: Math.round(point.x), y: Math.round(point.y) } });
+	return done("input.ref", startedAt, sent, focusEmulation, { action, resolution, dispatchOnly: true, target: { ...refTargetSummary(target, backend?.backendNodeId), ...(point.grounded ? { grounded: point.grounded } : {}) }, ...(backend?.targetId ? { targetId: backend.targetId, targetScoped: true, attachRouteUsed: pointRoute?.attachRouteUsed === true, ...(pointRoute ? { cdpRoute: pointRoute } : {}) } : {}), coordinates: { x: Math.round(point.x), y: Math.round(point.y), ...(point.to ? { to: { x: Math.round(point.to.x), y: Math.round(point.to.y) } } : {}) }, ...(action === "type" && typeof msg.text === "string" ? { text: { redacted: true, charCount: msg.text.length } } : {}) });
 }
 
 async function pointer(tabId: number, msg: BrowserPilotBridgeCommand, startedAt: number): Promise<BrowserPilotBridgeResponse> {

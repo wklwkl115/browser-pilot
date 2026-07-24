@@ -336,6 +336,7 @@ export function projectObservationResources(observation: PageObservationV3, path
 			snapshot: { snapshotId: observation.snapshot.snapshotId, capturedAt: observation.snapshot.capturedAt, ttlMs: observation.snapshot.ttlMs },
 			...(observation.gist || title ? { gist: { ...(observation.gist ?? {}), ...(title ? { title } : {}) } } : {}),
 			...(rootSection ? { content: { text: rootSection.text.slice(0, ROOT_CONTENT_MAX_CHARS), ...(headings?.length ? { headings } : {}), complete: observation.content?.complete !== false && sections.length <= 1 && rootSection.text.length <= ROOT_CONTENT_MAX_CHARS } } : {}),
+			...(observation.visual ? { visual: observation.visual } : {}),
 			...(outline?.length ? { outline } : {}),
 			...(actionSpace ? { actionSpace } : {}),
 			...(snapshotProjection ? { snapshotProjection } : {}),

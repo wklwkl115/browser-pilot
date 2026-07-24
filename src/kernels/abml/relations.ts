@@ -7,7 +7,7 @@
 // anchors and mints refs (DOM↔AX merge), then this pure module materializes anchors→refs and
 // summarizes. No browser, Node, or tools imports — stays inside the abml-kernel boundary.
 import type { Entity, EntityRelation, RelationType } from "./entity.js";
-import { backendNodeKey, bareBackendNodeKey, cleanTargetId } from "./nodeKey.js";
+import { backendNodeKey, cleanTargetId } from "./nodeKey.js";
 
 // A relation edge before ref materialization. sourceKey/targetKey are node-id keys in the
 // shared key space "b:<backendDOMNodeId>" | "a:<axNodeId>" — never leaked to callers.
@@ -60,9 +60,8 @@ function typeRank(type: RelationType): number {
 // The keys an entity answers to, across the shared anchor key space:
 //   t:<targetId>:b:<backendDOMNodeId> · b:<backendDOMNodeId> · a:<axNodeId> — AX-derived endpoints (property/table/currentIn relations)
 //   s:<selector>          — DOM endpoints (occlusion relations match by CSS selector)
-// All of an entity's keys register so an anchor keyed by any of them resolves to its ref. When an
-// OOPIF target id is known, the composite key is registered first and the bare backend key remains
-// available for providers that do not report a target id.
+// Target-scoped backend identities never register a bare fallback: backend ids are only unique
+// within their CDP target/session.
 export function entityRelationKeys(entity: Entity): string[] {
 	const keys: string[] = [];
 	const locator = entity.locators?.find((item) => item.by === "backendNodeId");
@@ -71,10 +70,7 @@ export function entityRelationKeys(entity: Entity): string[] {
 	const backend = Number.isFinite(hintBackend) ? hintBackend : locator?.by === "backendNodeId" && Number.isFinite(locatorBackend) ? locatorBackend : undefined;
 	if (backend !== undefined) {
 		const targetId = cleanTargetId(entity.hints?.targetId ?? entity.hints?.cdpTargetId) ?? (locator?.by === "backendNodeId" ? cleanTargetId(locator.targetId) : undefined);
-		const bareKey = bareBackendNodeKey(backend);
-		const compositeKey = backendNodeKey({ backendNodeId: backend, targetId });
-		keys.push(compositeKey);
-		if (compositeKey !== bareKey) keys.push(bareKey);
+		keys.push(backendNodeKey({ backendNodeId: backend, targetId }));
 	}
 	const axNodeId = entity.hints?.axNodeId;
 	if (typeof axNodeId === "string" && axNodeId.trim()) keys.push(`a:${axNodeId.trim()}`);

@@ -10,6 +10,7 @@ import { prepareScanAssembly } from "./scanAssembly.js";
 import { executeScanCapture } from "./scanCapture.js";
 import { finalizeScanObservation, type ObservationProviderFailure } from "./scanOutput.js";
 import { prepareScanSession } from "./scanSession.js";
+import { materializeVisualObservation } from "../visualEvidence.js";
 
 function providerFailure(provider: string, code: string, message?: string, details?: Record<string, unknown>): ObservationProviderFailure {
 	return {
@@ -150,6 +151,27 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		causal,
 		ledgerFrame,
 	});
+	let visual: Awaited<ReturnType<typeof materializeVisualObservation>> | undefined;
+	if (capture.visualCapture && fusedPageFingerprint) {
+		try {
+			visual = await materializeVisualObservation({
+				capture: capture.visualCapture,
+				fingerprint: fusedPageFingerprint,
+				entities: assembly.envelopeEntities,
+				snapshot: snapshotMeta,
+				outputPath: outputPath!,
+				projectRoot: ctx?.cwd ?? process.cwd(),
+				url: data.page.url,
+			});
+		} catch (error) {
+			providerFailures.push(providerFailureFromError("visual", error, "VISUAL_MATERIALIZATION_FAILED"));
+		}
+	} else if (capture.visualRequested) {
+		providerFailures.push(providerFailure("visual", "VISUAL_CAPTURE_FAILED", "A coherent actionable screenshot was unavailable"));
+	}
+	providers.report.visual = capture.visualRequested
+		? visual ? { planned: true, status: "executed" } : { planned: true, status: "degraded", reason: "visual-capture-unavailable" }
+		: { planned: false, status: "skipped", reason: "not-required" };
 	return await finalizeScanObservation({
 		server,
 		ctx,
@@ -174,6 +196,8 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		scanPageFingerprint,
 		renderStartedAt,
 		intent: params.intent,
+		visual: visual?.visual,
+		visualSaved: visual?.saved,
 	});
 }
 

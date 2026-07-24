@@ -76,6 +76,27 @@ export interface PageObservationContent {
 	complete: boolean;
 }
 
+export interface VisualObservation {
+	ref: string;
+	resourceUri: string;
+	captureMethod: string;
+	actionableGrounding: boolean;
+	coordinateSpace: "normalized-image";
+	image: { width: number; height: number; sha256: string };
+	basis: {
+		observationId: string;
+		changeSeq: number;
+		url?: string;
+		scrollX: number;
+		scrollY: number;
+		viewportWidth: number;
+		viewportHeight: number;
+		devicePixelRatio: number;
+		imageToCss: [number, number, number, number, number, number];
+	};
+	targets: Array<{ ref: string; box: { x: number; y: number; w: number; h: number } }>;
+}
+
 /** Saved artifacts use the same v3 root while retaining collection evidence. */
 export interface CollectionSummary extends CompactCollection {
 	collectionId?: string;
@@ -127,6 +148,7 @@ export interface PageObservationV3 {
 	delta?: "session";
 	baselineSnapshotId?: string;
 	content?: PageObservationContent;
+	visual?: VisualObservation;
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
 	entities?: Entity[];
@@ -153,6 +175,7 @@ export interface PageObservationView {
 	target: Pick<PageTarget, "url">;
 	snapshot: Pick<ObservationSnapshot, "snapshotId" | "capturedAt" | "ttlMs">;
 	content?: PageObservationContent;
+	visual?: VisualObservation;
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
 	actionSpace?: AgentActionSpace;
@@ -209,6 +232,31 @@ const ACTION_SPACE_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
+const VISUAL_OBSERVATION_SCHEMA = {
+	type: "object",
+	properties: {
+		ref: { type: "string", pattern: "^bp-ref://" },
+		resourceUri: { type: "string", pattern: "^browser-pilot://artifact/" },
+		captureMethod: { type: "string", minLength: 1 },
+		actionableGrounding: { type: "boolean" },
+		coordinateSpace: { const: "normalized-image" },
+		image: { type: "object", properties: { width: { type: "number", exclusiveMinimum: 0 }, height: { type: "number", exclusiveMinimum: 0 }, sha256: { type: "string", pattern: "^[0-9a-f]{64}$" } }, required: ["width", "height", "sha256"], additionalProperties: false },
+		basis: {
+			type: "object",
+			properties: {
+				observationId: { type: "string", minLength: 1 }, changeSeq: { type: "number" }, url: { type: "string" },
+				scrollX: { type: "number" }, scrollY: { type: "number" }, viewportWidth: { type: "number", exclusiveMinimum: 0 }, viewportHeight: { type: "number", exclusiveMinimum: 0 }, devicePixelRatio: { type: "number", exclusiveMinimum: 0 },
+				imageToCss: { type: "array", minItems: 6, maxItems: 6, items: { type: "number" } },
+			},
+			required: ["observationId", "changeSeq", "scrollX", "scrollY", "viewportWidth", "viewportHeight", "devicePixelRatio", "imageToCss"],
+			additionalProperties: false,
+		},
+		targets: { type: "array", maxItems: 128, items: { type: "object", properties: { ref: { type: "string", pattern: "^bp-ref://" }, box: { type: "object", properties: { x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 }, w: { type: "number", minimum: 0, maximum: 1 }, h: { type: "number", minimum: 0, maximum: 1 } }, required: ["x", "y", "w", "h"], additionalProperties: false } }, required: ["ref", "box"], additionalProperties: false } },
+	},
+	required: ["ref", "resourceUri", "captureMethod", "actionableGrounding", "coordinateSpace", "image", "basis", "targets"],
+	additionalProperties: false,
+} as const;
+
 const PROVIDER_ITEM_SCHEMA = {
 	type: "object",
 	properties: {
@@ -257,6 +305,7 @@ export const PAGE_OBSERVATION_V3_JSON_SCHEMA = {
 		},
 		reanchorReason: { enum: ["document_changed", "target_replaced", "session_changed", "identity_unproven", "baseline_missing"] }, delta: { const: "session" }, baselineSnapshotId: { type: "string" },
 		content: { type: "object", properties: { text: { type: "string" }, headings: { type: "array", items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
+		visual: VISUAL_OBSERVATION_SCHEMA,
 		gist: { type: "object" }, outline: { type: "array", items: { type: "object" } }, entities: { type: "array", items: { type: "object" } },
 		actionSpace: ACTION_SPACE_SCHEMA,
 		relations: { type: "object" }, identity: { type: "object" }, inference: { type: "object" }, diff: { type: "object" }, causal: { type: "object" }, treeDiff: { type: "object" }, snapshotProjection: { type: "object" }, collections: { type: "array", items: COLLECTION_SCHEMA },
@@ -312,6 +361,7 @@ export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
 			additionalProperties: false,
 		},
 		content: { type: "object", properties: { text: { type: "string", maxLength: 6_000 }, headings: { type: "array", maxItems: 16, items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
+		visual: VISUAL_OBSERVATION_SCHEMA,
 		gist: { type: "object" },
 		outline: { type: "array", maxItems: 8, items: { type: "object" } },
 		actionSpace: ACTION_SPACE_SCHEMA,

@@ -3,16 +3,16 @@ import type { PageWorldScanBundleV1, ScanActionable } from "./pageWorldScan.js";
 import { buildBoundedSpatialIndex, queryBoundedSpatialIndex, type BoundedSpatialIndex, type SpatialRect } from "./spatialIndex.js";
 
 type Rect = SpatialRect;
-type IndexedEntry = SnapshotGeometryEntry & { scaledBounds: Rect };
 type GeometryIndex = {
-	entries: IndexedEntry[];
-	byId: Map<string, IndexedEntry>;
-	spatial: BoundedSpatialIndex<IndexedEntry>;
+	entries: SnapshotGeometryEntry[];
+	byId: Map<string, SnapshotGeometryEntry>;
+	spatial: BoundedSpatialIndex<SnapshotGeometryEntry>;
 };
 type BootstrapOptions = { scanCapturedAt?: number; scanCapturedAtIso?: string; snapshotStartedAt?: string; snapshotEndedAt?: string };
 
 export type SnapshotGeometryEntry = {
 	backendNodeId: number;
+	/** Document-relative CSS pixels from DOMSnapshot.captureSnapshot. */
 	bounds: Rect;
 	attrs?: Record<string, string>;
 };
@@ -40,7 +40,7 @@ export type BackendNodeIdBootstrapStats = {
 	unsupported: number;
 	coverage: number;
 	matchThreshold: number;
-	snapshotScaleDivisor: number;
+	coordinateSpace: "document-css-px";
 	viewportKnown: boolean;
 	sampleWindowMs?: number;
 	scanCapturedAt?: string;
@@ -68,11 +68,6 @@ function rectFromScan(value: unknown): Rect | undefined {
 	return { x, y, w, h };
 }
 
-function scaledRect(rect: Rect, scale: number): Rect {
-	const divisor = scale > 0 ? scale : 1;
-	return { x: rect.x / divisor, y: rect.y / divisor, w: rect.w / divisor, h: rect.h / divisor };
-}
-
 function rectArea(rect: { w: number; h: number }): number {
 	return Math.max(0, rect.w) * Math.max(0, rect.h);
 }
@@ -93,26 +88,24 @@ function idFromSimpleSelector(selector: unknown): string | undefined {
 	return match?.[1];
 }
 
-function countStatuses(records: BackendNodeIdBootstrapRecord[]): Omit<BackendNodeIdBootstrapStats, "total" | "coverage" | "matchThreshold" | "snapshotScaleDivisor" | "viewportKnown" | "records" | "sampleWindowMs" | "scanCapturedAt" | "snapshotStartedAt" | "snapshotEndedAt"> {
+function countStatuses(records: BackendNodeIdBootstrapRecord[]): Omit<BackendNodeIdBootstrapStats, "total" | "coverage" | "matchThreshold" | "coordinateSpace" | "viewportKnown" | "records" | "sampleWindowMs" | "scanCapturedAt" | "snapshotStartedAt" | "snapshotEndedAt"> {
 	const counts = { matched: 0, ambiguous: 0, stale: 0, missing: 0, unsupported: 0 };
 	for (const item of records) counts[item.status] += 1;
 	return counts;
 }
 
-function indexEntries(entries: SnapshotGeometryEntry[], scale: number): IndexedEntry[] {
-	return entries
-		.filter((entry) => Number.isFinite(entry.backendNodeId) && entry.backendNodeId > 0 && rectArea(entry.bounds) > 0)
-		.map((entry) => ({ ...entry, scaledBounds: scaledRect(entry.bounds, scale) }));
+function indexEntries(entries: SnapshotGeometryEntry[]): SnapshotGeometryEntry[] {
+	return entries.filter((entry) => Number.isFinite(entry.backendNodeId) && entry.backendNodeId > 0 && rectArea(entry.bounds) > 0);
 }
 
-function entriesById(entries: IndexedEntry[]): Map<string, IndexedEntry> {
-	const byId = new Map<string, IndexedEntry>();
+function entriesById(entries: SnapshotGeometryEntry[]): Map<string, SnapshotGeometryEntry> {
+	const byId = new Map<string, SnapshotGeometryEntry>();
 	for (const entry of entries) if (entry.attrs?.id && !byId.has(entry.attrs.id)) byId.set(entry.attrs.id, entry);
 	return byId;
 }
 
-function buildGeometryIndex(entries: IndexedEntry[]): GeometryIndex {
-	const spatial = buildBoundedSpatialIndex(entries.map((entry) => ({ value: entry, rect: entry.scaledBounds })), {
+function buildGeometryIndex(entries: SnapshotGeometryEntry[]): GeometryIndex {
+	const spatial = buildBoundedSpatialIndex(entries.map((entry) => ({ value: entry, rect: entry.bounds })), {
 		bucketSize: GEOMETRY_BUCKET_SIZE,
 		maxBucketsPerRect: MAX_GEOMETRY_BUCKETS_PER_RECT,
 	});
@@ -128,15 +121,15 @@ function actionableJsonPath(item: ScanActionable, index: number): string {
 	return `data.structure.actionables[${actionableIndex(item, index)}]`;
 }
 
-function highIouSummary(scanRect: Rect, index: GeometryIndex): { count: number; best?: IndexedEntry; bestIou: number } {
+function highIouSummary(scanRect: Rect, index: GeometryIndex): { count: number; best?: SnapshotGeometryEntry; bestIou: number } {
 	let count = 0;
-	let best: IndexedEntry | undefined;
+	let best: SnapshotGeometryEntry | undefined;
 	let bestIou = 0;
 	// Every qualifying IoU candidate intersects the scan rectangle, so it must share at least one
 	// spatial bucket (or be in overflow). This changes the common path from O(actionables × entries)
 	// to a bounded local candidate scan without weakening the unique-match ambiguity rule.
 	for (const entry of queryBoundedSpatialIndex(index.spatial, scanRect)) {
-		const iou = rectIou(scanRect, entry.scaledBounds);
+		const iou = rectIou(scanRect, entry.bounds);
 		if (iou < MATCH_IOU_THRESHOLD) continue;
 		count += 1;
 		if (!best || iou > bestIou || (iou === bestIou && entry.backendNodeId < best.backendNodeId)) {
@@ -154,7 +147,7 @@ function sampleWindowMs(options: BootstrapOptions): number | undefined {
 	return Math.max(0, endedAt - options.scanCapturedAt);
 }
 
-function buildStats(records: BackendNodeIdBootstrapRecord[], scale: number, viewportKnown: boolean, options: BootstrapOptions): BackendNodeIdBootstrapStats {
+function buildStats(records: BackendNodeIdBootstrapRecord[], viewportKnown: boolean, options: BootstrapOptions): BackendNodeIdBootstrapStats {
 	const counts = countStatuses(records);
 	const windowMs = sampleWindowMs(options);
 	return {
@@ -162,7 +155,7 @@ function buildStats(records: BackendNodeIdBootstrapRecord[], scale: number, view
 		...counts,
 		coverage: records.length ? Number((counts.matched / records.length).toFixed(3)) : 0,
 		matchThreshold: MATCH_IOU_THRESHOLD,
-		snapshotScaleDivisor: scale,
+		coordinateSpace: "document-css-px",
 		viewportKnown,
 		...(windowMs === undefined ? {} : { sampleWindowMs: windowMs }),
 		...(options.scanCapturedAtIso ? { scanCapturedAt: options.scanCapturedAtIso } : {}),
@@ -181,19 +174,17 @@ function bootstrapActionable(item: ScanActionable, index: number, geometryIndex:
 	if (summary.count > 1) return { item: { ...item, backendNodeIdBootstrap: { status: "ambiguous", reason: "multiple-high-iou-candidates", candidateCount: summary.count } }, record: { jsonPath, selector, status: "ambiguous" as const, reason: "multiple-high-iou-candidates", candidateCount: summary.count, scanRect, iou: Number(summary.bestIou.toFixed(3)) } };
 	if (summary.best) {
 		const iou = Number(summary.bestIou.toFixed(3));
-		return { item: { ...item, backendNodeId: summary.best.backendNodeId, backendNodeIdBootstrap: { status: "matched", reason: "unique-high-iou", iou } }, record: { jsonPath, selector, status: "matched" as const, reason: "unique-high-iou", backendNodeId: summary.best.backendNodeId, iou, candidateCount: 1, scanRect, snapshotBounds: summary.best.scaledBounds } };
+		return { item: { ...item, backendNodeIdBootstrap: { status: "matched", reason: "unique-high-iou", iou } }, record: { jsonPath, selector, status: "matched" as const, reason: "unique-high-iou", backendNodeId: summary.best.backendNodeId, iou, candidateCount: 1, scanRect, snapshotBounds: summary.best.bounds } };
 	}
 	const selectorEntry = geometryIndex.byId.get(idFromSimpleSelector(selector) || "");
 	if (!selectorEntry) return { item: { ...item, backendNodeIdBootstrap: { status: "missing", reason: "no-high-iou-candidate" } }, record: { jsonPath, selector, status: "missing" as const, reason: "no-high-iou-candidate", candidateCount: 0, scanRect } };
-	const iou = Number(rectIou(scanRect, selectorEntry.scaledBounds).toFixed(3));
-	return { item: { ...item, backendNodeIdBootstrap: { status: "stale", reason: "selector-node-geometry-drift", iou } }, record: { jsonPath, selector, status: "stale" as const, reason: "selector-node-geometry-drift", backendNodeId: selectorEntry.backendNodeId, iou, candidateCount: 0, scanRect, snapshotBounds: selectorEntry.scaledBounds } };
+	const iou = Number(rectIou(scanRect, selectorEntry.bounds).toFixed(3));
+	return { item: { ...item, backendNodeIdBootstrap: { status: "stale", reason: "selector-node-geometry-drift", iou } }, record: { jsonPath, selector, status: "stale" as const, reason: "selector-node-geometry-drift", backendNodeId: selectorEntry.backendNodeId, iou, candidateCount: 0, scanRect, snapshotBounds: selectorEntry.bounds } };
 }
 
 export function bootstrapScanBackendNodeIds(data: PageWorldScanBundleV1, entries: SnapshotGeometryEntry[], options: BootstrapOptions = {}): BackendNodeIdBootstrapResult {
-	const capturedScale = num(data.signals.fingerprint.devicePixelRatio);
-	const scale = capturedScale !== undefined && capturedScale > 0 ? capturedScale : 1;
 	const viewportKnown = data.structure.actionables.some((item) => item.documentRect !== undefined);
-	const indexedEntries = indexEntries(entries, scale);
+	const indexedEntries = indexEntries(entries);
 	const geometryIndex = buildGeometryIndex(indexedEntries);
 	const actionables = data.structure.actionables;
 	const records: BackendNodeIdBootstrapRecord[] = [];
@@ -202,6 +193,6 @@ export function bootstrapScanBackendNodeIds(data: PageWorldScanBundleV1, entries
 		records.push(resolved.record);
 		return resolved.item as ScanActionable;
 	});
-	const stats = buildStats(records, scale, viewportKnown, options);
+	const stats = buildStats(records, viewportKnown, options);
 	return { data: { ...data, structure: { ...data.structure, actionables: nextActionables } }, stats };
 }

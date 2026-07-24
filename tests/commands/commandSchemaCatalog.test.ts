@@ -55,6 +55,8 @@ test("input.ref public protocol requires an opaque ref instead of a private targ
 	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", ref: "bp-ref://control/1", target: {} }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", ref: "bp-ref://control/1", target: {} }, { allowMissingTabId: true, allowResolvedTarget: true }).ok, true);
 	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", target: {} }, { allowMissingTabId: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "drag", ref: "bp-ref://region/1", visual: { observationId: "obs-1", point: { x: 0.2, y: 0.3 }, to: { x: 0.7, y: 0.8 } } }, { allowMissingTabId: true }).ok, true);
+	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "type", ref: "bp-ref://region/1", visual: { observationId: "obs-1", point: { x: 1.1, y: 0.3 } }, text: "hello" }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "network.list", target: {} }, { allowMissingTabId: true, allowResolvedTarget: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "network.list", tabId: "7" }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "network.list", timeoutMs: 1.5 }, { allowMissingTabId: true }).ok, false);
@@ -86,7 +88,7 @@ test("every public native command has one closed canonical parameter schema", ()
 test("browser_observe rejects contradictory freshness inputs", () => {
 	assert.deepEqual(validateObserveArguments({ fresh: true, diff: true }), [{ code: "OBSERVE_FRESH_DIFF_CONFLICT", path: "/fresh", message: "browser_observe fresh:true cannot be combined with diff:true" }]);
 	const properties = (command("browser_observe").parameters as { properties: Record<string, unknown> }).properties;
-	assert.deepEqual(Object.keys(properties), ["intent", "fresh", "diff", "targetRef"]);
+	assert.deepEqual(Object.keys(properties), ["intent", "fresh", "diff", "visual", "targetRef"]);
 	for (const removed of ["maxChars", "outputPath", "timeoutMs", "maxNodes", "includeIframes", "baseline", "baselinePath", "baselineSnapshotId", "actionRef"]) assert.equal(removed in properties, false);
 	assert.equal(validateBrowserCommandArguments(command("browser_observe"), { maxChars: 1000 }).ok, false);
 	assert.equal(validateBrowserCommandArguments(command("browser_observe"), { baseline: { saved: { path: "C:\\Windows\\win.ini" } } }).ok, false);

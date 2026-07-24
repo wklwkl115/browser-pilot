@@ -16,6 +16,7 @@ export type ExecutionRefTarget = {
 	backendNodeId?: number;
 	targetId?: string;
 	point?: { x: number; y: number };
+	visual?: RefDescriptor["visual"];
 	locators: RefDescriptor["locators"];
 };
 
@@ -43,6 +44,7 @@ function executionTarget(descriptor: RefDescriptor, fresh: boolean): ExecutionRe
 		...(backendNodeId !== undefined ? { backendNodeId } : {}),
 		...(targetId ? { targetId } : {}),
 		...(point ? { point: { x: point.x, y: point.y } } : {}),
+		...(descriptor.visual ? { visual: descriptor.visual } : {}),
 		locators: descriptor.locators,
 	};
 }

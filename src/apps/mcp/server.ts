@@ -14,6 +14,7 @@ import { PAGE_OBSERVATION_VIEW_JSON_SCHEMA, type PageObservationV3 } from "../..
 import { isPageObservationV3, isPageObservationView } from "../../validation/pageContracts.js";
 import { OBSERVATION_RESOURCE_SCHEMA, OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
 import { publicToolValue } from "../../utils/toolResult.js";
+import { artifactResourceUri } from "../../artifacts/artifactFiles.js";
 
 type JsonRpcId = string | number | null;
 type JsonRpcMessage = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown; result?: unknown; error?: unknown };
@@ -69,15 +70,6 @@ function recordJsonText(content: Array<{ type: "text"; text: string }>): Record<
 	}
 }
 
-function artifactResourceUri(savedPath: unknown, projectRoot: string): string | undefined {
-	if (typeof savedPath !== "string" || !savedPath.trim()) return undefined;
-	const root = path.resolve(projectRoot, ".browser-pilot", "artifacts");
-	const target = path.isAbsolute(savedPath) ? path.resolve(savedPath) : path.resolve(projectRoot, savedPath);
-	const relative = path.relative(root, target);
-	if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
-	return `browser-pilot://artifact/${relative.split(path.sep).map(encodeURIComponent).join("/")}`;
-}
-
 function mimeTypeFor(filePath: string): string {
 	switch (path.extname(filePath).toLowerCase()) {
 		case ".json": return "application/json";
@@ -94,10 +86,17 @@ function mimeTypeFor(filePath: string): string {
 
 function resourceLink(details: Record<string, unknown> | undefined, projectRoot: string): McpContent | undefined {
 	const saved = record(details?.saved);
-	const uri = artifactResourceUri(saved.path, projectRoot);
+	const uri = typeof saved.path === "string" ? artifactResourceUri(saved.path, projectRoot) : undefined;
 	if (!uri) return undefined;
 	const filePath = String(saved.path);
 	return { type: "resource_link", uri, name: path.basename(filePath), mimeType: typeof saved.mime === "string" ? saved.mime : mimeTypeFor(filePath) };
+}
+
+function visualResourceLink(observation: Record<string, unknown> | undefined, projectRoot: string): McpContent | undefined {
+	const visual = record(observation?.visual);
+	const uri = typeof visual.resourceUri === "string" ? visual.resourceUri : undefined;
+	const target = uri ? safeArtifactPath(uri, projectRoot) : undefined;
+	return uri && target ? { type: "resource_link", uri, name: path.basename(target), mimeType: "image/png" } : undefined;
 }
 
 function observationResourceToken(uri: string): string | undefined {
@@ -131,6 +130,7 @@ function completeSemanticObservation(observation: PageObservationV3): Record<str
 		target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
 		snapshot: { snapshotId: observation.snapshot.snapshotId, capturedAt: observation.snapshot.capturedAt, ttlMs: observation.snapshot.ttlMs },
 		...(observation.content ? { content: observation.content } : {}),
+		...(observation.visual ? { visual: observation.visual } : {}),
 		...(observation.gist ? { gist: observation.gist } : {}),
 		...(observation.outline ? { outline: observation.outline } : {}),
 		...(observation.actionSpace ? { actionSpace: observation.actionSpace } : {}),
@@ -211,8 +211,9 @@ export async function callMcpTool(name: string, args: Record<string, unknown>, s
 		const textContent = content.filter((item): item is { type: "text"; text: string } => item.type === "text");
 		const structuredContent = isError ? undefined : recordJsonText(textContent);
 		const observation = name === "browser_observe" && structuredContent && isPageObservationView(structuredContent) ? structuredContent : undefined;
+		const visualLink = visualResourceLink(observation, projectRoot);
 		return {
-			content: [...(observation ? [{ type: "text" as const, text: observationSummary(observation) }] : content), ...resourceLinks, ...(link ? [link] : [])],
+			content: [...(observation ? [{ type: "text" as const, text: observationSummary(observation) }] : content), ...resourceLinks, ...(visualLink ? [visualLink] : []), ...(link ? [link] : [])],
 			...(structuredContent ? { structuredContent } : {}),
 				isError,
 			...(details ? { _meta: { "browser-pilot/details": details } } : {}),

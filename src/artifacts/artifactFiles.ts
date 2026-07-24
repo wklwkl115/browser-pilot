@@ -2,7 +2,7 @@ import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { browserArtifactPrivacyMetadata } from "./artifactPrivacy.js";
 
-const OBSERVATION_ARTIFACT = /^observe-[a-z0-9-]+-\d+\.json$/i;
+const OBSERVATION_ARTIFACT = /^(?:observe-[a-z0-9-]+-\d+\.(?:json|png)|visual-effect-\d+\.png)$/i;
 const OBSERVATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const OBSERVATION_MAX_FILES = 256;
 const OBSERVATION_MAX_BYTES = 64 * 1024 * 1024;
@@ -12,6 +12,14 @@ export function resolveArtifactPath(ctx: { cwd?: string } | undefined, requested
 	const base = ctx?.cwd || process.cwd();
 	const target = requested?.trim() || path.join(".browser-pilot", "artifacts", fallbackName);
 	return path.isAbsolute(target) ? target : path.resolve(base, target);
+}
+
+export function artifactResourceUri(savedPath: string, projectRoot: string): string | undefined {
+	const root = path.resolve(projectRoot, ".browser-pilot", "artifacts");
+	const target = path.resolve(savedPath);
+	const relative = path.relative(root, target);
+	if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+	return `browser-pilot://artifact/${relative.split(path.sep).map(encodeURIComponent).join("/")}`;
 }
 
 export async function saveTextArtifact(ctx: { cwd?: string } | undefined, requested: string | undefined, fallbackName: string, content: string): Promise<{ path: string; chars: number; bytes: number; privacy: Record<string, unknown> }> {
@@ -32,7 +40,7 @@ export async function saveTextArtifact(ctx: { cwd?: string } | undefined, reques
 async function pruneObservationArtifactDirectory(outputPath: string): Promise<void> {
 	if (!OBSERVATION_ARTIFACT.test(path.basename(outputPath))) return;
 	const dir = path.dirname(outputPath);
-	const currentPath = path.resolve(outputPath);
+	const currentStem = path.parse(path.resolve(outputPath)).name;
 	const entries = await readdir(dir, { withFileTypes: true });
 	const files = (await Promise.all(entries
 		.filter((entry) => entry.isFile() && OBSERVATION_ARTIFACT.test(entry.name))
@@ -42,12 +50,12 @@ async function pruneObservationArtifactDirectory(outputPath: string): Promise<vo
 			return metadata ? { filePath, size: metadata.size, mtimeMs: metadata.mtimeMs } : undefined;
 		})))
 		.filter((file): file is { filePath: string; size: number; mtimeMs: number } => file !== undefined)
-		.sort((a, b) => Number(path.resolve(b.filePath) === currentPath) - Number(path.resolve(a.filePath) === currentPath) || b.mtimeMs - a.mtimeMs);
+		.sort((a, b) => Number(path.parse(b.filePath).name === currentStem) - Number(path.parse(a.filePath).name === currentStem) || b.mtimeMs - a.mtimeMs);
 	let keptFiles = 0;
 	let keptBytes = 0;
 	const cutoff = Date.now() - OBSERVATION_MAX_AGE_MS;
 	for (const file of files) {
-		const current = path.resolve(file.filePath) === currentPath;
+		const current = path.parse(file.filePath).name === currentStem;
 		if (!current && (file.mtimeMs < cutoff || keptFiles >= OBSERVATION_MAX_FILES || keptBytes + file.size > OBSERVATION_MAX_BYTES)) {
 			await rm(file.filePath, { force: true });
 			continue;
@@ -75,11 +83,15 @@ function decodeStrictBase64Payload(payload: string): Buffer {
 	return buffer;
 }
 
-export async function saveDataUrl(dataUrl: string, outputPath: string): Promise<{ path: string; bytes: number; mime: string }> {
+export function decodeDataUrl(dataUrl: string): { buffer: Buffer; mime: string } {
 	const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/s);
 	if (!match) throw new Error("screenshot result is not a base64 data URL");
-	const buffer = decodeStrictBase64Payload(match[2]);
+	return { buffer: decodeStrictBase64Payload(match[2]), mime: match[1] };
+}
+
+export async function saveDataUrl(dataUrl: string, outputPath: string): Promise<{ path: string; bytes: number; mime: string }> {
+	const { buffer, mime } = decodeDataUrl(dataUrl);
 	await mkdir(path.dirname(outputPath), { recursive: true });
 	await writeFile(outputPath, buffer);
-	return { path: outputPath, bytes: buffer.length, mime: match[1] };
+	return { path: outputPath, bytes: buffer.length, mime };
 }

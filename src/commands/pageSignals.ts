@@ -8,6 +8,11 @@ export type PageFingerprint = {
 	url?: string;
 	title?: string;
 	readyState?: string;
+	scrollX?: number;
+	scrollY?: number;
+	viewportWidth?: number;
+	viewportHeight?: number;
+	devicePixelRatio?: number;
 	visibleCount?: number;
 	interactiveCount?: number;
 	capturedAt?: number;
@@ -64,11 +69,32 @@ export function normalizePageFingerprint(value: unknown): PageFingerprint | unde
 		...(typeof record.url === "string" ? { url: record.url } : {}),
 		...(typeof record.title === "string" ? { title: record.title } : {}),
 		...(typeof record.readyState === "string" ? { readyState: record.readyState } : {}),
+		...(typeof record.scrollX === "number" ? { scrollX: record.scrollX } : {}),
+		...(typeof record.scrollY === "number" ? { scrollY: record.scrollY } : {}),
+		...(typeof record.viewportWidth === "number" ? { viewportWidth: record.viewportWidth } : {}),
+		...(typeof record.viewportHeight === "number" ? { viewportHeight: record.viewportHeight } : {}),
+		...(typeof record.devicePixelRatio === "number" ? { devicePixelRatio: record.devicePixelRatio } : {}),
 		...(typeof record.visibleCount === "number" ? { visibleCount: record.visibleCount } : {}),
 		...(typeof record.interactiveCount === "number" ? { interactiveCount: record.interactiveCount } : {}),
 		...(typeof record.capturedAt === "number" ? { capturedAt: record.capturedAt } : {}),
 		...(normalizeDirtyFingerprint(record.dirty) ? { dirty: normalizeDirtyFingerprint(record.dirty) } : {}),
 	};
+}
+
+export function samePageFingerprint(left: PageFingerprint, right: PageFingerprint): boolean {
+	return left.changeSeq === right.changeSeq
+		&& left.pageEpoch === right.pageEpoch
+		&& left.documentId === right.documentId
+		&& left.url === right.url
+		&& left.title === right.title
+		&& left.readyState === right.readyState
+		&& left.scrollX === right.scrollX
+		&& left.scrollY === right.scrollY
+		&& left.viewportWidth === right.viewportWidth
+		&& left.viewportHeight === right.viewportHeight
+		&& left.devicePixelRatio === right.devicePixelRatio
+		&& left.visibleCount === right.visibleCount
+		&& left.interactiveCount === right.interactiveCount;
 }
 
 export async function readPageFingerprint(server: BrowserCommandRuntimePort, options: PageSignalOptions): Promise<PageFingerprint | undefined> {

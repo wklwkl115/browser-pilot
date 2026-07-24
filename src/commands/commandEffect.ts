@@ -1,7 +1,7 @@
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
 import type { VerificationResult } from "../kernels/abml/types.js";
-import { readPageFingerprint, type PageFingerprint } from "./pageSignals.js";
+import { readPageFingerprint, samePageFingerprint, type PageFingerprint } from "./pageSignals.js";
 
 const EFFECT_SIGNAL_TIMEOUT_MS = 250;
 const EFFECT_QUIET_MS = 100;
@@ -20,6 +20,13 @@ export type CommandEffect = {
 		interactiveCountDelta?: number;
 	};
 	newTabs?: number;
+	visual?: {
+		observed: boolean;
+		changed: boolean | null;
+		beforeSha256?: string;
+		afterSha256?: string;
+		resourceUri?: string;
+	};
 };
 
 type CommandEffectOptions = {
@@ -47,17 +54,6 @@ function pageGenerationChanged(before: PageFingerprint, after: PageFingerprint):
 		|| changedString(after.documentId, before.documentId)
 		|| changedString(after.url, before.url)
 		|| after.changeSeq < before.changeSeq;
-}
-
-function sameFingerprint(left: PageFingerprint, right: PageFingerprint): boolean {
-	return left.changeSeq === right.changeSeq
-		&& left.pageEpoch === right.pageEpoch
-		&& left.documentId === right.documentId
-		&& left.url === right.url
-		&& left.title === right.title
-		&& left.readyState === right.readyState
-		&& left.visibleCount === right.visibleCount
-		&& left.interactiveCount === right.interactiveCount;
 }
 
 function newTabCount(result: BrowserBridgeExecutionResult): number {
@@ -192,7 +188,7 @@ export async function withCommandEffect<T extends BrowserBridgeExecutionResult>(
 			const current = await captureFingerprint(server, { ...options, deadlineAt: settleDeadline });
 			if (!current) continue;
 			after = current;
-			if (previous && sameFingerprint(previous, current) && current.readyState !== "loading") {
+			if (previous && samePageFingerprint(previous, current) && current.readyState !== "loading") {
 				settled = true;
 				break;
 			}

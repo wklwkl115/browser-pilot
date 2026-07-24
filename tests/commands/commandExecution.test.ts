@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,8 +12,9 @@ import { defineScreenshotCommand } from "../../src/commands/screenshotCommand.ts
 import { defineTabsCommand } from "../../src/commands/tabsCommand.ts";
 import type { BrowserCommandRuntimePort, CommandPerceptionLedgerFrame } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
-import { registerRefDescriptor } from "../../src/resources/resourceRefs.ts";
+import { registerRefDescriptor, resolveRefUriDetailed } from "../../src/resources/resourceRefs.ts";
 import { BrowserBridgeError } from "../../src/utils/errors.ts";
+import { registerVisualTargetRef, screenshotSha256 } from "../../src/commands/visualEvidence.ts";
 
 type RuntimeCall = { name: string; args: unknown[] };
 
@@ -121,6 +122,47 @@ function registerOwnedRef(options: { tabId?: number; browserSessionId?: string; 
 		},
 	});
 }
+
+const VISUAL_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9s6Nwl8AAAAASUVORK5CYII=";
+
+function registerVisualRef(options: { artifactPath?: string } = {}): string {
+	const createdAt = Date.now();
+	return registerRefDescriptor({
+		descriptor: {
+			refId: `bp-ref://region/visual-command-test-${registeredTestRef += 1}`,
+			kind: "region",
+			locators: [{ by: "point", x: 50, y: 50 }],
+			owner: { browserSessionId: "session-1", tabId: 7, topLevelOrigin: "https://example.test" },
+			policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
+			semantic: { role: "region", name: "visual viewport" },
+			geometry: { box: { x: 0, y: 0, w: 100, h: 100 } },
+			observationId: "visual-observation-1",
+			documentEpoch: { targetGeneration: 1, pageEpoch: "page-1", documentId: "doc-1", changeSeq: 1, url: "https://example.test/", capturedAt: createdAt },
+			visual: {
+				resourceUri: "browser-pilot://artifact/visual-command.png",
+				sha256: screenshotSha256(VISUAL_PNG),
+				width: 1,
+				height: 1,
+				captureMethod: "persistent_cdp",
+				actionableGrounding: true,
+				fingerprint: { changeSeq: 1, pageEpoch: "page-1", documentId: "doc-1", url: "https://example.test/", scrollX: 0, scrollY: 0, viewportWidth: 100, viewportHeight: 100, devicePixelRatio: 1 },
+				imageToCss: [100, 0, 0, 100, 0, 0],
+			},
+			createdAt,
+			ttlMs: 30_000,
+		},
+		...(options.artifactPath ? { artifactPath: options.artifactPath } : {}),
+	});
+}
+
+test("commands execution: repeated visual points receive snapshot-local refs", () => {
+	const resolved = resolveRefUriDetailed(registerVisualRef());
+	assert.equal(resolved.ok, true);
+	if (!resolved.ok) return;
+	const first = registerVisualTargetRef(resolved.ref.descriptor, { x: 0.25, y: 0.75 });
+	const second = registerVisualTargetRef(resolved.ref.descriptor, { x: 0.25, y: 0.75 });
+	assert.notEqual(first, second);
+});
 
 test("commands execution: browser_tabs list hides runtime identity", async () => {
 	const runtime = createRuntime();
@@ -633,4 +675,79 @@ test("commands execution: input.ref expands its private native target and routes
 	assert.equal(target.backendNodeId, 41);
 	assert.equal(target.targetId, "target-1");
 	assert.deepEqual({ ...(send?.args[1] as Record<string, unknown>), signal: undefined }, { browserSessionId: "session-1", tabId: 7, timeoutMs: 15000, accessMode: "write", signal: undefined });
+});
+
+test("commands execution: visual input.ref derives an ephemeral region, validates drift, and returns pixel evidence", async () => {
+	const directory = await mkdtemp(path.join(tmpdir(), "browser-pilot-visual-input-"));
+	const baseRef = registerVisualRef();
+	const runtime = createRuntime({
+		async sendCommand(command, options) {
+			runtime.calls.push({ name: "sendCommand", args: [command, options] });
+			if (command.cmd === "content.fingerprint") return { id: "fingerprint", acknowledged: true, data: { changeSeq: 1, pageEpoch: "page-1", documentId: "doc-1", url: "https://example.test/", title: "Example", readyState: "complete", scrollX: 0, scrollY: 0, viewportWidth: 100, viewportHeight: 100, devicePixelRatio: 1, visibleCount: 1, interactiveCount: 1 } } as BrowserBridgeExecutionResult;
+			if (command.cmd === "screenshot.capture") return { id: "screenshot", acknowledged: true, data: { screenshot: VISUAL_PNG, method: "persistent_cdp" } } as BrowserBridgeExecutionResult;
+			return { id: "visual-input", acknowledged: true, data: { input: { dispatchOnly: true, dispatched: 3 } } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const outcome = parseResult(await command.execute({ command: { cmd: "input.ref", action: "click", ref: baseRef, visual: { observationId: "visual-observation-1", point: { x: 0.25, y: 0.75 } } } }, undefined, { cwd: directory }));
+	const send = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as Record<string, unknown>).cmd === "input.ref");
+	const native = send?.args[0] as Record<string, unknown>;
+	const target = native.target as Record<string, unknown>;
+	const visual = target.visual as Record<string, unknown>;
+	assert.notEqual(native.ref, baseRef);
+	assert.deepEqual(target.point, { x: 25, y: 75 });
+	assert.deepEqual((visual.anchor as Record<string, unknown>).point, { x: 0.25, y: 0.75 });
+	assert.deepEqual((outcome.effect as Record<string, unknown>).visual, {
+		observed: true,
+		changed: false,
+		beforeSha256: screenshotSha256(VISUAL_PNG),
+		afterSha256: screenshotSha256(VISUAL_PNG),
+		resourceUri: (outcome.effect as { visual: { resourceUri: string } }).visual.resourceUri,
+	});
+	assert.match((outcome.effect as { visual: { resourceUri: string } }).visual.resourceUri, /^browser-pilot:\/\/artifact\/visual-effect-\d+\.png$/);
+
+	const driftRuntime = createRuntime({
+		async sendCommand(command, options) {
+			driftRuntime.calls.push({ name: "sendCommand", args: [command, options] });
+			return { id: "drift", acknowledged: true, data: command.cmd === "content.fingerprint" ? { changeSeq: 2, pageEpoch: "page-1", documentId: "doc-1", url: "https://example.test/", scrollX: 0, scrollY: 0, viewportWidth: 100, viewportHeight: 100, devicePixelRatio: 1 } : {} } as BrowserBridgeExecutionResult;
+		},
+	});
+	const driftCommand = defineCommand((context) => defineNativeCommand(context), driftRuntime);
+	const drift = parseResult(await driftCommand.execute({ command: { cmd: "input.ref", action: "click", ref: registerVisualRef(), visual: { observationId: "visual-observation-1", point: { x: 0.25, y: 0.75 } } } }));
+	assert.equal(drift.code, "REF_STALE");
+	assert.equal(driftRuntime.calls.some((call) => (call.args[0] as Record<string, unknown>).cmd === "input.ref"), false);
+
+	let fingerprintReads = 0;
+	const tornRuntime = createRuntime({
+		async sendCommand(command, options) {
+			tornRuntime.calls.push({ name: "sendCommand", args: [command, options] });
+			if (command.cmd === "content.fingerprint") {
+				fingerprintReads += 1;
+				return { id: "fingerprint", acknowledged: true, data: { changeSeq: fingerprintReads, pageEpoch: "page-1", documentId: "doc-1", url: "https://example.test/", scrollX: 0, scrollY: 0, viewportWidth: 100, viewportHeight: 100, devicePixelRatio: 1 } } as BrowserBridgeExecutionResult;
+			}
+			if (command.cmd === "screenshot.capture") return { id: "screenshot", acknowledged: true, data: { screenshot: VISUAL_PNG, method: "persistent_cdp" } } as BrowserBridgeExecutionResult;
+			return { id: "unexpected", acknowledged: true, data: {} } as BrowserBridgeExecutionResult;
+		},
+	});
+	const tornCommand = defineCommand((context) => defineNativeCommand(context), tornRuntime);
+	const torn = parseResult(await tornCommand.execute({ command: { cmd: "input.ref", action: "click", ref: registerVisualRef(), visual: { observationId: "visual-observation-1", point: { x: 0.25, y: 0.75 } } } }));
+	assert.equal(torn.code, "REF_STALE");
+	assert.equal(tornRuntime.calls.some((call) => (call.args[0] as Record<string, unknown>).cmd === "input.ref"), false);
+});
+
+test("commands execution: visual input.ref rejects modified observation pixels before deriving a ref", async () => {
+	const directory = await mkdtemp(path.join(tmpdir(), "browser-pilot-visual-freshness-"));
+	try {
+		const artifactPath = path.join(directory, "visual.png");
+		await writeFile(artifactPath, "original");
+		const ref = registerVisualRef({ artifactPath });
+		await writeFile(artifactPath, "modified visual evidence");
+		const runtime = createRuntime();
+		const command = defineCommand((context) => defineNativeCommand(context), runtime);
+		const outcome = parseResult(await command.execute({ command: { cmd: "input.ref", action: "click", ref, visual: { observationId: "visual-observation-1", point: { x: 0.25, y: 0.75 } } } }));
+		assert.equal(outcome.code, "REF_STALE");
+		assert.equal(runtime.calls.length, 0);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
 });

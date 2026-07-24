@@ -4,7 +4,7 @@ import type { TreeDiff } from "../../kernels/abml/treeDiff.js";
 import type { CausalSummary } from "../../kernels/abml/causal.js";
 import { causalFiredHint } from "../../kernels/abml/causal.js";
 import { isRecord } from "../../utils/params.js";
-import { PAGE_OBSERVATION_SCHEMA_V3, type AgentActionSpace, type CollectionSummary, type CompactActionable, type ObservationSnapshot, type PageObservationV3, type PageTarget, type ProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
+import { PAGE_OBSERVATION_SCHEMA_V3, type AgentActionSpace, type CollectionSummary, type CompactActionable, type ObservationSnapshot, type PageObservationV3, type PageTarget, type ProviderExecutionReport, type VisualObservation } from "../../kernels/abml/pageObservation.js";
 import type { CollectionModel } from "../../kernels/abml/collections.js";
 import type { SnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 
@@ -25,6 +25,7 @@ type PageObservationInput = {
 	providerFailures?: ProviderFailureReason[];
 	diagnostics: Record<string, unknown>;
 	providerExecution?: ProviderExecutionReport;
+	visual?: VisualObservation;
 };
 
 export type PageObservationBuild = PageObservationV3;
@@ -204,6 +205,7 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 		target,
 		snapshot,
 		content: { text: input.content, ...(input.headings?.length ? { headings: input.headings } : {}), complete: input.contentComplete !== false },
+		...(input.visual ? { visual: input.visual } : {}),
 		...(reason ? { reanchorReason: reason } : {}),
 		...(input.summary.delta === "session" ? { delta: "session" as const } : {}),
 		...(typeof input.summary.baselineSnapshotId === "string" ? { baselineSnapshotId: input.summary.baselineSnapshotId } : {}),
@@ -259,7 +261,7 @@ export function buildScanNextActionHints(input: {
 }
 
 export function buildObserveAbmlDetails(input: {
-	abmlRead: { ok?: boolean; entities?: Entity[] } | undefined;
+	abmlRead: { ok?: boolean; entities?: Entity[]; error?: { code?: string; message?: string } } | undefined;
 	diagnostics: unknown;
 }) {
 	return input.abmlRead?.ok === true
@@ -268,9 +270,9 @@ export function buildObserveAbmlDetails(input: {
 			entityCount: input.abmlRead.entities?.length ?? 0,
 			primaryEntityCount: input.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0,
 			listEntityCount: input.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0,
-			visualRegionCount: input.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0,
+			visualRegionCount: input.abmlRead.entities?.filter((entity) => entity.kind === "region" && (entity.source === "vision" || entity.hints?.visualSurface === true)).length ?? 0,
 			frameEntityCount: input.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0,
 			diagnostics: input.diagnostics,
 		}
-		: { integrated: false, diagnostics: input.diagnostics };
+		: { integrated: false, ...(input.abmlRead?.error ? { error: input.abmlRead.error } : {}), diagnostics: input.diagnostics };
 }

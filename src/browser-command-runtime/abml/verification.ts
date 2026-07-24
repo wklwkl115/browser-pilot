@@ -121,6 +121,7 @@ export async function readAbmlVerificationObservation(options: AbmlVerificationR
 		readPartialAxTree(options.server, {
 			browserSessionId: options.browserSessionId,
 			tabId: options.tabId,
+			targetId: targetId(descriptor),
 			backendNodeId: id,
 			timeoutMs: Math.min(options.timeoutMs, 1_500),
 			maxNodes: 8,

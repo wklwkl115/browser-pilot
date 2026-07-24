@@ -11,6 +11,7 @@ export type ObserveToolParams = {
 	baseline?: string;
 	fresh?: boolean;
 	diff?: boolean;
+	visual?: "auto" | "always" | "never";
 };
 
 export function currentObserveSnapshotMeta(server: BrowserCommandRuntimePort, params: ObserveToolParams, savedPath: string | undefined, url: string | undefined, networkSeq?: number, hookSeq?: number, identityOverride?: PageIdentity) {
@@ -25,6 +26,7 @@ export function currentObserveSnapshotMeta(server: BrowserCommandRuntimePort, pa
 		...(pageIdentity ? {
 			targetGeneration: pageIdentity.targetGeneration,
 			pageEpoch: pageIdentity.pageEpoch,
+			...(pageIdentity.documentId ? { documentId: pageIdentity.documentId } : {}),
 		} : {}),
 		frameScope: "tab",
 		selectionVersion: bridge.selectionVersion,

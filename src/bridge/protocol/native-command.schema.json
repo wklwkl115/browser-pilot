@@ -379,8 +379,24 @@
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "action": { "enum": ["click"] },
-          "ref": { "type": "string", "pattern": "^bp-ref://" }
+          "action": { "enum": ["click", "hover", "wheel", "drag", "type"] },
+          "ref": { "type": "string", "pattern": "^bp-ref://" },
+          "visual": {
+            "type": "object",
+            "properties": {
+              "observationId": { "type": "string", "minLength": 1 },
+              "point": { "type": "object", "properties": { "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 } }, "required": ["x", "y"], "additionalProperties": false },
+              "to": { "type": "object", "properties": { "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 } }, "required": ["x", "y"], "additionalProperties": false }
+            },
+            "required": ["observationId", "point"],
+            "additionalProperties": false
+          },
+          "text": { "type": "string" },
+          "deltaX": { "type": "number" },
+          "deltaY": { "type": "number" },
+          "button": { "enum": ["left", "middle", "right", "back", "forward", "none"] },
+          "count": { "type": "number" },
+          "modifiers": { "anyOf": [{ "type": "number" }, { "type": "array", "items": { "type": "string" } }, { "type": "object" }] }
         },
         "required": ["action", "ref"],
         "additionalProperties": false
@@ -1650,6 +1666,11 @@
       "category": "abml.input",
       "retryable": false,
       "summary": "Page-world scan returned a malformed or unknown capture bundle."
+    },
+    "ABML_OBSERVATION_UNSTABLE": {
+      "category": "abml.observation",
+      "retryable": true,
+      "summary": "Page changed repeatedly during DOM and accessibility observation."
     },
     "EXTENSION_CONTRACT_MISMATCH": {
       "category": "driver.lifecycle",

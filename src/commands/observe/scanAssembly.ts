@@ -79,7 +79,7 @@ function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[]
 	const referencedEntities = mergeEntitiesByRef(entitiesForInferenceEvidence(entities, inference)).slice(0, 12);
 	const primaryEntities = sortEntitiesBySalience(entities.filter((entity) => entity.kind !== "region"), relevance).slice(0, 10);
 	const listEntities = entities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5);
-	const visualRegions = entities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4);
+	const visualRegions = entities.filter((entity) => entity.kind === "region" && (entity.source === "vision" || entity.hints?.visualSurface === true)).slice(0, 4);
 	const identity = identityGraphSummary(identityGraph);
 	return {
 		summary: {
@@ -152,7 +152,9 @@ export function prepareScanAssembly(options: {
 		browserSessionId: bridge.browserSessionId,
 		tabId,
 		targetGeneration: snapshotMeta.targetGeneration,
-		pageEpoch: snapshotMeta.pageEpoch,
+			pageEpoch: snapshotMeta.pageEpoch,
+			documentId: snapshotMeta.documentId,
+			changeSeq: data.signals.fingerprint.changeSeq,
 		url: pageUrl,
 		observationId: snapshotMeta.snapshotId,
 		capturedAt: snapshotMeta.capturedAt,

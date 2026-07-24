@@ -40,6 +40,7 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 			intent: Type.Optional(Type.String({ description: "Optional relevance hint" })),
 			fresh: Type.Optional(Type.Boolean({ description: "Ignore prior observation state and return a fresh observation" })),
 			diff: Type.Optional(Type.Boolean({ description: "Diff against the latest observation for this tab" })),
+			visual: Type.Optional(Type.String({ enum: ["auto", "always", "never"], description: "Attach a coherent viewport screenshot automatically, always, or never." })),
 			...sharedTabScopedToolParams(),
 		}),
 		validateArguments: validateObserveArguments,

@@ -21,17 +21,18 @@ test("bootstrapScanBackendNodeIds keeps diagnostic jsonPath stable when actionab
 	assert.equal(result.stats.records[0]?.jsonPath, "data.structure.actionables[0]");
 });
 
-test("bootstrapScanBackendNodeIds normalizes snapshot bounds by the captured device scale", () => {
+test("bootstrapScanBackendNodeIds keeps DOMSnapshot document CSS coordinates independent of device scale", () => {
 	const result = bootstrapScanBackendNodeIds(pageWorldScanBundle({
 		signals: { fingerprint: { devicePixelRatio: 2 } },
 		structure: { actionables: [{ selector: "#phone", rect: { x: 834, y: 265, width: 239, height: 48 }, documentRect: { x: 834, y: 344, width: 239, height: 48 } }] },
 	}), [
-		{ backendNodeId: 9393, bounds: { x: 1668, y: 688, w: 478, h: 96 }, attrs: { id: "phone" } },
+		{ backendNodeId: 9393, bounds: { x: 834, y: 344, w: 239, h: 48 }, attrs: { id: "phone" } },
 	]);
 
-	assert.equal(result.data.structure.actionables[0]?.backendNodeId, 9393);
+	assert.equal(result.data.structure.actionables[0]?.backendNodeId, undefined);
 	assert.equal(result.stats.matched, 1);
-	assert.equal(result.stats.snapshotScaleDivisor, 2);
+	assert.equal(result.stats.records[0]?.backendNodeId, 9393);
+	assert.equal(result.stats.coordinateSpace, "document-css-px");
 	assert.deepEqual(result.stats.records[0]?.scanRect, { x: 834, y: 344, w: 239, h: 48 });
 	assert.deepEqual(result.stats.records[0]?.snapshotBounds, { x: 834, y: 344, w: 239, h: 48 });
 });

@@ -65,10 +65,18 @@ test("observation artifacts retain only a recent bounded window", async () => {
 		const oldTime = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
 		await utimes(old, oldTime, oldTime);
 		const current = files.at(-1)!;
+		const currentPng = current.replace(/\.json$/, ".png");
+		await writeFile(currentPng, "png");
 		await pruneObservationArtifacts(current);
 		assert.equal((await readdir(artifacts)).filter((name) => name.startsWith("observe-")).length, 256);
 		await assert.rejects(() => access(old));
 		await access(current);
+		await access(currentPng);
+		const visualEffect = path.join(artifacts, "visual-effect-1.png");
+		await writeFile(visualEffect, "png");
+		await pruneObservationArtifacts(visualEffect);
+		assert.equal((await readdir(artifacts)).filter((name) => name.startsWith("observe-") || name.startsWith("visual-effect-")).length, 256);
+		await access(visualEffect);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -299,4 +307,31 @@ test("PageObservation schema guards reject incomplete frontiers and negative col
 	};
 	assert.equal(isPageObservationV3({ ...base, frontier: { items: [{ ref: "content", kind: "content", state: "folded" }] } }), false);
 	assert.equal(isPageObservationV3({ ...base, frontier: { items: [] }, collections: [{ ref: "c", kind: "list", observed: -1, completeness: "complete", confidence: "high", itemRefs: [] }] }), false);
+});
+
+test("PageObservation keeps one bounded visual observation in canonical and public views", async () => {
+	const visual = {
+		ref: "bp-ref://region/visual-1",
+		resourceUri: "browser-pilot://artifact/observe-scan-1.png",
+		captureMethod: "persistent_cdp",
+		actionableGrounding: true,
+		coordinateSpace: "normalized-image" as const,
+		image: { width: 1280, height: 720, sha256: "a".repeat(64) },
+		basis: { observationId: "visual-1", changeSeq: 2, url: "https://example.test/", scrollX: 0, scrollY: 0, viewportWidth: 1280, viewportHeight: 720, devicePixelRatio: 1, imageToCss: [1, 0, 0, 1, 0, 0] as [number, number, number, number, number, number] },
+		targets: [{ ref: "bp-ref://control/save", box: { x: 0.1, y: 0.2, w: 0.2, h: 0.1 } }],
+	};
+	const built = buildPageObservation({ summary: {}, entities: [], content: "Visual page", visual, snapshot: { snapshotId: "visual-1", sourceMode: "scan", capturedAt: 1, ttlMs: 30_000 }, abmlIntegrated: true, diagnostics: {} });
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-visual-"));
+	try {
+		const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observe-scan-1.json");
+		const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observe-scan-1.json" });
+		const inline = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+		const artifact = JSON.parse(await readFile(outputPath, "utf8")) as Record<string, unknown>;
+		assert.deepEqual(inline.visual, visual);
+		assert.deepEqual(artifact.visual, visual);
+		assert.equal(isPageObservationView(inline), true);
+		assert.equal(isPageObservationV3(artifact), true);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
 });

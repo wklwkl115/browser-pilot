@@ -12,6 +12,11 @@ type PageFingerprint = {
   url: string;
   title: string;
   readyState: string;
+  scrollX: number;
+  scrollY: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  devicePixelRatio: number;
   visibleCount: number;
   interactiveCount: number;
   capturedAt: number;
@@ -123,6 +128,11 @@ function currentBrowserPilotFingerprint(): PageFingerprint {
     url: location.href,
     title: document.title,
     readyState: document.readyState,
+    scrollX: Number(window.scrollX || 0),
+    scrollY: Number(window.scrollY || 0),
+    viewportWidth: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
+    viewportHeight: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0),
+    devicePixelRatio: Number(window.devicePixelRatio || 1),
     visibleCount: countVisibleElements(Array.from(document.body?.querySelectorAll("*") ?? []).slice(0, 500)),
     interactiveCount: interactive.length,
     capturedAt: browserPilotLastChangedAt,

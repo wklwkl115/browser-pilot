@@ -574,6 +574,13 @@ export function scanPage(config: any) {
   const references = refTargetsList;
   const listHints = repeatedItems.hints;
   const canvasRegions = collectCanvasRegions(scanRoot);
+  let visualSurfaceCount = 0;
+  for (const el of document.querySelectorAll('canvas,video,embed,object,iframe,img:not([alt]),img[alt=""]')) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth) visualSurfaceCount += 1;
+    if (visualSurfaceCount >= 100) break;
+  }
+  const unnamedActionableCount = actionables.filter(item => !clean(item.label || item.displayLabel || item.text || item.action || '', 120)).length;
   const rawPageText = String(document.body && document.body.innerText || '').replace(/\s+/g, ' ').trim();
   const pageText = rawPageText.slice(0, options.maxChars);
   if (rawPageText.length > pageText.length) truncated = true;
@@ -582,11 +589,15 @@ export function scanPage(config: any) {
     .map(node => String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200))
     .filter(Boolean);
   const scanFingerprint = {
-    changeSeq: Number((globalThis.__browserPilotScanFingerprintSeq = Number(globalThis.__browserPilotScanFingerprintSeq || 0) + 1)),
+    changeSeq: 0,
     url: location.href,
     title: document.title,
     readyState: document.readyState,
     devicePixelRatio: Number(window.devicePixelRatio || 1),
+    scrollX: Number(window.scrollX || 0),
+    scrollY: Number(window.scrollY || 0),
+    viewportWidth: Math.max(document.documentElement.clientWidth || 0, innerWidth || 0),
+    viewportHeight: Math.max(document.documentElement.clientHeight || 0, innerHeight || 0),
     visibleCount: actionables.length,
     interactiveCount: document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length,
     capturedAt: Date.now()
@@ -620,7 +631,9 @@ export function scanPage(config: any) {
       outputChars: pageText.length,
       truncated,
       actionableCount: actionables.length,
-      actionablesComplete: scanNodes.length <= Math.max(0, nodeLimit - 1)
+      actionablesComplete: scanNodes.length <= Math.max(0, nodeLimit - 1),
+      visualSurfaceCount,
+      unnamedActionableCount
     }
   };
 }

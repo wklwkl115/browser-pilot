@@ -40,10 +40,11 @@ async function captureVisibleFallback(tabId: number, format: string, quality: un
     if (isScreenshotMissingTabError(target.error)) return screenshotTabNotFound(tabId, target.error);
     throw target.error;
   }
+  if (target.tab.active !== true) return browserPilotError(BROWSER_PILOT_ERROR_CODES.UNSUPPORTED_TARGET, 'captureVisibleTab fallback requires the target tab to be active', { tabId, windowId: target.tab.windowId });
   const actualFormat = format === 'jpeg' ? 'jpeg' : 'png';
   const mime = 'image/' + actualFormat;
   const dataUrl = await browserPilotWithTimeout(chrome.tabs.captureVisibleTab(Number(target.tab.windowId || 0), { format: actualFormat, quality }), timeoutMs, 'chrome.tabs.captureVisibleTab');
-  return { ok: true, data: { screenshot: dataUrl, format: actualFormat, mime, fallback: 'captureVisibleTab' } };
+  return { ok: true, data: { screenshot: dataUrl, format: actualFormat, mime, method: 'captureVisibleTab', fallback: 'captureVisibleTab' } };
 }
 
 async function captureScreenshotWithRetry(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
@@ -63,7 +64,8 @@ async function captureScreenshotWithRetry(tabId: number, msg: BrowserPilotBridge
       try {
         const resp = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Page.captureScreenshot', { format, quality: msg.quality, captureBeyondViewport: msg.captureBeyondViewport === true }, { persistent: true, timeoutMs }));
         if (resp && resp.ok !== false) {
-          const result = ((resp.data && typeof resp.data === 'object') ? resp.data as JsonRecord : {}).result || resp.result || resp.data;
+          const data = resp.data && typeof resp.data === 'object' ? resp.data as JsonRecord : {};
+          const result = data.result || resp.result || resp.data;
           const resultRecord = result && typeof result === 'object' ? result as JsonRecord : {};
           if (resultRecord.data) return { ok: true, data: { screenshot: 'data:image/' + format + ';base64,' + resultRecord.data, format, method: 'persistent_cdp' } };
         }

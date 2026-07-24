@@ -4,24 +4,79 @@ import { prepareAbmlVerification, recordAbmlActionContext } from "../browser-com
 import { BrowserBridgeError } from "../utils/errors.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { withBrowserOperation } from "./browserOperation.js";
-import { withCommandEffect } from "./commandEffect.js";
+import { withCommandEffect, type CommandEffect } from "./commandEffect.js";
 import { commandExpectationSchema, javascriptVerificationResult, prepareCommandExpectation } from "./commandExpectation.js";
 import { defineBrowserCommand, pinTabExecutionTarget, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { validateBridgeCommand, type BridgeCommand } from "../types/nativeProtocol.js";
 import { isNativeTabScopedCommand, isNativeWriteCommand, isPublicNativeCommand, nativeCommandOwner, publicNativeCommandNames } from "./nativeCommandAccess.js";
+import { isRecord } from "../utils/records.js";
+import { registerVisualTargetRef } from "./visualEvidence.js";
+import { captureVisualScreenshot, visualFingerprintMatches, type VisualScreenshotCapture } from "./visualEvidence.js";
+import { readPageFingerprint } from "./pageSignals.js";
+import { artifactResourceUri, pruneObservationArtifacts, resolveArtifactPath, saveDataUrl } from "../artifacts/artifactFiles.js";
+import type { RefVisualBinding } from "../kernels/refs/types.js";
+import type { VerificationResult } from "../kernels/abml/types.js";
+import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
 
 const nativeCommandNames = publicNativeCommandNames();
+
+type NativeCommandOutcome = {
+	result: BrowserBridgeExecutionResult;
+	effect?: CommandEffect;
+	verification?: VerificationResult;
+	visualCapture?: VisualScreenshotCapture;
+	visualEffect?: NonNullable<CommandEffect["visual"]>;
+};
+
+async function preflightVisualInput(options: {
+	server: Awaited<ReturnType<CommandRegistrarContext["ensureStarted"]>>;
+	binding: RefVisualBinding;
+	browserSessionId?: string;
+	tabId: number;
+	timeoutMs: number;
+	signal: AbortSignal;
+}): Promise<VisualScreenshotCapture> {
+	if (!options.binding.actionableGrounding) throw new BrowserBridgeError("INVALID_RULE", "This visual observation is not trusted for live actions", { captureMethod: options.binding.captureMethod });
+	const fingerprint = await readPageFingerprint(options.server, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, signal: options.signal });
+	if (!visualFingerprintMatches(options.binding, fingerprint)) throw new BrowserBridgeError("REF_STALE", "Visual observation basis changed before input dispatch", { refObservationId: options.binding.anchor?.hostRef });
+	const screenshot = await captureVisualScreenshot(options.server, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, signal: options.signal });
+	if (!screenshot || screenshot.sha256 !== options.binding.sha256 || screenshot.width !== options.binding.width || screenshot.height !== options.binding.height) {
+		// ponytail: strict full-frame equality; add ROI decoding only if rejection telemetry proves this too conservative.
+		throw new BrowserBridgeError("REF_STALE", "Visual pixels changed before input dispatch", { observationId: options.binding.anchor?.hostRef });
+	}
+	const finalFingerprint = await readPageFingerprint(options.server, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, signal: options.signal });
+	if (!visualFingerprintMatches(options.binding, finalFingerprint)) throw new BrowserBridgeError("REF_STALE", "Visual observation basis changed during input preflight", { refObservationId: options.binding.anchor?.hostRef });
+	return screenshot;
+}
 
 function prepareNativeRef(command: BridgeCommand): { command: BridgeCommand; refs: ExecutionRefTarget[] } {
 	if (command.cmd !== "input.ref") return { command, refs: [] };
 	if (typeof command.ref !== "string" || !command.ref.startsWith("bp-ref://")) {
 		throw new BrowserBridgeError("INVALID_REF_TARGET", "input.ref requires a bp-ref URI in ref", { ref: command.ref });
 	}
-	const resolved = resolveExecutionRef(command.ref);
-	const { refId, kind, backendNodeId, targetId, point, locators, semantic } = resolved.target;
-	const target = { refId, kind, ...(backendNodeId !== undefined ? { backendNodeId } : {}), ...(targetId ? { targetId } : {}), ...(point ? { point } : {}), locators, ...(semantic ? { semantic } : {}) };
+	let resolved = resolveExecutionRef(command.ref);
+	if (!resolved.target.fresh) throw new BrowserBridgeError("REF_STALE", "Referenced evidence was modified after observation", { ref: command.ref });
+	const visualInput = isRecord(command.visual) ? command.visual : undefined;
+	if (resolved.descriptor.visual) {
+		const point = isRecord(visualInput?.point) ? { x: Number(visualInput.point.x), y: Number(visualInput.point.y) } : undefined;
+		const to = isRecord(visualInput?.to) ? { x: Number(visualInput.to.x), y: Number(visualInput.to.y) } : undefined;
+		if (!visualInput || visualInput.observationId !== resolved.descriptor.observationId || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+			throw new BrowserBridgeError("INVALID_REF_TARGET", "Visual input.ref requires the matching observationId and normalized point", { ref: command.ref });
+		}
+		const action = String(command.action || "");
+		if (action === "drag" && !to) throw new BrowserBridgeError("INVALID_RULE", "Visual input.ref drag requires visual.to", { ref: command.ref });
+		if (action === "type" && typeof command.text !== "string") throw new BrowserBridgeError("INVALID_RULE", "Visual input.ref type requires text", { ref: command.ref });
+		const visualRef = registerVisualTargetRef(resolved.descriptor, point, to);
+		resolved = resolveExecutionRef(visualRef);
+		command = { ...command, ref: visualRef };
+	} else {
+		if (visualInput) throw new BrowserBridgeError("INVALID_REF_TARGET", "visual input requires a visual observation ref", { ref: command.ref });
+		if (command.action !== "click") throw new BrowserBridgeError("INVALID_RULE", "Non-visual input.ref targets currently support click only", { action: command.action });
+	}
+	const { refId, kind, backendNodeId, targetId, point, locators, semantic, visual } = resolved.target;
+	const target = { refId, kind, ...(backendNodeId !== undefined ? { backendNodeId } : {}), ...(targetId ? { targetId } : {}), ...(point ? { point } : {}), locators, ...(semantic ? { semantic } : {}), ...(visual ? { visual } : {}) };
 	return { command: { ...command, target }, refs: [resolved.target] };
 }
 
@@ -36,6 +91,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 			"Use browser_command for explicit native CDP/management operations and browser_execute only for JavaScript.",
 			"For raw CDP, pass command={cmd:'cdp',method:'Domain.method',params:{...}}; Browser Pilot owns attach, reuse, recovery, and cleanup.",
 			"For a trusted physical click, use command={cmd:'input.ref',action:'click',ref:'bp-ref://...'}; Browser Pilot resolves its tab and private CDP target.",
+			"For screenshot-grounded input, use browser_observe visual.ref with the matching visual.basis.observationId and normalized visual.point; do not convert it to raw input.pointer coordinates.",
 			"For tab-scoped writes, expect may declare a JavaScript truth expression or structured ABML ref/state postcondition; Browser Pilot owns settlement and returns canonical verification evidence.",
 		],
 		parameters: strictCommandParameters({
@@ -45,7 +101,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 			expect: Type.Optional(commandExpectationSchema),
 			...sharedTabScopedToolParams(),
 		}),
-		async execute(params, signal) {
+		async execute(params, signal, ctx) {
 			return await runCommandHandler(async () => {
 				if (!params.command || typeof params.command !== "object" || Array.isArray(params.command)) throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", { commandName: "browser_command" });
 				const protocol = validateBridgeCommand(params.command, { allowMissingTabId: true, publicCall: true });
@@ -73,13 +129,15 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 					accessMode: write ? "write" : "read",
 					signal: dispatchSignal,
 				});
-				const dispatchWrite = async ({ signal: operationSignal, deadlineAt }: { signal: AbortSignal; deadlineAt: number }) => {
+				const dispatchWrite = async ({ signal: operationSignal, deadlineAt }: { signal: AbortSignal; deadlineAt: number }): Promise<NativeCommandOutcome> => {
 					let actionAt: number | undefined;
 					const run = () => {
 						if (command.cmd === "input.ref") actionAt = Date.now();
 						return dispatch({ signal: operationSignal });
 					};
 					if (target.tabId === undefined) return { result: await run() };
+					const visualBinding = prepared.refs[0]?.visual;
+					const beforeVisual = visualBinding ? await preflightVisualInput({ server, binding: visualBinding, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, signal: operationSignal }) : undefined;
 					const structured = expect?.kind === "abml" ? expect.expectation : undefined;
 					const abmlVerification = structured ? await prepareAbmlVerification({ server, expectation: structured, verb: commandName, browserSessionId: target.browserSessionId, tabId: target.tabId, rawTarget: target.rawTarget!, timeoutMs, signal: operationSignal }) : undefined;
 					const initialVerification = abmlVerification?.initialVerification ?? (expect?.kind === "javascript" ? javascriptVerificationResult(commandName) : undefined);
@@ -93,20 +151,45 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 						...(expect?.kind === "javascript" ? { verify: async () => javascriptVerificationResult(commandName, (await server.executeJavaScript(`return Boolean(await (${expect.expression}));`, { browserSessionId: target.browserSessionId, tabId: target.rawTarget, timeoutMs, accessMode: "read", signal: operationSignal })).data === true) } : {}),
 						...(abmlVerification ? { verify: abmlVerification.verify } : {}),
 					}, run);
+					const afterVisual = visualBinding
+						? await captureVisualScreenshot(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, signal: operationSignal }).catch(() => {
+							operationSignal.throwIfAborted();
+							return undefined;
+						})
+						: undefined;
 					if (command.cmd === "input.ref" && typeof command.ref === "string") {
 						recordAbmlActionContext({ server, browserSessionId: target.browserSessionId, tabId: target.tabId, ref: command.ref, verb: commandName, at: actionAt ?? Date.now() });
 					}
-					return effected;
+					return {
+						...effected,
+						...(visualBinding ? {
+							visualCapture: afterVisual,
+							visualEffect: {
+								observed: !!afterVisual,
+								changed: afterVisual ? afterVisual.sha256 !== beforeVisual?.sha256 : null,
+								...(beforeVisual ? { beforeSha256: beforeVisual.sha256 } : {}),
+								...(afterVisual ? { afterSha256: afterVisual.sha256 } : {}),
+							},
+						} : {}),
+					};
 				};
-				const outcome = write
+				const outcome: NativeCommandOutcome = write
 					? await withBrowserOperation({ server, browserSessionId: target.browserSessionId, tabId: target.tabId, targetRef: target.rawTarget, timeoutMs, signal }, dispatchWrite)
 					: { result: await dispatch({ signal }) };
+				const visualSaved = outcome.visualCapture
+					? await saveDataUrl(outcome.visualCapture.dataUrl, resolveArtifactPath(ctx, undefined, `visual-effect-${Date.now()}.png`))
+					: undefined;
+				if (visualSaved) await pruneObservationArtifacts(visualSaved.path);
+				const visualResourceUri = visualSaved ? artifactResourceUri(visualSaved.path, ctx?.cwd ?? process.cwd()) : undefined;
+				const effect = outcome.effect
+					? { ...outcome.effect, ...(outcome.visualEffect ? { visual: { ...outcome.visualEffect, ...(visualResourceUri ? { resourceUri: visualResourceUri } : {}) } } : {}) }
+					: undefined;
 				const value = {
 					result: outcome.result.data ?? null,
-					...("effect" in outcome ? { effect: outcome.effect } : {}),
-					...("verification" in outcome && outcome.verification ? { verification: outcome.verification } : {}),
+					...(effect ? { effect } : {}),
+					...(outcome.verification ? { verification: outcome.verification } : {}),
 				};
-				return jsonResult(value, { mode: "command", command: commandName });
+				return jsonResult(value, { mode: "command", command: commandName, ...(visualSaved ? { saved: visualSaved } : {}) });
 			});
 		},
 	});
