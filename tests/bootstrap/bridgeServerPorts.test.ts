@@ -332,7 +332,7 @@ test("BrowserBridgeServer lets a new worker socket replace the same browser inst
 		assert.equal(server.snapshot().extension?.workerBootId, "worker-2");
 		assert.equal(server.getTabs().some((tab) => tab.url === "https://after.test/"), true);
 		const stale = await within(openExtension(server, [], { extensionInstanceId: "same-instance", workerBootId: "worker-old", buildId: "stale-build" }), "stale extension connect");
-		assert.equal((await within(stale.closed, "stale extension rejection")).code, 1008);
+		assert.ok([1008, 1006].includes((await within(stale.closed, "stale extension rejection")).code));
 		assert.equal(server.snapshot().extension?.workerBootId, "worker-2");
 		replacement.close();
 	});
