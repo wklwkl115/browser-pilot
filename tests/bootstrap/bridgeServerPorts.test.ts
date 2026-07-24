@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -23,6 +24,13 @@ async function withServer<T>(fn: (server: BrowserBridgeServer) => Promise<T>): P
 	} finally {
 		await server.stop();
 	}
+}
+
+async function within<T>(promise: Promise<T>, label: string): Promise<T> {
+	return Promise.race([
+		promise,
+		delay(1_000, undefined, { ref: false }).then(() => { throw new Error(`${label} timed out`); }),
+	]);
 }
 
 type PortBlocker = { port: number; close: () => Promise<void> };
@@ -314,17 +322,17 @@ test("BrowserBridgeServer rejects a different browser instance after ownership i
 		});
 	});
 
-test("BrowserBridgeServer lets a new worker socket replace the same browser instance", { timeout: 3_000 }, async () => {
+test("BrowserBridgeServer lets a new worker socket replace the same browser instance", { timeout: 7_000 }, async () => {
 	await withServer(async (server) => {
-		const first = await connectExtension(server, [{ id: 7, url: "https://before.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-1" });
+		const first = await within(connectExtension(server, [{ id: 7, url: "https://before.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-1" }), "first extension connect");
 		const firstClosed = new Promise<number>((resolve) => first.once("close", resolve));
-		const replacement = await connectExtension(server, [{ id: 8, url: "https://after.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-2" });
-		assert.equal(await firstClosed, 1006);
+		const replacement = await within(connectExtension(server, [{ id: 8, url: "https://after.test/", active: true }], { extensionInstanceId: "same-instance", workerBootId: "worker-2" }), "replacement extension connect");
+		assert.equal(await within(firstClosed, "superseded extension close"), 1006);
 		assert.equal(server.snapshot().connectedClients, 1);
 		assert.equal(server.snapshot().extension?.workerBootId, "worker-2");
 		assert.equal(server.getTabs().some((tab) => tab.url === "https://after.test/"), true);
-		const stale = await openExtension(server, [], { extensionInstanceId: "same-instance", workerBootId: "worker-old", buildId: "stale-build" });
-		assert.equal((await stale.closed).code, 1008);
+		const stale = await within(openExtension(server, [], { extensionInstanceId: "same-instance", workerBootId: "worker-old", buildId: "stale-build" }), "stale extension connect");
+		assert.equal((await within(stale.closed, "stale extension rejection")).code, 1008);
 		assert.equal(server.snapshot().extension?.workerBootId, "worker-2");
 		replacement.close();
 	});
