@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-24
+
 ### Breaking
 
 - The bridge now accepts exactly one browser instance at a time. Same-instance reconnects and current-build replacement of a stale extension remain automatic; `browser_tabs selectBrowser` and its `browserId` parameter were removed.

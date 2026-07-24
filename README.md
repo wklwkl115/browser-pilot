@@ -43,23 +43,15 @@ Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**, ch
 
 ### 3. Configure your MCP client
 
-Build the MCP server once:
-
-```bash
-npm run build
-```
-
-Then point your MCP client at the generated entry file:
-
 ```toml
 [mcp_servers.browser-pilot]
-command = "node"
-args = ["/absolute/path/to/browser-pilot/dist/src/apps/mcp/bin.js"]
+command = "npx"
+args = ["--yes", "--package", "browser-pilot-mcp@latest", "browser-pilot-mcp"]
 ```
 
 The MCP process starts or reuses the local daemon automatically. Set `BROWSER_PILOT_PROJECT_ROOT` when a global MCP configuration must write artifacts into a specific project.
 
-> The npm package is not published yet; use a source checkout for now.
+For a source checkout, run `npm run build` and point the MCP client at `dist/src/apps/mcp/bin.js` with `command = "node"`.
 
 ## Tools
 

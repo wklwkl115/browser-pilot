@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Browser Pilot Bridge",
   "short_name": "Browser Pilot",
-  "version": "0.4.0",
-  "version_name": "0.4.0-browser-pilot",
+  "version": "0.5.0",
+  "version_name": "0.5.0-browser-pilot",
   "description": "Browser Pilot browser tools bridge",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3g2H3FzXDXC/UxiVdcZpkykX+jtHDuNf288mfYyuLJIrVFT/GX9nr+eB0st7/GkCZAc/EhaRgwqBSKDaMfcspsa/30R1yjA9Uu1rKCSWAOFnrhRNqdyPzG+xnH5plzRW3r9S9V3T5gm+FrltdlSn9Cb0xOsbEI6ntrAs1RMuoN/8lLcbZgfKAnuFN6ENK/VKI+T8tkkn3YddxMOAzIQ2tMp/xFnX+lXfF4K2jQ1syE9tW78l/ueThwwz5Kq99UJeAKWBlTW1OL+xQGJQ53OTwk/abhpifNXnEVUltghNdo6DymdaVzz3uq9ADLFpxzA/Ep7PqDUMgIkY6hBfAwjq2wIDAQAB",
   "permissions": [
