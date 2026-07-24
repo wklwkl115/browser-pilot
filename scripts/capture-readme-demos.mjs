@@ -1,4 +1,4 @@
-// Generates README GIFs from real Browser Pilot commands. Requires ffmpeg on PATH.
+// Run with: node --import tsx scripts/capture-readme-demos.mjs. Requires ffmpeg on PATH.
 import { spawn } from "node:child_process";
 import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
@@ -14,7 +14,7 @@ const launchTimeoutMs = 20_000;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function pageShell(title, eyebrow, content, script = "") {
+function pageShell(title, task, content, script = "") {
 	return `<!doctype html>
 <html lang="en">
 <head>
@@ -27,34 +27,25 @@ function pageShell(title, eyebrow, content, script = "") {
   :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #0b1220; background: #e8edf4; }
   body { margin: 0; min-width: 1180px; height: 100vh; overflow: hidden; background: #e8edf4; }
   button, input, select { font: inherit; }
-  .topbar { position: fixed; inset: 0 0 auto; z-index: 10; height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; color: #f8fafc; background: #0b1220; border-bottom: 3px solid #22d3ee; }
+  .topbar { height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 34px; color: #f8fafc; background: #0b1220; border-bottom: 3px solid #22d3ee; }
   .brand { display: flex; align-items: center; gap: 12px; font-weight: 760; font-size: 20px; }
   .brand-mark { width: 28px; height: 28px; display: grid; place-items: center; border: 2px solid #22d3ee; border-radius: 6px; color: #22d3ee; font: 800 13px ui-monospace, SFMono-Regular, Consolas, monospace; }
   .connection { display: flex; align-items: center; gap: 9px; color: #cbd5e1; font-size: 14px; }
   .connection::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 4px rgb(34 197 94 / 16%); }
-  .layout { display: grid; grid-template-columns: 196px 1fr; height: 100vh; padding-top: 68px; }
-  .nav { padding: 24px 18px; color: #94a3b8; background: #111c31; }
-  .nav-label { margin: 0 10px 14px; color: #64748b; font: 700 11px ui-monospace, SFMono-Regular, Consolas, monospace; text-transform: uppercase; }
-  .nav-item { display: flex; align-items: center; gap: 10px; padding: 11px 12px; margin-bottom: 5px; border-radius: 6px; font-size: 14px; }
-  .nav-item.active { color: #f8fafc; background: #1e2b45; }
-  .nav-icon { width: 8px; height: 8px; border-radius: 2px; background: #64748b; }
-  .nav-item.active .nav-icon { background: #22d3ee; }
-  main { padding: 28px 32px 34px; overflow: hidden; }
-  .eyebrow { margin: 0 0 7px; color: #2563eb; font: 750 12px ui-monospace, SFMono-Regular, Consolas, monospace; text-transform: uppercase; }
-  h1 { margin: 0; font-size: 30px; line-height: 1.15; letter-spacing: 0; }
-  .lede { margin: 8px 0 22px; color: #64748b; font-size: 15px; }
-  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 310px; min-height: 520px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; box-shadow: 0 14px 36px rgb(15 23 42 / 9%); }
-  .work { padding: 26px 28px; }
-  .trace { padding: 22px; color: #e2e8f0; background: #111c31; border-left: 1px solid #253451; }
-  .trace-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-  .trace h2 { margin: 0; font-size: 15px; }
-  .trace-badge { padding: 4px 7px; color: #22d3ee; border: 1px solid #256078; border-radius: 4px; font: 700 10px ui-monospace, SFMono-Regular, Consolas, monospace; }
-  #trace-list { display: grid; gap: 10px; }
-  .trace-row { padding: 11px 12px; border: 1px solid #2b3a57; border-radius: 6px; background: #17233a; }
-  .trace-tool { color: #22d3ee; font: 700 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
-  .trace-detail { margin-top: 5px; color: #cbd5e1; font-size: 12px; line-height: 1.35; }
-  .trace-row.live { border-color: #f59e0b; }
-  .trace-row.live .trace-tool { color: #f59e0b; }
+  main { padding: 26px 34px 34px; overflow: hidden; }
+  .eyebrow { margin: 0 0 6px; color: #2563eb; font: 750 12px ui-monospace, SFMono-Regular, Consolas, monospace; text-transform: uppercase; }
+  h1 { margin: 0; font-size: 28px; line-height: 1.15; letter-spacing: 0; }
+  .taskbar { display: grid; grid-template-columns: 58px 1fr 92px; align-items: center; gap: 14px; margin: 18px 0; padding: 14px 16px; background: #fff; border: 1px solid #bfdbfe; border-left: 4px solid #2563eb; border-radius: 6px; }
+  .task-label { color: #2563eb; font: 800 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .taskbar strong { font-size: 16px; }
+  .task-state { justify-self: end; width: 82px; padding: 5px 0; color: #92400e; background: #fef3c7; border-radius: 4px; text-align: center; font: 800 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .task-state[data-state="done"] { color: #166534; background: #dcfce7; }
+  .workspace { min-height: 500px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; box-shadow: 0 14px 36px rgb(15 23 42 / 9%); }
+  .action-strip { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 24px; color: #475569; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+  .action-dot { width: 9px; height: 9px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 0 4px rgb(245 158 11 / 15%); }
+  .action-strip[data-state="done"] .action-dot { background: #22c55e; box-shadow: 0 0 0 4px rgb(34 197 94 / 15%); }
+  .work { padding: 26px 30px; }
+  .agent-target { outline: 3px solid #f59e0b !important; outline-offset: 3px; box-shadow: 0 0 0 7px rgb(245 158 11 / 14%) !important; }
   .section-title { margin: 0 0 18px; font-size: 18px; }
   .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   .field.full { grid-column: 1 / -1; }
@@ -88,25 +79,24 @@ function pageShell(title, eyebrow, content, script = "") {
   .sync-panel { display: flex; align-items: center; justify-content: space-between; padding: 20px; border: 1px solid #cbd5e1; border-radius: 6px; }
   .sync-copy strong { display: block; margin-bottom: 5px; }
   .sync-copy span { color: #64748b; font-size: 13px; }
-  .request { display: none; grid-template-columns: 90px 1fr 55px; gap: 12px; align-items: center; margin-top: 18px; padding: 14px; background: #0b1220; border-radius: 6px; color: #e2e8f0; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
-  .request[data-visible="true"] { display: grid; }
-  .method { color: #22d3ee; font-weight: 800; }
-  .http-ok { color: #4ade80; font-weight: 800; }
+  .result-card { display: none; grid-template-columns: 34px 1fr 86px; gap: 12px; align-items: center; margin-top: 18px; padding: 15px; color: #166534; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; }
+  .result-card[data-visible="true"] { display: grid; }
+  .result-card strong, .result-card small { display: block; }
+  .result-card small { margin-top: 3px; color: #4b5563; }
+  .result-state { font-size: 12px; font-weight: 800; text-align: right; }
   .spin { animation: pulse .6s ease-in-out infinite alternate; }
   @keyframes pulse { from { opacity: .45; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 </style>
 </head>
 <body>
-<header class="topbar"><div class="brand"><span class="brand-mark">BP</span>Browser Pilot Operations</div><div class="connection">Extension connected</div></header>
-<div class="layout">
-  <nav class="nav"><p class="nav-label">Workspace</p><div class="nav-item active"><span class="nav-icon"></span>Agent run</div><div class="nav-item"><span class="nav-icon"></span>Evidence</div><div class="nav-item"><span class="nav-icon"></span>Browser tabs</div><div class="nav-item"><span class="nav-icon"></span>Run history</div></nav>
-  <main><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p class="lede">Real Chrome session driven through Browser Pilot's public MCP tools.</p>
-    <section class="workspace"><div class="work">${content}</div><aside class="trace"><div class="trace-head"><h2>Agent trace</h2><span class="trace-badge">LIVE MCP</span></div><div id="trace-list"><div class="trace-row"><div class="trace-tool">session.ready</div><div class="trace-detail">Browser and extension handshake complete</div></div></div></aside></section>
-  </main>
-</div>
+<header class="topbar"><div class="brand"><span class="brand-mark">BP</span>Browser Pilot Operations</div><div class="connection">Live browser connected</div></header>
+<main><p class="eyebrow">Live browser task</p><h1>${title}</h1>
+  <section class="taskbar"><span class="task-label">TASK</span><strong>${task}</strong><span class="task-state" id="task-state" data-state="working">WORKING</span></section>
+  <section class="workspace"><div class="action-strip" id="action-strip" data-state="working"><span class="action-dot"></span><strong id="action-label">Reading the page</strong></div><div class="work">${content}</div></section>
+</main>
 <script>
-window.demoTrace=(tool,detail,state='done')=>{const list=document.querySelector('#trace-list');if(list.children.length>=5)list.firstElementChild.remove();const row=document.createElement('div');row.className='trace-row '+(state==='live'?'live':'');row.innerHTML='<div class="trace-tool"></div><div class="trace-detail"></div>';row.children[0].textContent=tool;row.children[1].textContent=detail;list.append(row)};
+window.demoStep=(selector,label,done=false)=>{document.querySelector('.agent-target')?.classList.remove('agent-target');if(selector)document.querySelector(selector)?.classList.add('agent-target');document.querySelector('#action-label').textContent=label;if(done){const state=document.querySelector('#task-state');state.textContent='DONE';state.dataset.state='done';document.querySelector('#action-strip').dataset.state='done'}};
 ${script}
 </script>
 </body></html>`;
@@ -120,16 +110,16 @@ function fixturePage(pathname) {
 			["INV-2046", "Summit Retail", "$6,900", "Overdue"],
 			["INV-2045", "Bluebird Health", "$2,760", "Paid"],
 		].map(([id, account, amount, status]) => `<button class="invoice-row" type="button" data-status="${status.toLowerCase()}" aria-label="Open invoice ${id}"><strong>${id}</strong><span>${account}</span><span>${amount}</span><span class="status ${status.toLowerCase()}">${status}</span></button>`).join("");
-		return pageShell("Resolve overdue invoices", "Structured page observation", `<h2 class="section-title">Invoice queue</h2><div class="toolbar"><input class="search" id="invoice-filter" aria-label="Filter invoices" placeholder="Filter by status or account"><span class="count" id="invoice-count">4 records</span></div><div class="table-head"><span>Invoice</span><span>Account</span><span>Amount</span><span>Status</span></div><div id="invoice-rows">${rows}</div><div class="drawer" id="invoice-drawer" data-visible="false"><strong id="drawer-title">Invoice</strong><span>Owner: Finance Operations · Next action: Contact account owner</span></div>`, `
+			return pageShell("Invoice queue", "Find overdue invoice INV-2048 and open it", `<h2 class="section-title">All invoices</h2><div class="toolbar"><input class="search" id="invoice-filter" aria-label="Filter invoices" placeholder="Filter by status or account"><span class="count" id="invoice-count">4 records</span></div><div class="table-head"><span>Invoice</span><span>Account</span><span>Amount</span><span>Status</span></div><div id="invoice-rows">${rows}</div><div class="drawer" id="invoice-drawer" data-visible="false"><strong id="drawer-title">Invoice</strong><span>Owner: Finance Operations · Next action: Contact account owner</span></div>`, `
 const filter=document.querySelector('#invoice-filter'),rows=[...document.querySelectorAll('.invoice-row')],count=document.querySelector('#invoice-count'),drawer=document.querySelector('#invoice-drawer');
 filter.addEventListener('input',()=>{const q=filter.value.toLowerCase();let shown=0;for(const row of rows){const visible=row.textContent.toLowerCase().includes(q);row.hidden=!visible;if(visible)shown++}count.textContent=shown+' records';drawer.dataset.visible='false'});
 for(const row of rows)row.addEventListener('click',()=>{document.querySelector('#drawer-title').textContent=row.getAttribute('aria-label').replace('Open ','');drawer.dataset.visible='true'});`);
 	}
 	if (pathname === "/network") {
-		return pageShell("Capture network evidence", "Native browser command", `<h2 class="section-title">Warehouse synchronization</h2><div class="metric-grid"><div class="metric"><div class="metric-label">Products</div><div class="metric-value" id="products">1,284</div></div><div class="metric"><div class="metric-label">Warehouses</div><div class="metric-value">6</div></div><div class="metric"><div class="metric-label">Exceptions</div><div class="metric-value" id="exceptions">12</div></div></div><div class="sync-panel"><div class="sync-copy"><strong id="sync-title">Inventory ready</strong><span id="sync-detail">Last synchronized 18 minutes ago</span></div><button class="primary" id="sync-button" type="button" aria-label="Sync inventory">Sync inventory</button></div><div class="request" id="request-row" data-visible="false"><span class="method">GET</span><span>/api/inventory?warehouse=west</span><span class="http-ok">200</span></div>`, `
-document.querySelector('#sync-button').addEventListener('click',async()=>{const button=document.querySelector('#sync-button'),title=document.querySelector('#sync-title'),detail=document.querySelector('#sync-detail');button.disabled=true;button.textContent='Syncing...';button.classList.add('spin');title.textContent='Request in flight';detail.textContent='Waiting for warehouse API';const data=await fetch('/api/inventory?warehouse=west').then(r=>r.json());document.querySelector('#products').textContent=data.products.toLocaleString();document.querySelector('#exceptions').textContent=String(data.exceptions);document.querySelector('#request-row').dataset.visible='true';title.textContent='Inventory synchronized';detail.textContent='Warehouse response applied';button.textContent='Synced';button.classList.remove('spin');document.documentElement.dataset.sync='done'});`);
-	}
-	return pageShell("Verify a form workflow", "Observe, act, verify", `<h2 class="section-title">Create support case</h2><form id="case-form"><div class="field-grid"><label>Company<input id="company" aria-label="Company" autocomplete="off" placeholder="Company name"></label><label>Contact email<input id="email" aria-label="Contact email" type="email" autocomplete="off" placeholder="name@company.com"></label><label class="field full">Priority<select id="priority" aria-label="Priority"><option value="">Select priority</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label></div><div class="form-actions"><button class="primary" id="create-case" type="submit">Create case</button></div></form><div class="success" id="case-success" data-visible="false"><span class="check">✓</span><span>Case BP-1042 created and verified</span></div>`, `
+			return pageShell("Warehouse inventory", "Sync the west warehouse and confirm the updated totals", `<h2 class="section-title">Inventory overview</h2><div class="metric-grid"><div class="metric"><div class="metric-label">Products</div><div class="metric-value" id="products">1,284</div></div><div class="metric"><div class="metric-label">Warehouses</div><div class="metric-value">6</div></div><div class="metric"><div class="metric-label">Exceptions</div><div class="metric-value" id="exceptions">12</div></div></div><div class="sync-panel"><div class="sync-copy"><strong id="sync-title">Inventory ready</strong><span id="sync-detail">Last synchronized 18 minutes ago</span></div><button class="primary" id="sync-button" type="button" aria-label="Sync inventory">Sync inventory</button></div><div class="result-card" id="sync-result" data-visible="false"><span class="check">✓</span><span><strong>West warehouse is up to date</strong><small>1,298 products · 4 exceptions</small></span><span class="result-state">COMPLETE</span></div>`, `
+	document.querySelector('#sync-button').addEventListener('click',async()=>{const button=document.querySelector('#sync-button'),title=document.querySelector('#sync-title'),detail=document.querySelector('#sync-detail');button.disabled=true;button.textContent='Syncing...';button.classList.add('spin');title.textContent='Sync in progress';detail.textContent='Waiting for the west warehouse';const data=await fetch('/api/inventory?warehouse=west').then(r=>r.json());document.querySelector('#products').textContent=data.products.toLocaleString();document.querySelector('#exceptions').textContent=String(data.exceptions);document.querySelector('#sync-result').dataset.visible='true';title.textContent='Inventory synchronized';detail.textContent='Updated just now';button.textContent='Synced';button.classList.remove('spin');document.documentElement.dataset.sync='done'});`);
+		}
+		return pageShell("Support cases", "Create a high-priority case for Northwind Labs", `<h2 class="section-title">New support case</h2><form id="case-form"><div class="field-grid"><label>Company<input id="company" aria-label="Company" autocomplete="off" placeholder="Company name"></label><label>Contact email<input id="email" aria-label="Contact email" type="email" autocomplete="off" placeholder="name@company.com"></label><label class="field full">Priority<select id="priority" aria-label="Priority"><option value="">Select priority</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label></div><div class="form-actions"><button class="primary" id="create-case" type="submit">Create case</button></div></form><div class="success" id="case-success" data-visible="false"><span class="check">✓</span><span>Case BP-1042 created and verified</span></div>`, `
 document.querySelector('#case-form').addEventListener('submit',event=>{event.preventDefault();document.querySelector('#case-success').dataset.visible='true';document.documentElement.dataset.caseCreated='true'});`);
 }
 
@@ -267,10 +257,10 @@ function actionRef(observation, name) {
 	return item.ref;
 }
 
-async function trace(daemon, targetRef, tool, detail, state = "done") {
+async function step(daemon, targetRef, selector, label, done = false) {
 	await invoke(daemon, "browser_execute", {
 		targetRef,
-		script: `window.demoTrace(${JSON.stringify(tool)},${JSON.stringify(detail)},${JSON.stringify(state)});true`,
+		script: `window.demoStep(${JSON.stringify(selector)},${JSON.stringify(label)},${JSON.stringify(done)});true`,
 	});
 }
 
@@ -327,7 +317,7 @@ async function captureForm(daemon, targetRef, baseUrl, tempRoot) {
 	const record = recorder(daemon, targetRef, dir);
 	await record.capture(1.1);
 	const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "browser_observe");
-	await trace(daemon, targetRef, "browser_observe", `${observed.actionSpace.coverage.captured} actionable controls mapped`);
+	await step(daemon, targetRef, "#company", "Enter the customer details");
 	await record.capture(0.9);
 	const company = actionRef(observed, "Company");
 	const email = actionRef(observed, "Contact email");
@@ -335,21 +325,21 @@ async function captureForm(daemon, targetRef, baseUrl, tempRoot) {
 	await setRefValue(daemon, company, "North");
 	await record.capture(0.45);
 	await setRefValue(daemon, company, "Northwind Labs");
-	await trace(daemon, targetRef, "browser_execute", "Company value written through observed ref");
 	await record.capture(0.65);
 	await setRefValue(daemon, email, "ops@northwind.example");
 	await invoke(daemon, "browser_execute", {
 		targetRef,
 		script: "(()=>{const field=document.querySelector('#priority');field.value='high';field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));return true})()",
 	});
-	await trace(daemon, targetRef, "browser_execute", "Contact and priority fields completed");
+	await step(daemon, targetRef, "#create-case", "Review the completed form, then create the case");
 	await record.capture(0.8);
 	const submitted = resultEnvelope(await invoke(daemon, "browser_command", {
 		targetRef,
 		command: { cmd: "input.ref", action: "click", ref: submit },
 		expect: "document.documentElement.dataset.caseCreated==='true'",
 	}), "browser_command input.ref");
-	await trace(daemon, targetRef, "browser_command", `Trusted click · verification ${submitted.verification?.status || "met"}`);
+	if (!submitted.verification?.status) throw new Error(`form verification missing: ${JSON.stringify(submitted)}`);
+	await step(daemon, targetRef, null, "Case BP-1042 created and verified", true);
 	await record.capture(1.8);
 	await encodeGif(dir, record.frames, path.join(outputDir, "demo-form-verification.gif"));
 }
@@ -361,13 +351,13 @@ async function captureTable(daemon, targetRef, baseUrl, tempRoot) {
 	const record = recorder(daemon, targetRef, dir);
 	await record.capture(1.1);
 	let observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "browser_observe");
-	await trace(daemon, targetRef, "browser_observe", `${observed.actionSpace.coverage.captured} actions across invoice records`);
+	await step(daemon, targetRef, "#invoice-filter", "Filter the queue to overdue invoices");
 	await record.capture(0.8);
 	const filter = actionRef(observed, "Filter invoices");
 	await setRefValue(daemon, filter, "over");
 	await record.capture(0.45);
 	await setRefValue(daemon, filter, "overdue");
-	await trace(daemon, targetRef, "browser_execute", "Filtered table to overdue records");
+	await step(daemon, targetRef, "[aria-label='Open invoice INV-2048']", "Open overdue invoice INV-2048");
 	await record.capture(0.9);
 	observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "filtered browser_observe");
 	const invoice = actionRef(observed, "Open invoice INV-2048");
@@ -376,7 +366,7 @@ async function captureTable(daemon, targetRef, baseUrl, tempRoot) {
 		command: { cmd: "input.ref", action: "click", ref: invoice },
 		expect: "document.querySelector('#invoice-drawer').dataset.visible==='true'",
 	});
-	await trace(daemon, targetRef, "browser_command", "Opened INV-2048 with verified native input");
+	await step(daemon, targetRef, null, "INV-2048 opened for follow-up", true);
 	await record.capture(1.8);
 	await encodeGif(dir, record.frames, path.join(outputDir, "demo-structured-research.gif"));
 }
@@ -390,9 +380,10 @@ async function captureNetwork(daemon, targetRef, baseUrl, tempRoot) {
 	const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "browser_observe");
 	const sync = actionRef(observed, "Sync inventory");
 	await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.start", clear: true } });
-	await trace(daemon, targetRef, "browser_command", "Network capture armed for the selected tab");
+	await step(daemon, targetRef, "#sync-button", "Start the west warehouse inventory sync");
 	await record.capture(0.9);
 	await invoke(daemon, "browser_command", { targetRef, command: { cmd: "input.ref", action: "click", ref: sync } });
+	await step(daemon, targetRef, null, "Waiting for the warehouse response");
 	await record.capture(0.75);
 	await invoke(daemon, "browser_execute", {
 		targetRef,
@@ -402,7 +393,7 @@ async function captureNetwork(daemon, targetRef, baseUrl, tempRoot) {
 	await record.capture(0.85);
 	const network = resultText(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.list", limit: 20 } }));
 	if (!network.includes("/api/inventory")) throw new Error(`network evidence missing inventory request: ${network}`);
-	await trace(daemon, targetRef, "browser_command", "GET /api/inventory · 200 captured as evidence");
+	await step(daemon, targetRef, null, "Inventory synchronized: 1,298 products, 4 exceptions", true);
 	await record.capture(1.8);
 	await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.stop" } });
 	await encodeGif(dir, record.frames, path.join(outputDir, "demo-network-evidence.gif"));
