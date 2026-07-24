@@ -1,5 +1,6 @@
 import { browserPilotPersistentCdpSend } from "./cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
+import { PAGE_REF_RUNTIME_SOURCE } from "../../../browser-runtime/pageRefRuntimeSource";
 
 const INPUT_CDP_SESSION_NAME = "browser-pilot-input";
 const TIMEOUT_MS = 15000;
@@ -100,41 +101,11 @@ function refPoint(target: JsonRecord): RefPoint | undefined {
 	for (const locator of Array.isArray(target.locators) ? target.locators : []) { const r = rec(locator), x = opt(r.x), y = opt(r.y); if (r.by === "point" && x !== undefined && y !== undefined) return { x, y }; }
 	return undefined;
 }
-function cssSelectors(target: JsonRecord): string[] {
-	return (Array.isArray(target.locators) ? target.locators : [])
-		.map(rec)
-		.filter((locator) => locator.by === "css" && typeof locator.value === "string" && locator.value.trim())
-		.map((locator) => String(locator.value).trim())
-		.slice(0, 8);
-}
 function runtimeValue(response: BrowserPilotBridgeResponse): JsonRecord {
 	return rec(rec(rec(rec(response.data).result).result).value);
 }
 
-const REF_POINT_FUNCTION = `function(input) {
-	const normalize = value => String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
-	const el = this;
-	if (!el || el.nodeType !== 1) return { ok: false, reason: "not_found" };
-	const inputRoles = { checkbox: "checkbox", radio: "radio", button: "button", submit: "button", reset: "button", search: "searchbox", range: "slider", number: "spinbutton" };
-	const implicitRoles = { A: "link", BUTTON: "button", TEXTAREA: "textbox", SELECT: "combobox", CANVAS: "region", IMG: "img" };
-	const actualRole = normalize(el.getAttribute("role") || (el.tagName === "INPUT" ? inputRoles[String(el.type || "").toLowerCase()] || "textbox" : implicitRoles[el.tagName] || String(el.tagName || "").toLowerCase()));
-	const labelledBy = String(el.getAttribute("aria-labelledby") || "").split(/\\s+/).filter(Boolean).map(id => document.getElementById(id)?.textContent || "").join(" ");
-	const labels = el.labels ? Array.from(el.labels).map(label => label.textContent || "").join(" ") : "";
-	const actualName = normalize(el.getAttribute("aria-label") || labelledBy || labels || el.getAttribute("alt") || el.innerText || el.textContent || el.value || el.getAttribute("title") || "");
-	if (input.role && actualRole !== normalize(input.role)) return { ok: false, reason: "role_mismatch", actualRole };
-	if (input.name && actualName !== normalize(input.name)) return { ok: false, reason: "name_mismatch", actualName };
-	el.scrollIntoView({ block: "center", inline: "center" });
-	const rect = el.getBoundingClientRect();
-	const style = getComputedStyle(el);
-	if ((!rect.width && !rect.height) || style.display === "none" || style.visibility === "hidden" || style.opacity === "0" || style.pointerEvents === "none") return { ok: false, reason: "not_hittable" };
-	for (const pair of [[0.5,0.5],[0.25,0.5],[0.75,0.5],[0.5,0.25],[0.5,0.75]]) {
-		const x = Math.round(rect.left + rect.width * pair[0]);
-		const y = Math.round(rect.top + rect.height * pair[1]);
-		const hit = document.elementFromPoint(x, y);
-		if (hit && (hit === el || el.contains(hit))) return { ok: true, x, y };
-	}
-	return { ok: false, reason: "occluded" };
-}`;
+const REF_POINT_FUNCTION = `function(input) { return (${PAGE_REF_RUNTIME_SOURCE}).point(this, { semantic: input }, true); }`;
 
 const VISUAL_POINT_FUNCTION = `function(input) {
 	const basis = input.basis || {};
@@ -184,25 +155,22 @@ async function visualRefPoint(tabId: number, msg: BrowserPilotBridgeCommand, tar
 }
 
 async function liveRefPoint(tabId: number, msg: BrowserPilotBridgeCommand, target: JsonRecord, startedAt: number): Promise<RefPoint | BrowserPilotBridgeResponse> {
-	const selectors = cssSelectors(target);
 	const fallback = refPoint(target);
 	const kind = cleanString(target.kind);
 	const semantic = rec(target.semantic);
 	const role = cleanString(semantic.role);
 	const name = cleanString(semantic.name);
-	if (!selectors.length && (!fallback || !["region", "media"].includes(kind || "") || (!role && !name))) return failRef("INVALID_REF_TARGET", "Point-only input.ref targets require region/media semantic identity", startedAt, target);
+	const locators = Array.isArray(target.locators) ? target.locators : [];
+	const hasLiveLocator = locators.some((item) => ["css", "xpath", "attrSignature", "textAnchor"].includes(String(rec(item).by || "")));
+	if (!hasLiveLocator && (!fallback || !["region", "media"].includes(kind || "") || (!role && !name))) return failRef("INVALID_REF_TARGET", "Point-only input.ref targets require region/media semantic identity", startedAt, target);
 	const expression = `(() => {
-	  const input = ${JSON.stringify({ selectors, point: fallback, role, name })};
-	  let el = null;
-	  const closest = nodes => {
-	    if (nodes.length === 1) return nodes[0];
-	    if (!input.point || !nodes.length) return null;
-	    const ranked = nodes.map(node => { const rect = node.getBoundingClientRect(); return { node, distance: Math.hypot(rect.left + rect.width / 2 - input.point.x, rect.top + rect.height / 2 - input.point.y) }; }).sort((a, b) => a.distance - b.distance);
-	    return ranked[0] && ranked[0].distance < (ranked[1] ? ranked[1].distance : Number.POSITIVE_INFINITY) ? ranked[0].node : null;
-	  };
-	  for (const selector of input.selectors) { try { el = closest(Array.from(document.querySelectorAll(selector))); } catch (_) {} if (el) break; }
-	  if (!el && input.point) el = document.elementFromPoint(Number(input.point.x), Number(input.point.y));
-	  return (${REF_POINT_FUNCTION}).call(el, input);
+	  const input = ${JSON.stringify({ locators, point: fallback, semantic: { role, name }, kind })};
+	  const runtime = ${PAGE_REF_RUNTIME_SOURCE};
+	  const resolved = runtime.resolve(input);
+	  let el = resolved.ok ? resolved.el : null;
+	  if (!el && input.point && ["region", "media"].includes(input.kind)) el = document.elementFromPoint(Number(input.point.x), Number(input.point.y));
+	  if (!el) return { ok: false, reason: resolved.reason || "not_found", tried: resolved.tried };
+	  return runtime.point(el, input, true);
 	})()`;
 	const response = await cdp(tabId, msg, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, targetIdFor(target));
 	if (!response.ok) return failRef(backendFailure(response), cdpErrorText(response), startedAt, target, undefined, { resolution: "liveLocator", phase: "resolve" });
@@ -240,12 +208,29 @@ async function handleBrowserPilotRefInputCommand(cmd: string, tabId: number, msg
 	const target = rec(msg.target), backend = backendTarget(target);
 	const visual = Object.keys(rec(target.visual)).length > 0;
 	if (!visual && action !== "click") return err("INVALID_RULE", "Non-visual input.ref targets support click only", { action });
-	const point = visual ? await visualRefPoint(tabId, msg, target, startedAt) : backend ? await backendPoint(tabId, msg, target, backend, startedAt) : await liveRefPoint(tabId, msg, target, startedAt);
+	let resolution: "visualPoint" | "backendNodeId" | "liveLocator";
+	let point: RefPoint | BrowserPilotBridgeResponse;
+	if (visual) {
+		resolution = "visualPoint";
+		point = await visualRefPoint(tabId, msg, target, startedAt);
+	} else if (backend) {
+		const direct = await backendPoint(tabId, msg, target, backend, startedAt);
+		if (!("ok" in direct)) {
+			resolution = "backendNodeId";
+			point = direct;
+		} else {
+			const rebound = await liveRefPoint(tabId, msg, target, startedAt);
+			resolution = "liveLocator";
+			point = "ok" in rebound && rebound.error_code === "INVALID_REF_TARGET" ? direct : rebound;
+		}
+	} else {
+		resolution = "liveLocator";
+		point = await liveRefPoint(tabId, msg, target, startedAt);
+	}
 	if (point && "ok" in point) {
 		return point;
 	}
 	if (!point) return failRef("INVALID_REF_TARGET", "input.ref target requires backendNodeId or point", startedAt, target, backend?.backendNodeId, { action });
-	const resolution = visual ? "visualPoint" : backend ? "backendNodeId" : "liveLocator";
 	const sent: Sent[] = [], focusEmulation = await focus(tabId, msg), modifiers = mods(msg.modifiers), b = button(msg.button), clickCount = Math.max(1, Math.trunc(Number(msg.count || 1))), base = { x: point.x, y: point.y, modifiers };
 	const events: JsonRecord[] = action === "hover"
 		? [{ ...base, type: "mouseMoved", button: "none" }]

@@ -31,6 +31,7 @@ type ScanCaptureOptions = {
 	captureMaxChars: number;
 	scanScript: string;
 	baseline: BaselineResolution | undefined;
+	identityBaseline?: BaselineResolution;
 	pageFingerprint: PageFingerprint | undefined;
 	pageIdentity: PageIdentity | undefined;
 	reanchorReason: PageReanchorReason | undefined;
@@ -65,6 +66,10 @@ async function readCaptureFingerprint(options: ScanCaptureOptions): Promise<Page
 
 type ScanEvaluationResult = Omit<Awaited<ReturnType<typeof evaluatePageScriptDirect>>, "data"> & { data: PageWorldScanBundleV1 };
 
+function identityBaselineFor(options: ScanCaptureOptions): BaselineResolution | undefined {
+	return options.identityBaseline ?? options.baseline;
+}
+
 export function axCacheKeyForPage(fingerprint: PageFingerprint | undefined): string | undefined {
 	return fingerprint?.pageEpoch
 		? JSON.stringify(["content", fingerprint.pageEpoch, fingerprint.documentId ?? "", fingerprint.changeSeq, fingerprint.url ?? "", fingerprint.scrollX ?? 0, fingerprint.scrollY ?? 0, fingerprint.viewportWidth ?? 0, fingerprint.viewportHeight ?? 0])
@@ -75,6 +80,7 @@ async function readScanAbml(
 	options: ScanCaptureOptions,
 	result: ScanEvaluationResult,
 	effectiveBaseline: BaselineResolution | undefined,
+	effectiveIdentityBaseline: BaselineResolution | undefined,
 	fusedPageFingerprint: PageFingerprint | undefined,
 ) {
 	const { browserSessionId, tabId, timeoutMs, captureMaxChars, timings } = options;
@@ -83,6 +89,7 @@ async function readScanAbml(
 	const abmlStartedAt = Date.now();
 	const abmlRead = await readBrowserAbmlStructure(options.server, {
 		baseline: effectiveBaseline?.entities,
+		identityBaseline: effectiveIdentityBaseline?.entities,
 		diffOptions: effectiveBaseline?.partialBaseline ? { partialBaseline: true } : undefined,
 		prefetchedScan: result.data,
 		axCacheKey: cacheKey,
@@ -109,6 +116,7 @@ function withCoherenceDiagnostics(abmlRead: BrowserAbmlStructureResult, attempts
 async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFingerprint: PageFingerprint | undefined) {
 	const { server, params, rawTargetRef, timeoutMs, scanScript, baseline, timings } = options;
 	let effectiveBaseline = baseline;
+	let effectiveIdentityBaseline = identityBaselineFor(options);
 	let reanchorReason = options.reanchorReason;
 	const initialFingerprint = seededFingerprint ?? await readCaptureFingerprint(options);
 	const pageScriptStartedAt = Date.now();
@@ -121,8 +129,9 @@ async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFing
 	if (capturedIdentity.reanchorReason) {
 		reanchorReason = capturedIdentity.reanchorReason;
 		effectiveBaseline = undefined;
+		effectiveIdentityBaseline = undefined;
 	}
-	const { abmlRead, cacheKey } = await readScanAbml(options, result, effectiveBaseline, initialFingerprint);
+	const { abmlRead, cacheKey } = await readScanAbml(options, result, effectiveBaseline, effectiveIdentityBaseline, initialFingerprint);
 	const visualRequested = shouldCaptureVisual(params, result.data);
 	const visualStartedAt = Date.now();
 	let visualCapture: Awaited<ReturnType<typeof captureVisualScreenshot>> | undefined;

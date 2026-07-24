@@ -16,7 +16,7 @@ async function resolveScanBaseline(
 	pageIdentity: PageIdentity | undefined,
 	signal?: AbortSignal,
 ) {
-	const requested = params.baseline ?? ledgerFrame?.snapshotId;
+	const requested = params.baseline ?? (sessionDeltaEnabled(params) ? ledgerFrame?.snapshotId : undefined);
 	const baselineRequested = requested !== undefined && requested !== null;
 	if (!baselineRequested) {
 		const reanchorReason = params.diff === true ? (pageIdentity ? "baseline_missing" : "identity_unproven") as PageReanchorReason : undefined;
@@ -40,6 +40,22 @@ async function resolveScanBaseline(
 		signal?.throwIfAborted();
 		if (!ledgerFrame || params.baseline !== undefined) throw error;
 		return { baseline: undefined, baselineRequested: true, baselineResolutionError: error instanceof Error ? error.message : String(error), reanchorReason: "baseline_missing" as PageReanchorReason };
+	}
+}
+
+async function resolveIdentityBaseline(
+	server: BrowserCommandRuntimePort,
+	ledgerFrame: ReturnType<NonNullable<BrowserCommandRuntimePort["getPerceptionLedgerFrame"]>> | undefined,
+	fallback: Awaited<ReturnType<typeof resolveScanBaseline>>["baseline"],
+	signal?: AbortSignal,
+) {
+	const snapshotId = ledgerFrame?.snapshotId;
+	if (!snapshotId || fallback?.snapshotId === snapshotId) return fallback;
+	try {
+		return await resolveBaselineEntities(server, snapshotId, signal) ?? fallback;
+	} catch {
+		signal?.throwIfAborted();
+		return fallback;
 	}
 }
 
@@ -80,10 +96,12 @@ export async function prepareScanSession(options: {
 	const pageFingerprint = await readScanFingerprint({ server, params, effectiveTabId, timeoutMs, timings, signal });
 	const pageIdentity = currentPageIdentity(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId }, pageFingerprint);
 	const plannedLedgerKey = perceptionLedgerKey(pageIdentity);
-	const ledgerFrame = sessionDeltaEnabled(params) && plannedLedgerKey && typeof server.getPerceptionLedgerFrame === "function"
+	const identityLedgerFrame = plannedLedgerKey && typeof server.getPerceptionLedgerFrame === "function"
 		? server.getPerceptionLedgerFrame(plannedLedgerKey)
 		: undefined;
+	const ledgerFrame = sessionDeltaEnabled(params) ? identityLedgerFrame : undefined;
 	const baselineState = await resolveScanBaseline(server, params, ledgerFrame, pageIdentity, signal);
+	const identityBaseline = await resolveIdentityBaseline(server, identityLedgerFrame, baselineState.baseline, signal);
 	return {
 		timeoutMs,
 		effectiveTabId,
@@ -92,6 +110,7 @@ export async function prepareScanSession(options: {
 		ledgerFrame,
 		pageFingerprint,
 		pageIdentity,
+		identityBaseline,
 		...baselineState,
 	};
 }

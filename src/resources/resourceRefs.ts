@@ -83,6 +83,11 @@ export function resolveRefUriDetailed(uri: string): ResolveRefResult {
 	};
 }
 
+export function unregisterRefDescriptor(uri: string): boolean {
+	const parsed = parseBrowserPilotRefUri(uri);
+	return parsed ? refStore.delete(parsed.id) : false;
+}
+
 function pruneExpiredAmortized(): void {
 	registrationsSincePrune += 1;
 	if (registrationsSincePrune < PRUNE_EVERY_REGISTRATIONS) return;

@@ -109,7 +109,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		timings: observeTimings,
 		signal,
 	});
-	const { timeoutMs, effectiveTabId, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, pageFingerprint, pageIdentity, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
+	const { timeoutMs, effectiveTabId, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, pageFingerprint, pageIdentity, identityBaseline, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
 	const capture = await executeScanCapture({
 		server,
 		params,
@@ -120,6 +120,7 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		captureMaxChars,
 		scanScript,
 		baseline: sessionBaseline,
+		identityBaseline,
 		pageFingerprint,
 		pageIdentity,
 		reanchorReason: sessionReanchorReason,

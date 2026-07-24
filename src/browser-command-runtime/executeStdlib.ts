@@ -8,11 +8,12 @@ export type PreparedExecuteScript = {
 	targetRefs: ExecutionRefTarget[];
 };
 
-function pageDescriptor(descriptor: RefDescriptor): Pick<RefDescriptor, "refId" | "locators" | "geometry"> {
+function pageDescriptor(descriptor: RefDescriptor): Pick<RefDescriptor, "refId" | "locators" | "geometry" | "semantic"> {
 	return {
 		refId: descriptor.refId,
-		locators: descriptor.locators.filter((locator) => locator.by === "css" || locator.by === "xpath" || locator.by === "attrSignature"),
+		locators: descriptor.locators.filter((locator) => locator.by === "css" || locator.by === "xpath" || locator.by === "attrSignature" || locator.by === "textAnchor"),
 		geometry: descriptor.geometry,
+		semantic: descriptor.semantic,
 	};
 }
 

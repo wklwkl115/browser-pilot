@@ -1,73 +1,18 @@
+import { PAGE_REF_RUNTIME_SOURCE } from "../browser-runtime/pageRefRuntimeSource.js";
+
 export const BROWSER_PILOT_STDLIB_NAMES = ["refs", "resolve", "box", "setValue", "settled"] as const;
 
 export function stdlibPrelude(registry: Record<string, unknown>, bindings: Record<string, string> = {}): string {
 	return `
-	const browserPilot = (() => {
-	  const __registry = ${JSON.stringify(registry)};
-	  const __bindings = ${JSON.stringify(bindings)};
+const browserPilot = (() => {
+  const __registry = ${JSON.stringify(registry)};
+  const __bindings = ${JSON.stringify(bindings)};
+  const __refRuntime = ${PAGE_REF_RUNTIME_SOURCE};
   const __names = ${JSON.stringify(BROWSER_PILOT_STDLIB_NAMES)};
   function __entry(ref) {
     if (typeof ref === "string") return __registry[ref] || null;
     if (ref && typeof ref === "object" && ref.descriptor) return { ok: true, fresh: true, descriptor: ref.descriptor };
     if (ref && typeof ref === "object" && ref.refId && ref.locators) return { ok: true, fresh: true, descriptor: ref };
-    return null;
-  }
-  function __rect(el) {
-    if (!el || typeof el.getBoundingClientRect !== "function") return null;
-    try { return el.getBoundingClientRect(); } catch (_) { return null; }
-  }
-  function __samplePoints(rect) {
-    const viewportW = Math.max(document.documentElement && document.documentElement.clientWidth || 0, window.innerWidth || 0);
-    const viewportH = Math.max(document.documentElement && document.documentElement.clientHeight || 0, window.innerHeight || 0);
-    if (!rect || !viewportW || !viewportH) return [];
-    const samples = [[0.5,0.5],[0.25,0.5],[0.75,0.5],[0.5,0.25],[0.5,0.75]];
-    return samples.map(pair => ({
-      x: Math.round(Math.max(0, Math.min(viewportW - 1, rect.left + rect.width * pair[0]))),
-      y: Math.round(Math.max(0, Math.min(viewportH - 1, rect.top + rect.height * pair[1])))
-    }));
-  }
-  function __actionablePoint(el) {
-    if (!el || el.nodeType !== 1) return undefined;
-    const rect = __rect(el);
-    if (!rect) return undefined;
-    const cs = typeof getComputedStyle === "function" ? getComputedStyle(el) : null;
-    const viewportW = Math.max(document.documentElement && document.documentElement.clientWidth || 0, window.innerWidth || 0);
-    const viewportH = Math.max(document.documentElement && document.documentElement.clientHeight || 0, window.innerHeight || 0);
-    const cssVisible = !!(rect.width || rect.height) && (!cs || (cs.visibility !== "hidden" && cs.display !== "none" && cs.opacity !== "0" && cs.pointerEvents !== "none"));
-    const rectVisible = cssVisible && rect.bottom > 0 && rect.right > 0 && rect.top < viewportH && rect.left < viewportW;
-    if (!rectVisible) return undefined;
-    if (typeof document.elementFromPoint !== "function") return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
-    for (const point of __samplePoints(rect)) {
-      const hit = document.elementFromPoint(point.x, point.y);
-      if (!hit || hit === el || el.contains(hit) || (hit.contains && hit.contains(el))) return point;
-    }
-    return undefined;
-  }
-  function __closestByGeometry(nodes, descriptor) {
-    if (nodes.length === 1) return nodes[0];
-    const target = __geometryBox(descriptor);
-    if (!target || !nodes.length) return null;
-    const tx = target.x + target.width / 2;
-    const ty = target.y + target.height / 2;
-    const ranked = nodes.map(el => {
-      const rect = __rect(el);
-      return { el, distance: rect ? Math.hypot(rect.left + rect.width / 2 - tx, rect.top + rect.height / 2 - ty) : Number.POSITIVE_INFINITY };
-    }).sort((a, b) => a.distance - b.distance);
-    return ranked[0] && ranked[0].distance < (ranked[1] ? ranked[1].distance : Number.POSITIVE_INFINITY) ? ranked[0].el : null;
-  }
-  function __resolveLocator(locator, descriptor) {
-    if (!locator || typeof locator !== "object") return null;
-    try {
-      if (locator.by === "css" && locator.value) return __closestByGeometry(Array.from(document.querySelectorAll(String(locator.value))), descriptor);
-      if (locator.by === "xpath" && locator.value) return document.evaluate(String(locator.value), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      if (locator.by === "attrSignature" && locator.value && typeof locator.value === "object") {
-        const attrs = locator.value;
-        const candidates = Array.from(document.querySelectorAll("iframe,frame,[id],[name],[role]"));
-        return candidates.find(el => Object.entries(attrs).every(([key, value]) => String(el.getAttribute(key) || "") === String(value))) || null;
-      }
-    } catch (_) {
-      return null;
-    }
     return null;
   }
   function __geometryBox(descriptor) {
@@ -85,16 +30,11 @@ export function stdlibPrelude(registry: Record<string, unknown>, bindings: Recor
       return { el: null, freshness: "miss", tried: ["registry"], warning: "element not found for ref - script will receive null" };
     }
     const descriptor = entry.descriptor;
-    let fallback = null;
-    for (const locator of Array.isArray(descriptor.locators) ? descriptor.locators : []) {
-      tried.push(locator.by || "unknown");
-      const el = __resolveLocator(locator, descriptor);
-      if (!fallback && el) fallback = el;
-      if (__actionablePoint(el)) return { el, freshness: entry.fresh === false ? "stale" : "fresh", tried };
-    }
-    if (fallback) return { el: fallback, freshness: entry.fresh === false ? "stale" : "fresh", tried, warning: "resolved element is present but not visibly hittable" };
+    const resolved = __refRuntime.resolve(descriptor);
+    tried.push(...resolved.tried);
+    if (resolved.ok) return { el: resolved.el, freshness: entry.fresh === false ? "stale" : "fresh", tried, ...(resolved.warning ? { warning: resolved.warning } : {}) };
     console.warn("[browser-pilot] ref resolution miss:", ref, "tried:", tried.join(","));
-    return { el: null, freshness: "miss", tried, geometry: __geometryBox(descriptor), warning: "element not found for ref - script will receive null" };
+    return { el: null, freshness: "miss", tried, geometry: __geometryBox(descriptor), reason: resolved.reason, warning: "element not found for ref - script will receive null" };
   }
   function box(ref) {
     const resolved = resolve(ref);
@@ -122,7 +62,7 @@ export function stdlibPrelude(registry: Record<string, unknown>, bindings: Recor
     el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     return { ok: true, freshness: resolved.freshness, tagName: String(el.tagName || "").toLowerCase(), charCount: String(value ?? "").length };
   }
-	  function settled(quietMs = 150, timeoutMs = 2000) {
+  function settled(quietMs = 150, timeoutMs = 2000) {
     const quiet = Math.max(0, Math.min(1000, Number(quietMs) || 150));
     const timeout = Math.max(quiet, Math.min(10000, Number(timeoutMs) || 2000));
     return new Promise(resolveDone => {
@@ -143,18 +83,18 @@ export function stdlibPrelude(registry: Record<string, unknown>, bindings: Recor
       quietTimer = setTimeout(() => done(true), quiet);
       setTimeout(() => done(false), timeout);
     });
-	  }
-	  const __resolvedBindings = new Map();
-	  const refs = {};
-	  for (const [name, ref] of Object.entries(__bindings)) Object.defineProperty(refs, name, {
-	    enumerable: true,
-	    get() {
-	      if (!__resolvedBindings.has(name)) __resolvedBindings.set(name, resolve(ref).el);
-	      return __resolvedBindings.get(name);
-	    }
-	  });
-	  Object.freeze(refs);
-	  return Object.freeze({ refs, resolve, box, setValue, settled, __namespace: Object.freeze(__names) });
-	})();
+  }
+  const __resolvedBindings = new Map();
+  const refs = {};
+  for (const [name, ref] of Object.entries(__bindings)) Object.defineProperty(refs, name, {
+    enumerable: true,
+    get() {
+      if (!__resolvedBindings.has(name)) __resolvedBindings.set(name, resolve(ref).el);
+      return __resolvedBindings.get(name);
+    }
+  });
+  Object.freeze(refs);
+  return Object.freeze({ refs, resolve, box, setValue, settled, __namespace: Object.freeze(__names) });
+})();
 `;
 }

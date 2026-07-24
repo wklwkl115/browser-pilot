@@ -79,6 +79,7 @@ function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summar
 	return {
 		observeTimings: finalizedObserveTimings(timings, data, observation.abmlRead),
 		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axFusion) ? { axFusion: observation.abmlRead.data.axFusion } : {}),
+		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.identityReconciliation) ? { identityReconciliation: observation.abmlRead.data.identityReconciliation } : {}),
 		...(baseline.diagnostics ? { baseline: baseline.diagnostics } : {}),
 		...(providerFailures.length ? { providerFailures } : {}),
 		...(abmlFailure ? { abmlFailure } : {}),

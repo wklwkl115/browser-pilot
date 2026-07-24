@@ -346,18 +346,25 @@ try {
 	if (typeof actionRef !== "string") throw new Error(`browser_observe did not mint the smoke action ref: ${JSON.stringify(observed.actionSpace)}`);
 	const bound = resultEnvelope(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "({id:browserPilot.refs.action?.id,tag:browserPilot.refs.action?.tagName})" }), "browser_execute refs");
 	if (bound.result?.id !== "smoke-action" || bound.result?.tag !== "BUTTON") throw new Error(`browser_execute did not bind the observed ref: ${JSON.stringify(bound)}`);
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const old=document.querySelector('#smoke-action');const next=old.cloneNode(true);next.id='smoke-action-rerendered';old.replaceWith(next);return true})()" }), "rerender ref target");
+	const rebound = resultEnvelope(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "({id:browserPilot.refs.action?.id,tag:browserPilot.refs.action?.tagName})" }), "browser_execute rebound ref");
+	if (rebound.result?.id !== "smoke-action-rerendered" || rebound.result?.tag !== "BUTTON") throw new Error(`browser_execute did not rebind the rerendered ref: ${JSON.stringify(rebound)}`);
 	const input = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "browser_command input.ref");
 	requireEffect(input, "browser_command input.ref");
+	if (input.result?.input?.resolution !== "liveLocator") throw new Error(`input.ref did not fall back from the stale backend node: ${JSON.stringify(input)}`);
 	const clicked = resultEnvelope(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "browserPilot.refs.action?.dataset.clicked" }), "browser_execute ref verification");
 	if (clicked.result !== "yes") throw new Error(`input.ref did not dispatch the physical click: ${JSON.stringify(clicked)}`);
-	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action');el.dataset.clicked='';el.textContent='Changed action';return true})()" }), "change ref semantics");
+	const continuedObservation = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "continued browser_observe");
+	const continuedRef = Array.isArray(continuedObservation.actionSpace?.items) ? continuedObservation.actionSpace.items.find((entity) => entity?.name === "Run smoke")?.ref : undefined;
+	if (continuedRef !== actionRef) throw new Error(`browser_observe did not preserve semantic identity across rerender: ${JSON.stringify({ actionRef, continuedRef })}`);
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action-rerendered');el.dataset.clicked='';el.textContent='Changed action';return true})()" }), "change ref semantics");
 	const semanticMismatch = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "semantic mismatch input.ref");
 	if (semanticMismatch.code !== "BACKEND_NODE_STALE") throw new Error(`input.ref did not reject changed semantics: ${JSON.stringify(semanticMismatch)}`);
-	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action');el.textContent='Run smoke';const rect=el.getBoundingClientRect();const cover=document.createElement('div');cover.id='smoke-cover';Object.assign(cover.style,{position:'fixed',left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`,zIndex:'2147483647'});document.body.append(cover);return true})()" }), "cover ref target");
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action-rerendered');el.textContent='Run smoke';const rect=el.getBoundingClientRect();const cover=document.createElement('div');cover.id='smoke-cover';Object.assign(cover.style,{position:'fixed',left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`,zIndex:'2147483647'});document.body.append(cover);return true})()" }), "cover ref target");
 	const occluded = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "occluded input.ref");
 	if (occluded.code !== "BACKEND_NODE_STALE") throw new Error(`input.ref did not reject an occluded target: ${JSON.stringify(occluded)}`);
 	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "document.querySelector('#smoke-cover')?.remove()" }), "uncover ref target");
-	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const old=document.querySelector('#smoke-action');const next=document.createElement('button');next.id='danger-action';next.textContent='Danger';next.onclick=()=>{next.dataset.clicked='yes'};old.replaceWith(next);return true})()" }), "replace ref target");
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const old=document.querySelector('#smoke-action-rerendered');const next=document.createElement('button');next.id='danger-action';next.textContent='Danger';next.onclick=()=>{next.dataset.clicked='yes'};old.replaceWith(next);return true})()" }), "replace ref target");
 	const staleInput = resultEnvelope(await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }), "stale input.ref");
 	if (staleInput.code !== "BACKEND_NODE_STALE") throw new Error(`stale input.ref did not fail closed: ${JSON.stringify(staleInput)}`);
 	const untouched = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "document.querySelector('#danger-action')?.dataset.clicked" }), "stale ref verification");
@@ -380,7 +387,7 @@ try {
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-			checks: ["extension-handshake", "tabs", "execute", "raw-cdp-auto-lifecycle", "tab-create-close", "background-cdp-effect", "browser-command-network-effect", "hook-auto-session", "visual-observe-resource", "visual-click-exact", "visual-drag", "visual-wheel", "visual-type", "visual-stale-rejected", "visual-auto", "canonical-observe", "direct-observe-content", "ref-execute", "ref-input-effect", "ref-semantic-mismatch-rejected", "ref-occlusion-rejected", "stale-ref-rejected", "burst-effect", "new-tab-effect", "navigation-effect"],
+		checks: ["extension-handshake", "tabs", "execute", "raw-cdp-auto-lifecycle", "tab-create-close", "background-cdp-effect", "browser-command-network-effect", "hook-auto-session", "visual-observe-resource", "visual-click-exact", "visual-drag", "visual-wheel", "visual-type", "visual-stale-rejected", "visual-auto", "canonical-observe", "direct-observe-content", "ref-execute", "ref-rerender-rebound", "ref-input-effect", "ref-observation-continuity", "ref-semantic-mismatch-rejected", "ref-occlusion-rejected", "stale-ref-rejected", "burst-effect", "new-tab-effect", "navigation-effect"],
 	}, null, 2));
 } finally {
 	await stopBrowser(browser?.child, browser?.profileDir);

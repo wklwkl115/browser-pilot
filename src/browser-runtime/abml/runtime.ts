@@ -7,7 +7,7 @@ import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptE
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";
 import { scanEntitiesForEnvelope } from "../../scan/summary.js";
 import { normalizeTabId } from "../../utils/params.js";
-import { registerRefDescriptor } from "../../resources/resourceRefs.js";
+import { registerRefDescriptor, resolveRefUriDetailed, unregisterRefDescriptor } from "../../resources/resourceRefs.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { diffEntities, type EntityDiff, type EntityDiffOptions } from "../../kernels/abml/diff.js";
 import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
@@ -16,6 +16,7 @@ import { materializeRelationGraph, derivePaintOrderRelationAnchors, deriveStateR
 import type { AxFusionDiagnostics } from "../../kernels/abml/ax.js";
 import { defaultRefPolicyForKind } from "../../kernels/refs/refPolicy.js";
 import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
+import { reconcileEntityIdentities } from "../../kernels/abml/identityReconciliation.js";
 import type { PageWorldScanBundleV1, ScanPageFingerprint } from "../../kernels/abml/pageWorldScan.js";
 import { validatePageWorldScanBundle } from "../../validation/pageContracts.js";
 
@@ -31,6 +32,7 @@ export type BrowserAbmlRuntimeOptions = {
 
 export type BrowserAbmlStructureInput = {
 	baseline?: Entity[];
+	identityBaseline?: Entity[];
 	diffOptions?: EntityDiffOptions;
 	prefetchedScan?: PageWorldScanBundleV1;
 	axCacheKey?: string;
@@ -85,8 +87,20 @@ function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessio
 				stabilityScore: 0.9,
 			},
 		});
+		if (refId !== entity.ref) unregisterRefDescriptor(entity.ref);
 		return { ...entity, ref: refId };
 	});
+}
+
+function applyIdentityReconciliation(current: Entity[], input: BrowserAbmlStructureInput) {
+	const reconciliation = reconcileEntityIdentities(input.identityBaseline ?? input.baseline ?? [], current);
+	for (const [provisionalRef, canonicalRef] of reconciliation.refMap) {
+		const resolved = resolveRefUriDetailed(provisionalRef);
+		if (!resolved.ok) throw new Error(`ABML identity reconciliation lost provisional ref: ${provisionalRef}`);
+		registerRefDescriptor({ descriptor: { ...resolved.ref.descriptor, refId: canonicalRef } });
+		unregisterRefDescriptor(provisionalRef);
+	}
+	return reconciliation;
 }
 
 function materializeStructureRelations(entities: Entity[], axRead: AxReadResult) {
@@ -174,7 +188,8 @@ async function readStructure(server: AbmlBrowserRuntimeServer, input: BrowserAbm
 	const entities = scanEntitiesForEnvelope(summaryData, { entityContext });
 	const fusion = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : undefined;
 	const mergedEntities = remintSemanticTemplateRefs(fusion?.entities ?? entities, entityContext);
-	const relations = materializeStructureRelations(mergedEntities, axRead);
+	const reconciliation = applyIdentityReconciliation(mergedEntities, input);
+	const relations = materializeStructureRelations(reconciliation.entities, axRead);
 	return {
 		entities: relations.entities,
 		data: {
@@ -189,6 +204,7 @@ async function readStructure(server: AbmlBrowserRuntimeServer, input: BrowserAbm
 			backendNodeIdBootstrap: bootstrapped.stats,
 			axDiagnostics: axRead.diagnostics,
 			axFusion: structureAxFusionDiagnostics(fusion, entities.length, axRead.entities.length),
+			identityReconciliation: reconciliation.diagnostics,
 			...(relations.paintOrderEvidence ? { paintOrderEvidence: relations.paintOrderEvidence } : {}),
 		},
 	};
