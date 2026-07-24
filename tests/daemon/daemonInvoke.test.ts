@@ -48,11 +48,11 @@ function tools() {
 	const success: CommandDefinition = {
 		name: "browser_success",
 		parameters: strictCommandParameters({ message: Type.String() }),
-		async execute(params, _signal, ctx) {
-			return {
-				content: [{ type: "text", text: String(params.message) }],
-				details: { cwd: ctx?.cwd, omitTransportDetails: ctx?.omitTransportDetails },
-			};
+			async execute(params, _signal, ctx) {
+				return {
+					content: [{ type: "text", text: String(params.message) }],
+					details: { cwd: ctx?.cwd },
+				};
 		},
 	};
 	const throwing: CommandDefinition = {

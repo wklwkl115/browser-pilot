@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { AgentActionSpace, CollectionSummary, CompactCollection, ObservationFrontierItem, PageObservationContent, PageObservationV3, PageObservationView, PublicProviderExecutionReport } from "../../kernels/abml/pageObservation.js";
-import type { SnapshotProjection, SnapshotProjectionTemplate } from "../../kernels/abml/snapshotProjection.js";
-import type { TreeDiffChangedBucket, TreeDiffInstanceBucket, TreeTemplateDiff } from "../../kernels/abml/treeDiff.js";
+import type { AgentActionSpace, CollectionSummary, CompactCollection, ObservationFrontierItem, PageObservationContent, PageObservationV3, PageObservationView, PublicCausalSummary, PublicInferenceSummary, PublicRelationSummary, PublicVisualObservation } from "../../kernels/abml/pageObservation.js";
 import { computeRelevanceMap } from "../../kernels/evidence/distill/relevance.js";
 import { extractScalarTerm } from "../../kernels/evidence/distill/relevanceTaps.js";
+import { collectRefs } from "../../kernels/refs/text.js";
 import { isRecord } from "../../utils/records.js";
 
 const ROOT_SAMPLE_SIZE = 3;
@@ -16,7 +15,6 @@ const ROOT_RESULT_TARGET_BYTES = 30 * 1024;
 
 export const OBSERVATION_RESOURCE_URI_PREFIX = "browser-pilot://observation/";
 export const OBSERVATION_RESOURCES_DETAIL_KEY = "browser-pilot/internal-observation-resources";
-export const OBSERVATION_RESOURCE_SCHEMA = "browser-page-observation-resource/v1";
 
 export type ObservationResourceDescriptor = {
 	uri: string;
@@ -86,30 +84,133 @@ function rootContentSection(content: PageObservationContent, sections: IndexedCo
 }
 
 function compactOutline(outline: PageObservationV3["outline"]): PageObservationV3["outline"] {
-	return outline?.slice(0, ROOT_OUTLINE_LIMIT).map((item) => ({
-		...item,
-		...(Array.isArray(item.memberRefs) ? { memberRefs: item.memberRefs.slice(0, ROOT_SAMPLE_SIZE) } : {}),
-	}));
+	return outline?.slice(0, ROOT_OUTLINE_LIMIT).flatMap((item) => {
+		if (typeof item.container !== "string" || typeof item.memberCount !== "number" || !Array.isArray(item.memberRefs)) return [];
+		return [{
+			container: item.container,
+			...(typeof item.name === "string" ? { name: item.name } : {}),
+			memberCount: item.memberCount,
+			...(typeof item.controlCount === "number" ? { controlCount: item.controlCount } : {}),
+			memberRefs: item.memberRefs.filter((ref): ref is string => typeof ref === "string" && ref.startsWith("bp-ref://")).slice(0, ROOT_SAMPLE_SIZE),
+		}];
+	});
 }
 
-function compactDiagnostics(value: PageObservationV3["diagnostics"]): PageObservationV3["diagnostics"] {
-	if (!isRecord(value)) return undefined;
-	const axFusion = isRecord(value.axFusion) && value.axFusion.degraded === true
-		? { degraded: true, ...(isRecord(value.axFusion.skipped) ? { skipped: value.axFusion.skipped } : {}) }
-		: undefined;
-	const diagnostics = {
-		...(value.abmlIntegrated === false ? { abmlIntegrated: false } : {}),
-		...(Array.isArray(value.warnings) && value.warnings.length ? { warnings: value.warnings.filter((warning): warning is string => typeof warning === "string") } : {}),
-		...(axFusion ? { axFusion } : {}),
+export function publicWarnings(value: PageObservationV3["diagnostics"]): string[] {
+	if (!isRecord(value)) return [];
+	const visualUnavailable = Array.isArray(value.providerFailures) && value.providerFailures.some((failure) => isRecord(failure) && failure.provider === "visual");
+	return [...new Set([
+		...(value.abmlIntegrated === false ? ["Semantic structure was unavailable; using the page scan fallback."] : []),
+		...(isRecord(value.axFusion) && value.axFusion.degraded === true ? ["Accessibility enrichment was incomplete."] : []),
+		...(visualUnavailable ? ["Requested visual evidence was unavailable."] : []),
+		...(Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : []),
+	])];
+}
+
+export function publicGist(gist: PageObservationV3["gist"], title?: string): PageObservationView["gist"] {
+	const landmarks = Array.isArray(gist?.landmarks) ? gist.landmarks.filter((item): item is string => typeof item === "string") : [];
+	return title || landmarks.length ? { ...(title ? { title } : {}), ...(landmarks.length ? { landmarks } : {}) } : undefined;
+}
+
+export function publicVisual(value: PageObservationV3["visual"]): PublicVisualObservation | undefined {
+	if (!value) return undefined;
+	return {
+		ref: value.ref,
+		resourceUri: value.resourceUri,
+		actionableGrounding: value.actionableGrounding,
+		coordinateSpace: value.coordinateSpace,
+		image: { width: value.image.width, height: value.image.height },
+		targets: value.targets,
 	};
-	return Object.keys(diagnostics).length ? diagnostics : undefined;
 }
 
-function compactProviders(value: PageObservationV3["providers"]): PublicProviderExecutionReport {
-	return Object.fromEntries(Object.entries(value).map(([provider, item]) => [provider, {
-		status: item.status,
-		...(item.reason ? { reason: item.reason } : {}),
-	}]));
+export function publicInference(value: PageObservationV3["inference"]): PublicInferenceSummary | undefined {
+	if (!value?.intents.length) return undefined;
+	return { intents: value.intents.map((item) => {
+		const refs = collectRefs(item.evidence);
+		return { intent: item.intent, confidence: item.confidence, ...(item.reason ? { reason: item.reason } : {}), ...(refs.length ? { refs } : {}) };
+	}) };
+}
+
+export function publicSnapshotProjection(value: PageObservationV3["snapshotProjection"]): Record<string, unknown> | undefined {
+	if (!value) return undefined;
+	return {
+		summary: { templateCount: value.summary.templateCount, instanceCount: value.summary.instanceCount },
+		templates: value.templates.map((template) => ({
+			...(template.container ? { container: template.container } : {}),
+			...(template.containerName ? { containerName: template.containerName } : {}),
+			role: template.role,
+			kind: template.kind,
+			count: template.count,
+			...(template.setSize !== undefined ? { setSize: template.setSize } : {}),
+			varies: template.varies,
+			instanceRefs: template.instanceRefs,
+			...(template.sample ? { sample: { ref: template.sample.ref, ...(template.sample.name ? { name: template.sample.name } : {}), ...(template.sample.value ? { value: template.sample.value } : {}) } } : {}),
+		})),
+	};
+}
+
+function publicTreeDiffSummary(value: NonNullable<PageObservationV3["treeDiff"]>["summary"]) {
+	return {
+		templateCount: value.templateCount,
+		changedTemplateCount: value.changedTemplateCount,
+		appeared: value.appeared,
+		disappeared: value.disappeared,
+		changed: value.changed,
+		reordered: value.reordered,
+		...(value.sample ? { sample: {
+			...(value.sample.appeared ? { appeared: value.sample.appeared } : {}),
+			...(value.sample.disappeared ? { disappeared: value.sample.disappeared } : {}),
+			...(value.sample.changed ? { changed: value.sample.changed } : {}),
+		} } : {}),
+		...(value.partialBaseline !== undefined ? { partialBaseline: value.partialBaseline } : {}),
+		...(value.unavailable ? { unavailable: value.unavailable } : {}),
+	};
+}
+
+export function publicTreeDiff(value: PageObservationV3["treeDiff"]): Record<string, unknown> | undefined {
+	if (!value) return undefined;
+	const instances = (items: Array<{ ref: string; confidence: string; name?: string; value?: string; posInSet?: number }>) => items.map((item) => ({
+		ref: item.ref,
+		confidence: item.confidence,
+		...(item.name ? { name: item.name } : {}),
+		...(item.value ? { value: item.value } : {}),
+		...(item.posInSet !== undefined ? { posInSet: item.posInSet } : {}),
+	}));
+	return {
+		summary: publicTreeDiffSummary(value.summary),
+		templates: value.templates.map((template) => ({
+			...(template.container ? { container: template.container } : {}),
+			...(template.containerName ? { containerName: template.containerName } : {}),
+			role: template.role,
+			kind: template.kind,
+			beforeCount: template.beforeCount,
+			afterCount: template.afterCount,
+			appeared: { count: template.appeared.count, instances: instances(template.appeared.instances) },
+			disappeared: { count: template.disappeared.count, instances: instances(template.disappeared.instances) },
+			changed: { count: template.changed.count, instances: template.changed.instances.map((item) => ({ ref: item.afterRef, confidence: item.confidence, fields: item.fields, ...(item.name ? { name: item.name } : {}) })) },
+			...(template.reordered ? { reordered: { changed: true, commonCount: template.reordered.commonCount } } : {}),
+		})),
+	};
+}
+
+export function publicCollection(value: CollectionSummary): Record<string, unknown> {
+	const paginationControl = isRecord(value.paginationControl) ? {
+		...(typeof value.paginationControl.ref === "string" ? { ref: value.paginationControl.ref } : {}),
+		...(typeof value.paginationControl.label === "string" ? { label: value.paginationControl.label } : {}),
+		...(typeof value.paginationControl.kind === "string" ? { kind: value.paginationControl.kind } : {}),
+	} : undefined;
+	return {
+		ref: value.ref,
+		kind: value.kind,
+		...(value.name ? { name: value.name } : {}),
+		observed: value.observed,
+		...(value.total !== undefined ? { total: value.total } : {}),
+		completeness: value.completeness,
+		confidence: value.confidence,
+		itemRefs: value.itemRefs,
+		...(paginationControl && Object.keys(paginationControl).length ? { paginationControl } : {}),
+	};
 }
 
 function descriptor(observation: PageObservationV3, path: string, input: Omit<ObservationResourceDescriptor, "uri" | "mimeType" | "path" | "expiresAt" | "snapshotId">): ObservationResourceDescriptor {
@@ -133,72 +234,23 @@ function actionSpaceWindow(actionSpace: AgentActionSpace, count: number): AgentA
 	const scopeIds = new Set(items.flatMap((item) => item.scope ? [item.scope.id] : []));
 	return {
 		...actionSpace,
-		coverage: { ...actionSpace.coverage, returned: items.length, projectionComplete: items.length === actionSpace.coverage.captured },
 		scopes: actionSpace.scopes.filter((scope) => scopeIds.has(scope.id)),
 		items,
 	};
 }
 
-function compactInstanceBucket(bucket: TreeDiffInstanceBucket): TreeDiffInstanceBucket {
-	return { count: bucket.count, instances: bucket.instances.slice(0, ROOT_SAMPLE_SIZE) };
-}
-
-function compactChangedBucket(bucket: TreeDiffChangedBucket): TreeDiffChangedBucket {
-	return { count: bucket.count, instances: bucket.instances.slice(0, ROOT_SAMPLE_SIZE) };
-}
-
-function compactTreeTemplate(template: TreeTemplateDiff): TreeTemplateDiff {
-	return {
-		...template,
-		appeared: compactInstanceBucket(template.appeared),
-		disappeared: compactInstanceBucket(template.disappeared),
-		changed: compactChangedBucket(template.changed),
-	};
-}
-
-function treeDiffDetailCount(templates: TreeTemplateDiff[]): number {
-	return templates.reduce((count, template) => count + 1 + template.appeared.instances.length + template.disappeared.instances.length + template.changed.instances.length, 0);
-}
-
-function compactTemplate(template: SnapshotProjectionTemplate): SnapshotProjectionTemplate {
-	const delta = template.delta ? {
-		...template.delta,
-		appeared: compactInstanceBucket(template.delta.appeared),
-		disappeared: compactInstanceBucket(template.delta.disappeared),
-		changed: compactChangedBucket(template.delta.changed),
-	} : undefined;
-	return { ...template, instanceRefs: template.instanceRefs.slice(0, ROOT_SAMPLE_SIZE), ...(template.sample ? { sample: { ...template.sample } } : {}), ...(delta ? { delta } : {}) };
-}
-
-function projectTemplates(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[], deltaOnly = false): SnapshotProjection | undefined {
+function addSnapshotProjectionResource(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): void {
 	const projection = observation.snapshotProjection;
-	if (!projection) return undefined;
-	const available = deltaOnly ? projection.templates.filter((template) => template.delta || template.deltaOnly) : projection.templates;
-	if (!available.length) return undefined;
-	const selected = available.slice(0, ROOT_STRUCTURE_LIMIT);
-	if (available.length > selected.length) {
-		const ref = "frontier:templates:unavailable";
-		const label = "Complete structure templates";
-		const resource = descriptor(observation, path, { name: label, ref, kind: "details", label, jsonPath: "snapshotProjection" });
-		resources.push(resource);
-		items.push({ ref, kind: "details", state: "folded", label, observed: selected.length, total: available.length, resourceUri: resource.uri });
-	}
-	const templates = selected.map((template) => {
-		const index = projection.templates.indexOf(template);
-		const compact = compactTemplate(template);
-		if (template.instanceRefCount <= compact.instanceRefs.length) return compact;
-		const ref = `frontier:template:${template.templateKey}`;
-		const label = `Instances of ${template.templateKey}`;
-		const resource = descriptor(observation, path, { name: label, ref, kind: "template-instances", label, jsonPath: `snapshotProjection.templates[${index}].instanceRefs` });
-		resources.push(resource);
-		items.push({ ref, kind: "template-instances", state: "folded", label, observed: compact.instanceRefs.length, total: template.instanceRefCount, resourceUri: resource.uri });
-		return compact;
-	});
-	return { summary: projection.summary, templates };
+	if (!projection?.templates.length) return;
+	const ref = "frontier:details:structure";
+	const label = "Structure templates";
+	const resource = descriptor(observation, path, { name: label, ref, kind: "details", label, jsonPath: "snapshotProjection" });
+	resources.push(resource);
+	items.push({ ref, kind: "details", state: "folded", label, observed: 0, total: projection.templates.length, resourceUri: resource.uri });
 }
 
 function limitedFrontier(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]) {
-	const priority: Record<ObservationFrontierItem["kind"], number> = { "action-space": 0, details: 1, "collection-window": 2, content: 3, "template-instances": 4 };
+	const priority: Record<ObservationFrontierItem["kind"], number> = { "action-space": 0, details: 1, "collection-window": 2, content: 3 };
 	const itemPriority = (item: ObservationFrontierItem): number => item.kind === "action-space" ? -2 : item.ref === "frontier:content:root" || item.state === "unavailable" ? -1 : priority[item.kind];
 	const ranked = items
 		.map((item, index) => ({ item, index }))
@@ -226,25 +278,34 @@ function addDetailsResource(observation: PageObservationV3, path: string, resour
 	items.push({ ref: input.ref, kind: "details", state: "folded", label: input.label, observed: input.observed, total: input.total, resourceUri: resource.uri });
 }
 
-function projectTreeDiff(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): PageObservationV3["treeDiff"] {
+function projectTreeDiff(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): PageObservationView["treeDiff"] {
 	const treeDiff = observation.treeDiff;
 	if (!treeDiff) return undefined;
-	const shown = treeDiff.templates.slice(0, ROOT_SAMPLE_SIZE).map(compactTreeTemplate);
-	const folded = treeDiff.templates.length > shown.length || treeDiff.templates.some((template) => template.appeared.instances.length > ROOT_SAMPLE_SIZE || template.disappeared.instances.length > ROOT_SAMPLE_SIZE || template.changed.instances.length > ROOT_SAMPLE_SIZE);
-	if (folded) addDetailsResource(observation, path, resources, items, { ref: "frontier:details:tree-diff", label: "Complete tree diff", jsonPath: "treeDiff", observed: treeDiffDetailCount(shown), total: treeDiffDetailCount(treeDiff.templates) });
-	return { summary: treeDiff.summary, templates: shown };
+	if (treeDiff.templates.length) addDetailsResource(observation, path, resources, items, { ref: "frontier:details:tree-diff", label: "Tree diff details", jsonPath: "treeDiff", observed: 0, total: treeDiff.templates.length });
+	return { summary: publicTreeDiffSummary(treeDiff.summary) };
 }
 
-function projectCausal(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): PageObservationV3["causal"] {
-	const causal = observation.causal;
-	if (!causal || !("requests" in causal)) return causal;
-	const requests = causal.requests.slice(0, ROOT_SAMPLE_SIZE);
-	const events = causal.events?.slice(0, ROOT_SAMPLE_SIZE);
-	const total = causal.requests.length + (causal.events?.length ?? 0);
-	const observed = requests.length + (events?.length ?? 0);
-	if (total > observed) addDetailsResource(observation, path, resources, items, { ref: "frontier:details:causal", label: "Complete causal activity", jsonPath: "causal", observed, total });
+export function publicCausal(causal: PageObservationV3["causal"], limit = Number.POSITIVE_INFINITY): PublicCausalSummary | undefined {
+	if (!causal) return undefined;
+	const events = causal.events?.slice(0, limit).map((event) => ({
+		ref: event.ref,
+		type: event.type,
+		...(event.at !== undefined ? { at: event.at } : {}),
+		...(event.summary ? { summary: event.summary } : {}),
+		...(event.selector ? { selector: event.selector } : {}),
+	}));
+	if (!("requests" in causal)) return { unavailable: "Recent request activity was unavailable.", ...(events?.length ? { events } : {}), ...(causal.events && causal.events.length > (events?.length ?? 0) ? { eventCount: causal.events.length } : {}) };
+	const requests = causal.requests.slice(0, limit).map((request) => ({
+		ref: request.ref,
+		...(request.method ? { method: request.method } : {}),
+		...(request.url ? { url: request.url } : {}),
+		...(request.status !== undefined ? { status: request.status } : {}),
+		...(request.type ? { type: request.type } : {}),
+		...(request.at !== undefined ? { at: request.at } : {}),
+		...(request.initiatorType ? { initiatorType: request.initiatorType } : {}),
+		...(request.passive !== undefined ? { passive: request.passive } : {}),
+	}));
 	return {
-		sinceSeq: causal.sinceSeq,
 		requests,
 		...(causal.requests.length > requests.length ? { requestCount: causal.requests.length } : {}),
 		...(events?.length ? { events } : {}),
@@ -252,12 +313,29 @@ function projectCausal(observation: PageObservationV3, path: string, resources: 
 	};
 }
 
-function projectRelations(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): PageObservationV3["relations"] {
+function projectCausal(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): PublicCausalSummary | undefined {
+	const causal = observation.causal;
+	if (!causal) return undefined;
+	const projected = publicCausal(causal, ROOT_SAMPLE_SIZE);
+	const total = ("requests" in causal ? causal.requests.length : 0) + (causal.events?.length ?? 0);
+	const observed = (projected && "requests" in projected ? projected.requests.length : 0) + (projected?.events?.length ?? 0);
+	if (total > observed) addDetailsResource(observation, path, resources, items, { ref: "frontier:details:causal", label: "Complete causal activity", jsonPath: "causal", observed, total });
+	return projected;
+}
+
+export function publicRelations(relations: PageObservationV3["relations"], limit = Number.POSITIVE_INFINITY): PublicRelationSummary | undefined {
+	if (!relations) return undefined;
+	const highlights = relations.highlights.slice(0, limit).map(({ type, sourceRef, targetRef }) => ({ type, sourceRef, targetRef }));
+	const summary = Object.fromEntries(Object.entries(relations.summary).filter((entry): entry is [string, number] => typeof entry[1] === "number" && entry[1] >= 0));
+	return { summary, highlights, ...(relations.highlights.length > highlights.length ? { highlightCount: relations.highlights.length } : {}) };
+}
+
+function projectRelations(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): PublicRelationSummary | undefined {
 	const relations = observation.relations;
 	if (!relations) return undefined;
-	const highlights = relations.highlights.slice(0, ROOT_SAMPLE_SIZE);
-	if (relations.highlights.length > highlights.length) addDetailsResource(observation, path, resources, items, { ref: "frontier:details:relations", label: "Complete relation highlights", jsonPath: "relations", observed: highlights.length, total: relations.highlights.length });
-	return { summary: relations.summary, highlights, ...(relations.highlights.length > highlights.length ? { highlightCount: relations.highlights.length } : {}) };
+	const projected = publicRelations(relations, ROOT_SAMPLE_SIZE)!;
+	if (relations.highlights.length > projected.highlights.length) addDetailsResource(observation, path, resources, items, { ref: "frontier:details:relations", label: "Complete relation highlights", jsonPath: "relations", observed: projected.highlights.length, total: relations.highlights.length });
+	return projected;
 }
 
 function projectCollections(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]): CompactCollection[] | undefined {
@@ -312,7 +390,7 @@ export function projectObservationResources(observation: PageObservationV3, path
 		items.push({ ref, kind: "content", state: "folded", label: section.label, observed: section.text.length, total: section.text.length, resourceUri: resource.uri });
 	}
 	if (observation.content?.complete === false) items.push({ ref: "frontier:content:unavailable", kind: "content", state: "unavailable", label: "Uncaptured page content", unavailableReason: "capture reached the internal safety ceiling" });
-	const snapshotProjection = projectTemplates(observation, path, resources, items, deltaOnly);
+	addSnapshotProjectionResource(observation, path, resources, items);
 	const collections = projectCollections(observation, path, resources, items);
 	const treeDiff = projectTreeDiff(observation, path, resources, items);
 	const causal = projectCausal(observation, path, resources, items);
@@ -320,36 +398,32 @@ export function projectObservationResources(observation: PageObservationV3, path
 	const headings = observation.content?.headings?.slice(0, ROOT_HEADINGS_LIMIT);
 	const title = headings?.[0];
 	const outline = compactOutline(observation.outline);
-	const diagnostics = compactDiagnostics(observation.diagnostics);
+	const gist = publicGist(observation.gist, title);
+	const visual = publicVisual(observation.visual);
+	const inference = publicInference(observation.inference);
+	const warnings = publicWarnings(observation.diagnostics);
 	const buildView = (frontier: ReturnType<typeof limitedFrontier>, actionSpace?: AgentActionSpace): PageObservationView => {
 		const publicCollections = collections?.map((collection) => {
 			if (!collection.frontierRef || frontier.refs.has(collection.frontierRef)) return collection;
 			const { frontierRef: _frontierRef, ...withoutFrontier } = collection;
 			return withoutFrontier;
-		});
-		return {
-			schema: observation.schema,
-			tool: observation.tool,
-			model: observation.model,
-			canonical: false,
-			target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
-			snapshot: { snapshotId: observation.snapshot.snapshotId, capturedAt: observation.snapshot.capturedAt, ttlMs: observation.snapshot.ttlMs },
-			...(observation.gist || title ? { gist: { ...(observation.gist ?? {}), ...(title ? { title } : {}) } } : {}),
-			...(rootSection ? { content: { text: rootSection.text.slice(0, ROOT_CONTENT_MAX_CHARS), ...(headings?.length ? { headings } : {}), complete: observation.content?.complete !== false && sections.length <= 1 && rootSection.text.length <= ROOT_CONTENT_MAX_CHARS } } : {}),
-			...(observation.visual ? { visual: observation.visual } : {}),
-			...(outline?.length ? { outline } : {}),
-			...(actionSpace ? { actionSpace } : {}),
-			...(snapshotProjection ? { snapshotProjection } : {}),
-			...(publicCollections?.length ? { collections: publicCollections } : {}),
-			...(treeDiff ? { treeDiff } : {}),
-			...(causal ? { causal } : {}),
-			...(relations ? { relations } : {}),
-			...(observation.inference ? { inference: observation.inference } : {}),
-			providers: compactProviders(observation.providers),
-			...(diagnostics ? { diagnostics } : {}),
-			...(observation.nextActions?.length ? { nextActions: observation.nextActions.slice(0, 8) } : {}),
-			frontier: { items: frontier.items },
-		};
+			});
+			return {
+				target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
+				...(gist ? { gist } : {}),
+				...(rootSection ? { content: { text: rootSection.text.slice(0, ROOT_CONTENT_MAX_CHARS), ...(headings?.length ? { headings } : {}), complete: observation.content?.complete !== false && sections.length <= 1 && rootSection.text.length <= ROOT_CONTENT_MAX_CHARS } } : {}),
+				...(visual ? { visual } : {}),
+					...(outline?.length ? { outline } : {}),
+					...(actionSpace ? { actionSpace } : {}),
+					...(publicCollections?.length ? { collections: publicCollections } : {}),
+					...(treeDiff ? { treeDiff } : {}),
+					...(causal ? { causal } : {}),
+					...(relations ? { relations } : {}),
+				...(inference ? { inference } : {}),
+				...(warnings.length ? { warnings } : {}),
+				...(observation.nextActions?.length ? { nextActions: observation.nextActions.slice(0, 8) } : {}),
+				...(frontier.items.length ? { frontier: { items: frontier.items } } : {}),
+			};
 	};
 
 	let frontier = limitedFrontier(observation, path, resources, items);
@@ -392,14 +466,8 @@ export function projectObservationOverflow(observation: PageObservationV3, path:
 	}
 	return {
 		observation: {
-			schema: observation.schema,
-			tool: observation.tool,
-			model: observation.model,
-			canonical: false,
-			target: {},
-			snapshot: { snapshotId: observation.snapshot.snapshotId, capturedAt: observation.snapshot.capturedAt, ttlMs: observation.snapshot.ttlMs },
+			target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
 			...(actionSpace ? { actionSpace } : {}),
-			providers: Object.fromEntries(Object.entries(observation.providers).map(([provider, item]) => [provider, { status: item.status }])),
 			frontier: { items },
 		},
 		resources,

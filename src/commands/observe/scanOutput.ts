@@ -34,7 +34,7 @@ function buildBaselineDiagnostics(options: FinalizeScanObservationOptions) {
 	return {
 		diagnostics: { baselineRequested, baselineApplied: baseline !== undefined, ...(reanchorReason ? { reanchorReason } : {}), ...(baselineResolutionError ? { baselineResolutionError } : {}) },
 		warnings: !baseline && baselineResolutionError
-			? [`baseline resolution failed — returning full observation instead of diff: ${baselineResolutionError}`]
+			? ["Prior page state was unavailable; returned a full observation instead of a diff."]
 			: [],
 	};
 }
@@ -49,7 +49,6 @@ type FinalizeScanObservationOptions = {
 	content: string;
 	scanMeta: Record<string, unknown> | undefined;
 	bridge: ReturnType<BrowserCommandRuntimePort["snapshot"]>;
-	recorderActive: boolean;
 	baseline: BaselineResolution | undefined;
 	baselineRequested: boolean;
 	baselineResolutionError: string | undefined;
@@ -157,12 +156,12 @@ function recordLedgerProjection(options: FinalizeScanObservationOptions, frame: 
 }
 
 export async function finalizeScanObservation(options: FinalizeScanObservationOptions) {
-	const { ctx, fallbackName, outputPath, snapshotMeta } = options;
+	const { ctx, fallbackName, outputPath } = options;
 	const { summary, treeDiff } = options.assembly;
 	const { causal } = options.providers;
 
 	if (options.reanchorReason) summary.reanchorReason = options.reanchorReason;
-	const hints = buildScanNextActionHints({ hasBaseline: options.baseline !== undefined, snapshotId: snapshotMeta.snapshotId, recorderActive: options.recorderActive, causal, treeDiff });
+	const hints = buildScanNextActionHints({ hasBaseline: options.baseline !== undefined, causal, treeDiff });
 	if (hints.length) summary.nextActions = hints;
 	const ledger = buildLedgerProjection(options);
 	options.timings.renderMs = elapsedMs(options.renderStartedAt);

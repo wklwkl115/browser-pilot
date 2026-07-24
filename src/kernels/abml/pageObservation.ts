@@ -1,16 +1,16 @@
 import type { Entity, EntityAction, EntityState } from "./entity.js";
 import type { EntityDiff } from "./diff.js";
-import type { CausalSummary } from "./causal.js";
+import type { CausalEvent, CausalRequest, CausalSummary } from "./causal.js";
 import type { TreeDiff } from "./treeDiff.js";
 import type { SnapshotProjection } from "./snapshotProjection.js";
 import type { RelationSummary } from "./relations.js";
-import type { InferenceSummary } from "./inference.js";
+import type { DetectedIntent, InferenceSummary } from "./inference.js";
 import type { PageReanchorReason } from "../session/pageIdentity.js";
 
 export const PAGE_OBSERVATION_SCHEMA_V3 = "browser-page-observation/v3" as const;
 
 export type ObservationFrontierState = "folded" | "viewport-window" | "virtualized" | "paginated" | "lazy" | "unavailable";
-export type ObservationFrontierKind = "action-space" | "template-instances" | "collection-window" | "content" | "details";
+export type ObservationFrontierKind = "action-space" | "collection-window" | "content" | "details";
 
 export interface ObservationFrontierItem {
 	ref: string;
@@ -36,8 +36,6 @@ export interface ProviderExecutionItem {
 	bridgeRoundTrips?: number;
 }
 export type ProviderExecutionReport = Record<string, ProviderExecutionItem>;
-export type PublicProviderExecutionItem = Pick<ProviderExecutionItem, "status" | "reason">;
-export type PublicProviderExecutionReport = Record<string, PublicProviderExecutionItem>;
 
 export interface CompactActionable {
 	ref: string;
@@ -48,12 +46,11 @@ export interface CompactActionable {
 	hint?: string;
 	confidence: "high" | "medium";
 	scope?: { id: string; position?: number };
-	state?: Partial<EntityState>;
+	state: EntityState;
 }
 
 export interface AgentActionSpace {
-	defaults: { state: EntityState };
-	coverage: { captured: number; returned: number; captureComplete: boolean; projectionComplete: boolean };
+	coverage: { captured: number; captureComplete: boolean };
 	scopes: Array<{ id: string; name?: string; size?: number }>;
 	items: CompactActionable[];
 }
@@ -96,6 +93,17 @@ export interface VisualObservation {
 	};
 	targets: Array<{ ref: string; box: { x: number; y: number; w: number; h: number } }>;
 }
+
+export type PublicVisualObservation = Pick<VisualObservation, "ref" | "resourceUri" | "actionableGrounding" | "coordinateSpace" | "targets"> & {
+	image: Pick<VisualObservation["image"], "width" | "height">;
+};
+
+export type PublicCausalSummary =
+	| { requests: CausalRequest[]; requestCount?: number; events?: CausalEvent[]; eventCount?: number }
+	| { unavailable: string; events?: CausalEvent[]; eventCount?: number };
+
+export type PublicInferenceSummary = { intents: Array<Pick<DetectedIntent, "intent" | "confidence" | "reason"> & { refs?: string[] }> };
+export type PublicRelationSummary = { summary: RelationSummary["summary"]; highlights: Array<Pick<RelationSummary["highlights"][number], "type" | "sourceRef" | "targetRef">>; highlightCount?: number };
 
 /** Saved artifacts use the same v3 root while retaining collection evidence. */
 export interface CollectionSummary extends CompactCollection {
@@ -168,26 +176,19 @@ export interface PageObservationV3 {
 }
 
 export interface PageObservationView {
-	schema: typeof PAGE_OBSERVATION_SCHEMA_V3;
-	tool: "browser_observe";
-	model: "PageObservation";
-	canonical: false;
 	target: Pick<PageTarget, "url">;
-	snapshot: Pick<ObservationSnapshot, "snapshotId" | "capturedAt" | "ttlMs">;
 	content?: PageObservationContent;
-	visual?: VisualObservation;
+	visual?: PublicVisualObservation;
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
 	actionSpace?: AgentActionSpace;
-	relations?: RelationSummary;
-	inference?: InferenceSummary;
-	causal?: CausalSummary;
-	treeDiff?: TreeDiff;
-	snapshotProjection?: SnapshotProjection;
+	relations?: PublicRelationSummary;
+	inference?: PublicInferenceSummary;
+	causal?: PublicCausalSummary;
+	treeDiff?: Pick<TreeDiff, "summary">;
 	collections?: CompactCollection[];
-	providers: PublicProviderExecutionReport;
-	frontier: ObservationFrontier;
-	diagnostics?: Record<string, unknown>;
+	frontier?: ObservationFrontier;
+	warnings?: string[];
 	nextActions?: string[];
 }
 
@@ -195,7 +196,7 @@ const FRONTIER_ITEM_SCHEMA = {
 	type: "object",
 	properties: {
 		ref: { type: "string", minLength: 1 },
-		kind: { enum: ["action-space", "template-instances", "collection-window", "content", "details"] },
+		kind: { enum: ["action-space", "collection-window", "content", "details"] },
 		state: { enum: ["folded", "viewport-window", "virtualized", "paginated", "lazy", "unavailable"] },
 		label: { type: "string", minLength: 1 },
 		observed: { type: "integer", minimum: 0 },
@@ -218,17 +219,16 @@ const ENTITY_STATE_PROPERTIES = {
 const ACTION_SPACE_SCHEMA = {
 	type: "object",
 	properties: {
-		defaults: { type: "object", properties: { state: { type: "object", properties: ENTITY_STATE_PROPERTIES, required: ["visible", "occluded", "disabled", "focused", "editable", "inViewport"], additionalProperties: false } }, required: ["state"], additionalProperties: false },
-		coverage: { type: "object", properties: { captured: { type: "integer", minimum: 0 }, returned: { type: "integer", minimum: 0 }, captureComplete: { type: "boolean" }, projectionComplete: { type: "boolean" } }, required: ["captured", "returned", "captureComplete", "projectionComplete"], additionalProperties: false },
+		coverage: { type: "object", properties: { captured: { type: "integer", minimum: 0 }, captureComplete: { type: "boolean" } }, required: ["captured", "captureComplete"], additionalProperties: false },
 		scopes: { type: "array", items: { type: "object", properties: { id: { type: "string", minLength: 1 }, name: { type: "string" }, size: { type: "integer", minimum: 1 } }, required: ["id"], additionalProperties: false } },
 		items: { type: "array", items: { type: "object", properties: {
 			ref: { type: "string", minLength: 1 }, kind: { type: "string", minLength: 1 }, role: { type: "string", minLength: 1 }, name: { type: "string" },
 			actions: { type: "array", minItems: 1, items: { enum: ["click", "edit"] } }, hint: { type: "string" }, confidence: { enum: ["high", "medium"] },
 			scope: { type: "object", properties: { id: { type: "string", minLength: 1 }, position: { type: "integer", minimum: 1 } }, required: ["id"], additionalProperties: false },
-			state: { type: "object", properties: ENTITY_STATE_PROPERTIES, additionalProperties: false },
-		}, required: ["ref", "kind", "role", "actions", "confidence"], additionalProperties: false } },
+			state: { type: "object", properties: ENTITY_STATE_PROPERTIES, required: ["visible", "occluded", "disabled", "focused", "editable", "inViewport"], additionalProperties: false },
+		}, required: ["ref", "kind", "role", "actions", "confidence", "state"], additionalProperties: false } },
 	},
-	required: ["defaults", "coverage", "scopes", "items"],
+	required: ["coverage", "scopes", "items"],
 	additionalProperties: false,
 } as const;
 
@@ -318,16 +318,6 @@ export const PAGE_OBSERVATION_V3_JSON_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
-const PUBLIC_PROVIDER_ITEM_SCHEMA = {
-	type: "object",
-	properties: {
-		status: { enum: ["executed", "scan-backed", "skipped", "failed", "degraded"] },
-		reason: { type: "string" },
-	},
-	required: ["status"],
-	additionalProperties: false,
-} as const;
-
 const PUBLIC_COLLECTION_SCHEMA = {
 	type: "object",
 	properties: {
@@ -345,37 +335,119 @@ const PUBLIC_COLLECTION_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
-export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
-	$id: "browser-page-observation-view/v1",
+const PUBLIC_VISUAL_OBSERVATION_SCHEMA = {
 	type: "object",
 	properties: {
-		schema: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.schema,
-		tool: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.tool,
-		model: PAGE_OBSERVATION_V3_JSON_SCHEMA.properties.model,
-		canonical: { const: false },
+		ref: { type: "string", pattern: "^bp-ref://" },
+		resourceUri: { type: "string", pattern: "^browser-pilot://artifact/" },
+		actionableGrounding: { type: "boolean" },
+		coordinateSpace: { const: "normalized-image" },
+		image: { type: "object", properties: { width: { type: "number", exclusiveMinimum: 0 }, height: { type: "number", exclusiveMinimum: 0 } }, required: ["width", "height"], additionalProperties: false },
+		targets: { type: "array", maxItems: 128, items: { type: "object", properties: { ref: { type: "string", pattern: "^bp-ref://" }, box: { type: "object", properties: { x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 }, w: { type: "number", minimum: 0, maximum: 1 }, h: { type: "number", minimum: 0, maximum: 1 } }, required: ["x", "y", "w", "h"], additionalProperties: false } }, required: ["ref", "box"], additionalProperties: false } },
+	},
+	required: ["ref", "resourceUri", "actionableGrounding", "coordinateSpace", "image", "targets"],
+	additionalProperties: false,
+} as const;
+
+const GIST_SCHEMA = {
+	type: "object",
+	properties: {
+		title: { type: "string" },
+		landmarks: { type: "array", items: { type: "string" } },
+	},
+	additionalProperties: false,
+} as const;
+
+const OUTLINE_ITEM_SCHEMA = {
+	type: "object",
+	properties: {
+		container: { type: "string" }, name: { type: "string" }, memberCount: { type: "integer", minimum: 0 }, controlCount: { type: "integer", minimum: 0 },
+		memberRefs: { type: "array", maxItems: 3, items: { type: "string", pattern: "^bp-ref://" } },
+	},
+	required: ["container", "memberCount", "memberRefs"],
+	additionalProperties: false,
+} as const;
+
+const RELATIONS_SCHEMA = {
+	type: "object",
+	properties: {
+		summary: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+		highlights: { type: "array", maxItems: 3, items: { type: "object", properties: {
+			type: { type: "string" }, sourceRef: { type: "string", pattern: "^bp-ref://" }, targetRef: { type: "string", pattern: "^bp-ref://" },
+		}, required: ["type", "sourceRef", "targetRef"], additionalProperties: false } },
+		highlightCount: { type: "integer", minimum: 0 },
+	},
+	required: ["summary", "highlights"],
+	additionalProperties: false,
+} as const;
+
+const INFERENCE_SCHEMA = {
+	type: "object",
+	properties: {
+		intents: { type: "array", items: { type: "object", properties: {
+			intent: { enum: ["login", "search", "filter-panel", "single-choice", "multi-choice", "expandable", "data-grid", "navigation", "dialog", "tabbed-interface", "alert-region", "form-dependency"] },
+			confidence: { enum: ["high", "medium", "low"] }, reason: { type: "string" }, refs: { type: "array", items: { type: "string", pattern: "^bp-ref://" } },
+		}, required: ["intent", "confidence"], additionalProperties: false } },
+	},
+	required: ["intents"],
+	additionalProperties: false,
+} as const;
+
+const CAUSAL_REQUEST_SCHEMA = {
+	type: "object",
+	properties: {
+		ref: { type: "string", pattern: "^bp-ref://" }, method: { type: "string" }, url: { type: "string" }, status: { type: "number" }, type: { type: "string" }, at: { type: "number" }, initiatorType: { type: "string" }, passive: { type: "boolean" },
+	},
+	required: ["ref"],
+	additionalProperties: false,
+} as const;
+
+const CAUSAL_EVENT_SCHEMA = {
+	type: "object",
+	properties: { ref: { type: "string", pattern: "^bp-ref://" }, type: { type: "string" }, at: { type: "number" }, summary: { type: "string" }, selector: { type: "string" } },
+	required: ["ref", "type"],
+	additionalProperties: false,
+} as const;
+
+const CAUSAL_SCHEMA = {
+	anyOf: [
+		{ type: "object", properties: { requests: { type: "array", maxItems: 3, items: CAUSAL_REQUEST_SCHEMA }, requestCount: { type: "integer", minimum: 0 }, events: { type: "array", maxItems: 3, items: CAUSAL_EVENT_SCHEMA }, eventCount: { type: "integer", minimum: 0 } }, required: ["requests"], additionalProperties: false },
+		{ type: "object", properties: { unavailable: { type: "string" }, events: { type: "array", maxItems: 3, items: CAUSAL_EVENT_SCHEMA }, eventCount: { type: "integer", minimum: 0 } }, required: ["unavailable"], additionalProperties: false },
+	],
+} as const;
+
+const TREE_DIFF_SCHEMA = {
+	type: "object",
+	properties: {
+		summary: { type: "object", properties: {
+			templateCount: { type: "integer", minimum: 0 }, changedTemplateCount: { type: "integer", minimum: 0 }, appeared: { type: "integer", minimum: 0 }, disappeared: { type: "integer", minimum: 0 }, changed: { type: "integer", minimum: 0 }, reordered: { type: "integer", minimum: 0 },
+			sample: { type: "object", properties: { appeared: { type: "array", items: { type: "string" } }, disappeared: { type: "array", items: { type: "string" } }, changed: { type: "array", items: { type: "string" } } }, additionalProperties: false },
+			partialBaseline: { type: "boolean" }, unavailable: { type: "string" },
+		}, required: ["templateCount", "changedTemplateCount", "appeared", "disappeared", "changed", "reordered"], additionalProperties: false },
+	},
+	required: ["summary"],
+	additionalProperties: false,
+} as const;
+
+export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
+	$id: "browser-page-observation-view/v2",
+	type: "object",
+	properties: {
 		target: { type: "object", properties: { url: { type: "string" } }, additionalProperties: false },
-		snapshot: {
-			type: "object",
-			properties: { snapshotId: { type: "string" }, capturedAt: { type: "number" }, ttlMs: { type: "number" } },
-			required: ["snapshotId", "capturedAt", "ttlMs"],
-			additionalProperties: false,
-		},
 		content: { type: "object", properties: { text: { type: "string", maxLength: 6_000 }, headings: { type: "array", maxItems: 16, items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
-		visual: VISUAL_OBSERVATION_SCHEMA,
-		gist: { type: "object" },
-		outline: { type: "array", maxItems: 8, items: { type: "object" } },
+		visual: PUBLIC_VISUAL_OBSERVATION_SCHEMA,
+		gist: GIST_SCHEMA,
+		outline: { type: "array", maxItems: 8, items: OUTLINE_ITEM_SCHEMA },
 		actionSpace: ACTION_SPACE_SCHEMA,
-		relations: { type: "object" },
-		inference: { type: "object" },
-		causal: { type: "object" },
-		treeDiff: { type: "object" },
-		snapshotProjection: { type: "object", properties: { summary: { type: "object" }, templates: { type: "array", maxItems: 12, items: { type: "object" } } }, additionalProperties: false },
+		relations: RELATIONS_SCHEMA,
+		inference: INFERENCE_SCHEMA,
+		causal: CAUSAL_SCHEMA,
+		treeDiff: TREE_DIFF_SCHEMA,
 		collections: { type: "array", maxItems: 12, items: PUBLIC_COLLECTION_SCHEMA },
-		providers: { type: "object", additionalProperties: PUBLIC_PROVIDER_ITEM_SCHEMA },
 		frontier: { type: "object", properties: { items: { type: "array", maxItems: 13, items: FRONTIER_ITEM_SCHEMA } }, required: ["items"], additionalProperties: false },
-		diagnostics: { type: "object" },
+		warnings: { type: "array", items: { type: "string" } },
 		nextActions: { type: "array", maxItems: 8, items: { type: "string" } },
 	},
-	required: ["schema", "tool", "model", "canonical", "target", "snapshot", "providers", "frontier"],
+	required: ["target"],
 	additionalProperties: false,
 } as const;

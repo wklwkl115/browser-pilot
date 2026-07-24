@@ -48,7 +48,7 @@ export function causalRequestsFiredCount(causal: CausalSummary): number {
 export function causalFiredHint(causal: CausalSummary): string | undefined {
 	if (!("requests" in causal) || !causal.requests.length) return undefined;
 	const fired = causalRequestsFiredCount(causal);
-	return `${fired} request(s) fired since baseline → read envelope.causal.requests and its frontier resource when folded (action→request attribution)`;
+	return `${fired} request(s) fired since baseline → read causal.requests and its frontier resource when folded (action→request attribution)`;
 }
 
 function refIdComponent(value: string, fallback: string): string {

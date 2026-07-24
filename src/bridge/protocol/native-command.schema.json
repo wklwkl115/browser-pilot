@@ -192,6 +192,7 @@
       "domain": "core",
       "tabScoped": false,
       "accessMode": "write",
+      "internal": true,
       "methods": [
         "reload"
       ],
@@ -375,7 +376,7 @@
         "action",
         "ref"
       ],
-      "notes": "Pass an observed bp-ref URI in ref. The daemon resolves ownership and expands the private CDP target before dispatch.",
+      "notes": "Pass an observed bp-ref URI in ref. Screenshot-grounded actions also pass a normalized visual.point; the daemon resolves ownership and private browser state.",
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -384,11 +385,10 @@
           "visual": {
             "type": "object",
             "properties": {
-              "observationId": { "type": "string", "minLength": 1 },
               "point": { "type": "object", "properties": { "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 } }, "required": ["x", "y"], "additionalProperties": false },
               "to": { "type": "object", "properties": { "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 } }, "required": ["x", "y"], "additionalProperties": false }
             },
-            "required": ["observationId", "point"],
+            "required": ["point"],
             "additionalProperties": false
           },
           "text": { "type": "string" },

@@ -7,7 +7,7 @@ import { withBrowserOperation } from "./browserOperation.js";
 import { withCommandEffect, type CommandEffect } from "./commandEffect.js";
 import { commandExpectationSchema, javascriptVerificationResult, prepareCommandExpectation } from "./commandExpectation.js";
 import { defineBrowserCommand, pinTabExecutionTarget, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
-import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
+import { DEFAULT_TOOL_TIMEOUT_MS, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { validateBridgeCommand, type BridgeCommand } from "../types/nativeProtocol.js";
 import { isNativeTabScopedCommand, isNativeWriteCommand, isPublicNativeCommand, nativeCommandOwner, publicNativeCommandNames } from "./nativeCommandAccess.js";
@@ -62,8 +62,8 @@ function prepareNativeRef(command: BridgeCommand): { command: BridgeCommand; ref
 	if (resolved.descriptor.visual) {
 		const point = isRecord(visualInput?.point) ? { x: Number(visualInput.point.x), y: Number(visualInput.point.y) } : undefined;
 		const to = isRecord(visualInput?.to) ? { x: Number(visualInput.to.x), y: Number(visualInput.to.y) } : undefined;
-		if (!visualInput || visualInput.observationId !== resolved.descriptor.observationId || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-			throw new BrowserBridgeError("INVALID_REF_TARGET", "Visual input.ref requires the matching observationId and normalized point", { ref: command.ref });
+		if (!visualInput || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+			throw new BrowserBridgeError("INVALID_REF_TARGET", "Visual input.ref requires a normalized point", { ref: command.ref });
 		}
 		const action = String(command.action || "");
 		if (action === "drag" && !to) throw new BrowserBridgeError("INVALID_RULE", "Visual input.ref drag requires visual.to", { ref: command.ref });
@@ -84,15 +84,13 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 	defineBrowserCommand(commands, {
 		name: "browser_command",
 		label: "Browser Command",
-		description: "Send one validated native browser command through the selected or explicit target. Returns result plus write effect and optional verification; structured ABML verification owns its target-state diff.",
-		promptSnippet: "Use one native command for browser/CDP capabilities outside page JavaScript; read its resource only when command-specific fields are needed.",
+		description: "Run one validated native browser command in the selected or ref-owning tab. Writes may return effect and verification evidence.",
 		promptGuidelines: [
-			TAB_SCOPED_TOOL_GUIDELINE,
-			"Use browser_command for explicit native CDP/management operations and browser_execute only for JavaScript.",
+			"Read browser-pilot://native-command/<cmd> only when an unfamiliar native command's fields are needed.",
 			"For raw CDP, pass command={cmd:'cdp',method:'Domain.method',params:{...}}; Browser Pilot owns attach, reuse, recovery, and cleanup.",
 			"For a trusted physical click, use command={cmd:'input.ref',action:'click',ref:'bp-ref://...'}; Browser Pilot resolves its tab and private CDP target.",
-			"For screenshot-grounded input, use browser_observe visual.ref with the matching visual.basis.observationId and normalized visual.point; do not convert it to raw input.pointer coordinates.",
-			"For tab-scoped writes, expect may declare a JavaScript truth expression or structured ABML ref/state postcondition; Browser Pilot owns settlement and returns canonical verification evidence.",
+			"For screenshot-grounded input, use browser_observe visual.ref with a normalized visual.point; do not convert it to raw input.pointer coordinates.",
+			"For tab-scoped writes, expect may declare a JavaScript truth expression or structured ref/state postcondition; Browser Pilot owns settlement and verification.",
 		],
 		parameters: strictCommandParameters({
 			command: Type.Object({

@@ -66,8 +66,18 @@ export function jsonResult(value: unknown, details: Record<string, unknown> = {}
 
 export function errorResult(error: unknown): BrowserTextCommandResult {
 	const normalized = publicToolValue(compactError(error)) as Record<string, unknown>;
+	const rawDetails = isRecord(normalized.details) ? normalized.details : {};
+	const { recovery: _nestedRecovery, commandName: _commandName, snapshotId: _snapshotId, observationId: _observationId, refObservationId: _refObservationId, ...details } = rawDetails;
+	const rawRecovery = isRecord(normalized.recovery) ? normalized.recovery : {};
+	const { summary: _summary, ...recovery } = rawRecovery;
+	const publicError = {
+		code: normalized.code,
+		message: normalized.message,
+		...(Object.keys(details).length ? { details } : {}),
+		...(Object.keys(recovery).length ? { recovery } : {}),
+	};
 	return {
-		content: [{ type: "text", text: stableJson(normalized) }],
+		content: [{ type: "text", text: stableJson(publicError) }],
 		details: normalizeDetails({ error: normalized }),
 		isError: true,
 	};

@@ -11,7 +11,7 @@ import { withBrowserOperation } from "./browserOperation.js";
 import { withCommandEffect } from "./commandEffect.js";
 import { commandExpectationSchema, javascriptVerificationResult, prepareCommandExpectation, type PreparedCommandExpectation } from "./commandExpectation.js";
 import { defineBrowserCommand, pinTabExecutionTarget, resolveRefExecutionTarget, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
-import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
+import { DEFAULT_TOOL_TIMEOUT_MS, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import type { ValidationIssue } from "./commandDefinition.js";
 
@@ -51,7 +51,7 @@ export function validateExecuteArguments(args: Record<string, unknown>): Validat
 	if (typeof args.script !== "string" || !args.script.length) return [{ code: "EXECUTE_SCRIPT_REQUIRED", path: "/script", message: "browser_execute requires script" }];
 	const script = args.script;
 	if (detectCommandLikeScript(script)) return [{ code: "EXECUTE_COMMAND_SHAPED_SCRIPT", path: "/script", message: "browser_execute only accepts JavaScript; use browser_command for bridge commands" }];
-	if (args.expect !== undefined && !(typeof args.expect === "string" && args.expect.trim()) && !isAbmlStateExpectation(args.expect)) return [{ code: "EXECUTE_EXPECT_INVALID", path: "/expect", message: "browser_execute expect must be a non-empty JavaScript expression or structured ABML postcondition" }];
+	if (args.expect !== undefined && !(typeof args.expect === "string" && args.expect.trim()) && !isAbmlStateExpectation(args.expect)) return [{ code: "EXECUTE_EXPECT_INVALID", path: "/expect", message: "browser_execute expect must be a non-empty JavaScript expression or structured ref/state postcondition" }];
 	if (args.expect !== undefined && args.readOnly === true) return [{ code: "EXECUTE_EXPECT_READ_ONLY", path: "/expect", message: "browser_execute expect is only valid for writes" }];
 	return [];
 }
@@ -68,13 +68,12 @@ export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistr
 	defineBrowserCommand(commands, {
 		name: "browser_execute",
 		label: "Browser Execute",
-		description: "Execute JavaScript in the selected or ref-owning tab. Returns result plus write effect and optional verification; structured ABML verification owns its target-state diff.",
-		promptSnippet: "Execute JavaScript directly; omit targetRef for the selected tab and bind observed elements through refs when available.",
+		description: "Execute JavaScript in the selected or ref-owning tab. Writes may return effect and verification evidence.",
 		promptGuidelines: [
-			TAB_SCOPED_TOOL_GUIDELINE,
+			"Combine deterministic same-page reads, writes, and waits in one script; split only when the next step depends on new page state.",
 			"Pass observed bp-ref URIs through refs; each entry is available as browserPilot.refs.<name>, and its owner selects the tab automatically. Use browser_command input.ref for trusted native input.",
 			"The page runtime exposes browserPilot.refs, resolve(ref), box(ref), and setValue(target,value).",
-			"Use readOnly:true for queries. For writes, expect may declare a JavaScript truth expression or structured ABML ref/state postcondition; Browser Pilot owns settlement and returns canonical verification evidence.",
+			"Use readOnly:true for queries. For writes, expect may declare a JavaScript truth expression or structured ref/state postcondition; Browser Pilot owns settlement and verification.",
 		],
 		parameters: strictCommandParameters({
 			script: Type.String({ description: "JavaScript to execute." }),

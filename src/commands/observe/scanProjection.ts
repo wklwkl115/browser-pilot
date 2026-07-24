@@ -1,4 +1,4 @@
-import type { Entity, EntityAction, EntityState } from "../../kernels/abml/entity.js";
+import type { Entity, EntityAction } from "../../kernels/abml/entity.js";
 import type { EntityDiff } from "../../kernels/abml/diff.js";
 import type { TreeDiff } from "../../kernels/abml/treeDiff.js";
 import type { CausalSummary } from "../../kernels/abml/causal.js";
@@ -36,13 +36,6 @@ type ProviderFailureReason = {
 	message?: string;
 	details?: Record<string, unknown>;
 };
-
-const ACTION_STATE_DEFAULTS: EntityState = { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true };
-
-function actionStateDelta(state: EntityState): Partial<EntityState> | undefined {
-	const delta = Object.fromEntries(Object.entries(state).filter(([key, value]) => value !== (ACTION_STATE_DEFAULTS as unknown as Record<string, unknown>)[key])) as Partial<EntityState>;
-	return Object.keys(delta).length ? delta : undefined;
-}
 
 function fallbackActions(entity: Entity): EntityAction[] {
 	return entity.state.editable ? ["edit"] : ["click"];
@@ -89,7 +82,6 @@ function compactActionSpace(entities: Entity[], focus: Record<string, unknown>, 
 			}
 			compactScope = { id, ...(scope.position ? { position: scope.position } : {}) };
 		}
-		const state = actionStateDelta(entity.state);
 		return {
 			ref: entity.ref,
 			kind: entity.kind,
@@ -99,10 +91,10 @@ function compactActionSpace(entities: Entity[], focus: Record<string, unknown>, 
 			...(entity.actionability?.hint ? { hint: entity.actionability.hint } : {}),
 			confidence: entity.actionability?.confidence ?? "medium",
 			...(compactScope ? { scope: compactScope } : {}),
-			...(state ? { state } : {}),
+			state: entity.state,
 		};
 	});
-	return { defaults: { state: ACTION_STATE_DEFAULTS }, coverage: { captured: items.length, returned: items.length, captureComplete, projectionComplete: true }, scopes, items };
+	return { coverage: { captured: items.length, captureComplete }, scopes, items };
 }
 
 function collectionSummaries(collections: CollectionModel[]): CollectionSummary[] {
@@ -234,16 +226,10 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 
 export function buildScanNextActionHints(input: {
 	hasBaseline: boolean;
-	snapshotId?: unknown;
-	recorderActive: boolean;
 	causal?: CausalSummary;
 	treeDiff?: TreeDiff;
 }): string[] {
 	const hints: string[] = [];
-	const sid = typeof input.snapshotId === "string" ? input.snapshotId : undefined;
-	if (!input.hasBaseline && sid) {
-		hints.push(`after acting, use browser_observe diff:true only if the next decision needs fresh state; inspect treeDiff${input.recorderActive ? " and causal.requests" : ""}`);
-	}
 	if (input.hasBaseline && input.causal) {
 		const firedHint = causalFiredHint(input.causal);
 		if (firedHint) hints.push(firedHint);
@@ -255,7 +241,7 @@ export function buildScanNextActionHints(input: {
 			...(s.sample?.disappeared?.length ? [`-${s.sample.disappeared.slice(0, 3).join(", ")}`] : []),
 			...(s.sample?.changed?.length ? [`~${s.sample.changed.slice(0, 3).join(", ")}`] : []),
 		].join("; ");
-		hints.push(`treeDiff: +${s.appeared}/-${s.disappeared}/~${s.changed} templates${eg ? ` (${eg})` : ""}; expand treeDiff.templates only if the summary sample is insufficient`);
+		hints.push(`treeDiff: +${s.appeared}/-${s.disappeared}/~${s.changed} templates${eg ? ` (${eg})` : ""}; read the tree-diff resource only if the summary sample is insufficient`);
 	}
 	return hints;
 }

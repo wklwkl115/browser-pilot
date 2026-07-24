@@ -7,16 +7,12 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { callMcpTool, mcpProjectRoot, mcpResources, mcpResourceTemplates, mcpTools, readMcpResource, registerMcpObservationResources } from "../../src/apps/mcp/server.ts";
+import { mcpProjectRoot, mcpResources, mcpResourceTemplates, mcpTools, readMcpResource, registerMcpObservationResources } from "../../src/apps/mcp/server.ts";
 import { publicNativeCommandNames } from "../../src/commands/nativeCommandAccess.ts";
 import { buildPageObservation } from "../../src/commands/observe/scanProjection.ts";
 import { pageObservationResult } from "../../src/commands/resultMiddleware.ts";
 import { OBSERVATION_RESOURCES_DETAIL_KEY, type ObservationResourceDescriptor } from "../../src/commands/observe/observationResources.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
-
-function firstText(result: Awaited<ReturnType<typeof callMcpTool>>): string {
-	return result.content.find((item) => item.type === "text")?.text ?? "";
-}
 
 function resourceText(resource: Awaited<ReturnType<typeof readMcpResource>>): string {
 	const content = resource.contents[0];
@@ -31,19 +27,24 @@ test("MCP publishes the command catalog as tools", () => {
 	]);
 	assert.ok(tools.every((tool) => tool.inputSchema.type === "object"));
 	const observeSchema = tools.find((tool) => tool.name === "browser_observe")?.outputSchema;
-	assert.equal(observeSchema?.$id, "browser-page-observation-view/v1");
-	assert.doesNotMatch(JSON.stringify(observeSchema), /browserSessionId|tabId|targetGeneration|pageEpoch|documentId|frameScope|selectionVersion|sourceMode|networkSeq|hookSeq|reanchorReason|baselineSnapshotId|reservedMs|actualMs|bridgeRoundTrips|planned/);
+	assert.equal(observeSchema?.$id, "browser-page-observation-view/v2");
+	assert.doesNotMatch(JSON.stringify(observeSchema), /browserSessionId|tabId|targetGeneration|pageEpoch|documentId|frameScope|selectionVersion|sourceMode|networkSeq|hookSeq|reanchorReason|baselineSnapshotId|snapshotId|observationId|changeSeq|sinceSeq|sha256|reservedMs|actualMs|bridgeRoundTrips|planned|providers|diagnostics|canonical/);
 	const observeProperties = observeSchema?.properties as Record<string, unknown>;
-	for (const internal of ["delta", "baselineSnapshotId", "reanchorReason", "entities", "diff", "identity"]) assert.equal(internal in observeProperties, false);
+	for (const internal of ["schema", "tool", "model", "canonical", "snapshot", "providers", "diagnostics", "snapshotProjection", "delta", "baselineSnapshotId", "reanchorReason", "entities", "diff", "identity"]) assert.equal(internal in observeProperties, false);
 	const tabs = tools.find((tool) => tool.name === "browser_tabs")!;
 	const tabProperties = tabs.inputSchema.properties as Record<string, Record<string, unknown>>;
 	assert.deepEqual(tabProperties.action.enum, ["list", "switch", "create", "close"]);
 	assert.equal("browserSessionId" in tabProperties, false);
+	assert.deepEqual((tabs.outputSchema?.required as string[]), ["tabs"]);
 	assert.match(tabs.description ?? "", /Omit browser_tabs when the selected active tab is already the intended target/);
 	const native = tools.find((tool) => tool.name === "browser_command")!;
 	const nativeProperties = native.inputSchema.properties as Record<string, Record<string, unknown>>;
 	const commandProperties = nativeProperties.command.properties as Record<string, Record<string, unknown>>;
 	assert.deepEqual(commandProperties.cmd.enum, publicNativeCommandNames());
+	assert.match(native.description ?? "", /browser-pilot:\/\/native-command\/<cmd>/);
+	assert.match(tools.find((tool) => tool.name === "browser_execute")?.description ?? "", /Combine deterministic same-page reads, writes, and waits in one script/);
+	assert.deepEqual((tools.find((tool) => tool.name === "browser_screenshot")?.outputSchema?.required as string[]), ["captured"]);
+	for (const tool of tools.filter((item) => item.name !== "browser_tabs")) assert.doesNotMatch(tool.description ?? "", /Use targetRef from browser_tabs list\/create/);
 });
 
 test("MCP uses the configured project root", () => {
@@ -57,33 +58,31 @@ test("MCP uses the configured project root", () => {
 	}
 });
 
-test("MCP returns an ordinary tool error for unknown tools", async () => {
-	const result = await callMcpTool("browser_missing", {});
-	assert.equal(result.isError, true);
-	assert.match(firstText(result), /Unknown tool/);
-});
-
 test("MCP resources expose a compact native index, per-command schemas, and project-scoped artifacts", async () => {
 	assert.equal(mcpResources()[0]?.uri, "browser-pilot://native-commands");
 	const native = await readMcpResource("browser-pilot://native-commands");
 	assert.match(resourceText(native), /"network\.list"/);
-	const nativeResource = JSON.parse(resourceText(native)) as { commands: Record<string, { paramsSchema?: object }> };
-	const nativeCommands = nativeResource.commands;
-	assert.equal(Object.hasOwn(nativeResource, "envelope"), false);
-	assert.equal(Object.hasOwn(nativeCommands, "tabs"), false);
-	assert.equal(Object.hasOwn(nativeCommands, "batch"), false);
+		const nativeResource = JSON.parse(resourceText(native)) as { commands: Record<string, { paramsSchema?: object }> };
+		const nativeCommands = nativeResource.commands;
+		assert.equal(Object.hasOwn(nativeResource, "envelope"), false);
+		assert.equal(Object.hasOwn(nativeCommands, "tabs"), false);
+		assert.equal(Object.hasOwn(nativeCommands, "management"), false);
+		assert.equal(Object.hasOwn(nativeCommands, "batch"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "persistent_cdp"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "hook.list_sessions"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "hook.list_targets"), false);
-	assert.equal(Object.hasOwn(nativeCommands, "hook.clear"), false);
-	assert.equal(Object.hasOwn(nativeCommands, "transfer.download"), true);
-	assert.ok(Object.values(nativeCommands).every((spec) => !spec.paramsSchema));
+		assert.equal(Object.hasOwn(nativeCommands, "hook.clear"), false);
+		assert.equal(Object.hasOwn(nativeCommands, "transfer.download"), true);
+		assert.ok(Object.values(nativeCommands).every((spec) => !spec.paramsSchema));
+		assert.ok(Object.values(nativeCommands).every((spec) => !("domain" in spec) && !("tabScoped" in spec) && !("methodSpecs" in spec)));
+		assert.doesNotMatch(resourceText(native), /requiredAny/);
 	assert.ok(mcpResourceTemplates().some((template) => template.uriTemplate === "browser-pilot://native-command/{command}"));
-	assert.ok(mcpResourceTemplates().some((template) => template.uriTemplate === "browser-pilot://observation/{token}"));
-	const command = await readMcpResource("browser-pilot://native-command/network.list");
-	const commandResource = JSON.parse(resourceText(command)) as { envelope?: unknown; specification: { paramsSchema?: object } };
-	assert.equal(commandResource.envelope, undefined);
-	assert.ok(commandResource.specification.paramsSchema);
+		assert.ok(mcpResourceTemplates().some((template) => template.uriTemplate === "browser-pilot://observation/{token}"));
+		const command = await readMcpResource("browser-pilot://native-command/network.list");
+		const commandResource = JSON.parse(resourceText(command)) as { envelope?: unknown; paramsSchema?: object; specification?: unknown };
+		assert.equal(commandResource.envelope, undefined);
+		assert.equal(commandResource.specification, undefined);
+		assert.ok(commandResource.paramsSchema);
 	await assert.rejects(() => readMcpResource("browser-pilot://native-command/hook.clear"), /unknown native command resource/i);
 	await assert.rejects(() => readMcpResource("browser-pilot://native-command/persistent_cdp"), /unknown native command resource/i);
 
@@ -111,14 +110,56 @@ test("MCP resources expose a compact native index, per-command schemas, and proj
 		assert.equal(registerMcpObservationResources({ [OBSERVATION_RESOURCES_DETAIL_KEY]: [{ ...descriptor, uri: "browser-pilot://observation/00000000-0000-0000-0000-000000000000" }] }, root).length, 0);
 		assert.equal(registerMcpObservationResources({ [OBSERVATION_RESOURCES_DETAIL_KEY]: [{ ...descriptor, expiresAt: Date.now() - 1 }] }, root).length, 0);
 		const link = links.find((item) => item.type === "resource_link" && item.uri === descriptor.uri);
-		assert.equal(link?.type, "resource_link");
-		if (!link || link.type !== "resource_link") throw new Error("observation resource link missing");
-		const expanded = await readMcpResource(link.uri, root);
-		assert.match(resourceText(expanded), /Introduction/);
-		assert.equal(resourceText(expanded).includes(observationPath), false);
+			assert.equal(link?.type, "resource_link");
+			if (!link || link.type !== "resource_link") throw new Error("observation resource link missing");
+			const expanded = await readMcpResource(link.uri, root);
+			assert.match(resourceText(expanded), /Introduction/);
+			assert.equal(resourceText(expanded).includes(observationPath), false);
+			assert.doesNotMatch(resourceText(expanded), /snapshotId|browser-page-observation-resource/);
 		const causal = descriptors.find((item) => item.kind === "details")!;
 		const expandedCausal = await readMcpResource(causal.uri, root);
 		assert.equal(((JSON.parse(resourceText(expandedCausal)) as { value: { requests: unknown[] } }).value.requests).length, 4);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("MCP collection resources expose decisions without internal evidence", async () => {
+	const root = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-mcp-collections-"));
+	try {
+		const artifacts = path.join(root, ".browser-pilot", "artifacts");
+		await mkdir(artifacts, { recursive: true });
+		const observation = buildPageObservation({
+			summary: {}, entities: [], content: "", url: "https://example.test/collections",
+			snapshot: { snapshotId: "snapshot-collection-resource", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 60_000 },
+			abmlIntegrated: true, diagnostics: {},
+		});
+		observation.collections = Array.from({ length: 13 }, (_, index) => ({
+			ref: `bp-ref://region/collection-${index}`,
+			kind: "list",
+			name: `Collection ${index}`,
+			observed: 1,
+			completeness: "complete",
+			confidence: "high",
+			itemRefs: [`bp-ref://element/item-${index}`],
+			collectionId: `internal-${index}`,
+			containerRole: "list",
+			paginationControl: { ref: `bp-ref://control/next-${index}`, label: "Next", kind: "next", internal: "hidden" },
+			dataSources: [{ source: "dom", summary: "internal source", confidence: "high" }],
+			evidence: [{ source: "itemEntities", summary: "internal evidence" }],
+		}));
+		const observed = await pageObservationResult({ observation, artifactPath: path.join(artifacts, "collections.json"), fallbackName: "collections.json" });
+		const descriptors = observed.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
+		const descriptor = descriptors.find((item) => item.jsonPath === "collections")!;
+		registerMcpObservationResources(observed.details, root);
+		const expanded = JSON.parse(resourceText(await readMcpResource(descriptor.uri, root))) as { value: Array<Record<string, unknown>> };
+		assert.equal(expanded.value.length, 13);
+		for (const collection of expanded.value) {
+			assert.deepEqual(Object.keys(collection), ["ref", "kind", "name", "observed", "completeness", "confidence", "itemRefs", "paginationControl"]);
+			const control = collection.paginationControl as Record<string, unknown>;
+			assert.deepEqual(Object.keys(control), ["ref", "label", "kind"]);
+			assert.match(String(control.ref), /^bp-ref:\/\/control\/next-/);
+		}
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -174,7 +215,6 @@ test("stdio MCP initialization and tools/list work end to end", async () => {
 		stdio: ["pipe", "pipe", "pipe"],
 	});
 	const responses = new Map<number, (message: Record<string, unknown>) => void>();
-	const progress: Record<string, unknown>[] = [];
 	let rootsRequested = false;
 	const lines = createInterface({ input: child.stdout });
 	lines.on("line", (line) => {
@@ -184,7 +224,6 @@ test("stdio MCP initialization and tools/list work end to end", async () => {
 			child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { roots: [{ uri: pathToFileURL(process.cwd()).href, name: "workspace" }] } })}\n`);
 			return;
 		}
-		if (message.method === "notifications/progress") progress.push(message.params as Record<string, unknown>);
 		if (typeof message.id === "number") responses.get(message.id)?.(message);
 	});
 	const request = (id: number, method: string, params: Record<string, unknown> = {}, jsonrpc = "2.0") => new Promise<Record<string, unknown>>((resolve) => {
@@ -199,7 +238,9 @@ test("stdio MCP initialization and tools/list work end to end", async () => {
 		const beforeInitialize = await request(0, "tools/list");
 		assert.equal((beforeInitialize.error as Record<string, unknown>).code, -32002);
 		const initialized = await request(1, "initialize", { protocolVersion: "2025-11-25", capabilities: { roots: { listChanged: true } }, clientInfo: { name: "test", version: "1" } });
-		assert.equal((initialized.result as Record<string, unknown>).protocolVersion, "2025-11-25");
+		const initializeResult = initialized.result as Record<string, unknown>;
+		assert.equal(initializeResult.protocolVersion, "2025-11-25");
+		assert.match(String(initializeResult.instructions), /Combine deterministic same-page JavaScript in one browser_execute call/);
 		child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
 		const listed = await request(2, "tools/list");
 		assert.equal(((listed.result as { tools: unknown[] }).tools).length, mcpTools().length);
@@ -207,9 +248,9 @@ test("stdio MCP initialization and tools/list work end to end", async () => {
 		assert.equal(((resources.result as { resources: unknown[] }).resources).length, 1);
 		const native = await request(4, "resources/read", { uri: "browser-pilot://native-commands" });
 		assert.match(JSON.stringify(native.result), /network\.list/);
-		const missing = await request(5, "tools/call", { name: "browser_missing", arguments: {}, _meta: { progressToken: "progress-1" } });
-		assert.equal((missing.result as { isError?: boolean }).isError, true);
-		assert.equal(progress[0]?.progressToken, "progress-1");
+		const missing = await request(5, "tools/call", { name: "browser_missing", arguments: {} });
+		assert.equal((missing.error as Record<string, unknown>).code, -32602);
+		assert.match(String((missing.error as Record<string, unknown>).message), /Unknown tool: browser_missing/);
 		assert.equal(rootsRequested, true);
 	} finally {
 		child.stdin.end();

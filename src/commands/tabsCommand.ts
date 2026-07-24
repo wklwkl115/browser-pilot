@@ -3,11 +3,12 @@ import { type NativeErrorCode } from "../types/nativeErrorCodes.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { defineBrowserCommand, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams } from "./commandRuntime.js";
-import { compactBridgeForTabsList, compactTabForList } from "./tabsProjection.js";
+import { compactTabForList } from "./tabsProjection.js";
 import { strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { withBrowserOperation } from "./browserOperation.js";
 import type { ValidationIssue } from "./commandDefinition.js";
+import { isRecord } from "../utils/records.js";
 
 const TAB_TARGET_ACTIONS = new Set(["switch", "close"]);
 
@@ -34,6 +35,15 @@ function normalizeCreateTabUrl(value: unknown): string {
 		throw tabsToolError("INVALID_TAB_URL", "browser_tabs create does not accept javascript: or data: URLs; use browser_execute for JavaScript in an existing tab", { url: raw, protocol });
 	}
 	return parsed.href;
+}
+
+function changedTab(result: unknown, targetRef?: string): Record<string, unknown> | undefined {
+	if (!isRecord(result)) return targetRef ? { targetRef } : undefined;
+	const data = isRecord(result.data) ? result.data : {};
+	const createdTarget = isRecord(result.createdTarget) ? result.createdTarget : {};
+	const created = isRecord(result.createdTab) ? result.createdTab : {};
+	const tab = compactTabForList({ ...data, ...createdTarget, ...created, ...(targetRef ? { targetRef } : {}) });
+	return Object.keys(tab).length ? tab : undefined;
 }
 
 const TAB_ACTIONS = ["list", "switch", "create", "close"] as const;
@@ -68,33 +78,29 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 		name: "browser_tabs",
 		label: "Browser Tabs",
 		description: "List, switch, create, or close connected browser tabs.",
-		promptSnippet: "Control connected browser tabs.",
 		promptGuidelines: [
 			"Omit browser_tabs when the selected active tab is already the intended target; use list only to inspect or disambiguate tabs, and switch only to intentionally change the browser active tab.",
 			"Reuse the returned targetRef for later tab-scoped browser_* calls.",
 		],
 		parameters: strictCommandParameters({
 			action: Type.String({ enum: [...TAB_ACTIONS], description: "list | switch | create | close" }),
-			...sharedTabScopedToolParams("Stable tabHandle for switch or close."),
+			...sharedTabScopedToolParams("targetRef returned by list; required for switch or close."),
 			url: Type.Optional(Type.String({ description: "URL for create" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether created tab should be active" })),
 			incognito: Type.Optional(Type.Boolean({ description: "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint." })),
 		}),
 		validateArguments: validateTabsArguments,
-		async execute(params, signal, ctx) {
+		async execute(params, signal) {
 			return await runCommandHandler(async () => {
 				const action = String(params.action || "").trim().toLowerCase();
 				const timeoutMs = 5_000;
 				const tabRef = TAB_TARGET_ACTIONS.has(action) ? requireTabsActionTargetRef(action, params.targetRef) : undefined;
 				const createUrl = action === "create" ? normalizeCreateTabUrl(params.url) : undefined;
 				const server = await ensureStarted();
-				const omitTransportDetails = (ctx as { omitTransportDetails?: boolean } | undefined)?.omitTransportDetails === true;
-				const detailsForTransport = (build: () => Record<string, unknown>): Record<string, unknown> => omitTransportDetails ? {} : build();
 				if (action === "list") {
 					const tabs = await server.refreshTabs(timeoutMs, { signal });
-					const snapshot = server.snapshot();
 					const compactTabs = tabs.map((tab) => compactTabForList(tab as Record<string, unknown>));
-					return jsonResult({ tabs: compactTabs, tabCount: tabs.length, bridge: compactBridgeForTabsList(snapshot as Record<string, unknown>) }, detailsForTransport(() => ({ action, snapshot, observationSnapshots: server.listObservationSnapshots().length })));
+					return jsonResult({ tabs: compactTabs });
 				}
 				if (["switch", "create", "close"].includes(action)) {
 					const trackedTabId = action === "create" ? undefined : resolveLocalTargetTabId(server, tabRef);
@@ -109,7 +115,8 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 						if (action === "create") return await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { incognito: params.incognito === true, signal: operationSignal });
 						return await server.closeTab(tabRef!, timeoutMs, { signal: operationSignal });
 					});
-					return jsonResult(result, { action });
+					const tab = action === "close" ? undefined : changedTab(result, action === "switch" ? tabRef : undefined);
+					return jsonResult({ tabs: tab ? [tab] : [] }, { action });
 				}
 				throw tabsToolError("INVALID_RULE", `Unsupported browser_tabs action: ${params.action}`, { action: params.action });
 			});

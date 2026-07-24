@@ -32,8 +32,8 @@ function baselineRecovery(extra: Record<string, unknown> = {}): Record<string, u
 		...extra,
 		recovery: {
 			retryable: true,
-			hint: "Run browser_observe once to establish fresh state, then retry with diff:true.",
-			nextActions: ["browser_observe", "browser_observe diff:true"],
+			hint: "Run browser_observe once to establish state, then retry with mode:'diff'.",
+			nextActions: ["browser_observe", "browser_observe mode:'diff'"],
 		},
 	};
 }
@@ -48,9 +48,9 @@ export async function resolveBaselineEntities(server: BrowserCommandRuntimePort,
 		parsed = parseJsonOrThrow(await readFile(snapshot.saved.path, { encoding: "utf8", signal }), "browser_observe baseline snapshot artifact");
 	} catch (error) {
 		signal?.throwIfAborted();
-		throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact could not be read as JSON", baselineRecovery({ snapshotId, path: snapshot.saved.path, error: error instanceof Error ? error.message : String(error) }));
+		throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact could not be read as JSON", baselineRecovery({ snapshotId, error: error instanceof Error ? error.message : String(error) }));
 	}
-	if (!isPageObservationV3(parsed)) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact is not a canonical PageObservation", baselineRecovery({ snapshotId, path: snapshot.saved.path }));
+	if (!isPageObservationV3(parsed)) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact is not a canonical PageObservation", baselineRecovery({ snapshotId }));
 	const fromArtifact = parsed.entities ?? [];
 	return { entities: fromArtifact, partialBaseline: false, networkSeq: snapshot.networkSeq, hookSeq: snapshot.hookSeq, snapshotId, pageIdentity: pageIdentityFromUnknown(snapshot) ?? pageIdentityFromUnknown(parsed) };
 }

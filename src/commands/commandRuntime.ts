@@ -10,12 +10,12 @@ import { pageReanchorReason } from "../kernels/session/pageIdentity.js";
 import type { ExecutionRefTarget } from "../browser-command-runtime/executionRef.js";
 import { pageIdentityFromUnknown } from "./observe/pageIdentity.js";
 import { asPositiveInt, optionalTargetRef } from "./commandShared.js";
-import type { BrowserCommandDefinition, BrowserCommandSink } from "./commandDefinition.js";
+import type { BrowserCommandDefinition, BrowserCommandExecuteContext, BrowserCommandSink } from "./commandDefinition.js";
 
 /** Hard ceiling for any command timeout to prevent unbounded hangs. */
 const MAX_COMMAND_TIMEOUT_MS = 300_000;
 
-export type CommandResultContext = { cwd?: string; omitTransportDetails?: boolean } | undefined;
+export type CommandResultContext = BrowserCommandExecuteContext | undefined;
 
 export function defineBrowserCommand(commands: BrowserCommandSink, spec: BrowserCommandDefinition) {
 	commands.define(spec);

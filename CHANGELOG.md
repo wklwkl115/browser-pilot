@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking
+
+- MCP results now expose only decision-facing data: `browser_tabs` consistently returns `{ tabs }`, screenshots are delivered as resources, errors use a minimal envelope, and `browser-page-observation-view/v2` moves complete structures behind typed resources.
+- `browser_observe` replaces the conflicting freshness flags with `mode: auto | full | diff`; `management` is no longer a public native command.
+
+### Changed
+
+- MCP initialization and tool schemas now carry the agent workflow contract directly. Removed synthetic progress updates, repeated prompt snippets, transport diagnostics, and non-standard discovery fields.
+
 ## [0.5.0] - 2026-07-24
 
 ### Breaking

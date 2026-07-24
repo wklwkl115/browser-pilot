@@ -20,9 +20,9 @@ const stateProperties = {
 export const commandExpectationSchema = Type.Union([
 	Type.String({ minLength: 1, description: "JavaScript truth expression returning truthy when the intended state is reached." }),
 	Type.Object({
-		ref: Type.String({ pattern: "^bp-ref://", description: "Observed entity whose ABML state is the business postcondition." }),
+		ref: Type.String({ pattern: "^bp-ref://", description: "Observed entity whose state is the business postcondition." }),
 		state: Type.Object(stateProperties, { additionalProperties: false, minProperties: 1 }),
-	}, { additionalProperties: false, description: "Structured ABML postcondition verified from the target's DOM+AX state." }),
+	}, { additionalProperties: false, description: "Structured postcondition verified from the target's observed state." }),
 ]);
 
 export type PreparedCommandExpectation =
@@ -33,7 +33,7 @@ export function prepareCommandExpectation(value: unknown, commandName: string): 
 	if (value === undefined) return undefined;
 	if (typeof value === "string" && value.trim()) return { kind: "javascript", expression: value.trim() };
 	if (isAbmlStateExpectation(value)) return { kind: "abml", expectation: value };
-	throw new BrowserBridgeError("INVALID_RULE", `${commandName} expect must be a non-empty JavaScript expression or structured ABML postcondition`, { commandName });
+	throw new BrowserBridgeError("INVALID_RULE", `${commandName} expect must be a non-empty JavaScript expression or structured ref/state postcondition`, { commandName });
 }
 
 export function javascriptVerificationResult(verb: string, observed?: boolean): VerificationResult {

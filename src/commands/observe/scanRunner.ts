@@ -194,7 +194,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		content,
 		scanMeta,
 		bridge,
-		recorderActive: recorderState.active,
 		baseline,
 		baselineRequested,
 		baselineResolutionError,

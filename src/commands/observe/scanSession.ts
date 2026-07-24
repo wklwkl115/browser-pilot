@@ -38,7 +38,6 @@ async function resolveScanBaseline(
 		};
 	} catch (error) {
 		signal?.throwIfAborted();
-		if (!ledgerFrame || params.baseline !== undefined) throw error;
 		return { baseline: undefined, baselineRequested: true, baselineResolutionError: error instanceof Error ? error.message : String(error), reanchorReason: "baseline_missing" as PageReanchorReason };
 	}
 }
