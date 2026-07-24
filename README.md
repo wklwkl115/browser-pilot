@@ -7,6 +7,7 @@
 Browser Pilot connects MCP clients to a local Node daemon and a Manifest V3 extension for observation, execution, native browser commands, screenshots, and evidence capture.
 
 [![CI](https://github.com/wklwkl115/browser-pilot/actions/workflows/ci.yml/badge.svg)](https://github.com/wklwkl115/browser-pilot/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/browser-pilot-mcp?logo=npm&color=CB3837)](https://www.npmjs.com/package/browser-pilot-mcp)
 [![License](https://img.shields.io/github/license/wklwkl115/browser-pilot?color=2563EB)](LICENSE)
 ![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-compatible-22D3EE)
