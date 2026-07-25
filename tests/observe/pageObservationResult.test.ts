@@ -21,7 +21,7 @@ test("PageObservation returns a bounded view and keeps its canonical artifact", 
 		snapshot: { snapshotId: "snapshot-1", browserSessionId: "session-1", tabId: 7, targetGeneration: 2, pageEpoch: "page-1", sourceMode: "scan", capturedAt: 1, ttlMs: 300_000 },
 		abmlIntegrated: true,
 		diagnostics: {},
-		providerExecution: { causal: { planned: true, status: "executed", reservedMs: 500, actualMs: 20, bridgeRoundTrips: 2 } },
+		providerExecution: { causal: { planned: true, status: "executed", reservedMs: 500, actualMs: 20 } },
 		causal: { sinceSeq: 0, requests: Array.from({ length: 4 }, (_, index) => ({ ref: `bp-ref://network/${index}`, url: `https://example.test/${index}` })) },
 	});
 	((built.causal as { requests: Array<Record<string, unknown>> }).requests[0]!).internalId = "hidden";

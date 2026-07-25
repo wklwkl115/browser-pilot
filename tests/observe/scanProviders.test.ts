@@ -51,5 +51,33 @@ test("observe providers retain hook events when network capture is unavailable",
 	});
 	assert.equal(result.causal && "unavailable" in result.causal, true);
 	assert.equal(result.causal?.events?.[0]?.summary, "saved");
-	assert.equal(result.report.causal?.bridgeRoundTrips, 1);
+});
+
+test("observe providers query independent network and hook deltas concurrently", async () => {
+	let active = 0;
+	let maxActive = 0;
+	const server = {
+		getKnownRecorderState() {
+			return { active: true, lastSeq: 0 };
+		},
+		async sendCommand(command: { cmd?: string }) {
+			active += 1;
+			maxActive = Math.max(maxActive, active);
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			active -= 1;
+			return command.cmd === "network.list"
+				? { data: { active: true, lastSeq: 1, items: [] } }
+				: { data: { active: true, lastSeq: 1, events: [] } };
+		},
+	} as unknown as BrowserCommandRuntimePort;
+	await runObserveProviders({
+		server,
+		params: {},
+		tabId: 7,
+		startedAt: Date.now(),
+		deadlineAt: Date.now() + 5_000,
+		baseline: { entities: [], partialBaseline: false, networkSeq: 0, hookSeq: 0 },
+		timings: {},
+	});
+	assert.equal(maxActive, 2);
 });

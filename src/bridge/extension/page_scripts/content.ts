@@ -112,17 +112,25 @@ function installBrowserPilotInteractionFingerprinting(): void {
   window.addEventListener("resize", scheduleBrowserPilotViewportFingerprint, { passive: true });
 }
 
-function countVisibleElements(elements: Element[]): number {
-  let count = 0;
-  for (const element of elements) {
+function currentBrowserPilotElementCounts(): { visibleCount: number; interactiveCount: number } {
+  const root = document.body ?? document.documentElement;
+  if (!root) return { visibleCount: 0, interactiveCount: 0 };
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  let visibleCount = 0;
+  let interactiveCount = 0;
+  let scanned = 0;
+  while (scanned < 500 && walker.nextNode()) {
+    scanned += 1;
+    const element = walker.currentNode as Element;
+    if (element.matches("a[href],button,input,textarea,select,[role='button'],[tabindex]")) interactiveCount += 1;
     const rect = element.getBoundingClientRect();
-    if ((rect.width > 0 || rect.height > 0) && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) count += 1;
+    if ((rect.width > 0 || rect.height > 0) && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) visibleCount += 1;
   }
-  return count;
+  return { visibleCount, interactiveCount };
 }
 
 function currentBrowserPilotFingerprint(): PageFingerprint {
-  const interactive = Array.from(document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]"));
+  const elementCounts = currentBrowserPilotElementCounts();
   return {
     changeSeq: browserPilotChangeSeq,
     url: location.href,
@@ -133,8 +141,7 @@ function currentBrowserPilotFingerprint(): PageFingerprint {
     viewportWidth: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
     viewportHeight: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0),
     devicePixelRatio: Number(window.devicePixelRatio || 1),
-    visibleCount: countVisibleElements(Array.from(document.body?.querySelectorAll("*") ?? []).slice(0, 500)),
-    interactiveCount: interactive.length,
+    ...elementCounts,
     capturedAt: browserPilotLastChangedAt,
     dirty: {
       roots: Array.from(browserPilotDirtyRoots).slice(0, BROWSER_PILOT_DIRTY_ROOT_LIMIT),

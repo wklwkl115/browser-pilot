@@ -21,7 +21,7 @@ const MAX_OBSERVATION_RESULT_BYTES = 32 * 1024;
 export async function pageObservationResult(options: PageObservationResultOptions): Promise<BrowserTextCommandResult> {
 	const artifactText = stableJson(options.observation);
 	const saved = await saveTextArtifact(options.ctx, options.artifactPath, options.fallbackName, artifactText);
-	await pruneObservationArtifacts(saved.path);
+	void pruneObservationArtifacts(saved.path);
 	let projected = projectObservationResources(options.observation, saved.path, options.intent);
 	let modelSafe = publicToolValue(redactSensitiveValue(projected.observation)) as PageObservationView;
 	let rendered = JSON.stringify(modelSafe);

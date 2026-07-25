@@ -245,6 +245,7 @@ type AxRawCacheEntry = {
 
 const AX_RAW_CACHE_MAX = 16;
 const AX_GEOMETRY_FALLBACK_MAX_CALLS = 64;
+const AX_GEOMETRY_FALLBACK_CONCURRENCY = 4;
 const axRawCache = new Map<string, AxRawCacheEntry>();
 
 function axRawCacheKey(options: Pick<AxReadRuntimeOptions, "browserSessionId" | "tabId" | "cacheKey">): string | undefined {
@@ -527,30 +528,33 @@ async function readAxGeometry(sendCdp: AxCdpSender, options: AxReadRuntimeOption
 	const geometryByNode = new Map<Record<string, unknown>, AxGeometry | undefined>();
 	let geometryFallbackAttempts = 0;
 	let geometryFallbackTruncated = false;
-	await Promise.all(nodes.map(async (node) => {
-		const backendNodeId = Number(node.backendDOMNodeId ?? node.backendNodeId);
-		if (!Number.isFinite(backendNodeId) || backendNodeId <= 0) return;
-		if (rawGeometryByBackend.has(backendNodeId)) {
-			geometryByNode.set(node, rawGeometryByBackend.get(backendNodeId));
-			return;
-		}
-		if (geometryFallbackAttempts >= AX_GEOMETRY_FALLBACK_MAX_CALLS) {
-			geometryFallbackTruncated = true;
-			geometryByNode.set(node, undefined);
-			return;
-		}
-		geometryFallbackAttempts += 1;
-		try {
-			const box = await sendCdp({ browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs, cdpMethod: "DOM.getBoxModel", params: { backendNodeId } });
-			const geometry = boxModelToGeometry(valueRecord(box.data).result ?? valueRecord(box.data));
-			rawGeometryByBackend.set(backendNodeId, geometry);
-			geometryByNode.set(node, geometry);
-		} catch {
-			options.signal?.throwIfAborted();
-			rawGeometryByBackend.set(backendNodeId, undefined);
-			geometryByNode.set(node, undefined);
-		}
-	}));
+	// ponytail: four CDP reads at a time avoids 64-call bursts; raise only from browser traces.
+	for (let offset = 0; offset < nodes.length; offset += AX_GEOMETRY_FALLBACK_CONCURRENCY) {
+		await Promise.all(nodes.slice(offset, offset + AX_GEOMETRY_FALLBACK_CONCURRENCY).map(async (node) => {
+			const backendNodeId = Number(node.backendDOMNodeId ?? node.backendNodeId);
+			if (!Number.isFinite(backendNodeId) || backendNodeId <= 0) return;
+			if (rawGeometryByBackend.has(backendNodeId)) {
+				geometryByNode.set(node, rawGeometryByBackend.get(backendNodeId));
+				return;
+			}
+			if (geometryFallbackAttempts >= AX_GEOMETRY_FALLBACK_MAX_CALLS) {
+				geometryFallbackTruncated = true;
+				geometryByNode.set(node, undefined);
+				return;
+			}
+			geometryFallbackAttempts += 1;
+			try {
+				const box = await sendCdp({ browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs, cdpMethod: "DOM.getBoxModel", params: { backendNodeId } });
+				const geometry = boxModelToGeometry(valueRecord(box.data).result ?? valueRecord(box.data));
+				rawGeometryByBackend.set(backendNodeId, geometry);
+				geometryByNode.set(node, geometry);
+			} catch {
+				options.signal?.throwIfAborted();
+				rawGeometryByBackend.set(backendNodeId, undefined);
+				geometryByNode.set(node, undefined);
+			}
+		}));
+	}
 	return { geometryByNode, geometryFallbackTruncated };
 }
 

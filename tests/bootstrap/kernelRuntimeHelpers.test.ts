@@ -83,7 +83,7 @@ function createCdpServer(responses: Record<string, MockCdpResponse>) {
 			calls.push({ method, params: command.params as Record<string, unknown> | undefined, ...(typeof command.targetId === "string" ? { targetId: command.targetId } : {}), timeoutMs: typeof command.timeoutMs === "number" ? command.timeoutMs : undefined });
 			const response = responses[method];
 			if (response instanceof Error) throw response;
-			const data = typeof response === "function" ? response(command) : response;
+			const data = await (typeof response === "function" ? response(command) : response);
 			return { id: `mock-${calls.length}`, acknowledged: true, data };
 		},
 	};
@@ -310,6 +310,26 @@ test("full AX reader degrades from paint snapshot and falls back to bounded box 
 	assert.equal(boxFallback.diagnostics?.snapshotGeometryUnavailable, true);
 	assert.equal(boxFallback.diagnostics?.cdpCalls, 4);
 	assert.equal(boxFallback.diagnostics?.geometryCdpCalls, 1);
+});
+
+test("full AX reader bounds concurrent box geometry fallback", async () => {
+	let active = 0;
+	let maxActive = 0;
+	const nodes = Array.from({ length: 12 }, (_, index) => axNode(index + 1, "button", `Action ${index + 1}`));
+	const server = createCdpServer({
+		"Accessibility.getFullAXTree": { nodes },
+		"DOMSnapshot.captureSnapshot": bridgeFailure("snapshot unavailable"),
+		"DOM.getBoxModel": async () => {
+			active += 1;
+			maxActive = Math.max(maxActive, active);
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			active -= 1;
+			return { result: boxModel(0, 0, 10, 10) };
+		},
+	});
+	const result = await readAxEntities(server, { tabId: 7, observationId: "obs-bounded-box-fallback" });
+	assert.equal(result.diagnostics?.geometryCdpCalls, 12);
+	assert.equal(maxActive, 4);
 });
 
 test("ABML grouping helpers normalize descriptors and suppress nested non-control groups", () => {
@@ -975,6 +995,9 @@ test("scan script builder clamps options and injects scan helper blocks determin
 	assert.match(script, /"pageWorldScanSchema":"browser-page-scan\/v1"/);
 	assert.match(source, /fingerprint\s*:\s*scanFingerprint/);
 	assert.match(source, /devicePixelRatio\s*:\s*Number\(window\.devicePixelRatio\s*\|\|\s*1\)/);
+	assert.match(source, /createTreeWalker/);
+	assert.doesNotMatch(source, /querySelectorAll\('\*'\)/);
+	assert.doesNotMatch(source, /document\.body\s*&&\s*document\.body\.innerText/);
 	assert.match(source, /scrollY\s*:\s*Number\(window\.scrollY\s*\|\|\s*0\)/);
 	assert.match(source, /viewportHeight\s*:\s*Math\.max\(/);
 	assert.doesNotMatch(source, /content\.tree|tree\s*:\s*content|function walk\(|iframeNotes|includeIframes|growthProbe|collectVisibleRows|collectMediaCandidates|mediaCandidates|\binteractive\s*:|window\.scrollTo|\.scrollTop\s*=/);

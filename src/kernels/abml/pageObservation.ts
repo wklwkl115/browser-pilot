@@ -33,7 +33,6 @@ export interface ProviderExecutionItem {
 	reason?: string;
 	reservedMs?: number;
 	actualMs?: number;
-	bridgeRoundTrips?: number;
 }
 export type ProviderExecutionReport = Record<string, ProviderExecutionItem>;
 
@@ -265,7 +264,6 @@ const PROVIDER_ITEM_SCHEMA = {
 		reason: { type: "string" },
 		reservedMs: { type: "number", minimum: 0 },
 		actualMs: { type: "number", minimum: 0 },
-		bridgeRoundTrips: { type: "integer", minimum: 0 },
 	},
 	required: ["planned", "status"],
 	additionalProperties: false,

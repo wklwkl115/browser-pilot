@@ -67,17 +67,22 @@ async function readContentFingerprintViaScript(tabId: number, drainDirty = false
         });
         state.o.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
       }
-      const els = Array.from(document.body?.querySelectorAll('*') ?? []).slice(0, 500);
+      const root = document.body ?? document.documentElement;
+      const walker = root ? document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT) : undefined;
       let vc = 0;
-      for (const element of els) {
+      let ic = 0;
+      let scanned = 0;
+      while (walker && scanned < 500 && walker.nextNode()) {
+        scanned += 1;
+        const element = walker.currentNode as Element;
         try {
+          if (element.matches("a[href],button,input,textarea,select,[role='button'],[tabindex]")) ic += 1;
           const rect = element.getBoundingClientRect();
           if ((rect.width > 0 || rect.height > 0) && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) vc += 1;
         } catch {
           /* ignore per-node geometry errors */
         }
       }
-      const ic = document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length;
       const data = {
         changeSeq: state.seq,
         url: location.href,

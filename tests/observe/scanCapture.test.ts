@@ -20,22 +20,21 @@ test("AX cache identity requires page epoch and includes every change discrimina
 	]) assert.notEqual(key, axCacheKeyForPage(changed));
 });
 
-test("observe transport timing includes visual capture and its coherence fingerprints once", () => {
+test("observe diagnostics retain measured visual phases without synthetic totals", () => {
 	const data = pageWorldScanBundle();
-	const timings = finalizedObserveTimings({ tabRefreshMs: 2, fingerprintMs: 3, pageScriptMs: 5, abmlMs: 7, visualMs: 11, bridgeRoundTrips: 4, screenshotTransportMs: 8, visualDecodeHashMs: 2, visualWriteMs: 1 }, data, undefined);
-	assert.equal(timings.transportMs, 28);
-	assert.equal(timings.bridgeRoundTrips, 4);
+	const timings = finalizedObserveTimings({ tabRefreshMs: 2, fingerprintMs: 3, pageScriptMs: 5, abmlMs: 7, visualMs: 11, screenshotTransportMs: 8, visualDecodeHashMs: 2, visualWriteMs: 1 }, data, undefined);
+	assert.equal(timings.transportMs, undefined);
 	assert.equal(timings.screenshotTransportMs, 8);
 	assert.equal(timings.visualDecodeHashMs, 2);
 	assert.equal(timings.visualWriteMs, 1);
 });
 
-function scanCaptureRuntime(sequences: number[]) {
+function scanCaptureRuntime(sequences: number[], pageEpoch = "page-1") {
 	const calls: string[] = [];
 	const runtime = {
 		calls,
 		snapshot() {
-			return { browserSessionId: "session-1", defaultTabId: 7, selectionVersion: 1, tabs: [{ tabId: 7, targetGeneration: 1, pageEpoch: "page-1", documentId: "doc-1", url: "https://example.test/" }] };
+			return { browserSessionId: "session-1", defaultTabId: 7, selectionVersion: 1, tabs: [{ tabId: 7, targetGeneration: 1, pageEpoch, documentId: "doc-1", url: "https://example.test/" }] };
 		},
 		createObservationSnapshot(input: Record<string, unknown>) {
 			return { snapshotId: `snapshot-${calls.length}`, sourceMode: "scan", capturedAt: Number(input.capturedAt), ttlMs: 300_000, ...input };
@@ -45,7 +44,7 @@ function scanCaptureRuntime(sequences: number[]) {
 			calls.push(method);
 			if (command.cmd === "content.fingerprint") {
 				const changeSeq = sequences.shift();
-				return { id: "fingerprint", acknowledged: true, data: { changeSeq, pageEpoch: "page-1", documentId: "doc-1", url: "https://example.test/", title: "Example", readyState: "complete", scrollX: 0, scrollY: 0, viewportWidth: 1280, viewportHeight: 720, devicePixelRatio: 1, visibleCount: 0, interactiveCount: 0 } };
+				return { id: "fingerprint", acknowledged: true, data: { changeSeq, pageEpoch, documentId: "doc-1", url: "https://example.test/", title: "Example", readyState: "complete", scrollX: 0, scrollY: 0, viewportWidth: 1280, viewportHeight: 720, devicePixelRatio: 1, visibleCount: 0, interactiveCount: 0 } };
 			}
 			if (command.cmd === "screenshot.capture") return { id: "screenshot", acknowledged: true, data: { screenshot: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9s6Nwl8AAAAASUVORK5CYII=", method: "persistent_cdp" } };
 			if (method === "Runtime.evaluate") {
@@ -75,7 +74,6 @@ test("scan capture retries one torn DOM+AX observation and accepts the stable re
 	assert.equal(options.timings.abmlCoherenceRetries, 1);
 	assert.equal(options.timings.observationAttempts, 2);
 	assert.equal(options.timings.axCdpCalls, 4);
-	assert.equal(options.timings.bridgeRoundTrips, 9);
 	assert.deepEqual(server.calls, [
 		"Runtime.evaluate", "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "content.fingerprint",
 		"content.fingerprint", "Runtime.evaluate", "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "content.fingerprint",
@@ -111,9 +109,29 @@ test("scan capture brackets an explicitly requested visual observation with the 
 	assert.equal(result.visualCapture?.mime, "image/png");
 	assert.equal(Buffer.isBuffer(result.visualCapture?.buffer), true);
 	assert.equal(options.timings.observationAttempts, 1);
-	assert.equal(options.timings.bridgeRoundTrips, 6);
 	assert.equal(options.timings.screenshotBytes, result.visualCapture?.buffer.length);
 	assert.equal(typeof options.timings.screenshotTransportMs, "number");
 	assert.equal(typeof options.timings.visualDecodeHashMs, "number");
 	assert.deepEqual(server.calls, ["content.fingerprint", "Runtime.evaluate", "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "screenshot.capture", "content.fingerprint"]);
+});
+
+test("scan capture reads AX and visual evidence concurrently inside one fingerprint bracket", async () => {
+	const base = scanCaptureRuntime([1, 1], "page-concurrent");
+	const sendCommand = base.sendCommand.bind(base);
+	let active = 0;
+	let maxActive = 0;
+	const server = {
+		...base,
+		async sendCommand(command: BrowserRuntimeCommand) {
+			const method = typeof command.cdpMethod === "string" ? command.cdpMethod : String(command.cmd);
+			if (!["Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "screenshot.capture"].includes(method)) return sendCommand(command);
+			active += 1;
+			maxActive = Math.max(maxActive, active);
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			try { return await sendCommand(command); }
+			finally { active -= 1; }
+		},
+	} as unknown as BrowserCommandRuntimePort;
+	await executeScanCapture({ ...captureOptions(server), params: { visual: "always" } });
+	assert.equal(maxActive, 3);
 });

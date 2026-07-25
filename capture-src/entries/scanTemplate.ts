@@ -293,24 +293,25 @@ export function scanPage(config: any) {
     try { return CSS && CSS.escape ? CSS.escape(String(value)) : String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
     catch (_) { return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
   }
-  const SIBLING_SELECTOR_CACHE = new WeakMap();
+  const SIBLING_SELECTOR_INDEX_CACHE = new WeakMap();
   const SELECTOR_CACHE = new WeakMap();
-  function siblingSelectorInfo(parent, el) {
-    let cache = SIBLING_SELECTOR_CACHE.get(parent);
-    if (!cache) {
+  function siblingSelectorIndex(el) {
+    const parent = el.parentElement;
+    if (!parent) return 1;
+    let indexes = SIBLING_SELECTOR_INDEX_CACHE.get(parent);
+    if (!indexes) {
+      indexes = new WeakMap();
       const counts = new Map();
-      const order = new WeakMap();
-      for (const child of Array.from(parent.children)) {
-        const tag = child.tagName;
-        const next = (counts.get(tag) || 0) + 1;
-        counts.set(tag, next);
-        order.set(child, next);
+      let scanned = 0;
+      for (const child of parent.children) {
+        if (++scanned > options.maxNodes) { truncated = true; break; }
+        const index = (counts.get(child.tagName) || 0) + 1;
+        counts.set(child.tagName, index);
+        indexes.set(child, index);
       }
-      cache = { counts, order };
-      SIBLING_SELECTOR_CACHE.set(parent, cache);
+      SIBLING_SELECTOR_INDEX_CACHE.set(parent, indexes);
     }
-    const tag = el.tagName;
-    return { index: cache.order.get(el) || 1, total: cache.counts.get(tag) || 1 };
+    return indexes.get(el);
   }
   function selectorFor(el) {
     const cached = SELECTOR_CACHE.get(el);
@@ -319,25 +320,26 @@ export function scanPage(config: any) {
     if (el === document.documentElement) return 'html';
     if (el.id) {
       const byId = '#' + cssEscape(el.id);
-      try { if (document.querySelectorAll(byId).length === 1) { SELECTOR_CACHE.set(el, byId); return byId; } } catch (_) { /* Invalid ids fall through to a structural selector. */ }
+      try { if (document.getElementById(el.id) === el) { SELECTOR_CACHE.set(el, byId); return byId; } } catch (_) { /* Invalid ids fall through to a structural selector. */ }
     }
     const parts = [];
     let cur = el;
     let selector = '';
+    let depth = 0;
     while (cur && cur.nodeType === Node.ELEMENT_NODE && cur !== document.documentElement) {
+      if (++depth > options.maxNodes) { truncated = true; break; }
       let part = cur === document.body ? 'body' : cur.tagName.toLowerCase();
       const parent = cur.parentElement;
       if (cur !== document.body) {
         const cls = cleanClassValue(cur.className && typeof cur.className === 'object' ? cur.className.baseVal || '' : cur.className || '').split(/\s+/).filter(Boolean).slice(0, 2);
         if (cls.length) part += '.' + cls.map(cssEscape).join('.');
         if (parent) {
-          const siblingInfo = siblingSelectorInfo(parent, cur);
-          if (siblingInfo.total > 1) part += ':nth-of-type(' + siblingInfo.index + ')';
+          const siblingIndex = siblingSelectorIndex(cur);
+          if (siblingIndex !== undefined) part += ':nth-of-type(' + siblingIndex + ')';
         }
       }
       parts.unshift(part);
       selector = parts.join(' > ');
-      try { if (document.querySelectorAll(selector).length === 1) break; } catch (_) { /* Keep expanding invalid partial selectors. */ }
       cur = parent;
     }
     SELECTOR_CACHE.set(el, selector);
@@ -351,7 +353,9 @@ export function scanPage(config: any) {
     const v = el.getAttribute && el.getAttribute(attr);
     if (!v) return [];
     const out = [];
-    for (const id of String(v).split(/\s+/).filter(Boolean)) {
+    const ids = String(v).trim().split(/\s+/, 33).filter(Boolean);
+    if (ids.length > 32) truncated = true;
+    for (const id of ids.slice(0, 32)) {
       const target = document.getElementById(id);
       if (!target) continue;
       const sel = selectorFor(target);
@@ -489,11 +493,13 @@ export function scanPage(config: any) {
     const hints = [];
     const itemScopes = new WeakMap();
     let scanned = 0;
-    for (const container of containers) {
+    let childScans = 0;
+    containers: for (const container of containers) {
       if (++scanned > options.maxNodes) break;
       if (container instanceof SVGElement || !container.children || container.children.length < 5 || isIgnored(container) || isHidden(container)) continue;
       const groups = new Map();
-      for (const child of Array.from(container.children)) {
+      for (const child of container.children) {
+        if (++childScans > options.maxNodes) { truncated = true; break containers; }
         if (!child || child.nodeType !== Node.ELEMENT_NODE || child instanceof SVGElement || isIgnored(child) || isHidden(child)) continue;
         const cls = cleanClassValue(child.className && typeof child.className === 'object' ? child.className.baseVal || '' : child.className || '').split(/\s+/).filter(Boolean).slice(0, 2).map(cssEscape).join('.');
         const key = child.tagName.toLowerCase() + (cls ? '.' + cls : '');
@@ -515,9 +521,56 @@ export function scanPage(config: any) {
     }
     return { hints: hints.sort((a, b) => b.itemCount - a.itemCount), itemScopes };
   }
-  function collectCanvasRegions(root) {
-    if (!root || !root.querySelectorAll) return [];
-    const canvases = Array.from(root.querySelectorAll('canvas'));
+  function boundedDescendants(root, limit) {
+    if (!root || !document.createTreeWalker) return { elements: [], textNodes: [], truncated: false };
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    const elements = [];
+    const textNodes = [];
+    let visited = 0;
+    while (visited < limit && walker.nextNode()) {
+      visited++;
+      if (walker.currentNode.nodeType === Node.ELEMENT_NODE) elements.push(walker.currentNode);
+      else if (walker.currentNode.nodeType === Node.TEXT_NODE) textNodes.push(walker.currentNode);
+    }
+    return { elements, textNodes, truncated: !!walker.nextNode() };
+  }
+  function viewportLayerCandidates(doc) {
+    const vw = Math.max(doc.documentElement.clientWidth || 0, innerWidth || 0);
+    const vh = Math.max(doc.documentElement.clientHeight || 0, innerHeight || 0);
+    const out = [];
+    const seen = new Set();
+    // ponytail: three centerline samples cover modal/fullscreen overlays; widen only from failing browser evidence.
+    for (const y of [1, Math.max(1, Math.floor(vh / 2)), Math.max(1, vh - 1)]) {
+      let el = doc.elementFromPoint && doc.elementFromPoint(Math.max(1, Math.floor(vw / 2)), y);
+      for (let depth = 0; el && depth < 12; depth++, el = el.parentElement) {
+        if (el === doc.body || el === doc.documentElement) break;
+        if (seen.has(el)) continue;
+        seen.add(el);
+        out.push(el);
+      }
+    }
+    return out;
+  }
+  function boundedPageText(nodes, maxChars) {
+    const parts = [];
+    let chars = 0;
+    let textTruncated = false;
+    for (const node of nodes) {
+      const parent = node.parentElement;
+      if (!parent || SKIP.has(parent.tagName) || isIgnored(parent) || isHidden(parent) || !parent.getClientRects().length) continue;
+      const value = String(node.nodeValue || '').replace(/\s+/g, ' ').trim();
+      if (!value) continue;
+      const separator = parts.length ? 1 : 0;
+      const available = Math.max(0, maxChars - chars - separator);
+      if (!available) { textTruncated = true; break; }
+      parts.push(value.slice(0, available));
+      chars += separator + Math.min(value.length, available);
+      if (value.length > available) { textTruncated = true; break; }
+    }
+    return { text: parts.join(' '), truncated: textTruncated };
+  }
+  function collectCanvasRegions(elements) {
+    const canvases = elements.filter(el => el && el.tagName === 'CANVAS');
     const out = [];
     for (const el of canvases) {
       if (!el || isIgnored(el) || isHidden(el)) continue;
@@ -529,28 +582,20 @@ export function scanPage(config: any) {
     return out.slice(0, 12);
   }
   const documentRoot = document.body || document.documentElement;
-  const documentNodes = documentRoot && documentRoot.querySelectorAll ? documentRoot.querySelectorAll('*') : [];
   const nodeLimit = Math.max(1, options.maxNodes);
-  const documentElements = Array.prototype.slice.call(documentNodes, 0, nodeLimit);
-  // ponytail: custom overlays are sampled from the DOM tail; widen only if traces show early-DOM overlays are missed.
-  const topLayerElements = documentNodes.length > nodeLimit ? Array.prototype.slice.call(documentNodes, -nodeLimit) : documentElements;
-  const topRoot = topLayerRoot(document, topLayerElements);
+  const topRoot = topLayerRoot(document, viewportLayerCandidates(document));
   const scanRoot = topRoot || documentRoot;
-  const scanNodes = topRoot && topRoot.querySelectorAll ? topRoot.querySelectorAll('*') : documentNodes;
-  const scanElements = scanRoot ? [scanRoot].concat(Array.prototype.slice.call(scanNodes, 0, Math.max(0, nodeLimit - 1))) : [];
+  const scanRead = boundedDescendants(scanRoot, Math.max(0, nodeLimit - 1));
+  const scanElements = scanRoot ? [scanRoot].concat(scanRead.elements) : [];
   const nodeCount = scanElements.length;
-  if (scanNodes.length > Math.max(0, nodeLimit - 1)) truncated = true;
-  // Collect aria-controls/aria-owns/aria-expanded pairings page-wide so the relation resolves even
-  // when the source element is scrolled off-screen and never made the actionable list. We record
-  // both the target (for entity building) AND a sourceSelector→targetSelectors map so the relation
-  // can be emitted without needing the source in primary_entities. Capped at 100 pairs.
-  function collectControlsPairs(root) {
-    if (!root) return { targets: [], pairs: [] };
+  if (scanRead.truncated) truncated = true;
+  // Collect relations from the bounded scan so capture cost and completeness share one ceiling.
+  function collectControlsPairs(elements) {
     const targetMap = new Map();
     const pairs = [];
-    const all = Array.from((root === document.body || root === document.documentElement ? root : document).querySelectorAll('[aria-controls],[aria-owns]'));
-    for (const el of all) {
+    for (const el of elements) {
       if (pairs.length >= 100) break;
+      if (!el.hasAttribute || !el.hasAttribute('aria-controls') && !el.hasAttribute('aria-owns')) continue;
       const ctlSelectors = refTargets(el, 'aria-controls', targetMap);
       const ownsSelectors = refTargets(el, 'aria-owns', targetMap);
       const expandedAttr = el.getAttribute && el.getAttribute('aria-expanded');
@@ -570,21 +615,21 @@ export function scanPage(config: any) {
   pseudoCheckCount = 0;
   const repeatedItems = collectListHints(scanRoot, scanElements);
   const actionables = collectActionables(scanRoot, scanElements, repeatedItems.itemScopes);
-  const { targets: refTargetsList, pairs: controlsPairs } = collectControlsPairs(scanRoot);
+  const { targets: refTargetsList, pairs: controlsPairs } = collectControlsPairs(scanElements);
   const references = refTargetsList;
   const listHints = repeatedItems.hints;
-  const canvasRegions = collectCanvasRegions(scanRoot);
+  const canvasRegions = collectCanvasRegions(scanElements);
   let visualSurfaceCount = 0;
-  for (const el of document.querySelectorAll('canvas,video,embed,object,iframe,img:not([alt]),img[alt=""]')) {
+  for (const el of scanElements.filter(item => item.matches && item.matches('canvas,video,embed,object,iframe,img:not([alt]),img[alt=""]'))) {
     const r = el.getBoundingClientRect();
     if (r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth) visualSurfaceCount += 1;
     if (visualSurfaceCount >= 100) break;
   }
   const unnamedActionableCount = actionables.filter(item => !clean(item.label || item.displayLabel || item.text || item.action || '', 120)).length;
-  const rawPageText = String(document.body && document.body.innerText || '').replace(/\s+/g, ' ').trim();
-  const pageText = rawPageText.slice(0, options.maxChars);
-  if (rawPageText.length > pageText.length) truncated = true;
-  const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]'))
+  const textRead = boundedPageText(scanRead.textNodes, options.maxChars);
+  const pageText = textRead.text;
+  if (textRead.truncated) truncated = true;
+  const headings = scanElements.filter(node => node.matches && node.matches('h1,h2,h3,h4,h5,h6,[role="heading"]'))
     .slice(0, 100)
     .map(node => String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200))
     .filter(Boolean);
@@ -599,7 +644,7 @@ export function scanPage(config: any) {
     viewportWidth: Math.max(document.documentElement.clientWidth || 0, innerWidth || 0),
     viewportHeight: Math.max(document.documentElement.clientHeight || 0, innerHeight || 0),
     visibleCount: actionables.length,
-    interactiveCount: document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length,
+    interactiveCount: scanElements.filter(node => node.matches && node.matches("a[href],button,input,textarea,select,[role='button'],[tabindex]")).length,
     capturedAt: Date.now()
   };
   return {
@@ -631,7 +676,7 @@ export function scanPage(config: any) {
       outputChars: pageText.length,
       truncated,
       actionableCount: actionables.length,
-      actionablesComplete: scanNodes.length <= Math.max(0, nodeLimit - 1),
+      actionablesComplete: !scanRead.truncated,
       visualSurfaceCount,
       unnamedActionableCount
     }

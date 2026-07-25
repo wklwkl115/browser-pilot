@@ -177,7 +177,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 				const visualSaved = outcome.visualCapture
 					? await saveBuffer(outcome.visualCapture.buffer, resolveArtifactPath(ctx, undefined, `visual-effect-${Date.now()}.png`), outcome.visualCapture.mime)
 					: undefined;
-				if (visualSaved) await pruneObservationArtifacts(visualSaved.path);
+				if (visualSaved) void pruneObservationArtifacts(visualSaved.path);
 				const visualResourceUri = visualSaved ? artifactResourceUri(visualSaved.path, ctx?.cwd ?? process.cwd()) : undefined;
 				const effect = outcome.effect
 					? { ...outcome.effect, ...(outcome.visualEffect ? { visual: { ...outcome.visualEffect, ...(visualResourceUri ? { resourceUri: visualResourceUri } : {}) } } : {}) }
