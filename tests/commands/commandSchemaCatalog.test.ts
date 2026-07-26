@@ -87,7 +87,7 @@ test("every public native command has one closed canonical parameter schema", ()
 
 test("browser_observe exposes one observation mode", () => {
 	const properties = (command("browser_observe").parameters as { properties: Record<string, unknown> }).properties;
-	assert.deepEqual(Object.keys(properties), ["intent", "mode", "visual", "targetRef"]);
+	assert.deepEqual(Object.keys(properties), ["mode", "visual", "targetRef"]);
 	assert.deepEqual((properties.mode as { enum: string[] }).enum, ["auto", "full", "diff"]);
 	for (const removed of ["fresh", "diff", "maxChars", "outputPath", "timeoutMs", "maxNodes", "includeIframes", "baseline", "baselinePath", "baselineSnapshotId", "actionRef"]) assert.equal(removed in properties, false);
 	assert.equal(validateBrowserCommandArguments(command("browser_observe"), { maxChars: 1000 }).ok, false);

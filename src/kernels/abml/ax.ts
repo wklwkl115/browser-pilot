@@ -89,6 +89,7 @@ function emptyFusionDiagnostics(scanBacked: number): AxFusionDiagnostics {
 
 const CONTROL_AX_ROLES = new Set(["button", "link", "textbox", "searchbox", "combobox", "checkbox", "radio", "switch", "tab", "listbox", "menuitem", "option", "slider", "spinbutton"]);
 const TEXT_AX_ROLES = new Set(["statictext", "text", "labeltext", "heading"]);
+const CONTENT_LEAF_AX_ROLES = new Set(["statictext", "text", "labeltext", "inlinetextbox"]);
 const MEDIA_AX_ROLES = new Set(["image", "img"]);
 const FRAME_AX_ROLES = new Set(["iframe", "frame", "webarea", "rootwebarea"]);
 const BORING_AX_ROLES = new Set(["rootwebarea", "none", "generic", "group", "pane", "section", "paragraph", "listitemmarker", "inlinetextbox"]);
@@ -187,6 +188,9 @@ function kindForAxRole(role: string): EntityKind {
 export function isInterestingAxNode(node: AxTreeNode): boolean {
 	if (node.ignored === true) return false;
 	const role = axRole(node).toLowerCase();
+	// Page text is modeled once by the full DOM content channel; rendered AX fragments do not own
+	// independent semantics and must never consume entity refs.
+	if (CONTENT_LEAF_AX_ROLES.has(role)) return false;
 	const name = axName(node);
 	if (BORING_AX_ROLES.has(role)) return Boolean(name || axValue(node));
 	if (kindForAxRole(role) !== "element") return true;

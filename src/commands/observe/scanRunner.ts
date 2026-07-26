@@ -159,8 +159,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const abmlProviderFailure = providerFailureFromAbmlRead(observation.abmlRead);
 	if (abmlProviderFailure) providerFailures.push(abmlProviderFailure);
 	const { assembly } = prepareScanAssembly({
-		server,
-		params,
 		tabId: effectiveTabId,
 		data,
 		bridge,
@@ -214,7 +212,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		assembly,
 		scanPageFingerprint,
 		renderStartedAt,
-		intent: params.intent,
 		visual: visual?.visual,
 		visualSaved: visual?.saved,
 	});

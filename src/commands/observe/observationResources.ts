@@ -1,8 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentActionSpace, CollectionSummary, CompactCollection, ObservationFrontierItem, PageObservationContent, PageObservationV3, PageObservationView, PublicCausalSummary, PublicInferenceSummary, PublicRelationSummary, PublicVisualObservation } from "../../kernels/abml/pageObservation.js";
-import { computeRelevanceMap } from "../../kernels/evidence/distill/relevance.js";
-import { extractScalarTerm } from "../../kernels/evidence/distill/relevanceTaps.js";
-import { collectRefs } from "../../kernels/refs/text.js";
+import type { AgentActionSpace, CollectionSummary, CompactCollection, ObservationFrontierItem, PageObservationContent, PageObservationV3, PageObservationView, PublicCausalSummary, PublicRelationSummary, PublicVisualObservation } from "../../kernels/abml/pageObservation.js";
 import { isRecord } from "../../utils/records.js";
 
 const ROOT_SAMPLE_SIZE = 3;
@@ -32,7 +29,9 @@ export type ObservationResourceDescriptor = {
 
 export type ObservationContentSection = { label: string; text: string };
 
-type IndexedContentSection = ObservationContentSection & { index: number; score: number };
+type IndexedContentSection = ObservationContentSection & { index: number };
+type RootContentProjection = { text: string; complete: boolean; includedBySection: Map<number, number> };
+type SnapshotTemplate = NonNullable<PageObservationV3["snapshotProjection"]>["templates"][number];
 
 export function semanticContentSections(content: PageObservationContent): ObservationContentSection[] {
 	const text = content.text.trim();
@@ -40,10 +39,11 @@ export function semanticContentSections(content: PageObservationContent): Observ
 	const positions: Array<{ label: string; start: number }> = [];
 	let cursor = 0;
 	for (const raw of content.headings ?? []) {
+		if (cursor >= text.length) break;
 		const label = raw.trim();
 		if (!label) continue;
 		const start = text.indexOf(label, cursor);
-		if (start < 0 || positions.some((item) => item.start === start)) continue;
+		if (start < 0) continue;
 		positions.push({ label, start });
 		cursor = start + label.length;
 	}
@@ -58,29 +58,77 @@ export function semanticContentSections(content: PageObservationContent): Observ
 	return sections.filter((section) => section.text);
 }
 
-function rankedContentSections(content: PageObservationContent, intent?: string): IndexedContentSection[] {
-	const sections = semanticContentSections(content);
-	const terms = extractScalarTerm(intent, "intent", 1.35).map((term) => ({ ...term, source: "E" as const }));
-	const relevance = terms.length ? computeRelevanceMap([], terms) : undefined;
-	return sections.map((section, index) => ({
-		...section,
-		index,
-		score: relevance?.scoreFields({ name: section.label, value: section.text }) ?? 0,
-	}));
+function indexedContentSections(content: PageObservationContent): IndexedContentSection[] {
+	return semanticContentSections(content).map((section, index) => ({ ...section, index }));
 }
 
-function rootContentSection(content: PageObservationContent, sections: IndexedContentSection[], intent?: string): IndexedContentSection | undefined {
-	if (!sections.length) return undefined;
-	const title = content.headings?.[0]?.trim();
-	const titleSection = sections.find((section) => title && section.label === title);
-	const normalizedIntent = intent?.normalize("NFKC").toLowerCase() ?? "";
-	const relevant = sections
-		.filter((section) => section.label !== "Page introduction" && (section.text.length >= 120 || normalizedIntent.includes(section.label.normalize("NFKC").toLowerCase())))
-		.sort((a, b) => b.score - a.score || a.index - b.index)[0];
-	if (relevant && relevant.score > 0) return relevant;
-	return titleSection
-		?? sections.find((section) => section.label !== "Page introduction")
-		?? sections[0];
+function compactRecord(value: Record<string, unknown> | undefined): string | undefined {
+	if (!value || !Object.keys(value).length) return undefined;
+	return JSON.stringify(value);
+}
+
+function templateSemanticDefaults(template: SnapshotTemplate): Record<string, unknown> {
+	const { role: _role, kind: _kind, ...constant } = template.constant;
+	return { ...constant, ...template.defaults };
+}
+
+function structureMapLines(observation: PageObservationV3): string[] {
+	const lines: string[] = [];
+	for (const item of observation.outline ?? []) {
+		if (typeof item.container !== "string" || typeof item.memberCount !== "number") continue;
+		const label = typeof item.name === "string" && item.name ? item.name : item.container;
+		lines.push(`section ${label} (${item.memberCount})`);
+	}
+	const templates = observation.snapshotProjection?.templates ?? [];
+	for (const collection of observation.collections ?? []) {
+		const label = collection.name || collection.kind;
+		const total = collection.total === undefined ? String(collection.observed) : `${collection.observed}/${collection.total}`;
+		const template = templates.find((item) =>
+			(!collection.itemRole || item.role === collection.itemRole)
+			&& (!collection.containerRole || item.container === collection.containerRole)
+			&& (!collection.name || !item.containerName || item.containerName === collection.name));
+		const defaults = template ? compactRecord(templateSemanticDefaults(template)) : undefined;
+		const varies = template?.varies.length ? template.varies.join(",") : undefined;
+		lines.push(`collection ${label} (${total}, ${collection.completeness})${template ? ` item=${template.role}` : ""}${defaults ? ` defaults=${defaults}` : ""}${varies ? ` varies=${varies}` : ""}`);
+	}
+	return lines;
+}
+
+function withoutLeadingLabel(text: string, label: string): string {
+	const trimmed = text.trim();
+	return trimmed.startsWith(label) ? trimmed.slice(label.length).trim() : trimmed;
+}
+
+function rootContentProjection(observation: PageObservationV3, sections: IndexedContentSection[]): RootContentProjection | undefined {
+	const content = observation.content;
+	const structure = structureMapLines(observation);
+	if (!content && !structure.length) return undefined;
+	const prefix = structure.length ? `Map\n${structure.join("\n")}` : "";
+	const separator = prefix && content?.text ? "\n\nContent\n" : "";
+	const full = `${prefix}${separator}${content?.text ?? ""}`;
+	const includedBySection = new Map<number, number>();
+	if (full.length <= ROOT_CONTENT_MAX_CHARS) {
+		for (const section of sections) includedBySection.set(section.index, section.text.length);
+		return { text: full, complete: content?.complete !== false, includedBySection };
+	}
+	const budgetAfterPrefix = Math.max(0, ROOT_CONTENT_MAX_CHARS - prefix.length - separator.length);
+	const labelChars = sections.reduce((sum, section) => sum + section.label.length + 4, 0);
+	const previewChars = sections.length ? Math.max(0, Math.floor((budgetAfterPrefix - labelChars) / sections.length)) : 0;
+	const previews = sections.map((section) => {
+		const fullBody = withoutLeadingLabel(section.text, section.label);
+		const body = fullBody.slice(0, previewChars);
+		return { section, fullBody, body, line: `[${section.label}]${body ? ` ${body}` : ""}` };
+	});
+	let offset = 0;
+	for (const { section, fullBody, body, line } of previews) {
+		const visible = Math.max(0, Math.min(line.length, budgetAfterPrefix - offset));
+		const labelVisible = Math.max(0, Math.min(section.label.length, visible - 1));
+		const bodyVisible = Math.max(0, Math.min(body.length, visible - section.label.length - 3));
+		const complete = visible === line.length && body.length === fullBody.length;
+		includedBySection.set(section.index, complete ? section.text.length : Math.min(section.text.length, (section.text.startsWith(section.label) ? labelVisible : 0) + bodyVisible));
+		offset += line.length + 1;
+	}
+	return { text: `${prefix}${separator}${previews.map((preview) => preview.line).join("\n")}`.slice(0, ROOT_CONTENT_MAX_CHARS), complete: false, includedBySection };
 }
 
 function compactOutline(outline: PageObservationV3["outline"]): PageObservationV3["outline"] {
@@ -124,14 +172,6 @@ export function publicVisual(value: PageObservationV3["visual"]): PublicVisualOb
 	};
 }
 
-export function publicInference(value: PageObservationV3["inference"]): PublicInferenceSummary | undefined {
-	if (!value?.intents.length) return undefined;
-	return { intents: value.intents.map((item) => {
-		const refs = collectRefs(item.evidence);
-		return { intent: item.intent, confidence: item.confidence, ...(item.reason ? { reason: item.reason } : {}), ...(refs.length ? { refs } : {}) };
-	}) };
-}
-
 export function publicSnapshotProjection(value: PageObservationV3["snapshotProjection"]): Record<string, unknown> | undefined {
 	if (!value) return undefined;
 	return {
@@ -144,8 +184,10 @@ export function publicSnapshotProjection(value: PageObservationV3["snapshotProje
 			count: template.count,
 			...(template.setSize !== undefined ? { setSize: template.setSize } : {}),
 			varies: template.varies,
+			defaults: templateSemanticDefaults(template),
+			exceptions: template.exceptions.map((item) => ({ index: item.index, ...(item.ref ? { ref: item.ref } : {}), values: item.values })),
 			instanceRefs: template.instanceRefs,
-			...(template.sample ? { sample: { ref: template.sample.ref, ...(template.sample.name ? { name: template.sample.name } : {}), ...(template.sample.value ? { value: template.sample.value } : {}) } } : {}),
+			...(template.sample ? { sample: { ...(template.sample.ref ? { ref: template.sample.ref } : {}), ...(template.sample.name ? { name: template.sample.name } : {}), ...(template.sample.value ? { value: template.sample.value } : {}) } } : {}),
 		})),
 	};
 }
@@ -250,8 +292,8 @@ function addSnapshotProjectionResource(observation: PageObservationV3, path: str
 }
 
 function limitedFrontier(observation: PageObservationV3, path: string, resources: ObservationResourceDescriptor[], items: ObservationFrontierItem[]) {
-	const priority: Record<ObservationFrontierItem["kind"], number> = { "action-space": 0, details: 1, "collection-window": 2, content: 3 };
-	const itemPriority = (item: ObservationFrontierItem): number => item.kind === "action-space" ? -2 : item.ref === "frontier:content:root" || item.state === "unavailable" ? -1 : priority[item.kind];
+	const priority: Record<ObservationFrontierItem["kind"], number> = { "action-space": 0, content: 1, details: 2, "collection-window": 3 };
+	const itemPriority = (item: ObservationFrontierItem): number => item.kind === "action-space" ? -2 : item.state === "unavailable" ? -1 : priority[item.kind];
 	const ranked = items
 		.map((item, index) => ({ item, index }))
 		.sort((a, b) => itemPriority(a.item) - itemPriority(b.item) || a.index - b.index);
@@ -349,13 +391,25 @@ function projectCollections(observation: PageObservationV3, path: string, resour
 		items.push({ ref, kind: "details", state: "folded", label, observed: selected.length, total: observation.collections.length, resourceUri: resource.uri });
 	}
 	return selected.map((collection: CollectionSummary, index) => {
-		const needsResource = collection.completeness !== "complete" || collection.itemRefs.length > ROOT_SAMPLE_SIZE || Boolean(collection.evidence?.length) || Boolean(collection.dataSources?.length);
+		const hasOverflow = collection.itemRefs.length > ROOT_SAMPLE_SIZE;
+		const incomplete = collection.completeness !== "complete";
+		const needsFrontier = hasOverflow || incomplete;
 		const ref = collection.frontierRef ?? `frontier:collection:${collection.collectionId ?? index}`;
-		if (needsResource) {
+		const controlRef = collection.paginationControl && typeof collection.paginationControl.ref === "string" ? collection.paginationControl.ref : undefined;
+		if (needsFrontier) {
 			const label = collection.name || `Collection ${index + 1}`;
-			const resource = descriptor(observation, path, { name: label, ref, kind: "collection-window", label, jsonPath: `collections[${index}]` });
-			resources.push(resource);
-			items.push({ ref, kind: "collection-window", state: collection.completeness === "virtualized" || collection.completeness === "paginated" || collection.completeness === "lazy" || collection.completeness === "viewport-window" ? collection.completeness : "folded", label, observed: collection.observed, ...(collection.total !== undefined ? { total: collection.total } : {}), ...(collection.paginationControl && typeof collection.paginationControl.ref === "string" ? { controlRef: collection.paginationControl.ref } : {}), resourceUri: resource.uri });
+			const resource = hasOverflow ? descriptor(observation, path, { name: label, ref, kind: "collection-window", label, jsonPath: `collections[${index}]` }) : undefined;
+			if (resource) resources.push(resource);
+			items.push({
+				ref,
+				kind: "collection-window",
+				state: collection.completeness === "virtualized" || collection.completeness === "paginated" || collection.completeness === "lazy" || collection.completeness === "viewport-window" ? collection.completeness : "folded",
+				label,
+				observed: collection.observed,
+				...(collection.total !== undefined ? { total: collection.total } : {}),
+				...(controlRef ? { controlRef } : {}),
+				...(resource ? { resourceUri: resource.uri } : controlRef ? {} : { unavailableReason: "No additional captured collection items are available." }),
+			});
 		}
 		return {
 			ref: collection.ref,
@@ -366,28 +420,24 @@ function projectCollections(observation: PageObservationV3, path: string, resour
 			completeness: collection.completeness,
 			confidence: collection.confidence,
 			itemRefs: collection.itemRefs.slice(0, ROOT_SAMPLE_SIZE),
-			...(needsResource ? { frontierRef: ref } : {}),
+			...(needsFrontier ? { frontierRef: ref } : {}),
 		};
 	});
 }
 
-export function projectObservationResources(observation: PageObservationV3, path: string, intent?: string): { observation: PageObservationView; resources: ObservationResourceDescriptor[] } {
+export function projectObservationResources(observation: PageObservationV3, path: string): { observation: PageObservationView; resources: ObservationResourceDescriptor[] } {
 	const resources: ObservationResourceDescriptor[] = [];
 	const items: ObservationFrontierItem[] = [];
 	const deltaOnly = observation.delta === "session" || observation.baselineSnapshotId !== undefined || observation.diff !== undefined || observation.treeDiff !== undefined;
-	const sections = observation.content && !deltaOnly ? rankedContentSections(observation.content, intent) : [];
-	const rootSection = observation.content ? rootContentSection(observation.content, sections, intent) : undefined;
-	if (rootSection && rootSection.text.length > ROOT_CONTENT_MAX_CHARS) {
-		const resource = descriptor(observation, path, { name: rootSection.label, ref: "frontier:content:root", kind: "content", label: rootSection.label, contentSection: rootSection.index });
-		resources.push(resource);
-		items.push({ ref: "frontier:content:root", kind: "content", state: "folded", label: rootSection.label, observed: ROOT_CONTENT_MAX_CHARS, total: rootSection.text.length, resourceUri: resource.uri });
-	}
-	for (const section of [...sections].sort((a, b) => b.score - a.score || a.index - b.index)) {
-		if (section.index === rootSection?.index) continue;
+	const sections = observation.content && !deltaOnly ? indexedContentSections(observation.content) : [];
+	const rootContent = deltaOnly ? undefined : rootContentProjection(observation, sections);
+	for (const section of sections) {
+		const observed = rootContent?.includedBySection.get(section.index) ?? 0;
+		if (observed >= section.text.length) continue;
 		const ref = `frontier:content:${section.index}`;
 		const resource = descriptor(observation, path, { name: section.label, ref, kind: "content", label: section.label, contentSection: section.index });
 		resources.push(resource);
-		items.push({ ref, kind: "content", state: "folded", label: section.label, observed: section.text.length, total: section.text.length, resourceUri: resource.uri });
+		items.push({ ref, kind: "content", state: "folded", label: section.label, observed, total: section.text.length, resourceUri: resource.uri });
 	}
 	if (observation.content?.complete === false) items.push({ ref: "frontier:content:unavailable", kind: "content", state: "unavailable", label: "Uncaptured page content", unavailableReason: "capture reached the internal safety ceiling" });
 	addSnapshotProjectionResource(observation, path, resources, items);
@@ -400,30 +450,28 @@ export function projectObservationResources(observation: PageObservationV3, path
 	const outline = compactOutline(observation.outline);
 	const gist = publicGist(observation.gist, title);
 	const visual = publicVisual(observation.visual);
-	const inference = publicInference(observation.inference);
 	const warnings = publicWarnings(observation.diagnostics);
 	const buildView = (frontier: ReturnType<typeof limitedFrontier>, actionSpace?: AgentActionSpace): PageObservationView => {
 		const publicCollections = collections?.map((collection) => {
 			if (!collection.frontierRef || frontier.refs.has(collection.frontierRef)) return collection;
 			const { frontierRef: _frontierRef, ...withoutFrontier } = collection;
 			return withoutFrontier;
-			});
-			return {
-				target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
-				...(gist ? { gist } : {}),
-				...(rootSection ? { content: { text: rootSection.text.slice(0, ROOT_CONTENT_MAX_CHARS), ...(headings?.length ? { headings } : {}), complete: observation.content?.complete !== false && sections.length <= 1 && rootSection.text.length <= ROOT_CONTENT_MAX_CHARS } } : {}),
-				...(visual ? { visual } : {}),
-					...(outline?.length ? { outline } : {}),
-					...(actionSpace ? { actionSpace } : {}),
-					...(publicCollections?.length ? { collections: publicCollections } : {}),
-					...(treeDiff ? { treeDiff } : {}),
-					...(causal ? { causal } : {}),
-					...(relations ? { relations } : {}),
-				...(inference ? { inference } : {}),
-				...(warnings.length ? { warnings } : {}),
-				...(observation.nextActions?.length ? { nextActions: observation.nextActions.slice(0, 8) } : {}),
-				...(frontier.items.length ? { frontier: { items: frontier.items } } : {}),
-			};
+		});
+		return {
+			target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
+			...(gist ? { gist } : {}),
+			...(rootContent ? { content: { text: rootContent.text, ...(headings?.length ? { headings } : {}), complete: rootContent.complete } } : {}),
+			...(visual ? { visual } : {}),
+			...(outline?.length ? { outline } : {}),
+			...(actionSpace ? { actionSpace } : {}),
+			...(publicCollections?.length ? { collections: publicCollections } : {}),
+			...(treeDiff ? { treeDiff } : {}),
+			...(causal ? { causal } : {}),
+			...(relations ? { relations } : {}),
+			...(warnings.length ? { warnings } : {}),
+			...(observation.nextActions?.length ? { nextActions: observation.nextActions.slice(0, 8) } : {}),
+			...(frontier.items.length ? { frontier: { items: frontier.items } } : {}),
+		};
 	};
 
 	let frontier = limitedFrontier(observation, path, resources, items);

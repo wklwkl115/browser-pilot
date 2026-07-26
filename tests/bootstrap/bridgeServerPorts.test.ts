@@ -264,9 +264,6 @@ test("BrowserBridgeServer command runtime port exposes snapshot, tabs and percep
 			assert.equal(port.getObservationSnapshot(observation.snapshotId)?.sourceMode, "scan");
 			assert.equal(port.listObservationSnapshots().some((item) => item.snapshotId === observation.snapshotId), true);
 
-			port.recordPerceptionTraceTerms?.(snapshot.browserSessionId, [{ term: "checkout", kind: "intent", weight: 1 }]);
-			assert.equal(port.perceptionTraceSnapshot?.(snapshot.browserSessionId).terms[0].term, "checkout");
-
 			port.recordKnownRecorderState?.("network", snapshot.browserSessionId, 7, { active: true, lastSeq: 9 });
 			port.recordKnownRecorderState?.("hook", snapshot.browserSessionId, 8, { active: true, lastSeq: 4 });
 			ws.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 8, url: "https://example.test/replaced", active: true }], replaced: [{ from: 7, to: 8 }] }));

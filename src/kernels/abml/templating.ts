@@ -8,7 +8,7 @@
 // React / Web Components): members share an AX container (`hints.containerRole` + `containerName`,
 // from the AX-membership merge) or a declared `aria-setsize`, plus the same `role` + `kind`.
 // No tag/class/selector-prefix matching (that overfits a framework's DOM). Pure: zero browser/Node deps.
-import type { Entity, EntityKind } from "./entity.js";
+import { isAddressableEntity, type Entity, type EntityKind } from "./entity.js";
 import { isPureTextLeaf, templateGroupDescriptorForEntity } from "./grouping.js";
 
 // Per-instance fields whose variation we track. A field that DIFFERS across instances is listed in
@@ -27,8 +27,10 @@ export type StructureTemplate = {
 	setSize?: number; // declared aria-setsize, if any (may exceed count when virtualized)
 	varies: TemplateVaryField[]; // fields that differ instance-to-instance
 	constant: Record<string, unknown>; // fields identical across all (role/kind always; uniform-truthy state)
+	defaults: Record<string, unknown>; // modal values for varying fields
+	exceptions: Array<{ index: number; ref?: string; values: Record<string, unknown> }>;
 	instanceRefs: string[];
-	sample?: { ref: string; name?: string; value?: string }; // one representative instance
+	sample?: { ref?: string; name?: string; value?: string }; // one representative instance
 };
 
 export function templateFieldValue(entity: Entity, field: TemplateVaryField): unknown {
@@ -44,11 +46,24 @@ export function buildTemplate(members: Entity[]): StructureTemplate {
 	const kind = first.kind;
 	const varies: TemplateVaryField[] = [];
 	const constant: Record<string, unknown> = { role, kind };
+	const defaults: Record<string, unknown> = {};
+	const defaultByField = new Map<TemplateVaryField, unknown>();
 	for (const field of VARY_FIELDS) {
 		const head = templateFieldValue(first, field);
 		const uniform = members.every((member) => templateFieldValue(member, field) === head);
 		if (!uniform) {
 			varies.push(field);
+			const counts = new Map<string, { value: unknown; count: number; first: number }>();
+			members.forEach((member, index) => {
+				const value = templateFieldValue(member, field);
+				const key = value === undefined ? "undefined" : JSON.stringify(value);
+				const current = counts.get(key);
+				if (current) current.count += 1;
+				else counts.set(key, { value, count: 1, first: index });
+			});
+			const selected = [...counts.values()].sort((a, b) => b.count - a.count || a.first - b.first)[0]!;
+			defaultByField.set(field, selected.value);
+			if (selected.value !== undefined) defaults[field] = selected.value;
 			continue;
 		}
 		if (field === "name" || field === "value") {
@@ -57,14 +72,23 @@ export function buildTemplate(members: Entity[]): StructureTemplate {
 			constant[field] = head;
 		}
 	}
+	const exceptions = members.flatMap((member, index) => {
+		const values: Record<string, unknown> = {};
+		for (const field of varies) {
+			const value = templateFieldValue(member, field);
+			if (value !== defaultByField.get(field)) values[field] = value ?? null;
+		}
+		return Object.keys(values).length ? [{ index, ...(isAddressableEntity(member) ? { ref: member.ref } : {}), values }] : [];
+	});
 	const setSize = typeof descriptor?.setSize === "number"
 		? descriptor.setSize
 		: members.find((member) => typeof member.structure?.setSize === "number")?.structure?.setSize;
-	const sample: StructureTemplate["sample"] = {
-		ref: first.ref,
+	const sampleValue = {
+		...(isAddressableEntity(first) ? { ref: first.ref } : {}),
 		...(first.name ? { name: first.name } : {}),
 		...(first.value ? { value: first.value } : {}),
 	};
+	const sample: StructureTemplate["sample"] = Object.keys(sampleValue).length ? sampleValue : undefined;
 	return {
 		...(descriptor?.container ? { container: descriptor.container } : {}),
 		...(descriptor?.containerName ? { containerName: descriptor.containerName } : {}),
@@ -75,8 +99,10 @@ export function buildTemplate(members: Entity[]): StructureTemplate {
 		...(typeof setSize === "number" ? { setSize } : {}),
 		varies,
 		constant,
-		instanceRefs: members.map((member) => member.ref),
-		sample,
+		defaults,
+		exceptions,
+		instanceRefs: members.filter(isAddressableEntity).map((member) => member.ref),
+		...(sample ? { sample } : {}),
 	};
 }
 

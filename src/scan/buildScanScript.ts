@@ -19,7 +19,8 @@ function boundedInt(value: unknown, fallback: number, min: number, max: number):
 export function buildScanScript(options: BrowserScanOptions = {}): string {
 	const opts = {
 		maxChars: boundedInt(options.maxChars, 35_000, 1_000, 500_000),
-		maxNodes: boundedInt(options.maxNodes, 4_000, 100, 20_000),
+		// ponytail: 200k-node safety ceiling; raise only after capture can be chunked within the tool deadline.
+		maxNodes: boundedInt(options.maxNodes, 200_000, 100, 200_000),
 	};
 	const config = {
 		options: opts,

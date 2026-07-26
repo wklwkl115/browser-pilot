@@ -108,6 +108,10 @@ export type Entity = {
 	hints?: { listContainer?: boolean; jsonPath?: string; selector?: string; [key: string]: unknown };
 };
 
+export function isAddressableEntity(entity: Entity): boolean {
+	return entity.actionability !== undefined || entity.kind === "control" || entity.kind === "region" || entity.kind === "frame" || entity.kind === "media" || Boolean(entity.relations?.length);
+}
+
 export type ScanEntityContext = {
 	browserSessionId?: string;
 	tabId?: number;
@@ -303,8 +307,7 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 			...(controlsSelectors ? { controlsSelectors } : {}),
 			...(ownsSelectors ? { ownsSelectors } : {}),
 			...(expandedTargetSelectors ? { expandedTargetSelectors } : {}),
-			// HTML input type (e.g. "password", "search", "email") — DOM-sourced for R2 intent
-			// detection. AX tree doesn't distinguish input types beyond role (textbox/searchbox).
+			// HTML input type (e.g. "password", "search", "email"). AX only exposes the role.
 			...(stringValue(node.inputKind) ? { inputKind: stringValue(node.inputKind) } : {}),
 		},
 	};
@@ -517,7 +520,8 @@ export function buildVisionRegionFromCanvasActionable(node: ScanVisionInput, con
 		...(geometryPoint(node.point) || {}),
 	};
 	const point = geometryCenter(geometry);
-	const locators: Locator[] = point ? [{ by: "point", x: point.x, y: point.y }] : [];
+	const inViewport = node.inViewport !== false && Boolean(point || geometry.box);
+	const locators: Locator[] = point && inViewport ? [{ by: "point", x: point.x, y: point.y }] : [];
 	const name = stringValue(node.action) || stringValue(node.label) || stringValue(node.text) || stringValue(node.selector) || "canvas region";
 	const entity: Omit<Entity, "ref"> = {
 		kind: "region",
@@ -529,7 +533,7 @@ export function buildVisionRegionFromCanvasActionable(node: ScanVisionInput, con
 			disabled: false,
 			focused: false,
 			editable: false,
-			inViewport: Boolean(point || geometry.box),
+			inViewport,
 		},
 		...(node.clickable === true ? { actionability: { actions: ["click"], hint: name, confidence: "medium" } } : {}),
 		source: "dom",

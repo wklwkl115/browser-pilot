@@ -28,6 +28,11 @@ type AssemblyResult = ReturnType<typeof assembleScanSummary>;
 type ProviderResult = Awaited<ReturnType<typeof runObserveProviders>>;
 type PageObservation = PageObservationBuild;
 
+function allSnapshotDocumentsCovered(observation: CaptureResult["observation"]): boolean {
+	const axDiagnostics = observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axDiagnostics) ? observation.abmlRead.data.axDiagnostics : undefined;
+	return Number(axDiagnostics?.snapshotDocumentCount ?? 0) === 1 && Number(axDiagnostics?.snapshotDocumentsSkipped ?? 0) === 0;
+}
+
 function buildBaselineDiagnostics(options: FinalizeScanObservationOptions) {
 	const { baselineRequested, baseline, baselineResolutionError, reanchorReason } = options;
 	if (!baselineRequested && !reanchorReason) return { diagnostics: undefined, warnings: [] as string[] };
@@ -61,7 +66,6 @@ type FinalizeScanObservationOptions = {
 	assembly: AssemblyResult;
 	scanPageFingerprint: PageFingerprint | undefined;
 	renderStartedAt: number;
-	intent?: string;
 	visual?: VisualObservation;
 	visualSaved?: { path: string; bytes: number; mime: string };
 };
@@ -71,7 +75,7 @@ function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summar
 	const { observation } = options.capture;
 	const baseline = buildBaselineDiagnostics(options);
 	const summaryWarnings = Array.isArray(summary.warnings) ? summary.warnings.filter((warning): warning is string => typeof warning === "string") : [];
-	const warnings = [...baseline.warnings, ...summaryWarnings];
+	const warnings = [...baseline.warnings, ...summaryWarnings, ...(!allSnapshotDocumentsCovered(observation) ? ["Full document semantic coverage was incomplete."] : [])];
 	const abmlFailure = observation.abmlRead?.ok === false
 		? { code: observation.abmlRead.error.code, message: observation.abmlRead.error.message }
 		: undefined;
@@ -86,6 +90,15 @@ function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summar
 	};
 }
 
+function captureCompleteness(options: FinalizeScanObservationOptions): { content: boolean; actions: boolean } {
+	const { data } = options;
+	const allDocuments = allSnapshotDocumentsCovered(options.capture.observation);
+	return {
+		content: data.stats.truncated !== true && allDocuments,
+		actions: (data.stats.actionablesComplete ?? data.stats.truncated !== true) && allDocuments,
+	};
+}
+
 function buildCanonicalPageObservation(
 	options: FinalizeScanObservationOptions,
 	summary: Record<string, unknown>,
@@ -94,13 +107,14 @@ function buildCanonicalPageObservation(
 	const { content, data, bridge, snapshotMeta, providerFailures } = options;
 	const { envelopeEntities, attributedEntities, envelopeDiff, treeDiff } = options.assembly;
 	const { causal } = options.providers;
+	const completeness = captureCompleteness(options);
 	return buildPageObservation({
 		summary,
 		entities: envelopeEntities,
 		content,
 		headings: data.content.headings,
-		contentComplete: data.stats.truncated !== true,
-		actionCaptureComplete: data.stats.actionablesComplete ?? data.stats.truncated !== true,
+		contentComplete: completeness.content,
+		actionCaptureComplete: completeness.actions,
 		url: data.page.url,
 		activeTabId: bridge.defaultTabId,
 		snapshot: snapshotMeta,
@@ -174,7 +188,6 @@ export async function finalizeScanObservation(options: FinalizeScanObservationOp
 		fallbackName,
 		ctx,
 		details,
-		intent: options.intent,
 	});
 	recordLedgerProjection(options, ledger.frame);
 	return result;

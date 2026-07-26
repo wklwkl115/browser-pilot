@@ -12,7 +12,7 @@ import { BrowserBridgeSessionState } from "./BrowserBridgeSessionState.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
-import type { BrowserCommandTargetTransactionInput, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey, CommandPerceptionTraceSnapshot } from "../../ports/BrowserCommandRuntimePort.js";
+import type { BrowserCommandTargetTransactionInput, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey } from "../../ports/BrowserCommandRuntimePort.js";
 import type { BrowserAutomationSession, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, ExecuteOptions } from "./types.js";
 
 const MAX_KNOWN_RECORDER_STATES = 128;
@@ -258,14 +258,6 @@ export class BrowserBridgeServer {
 
 	recordPerceptionLedgerFrame(frame: CommandPerceptionLedgerFrame): CommandPerceptionLedgerFrame {
 		return this.state.perceptionLedger.record(frame);
-	}
-
-	recordPerceptionTraceTerms(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>): CommandPerceptionTraceSnapshot {
-		return this.state.perceptionLedger.recordTraceTerms(browserSessionId, terms);
-	}
-
-	perceptionTraceSnapshot(browserSessionId?: string): CommandPerceptionTraceSnapshot {
-		return this.state.perceptionLedger.traceSnapshot(browserSessionId);
 	}
 
 	formatError(error: unknown): string {

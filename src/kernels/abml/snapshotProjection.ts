@@ -35,6 +35,8 @@ export type SnapshotProjectionTemplate = {
 	setSize?: number;
 	varies: TemplateVaryField[];
 	constant: Record<string, unknown>;
+	defaults: Record<string, unknown>;
+	exceptions: Array<{ index: number; ref?: string; values: Record<string, unknown> }>;
 	instanceRefs: string[];
 	instanceRefCount: number;
 	sample?: StructureTemplate["sample"];
@@ -115,6 +117,8 @@ function templateFromGroup(group: TemplateGroup, delta?: SnapshotProjectionDelta
 		...(typeof template.setSize === "number" ? { setSize: template.setSize } : {}),
 		varies: template.varies,
 		constant: template.constant,
+		defaults: template.defaults,
+		exceptions: template.exceptions,
 		instanceRefs: template.instanceRefs,
 		instanceRefCount: template.instanceRefs.length,
 		...(template.sample ? { sample: template.sample } : {}),
@@ -133,6 +137,8 @@ function deltaOnlyTemplate(diff: TreeTemplateDiff, delta: SnapshotProjectionDelt
 		count: diff.afterCount,
 		varies: [],
 		constant: { role: diff.role, kind: diff.kind },
+		defaults: {},
+		exceptions: [],
 		instanceRefs: [],
 		instanceRefCount: 0,
 		delta,

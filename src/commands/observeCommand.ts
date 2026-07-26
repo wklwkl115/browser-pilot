@@ -25,10 +25,9 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 		label: "Browser Observe",
 		description: "Return compact page content, actions, changes, and expandable semantic resources for the current tab.",
 		promptGuidelines: [
-			"Use browser_observe only for page understanding. It returns a bounded semantic projection and exposes omitted captured actions and additional page regions as MCP resources.",
+			"Use browser_observe only for page understanding. It returns a deterministic whole-page semantic map and exposes only irreducible overflow as MCP resources.",
 		],
 		parameters: strictCommandParameters({
-			intent: Type.Optional(Type.String({ description: "Optional relevance hint" })),
 			mode: Type.Optional(Type.String({ enum: ["auto", "full", "diff"], description: "Return an automatic session view, full view, or diff against the latest observation." })),
 			visual: Type.Optional(Type.String({ enum: ["auto", "always", "never"], description: "Attach a coherent viewport screenshot automatically, always, or never." })),
 			...sharedTabScopedToolParams(),

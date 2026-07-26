@@ -4,8 +4,6 @@ import type { Entity } from "../../src/kernels/abml/entity.ts";
 import { buildActionableLocators, buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities } from "../../src/kernels/abml/entity.ts";
 import { axBackendNodeId, axName, axNodeId, axRole, axValue, boxModelToGeometry, buildAxEntityFromNode, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities } from "../../src/kernels/abml/ax.ts";
 import { addEntityRelations, buildRelationSummary, derivePaintOrderRelationAnchors, deriveStateRelationAnchors, materializeRelationGraph } from "../../src/kernels/abml/relations.ts";
-import { buildInferenceSummary, entitiesForInferenceEvidence, inferenceEvidenceRefs } from "../../src/kernels/abml/inference.ts";
-import type { EntityDiff } from "../../src/kernels/abml/diff.ts";
 import { displayEntityText, groupEntities, isActionableOrStructural, isPureTextLeaf, normalizeEntityText, structureScopeKey, suppressNestedNonControlGroups, templateGroupDescriptorForEntity } from "../../src/kernels/abml/grouping.ts";
 import { buildCollectionModels } from "../../src/kernels/abml/collections.ts";
 import { firstSafeSemanticText, isItemLikePreview, safeContainerLabelText, sanitizeSemanticText } from "../../src/kernels/abml/semanticText.ts";
@@ -181,6 +179,23 @@ test("full AX reader projects snapshot geometry, paint order, relations, and raw
 	const refreshed = await readAxEntities(server, options);
 	assert.equal(refreshed.diagnostics?.cacheHit, false);
 	assert.equal(server.calls.length, 4);
+});
+
+test("full AX reader absorbs rendered text fragments before entity and ref creation", async () => {
+	const fragments = Array.from({ length: 20_000 }, (_, index) => [
+		{ nodeId: `static-${index}`, role: { value: "StaticText" }, name: { value: `Row ${index}` } },
+		{ nodeId: `inline-${index}`, role: { value: "InlineTextBox" }, name: { value: `Row ${index}` } },
+	]).flat();
+	const server = createCdpServer({
+		"Accessibility.getFullAXTree": { nodes: [...fragments, axNode(42, "button", "Save"), axNode(77, "button", "Cancel")] },
+		"DOMSnapshot.captureSnapshot": domSnapshot(),
+	});
+	const result = await readAxEntities(server, { tabId: 7, observationId: "obs-fragments", cacheKey: "fragment-cache" });
+	assert.equal(result.diagnostics?.nodeCount, 40_002);
+	assert.equal(result.diagnostics?.interestingNodeCount, 2);
+	assert.deepEqual(result.entities.map((item) => item.entity.name), ["Save", "Cancel"]);
+	const merged = mergeAxIntoDomEntities([], result.entities).entities;
+	assert.equal(merged.every((item) => resolveRefUriDetailed(item.ref).ok), true);
 });
 
 test("full AX reader redacts password values from AX-only entities and refs", async () => {
@@ -448,11 +463,14 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 		},
 	});
 	assert.equal(projection.summary.templateCount, 2);
-	assert.equal(projection.summary.projectedInstanceRefCount, 25);
+	assert.equal(projection.summary.projectedInstanceRefCount, 0);
 	assert.equal(projection.summary.partialBaseline, true);
 	const projectedRows = projection.templates.find((template) => template.container === "grid" && template.containerName === "Orders" && template.count === 25)!;
 	assert.equal(projectedRows.count, 25);
-	assert.equal(projectedRows.instanceRefCount, 25);
+	assert.equal(projectedRows.instanceRefCount, 0);
+	assert.deepEqual(projectedRows.defaults, { name: "Order 1" });
+	assert.equal(projectedRows.exceptions.length, 24);
+	assert.deepEqual(projectedRows.exceptions[0], { index: 1, values: { name: "Order 2" } });
 	const deltaOnly = projection.templates.find((template) => template.deltaOnly)!;
 	assert.equal(deltaOnly.delta?.appeared.count, 2);
 	assert.equal(deltaOnly.delta?.changed.instances[0]?.fields[0]?.field, "name");
@@ -461,10 +479,11 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	assert.equal(collections[0]!.kind, "table");
 	assert.equal(collections[0]!.completeness, "virtualized");
 	assert.equal(collections[0]!.declaredTotal, 100);
-	assert.equal(collections[0]!.itemRefs.length, 25);
+	assert.equal(collections[0]!.itemRefs.length, 0);
 	assert.equal(buildCollectionModels({ entities: rows, snapshotProjection: buildSnapshotProjection(rows) }).length, 1);
 
 	const duplicatedPositions = Array.from({ length: 24 }, (_, index) => entity(`bp-ref://fragment/${index}`, {
+		kind: "element",
 		role: "div",
 		structure: { setSize: 12, posInSet: index % 12 + 1 },
 		hints: { containerRole: "list", containerKey: "feed" },
@@ -472,7 +491,7 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	const positionalCollection = buildCollectionModels({ entities: duplicatedPositions, snapshotProjection: buildSnapshotProjection(duplicatedPositions) })[0]!;
 	assert.equal(positionalCollection.observedCount, 12);
 	assert.equal(positionalCollection.itemRefCount, 12);
-	assert.equal(positionalCollection.itemRefs.length, 12);
+	assert.equal(positionalCollection.itemRefs.length, 0);
 	assert.equal(positionalCollection.declaredTotal, 12);
 	assert.equal(positionalCollection.completeness, "complete");
 });
@@ -658,6 +677,9 @@ test("ABML entity builders handle malformed inputs, fallback roles, refs, and de
 	const vision = buildVisionRegionFromCanvasActionable({ rect: { x: 0, y: 0, w: 20, h: 10 }, hitOk: false }, context);
 	assert.deepEqual(vision.entity.locators, [{ by: "point", x: 10, y: 5 }]);
 	assert.equal(vision.entity.state.occluded, true);
+	const offscreenVision = buildVisionRegionFromCanvasActionable({ rect: { x: 0, y: 500, w: 20, h: 10 }, point: { x: 10, y: 199 }, inViewport: false }, context);
+	assert.equal(offscreenVision.entity.state.inViewport, false);
+	assert.deepEqual(offscreenVision.entity.locators, []);
 	const deduped = dedupeEntities([
 		{ kind: "control", hints: { selector: "#same", jsonPath: "a" } },
 		{ kind: "control", hints: { selector: "#same", jsonPath: "b" } },
@@ -804,6 +826,8 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 	assert.equal(axBackendNodeId(node), 11);
 	assert.equal(isInterestingAxNode({ role: { value: "generic" }, name: "" }), false);
 	assert.equal(isInterestingAxNode({ ignored: true, role: "button", name: "Save" }), false);
+	assert.equal(isInterestingAxNode({ role: "StaticText", name: "Rendered copy" }), false);
+	assert.equal(isInterestingAxNode({ role: "InlineTextBox", name: "Rendered copy" }), false);
 	assert.equal(isInterestingAxNode({ role: "generic", backendDOMNodeId: 44, value: "fallback" }), true);
 	assert.equal(boxModelToGeometry({ border: [0, 0, 10, 0, 10, 20, 0, 20] })?.point?.y, 10);
 	assert.equal(boxModelToGeometry({ border: [0, Number.NaN] }), undefined);
@@ -923,54 +947,6 @@ test("ABML relations materialize fallbacks, paint-order occlusion, graph dedupe,
 	assert.equal(summary.highlights.some((highlight) => highlight.type === "cellOf"), false);
 });
 
-test("ABML inference detects anchored intents, dedupes evidence refs, and handles diff fallbacks", () => {
-	const baseSummary = { summary: { expandedTarget: 2, currentIn: 1, tableCells: 51 }, highlights: [] };
-	const entities = [
-		entity("bp-ref://input/password", { role: "textbox", state: { ...entity("x").state, editable: true }, hints: { inputKind: "password" } }),
-		entity("bp-ref://button/login", { role: "button", name: "Sign in", state: { ...entity("x").state, inViewport: true } }),
-		entity("bp-ref://search/box", { role: "searchbox", state: { ...entity("x").state, editable: true } }),
-		...Array.from({ length: 7 }, (_, index) => entity(`bp-ref://filter/${index}`, { role: index % 2 ? "checkbox" : "button", name: `Filter ${index}`, hints: { containerRole: "group", containerName: "Filters" } })),
-		entity("bp-ref://radio/group", { role: "radiogroup" }),
-		entity("bp-ref://expand/1", { role: "button", state: { ...entity("x").state, expanded: false }, relations: [{ type: "expandedTarget", targetRef: "bp-ref://panel/1", source: "dom", confidence: "high" }] }),
-		entity("bp-ref://expand/2", { role: "button", state: { ...entity("x").state, expanded: true }, relations: [{ type: "expandedTarget", targetRef: "bp-ref://panel/2", source: "dom", confidence: "high" }] }),
-		entity("bp-ref://grid/main", { role: "grid" }),
-		entity("bp-ref://nav/current", { role: "link", state: { ...entity("x").state, current: "page" }, relations: [{ type: "currentIn", targetRef: "bp-ref://nav/main", source: "ax", confidence: "high" }] }),
-		entity("bp-ref://dialog/main", { kind: "region", role: "dialog" }),
-		entity("bp-ref://tabs/list", { kind: "region", role: "tablist" }),
-		entity("bp-ref://tab/1", { role: "tab" }),
-		entity("bp-ref://tab/2", { role: "tab" }),
-		entity("bp-ref://alert/status", { kind: "region", role: "status", name: "Saved" }),
-		entity("bp-ref://input/required", { role: "textbox", state: { ...entity("x").state, editable: true, focused: false } }),
-		entity("bp-ref://button/submit", { role: "button", name: "Submit" }),
-	];
-	const diff: EntityDiff = {
-		appeared: ["bp-ref://alert/status"],
-		disappeared: [],
-		focusedRef: "bp-ref://input/required",
-		changed: [{ ref: "bp-ref://button/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } }],
-	};
-	const summary = buildInferenceSummary(entities, baseSummary, diff);
-	assert.deepEqual(summary.intents.map((intent) => intent.intent), ["login", "filter-panel", "single-choice", "multi-choice", "expandable", "data-grid", "navigation", "dialog", "tabbed-interface", "alert-region", "form-dependency"]);
-	assert.equal((summary.intents.find((intent) => intent.intent === "filter-panel")?.evidence?.controlRefs as string[]).length, 7);
-	assert.equal(summary.intents.find((intent) => intent.intent === "alert-region")?.evidence?.fresh, "appeared");
-	assert.equal(summary.intents.find((intent) => intent.intent === "form-dependency")?.evidence?.focusSignal, "focusedRef");
-	assert.equal(inferenceEvidenceRefs(summary).includes("bp-ref://button/submit"), true);
-	assert.ok(entitiesForInferenceEvidence(entities, summary).length > 3);
-	const weakLogin = buildInferenceSummary([entity("bp-ref://password/only", { role: "textbox", state: { ...entity("x").state, editable: true }, hints: { inputKind: "password" } }), entity("bp-ref://oauth", { role: "button", name: "Forgot password" })], { summary: {}, highlights: [] });
-	assert.equal(weakLogin.intents[0]?.confidence, "medium");
-	assert.equal(weakLogin.intents[0]?.evidence, undefined);
-	const transitionDiff: EntityDiff = { appeared: [], disappeared: [], changed: [
-		{ ref: "bp-ref://button/enabled", kind: "state-changed", before: { disabled: true }, after: { disabled: false } },
-		{ ref: "bp-ref://input/lost", kind: "state-changed", before: { focused: true }, after: { focused: false } },
-	] };
-	const transition = buildInferenceSummary([
-		entity("bp-ref://button/enabled", { role: "button" }),
-		entity("bp-ref://input/lost", { role: "textbox", state: { ...entity("x").state, editable: true } }),
-	], { summary: {}, highlights: [] }, transitionDiff);
-	assert.equal(transition.intents.find((intent) => intent.intent === "form-dependency")?.confidence, "medium");
-	assert.deepEqual(buildInferenceSummary([], { summary: {}, highlights: [] }).intents, []);
-});
-
 function projectionKey(containerRole: string, containerName: string, itemRole: string, declaredTotal: number): string {
 	return [undefined, containerRole, containerName, itemRole, `total:${declaredTotal}`, undefined].filter((item): item is string => !!item).join("\u0000");
 }
@@ -991,11 +967,12 @@ test("scan script builder clamps options and injects scan helper blocks determin
 	assert.match(script, /const __name = \(target\) => target;/);
 	assert.match(script, /const BrowserPilotDomAccessibilityApi = \(\(\) => \{/);
 	assert.match(script, /catch \{\s*return null;/);
-	assert.match(script, /"options":\{"maxChars":1000,"maxNodes":4000\}/);
+	assert.match(script, /"options":\{"maxChars":1000,"maxNodes":200000\}/);
 	assert.match(script, /"pageWorldScanSchema":"browser-page-scan\/v1"/);
 	assert.match(source, /fingerprint\s*:\s*scanFingerprint/);
 	assert.match(source, /devicePixelRatio\s*:\s*Number\(window\.devicePixelRatio\s*\|\|\s*1\)/);
 	assert.match(source, /createTreeWalker/);
+	assert.equal((source.match(/if\s*\(!visible\.rendered\)\s*continue;/g) ?? []).length, 2);
 	assert.doesNotMatch(source, /querySelectorAll\('\*'\)/);
 	assert.doesNotMatch(source, /document\.body\s*&&\s*document\.body\.innerText/);
 	assert.match(source, /scrollY\s*:\s*Number\(window\.scrollY\s*\|\|\s*0\)/);

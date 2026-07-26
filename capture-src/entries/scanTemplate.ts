@@ -119,34 +119,6 @@ export function scanPage(config: any) {
     } catch (_) { return false; }
     return false;
   }
-  function topLayerRoot(doc, elements) {
-    try { const modal = doc.querySelector(':modal'); if (modal && !isIgnored(modal) && !isHidden(modal)) return modal; } catch (_) { /* Unsupported selector. */ }
-    const body = doc.body || doc.documentElement;
-    if (!body) return null;
-    const vw = Math.max(doc.documentElement.clientWidth || 0, innerWidth || 0);
-    const vh = Math.max(doc.documentElement.clientHeight || 0, innerHeight || 0);
-    const viewportArea = Math.max(1, vw * vh);
-    const candidates = [];
-    for (const el of elements) {
-      if (isIgnored(el) || isHidden(el)) continue;
-      const r = el.getBoundingClientRect();
-      if (!r || r.width < 120 || r.height < 120) continue;
-      const style = styleOf(el);
-      const cls = String(el.className && typeof el.className === 'object' ? el.className.baseVal || '' : el.className || '').toLowerCase();
-      const cover = (r.width * r.height) / viewportArea;
-      const centerDiff = Math.abs((r.left + r.width / 2) - vw / 2) / Math.max(1, vw);
-      const hasControls = !!el.querySelector('button,input,textarea,select,a,[role="button"],[contenteditable="true"]');
-      const zIndex = style.position !== 'static' ? (parseInt(style.zIndex) || 0) : 0;
-      const keywordModalish = cls.includes('modal') || cls.includes('dialog') || cls.includes('mask') || cls.includes('overlay');
-      const popupish = cls.includes('popup') && (style.position === 'fixed' || style.position === 'absolute') && zIndex > 0;
-      const fixedLayer = style.position === 'fixed' && (zIndex > 10 || cover > 0.3 || cls.includes('fullscreen'));
-      const modalish = keywordModalish || popupish || fixedLayer;
-      if (!hasControls || !modalish || cover < 0.15 || cover > 1.2 || centerDiff > 0.35) continue;
-      candidates.push({ el, cover, zIndex });
-    }
-    candidates.sort((a, b) => b.zIndex - a.zIndex || b.cover - a.cover);
-    return candidates[0]?.el || null;
-  }
   function nativeRoleOf(el) {
     const tag = el.tagName;
     if (tag === 'A') return el.hasAttribute && el.hasAttribute('href') ? 'link' : null;
@@ -378,7 +350,8 @@ export function scanPage(config: any) {
     const r = el.getBoundingClientRect();
     const vw = Math.max(document.documentElement.clientWidth || 0, innerWidth || 0);
     const vh = Math.max(document.documentElement.clientHeight || 0, innerHeight || 0);
-    const inViewport = !!r && r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
+    const rendered = !!r && r.width > 0 && r.height > 0;
+    const inViewport = rendered && r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
     let hitOk = null;
     let hitTarget = null;
     let occluderSelector = null;
@@ -408,7 +381,7 @@ export function scanPage(config: any) {
     const rect = { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
     const documentRect = { x: Math.round(r.x + (window.scrollX || 0)), y: Math.round(r.y + (window.scrollY || 0)), width: Math.round(r.width), height: Math.round(r.height) };
     const point = { x: Math.round(Math.max(0, Math.min(vw - 1, r.left + r.width / 2))), y: Math.round(Math.max(0, Math.min(vh - 1, r.top + r.height / 2))) };
-    return { inViewport, hitOk, hitTarget, occluderSelector, rect, documentRect, point };
+    return { rendered, inViewport, hitOk, hitTarget, occluderSelector, rect, documentRect, point };
   }
   function scoreActionable(item) {
     let score = 0;
@@ -458,7 +431,7 @@ export function scanPage(config: any) {
       const isClickable = confidence !== undefined;
       if (!isEditable && !isClickable) continue;
       const visible = visibleInfo(el);
-      if (!visible.inViewport) continue;
+      if (!visible.rendered) continue;
       const checkedAttr = el.getAttribute && el.getAttribute('aria-checked');
       const checkedState = (el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox')) ? !!el.checked : checkedAttr === 'true' ? true : checkedAttr === 'false' ? false : undefined;
       const selectedAttr = el.getAttribute && el.getAttribute('aria-selected');
@@ -481,7 +454,7 @@ export function scanPage(config: any) {
       }
       const displayLabel = !label ? borrowedHitTargetLabel(visible) : '';
       const scope = repeatedItemScope(el, itemScopes, root);
-      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label, ...(displayLabel ? { displayLabel } : {}), text: elText, clickable: isClickable, editable: isEditable, actionConfidence: isEditable ? 'high' : confidence, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', focused: document.activeElement === el, ...(checkedState === undefined ? {} : { checked: checkedState }), ...(selectedState === undefined ? {} : { selected: selectedState }), ...((pressedAttr === 'true' || pressedAttr === 'false') ? { pressed: pressedAttr === 'true' } : {}), ...((expandedAttr === 'true' || expandedAttr === 'false') ? { expanded: expandedAttr === 'true' } : {}), ...(currentAttr ? { current: currentAttr } : {}), ...(el.tagName === 'INPUT' && el.type ? { inputKind: String(el.type).toLowerCase() } : {}), ...(controlsSelectors.length ? { controlsSelectors } : {}), ...(ownsSelectors.length ? { ownsSelectors } : {}), ...((expandedAttr === 'true' || expandedAttr === 'false') && controlsSelectors.length ? { expandedTargetSelectors: controlsSelectors } : {}), ...(edgeHint.position ? { position: edgeHint.position } : {}), ...(edgeHint.edgeUtility ? { edgeUtility: true } : {}), handlers: handlers.slice(0, 6), rect: visible.rect, documentRect: visible.documentRect, point: visible.point, hitOk: visible.hitOk, hitTarget: visible.hitTarget, ...(scope ? { scope } : {}), ...((el.tagName === 'A' || el.tagName === 'AREA') && el.href ? { href: String(el.href) } : {}), ...(visible.hitOk === false && visible.occluderSelector ? { occluderSelector: visible.occluderSelector } : {}) };
+      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label, ...(displayLabel ? { displayLabel } : {}), text: elText, clickable: isClickable, editable: isEditable, actionConfidence: isEditable ? 'high' : confidence, visible: true, inViewport: visible.inViewport, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', focused: document.activeElement === el, ...(checkedState === undefined ? {} : { checked: checkedState }), ...(selectedState === undefined ? {} : { selected: selectedState }), ...((pressedAttr === 'true' || pressedAttr === 'false') ? { pressed: pressedAttr === 'true' } : {}), ...((expandedAttr === 'true' || expandedAttr === 'false') ? { expanded: expandedAttr === 'true' } : {}), ...(currentAttr ? { current: currentAttr } : {}), ...(el.tagName === 'INPUT' && el.type ? { inputKind: String(el.type).toLowerCase() } : {}), ...(controlsSelectors.length ? { controlsSelectors } : {}), ...(ownsSelectors.length ? { ownsSelectors } : {}), ...((expandedAttr === 'true' || expandedAttr === 'false') && controlsSelectors.length ? { expandedTargetSelectors: controlsSelectors } : {}), ...(edgeHint.position ? { position: edgeHint.position } : {}), ...(edgeHint.edgeUtility ? { edgeUtility: true } : {}), handlers: handlers.slice(0, 6), rect: visible.rect, documentRect: visible.documentRect, ...(visible.inViewport ? { point: visible.point } : {}), hitOk: visible.hitOk, hitTarget: visible.hitTarget, ...(scope ? { scope } : {}), ...((el.tagName === 'A' || el.tagName === 'AREA') && el.href ? { href: String(el.href) } : {}), ...(visible.hitOk === false && visible.occluderSelector ? { occluderSelector: visible.occluderSelector } : {}) };
       item.priority = scoreActionable(item);
       out.push(item);
     }
@@ -534,23 +507,6 @@ export function scanPage(config: any) {
     }
     return { elements, textNodes, truncated: !!walker.nextNode() };
   }
-  function viewportLayerCandidates(doc) {
-    const vw = Math.max(doc.documentElement.clientWidth || 0, innerWidth || 0);
-    const vh = Math.max(doc.documentElement.clientHeight || 0, innerHeight || 0);
-    const out = [];
-    const seen = new Set();
-    // ponytail: three centerline samples cover modal/fullscreen overlays; widen only from failing browser evidence.
-    for (const y of [1, Math.max(1, Math.floor(vh / 2)), Math.max(1, vh - 1)]) {
-      let el = doc.elementFromPoint && doc.elementFromPoint(Math.max(1, Math.floor(vw / 2)), y);
-      for (let depth = 0; el && depth < 12; depth++, el = el.parentElement) {
-        if (el === doc.body || el === doc.documentElement) break;
-        if (seen.has(el)) continue;
-        seen.add(el);
-        out.push(el);
-      }
-    }
-    return out;
-  }
   function boundedPageText(nodes, maxChars) {
     const parts = [];
     let chars = 0;
@@ -575,16 +531,15 @@ export function scanPage(config: any) {
     for (const el of canvases) {
       if (!el || isIgnored(el) || isHidden(el)) continue;
       const visible = visibleInfo(el);
-      if (!visible.inViewport) continue;
+      if (!visible.rendered) continue;
       const label = clean(el.getAttribute('aria-label') || el.getAttribute('title') || el.id || 'canvas region', 120);
-      out.push({ index: out.length, tag: 'canvas', role: el.getAttribute('role') || 'img', action: label, label, selector: selectorFor(el), point: visible.point, rect: visible.rect, hitOk: visible.hitOk, clickable: clickConfidence(el, styleOf(el), frameworkHandlers(el)) !== undefined });
+      out.push({ index: out.length, tag: 'canvas', role: el.getAttribute('role') || 'img', action: label, label, selector: selectorFor(el), point: visible.point, rect: visible.rect, inViewport: visible.inViewport, hitOk: visible.hitOk, clickable: clickConfidence(el, styleOf(el), frameworkHandlers(el)) !== undefined });
     }
-    return out.slice(0, 12);
+    return out;
   }
   const documentRoot = document.body || document.documentElement;
   const nodeLimit = Math.max(1, options.maxNodes);
-  const topRoot = topLayerRoot(document, viewportLayerCandidates(document));
-  const scanRoot = topRoot || documentRoot;
+  const scanRoot = documentRoot;
   const scanRead = boundedDescendants(scanRoot, Math.max(0, nodeLimit - 1));
   const scanElements = scanRoot ? [scanRoot].concat(scanRead.elements) : [];
   const nodeCount = scanElements.length;
@@ -594,7 +549,6 @@ export function scanPage(config: any) {
     const targetMap = new Map();
     const pairs = [];
     for (const el of elements) {
-      if (pairs.length >= 100) break;
       if (!el.hasAttribute || !el.hasAttribute('aria-controls') && !el.hasAttribute('aria-owns')) continue;
       const ctlSelectors = refTargets(el, 'aria-controls', targetMap);
       const ownsSelectors = refTargets(el, 'aria-owns', targetMap);
@@ -630,7 +584,6 @@ export function scanPage(config: any) {
   const pageText = textRead.text;
   if (textRead.truncated) truncated = true;
   const headings = scanElements.filter(node => node.matches && node.matches('h1,h2,h3,h4,h5,h6,[role="heading"]'))
-    .slice(0, 100)
     .map(node => String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200))
     .filter(Boolean);
   const scanFingerprint = {

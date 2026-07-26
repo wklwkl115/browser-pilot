@@ -207,7 +207,6 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 		actionSpace,
 		...(isRecord(focus.relations) ? { relations: focus.relations as PageObservationV3["relations"] } : {}),
 		...(isRecord(input.summary.identity) ? { identity: input.summary.identity } : {}),
-		...(isRecord(input.summary.inference) ? { inference: input.summary.inference as PageObservationV3["inference"] } : {}),
 		...(input.diff ? { diff: input.diff } : {}),
 		...(input.treeDiff ? { treeDiff: input.treeDiff } : {}),
 		...(input.causal ? { causal: input.causal } : {}),

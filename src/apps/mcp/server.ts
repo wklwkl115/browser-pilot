@@ -12,7 +12,7 @@ import { getJsonPath } from "../../utils/jsonPath.js";
 import { redactSensitiveText, redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
 import { PAGE_OBSERVATION_VIEW_JSON_SCHEMA, type PageObservationV3 } from "../../kernels/abml/pageObservation.js";
 import { isPageObservationV3, isPageObservationView } from "../../validation/pageContracts.js";
-import { OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, publicCausal, publicCollection, publicGist, publicInference, publicRelations, publicSnapshotProjection, publicTreeDiff, publicVisual, publicWarnings, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
+import { OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, publicCausal, publicCollection, publicGist, publicRelations, publicSnapshotProjection, publicTreeDiff, publicVisual, publicWarnings, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
 import { publicToolValue } from "../../utils/toolResult.js";
 import { artifactResourceUri } from "../../artifacts/artifactFiles.js";
 
@@ -152,7 +152,6 @@ function completeSemanticObservation(observation: PageObservationV3): Record<str
 	const gist = publicGist(observation.gist, title);
 	const visual = publicVisual(observation.visual);
 	const causal = publicCausal(observation.causal);
-	const inference = publicInference(observation.inference);
 	const relations = publicRelations(observation.relations);
 	const snapshotProjection = publicSnapshotProjection(observation.snapshotProjection);
 	const treeDiff = publicTreeDiff(observation.treeDiff);
@@ -173,7 +172,6 @@ function completeSemanticObservation(observation: PageObservationV3): Record<str
 		...(outline?.length ? { outline } : {}),
 		...(observation.actionSpace ? { actionSpace: observation.actionSpace } : {}),
 		...(relations ? { relations } : {}),
-		...(inference ? { inference } : {}),
 		...(causal ? { causal } : {}),
 		...(treeDiff ? { treeDiff } : {}),
 		...(snapshotProjection ? { snapshotProjection } : {}),

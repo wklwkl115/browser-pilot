@@ -89,6 +89,7 @@ export interface ScanCanvasRegion {
 	selector: string;
 	point: ScanPoint;
 	rect: ScanRect;
+	inViewport?: boolean;
 	hitOk: boolean | null;
 	clickable: boolean;
 	text?: string;
@@ -191,7 +192,7 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 			properties: {
 				actionables: { type: "array", items: { type: "object", properties: actionableProperties, anyOf: [{ required: ["selector"] }, { required: ["sourceSelector"] }], additionalProperties: false } },
 				listHints: { type: "array", items: { type: "object", properties: { selector: stringSchema, itemCount: numberSchema, firstItemPreview: stringSchema, containerLabel: stringSchema }, required: ["selector", "itemCount", "firstItemPreview"], additionalProperties: false } },
-				canvasRegions: { type: "array", items: { type: "object", properties: { index: numberSchema, tag: stringSchema, role: stringSchema, action: stringSchema, label: stringSchema, selector: stringSchema, point: pointSchema, rect: rectSchema, hitOk: nullableBooleanSchema, clickable: booleanSchema, text: stringSchema, visible: booleanSchema }, required: ["index", "tag", "role", "action", "label", "selector", "point", "rect", "hitOk", "clickable"], additionalProperties: false } },
+				canvasRegions: { type: "array", items: { type: "object", properties: { index: numberSchema, tag: stringSchema, role: stringSchema, action: stringSchema, label: stringSchema, selector: stringSchema, point: pointSchema, rect: rectSchema, inViewport: booleanSchema, hitOk: nullableBooleanSchema, clickable: booleanSchema, text: stringSchema, visible: booleanSchema }, required: ["index", "tag", "role", "action", "label", "selector", "point", "rect", "hitOk", "clickable"], additionalProperties: false } },
 			},
 			required: ["actionables", "listHints", "canvasRegions"],
 			additionalProperties: false,

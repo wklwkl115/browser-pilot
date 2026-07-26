@@ -336,7 +336,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		commandDefinitions = [...options.commandDefinitions];
 	} else {
 		const adapter = new CommandManifestIndex();
-		defineBrowserCommands(adapter, bridgeServer, ensureStarted);
+		defineBrowserCommands(adapter, ensureStarted);
 		commandDefinitions = adapter.getCommands();
 	}
 	const toolByName = new Map<string, CommandDefinition>(commandDefinitions.map((def) => [def.name, def]));

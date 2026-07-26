@@ -4,7 +4,6 @@ import type { CausalEvent, CausalRequest, CausalSummary } from "./causal.js";
 import type { TreeDiff } from "./treeDiff.js";
 import type { SnapshotProjection } from "./snapshotProjection.js";
 import type { RelationSummary } from "./relations.js";
-import type { DetectedIntent, InferenceSummary } from "./inference.js";
 import type { PageReanchorReason } from "../session/pageIdentity.js";
 
 export const PAGE_OBSERVATION_SCHEMA_V3 = "browser-page-observation/v3" as const;
@@ -101,7 +100,6 @@ export type PublicCausalSummary =
 	| { requests: CausalRequest[]; requestCount?: number; events?: CausalEvent[]; eventCount?: number }
 	| { unavailable: string; events?: CausalEvent[]; eventCount?: number };
 
-export type PublicInferenceSummary = { intents: Array<Pick<DetectedIntent, "intent" | "confidence" | "reason"> & { refs?: string[] }> };
 export type PublicRelationSummary = { summary: RelationSummary["summary"]; highlights: Array<Pick<RelationSummary["highlights"][number], "type" | "sourceRef" | "targetRef">>; highlightCount?: number };
 
 /** Saved artifacts use the same v3 root while retaining collection evidence. */
@@ -162,7 +160,6 @@ export interface PageObservationV3 {
 	actionSpace?: AgentActionSpace;
 	relations?: RelationSummary;
 	identity?: Record<string, unknown>;
-	inference?: InferenceSummary;
 	diff?: EntityDiff;
 	causal?: CausalSummary;
 	treeDiff?: TreeDiff;
@@ -182,7 +179,6 @@ export interface PageObservationView {
 	outline?: Array<Record<string, unknown>>;
 	actionSpace?: AgentActionSpace;
 	relations?: PublicRelationSummary;
-	inference?: PublicInferenceSummary;
 	causal?: PublicCausalSummary;
 	treeDiff?: Pick<TreeDiff, "summary">;
 	collections?: CompactCollection[];
@@ -306,7 +302,7 @@ export const PAGE_OBSERVATION_V3_JSON_SCHEMA = {
 		visual: VISUAL_OBSERVATION_SCHEMA,
 		gist: { type: "object" }, outline: { type: "array", items: { type: "object" } }, entities: { type: "array", items: { type: "object" } },
 		actionSpace: ACTION_SPACE_SCHEMA,
-		relations: { type: "object" }, identity: { type: "object" }, inference: { type: "object" }, diff: { type: "object" }, causal: { type: "object" }, treeDiff: { type: "object" }, snapshotProjection: { type: "object" }, collections: { type: "array", items: COLLECTION_SCHEMA },
+		relations: { type: "object" }, identity: { type: "object" }, diff: { type: "object" }, causal: { type: "object" }, treeDiff: { type: "object" }, snapshotProjection: { type: "object" }, collections: { type: "array", items: COLLECTION_SCHEMA },
 		providers: { type: "object", additionalProperties: PROVIDER_ITEM_SCHEMA },
 		frontier: { type: "object", properties: { items: { type: "array", items: FRONTIER_ITEM_SCHEMA } }, required: ["items"], additionalProperties: false },
 		diagnostics: { type: "object" },
@@ -379,18 +375,6 @@ const RELATIONS_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
-const INFERENCE_SCHEMA = {
-	type: "object",
-	properties: {
-		intents: { type: "array", items: { type: "object", properties: {
-			intent: { enum: ["login", "search", "filter-panel", "single-choice", "multi-choice", "expandable", "data-grid", "navigation", "dialog", "tabbed-interface", "alert-region", "form-dependency"] },
-			confidence: { enum: ["high", "medium", "low"] }, reason: { type: "string" }, refs: { type: "array", items: { type: "string", pattern: "^bp-ref://" } },
-		}, required: ["intent", "confidence"], additionalProperties: false } },
-	},
-	required: ["intents"],
-	additionalProperties: false,
-} as const;
-
 const CAUSAL_REQUEST_SCHEMA = {
 	type: "object",
 	properties: {
@@ -438,7 +422,6 @@ export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
 		outline: { type: "array", maxItems: 8, items: OUTLINE_ITEM_SCHEMA },
 		actionSpace: ACTION_SPACE_SCHEMA,
 		relations: RELATIONS_SCHEMA,
-		inference: INFERENCE_SCHEMA,
 		causal: CAUSAL_SCHEMA,
 		treeDiff: TREE_DIFF_SCHEMA,
 		collections: { type: "array", maxItems: 12, items: PUBLIC_COLLECTION_SCHEMA },
