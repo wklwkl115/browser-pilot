@@ -33,10 +33,6 @@ export function commandTimeoutMs(value: unknown, fallback: number, options: { al
 	return Math.min(asPositiveInt(value, fallback), MAX_COMMAND_TIMEOUT_MS);
 }
 
-export function artifactFallbackName(prefix: string, extension = "json"): string {
-	return `${prefix}-${Date.now()}.${extension}`;
-}
-
 export function targetTabId(params: { targetRef?: string }, body?: Record<string, unknown>): unknown {
 	return params.targetRef ?? body?.targetRef ?? body?.tabHandle ?? body?.tabId;
 }

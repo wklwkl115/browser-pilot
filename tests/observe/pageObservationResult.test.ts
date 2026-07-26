@@ -8,7 +8,20 @@ import { pageObservationResult } from "../../src/commands/resultMiddleware.ts";
 import { isPageObservationV3, isPageObservationView } from "../../src/validation/pageContracts.ts";
 import { OBSERVATION_RESOURCES_DETAIL_KEY, type ObservationResourceDescriptor } from "../../src/commands/observe/observationResources.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
-import { pruneObservationArtifacts } from "../../src/artifacts/artifactFiles.ts";
+import { artifactFallbackName, pruneObservationArtifacts } from "../../src/artifacts/artifactFiles.ts";
+
+test("artifact fallback names stay unique within one clock tick", () => {
+	const now = Date.now;
+	Date.now = () => 123;
+	try {
+		const first = artifactFallbackName("observe-scan");
+		const second = artifactFallbackName("observe-scan");
+		assert.notEqual(first, second);
+		assert.match(first, /^observe-scan-123-[0-9a-f-]+\.json$/);
+	} finally {
+		Date.now = now;
+	}
+});
 
 test("PageObservation returns a bounded view and keeps its canonical artifact", async () => {
 	const built = buildPageObservation({
@@ -102,6 +115,11 @@ test("observation artifacts retain only a recent bounded window", async () => {
 		await pruneObservationArtifacts(visualEffect);
 		assert.equal((await readdir(artifacts)).filter((name) => name.startsWith("observe-") || name.startsWith("visual-effect-")).length, 256);
 		await access(visualEffect);
+		const screenshot = path.join(artifacts, "screenshot-1.png");
+		await writeFile(screenshot, "png");
+		await pruneObservationArtifacts(screenshot);
+		assert.equal((await readdir(artifacts)).filter((name) => /^(?:observe-|visual-effect-|screenshot-)/.test(name)).length, 256);
+		await access(screenshot);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

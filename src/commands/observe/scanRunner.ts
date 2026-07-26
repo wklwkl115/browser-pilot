@@ -1,8 +1,8 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { BrowserBridgeError, compactError } from "../../utils/errors.js";
 import { isRecord } from "../../utils/params.js";
-import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
-import { artifactFallbackName, bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, type CommandResultContext } from "../commandRuntime.js";
+import { artifactFallbackName, resolveArtifactPath } from "../../artifacts/artifactFiles.js";
+import { bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, type CommandResultContext } from "../commandRuntime.js";
 import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, type ObserveToolParams } from "./common.js";
 import { runObserveProviders } from "./scanProviders.js";

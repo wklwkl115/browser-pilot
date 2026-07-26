@@ -479,7 +479,7 @@ test("dedicated screenshot and browser_command dispatch their native commands", 
 	const screenshotResult = parseResult(rawScreenshotResult);
 	const saved = rawScreenshotResult.details?.saved as Record<string, unknown>;
 	const screenshotBytes = await readFile(String(saved.path));
-	assert.match(String(saved.path), /screenshot-\d+\.png$/);
+	assert.match(String(saved.path), /screenshot-\d+-[0-9a-f-]+\.png$/);
 	assert.equal(saved.bytes, screenshotBytes.length);
 	assert.equal(screenshotBytes.toString("base64"), VISUAL_PNG.slice(VISUAL_PNG.indexOf(",") + 1));
 	assert.equal(screenshotResult.captured, true);
@@ -714,7 +714,7 @@ test("commands execution: visual input.ref derives an ephemeral region, validate
 		afterSha256: screenshotSha256(VISUAL_PNG),
 		resourceUri: (outcome.effect as { visual: { resourceUri: string } }).visual.resourceUri,
 	});
-	assert.match((outcome.effect as { visual: { resourceUri: string } }).visual.resourceUri, /^browser-pilot:\/\/artifact\/visual-effect-\d+\.png$/);
+	assert.match((outcome.effect as { visual: { resourceUri: string } }).visual.resourceUri, /^browser-pilot:\/\/artifact\/visual-effect-\d+-[0-9a-f-]+\.png$/);
 
 	const driftRuntime = createRuntime({
 		async sendCommand(command, options) {

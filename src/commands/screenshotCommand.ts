@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { decodeDataUrl, resolveArtifactPath, saveBuffer } from "../artifacts/artifactFiles.js";
+import { artifactFallbackName, decodeDataUrl, pruneObservationArtifacts, resolveArtifactPath, saveBuffer } from "../artifacts/artifactFiles.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, strictCommandParameters } from "./commandShared.js";
@@ -36,10 +36,11 @@ export function defineScreenshotCommand({ commands, ensureStarted }: CommandRegi
 				let saved: Awaited<ReturnType<typeof saveBuffer>> | undefined;
 				let dimensions: { width: number; height: number } | undefined;
 				if (screenshot) {
-					const outputPath = resolveArtifactPath(ctx, undefined, `screenshot-${Date.now()}.png`);
+					const outputPath = resolveArtifactPath(ctx, undefined, artifactFallbackName("screenshot", "png"));
 					const decoded = decodeDataUrl(screenshot);
 					dimensions = imageDimensions(decoded.buffer);
 					saved = await saveBuffer(decoded.buffer, outputPath, decoded.mime);
+					void pruneObservationArtifacts(saved.path);
 				}
 				return jsonResult({ captured: Boolean(saved), ...(dimensions ?? {}), ...(saved ? { mime: saved.mime } : {}) }, { saved });
 			});

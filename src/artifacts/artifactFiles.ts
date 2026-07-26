@@ -1,8 +1,10 @@
-import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { browserArtifactPrivacyMetadata } from "./artifactPrivacy.js";
+import { atomicWriteText } from "../utils/fsAtomic.js";
 
-const OBSERVATION_ARTIFACT = /^(?:observe-[a-z0-9-]+-\d+\.(?:json|png)|visual-effect-\d+\.png)$/i;
+const OBSERVATION_ARTIFACT = /^(?:observe-[a-z0-9-]+\.(?:json|png)|(?:visual-effect|screenshot)-[a-z0-9-]+\.png)$/i;
 const OBSERVATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const OBSERVATION_MAX_FILES = 256;
 const OBSERVATION_MAX_BYTES = 64 * 1024 * 1024;
@@ -12,6 +14,10 @@ export function resolveArtifactPath(ctx: { cwd?: string } | undefined, requested
 	const base = ctx?.cwd || process.cwd();
 	const target = requested?.trim() || path.join(".browser-pilot", "artifacts", fallbackName);
 	return path.isAbsolute(target) ? target : path.resolve(base, target);
+}
+
+export function artifactFallbackName(prefix: string, extension = "json"): string {
+	return `${prefix}-${Date.now()}-${randomUUID()}.${extension}`;
 }
 
 export function artifactResourceUri(savedPath: string, projectRoot: string): string | undefined {
@@ -24,16 +30,7 @@ export function artifactResourceUri(savedPath: string, projectRoot: string): str
 
 export async function saveTextArtifact(ctx: { cwd?: string } | undefined, requested: string | undefined, fallbackName: string, content: string): Promise<{ path: string; chars: number; bytes: number; privacy: Record<string, unknown> }> {
 	const outputPath = resolveArtifactPath(ctx, requested, fallbackName);
-	const dir = path.dirname(outputPath);
-	const tempPath = path.join(dir, `.${path.basename(outputPath)}.${process.pid}.${Date.now()}.tmp`);
-	await mkdir(dir, { recursive: true });
-	try {
-		await writeFile(tempPath, content, "utf8");
-		await rename(tempPath, outputPath);
-	} catch (error) {
-		await rm(tempPath, { force: true }).catch(() => {});
-		throw error;
-	}
+	await atomicWriteText(outputPath, content);
 	return { path: outputPath, chars: content.length, bytes: Buffer.byteLength(content, "utf8"), privacy: browserArtifactPrivacyMetadata() };
 }
 
