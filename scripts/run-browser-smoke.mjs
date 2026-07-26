@@ -371,7 +371,7 @@ try {
 	if (untouched.result !== undefined && untouched.result !== "[undefined]") throw new Error(`stale input.ref clicked the replacement element: ${JSON.stringify(untouched)}`);
 	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const root=document.createElement('div'),fragment=document.createDocumentFragment();root.id='large-dom';for(let i=0;i<20000;i++){const span=document.createElement('span');span.textContent=`node ${i}`;fragment.append(span)}root.append(fragment);document.body.append(root);return true})()" }), "large DOM fixture");
 	const boundedObservation = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, mode: "full", visual: "never" }), "bounded large DOM observe", 20_000);
-	if (boundedObservation.content?.complete !== false || boundedObservation.actionSpace?.coverage?.captureComplete !== false) throw new Error(`large DOM observation did not report its bounded frontier: ${JSON.stringify(boundedObservation)}`);
+	if (boundedObservation.content?.complete !== false || boundedObservation.actionSpace?.coverage?.captureComplete !== true) throw new Error(`large DOM observation did not preserve its bounded content and complete action coverage: ${JSON.stringify(boundedObservation)}`);
 	const burst = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{let n=0;const timer=setInterval(()=>{document.documentElement.dataset.burst=String(++n);if(n===4)clearInterval(timer)},15);return true})()" }), "burst browser_execute");
 	requireEffect(burst, "burst browser_execute");
 	const popupUrl = `${fixture.url}popup`;

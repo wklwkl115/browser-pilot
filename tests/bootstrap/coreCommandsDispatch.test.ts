@@ -20,6 +20,7 @@ const navigationListeners: Array<(details: Record<string, unknown> & { tabId?: n
 const runtimeMessageListeners: Array<(message: unknown, sender: Record<string, unknown>, sendResponse: (response: unknown) => void) => boolean> = [];
 const sessionStorage: Record<string, unknown> = {};
 let lastTabMessageOptions: Record<string, unknown> | undefined;
+let lastTabMessage: Record<string, unknown> | undefined;
 let failRunScriptOnce = false;
 let failNotAttachedOnce = false;
 let failAlreadyAttachedOnce = false;
@@ -145,6 +146,7 @@ const chromeStub = {
 		async sendMessage(_tabId: number, message: unknown, options?: Record<string, unknown>) {
 			lastTabMessageOptions = options;
 			const record = message && typeof message === "object" && !Array.isArray(message) ? message as Record<string, unknown> : {};
+			lastTabMessage = record;
 			if (record.cmd === "browserPilot.contentFingerprint") return { ok: true, data: { changeSeq: 1, url: "https://example.test/", title: "Example", readyState: "complete", visibleCount: 1, interactiveCount: 1, capturedAt: Date.now() } };
 			return undefined;
 		},
@@ -233,6 +235,7 @@ test("core commands expose only extension reload and target fingerprint reads to
 	assert.equal((await coreCommands.dispatchBrowserPilotBridgeCommand({ cmd: "management", method: "list" }, sender())).error_code, "INVALID_RULE");
 	assert.equal((await coreCommands.dispatchBrowserPilotBridgeCommand({ cmd: "content.fingerprint", tabId: 7 }, sender())).ok, true);
 	assert.deepEqual(lastTabMessageOptions, { frameId: 0 });
+	assert.deepEqual(lastTabMessage, { cmd: "browserPilot.contentFingerprint" });
 });
 
 test("core command batch validates native commands before dispatch", async () => {
