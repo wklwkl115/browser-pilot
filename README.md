@@ -13,6 +13,8 @@ Browser Pilot connects MCP clients to a local Node daemon and a Manifest V3 exte
 ![MCP](https://img.shields.io/badge/MCP-compatible-22D3EE)
 ![Chrome and Edge](https://img.shields.io/badge/Chrome%20%2F%20Edge-Manifest%20V3-F59E0B?logo=googlechrome&logoColor=white)
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 [Demos](#real-workflows) | [Quick start](#quick-start) | [Tools](#tools) | [Workflow](#agent-workflow) | [Architecture](#architecture) | [Security](#security-model) | [Development](#development)
 
 <img src="https://raw.githubusercontent.com/wklwkl115/browser-pilot/main/docs/assets/browser-pilot-flow.svg" alt="Browser Pilot routes MCP requests through a local daemon and Manifest V3 extension to a real browser tab" width="100%">
