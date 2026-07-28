@@ -1,6 +1,6 @@
 {
   "name": "browser-pilot-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "license": "Apache-2.0",
   "description": "Agent-driven browser automation: a Chrome extension + Node bridge exposing composable browser_* tools for scanning, execution, and evidence capture.",
   "keywords": [
