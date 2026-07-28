@@ -63,6 +63,8 @@ jobs:
           npm init --yes
           npm install "${{ steps.artifact.outputs.tarball }}"
           node --input-type=module --eval "import { defineBrowserCommands } from 'browser-pilot-mcp'; if (typeof defineBrowserCommands !== 'function') process.exit(1)"
+          BROWSER_PILOT_BROWSER=/bin/true BROWSER_PILOT_DAEMON_STATE_DIR="$PWD/browser-pilot-state" ./node_modules/.bin/browser-pilot-mcp install --browser chrome
+          test -f "$PWD/browser-pilot-state/extension/manifest.json"
 
       - name: Upload the only publishable artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

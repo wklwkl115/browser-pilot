@@ -47,31 +47,17 @@ Each GIF shows one complete browser task: the goal, the visible action, and the 
 
 ## Quick start
 
-### 1. Build from source
+### 1. Install the extension
 
 ```bash
-git clone https://github.com/wklwkl115/browser-pilot.git
-cd browser-pilot
-npm ci
-npm run build
-npm run build:bridge
+npx --yes browser-pilot-mcp@latest install
 ```
 
-### 2. Load the extension
+The installer copies the packaged extension to `~/.browser-pilot/extension` and opens the matching Chrome or Edge extensions page. On first install, enable **Developer mode**, choose **Load unpacked**, and select the directory printed by the command. This confirmation cannot be bypassed for an unpacked extension by browser security policy.
 
-Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `bridge/browser_pilot_bridge`.
+Use `--browser edge` or `--browser chrome` when both browsers are installed. After an npm upgrade, run the installer again and click **Reload** on the page it opens.
 
-### 3. Configure your MCP client
-
-```toml
-[mcp_servers.browser-pilot]
-command = "node"
-args = ["/absolute/path/to/browser-pilot/dist/src/apps/mcp/bin.js"]
-```
-
-On the first tool call, the MCP process starts or reuses the local daemon automatically. It scopes artifact resources to the MCP client's first filesystem root; clients that do not expose roots fall back to `BROWSER_PILOT_PROJECT_ROOT`, then the process working directory.
-
-To use the npm release instead, load the extension shipped in the same `browser-pilot-mcp` release and use:
+### 2. Configure your MCP client
 
 ```toml
 [mcp_servers.browser-pilot]
@@ -79,7 +65,23 @@ command = "npx"
 args = ["--yes", "--package", "browser-pilot-mcp@latest", "browser-pilot-mcp"]
 ```
 
-Keep the extension and MCP package on the same version.
+On the first tool call, the MCP process starts or reuses the local daemon automatically. It scopes artifact resources to the MCP client's first filesystem root; clients that do not expose roots fall back to `BROWSER_PILOT_PROJECT_ROOT`, then the process working directory.
+
+<details>
+<summary><strong>Build from source</strong></summary>
+
+```bash
+git clone https://github.com/wklwkl115/browser-pilot.git
+cd browser-pilot
+npm ci
+npm run build
+npm run build:bridge
+npm run mcp -- install
+```
+
+Then point the MCP client at `dist/src/apps/mcp/bin.js` with `command = "node"`.
+
+</details>
 
 ## Tools
 
