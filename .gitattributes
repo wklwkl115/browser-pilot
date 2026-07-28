@@ -26,3 +26,4 @@
 .gitattributes text eol=lf
 .gitignore text eol=lf
 .npmignore text eol=lf
+THIRD_PARTY_NOTICES text eol=lf

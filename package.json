@@ -74,12 +74,9 @@
     "typescript-eslint": "^8.65.0"
   },
   "files": [
-    "CHANGELOG.md",
-    "CODE_OF_CONDUCT.md",
     "README.md",
-    "THIRD_PARTY_NOTICES.md",
+    "THIRD_PARTY_NOTICES",
     "LICENSE",
-    "SECURITY.md",
     "bridge/",
     "dist/"
   ]

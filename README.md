@@ -13,7 +13,7 @@ Browser Pilot connects MCP clients to a local Node daemon and a Manifest V3 exte
 ![MCP](https://img.shields.io/badge/MCP-compatible-22D3EE)
 ![Chrome and Edge](https://img.shields.io/badge/Chrome%20%2F%20Edge-Manifest%20V3-F59E0B?logo=googlechrome&logoColor=white)
 
-[Demos](#real-workflows) | [Quick start](#quick-start) | [Tools](#tools) | [Workflow](#agent-workflow) | [Architecture](#architecture) | [Security](#security-model) | [Contributing](CONTRIBUTING.md)
+[Demos](#real-workflows) | [Quick start](#quick-start) | [Tools](#tools) | [Workflow](#agent-workflow) | [Architecture](#architecture) | [Security](#security-model) | [Development](#development)
 
 <img src="https://raw.githubusercontent.com/wklwkl115/browser-pilot/main/docs/assets/browser-pilot-flow.svg" alt="Browser Pilot routes MCP requests through a local daemon and Manifest V3 extension to a real browser tab" width="100%">
 
@@ -151,7 +151,7 @@ Source is organized by responsibility: `src/apps` contains the MCP server and da
 - The WebSocket bridge accepts upgrades only from the configured Browser Pilot extension origin, and command dispatch rejects a stale reported extension build.
 - Page content is always untrusted.
 - Browser Pilot does not remove page security headers or suppress page dialogs.
-- Security reports follow [SECURITY.md](SECURITY.md), not public issues.
+- Report vulnerabilities through GitHub private vulnerability reporting. If it is unavailable, open a minimal public issue requesting a private contact path; never include secrets or private evidence.
 
 ## Development
 
@@ -163,10 +163,6 @@ mise run smoke-browser
 ```
 
 `mise run verify` is the canonical gate. Browser integration changes should also pass `mise run smoke-browser`. Runtime source lives under `src/` and `capture-src/`; `dist/` and `bridge/browser_pilot_bridge/` are generated outputs. The bridge host and port range are owned by `bridge/browser_bridge_config.json`; run `npm run sync:config` after changing it.
-
-## Contributing
-
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## License
 
