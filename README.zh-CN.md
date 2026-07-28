@@ -47,31 +47,17 @@ Browser Pilot 直接使用 Chrome 或 Edge 中已打开的标签页和登录会�
 
 ## 快速开始
 
-### 1. 从源码构建
+### 1. 安装扩展
 
 ```bash
-git clone https://github.com/wklwkl115/browser-pilot.git
-cd browser-pilot
-npm ci
-npm run build
-npm run build:bridge
+npx --yes browser-pilot-mcp@latest install
 ```
 
-### 2. 加载扩展
+安装器会把 npm 包内的扩展复制到 `~/.browser-pilot/extension`，并自动打开对应的 Chrome 或 Edge 扩展管理页。首次安装时，启用**开发者模式**，点击**加载已解压的扩展程序**，选择命令输出的目录。浏览器安全策略不允许脚本绕过这次确认。
 
-打开 `chrome://extensions` 或 `edge://extensions`，启用**开发者模式**，点击**加载已解压的扩展程序**，选择 `bridge/browser_pilot_bridge`。
+同时安装了两个浏览器时，可通过 `--browser edge` 或 `--browser chrome` 指定。npm 包升级后再次运行安装命令，然后在自动打开的页面点击**重新加载**。
 
-### 3. 配置 MCP 客户端
-
-```toml
-[mcp_servers.browser-pilot]
-command = "node"
-args = ["/absolute/path/to/browser-pilot/dist/src/apps/mcp/bin.js"]
-```
-
-首次调用工具时，MCP 进程会自动启动或复用本地守护进程。产物资源默认写入 MCP 客户端提供的第一个文件系统根目录；不支持 Roots 的客户端会依次回退到 `BROWSER_PILOT_PROJECT_ROOT` 和进程工作目录。
-
-如果使用 npm 发布版，请加载同一版本 `browser-pilot-mcp` 中附带的扩展，并改用：
+### 2. 配置 MCP 客户端
 
 ```toml
 [mcp_servers.browser-pilot]
@@ -79,7 +65,23 @@ command = "npx"
 args = ["--yes", "--package", "browser-pilot-mcp@latest", "browser-pilot-mcp"]
 ```
 
-扩展和 MCP 包必须保持同一版本。
+首次调用工具时，MCP 进程会自动启动或复用本地守护进程。产物资源默认写入 MCP 客户端提供的第一个文件系统根目录；不支持 Roots 的客户端会依次回退到 `BROWSER_PILOT_PROJECT_ROOT` 和进程工作目录。
+
+<details>
+<summary><strong>从源码构建</strong></summary>
+
+```bash
+git clone https://github.com/wklwkl115/browser-pilot.git
+cd browser-pilot
+npm ci
+npm run build
+npm run build:bridge
+npm run mcp -- install
+```
+
+然后将 MCP 客户端的 `command` 设为 `node`，并指向 `dist/src/apps/mcp/bin.js`。
+
+</details>
 
 ## 工具
 
