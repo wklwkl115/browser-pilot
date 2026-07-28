@@ -36,7 +36,7 @@ that loop.
 Pixel-only surfaces are the narrow exception, not a second page model. `browser_observe` keeps DOM+AX as
 the semantic backbone and may attach one coherent viewport screenshot plus normalized ABML target boxes.
 The screenshot is captured inside the same fingerprint bracket, exposed as an MCP image resource, and bound
-to a short-lived visual ref. Pixel actions must use that ref, its observation id, and normalized image points;
+to a short-lived visual ref. Pixel actions must use that ref and normalized image points;
 runtime rechecks the screenshot hash and bracketed page fingerprint, reverse-grounds the live node, then
 returns post-action pixel evidence. OCR or a vision model may interpret the image, but neither may mint a
 parallel identity graph or bypass ABML ownership, freshness, and execution policy.
@@ -51,6 +51,7 @@ The modules below make up the kernel's public surface — consumers import them 
 | `entity.ts` | `Entity` / `EntityState` / `EntityStructure` model + builders. |
 | `ax.ts` | **DOM↔AX merge** — backend identity plus bounded geometry/semantic enrichment, DOM-authoritative physical state, AX-authoritative accessible semantics/state/structure. |
 | `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |
+| `semanticText.ts` | Bounded semantic text sanitization and item-preview classification. |
 | `nodeKey.ts` | Stable cross-provider node keys. |
 | `identityBootstrap.ts` | Best-effort scan rect ↔ DOMSnapshot backend identity candidate diagnostics. |
 | `spatialIndex.ts` | Shared bounded spatial candidate index with correctness-preserving overflow fallback. |
