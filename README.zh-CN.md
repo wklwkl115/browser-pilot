@@ -1,0 +1,171 @@
+<div align="center">
+
+# Browser Pilot
+
+**让 AI 智能体以结构化方式控制真实的 Chrome 和 Edge 标签页。**
+
+Browser Pilot 通过本地 Node 守护进程和 Manifest V3 扩展连接 MCP 客户端，提供页面观察、脚本执行、原生浏览器命令、截图和操作证据。
+
+[![CI](https://github.com/wklwkl115/browser-pilot/actions/workflows/ci.yml/badge.svg)](https://github.com/wklwkl115/browser-pilot/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/browser-pilot-mcp?logo=npm&color=CB3837)](https://www.npmjs.com/package/browser-pilot-mcp)
+[![License](https://img.shields.io/github/license/wklwkl115/browser-pilot?color=2563EB)](LICENSE)
+![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-compatible-22D3EE)
+![Chrome and Edge](https://img.shields.io/badge/Chrome%20%2F%20Edge-Manifest%20V3-F59E0B?logo=googlechrome&logoColor=white)
+
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+[演示](#真实工作流) | [快速开始](#快速开始) | [工具](#工具) | [工作流程](#智能体工作流程) | [架构](#架构) | [安全](#安全模型) | [开发](#开发)
+
+<img src="https://raw.githubusercontent.com/wklwkl115/browser-pilot/main/docs/assets/browser-pilot-flow.svg" alt="Browser Pilot 将 MCP 请求经由本地守护进程和 Manifest V3 扩展发送到真实浏览器标签页" width="100%">
+
+</div>
+
+## 为什么使用 Browser Pilot
+
+| 先观察，再操作 | 使用浏览器原生能力 | 验证操作结果 |
+| --- | --- | --- |
+| 结构化页面模型会返回可操作控件、语义区域、框架和可继续展开的资源入口。 | 可执行页面 JavaScript、可信输入、Chrome API、CDP 命令、标签页操作、上传和下载。 | 写操作返回有界的页面变化；显式预期会返回目标级验证结果和差异。 |
+
+Browser Pilot 直接使用 Chrome 或 Edge 中已打开的标签页和登录会话。每个协议边界都有明确的状态所有者，页面内容始终视为不可信输入。
+
+## 真实工作流
+
+每个 GIF 都展示一项完整的浏览器任务，包括目标、可见操作和验证结果。这些演示由 [`scripts/capture-readme-demos.mjs`](scripts/capture-readme-demos.mjs) 在隔离的 Edge 会话中录制，所有状态变化均通过 Browser Pilot 的公开工具完成。
+
+### 创建并验证支持工单
+
+<img src="https://raw.githubusercontent.com/wklwkl115/browser-pilot/main/docs/assets/demo-form-verification.gif" alt="Browser Pilot 观察支持表单，填写字段，通过可信输入提交并验证结果" width="100%">
+
+### 查找并打开逾期发票
+
+<img src="https://raw.githubusercontent.com/wklwkl115/browser-pilot/main/docs/assets/demo-structured-research.gif" alt="Browser Pilot 通过观察得到的引用筛选发票表格，并打开匹配记录" width="100%">
+
+### 同步库存并验证结果
+
+<img src="https://raw.githubusercontent.com/wklwkl115/browser-pilot/main/docs/assets/demo-network-evidence.gif" alt="Browser Pilot 同步西区仓库库存并验证更新后的总量" width="100%">
+
+## 快速开始
+
+### 1. 从源码构建
+
+```bash
+git clone https://github.com/wklwkl115/browser-pilot.git
+cd browser-pilot
+npm ci
+npm run build
+npm run build:bridge
+```
+
+### 2. 加载扩展
+
+打开 `chrome://extensions` 或 `edge://extensions`，启用**开发者模式**，点击**加载已解压的扩展程序**，选择 `bridge/browser_pilot_bridge`。
+
+### 3. 配置 MCP 客户端
+
+```toml
+[mcp_servers.browser-pilot]
+command = "node"
+args = ["/absolute/path/to/browser-pilot/dist/src/apps/mcp/bin.js"]
+```
+
+首次调用工具时，MCP 进程会自动启动或复用本地守护进程。产物资源默认写入 MCP 客户端提供的第一个文件系统根目录；不支持 Roots 的客户端会依次回退到 `BROWSER_PILOT_PROJECT_ROOT` 和进程工作目录。
+
+如果使用 npm 发布版，请加载同一版本 `browser-pilot-mcp` 中附带的扩展，并改用：
+
+```toml
+[mcp_servers.browser-pilot]
+command = "npx"
+args = ["--yes", "--package", "browser-pilot-mcp@latest", "browser-pilot-mcp"]
+```
+
+扩展和 MCP 包必须保持同一版本。
+
+## 工具
+
+Browser Pilot 提供 5 个可组合的 MCP 工具：
+
+| 工具 | 用途 |
+| --- | --- |
+| `browser_observe` | 返回精简的页面内容、可执行操作、页面变化和可展开的语义资源。 |
+| `browser_execute` | 在当前标签页或引用所属标签页中执行页面 JavaScript。 |
+| `browser_command` | 执行可信输入以及经过校验的浏览器原生命令或 CDP 操作。 |
+| `browser_tabs` | 列出、切换、创建或关闭已连接的浏览器标签页。 |
+| `browser_screenshot` | 以 MCP 图片资源返回当前视口或完整页面截图。 |
+
+MCP 的 `tools/list` 响应是公开语法的准确信息源。[`src/commands/commandCatalog.ts`](src/commands/commandCatalog.ts) 维护公开工具列表，各个 `*Command.ts` 模块维护对应的参数结构和处理逻辑。原生命令结构可通过 `browser-pilot://native-command/<cmd>` 资源读取。
+
+`browser_observe` 支持 `mode: "auto" | "full" | "diff"` 和 `visual: "auto" | "always" | "never"`。内联结果只保留当前决策需要的数据，无法继续压缩的内容通过带类型的观察资源提供。`browser_tabs` 始终返回 `{ "tabs": [...] }`；`browser_screenshot` 返回截图元数据和图片资源。
+
+## 智能体工作流程
+
+1. 省略 `targetRef` 时使用当前选中的活动标签页。只在需要区分标签页时列出标签页；任务确实需要时再创建、切换或关闭。
+2. 只有需要理解页面时才调用 `browser_observe`。观察结果中的 `bp-ref` 会让后续操作自动路由到引用所属标签页。
+3. 页面 JavaScript 使用 `browser_execute`，原生浏览器操作使用 `browser_command`。同一页面内能够确定执行的 JavaScript 应合并到一次调用中。
+4. 写操作需要验证时添加 `expect`。只有下一步决策依赖新页面状态时才重新观察，额外语义资源也按需读取。
+
+```text
+观察 -> 选择 bp-ref -> 执行脚本或命令 -> 验证 -> 收集证据
+```
+
+<details>
+<summary><strong>执行与验证约定</strong></summary>
+
+`browser_execute` 提供 `browserPilot.refs`、`resolve(ref)`、`box(ref)` 和 `setValue(target, value)`。写操作按目标串行执行，并自动使用扩展/CDP 回退路径。
+
+成功的 `browser_execute` 和 `browser_command` 调用返回 `{ "result": ..., "effect"?: ..., "verification"?: ... }`；写操作可能附带 `effect` 和 `verification`。`expect` 可以是返回真值的 JavaScript 表达式，也可以是结构化的引用/状态后置条件，例如 `{ "ref": "bp-ref://control/...", "state": { "pressed": true } }`。结构化验证会在命令执行前后读取同一引用，融合 DOM 与目标可访问性状态，并返回目标级差异。
+
+原始 CDP 命令使用 `command: { cmd: "cdp", method: "Domain.method", params: {...} }`。目标仍通过工具级 `targetRef` 指定；运行时会话、物理目标、超时、附加和清理状态不属于公开参数。
+
+</details>
+
+## 架构
+
+```text
+AI agent
+   | MCP stdio
+   v
+MCP process -- local IPC --> Node daemon
+                                | WebSocket bridge
+                                v
+                         offscreen transport
+                                |
+                                v
+                       MV3 service worker
+                                | Chrome APIs / CDP
+                                v
+                        Chrome or Edge tab
+```
+
+| 状态 | 所有者 |
+| --- | --- |
+| MCP 协议和项目根目录 | 每个智能体独立的 MCP 进程 |
+| 守护进程生命周期 | 用户本地守护进程 |
+| 连接、待处理请求和目标写入队列 | `BrowserBridgeServer` |
+| 当前浏览器和标签页会话 | 会话注册表 |
+| Chrome API 和 CDP 会话 | MV3 Service Worker |
+| 已捕获证据 | 请求级项目产物根目录 |
+
+源码按职责组织：`src/apps` 包含 MCP 服务器和守护进程；`src/bridge` 负责传输与扩展；`src/commands` 维护公开工具结构和编排；`src/browser-command-runtime` 准备命令执行；`src/browser-page-runtime` 执行页面脚本；`src/browser-runtime` 适配浏览器 I/O；`src/kernels` 保持纯逻辑。页面扫描位于 `src/scan` 和 `capture-src`，观察结果组装位于 `src/commands/observe`。
+
+## 安全模型
+
+- WebSocket 桥只接受来自已配置 Browser Pilot 扩展来源的升级请求；扩展报告的构建版本过期时，命令分发会拒绝执行。
+- 页面内容始终是不可信输入。
+- Browser Pilot 不移除页面安全响应头，也不屏蔽页面对话框。
+- 安全漏洞请通过 GitHub 私密漏洞报告提交。如果该功能不可用，只在公开 issue 中请求私密联系方式，不要附带密钥、令牌或未脱敏证据。
+
+## 开发
+
+环境要求：Node.js 22+、Chrome 或 Edge，以及用于执行仓库任务的 [`mise`](https://mise.jdx.dev/)。
+
+```bash
+mise run verify
+mise run smoke-browser
+```
+
+`mise run verify` 是统一检查入口。涉及浏览器集成的改动还应通过 `mise run smoke-browser`。运行时代码位于 `src/` 和 `capture-src/`；`dist/` 与 `bridge/browser_pilot_bridge/` 是生成目录。桥接主机和端口范围由 `bridge/browser_bridge_config.json` 管理，修改后运行 `npm run sync:config`。
+
+## 许可证
+
+本项目使用 [Apache-2.0](LICENSE) 许可证。
