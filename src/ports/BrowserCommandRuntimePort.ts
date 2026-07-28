@@ -1,11 +1,10 @@
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
 import type { SessionObservationSnapshotInfo } from "../kernels/session/observationSnapshotRegistry.js";
-import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../kernels/session/perceptionLedger.js";
+import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey } from "../kernels/session/perceptionLedger.js";
 
 export type CommandPerceptionLedgerKey = PerceptionLedgerKey;
 export type CommandPerceptionLedgerFactState = PerceptionLedgerFactState;
 export type CommandPerceptionLedgerFrame = PerceptionLedgerFrame;
-export type CommandPerceptionTraceSnapshot = PerceptionTraceSnapshot;
 
 export type CommandObservationSnapshotInfo = SessionObservationSnapshotInfo;
 export type BrowserCommandRuntimeSnapshot = {
@@ -79,19 +78,15 @@ export interface BrowserCommandRecorderStatePort {
 export interface BrowserCommandPerceptionPort {
 	getPerceptionLedgerFrame?(key: CommandPerceptionLedgerKey): CommandPerceptionLedgerFrame | undefined;
 	recordPerceptionLedgerFrame?(frame: CommandPerceptionLedgerFrame): CommandPerceptionLedgerFrame;
-	recordPerceptionTraceTerms?(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>): CommandPerceptionTraceSnapshot;
-	perceptionTraceSnapshot?(browserSessionId?: string): CommandPerceptionTraceSnapshot;
 }
 
 export interface BrowserCommandRuntimePort extends
-		BrowserCommandSnapshotPort,
-		BrowserCommandDispatchPort,
-		BrowserCommandTabControlPort,
-		BrowserCommandObservationPort,
+	BrowserCommandSnapshotPort,
+	BrowserCommandDispatchPort,
+	BrowserCommandTabControlPort,
+	BrowserCommandObservationPort,
 	BrowserCommandRecorderStatePort,
 	BrowserCommandPerceptionPort {
 }
-
-export type BrowserCommandRelevanceTracePort = Pick<BrowserCommandPerceptionPort, "recordPerceptionTraceTerms">;
 
 export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo };

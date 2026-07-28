@@ -9,7 +9,7 @@ let cached: CommandDefinition[] | undefined;
 export function browserCommandDefinitions(): CommandDefinition[] {
 	if (cached) return cached;
 	const commands = new CommandManifestIndex();
-	defineBrowserCommands(commands, placeholderRuntime, noopEnsureStarted);
+	defineBrowserCommands(commands, noopEnsureStarted);
 	cached = commands.getCommands();
 	return cached;
 }

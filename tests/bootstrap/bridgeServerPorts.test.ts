@@ -264,9 +264,6 @@ test("BrowserBridgeServer command runtime port exposes snapshot, tabs and percep
 			assert.equal(port.getObservationSnapshot(observation.snapshotId)?.sourceMode, "scan");
 			assert.equal(port.listObservationSnapshots().some((item) => item.snapshotId === observation.snapshotId), true);
 
-			port.recordPerceptionTraceTerms?.(snapshot.browserSessionId, [{ term: "checkout", kind: "intent", weight: 1 }]);
-			assert.equal(port.perceptionTraceSnapshot?.(snapshot.browserSessionId).terms[0].term, "checkout");
-
 			port.recordKnownRecorderState?.("network", snapshot.browserSessionId, 7, { active: true, lastSeq: 9 });
 			port.recordKnownRecorderState?.("hook", snapshot.browserSessionId, 8, { active: true, lastSeq: 4 });
 			ws.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 8, url: "https://example.test/replaced", active: true }], replaced: [{ from: 7, to: 8 }] }));
@@ -302,6 +299,29 @@ test("BrowserBridgeServer pending request surface records ack/result lifecycle i
 		assert.deepEqual(result.data, { ok: true, tabs: [] });
 		assert.equal(server.snapshot().pending.length, 0);
 
+		ws.close();
+	});
+});
+
+test("BrowserBridgeServer ignores tab state before the extension handshake", async () => {
+	await withServer(async (server) => {
+		const ws = new WebSocket(bridgeUrl(server), { origin: EXTENSION_ORIGIN });
+		await new Promise<void>((resolve, reject) => {
+			ws.once("open", resolve);
+			ws.once("error", reject);
+		});
+		ws.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 99, url: "https://untrusted.test/", active: true }] }));
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(server.getTabs().length, 0);
+
+		ws.send(JSON.stringify({
+			type: "ext_ready",
+			bridge: { id: "bridge-1", extensionInstanceId: "instance-pre-ready", workerBootId: "worker-1", build: { buildId: readExpectedExtensionBuild().buildId } },
+			tabs: [{ id: 7, url: "https://trusted.test/", active: true }],
+		}));
+		const deadline = Date.now() + 1_000;
+		while (!server.getTabs().length && Date.now() < deadline) await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(server.getTabs()[0]?.url, "https://trusted.test/");
 		ws.close();
 	});
 });

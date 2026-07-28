@@ -44,42 +44,45 @@ async function waitForCreatedTabReady(tabId: number, timeoutMs: number): Promise
   return await probeTabCapabilities(tabId, tab, Math.max(100, deadline - Date.now()));
 }
 
-async function readContentFingerprintViaScript(tabId: number, drainDirty = false): Promise<JsonRecord> {
+async function readContentFingerprintViaScript(tabId: number): Promise<JsonRecord> {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
-    args: [drainDirty],
-    func: (d: boolean) => {
-      type BrowserPilotFallbackFingerprintState = { seq: number; at: number; since: number; overflow: boolean; o?: MutationObserver };
+    func: () => {
+      type BrowserPilotFallbackFingerprintState = { seq: number; at: number; epoch: string; o?: MutationObserver };
       const key = '__browserPilotFingerprintFallbackState__';
       const holder = globalThis as unknown as Record<string, BrowserPilotFallbackFingerprintState | undefined>;
       let state = holder[key];
       if (!state) {
-        state = { seq: 1, at: Date.now(), since: 1, overflow: false };
+        state = { seq: 1, at: Date.now(), epoch: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}` };
         holder[key] = state;
       }
+      if (!state.epoch) state.epoch = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
       if (!state.o && document.documentElement) {
-        state.o = new MutationObserver((m = []) => {
-          const p = state!.seq;
+        state.o = new MutationObserver(() => {
           state.seq += 1;
           state.at = Date.now();
-          if (!state.overflow) state.since = p;
-          if (m.length) state.overflow = true;
         });
         state.o.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
       }
-      const els = Array.from(document.body?.querySelectorAll('*') ?? []).slice(0, 500);
+      const root = document.body ?? document.documentElement;
+      const walker = root ? document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT) : undefined;
       let vc = 0;
-      for (const element of els) {
+      let ic = 0;
+      let scanned = 0;
+      while (walker && scanned < 500 && walker.nextNode()) {
+        scanned += 1;
+        const element = walker.currentNode as Element;
         try {
+          if (element.matches("a[href],button,input,textarea,select,[role='button'],[tabindex]")) ic += 1;
           const rect = element.getBoundingClientRect();
           if ((rect.width > 0 || rect.height > 0) && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) vc += 1;
         } catch {
           /* ignore per-node geometry errors */
         }
       }
-      const ic = document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length;
       const data = {
         changeSeq: state.seq,
+        observerEpoch: state.epoch,
         url: location.href,
         title: document.title,
         readyState: document.readyState,
@@ -91,16 +94,7 @@ async function readContentFingerprintViaScript(tabId: number, drainDirty = false
         visibleCount: vc,
         interactiveCount: ic,
         capturedAt: state.at,
-        dirty: {
-          roots: [],
-          overflow: state.overflow,
-          sinceSeq: state.since,
-        },
       };
-      if (d) {
-        state.overflow = false;
-        state.since = state.seq;
-      }
       return data;
     },
   });
@@ -202,7 +196,7 @@ async function handleContentFingerprintCommand(msg: BrowserPilotBridgeCommand, s
   if (!tabId) return bridgeError(BROWSER_PILOT_ERROR_CODES.NO_SESSION, 'content.fingerprint requires a tabId', { cmd: msg.cmd, tabId: msg.tabId });
   let messageError: unknown;
   try {
-    const response = coreRecord(await chrome.tabs.sendMessage(tabId, msg.drainDirty === true ? { cmd: 'browserPilot.contentFingerprint', drainDirty: true } : { cmd: 'browserPilot.contentFingerprint' }, { frameId: 0 }));
+    const response = coreRecord(await chrome.tabs.sendMessage(tabId, { cmd: 'browserPilot.contentFingerprint' }, { frameId: 0 }));
     if (response.ok !== false) {
       const data = coreRecord(response.data ?? response);
       const identity = browserPilotPageIdentityForTab(tabId, typeof data.url === 'string' ? data.url : sender.tab?.url);
@@ -213,7 +207,7 @@ async function handleContentFingerprintCommand(msg: BrowserPilotBridgeCommand, s
     messageError = e;
   }
   try {
-    const data = await readContentFingerprintViaScript(tabId, msg.drainDirty === true);
+    const data = await readContentFingerprintViaScript(tabId);
     const identity = browserPilotPageIdentityForTab(tabId, typeof data.url === 'string' ? data.url : sender.tab?.url);
     return { ok: true, data: { ...data, ...(identity ? { pageEpoch: identity.pageEpoch, ...(identity.documentId ? { documentId: identity.documentId } : {}) } : {}) } };
   } catch (scriptError) {

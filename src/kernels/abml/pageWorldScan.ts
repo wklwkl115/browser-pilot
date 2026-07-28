@@ -53,6 +53,7 @@ export interface ScanActionable {
 	hitOk?: boolean | null;
 	hitTarget?: ScanHitTarget | null;
 	href?: string;
+	rel?: string;
 	occluderSelector?: string;
 	priority?: number;
 	name?: string;
@@ -89,6 +90,7 @@ export interface ScanCanvasRegion {
 	selector: string;
 	point: ScanPoint;
 	rect: ScanRect;
+	inViewport?: boolean;
 	hitOk: boolean | null;
 	clickable: boolean;
 	text?: string;
@@ -162,7 +164,7 @@ const actionableProperties = {
 	expanded: booleanSchema, visible: booleanSchema, inViewport: booleanSchema, current: stringSchema, inputKind: stringSchema,
 	controlsSelectors: stringArraySchema, ownsSelectors: stringArraySchema, expandedTargetSelectors: stringArraySchema,
 	position: stringSchema, edgeUtility: booleanSchema, handlers: stringArraySchema, rect: rectSchema, documentRect: rectSchema,
-	point: pointSchema, hitOk: nullableBooleanSchema, hitTarget: { anyOf: [hitTargetSchema, { type: "null" }] }, href: stringSchema,
+	point: pointSchema, hitOk: nullableBooleanSchema, hitTarget: { anyOf: [hitTargetSchema, { type: "null" }] }, href: stringSchema, rel: stringSchema,
 	occluderSelector: stringSchema, priority: numberSchema, name: stringSchema, ariaLabel: stringSchema, ref: stringSchema, hidden: booleanSchema, referenceOnly: booleanSchema,
 	relationOnly: booleanSchema, sourceSelector: stringSchema, sourceRole: nullableStringSchema, sourceName: stringSchema,
 	targetId: stringSchema, cdpTargetId: stringSchema,
@@ -191,7 +193,7 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 			properties: {
 				actionables: { type: "array", items: { type: "object", properties: actionableProperties, anyOf: [{ required: ["selector"] }, { required: ["sourceSelector"] }], additionalProperties: false } },
 				listHints: { type: "array", items: { type: "object", properties: { selector: stringSchema, itemCount: numberSchema, firstItemPreview: stringSchema, containerLabel: stringSchema }, required: ["selector", "itemCount", "firstItemPreview"], additionalProperties: false } },
-				canvasRegions: { type: "array", items: { type: "object", properties: { index: numberSchema, tag: stringSchema, role: stringSchema, action: stringSchema, label: stringSchema, selector: stringSchema, point: pointSchema, rect: rectSchema, hitOk: nullableBooleanSchema, clickable: booleanSchema, text: stringSchema, visible: booleanSchema }, required: ["index", "tag", "role", "action", "label", "selector", "point", "rect", "hitOk", "clickable"], additionalProperties: false } },
+				canvasRegions: { type: "array", items: { type: "object", properties: { index: numberSchema, tag: stringSchema, role: stringSchema, action: stringSchema, label: stringSchema, selector: stringSchema, point: pointSchema, rect: rectSchema, inViewport: booleanSchema, hitOk: nullableBooleanSchema, clickable: booleanSchema, text: stringSchema, visible: booleanSchema }, required: ["index", "tag", "role", "action", "label", "selector", "point", "rect", "hitOk", "clickable"], additionalProperties: false } },
 			},
 			required: ["actionables", "listHints", "canvasRegions"],
 			additionalProperties: false,

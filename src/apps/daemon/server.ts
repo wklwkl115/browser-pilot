@@ -22,12 +22,11 @@ import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
-import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
+import { MAX_CONTROL_BODY_BYTES, writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
 import { daemonVersion } from "./packageInfo.js";
 import { compareDaemonContractIdentity, createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
 
 export const DAEMON_VERSION = daemonVersion();
-const MAX_BODY_BYTES = 64 * 1024 * 1024;
 
 export interface DaemonHandle {
 	controlHost: string;
@@ -85,10 +84,12 @@ type DaemonControlContext = {
 function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 	return new Promise((resolve, reject) => {
 		let buf = "";
+		let bodyBytes = 0;
 		req.setEncoding("utf8");
 		req.on("data", (chunk: string) => {
+			bodyBytes += Buffer.byteLength(chunk, "utf8");
 			buf += chunk;
-			if (buf.length > MAX_BODY_BYTES) {
+			if (bodyBytes > MAX_CONTROL_BODY_BYTES) {
 				reject(new Error("request body too large"));
 				req.destroy();
 			}
@@ -336,7 +337,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		commandDefinitions = [...options.commandDefinitions];
 	} else {
 		const adapter = new CommandManifestIndex();
-		defineBrowserCommands(adapter, bridgeServer, ensureStarted);
+		defineBrowserCommands(adapter, ensureStarted);
 		commandDefinitions = adapter.getCommands();
 	}
 	const toolByName = new Map<string, CommandDefinition>(commandDefinitions.map((def) => [def.name, def]));

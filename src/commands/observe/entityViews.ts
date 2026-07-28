@@ -1,24 +1,23 @@
-import type { Entity } from "../../kernels/abml/entity.js";
-import type { RelevanceResult } from "../../kernels/evidence/distill/relevance.js";
+import { isAddressableEntity, type Entity } from "../../kernels/abml/entity.js";
 
 export function entitySalienceRank(entity: Entity): number {
 	const s = entity.state;
 	if (s.checked === true || s.selected === true || s.pressed === true || (s.current !== undefined && s.current !== false)) return 0;
 	if (s.checked !== undefined || s.selected !== undefined || s.pressed !== undefined) return 1;
-	if (entity.kind === "control") return 2;
-	if (s.inViewport === true) return 3;
-	return 4;
+	if (entity.kind === "control") return s.inViewport === true ? 2 : 3;
+	if (s.inViewport === true) return 4;
+	return 5;
 }
 
-export function sortEntitiesBySalience(entities: Entity[], relevance?: RelevanceResult): Entity[] {
+export function sortEntitiesBySalience(entities: Entity[]): Entity[] {
 	return entities
-		.map((entity, index) => ({ entity, index, relevance: relevance?.byRef.get(entity.ref)?.score ?? 0 }))
-		.sort((a, b) => entitySalienceRank(a.entity) - entitySalienceRank(b.entity) || b.relevance - a.relevance || a.index - b.index)
+		.map((entity, index) => ({ entity, index }))
+		.sort((a, b) => entitySalienceRank(a.entity) - entitySalienceRank(b.entity) || a.index - b.index)
 		.map((item) => item.entity);
 }
 
 export function buildEntityOutline(entities: Entity[]): Array<Record<string, unknown>> {
-	const groups = new Map<string, { container: string; name?: string; members: Array<{ ref: string; control: boolean }> }>();
+	const groups = new Map<string, { container: string; name?: string; memberCount: number; controlRefs: string[]; otherRefs: string[] }>();
 	for (const entity of entities) {
 		const role = typeof entity.hints?.containerRole === "string" ? entity.hints.containerRole : undefined;
 		if (!role) continue;
@@ -26,22 +25,21 @@ export function buildEntityOutline(entities: Entity[]): Array<Record<string, unk
 		const key = `${role}\u0000${name ?? ""}`;
 		let group = groups.get(key);
 		if (!group) {
-			group = { container: role, name, members: [] };
+			group = { container: role, name, memberCount: 0, controlRefs: [], otherRefs: [] };
 			groups.set(key, group);
 		}
-		group.members.push({ ref: entity.ref, control: entity.kind === "control" });
+		group.memberCount += 1;
+		if (isAddressableEntity(entity)) (entity.kind === "control" ? group.controlRefs : group.otherRefs).push(entity.ref);
 	}
 	return Array.from(groups.values())
-		.sort((a, b) => b.members.length - a.members.length)
-		.slice(0, 12)
+		.sort((a, b) => b.memberCount - a.memberCount)
 		.map((group) => {
-			const controlCount = group.members.filter((member) => member.control).length;
-			const orderedRefs = [...group.members.filter((m) => m.control), ...group.members.filter((m) => !m.control)].map((m) => m.ref);
+			const orderedRefs = [...group.controlRefs, ...group.otherRefs];
 			return {
 				container: group.container,
 				...(group.name ? { name: group.name } : {}),
-				memberCount: group.members.length,
-				...(controlCount ? { controlCount } : {}),
+				memberCount: group.memberCount,
+				...(group.controlRefs.length ? { controlCount: group.controlRefs.length } : {}),
 				memberRefs: orderedRefs.slice(0, 12),
 			};
 		});

@@ -5,7 +5,7 @@ import { DEFAULT_TOOL_TIMEOUT_MS } from "../commandShared.js";
 import { commandTimeoutMs } from "../commandRuntime.js";
 import { resolveBaselineEntities } from "./baseline.js";
 import type { ObserveToolParams } from "./common.js";
-import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
+import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import { baselineReanchorReason, currentPageIdentity, perceptionLedgerKey } from "./pageIdentity.js";
 import type { PageIdentity, PageReanchorReason } from "../../kernels/session/pageIdentity.js";
 
@@ -38,7 +38,6 @@ async function resolveScanBaseline(
 		};
 	} catch (error) {
 		signal?.throwIfAborted();
-		if (!ledgerFrame || params.baseline !== undefined) throw error;
 		return { baseline: undefined, baselineRequested: true, baselineResolutionError: error instanceof Error ? error.message : String(error), reanchorReason: "baseline_missing" as PageReanchorReason };
 	}
 }
@@ -72,7 +71,6 @@ async function readScanFingerprint(options: {
 	const startedAt = Date.now();
 	const fingerprint = await readPageFingerprint(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId, timeoutMs, signal });
 	timings.fingerprintMs = elapsedMs(startedAt);
-	addBridgeRoundTrips(timings, 1);
 	return fingerprint;
 }
 
@@ -90,7 +88,7 @@ export async function prepareScanSession(options: {
 	const { server, params, tabId, timings, signal } = options;
 	const timeoutMs = commandTimeoutMs(undefined, DEFAULT_TOOL_TIMEOUT_MS);
 	const captureMaxChars = 500_000;
-	const scanScript = buildScanScript({ maxChars: captureMaxChars });
+	const scanScript = buildScanScript({ maxChars: captureMaxChars, maxNodes: 200_000 });
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const effectiveTabId = tabId ?? bridge.defaultTabId;
 	const pageFingerprint = await readScanFingerprint({ server, params, effectiveTabId, timeoutMs, timings, signal });

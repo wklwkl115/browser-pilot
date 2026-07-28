@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { browserCommandDefinitions } from "../../src/commands/commandDefinitions.ts";
 import { validateBrowserCommandArguments } from "../../src/commands/commandValidation.ts";
-import { selectDiffBaselineSnapshot, validateObserveArguments } from "../../src/commands/observeCommand.ts";
+import { selectDiffBaselineSnapshot } from "../../src/commands/observeCommand.ts";
 import { validateCommandArgs } from "../../src/validation/commandArgs.ts";
 import { getNativeCommandProtocolSchema, validateBridgeCommand } from "../../src/types/nativeProtocol.ts";
 import { publicNativeCommandNames } from "../../src/commands/nativeCommandAccess.ts";
@@ -55,8 +55,8 @@ test("input.ref public protocol requires an opaque ref instead of a private targ
 	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", ref: "bp-ref://control/1", target: {} }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", ref: "bp-ref://control/1", target: {} }, { allowMissingTabId: true, allowResolvedTarget: true }).ok, true);
 	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "click", target: {} }, { allowMissingTabId: true }).ok, false);
-	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "drag", ref: "bp-ref://region/1", visual: { observationId: "obs-1", point: { x: 0.2, y: 0.3 }, to: { x: 0.7, y: 0.8 } } }, { allowMissingTabId: true }).ok, true);
-	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "type", ref: "bp-ref://region/1", visual: { observationId: "obs-1", point: { x: 1.1, y: 0.3 } }, text: "hello" }, { allowMissingTabId: true }).ok, false);
+	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "drag", ref: "bp-ref://region/1", visual: { point: { x: 0.2, y: 0.3 }, to: { x: 0.7, y: 0.8 } } }, { allowMissingTabId: true }).ok, true);
+	assert.equal(validateBridgeCommand({ cmd: "input.ref", action: "type", ref: "bp-ref://region/1", visual: { point: { x: 1.1, y: 0.3 } }, text: "hello" }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "network.list", target: {} }, { allowMissingTabId: true, allowResolvedTarget: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "network.list", tabId: "7" }, { allowMissingTabId: true }).ok, false);
 	assert.equal(validateBridgeCommand({ cmd: "network.list", timeoutMs: 1.5 }, { allowMissingTabId: true }).ok, false);
@@ -65,7 +65,7 @@ test("input.ref public protocol requires an opaque ref instead of a private targ
 test("every public native command has one closed canonical parameter schema", () => {
 	const protocol = getNativeCommandProtocolSchema();
 	const names = publicNativeCommandNames();
-	for (const internal of ["batch", "bridge_wake", "persistent_cdp", "hook.list_sessions", "hook.list_targets", "hook.install_targets"]) assert.equal(names.includes(internal), false);
+	for (const internal of ["batch", "bridge_wake", "management", "persistent_cdp", "hook.list_sessions", "hook.list_targets", "hook.install_targets"]) assert.equal(names.includes(internal), false);
 	assert.equal(names.includes("hook.clear"), false);
 	assert.equal(new Set(names).size, names.length);
 	const forbiddenFields = new Set(["browserSessionId", "tabId", "sessionId", "timeoutMs", "waitId", "networkSessionId", "targetId", "name", "persistent", "detachOnError", "protocolVersion", "bringToFront", "maxIdleMs"]);
@@ -85,11 +85,11 @@ test("every public native command has one closed canonical parameter schema", ()
 	assert.equal(validateBridgeCommand({ cmd: "transfer.download", url: "https://example.test/file", mode: "click" }, { allowMissingTabId: true }).ok, false);
 });
 
-test("browser_observe rejects contradictory freshness inputs", () => {
-	assert.deepEqual(validateObserveArguments({ fresh: true, diff: true }), [{ code: "OBSERVE_FRESH_DIFF_CONFLICT", path: "/fresh", message: "browser_observe fresh:true cannot be combined with diff:true" }]);
+test("browser_observe exposes one observation mode", () => {
 	const properties = (command("browser_observe").parameters as { properties: Record<string, unknown> }).properties;
-	assert.deepEqual(Object.keys(properties), ["intent", "fresh", "diff", "visual", "targetRef"]);
-	for (const removed of ["maxChars", "outputPath", "timeoutMs", "maxNodes", "includeIframes", "baseline", "baselinePath", "baselineSnapshotId", "actionRef"]) assert.equal(removed in properties, false);
+	assert.deepEqual(Object.keys(properties), ["mode", "visual", "targetRef"]);
+	assert.deepEqual((properties.mode as { enum: string[] }).enum, ["auto", "full", "diff"]);
+	for (const removed of ["fresh", "diff", "maxChars", "outputPath", "timeoutMs", "maxNodes", "includeIframes", "baseline", "baselinePath", "baselineSnapshotId", "actionRef"]) assert.equal(removed in properties, false);
 	assert.equal(validateBrowserCommandArguments(command("browser_observe"), { maxChars: 1000 }).ok, false);
 	assert.equal(validateBrowserCommandArguments(command("browser_observe"), { baseline: { saved: { path: "C:\\Windows\\win.ini" } } }).ok, false);
 	assert.equal(browserCommandDefinitions().some((definition) => definition.name === "browser_artifact"), false);

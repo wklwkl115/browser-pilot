@@ -7,7 +7,6 @@ export type BrowserCommandResult = {
 
 export type BrowserCommandExecuteContext = {
 	cwd?: string;
-	omitTransportDetails?: boolean;
 };
 
 export interface ValidationIssue {
@@ -20,7 +19,6 @@ export type BrowserCommandDefinition = {
 	name: string;
 	label?: string;
 	description?: string;
-	promptSnippet?: string;
 	promptGuidelines?: string[];
 	parameters?: unknown;
 	validateArguments?: (args: Record<string, unknown>) => ValidationIssue[];

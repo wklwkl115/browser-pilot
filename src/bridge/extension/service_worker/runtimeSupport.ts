@@ -1,4 +1,5 @@
 import { chromeApi as chrome } from "./runtimeEnv.js";
+import { redactSensitiveValue, type RedactionOptions } from "../../../utils/redaction.js";
 import type { BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotPersistentCdpBridge, JsonRecord } from "./types.js";
 
 export const BROWSER_PILOT_HOOK_DISPATCHER_FILE = "dist/hook_dispatcher.js";
@@ -25,34 +26,8 @@ export function integerInRange(value: unknown, fallback: number, min: number, ma
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.floor(parsed))) : fallback;
 }
 
-export function redactSensitive(value: unknown, depth = 0, seen?: WeakSet<object>): unknown {
-  const patterns = [
-    /bearer\s+fixture-secret/gi,
-    /fixture-secret/gi,
-    /fixture-password/gi,
-    /(authorization[=:]\s*bearer\s+)[^\s&'"<>]+/gi,
-    /([?&](?:token|secret|password|passwd|pwd|auth|authorization)=)[^&#\s'"<>]+/gi,
-  ];
-  if (value == null) return value;
-  if (typeof value === "string") {
-    let out = value;
-    for (const re of patterns) out = out.replace(re, (_match, prefix) => prefix ? prefix + "[REDACTED]" : "[REDACTED]");
-    return out;
-  }
-  if (typeof value === "number" || typeof value === "boolean") return value;
-  if (typeof value !== "object") return String(value);
-  if (depth > 8) return "[REDACTED_DEPTH]";
-  seen = seen || new WeakSet();
-  if (seen.has(value)) return "[REDACTED_CYCLE]";
-  seen.add(value);
-  if (Array.isArray(value)) return value.map((item) => redactSensitive(item, depth + 1, seen));
-  const out: JsonRecord = {};
-  for (const [key, item] of Object.entries(value)) {
-    out[key] = /(token|secret|password|passwd|pwd|authorization|cookie|set-cookie)/.test(key.toLowerCase())
-      ? "[REDACTED]"
-      : redactSensitive(item, depth + 1, seen);
-  }
-  return out;
+export function redactSensitive(value: unknown, options: RedactionOptions = {}): unknown {
+  return redactSensitiveValue(value, options);
 }
 
 export function browserPilotError(errorCode: string, message: unknown, details?: unknown): BrowserPilotBridgeResponse {

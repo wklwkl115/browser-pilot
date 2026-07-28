@@ -39,6 +39,7 @@ export class BrowserBridgeClientMessageService {
 	private readonly deps: BrowserBridgeClientMessageServiceDeps;
 	private readonly handshakeTimeoutMs: number;
 	private readonly handshakeTimers = new WeakMap<WebSocket, NodeJS.Timeout>();
+	private readonly readyClients = new WeakSet<WebSocket>();
 
 	constructor(deps: BrowserBridgeClientMessageServiceDeps) {
 		this.deps = deps;
@@ -91,9 +92,10 @@ export class BrowserBridgeClientMessageService {
 			return;
 		}
 
-		this.deps.clients.markSeen(ws);
 		if (!this.deps.clients.info(ws)) return;
 		const type = String(message.type || "");
+		if (type !== "ext_ready" && !this.readyClients.has(ws)) return;
+		this.deps.clients.markSeen(ws);
 		if (type === "ping") return;
 		if (type === "ext_ready" && !this.isValidExtensionReady(message)) return;
 		if (type === "ext_ready" || type === "tabs_update") {
@@ -120,6 +122,7 @@ export class BrowserBridgeClientMessageService {
 					return;
 				}
 				this.deps.browserSessions.selectClient(defaultSession, ws);
+				this.readyClients.add(ws);
 				// Classify before removing the previous owner so reconnect metrics retain context.
 				const info = this.deps.clients.info(ws);
 				const sameSocketRestart = previousInstanceId !== undefined
@@ -148,17 +151,17 @@ export class BrowserBridgeClientMessageService {
 		}
 
 		if (type === "ack") {
-			this.deps.pendingRequests.ack(String(message.id || ""));
+			this.deps.pendingRequests.ack(String(message.id || ""), ws);
 			return;
 		}
 		if (type === "result" || type === "error") {
 			const id = String(message.id || "");
 			const diagnostics = recordValue(message.diagnostics);
 			if (type === "error") {
-				this.deps.pendingRequests.rejectBrowserError(id, message.error, message.result, diagnostics);
+				this.deps.pendingRequests.rejectBrowserError(id, ws, message.error, message.result, diagnostics);
 				return;
 			}
-			this.deps.pendingRequests.resolve(id, message.result, Array.isArray(message.newTabs) ? message.newTabs : [], diagnostics);
+			this.deps.pendingRequests.resolve(id, ws, message.result, Array.isArray(message.newTabs) ? message.newTabs : [], diagnostics);
 		}
 	}
 

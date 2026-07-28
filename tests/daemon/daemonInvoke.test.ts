@@ -48,11 +48,11 @@ function tools() {
 	const success: CommandDefinition = {
 		name: "browser_success",
 		parameters: strictCommandParameters({ message: Type.String() }),
-		async execute(params, _signal, ctx) {
-			return {
-				content: [{ type: "text", text: String(params.message) }],
-				details: { cwd: ctx?.cwd, omitTransportDetails: ctx?.omitTransportDetails },
-			};
+			async execute(params, _signal, ctx) {
+				return {
+					content: [{ type: "text", text: String(params.message) }],
+					details: { cwd: ctx?.cwd },
+				};
 		},
 	};
 	const throwing: CommandDefinition = {
@@ -239,6 +239,24 @@ test("daemon status, connect, and unknown routes preserve control contracts", as
 
 		const missing = await controlRequest(handle, "GET", "/missing", undefined, 1_000);
 		assert.deepEqual(missing, { status: 404, json: { ok: false, error: "not found: GET /missing" } });
+	} finally {
+		await handle.close();
+	}
+});
+
+test("daemon control client preserves responses larger than one MiB", async () => {
+	const payload = "x".repeat(1_100_000);
+	const large: CommandDefinition = {
+		name: "browser_large",
+		parameters: strictCommandParameters({}),
+		execute() { return { content: [{ type: "text" as const, text: payload }] }; },
+	};
+	const handle = await startDaemon({ writeLock: false, startBridgeEagerly: false, commandDefinitions: [large] });
+	try {
+		const response = await controlRequest(handle, "POST", "/invoke", { tool: large.name, params: {}, contractIdentity: handle.contractIdentity }, 2_000);
+		assert.equal(response.status, 200);
+		const content = response.json?.content as Array<{ text: string }> | undefined;
+		assert.equal(String(content?.[0]?.text || "").length, payload.length);
 	} finally {
 		await handle.close();
 	}

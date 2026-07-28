@@ -158,6 +158,7 @@ async function verifyPostcondition(options: CommandEffectOptions): Promise<Verif
 		try {
 			last = await options.verify();
 			if (last.status === "verified") return withVerificationElapsed(last, startedAt);
+			if (last.retryable === false) return withVerificationElapsed(last, startedAt);
 		} catch {
 			return inconclusiveVerification(last, startedAt, "Postcondition observation failed");
 		}

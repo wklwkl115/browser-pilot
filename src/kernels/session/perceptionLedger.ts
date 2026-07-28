@@ -19,35 +19,14 @@ export type PerceptionLedgerFrame = {
 	};
 };
 
-export type PerceptionTraceTerm = {
-	term: string;
-	kind: string;
-	weight?: number;
-	at: number;
-	seq: number;
-};
-
-export type PerceptionTraceSnapshot = {
-	terms: PerceptionTraceTerm[];
-	latestSeq: number;
-};
-
-const MAX_TRACE_TERMS_PER_SESSION = 32;
 const MAX_LEDGER_FRAMES = 128;
-const MAX_TRACE_SESSIONS = 64;
 
 function keyString(key: PerceptionLedgerKey): string {
 	return [key.browserSessionId, key.tabId, key.targetGeneration, key.pageEpoch].join("\u0000");
 }
 
-function traceKey(browserSessionId?: string): string {
-	return browserSessionId || "default";
-}
-
 export class PerceptionLedger {
 	private readonly frames = new Map<string, PerceptionLedgerFrame>();
-	private readonly traces = new Map<string, PerceptionTraceTerm[]>();
-	private traceSeq = 0;
 
 	get(key: PerceptionLedgerKey): PerceptionLedgerFrame | undefined {
 		return this.frames.get(keyString(key));
@@ -77,35 +56,7 @@ export class PerceptionLedger {
 		return frames.length;
 	}
 
-	recordTraceTerms(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>, at = Date.now()): PerceptionTraceSnapshot {
-		const key = traceKey(browserSessionId);
-		const existing = this.traces.get(key) ?? [];
-		const seen = new Set(existing.map((item) => `${item.kind}\u0000${item.term.toLocaleLowerCase()}`));
-		const next = [...existing];
-		for (const term of terms) {
-			const text = term.term.trim();
-			if (!text) continue;
-			const dedupeKey = `${term.kind}\u0000${text.toLocaleLowerCase()}`;
-			if (seen.has(dedupeKey)) continue;
-			seen.add(dedupeKey);
-			this.traceSeq += 1;
-			next.push({ term: text, kind: term.kind, weight: term.weight, at, seq: this.traceSeq });
-		}
-		const retained = next.slice(-MAX_TRACE_TERMS_PER_SESSION);
-		this.traces.delete(key);
-		this.traces.set(key, retained);
-		while (this.traces.size > MAX_TRACE_SESSIONS) this.traces.delete(this.traces.keys().next().value!);
-		return { terms: [...retained].reverse(), latestSeq: this.traceSeq };
-	}
-
-	traceSnapshot(browserSessionId?: string): PerceptionTraceSnapshot {
-		const terms = this.traces.get(traceKey(browserSessionId)) ?? [];
-		return { terms: [...terms].reverse(), latestSeq: this.traceSeq };
-	}
-
 	clear(): void {
 		this.frames.clear();
-		this.traces.clear();
-		this.traceSeq = 0;
 	}
 }

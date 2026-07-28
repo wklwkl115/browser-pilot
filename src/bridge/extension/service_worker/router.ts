@@ -9,6 +9,7 @@ import { recordBrowserPilotPrerenderActivation } from "./tab_sync";
 // router.js - protocol validation and command dispatch for Browser Pilot Bridge messages.
 
 let browserPilotBridgeRouterInstalled = false;
+const BROWSER_PILOT_BRIDGE_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 
 function handleBrowserPilotRuntimeEventMessage(msgType: string, sender: BrowserPilotChromeMessageSender, sendResponse: (response: unknown) => void): boolean {
 	if (msgType === "browser-pilot-prerender-activated") {
@@ -46,8 +47,24 @@ function installBrowserPilotBridgeRouter() {
 /** @param {BrowserPilotBridgeWebSocketLike} socket @param {string | number} id @param {BrowserPilotBridgeCommand} msg @param {BrowserPilotBridgeResponse} res */
 function sendBrowserPilotBridgeWsCommandResult(socket: BrowserPilotBridgeWebSocketLike, id: string | number, msg: BrowserPilotBridgeCommand, res: BrowserPilotBridgeResponse) {
   const result = res.data ?? res.results ?? res;
-  if (isBrowserPilotNativeCommand(msg.cmd)) socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id, result, error: res.error ?? res }));
-  else socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id, result, error: res.error ?? res.message }));
+  const envelope = isBrowserPilotNativeCommand(msg.cmd)
+    ? { type: res.ok ? 'result' : 'error', id, result, error: res.error ?? res }
+    : { type: res.ok ? 'result' : 'error', id, result, error: res.error ?? res.message };
+  const payload = JSON.stringify(envelope);
+  const responseBytes = payload.length > BROWSER_PILOT_BRIDGE_MAX_RESPONSE_BYTES ? payload.length : new TextEncoder().encode(payload).length;
+  if (responseBytes <= BROWSER_PILOT_BRIDGE_MAX_RESPONSE_BYTES) {
+    socket.send(payload);
+    return;
+  }
+  socket.send(JSON.stringify({
+    type:'error',
+    id,
+    error:{
+      code:BROWSER_PILOT_ERROR_CODES.BUFFER_OVERFLOW,
+      message:'browser response exceeds the bridge response budget; narrow the command filters or lower its maxBytes/limit',
+      details:{ cmd:msg.cmd, responseBytesAtLeast:responseBytes, maxBytes:BROWSER_PILOT_BRIDGE_MAX_RESPONSE_BYTES },
+    },
+  }));
 }
 
 /** @param {BrowserPilotBridgeWebSocketLike} socket @param {string | number} id @param {string} error @param {JsonRecord=} details */
@@ -108,4 +125,4 @@ async function handleBrowserPilotBridgeWsMessage(data: BrowserPilotBridgeWsEnvel
 	if (typeof code === "string") return await handleWsExec({ ...data, code }, socket);
 	sendBrowserPilotBridgeWsInputError(socket, data.id, `Unsupported message code type: ${typeof code}`, { codeType: typeof code });
 }
-export { installBrowserPilotBridgeRouter, handleBrowserPilotBridgeMessage, sendBrowserPilotBridgeWsCommandResult, sendBrowserPilotBridgeWsInputError, handleBrowserPilotBridgeWsMessage };
+export { BROWSER_PILOT_BRIDGE_MAX_RESPONSE_BYTES, installBrowserPilotBridgeRouter, handleBrowserPilotBridgeMessage, sendBrowserPilotBridgeWsCommandResult, sendBrowserPilotBridgeWsInputError, handleBrowserPilotBridgeWsMessage };

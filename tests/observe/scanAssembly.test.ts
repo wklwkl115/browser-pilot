@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { assembleScanSummary } from "../../src/commands/observe/scanAssembly.ts";
 import { pageWorldScanBundle } from "../helpers/pageWorldScan.ts";
-import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
 
 test("successful ABML assembly does not require scan fallback entities", () => {
@@ -14,19 +13,18 @@ test("successful ABML assembly does not require scan fallback entities", () => {
 		state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true },
 		source: "dom",
 	};
+	const offscreen = { ...entity, ref: "bp-ref://control/offscreen", name: "Offscreen", state: { ...entity.state, inViewport: false } };
 	const result = assembleScanSummary({
-		server: {} as BrowserCommandRuntimePort,
-		params: {},
 		summaryData: pageWorldScanBundle(),
-		browserSessionId: undefined,
-		abmlEntities: [entity],
+		abmlEntities: [offscreen, entity],
 		abmlDiff: undefined,
 		baseline: undefined,
 		causal: undefined,
 		ledgerDeltaFields: {},
 	});
-	assert.equal(result.summary.abmlIntegrated, true);
-	assert.deepEqual(result.envelopeEntities, [entity]);
+	assert.equal("abmlIntegrated" in result.summary, false);
+	assert.deepEqual(result.envelopeEntities, [offscreen, entity]);
+	assert.deepEqual(result.summary.focus.primary_entities, [entity.ref, offscreen.ref]);
 });
 
 test("ABML assembly attributes post-action requests to the recorded action ref", () => {
@@ -40,10 +38,7 @@ test("ABML assembly attributes post-action requests to the recorded action ref",
 		source: "dom",
 	};
 	const result = assembleScanSummary({
-		server: {} as BrowserCommandRuntimePort,
-		params: {},
 		summaryData: pageWorldScanBundle(),
-		browserSessionId: undefined,
 		abmlEntities: [entity],
 		abmlDiff: undefined,
 		baseline: undefined,
@@ -59,10 +54,7 @@ test("ABML assembly attributes post-action requests to the recorded action ref",
 		evidence: { since: 0, initiatorType: "script" },
 	}]);
 	const missingAction = assembleScanSummary({
-		server: {} as BrowserCommandRuntimePort,
-		params: {},
 		summaryData: pageWorldScanBundle(),
-		browserSessionId: undefined,
 		abmlEntities: [entity],
 		abmlDiff: { appeared: [], disappeared: [], changed: [], focusedRef: actionRef },
 		baseline: undefined,

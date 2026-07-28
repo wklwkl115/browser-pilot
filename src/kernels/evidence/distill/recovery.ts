@@ -61,17 +61,17 @@ function abmlRecoveryActions(code: string, details: Record<string, unknown>): st
 	const ref = typeof details.ref === "string" ? redactSensitiveText(details.ref) : undefined;
 	const uri = typeof details.uri === "string" ? redactSensitiveText(details.uri) : undefined;
 	return uniqueRecoveryActions([
-		["REF_NOT_FOUND", "REF_STALE", "HANDLE_NOT_FOUND", "HANDLE_EXPIRED", "HANDLE_ETAG_MISMATCH"].includes(code) ? "browser_observe to re-capture fresh ABML refs" : undefined,
-		code === "REF_AMBIGUOUS" ? "narrow the ABML ref with role/name/text or re-run browser_observe for current candidates" : undefined,
+		["REF_NOT_FOUND", "REF_STALE", "HANDLE_NOT_FOUND", "HANDLE_EXPIRED", "HANDLE_ETAG_MISMATCH"].includes(code) ? "browser_observe to re-capture fresh refs" : undefined,
+		code === "REF_AMBIGUOUS" ? "narrow the ref with role/name/text or re-run browser_observe for current candidates" : undefined,
 		code === "REF_SCOPE_VIOLATION" ? "remove the conflicting targetRef so the ref routes automatically, or re-capture it on the intended tab" : undefined,
-		code === "HANDLE_KIND_MISMATCH" || code === "INVALID_INPUT" ? "retry with a ref/handle and parameters that match the requested ABML operation" : undefined,
+		code === "HANDLE_KIND_MISMATCH" || code === "INVALID_INPUT" ? "retry with a ref/handle and parameters that match the requested operation" : undefined,
 		code === "PRIVACY_BLOCKED" ? "use redacted output or evidence scoped to the current page instead of private cross-scope data" : undefined,
-		["ACTIONABILITY_TIMEOUT", "TARGET_OCCLUDED", "TARGET_DISABLED"].includes(code) ? "scroll or dismiss overlays in a new operation, or refresh actionability evidence before retrying the ABML action" : undefined,
+		["ACTIONABILITY_TIMEOUT", "TARGET_OCCLUDED", "TARGET_DISABLED"].includes(code) ? "scroll or dismiss overlays in a new operation, or refresh actionability evidence before retrying the action" : undefined,
 		code === "TARGET_NOT_EDITABLE" ? "choose an editable target or focus the editor before retrying" : undefined,
 		code === "BACKEND_UNAVAILABLE" ? "retry once after the browser/CDP backend recovers" : undefined,
 		code === "CROSS_ORIGIN_BLOCKED" ? "switch to a reachable frame or use a visual/read fallback when cross-origin access is blocked" : undefined,
 		["VERIFY_FAILED", "VERIFY_INCONCLUSIVE"].includes(code) ? "use the returned effect or evidence; refresh with browser_observe only if it remains inconclusive" : undefined,
-		ref ? `retry with a fresh ABML ref instead of ${ref}` : undefined,
+		ref ? `retry with a fresh observed ref instead of ${ref}` : undefined,
 		uri ? `retry with a fresh resource URI instead of ${uri}` : undefined,
 	]);
 }

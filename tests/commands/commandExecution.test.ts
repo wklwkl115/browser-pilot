@@ -88,13 +88,13 @@ function createRuntime(overrides: Partial<BrowserCommandRuntimePort> = {}): Mock
 		},
 		async createTab(...args) {
 			calls.push({ name: "createTab", args });
-			return { id: "create-1", acknowledged: true, tabId: 8, target: { tabId: 8, tabHandle: "tab-8" }, data: { url: args[0] } } as BrowserBridgeExecutionResult;
+			return { id: "create-1", acknowledged: true, tabId: 8, createdTarget: { tabId: 8, targetRef: "tab-8", tabHandle: "tab-8" }, data: { url: args[0] } } as BrowserBridgeExecutionResult;
 		},
 		async closeTab(...args) {
 			calls.push({ name: "closeTab", args });
 			return { id: "close-1", acknowledged: true, tabId: 7, data: { closed: true, tabId: 7 } } as BrowserBridgeExecutionResult;
 		},
-			createObservationSnapshot(snapshot) { return { snapshotId: snapshot.snapshotId || "snap-1", ttlMs: snapshot.ttlMs || 1_000, expired: false, ...snapshot }; },
+		createObservationSnapshot(snapshot) { return { snapshotId: snapshot.snapshotId || "snap-1", ttlMs: snapshot.ttlMs || 1_000, expired: false, ...snapshot }; },
 		getObservationSnapshot() { return undefined; },
 		listObservationSnapshots() { return []; },
 		...overrides,
@@ -168,11 +168,9 @@ test("commands execution: browser_tabs list hides runtime identity", async () =>
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
 	const controller = new AbortController();
-	const result = await command.execute({ action: "list" }, controller.signal, { omitTransportDetails: true });
+	const result = await command.execute({ action: "list" }, controller.signal);
 	const body = parseResult(result);
-	assert.equal(body.tabCount, 1);
-	assert.deepEqual(body.bridge, { running: true, connectedClients: 1, extensionConnected: true });
-	assert.deepEqual(body.tabs, [{ id: "tab-7", targetRef: "tab-7", url: "https://example.test/", title: "Example", active: true }]);
+	assert.deepEqual(body.tabs, [{ targetRef: "tab-7", url: "https://example.test/", title: "Example", active: true }]);
 	assert.deepEqual(result.details, {});
 	assert.deepEqual(runtime.calls.find((call) => call.name === "refreshTabs")?.args, [5_000, { signal: controller.signal }]);
 });
@@ -195,13 +193,15 @@ test("commands execution: browser_tabs actions preserve runtime dispatch", async
 	const runtime = createRuntime();
 	const command = defineCommand((context) => defineTabsCommand(context), runtime);
 	const create = parseResult(await command.execute({ action: "create", url: "https://example.test/new", active: false, incognito: true }));
-	assert.deepEqual(create, { url: "https://example.test/new" });
+	assert.deepEqual(create, { tabs: [{ targetRef: "tab-8", url: "https://example.test/new" }] });
 	const createArgs = runtime.calls.find((call) => call.name === "createTab")?.args;
 	assert.deepEqual(createArgs?.slice(0, 3), ["https://example.test/new", false, 5_000]);
 	assert.deepEqual({ ...(createArgs?.[3] as Record<string, unknown>), signal: undefined }, { incognito: true, signal: undefined });
 	assert.ok((createArgs?.[3] as { signal?: unknown }).signal instanceof AbortSignal);
-	await command.execute({ action: "switch", targetRef: "tab-7" });
-	await command.execute({ action: "close", targetRef: "tab-7" });
+	const switched = parseResult(await command.execute({ action: "switch", targetRef: "tab-7" }));
+	assert.deepEqual(switched, { tabs: [{ targetRef: "tab-7", active: true }] });
+	const closed = parseResult(await command.execute({ action: "close", targetRef: "tab-7" }));
+	assert.deepEqual(closed, { tabs: [] });
 	for (const [name, prefix] of [["switchTab", ["tab-7", 5_000]], ["closeTab", ["tab-7", 5_000]]] as const) {
 		const args = runtime.calls.find((call) => call.name === name)?.args;
 		assert.deepEqual(args?.slice(0, 2), prefix);
@@ -247,6 +247,18 @@ test("commands execution: browser_command preserves large JSON results", async (
 	assert.equal(((result.result as Record<string, unknown>).largeText as string).length, payload.length);
 });
 
+test("commands execution: network.body preserves requested content while redacting embedded credentials", async () => {
+	const runtime = createRuntime({
+		async sendCommand() {
+			return { id: "body", acknowledged: true, data: { body: '{"token":"sec\\"ret","api_key":123,"items":[{"password":"hidden"}],"__proto__":{"marker":"keep"},"ok":true}' } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const result = parseResult(await command.execute({ command: { cmd: "network.body", requestId: "request-1" } }));
+	const body = JSON.parse(String((result.result as Record<string, unknown>).body)) as Record<string, unknown>;
+	assert.deepEqual(body, JSON.parse('{"token":"[redacted]","api_key":"[redacted]","items":[{"password":"[redacted]"}],"__proto__":{"marker":"keep"},"ok":true}'));
+});
+
 test("tool results preserve complete metadata", () => {
 	const diagnosticText = "x".repeat(60_000);
 	assert.equal(jsonResult({}, { diagnosticText }).details?.diagnosticText, diagnosticText);
@@ -261,6 +273,13 @@ test("tool results redact sensitive values by default", () => {
 	const raw = result.content[0]?.text || "";
 	assert.doesNotMatch(raw, /cookie-secret|body-secret|authorization-secret/);
 	assert.deepEqual(JSON.parse(raw), { body: "[redacted body]", cookies: "[redacted]", headers: { Authorization: "[redacted]" } });
+	assert.deepEqual(parseResult(jsonResult({ body: { foo: "secret", nested: { bar: "hidden" } } })), { body: "[redacted body]" });
+});
+
+test("tool result redaction bounds adversarial nesting", () => {
+	let value: Record<string, unknown> = { leaf: "visible" };
+	for (let depth = 0; depth < 20; depth += 1) value = { next: value };
+	assert.match(jsonResult(value).content[0]?.text || "", /redacted depth/);
 });
 
 test("commands execution: browser_command writes return domain data and effect", async () => {
@@ -370,6 +389,7 @@ test("ABML verification refuses to sample a ref after page replacement", async (
 	const runtime = createRuntime({ snapshot() { return { ...baseSnapshot(), tabs: [{ ...baseSnapshot().tabs[0]!, pageEpoch: "page-2" }] }; } });
 	const observation = await readAbmlVerificationObservation({ server: runtime, expectation: { ref, state: { visible: true } }, browserSessionId: "session-1", tabId: 7, rawTarget: "tab-7", timeoutMs: 1_000 });
 	assert.match(observation.reason ?? "", /stale/);
+	assert.equal(observation.retryable, false);
 	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), false);
 });
 
@@ -390,15 +410,6 @@ test("ABML verification nests diff after a post-action sample", async () => {
 	assert.equal(verification.initialVerification.diff, undefined);
 	const result = await verification.verify();
 	assert.deepEqual(result.diff?.changed, [{ ref, kind: "state-changed", before: { pressed: false }, after: { pressed: true } }]);
-});
-
-test("commands execution: browser-wide writes skip irrelevant page-effect sampling", async () => {
-	const runtime = createRuntime();
-	const command = defineCommand((context) => defineNativeCommand(context), runtime);
-	const outcome = parseResult(await command.execute({ command: { cmd: "management", method: "reload" } }));
-	assert.equal(outcome.effect, undefined);
-	assert.equal(runtime.calls.filter((call) => call.name === "sendCommand").length, 1);
-	assert.equal((runtime.calls.find((call) => call.name === "sendCommand")?.args[0] as Record<string, unknown>).cmd, "management");
 });
 
 test("commands execution: browser_command rejects commands outside the public native catalog", async () => {
@@ -430,6 +441,7 @@ test("commands execution: browser_command rejects runtime-managed control fields
 	}
 	for (const input of [
 		{ cmd: "bridge_wake" },
+		{ cmd: "management", method: "reload" },
 		{ cmd: "persistent_cdp", action: "send", cdpMethod: "Page.reload" },
 		{ cmd: "hook.list_sessions" },
 		{ cmd: "hook.list_targets" },
@@ -482,15 +494,20 @@ test("dedicated screenshot and browser_command dispatch their native commands", 
 	});
 
 	const screenshot = defineCommand((context) => defineScreenshotCommand(context), runtime);
-	const screenshotResult = parseResult(await screenshot.execute({ targetRef: "tab-7" }, undefined, { cwd: directory }));
-	const saved = screenshotResult.saved as Record<string, unknown>;
+	const controller = new AbortController();
+	const rawScreenshotResult = await screenshot.execute({ targetRef: "tab-7" }, controller.signal, { cwd: directory });
+	const screenshotResult = parseResult(rawScreenshotResult);
+	const saved = rawScreenshotResult.details?.saved as Record<string, unknown>;
 	const screenshotBytes = await readFile(String(saved.path));
-	assert.match(String(saved.path), /screenshot-\d+\.png$/);
+	assert.match(String(saved.path), /screenshot-\d+-[0-9a-f-]+\.png$/);
 	assert.equal(saved.bytes, screenshotBytes.length);
 	assert.equal(screenshotBytes.toString("base64"), VISUAL_PNG.slice(VISUAL_PNG.indexOf(",") + 1));
-	assert.equal(screenshotResult.format, "png");
+	assert.equal(screenshotResult.captured, true);
+	assert.equal(screenshotResult.mime, "image/png");
 	assert.equal(screenshotResult.width, 1);
 	assert.equal(screenshotResult.height, 1);
+	const screenshotCall = runtime.calls.find((call) => (call.args[0] as Record<string, unknown>)?.cmd === "screenshot.capture");
+	assert.equal((screenshotCall?.args[1] as { signal?: AbortSignal }).signal, controller.signal);
 
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	await command.execute({ targetRef: "tab-7", command: { cmd: "transfer.download", url: "https://example.test/file.txt" } });
@@ -593,6 +610,10 @@ test("commands execution: browser_execute rejects command-shaped scripts with re
 	const details = result.details?.error as Record<string, unknown>;
 	assert.equal(body.code, "INVALID_RULE");
 	assert.match(String(body.message), /only accepts JavaScript/);
+	assert.deepEqual(body.recovery, { useTool: "browser_command" });
+	assert.equal(body.details, undefined);
+	assert.equal(body.taxonomy, undefined);
+	assert.equal(body.name, undefined);
 	assert.deepEqual(details.recovery, { useTool: "browser_command" });
 	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), false);
 });
@@ -698,7 +719,7 @@ test("commands execution: visual input.ref derives an ephemeral region, validate
 		},
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
-	const outcome = parseResult(await command.execute({ command: { cmd: "input.ref", action: "click", ref: baseRef, visual: { observationId: "visual-observation-1", point: { x: 0.25, y: 0.75 } } } }, undefined, { cwd: directory }));
+	const outcome = parseResult(await command.execute({ command: { cmd: "input.ref", action: "click", ref: baseRef, visual: { point: { x: 0.25, y: 0.75 } } } }, undefined, { cwd: directory }));
 	const send = runtime.calls.find((call) => call.name === "sendCommand" && (call.args[0] as Record<string, unknown>).cmd === "input.ref");
 	const native = send?.args[0] as Record<string, unknown>;
 	const target = native.target as Record<string, unknown>;
@@ -713,7 +734,7 @@ test("commands execution: visual input.ref derives an ephemeral region, validate
 		afterSha256: screenshotSha256(VISUAL_PNG),
 		resourceUri: (outcome.effect as { visual: { resourceUri: string } }).visual.resourceUri,
 	});
-	assert.match((outcome.effect as { visual: { resourceUri: string } }).visual.resourceUri, /^browser-pilot:\/\/artifact\/visual-effect-\d+\.png$/);
+	assert.match((outcome.effect as { visual: { resourceUri: string } }).visual.resourceUri, /^browser-pilot:\/\/artifact\/visual-effect-\d+-[0-9a-f-]+\.png$/);
 
 	const driftRuntime = createRuntime({
 		async sendCommand(command, options) {
@@ -722,9 +743,10 @@ test("commands execution: visual input.ref derives an ephemeral region, validate
 		},
 	});
 	const driftCommand = defineCommand((context) => defineNativeCommand(context), driftRuntime);
-	const drift = parseResult(await driftCommand.execute({ command: { cmd: "input.ref", action: "click", ref: registerVisualRef(), visual: { observationId: "visual-observation-1", point: { x: 0.25, y: 0.75 } } } }));
-	assert.equal(drift.code, "REF_STALE");
-	assert.equal(driftRuntime.calls.some((call) => (call.args[0] as Record<string, unknown>).cmd === "input.ref"), false);
+		const drift = parseResult(await driftCommand.execute({ command: { cmd: "input.ref", action: "click", ref: registerVisualRef(), visual: { point: { x: 0.25, y: 0.75 } } } }));
+		assert.equal(drift.code, "REF_STALE");
+		assert.equal(drift.details, undefined);
+		assert.equal(driftRuntime.calls.some((call) => (call.args[0] as Record<string, unknown>).cmd === "input.ref"), false);
 
 	let fingerprintReads = 0;
 	const tornRuntime = createRuntime({
@@ -739,7 +761,7 @@ test("commands execution: visual input.ref derives an ephemeral region, validate
 		},
 	});
 	const tornCommand = defineCommand((context) => defineNativeCommand(context), tornRuntime);
-	const torn = parseResult(await tornCommand.execute({ command: { cmd: "input.ref", action: "click", ref: registerVisualRef(), visual: { observationId: "visual-observation-1", point: { x: 0.25, y: 0.75 } } } }));
+	const torn = parseResult(await tornCommand.execute({ command: { cmd: "input.ref", action: "click", ref: registerVisualRef(), visual: { point: { x: 0.25, y: 0.75 } } } }));
 	assert.equal(torn.code, "REF_STALE");
 	assert.equal(tornRuntime.calls.some((call) => (call.args[0] as Record<string, unknown>).cmd === "input.ref"), false);
 });
@@ -753,7 +775,7 @@ test("commands execution: visual input.ref rejects modified observation pixels b
 		await writeFile(artifactPath, "modified visual evidence");
 		const runtime = createRuntime();
 		const command = defineCommand((context) => defineNativeCommand(context), runtime);
-		const outcome = parseResult(await command.execute({ command: { cmd: "input.ref", action: "click", ref, visual: { observationId: "visual-observation-1", point: { x: 0.25, y: 0.75 } } } }));
+		const outcome = parseResult(await command.execute({ command: { cmd: "input.ref", action: "click", ref, visual: { point: { x: 0.25, y: 0.75 } } } }));
 		assert.equal(outcome.code, "REF_STALE");
 		assert.equal(runtime.calls.length, 0);
 	} finally {

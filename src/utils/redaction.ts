@@ -6,6 +6,8 @@ const EMAIL_VALUE_RE = /^[^\s@/?#&=]+@[^\s@/?#&=]+\.[^\s@/?#&=]+$/i;
 
 const SENSITIVE_FIELD_NAMES = new Set([
 	"authorization",
+	"auth",
+	"bearer",
 	"proxyauthorization",
 	"cookie",
 	"cookies",
@@ -42,6 +44,8 @@ const SENSITIVE_FIELD_NAMES = new Set([
 
 const BODY_FIELD_NAMES = new Set(["body", "requestbody", "responsebody"]);
 const POST_DATA_FIELD_NAMES = new Set(["postdata", "requestpostdata", "payloaddata", "payload"]);
+
+export type RedactionOptions = { preserveBodyFields?: boolean; maxDepth?: number };
 
 function normalizeFieldName(key: string): string {
 	return key.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -104,43 +108,56 @@ export function redactSensitiveText(text: string): string {
 		return `<<BPURI${index}>>`;
 	});
 	const redacted = redactUrlQueryValues(sheltered)
-		.replace(/(\b(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
-		.replace(/((?:^|[\r\n])[^\r\n]{0,160}\b(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
-		.replace(/("(?:cookie|cookies|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp|postData|payloadData|body)"\s*:\s*)"[^"]*"/gi, "$1\"[redacted]\"")
-		.replace(/((?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp)\s*=\s*)[^;&\s,"'}]+/gi, "$1[redacted]")
+		.replace(/\b((?:https?|wss?):\/\/)[^/\s:@]+:[^@\s/]+@/gi, "$1[redacted]:[redacted]@")
+		.replace(/(\b(?:auth|bearer|cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
+		.replace(/((?:^|[\r\n])[^\r\n]{0,160}\b(?:auth|bearer|cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
+		.replace(/("(?:auth|bearer|cookie|cookies|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp|postData|payloadData|body)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, "$1\"[redacted]\"")
+		.replace(/((?:auth|bearer|cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp)\s*=\s*)[^;&\s,"'}]+/gi, "$1[redacted]")
 		.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
 		.replace(/\bBasic\s+[A-Za-z0-9+/=]+/gi, "Basic [redacted]")
-		.replace(/([?&](?:token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|password|api[_-]?key|otp|totp)=)[^&#\s"'<>]+/gi, "$1[redacted]")
+		.replace(/([?&](?:auth|authorization|bearer|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|password|api[_-]?key|otp|totp)=)[^&#\s"'<>]+/gi, "$1[redacted]")
 		.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted private key]");
 	if (!preserved.length) return redacted;
 	return redacted.replace(/<<BPURI(\d+)>>/g, (_, idx) => preserved[Number(idx)]);
 }
 
-export function redactSensitiveValue(value: unknown, seen = new WeakSet<object>(), parentPayload = false): unknown {
-	if (typeof value === "string") return parentPayload ? REDACTED_BODY : redactSensitiveText(value);
+function redactSensitiveValueInner(value: unknown, options: RedactionOptions, seen: WeakSet<object>, parentBody = false, depth = 0): unknown {
+	if (typeof value === "string") {
+		if (parentBody && !options.preserveBodyFields) return REDACTED_BODY;
+		if (parentBody) {
+			try {
+				return JSON.stringify(redactSensitiveValueInner(JSON.parse(value), options, new WeakSet<object>(), false, depth + 1));
+			} catch {
+				/* Non-JSON bodies still receive conservative text redaction. */
+			}
+		}
+		return redactSensitiveText(value);
+	}
 	if (value === null || value === undefined || typeof value !== "object") return value;
+	if (depth > (options.maxDepth ?? 12)) return "[redacted depth]";
 	if (seen.has(value)) return "[Circular]";
 	seen.add(value);
 	if (Array.isArray(value)) {
-		const output = value.map((item) => redactSensitiveValue(item, seen, parentPayload));
+		const output = value.map((item) => redactSensitiveValueInner(item, options, seen, parentBody, depth + 1));
 		seen.delete(value);
 		return output;
 	}
-	const out: Record<string, unknown> = {};
-	for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+	const out = Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]): [string, unknown] => {
 		const placeholder = sensitiveFieldPlaceholder(key);
 		const normalized = normalizeFieldName(key);
-		const payloadField = BODY_FIELD_NAMES.has(normalized) || POST_DATA_FIELD_NAMES.has(normalized);
-		if (placeholder && (item === null || item === undefined || typeof item !== "object" || SENSITIVE_FIELD_NAMES.has(normalized) || POST_DATA_FIELD_NAMES.has(normalized))) {
-			out[key] = placeholder;
-			continue;
+		const bodyField = BODY_FIELD_NAMES.has(normalized);
+		if (placeholder && !(bodyField && options.preserveBodyFields)) {
+			return [key, placeholder];
 		}
-		if (shouldRedactPayloadText(key, parentPayload)) {
-			out[key] = REDACTED_BODY;
-			continue;
+		if (shouldRedactPayloadText(key, parentBody) && !options.preserveBodyFields) {
+			return [key, REDACTED_BODY];
 		}
-		out[key] = redactSensitiveValue(item, seen, payloadField);
-	}
+		return [key, redactSensitiveValueInner(item, options, seen, bodyField, depth + 1)];
+	}));
 	seen.delete(value);
 	return out;
+}
+
+export function redactSensitiveValue(value: unknown, options: RedactionOptions = {}): unknown {
+	return redactSensitiveValueInner(value, options, new WeakSet<object>());
 }

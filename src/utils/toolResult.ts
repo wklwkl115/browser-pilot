@@ -27,7 +27,7 @@ function isRuntimeResultKey(key: string): boolean {
 		|| /(?:tab|target|session)_(?:id|key|name)$/.test(key);
 }
 
-type PublicToolValueOptions = { preserveExecutionData?: boolean };
+type PublicToolValueOptions = { preserveExecutionData?: boolean; preserveBodyFields?: boolean };
 
 function projectRecord(value: Record<string, unknown>, options: PublicToolValueOptions): Record<string, unknown> {
 	if (isExecutionEnvelope(value)) {
@@ -59,15 +59,25 @@ function normalizeDetails(details: Record<string, unknown>): Record<string, unkn
 
 export function jsonResult(value: unknown, details: Record<string, unknown> = {}, options: PublicToolValueOptions = {}): BrowserTextCommandResult {
 	return {
-		content: [{ type: "text", text: stableJson(publicToolValue(redactSensitiveValue(value), options)) }],
+		content: [{ type: "text", text: stableJson(publicToolValue(redactSensitiveValue(value, { preserveBodyFields: options.preserveBodyFields }), options)) }],
 		details: normalizeDetails(details),
 	};
 }
 
 export function errorResult(error: unknown): BrowserTextCommandResult {
 	const normalized = publicToolValue(compactError(error)) as Record<string, unknown>;
+	const rawDetails = isRecord(normalized.details) ? normalized.details : {};
+	const { recovery: _nestedRecovery, commandName: _commandName, snapshotId: _snapshotId, observationId: _observationId, refObservationId: _refObservationId, ...details } = rawDetails;
+	const rawRecovery = isRecord(normalized.recovery) ? normalized.recovery : {};
+	const { summary: _summary, ...recovery } = rawRecovery;
+	const publicError = {
+		code: normalized.code,
+		message: normalized.message,
+		...(Object.keys(details).length ? { details } : {}),
+		...(Object.keys(recovery).length ? { recovery } : {}),
+	};
 	return {
-		content: [{ type: "text", text: stableJson(normalized) }],
+		content: [{ type: "text", text: stableJson(publicError) }],
 		details: normalizeDetails({ error: normalized }),
 		isError: true,
 	};

@@ -101,10 +101,10 @@ function requireEffect(value, label, options = {}) {
 	return effect;
 }
 
-function normalizedVisualPoint(visual, rect, x, y) {
-	const width = Number(visual?.basis?.viewportWidth);
-	const height = Number(visual?.basis?.viewportHeight);
-	if (!(width > 0 && height > 0)) throw new Error(`visual observation has no viewport basis: ${JSON.stringify(visual)}`);
+function normalizedVisualPoint(rect, x, y) {
+	const width = Number(rect?.viewportWidth);
+	const height = Number(rect?.viewportHeight);
+	if (!(width > 0 && height > 0)) throw new Error(`visual geometry has no viewport: ${JSON.stringify(rect)}`);
 	return { x: (Number(rect.x) + x) / width, y: (Number(rect.y) + y) / height };
 }
 
@@ -266,11 +266,11 @@ try {
 	if (cdp.result?.result?.value !== "Browser Pilot Smoke") throw new Error(`browser_command cdp did not return raw browser evidence: ${JSON.stringify(cdp)}`);
 
 	const created = resultEnvelope(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}secondary`, active: true }), "browser_tabs create");
-	const createdTargetRef = created.createdTarget?.targetRef;
+	const createdTargetRef = created.tabs?.[0]?.targetRef;
 	if (!createdTargetRef) throw new Error(`created tab was not routable: ${JSON.stringify(created)}`);
 	resultEnvelope(await invoke(daemon, "browser_tabs", { action: "close", targetRef: createdTargetRef }), "browser_tabs close");
 	const background = resultEnvelope(await invoke(daemon, "browser_tabs", { action: "create", url: `${fixture.url}background`, active: false }), "browser_tabs create background");
-	const backgroundTargetRef = background.createdTarget?.targetRef;
+	const backgroundTargetRef = background.tabs?.[0]?.targetRef;
 	if (!backgroundTargetRef) throw new Error(`background tab was not routable: ${JSON.stringify(background)}`);
 	const backgroundWrite = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef: backgroundTargetRef, script: "document.documentElement.dataset.background='yes'; true" }), "background browser_execute");
 	requireEffect(backgroundWrite, "background browser_execute");
@@ -286,61 +286,61 @@ try {
 	resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.install", targets: ["console"] } }), "browser_command hook.install");
 	const hookReused = resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.install", targets: ["console"] } }), "browser_command hook.install reuse");
 	if (hookReused.result?.idempotent !== true && hookReused.result?.reused !== true) throw new Error(`hook.install did not reuse its runtime-owned session: ${JSON.stringify(hookReused)}`);
-		resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.uninstall" } }), "browser_command hook.uninstall");
+	resultEnvelope(await invoke(daemon, "browser_command", { targetRef, command: { cmd: "hook.uninstall" } }), "browser_command hook.uninstall");
 
-		const visualGeometry = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "(()=>{const box=element=>{const r=element.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};return{canvas:box(document.querySelector('#visual-surface')),input:box(document.querySelector('#visual-input'))}})()" }), "visual geometry").result;
-		const observeVisual = async (label) => {
-			const value = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, visual: "always" }), label);
-			const visual = value.visual;
-			if (typeof visual?.ref !== "string" || typeof visual?.basis?.observationId !== "string" || visual.actionableGrounding !== true) throw new Error(`${label} did not return actionable visual evidence: ${JSON.stringify(visual)}`);
-			await requirePngResource(visual.resourceUri, label);
-			return visual;
-		};
-		const visualCommand = (visual, action, point, extra = {}) => invoke(daemon, "browser_command", { command: { cmd: "input.ref", action, ref: visual.ref, visual: { observationId: visual.basis.observationId, point, ...(extra.to ? { to: extra.to } : {}) }, ...extra.command } });
+	const visualGeometry = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "(()=>{const box=element=>{const r=element.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,viewportWidth:innerWidth,viewportHeight:innerHeight}};return{canvas:box(document.querySelector('#visual-surface')),input:box(document.querySelector('#visual-input'))}})()" }), "visual geometry").result;
+	const observeVisual = async (label) => {
+		const value = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, visual: "always" }), label);
+		const visual = value.visual;
+		if (typeof visual?.ref !== "string" || visual.actionableGrounding !== true) throw new Error(`${label} did not return actionable visual evidence: ${JSON.stringify(visual)}`);
+		await requirePngResource(visual.resourceUri, label);
+		return visual;
+	};
+	const visualCommand = (visual, action, point, extra = {}) => invoke(daemon, "browser_command", { command: { cmd: "input.ref", action, ref: visual.ref, visual: { point, ...(extra.to ? { to: extra.to } : {}) }, ...extra.command } });
 
-		const clickVisual = await observeVisual("visual click observe");
-		const clickPoint = normalizedVisualPoint(clickVisual, visualGeometry.canvas, 31, 19);
-		const visualClick = resultEnvelope(await visualCommand(clickVisual, "click", clickPoint), "visual click");
-		const visualClickEffect = requireEffect(visualClick, "visual click");
-		if (visualClickEffect.visual?.observed !== true || visualClickEffect.visual.changed !== true) throw new Error(`visual click did not return changed pixel evidence: ${JSON.stringify(visualClickEffect)}`);
-		await requirePngResource(visualClickEffect.visual.resourceUri, "visual click effect");
-		const clickCoordinates = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "(()=>{const c=document.querySelector('#visual-surface');return{x:Number(c.dataset.clickX),y:Number(c.dataset.clickY),count:Number(c.dataset.clickCount)}})()" }), "visual click coordinates").result;
-		if (Math.abs(clickCoordinates.x - 31) > 1 || Math.abs(clickCoordinates.y - 19) > 1 || clickCoordinates.count !== 1) throw new Error(`visual click was recentered or missed: ${JSON.stringify(clickCoordinates)}`);
+	const clickVisual = await observeVisual("visual click observe");
+	const clickPoint = normalizedVisualPoint(visualGeometry.canvas, 31, 19);
+	const visualClick = resultEnvelope(await visualCommand(clickVisual, "click", clickPoint), "visual click");
+	const visualClickEffect = requireEffect(visualClick, "visual click");
+	if (visualClickEffect.visual?.observed !== true || visualClickEffect.visual.changed !== true) throw new Error(`visual click did not return changed pixel evidence: ${JSON.stringify(visualClickEffect)}`);
+	await requirePngResource(visualClickEffect.visual.resourceUri, "visual click effect");
+	const clickCoordinates = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "(()=>{const c=document.querySelector('#visual-surface');return{x:Number(c.dataset.clickX),y:Number(c.dataset.clickY),count:Number(c.dataset.clickCount)}})()" }), "visual click coordinates").result;
+	if (Math.abs(clickCoordinates.x - 31) > 1 || Math.abs(clickCoordinates.y - 19) > 1 || clickCoordinates.count !== 1) throw new Error(`visual click was recentered or missed: ${JSON.stringify(clickCoordinates)}`);
 
-		const dragVisual = await observeVisual("visual drag observe");
-		const dragFrom = normalizedVisualPoint(dragVisual, visualGeometry.canvas, 24, 30);
-		const dragTo = normalizedVisualPoint(dragVisual, visualGeometry.canvas, 180, 72);
-		resultEnvelope(await visualCommand(dragVisual, "drag", dragFrom, { to: dragTo }), "visual drag");
-		const dragCoordinates = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "(()=>{const c=document.querySelector('#visual-surface');return{from:c.dataset.dragStart,to:c.dataset.dragEnd}})()" }), "visual drag coordinates").result;
-		const [dragFromX, dragFromY] = String(dragCoordinates.from).split(",").map(Number);
-		const [dragToX, dragToY] = String(dragCoordinates.to).split(",").map(Number);
-		if (Math.abs(dragFromX - 24) > 1 || Math.abs(dragFromY - 30) > 1 || Math.abs(dragToX - 180) > 1 || Math.abs(dragToY - 72) > 1) throw new Error(`visual drag coordinates changed: ${JSON.stringify(dragCoordinates)}`);
+	const dragVisual = await observeVisual("visual drag observe");
+	const dragFrom = normalizedVisualPoint(visualGeometry.canvas, 24, 30);
+	const dragTo = normalizedVisualPoint(visualGeometry.canvas, 180, 72);
+	resultEnvelope(await visualCommand(dragVisual, "drag", dragFrom, { to: dragTo }), "visual drag");
+	const dragCoordinates = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "(()=>{const c=document.querySelector('#visual-surface');return{from:c.dataset.dragStart,to:c.dataset.dragEnd}})()" }), "visual drag coordinates").result;
+	const [dragFromX, dragFromY] = String(dragCoordinates.from).split(",").map(Number);
+	const [dragToX, dragToY] = String(dragCoordinates.to).split(",").map(Number);
+	if (Math.abs(dragFromX - 24) > 1 || Math.abs(dragFromY - 30) > 1 || Math.abs(dragToX - 180) > 1 || Math.abs(dragToY - 72) > 1) throw new Error(`visual drag coordinates changed: ${JSON.stringify(dragCoordinates)}`);
 
-		const wheelVisual = await observeVisual("visual wheel observe");
-		const wheelPoint = normalizedVisualPoint(wheelVisual, visualGeometry.canvas, 80, 60);
-		resultEnvelope(await visualCommand(wheelVisual, "wheel", wheelPoint, { command: { deltaY: 47 } }), "visual wheel");
-		const wheelY = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "Number(document.querySelector('#visual-surface').dataset.wheelY)" }), "visual wheel delta").result;
-		if (wheelY !== 47) throw new Error(`visual wheel delta changed: ${JSON.stringify(wheelY)}`);
+	const wheelVisual = await observeVisual("visual wheel observe");
+	const wheelPoint = normalizedVisualPoint(visualGeometry.canvas, 80, 60);
+	resultEnvelope(await visualCommand(wheelVisual, "wheel", wheelPoint, { command: { deltaY: 47 } }), "visual wheel");
+	const wheelY = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "Number(document.querySelector('#visual-surface').dataset.wheelY)" }), "visual wheel delta").result;
+	if (wheelY !== 47) throw new Error(`visual wheel delta changed: ${JSON.stringify(wheelY)}`);
 
-		const typeVisual = await observeVisual("visual type observe");
-		const typePoint = normalizedVisualPoint(typeVisual, visualGeometry.input, visualGeometry.input.width / 2, visualGeometry.input.height / 2);
-		const visualType = resultEnvelope(await visualCommand(typeVisual, "type", typePoint, { command: { text: "pixel input" } }), "visual type");
-		if (visualType.effect?.visual?.observed !== true) throw new Error(`visual type did not return pixel evidence: ${JSON.stringify(visualType)}`);
-		const typedValue = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "document.querySelector('#visual-input').value" }), "visual type value").result;
-		if (typedValue !== "pixel input") throw new Error(`visual type missed its target: ${JSON.stringify(typedValue)}`);
+	const typeVisual = await observeVisual("visual type observe");
+	const typePoint = normalizedVisualPoint(visualGeometry.input, visualGeometry.input.width / 2, visualGeometry.input.height / 2);
+	const visualType = resultEnvelope(await visualCommand(typeVisual, "type", typePoint, { command: { text: "pixel input" } }), "visual type");
+	if (visualType.effect?.visual?.observed !== true) throw new Error(`visual type did not return pixel evidence: ${JSON.stringify(visualType)}`);
+	const typedValue = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "document.querySelector('#visual-input').value" }), "visual type value").result;
+	if (typedValue !== "pixel input") throw new Error(`visual type missed its target: ${JSON.stringify(typedValue)}`);
 
-		resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "document.activeElement?.blur();true" }), "blur visual input");
-		const staleVisual = await observeVisual("visual stale observe");
-		const stalePoint = normalizedVisualPoint(staleVisual, visualGeometry.canvas, 60, 40);
-		resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const c=document.querySelector('#visual-surface');const x=c.getContext('2d');x.fillStyle='#111';x.fillRect(0,0,12,12);return true})()" }), "mutate visual pixels");
-		const staleVisualInput = resultEnvelope(await visualCommand(staleVisual, "click", stalePoint), "stale visual click");
-		if (staleVisualInput.code !== "REF_STALE") throw new Error(`visual input did not reject changed pixels: ${JSON.stringify(staleVisualInput)}`);
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "document.activeElement?.blur();true" }), "blur visual input");
+	const staleVisual = await observeVisual("visual stale observe");
+	const stalePoint = normalizedVisualPoint(visualGeometry.canvas, 60, 40);
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const c=document.querySelector('#visual-surface');const x=c.getContext('2d');x.fillStyle='#111';x.fillRect(0,0,12,12);return true})()" }), "mutate visual pixels");
+	const staleVisualInput = resultEnvelope(await visualCommand(staleVisual, "click", stalePoint), "stale visual click");
+	if (staleVisualInput.code !== "REF_STALE") throw new Error(`visual input did not reject changed pixels: ${JSON.stringify(staleVisualInput)}`);
 
-		const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "browser_observe");
-		if (observed.schema !== "browser-page-observation/v3" || typeof observed.content?.text !== "string") {
-			throw new Error(`browser_observe did not return a PageObservation view: ${JSON.stringify(observed)}`);
-		}
-		if (observed.visual?.actionableGrounding !== true) throw new Error(`browser_observe auto mode did not attach visual evidence: ${JSON.stringify(observed.visual)}`);
+	const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, mode: "full" }), "browser_observe");
+	if (typeof observed.content?.text !== "string") {
+		throw new Error(`browser_observe did not return a PageObservation view: ${JSON.stringify(observed)}`);
+	}
+	if (observed.visual?.actionableGrounding !== true) throw new Error(`browser_observe auto mode did not attach visual evidence: ${JSON.stringify(observed.visual)}`);
 	if (!observed.content.text.includes("Browser Pilot Smoke")) throw new Error(`browser_observe did not return page content: ${JSON.stringify(observed.content)}`);
 	const actionRef = Array.isArray(observed.actionSpace?.items) ? observed.actionSpace.items.find((entity) => entity?.name === "Run smoke")?.ref : undefined;
 	if (typeof actionRef !== "string") throw new Error(`browser_observe did not mint the smoke action ref: ${JSON.stringify(observed.actionSpace)}`);
@@ -354,7 +354,7 @@ try {
 	if (input.result?.input?.resolution !== "liveLocator") throw new Error(`input.ref did not fall back from the stale backend node: ${JSON.stringify(input)}`);
 	const clicked = resultEnvelope(await invoke(daemon, "browser_execute", { refs: { action: actionRef }, readOnly: true, script: "browserPilot.refs.action?.dataset.clicked" }), "browser_execute ref verification");
 	if (clicked.result !== "yes") throw new Error(`input.ref did not dispatch the physical click: ${JSON.stringify(clicked)}`);
-	const continuedObservation = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "continued browser_observe");
+	const continuedObservation = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, mode: "full" }), "continued browser_observe");
 	const continuedRef = Array.isArray(continuedObservation.actionSpace?.items) ? continuedObservation.actionSpace.items.find((entity) => entity?.name === "Run smoke")?.ref : undefined;
 	if (continuedRef !== actionRef) throw new Error(`browser_observe did not preserve semantic identity across rerender: ${JSON.stringify({ actionRef, continuedRef })}`);
 	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const el=document.querySelector('#smoke-action-rerendered');el.dataset.clicked='';el.textContent='Changed action';return true})()" }), "change ref semantics");
@@ -369,6 +369,9 @@ try {
 	if (staleInput.code !== "BACKEND_NODE_STALE") throw new Error(`stale input.ref did not fail closed: ${JSON.stringify(staleInput)}`);
 	const untouched = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, readOnly: true, script: "document.querySelector('#danger-action')?.dataset.clicked" }), "stale ref verification");
 	if (untouched.result !== undefined && untouched.result !== "[undefined]") throw new Error(`stale input.ref clicked the replacement element: ${JSON.stringify(untouched)}`);
+	resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{const root=document.createElement('div'),fragment=document.createDocumentFragment();root.id='large-dom';for(let i=0;i<20000;i++){const span=document.createElement('span');span.textContent=`node ${i}`;fragment.append(span)}root.append(fragment);document.body.append(root);return true})()" }), "large DOM fixture");
+	const boundedObservation = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, mode: "full", visual: "never" }), "bounded large DOM observe", 20_000);
+	if (boundedObservation.content?.complete !== false || boundedObservation.actionSpace?.coverage?.captureComplete !== true) throw new Error(`large DOM observation did not preserve its bounded content and complete action coverage: ${JSON.stringify(boundedObservation)}`);
 	const burst = resultEnvelope(await invoke(daemon, "browser_execute", { targetRef, script: "(()=>{let n=0;const timer=setInterval(()=>{document.documentElement.dataset.burst=String(++n);if(n===4)clearInterval(timer)},15);return true})()" }), "burst browser_execute");
 	requireEffect(burst, "burst browser_execute");
 	const popupUrl = `${fixture.url}popup`;
@@ -387,7 +390,7 @@ try {
 		browser: browser.executable,
 		bridgePort: daemon.bridgePort,
 		tabId,
-		checks: ["extension-handshake", "tabs", "execute", "raw-cdp-auto-lifecycle", "tab-create-close", "background-cdp-effect", "browser-command-network-effect", "hook-auto-session", "visual-observe-resource", "visual-click-exact", "visual-drag", "visual-wheel", "visual-type", "visual-stale-rejected", "visual-auto", "canonical-observe", "direct-observe-content", "ref-execute", "ref-rerender-rebound", "ref-input-effect", "ref-observation-continuity", "ref-semantic-mismatch-rejected", "ref-occlusion-rejected", "stale-ref-rejected", "burst-effect", "new-tab-effect", "navigation-effect"],
+		checks: ["extension-handshake", "tabs", "execute", "raw-cdp-auto-lifecycle", "tab-create-close", "background-cdp-effect", "browser-command-network-effect", "hook-auto-session", "visual-observe-resource", "visual-click-exact", "visual-drag", "visual-wheel", "visual-type", "visual-stale-rejected", "visual-auto", "canonical-observe", "direct-observe-content", "ref-execute", "ref-rerender-rebound", "ref-input-effect", "ref-observation-continuity", "ref-semantic-mismatch-rejected", "ref-occlusion-rejected", "stale-ref-rejected", "bounded-large-dom-observe", "burst-effect", "new-tab-effect", "navigation-effect"],
 	}, null, 2));
 } finally {
 	await stopBrowser(browser?.child, browser?.profileDir);

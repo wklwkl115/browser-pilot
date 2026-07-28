@@ -5,6 +5,7 @@ import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse 
 
 const findLostWsRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
 const summarizeLostWsRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
+const BROWSER_PILOT_WS_MAX_INBOUND_FRAME_BYTES = 64 * 1024;
 
 function previewText(text: string, limit = 160): string {
 	const compact = String(text || "").replace(/\s+/g, " ").trim();
@@ -23,17 +24,23 @@ function unsafeMatcherReason(pattern: unknown): string | undefined {
 	return undefined;
 }
 
-function normalizePayload(data: unknown): { text: string; bytes: number; binary: boolean; json?: unknown } {
+type NormalizedWsPayload =
+	| { oversized: true; bytes: number; binary: boolean }
+	| { oversized: false; text: string; bytes: number; binary: boolean; json?: unknown };
+
+function normalizePayload(data: unknown): NormalizedWsPayload {
 	const encoder = new TextEncoder();
 	let text: string;
 	let binary = false;
 	let bytes: number;
 	if (typeof data === "string") {
 		text = data;
+		if (text.length > BROWSER_PILOT_WS_MAX_INBOUND_FRAME_BYTES) return { oversized: true, bytes: text.length, binary };
 		bytes = encoder.encode(text).length;
 	} else if (data instanceof ArrayBuffer) {
 		binary = true;
 		bytes = data.byteLength;
+		if (bytes > BROWSER_PILOT_WS_MAX_INBOUND_FRAME_BYTES) return { oversized: true, bytes, binary };
 		text = new TextDecoder().decode(new Uint8Array(data));
 	} else if (typeof Blob !== "undefined" && data instanceof Blob) {
 		binary = true;
@@ -42,15 +49,17 @@ function normalizePayload(data: unknown): { text: string; bytes: number; binary:
 	} else if (ArrayBuffer.isView(data)) {
 		binary = true;
 		bytes = data.byteLength;
+		if (bytes > BROWSER_PILOT_WS_MAX_INBOUND_FRAME_BYTES) return { oversized: true, bytes, binary };
 		text = new TextDecoder().decode(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
 	} else {
 		text = String(data ?? "");
 		bytes = encoder.encode(text).length;
 	}
+	if (bytes > BROWSER_PILOT_WS_MAX_INBOUND_FRAME_BYTES) return { oversized: true, bytes, binary };
 	try {
-		return { text, bytes, binary, json: JSON.parse(text) };
+		return { oversized: false, text, bytes, binary, json: JSON.parse(text) };
 	} catch {
-		return { text, bytes, binary };
+		return { oversized: false, text, bytes, binary };
 	}
 }
 
@@ -116,6 +125,19 @@ async function openWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<Br
 	browserPilotWsSessions.set(String(session.key), session);
 	const messageListener = (event: MessageEvent) => {
 		const payload = normalizePayload(event.data);
+		if (payload.oversized) {
+			session.lastError = `inbound WebSocket frame exceeds ${BROWSER_PILOT_WS_MAX_INBOUND_FRAME_BYTES}-byte limit (${payload.bytes} bytes)`;
+			session.state = "error";
+			rememberWsTranscript(session, { event: "error", direction: "inbound", error: session.lastError, bytes: payload.bytes, maxBytes: BROWSER_PILOT_WS_MAX_INBOUND_FRAME_BYTES });
+			cleanupWsSocketListeners(session);
+			try {
+				ws.close(1009, "Inbound frame too large");
+			} catch {
+				/* best-effort websocket close after oversized inbound frame */
+			}
+			void forgetState('ws', `${Number(tabId)}:${session.sessionId}`);
+			return;
+		}
 		rememberWsTranscript(session, { event: "message", direction: "inbound", text: payload.text, preview: previewText(payload.text), bytes: payload.bytes, binary: payload.binary, json: payload.json });
 	};
 	const closeListener = (event: CloseEvent) => {
@@ -225,7 +247,15 @@ function waitWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserP
 			ws.removeEventListener("error", onError);
 		};
 		const onMessage = (event: MessageEvent) => {
+			if (session.state !== "open") {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				resolve(browserPilotError("WEBSOCKET_WAIT_ABORTED", "ws wait aborted because session errored", { cmd: msg.cmd, tabId, sessionId: session.sessionId, state: session.state, lastError: session.lastError, afterSeq, contains, regex: regexText }));
+				return;
+			}
 			const payload = normalizePayload(event.data);
+			if (payload.oversized) return;
 			const entry = session.transcript.at(-1);
 			const matched = entry && entry.event === "message" && entry.direction === "inbound" && Number(entry.seq) > afterSeq && (!contains || payload.text.includes(contains)) && (!regex || regex.test(payload.text));
 			if (!matched || settled) return;
@@ -402,4 +432,4 @@ registerRecovery(async (results) => {
 	results.push(result);
 });
 
-export { handleBrowserPilotWsCommand, cleanupWsSessionsForTab };
+export { BROWSER_PILOT_WS_MAX_INBOUND_FRAME_BYTES, handleBrowserPilotWsCommand, cleanupWsSessionsForTab };

@@ -6,7 +6,7 @@ traffic, local files selected for upload, and local-only artifacts.
 ## Local Trust Model
 
 - Daemon control requests use a user-local token with restrictive POSIX file modes; Windows relies on the user-profile ACL.
-- The browser bridge accepts WebSocket upgrades only from the packaged extension.
+- The browser bridge accepts WebSocket upgrades only from the configured Browser Pilot extension origin; command dispatch also validates the reported extension build.
 - Page content is untrusted; the extension does not suppress dialogs or remove CSP headers.
 
 ## Reporting

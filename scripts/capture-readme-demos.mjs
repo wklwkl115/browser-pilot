@@ -316,7 +316,7 @@ async function captureForm(daemon, targetRef, baseUrl, tempRoot) {
 	await mkdir(dir);
 	const record = recorder(daemon, targetRef, dir);
 	await record.capture(1.1);
-	const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "browser_observe");
+	const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, mode: "full" }), "browser_observe");
 	await step(daemon, targetRef, "#company", "Enter the customer details");
 	await record.capture(0.9);
 	const company = actionRef(observed, "Company");
@@ -350,7 +350,7 @@ async function captureTable(daemon, targetRef, baseUrl, tempRoot) {
 	await mkdir(dir);
 	const record = recorder(daemon, targetRef, dir);
 	await record.capture(1.1);
-	let observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "browser_observe");
+	let observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, mode: "full" }), "browser_observe");
 	await step(daemon, targetRef, "#invoice-filter", "Filter the queue to overdue invoices");
 	await record.capture(0.8);
 	const filter = actionRef(observed, "Filter invoices");
@@ -359,7 +359,7 @@ async function captureTable(daemon, targetRef, baseUrl, tempRoot) {
 	await setRefValue(daemon, filter, "overdue");
 	await step(daemon, targetRef, "[aria-label='Open invoice INV-2048']", "Open overdue invoice INV-2048");
 	await record.capture(0.9);
-	observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "filtered browser_observe");
+	observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, mode: "full" }), "filtered browser_observe");
 	const invoice = actionRef(observed, "Open invoice INV-2048");
 	await invoke(daemon, "browser_command", {
 		targetRef,
@@ -377,7 +377,7 @@ async function captureNetwork(daemon, targetRef, baseUrl, tempRoot) {
 	await mkdir(dir);
 	const record = recorder(daemon, targetRef, dir);
 	await record.capture(1.1);
-	const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, fresh: true }), "browser_observe");
+	const observed = resultEnvelope(await invoke(daemon, "browser_observe", { targetRef, mode: "full" }), "browser_observe");
 	const sync = actionRef(observed, "Sync inventory");
 	await invoke(daemon, "browser_command", { targetRef, command: { cmd: "network.start", clear: true } });
 	await step(daemon, targetRef, "#sync-button", "Start the west warehouse inventory sync");

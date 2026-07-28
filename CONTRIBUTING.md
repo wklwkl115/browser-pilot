@@ -16,7 +16,7 @@ npm run build:bridge
 mise run verify
 ```
 
-Edit source under `src/` and `capture-src/`. Do not edit generated `dist/` or `bridge/browser_pilot_bridge/` files. Public tools are owned by `src/commands/commandCatalog.ts`; pure kernels under `src/kernels/` must remain free of browser and npm runtime dependencies.
+Edit runtime source under `src/` and `capture-src/`. Do not edit generated `dist/` or `bridge/browser_pilot_bridge/` files. The bridge host and port range are owned by `bridge/browser_bridge_config.json`; run `npm run sync:config` after changing it. The public tool list is owned by `src/commands/commandCatalog.ts`, with schemas and handlers in the corresponding command modules. Pure kernels under `src/kernels/` must remain free of browser and npm runtime dependencies.
 
 ## Pull Requests
 

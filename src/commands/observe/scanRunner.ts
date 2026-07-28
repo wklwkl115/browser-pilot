@@ -1,9 +1,9 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { BrowserBridgeError, compactError } from "../../utils/errors.js";
 import { isRecord } from "../../utils/params.js";
-import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
-import { artifactFallbackName, bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, type CommandResultContext } from "../commandRuntime.js";
-import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
+import { artifactFallbackName, resolveArtifactPath } from "../../artifacts/artifactFiles.js";
+import { bridgeNestedErrorResult, resolveLocalTargetTabId, targetTabId, type CommandResultContext } from "../commandRuntime.js";
+import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import { currentObserveSnapshotMeta, type ObserveToolParams } from "./common.js";
 import { runObserveProviders } from "./scanProviders.js";
 import { prepareScanAssembly } from "./scanAssembly.js";
@@ -11,6 +11,8 @@ import { executeScanCapture } from "./scanCapture.js";
 import { finalizeScanObservation, type ObservationProviderFailure } from "./scanOutput.js";
 import { prepareScanSession } from "./scanSession.js";
 import { materializeVisualObservation } from "../visualEvidence.js";
+import { DEFAULT_TOOL_TIMEOUT_MS } from "../commandShared.js";
+import { withBrowserOperation } from "../browserOperation.js";
 
 function providerFailure(provider: string, code: string, message?: string, details?: Record<string, unknown>): ObservationProviderFailure {
 	return {
@@ -72,7 +74,6 @@ async function prepareObservationRequest(
 			return server.getTabs();
 		});
 		timings.tabRefreshMs = elapsedMs(refreshStartedAt);
-		addBridgeRoundTrips(timings, 1);
 		if (rawTargetRef !== undefined) tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
 	}
 	signal?.throwIfAborted();
@@ -102,31 +103,48 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const observeTimings: ObserveTimingMetrics = {};
 	const request = await prepareObservationRequest(server, params, ctx, observeTimings, signal);
 	const { tabs, providerFailures, browserSessionId, rawTargetRef, tabId, fallbackName, outputPath } = request;
-	const session = await prepareScanSession({
+	const operationTabId = tabId ?? server.snapshot({ browserSessionId: params.browserSessionId }).defaultTabId;
+	const operationStartedAt = Date.now();
+	const browserStage = await withBrowserOperation({
 		server,
-		params,
-		tabId,
-		timings: observeTimings,
-		signal,
-	});
-	const { timeoutMs, effectiveTabId, captureMaxChars, scanScript, ledgerFrame: sessionLedgerFrame, pageFingerprint, pageIdentity, identityBaseline, baseline: sessionBaseline, baselineRequested, baselineResolutionError, reanchorReason: sessionReanchorReason } = session;
-	const capture = await executeScanCapture({
-		server,
-		params,
-		rawTargetRef,
 		browserSessionId,
-		tabId: effectiveTabId,
-		timeoutMs,
-		captureMaxChars,
-		scanScript,
-		baseline: sessionBaseline,
-		identityBaseline,
-		pageFingerprint,
-		pageIdentity,
-		reanchorReason: sessionReanchorReason,
-		timings: observeTimings,
+		tabId: operationTabId,
+		targetRef: rawTargetRef as string | number | undefined,
+		timeoutMs: Math.max(1, DEFAULT_TOOL_TIMEOUT_MS - elapsedMs(startedAt)),
 		signal,
+	}, async ({ signal: operationSignal, deadlineAt }) => {
+		const session = await prepareScanSession({ server, params, tabId, timings: observeTimings, signal: operationSignal });
+		const capture = await executeScanCapture({
+			server,
+			params,
+			rawTargetRef,
+			browserSessionId,
+			tabId: session.effectiveTabId,
+			timeoutMs: session.timeoutMs,
+			captureMaxChars: session.captureMaxChars,
+			scanScript: session.scanScript,
+			baseline: session.baseline,
+			identityBaseline: session.identityBaseline,
+			pageFingerprint: session.pageFingerprint,
+			pageIdentity: session.pageIdentity,
+			reanchorReason: session.reanchorReason,
+			timings: observeTimings,
+			signal: operationSignal,
+		});
+		const providers = await runObserveProviders({
+			server,
+			params,
+			tabId: session.effectiveTabId,
+			startedAt: operationStartedAt,
+			deadlineAt,
+			baseline: capture.baseline,
+			timings: observeTimings,
+			signal: operationSignal,
+		});
+		return { session, capture, providers };
 	});
+	const { session, capture, providers } = browserStage;
+	const { effectiveTabId, ledgerFrame: sessionLedgerFrame, baselineRequested, baselineResolutionError } = session;
 	const { observation, fusedPageFingerprint } = capture;
 	const baseline = capture.baseline;
 	const ledgerFrame = capture.reanchorReason ? undefined : sessionLedgerFrame;
@@ -135,24 +153,12 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 	const content = data.content.text;
 	const scanMeta = { schema: data.schema, page: data.page, stats: data.stats };
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
-	const providers = await runObserveProviders({
-		server,
-		params,
-		tabId: effectiveTabId,
-		startedAt,
-		deadlineAt: startedAt + timeoutMs,
-		baseline,
-		timings: observeTimings,
-		signal,
-	});
 	const { causal, recorderState, hookState } = providers;
 	const snapshotMeta = currentObserveSnapshotMeta(server, params, outputPath, data.page.url, recorderState.lastSeq, hookState.lastSeq, capture.pageIdentity);
 	const renderStartedAt = Date.now();
 	const abmlProviderFailure = providerFailureFromAbmlRead(observation.abmlRead);
 	if (abmlProviderFailure) providerFailures.push(abmlProviderFailure);
 	const { assembly } = prepareScanAssembly({
-		server,
-		params,
 		tabId: effectiveTabId,
 		data,
 		bridge,
@@ -194,7 +200,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		content,
 		scanMeta,
 		bridge,
-		recorderActive: recorderState.active,
 		baseline,
 		baselineRequested,
 		baselineResolutionError,
@@ -207,7 +212,6 @@ export async function runScanObservation(server: BrowserCommandRuntimePort, para
 		assembly,
 		scanPageFingerprint,
 		renderStartedAt,
-		intent: params.intent,
 		visual: visual?.visual,
 		visualSaved: visual?.saved,
 	});

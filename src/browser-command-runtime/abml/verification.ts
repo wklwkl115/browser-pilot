@@ -93,10 +93,10 @@ function staleRefReason(options: AbmlVerificationRuntimeOptions, descriptor: Res
 
 export async function readAbmlVerificationObservation(options: AbmlVerificationRuntimeOptions): Promise<AbmlVerificationObservation> {
 	const resolved = resolveRefUriDetailed(options.expectation.ref);
-	if (!resolved.ok) return { reason: resolved.error };
+	if (!resolved.ok) return { reason: resolved.error, retryable: false };
 	const descriptor = resolved.ref.descriptor;
 	const staleReason = staleRefReason(options, descriptor);
-	if (staleReason) return { reason: staleReason };
+	if (staleReason) return { reason: staleReason, retryable: false };
 	const capturedAt = Date.now();
 	const context: ScanEntityContext = {
 		browserSessionId: options.browserSessionId,

@@ -2,7 +2,7 @@ import { readBrowserAbmlStructure, type BrowserAbmlStructureResult } from "../..
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { readPageFingerprint, samePageFingerprint, type PageFingerprint } from "../pageSignals.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
-import { addBridgeRoundTrips, elapsedMs, type ObserveTimingMetrics } from "./timings.js";
+import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import type { BaselineResolution } from "./baseline.js";
 import type { ObserveToolParams } from "./common.js";
 import type { PageIdentity, PageReanchorReason } from "../../kernels/session/pageIdentity.js";
@@ -10,7 +10,6 @@ import { pageReanchorReason, samePageIdentity } from "../../kernels/session/page
 import { currentPageIdentity, pageIdentityFromUnknown } from "./pageIdentity.js";
 import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
 import { validatePageWorldScanBundle } from "../../validation/pageContracts.js";
-import { invalidateAxRawCache } from "../../browser-runtime/abml/axRuntime.js";
 import { BrowserBridgeError, normalizeError } from "../../utils/errors.js";
 import { captureVisualScreenshot, shouldCaptureVisual } from "../visualEvidence.js";
 import { finiteNumber, isRecord } from "../../utils/records.js";
@@ -60,7 +59,6 @@ async function readCaptureFingerprint(options: ScanCaptureOptions): Promise<Page
 	const startedAt = Date.now();
 	const fingerprint = await readPageFingerprint(options.server, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, signal: options.signal });
 	options.timings.fingerprintMs = Number(options.timings.fingerprintMs ?? 0) + elapsedMs(startedAt);
-	addBridgeRoundTrips(options.timings, 1);
 	return fingerprint;
 }
 
@@ -68,12 +66,6 @@ type ScanEvaluationResult = Omit<Awaited<ReturnType<typeof evaluatePageScriptDir
 
 function identityBaselineFor(options: ScanCaptureOptions): BaselineResolution | undefined {
 	return options.identityBaseline ?? options.baseline;
-}
-
-export function axCacheKeyForPage(fingerprint: PageFingerprint | undefined): string | undefined {
-	return fingerprint?.pageEpoch
-		? JSON.stringify(["content", fingerprint.pageEpoch, fingerprint.documentId ?? "", fingerprint.changeSeq, fingerprint.url ?? "", fingerprint.scrollX ?? 0, fingerprint.scrollY ?? 0, fingerprint.viewportWidth ?? 0, fingerprint.viewportHeight ?? 0])
-		: undefined;
 }
 
 async function readScanAbml(
@@ -85,14 +77,12 @@ async function readScanAbml(
 ) {
 	const { browserSessionId, tabId, timeoutMs, captureMaxChars, timings } = options;
 	timings.abmlPrefetchedScan = true;
-	const cacheKey = axCacheKeyForPage(fusedPageFingerprint);
 	const abmlStartedAt = Date.now();
 	const abmlRead = await readBrowserAbmlStructure(options.server, {
 		baseline: effectiveBaseline?.entities,
 		identityBaseline: effectiveIdentityBaseline?.entities,
 		diffOptions: effectiveBaseline?.partialBaseline ? { partialBaseline: true } : undefined,
 		prefetchedScan: result.data,
-		axCacheKey: cacheKey,
 		pageFingerprint: fusedPageFingerprint,
 	}, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, signal: options.signal });
 	timings.abmlMs = Number(timings.abmlMs ?? 0) + elapsedMs(abmlStartedAt);
@@ -101,10 +91,9 @@ async function readScanAbml(
 	const axGeometryCdpCalls = finiteNumber(axDiagnostics?.geometryCdpCalls);
 	if (axCdpCalls !== undefined) {
 		timings.axCdpCalls = Number(timings.axCdpCalls ?? 0) + axCdpCalls;
-		addBridgeRoundTrips(timings, axCdpCalls);
 	}
 	if (axGeometryCdpCalls !== undefined) timings.axGeometryCdpCalls = Number(timings.axGeometryCdpCalls ?? 0) + axGeometryCdpCalls;
-	return { abmlRead, cacheKey };
+	return abmlRead;
 }
 
 function withCoherenceDiagnostics(abmlRead: BrowserAbmlStructureResult, attempts: number): BrowserAbmlStructureResult {
@@ -113,17 +102,20 @@ function withCoherenceDiagnostics(abmlRead: BrowserAbmlStructureResult, attempts
 		: abmlRead;
 }
 
+async function evaluateScan(options: ScanCaptureOptions, script: string): Promise<ScanEvaluationResult> {
+	const startedAt = Date.now();
+	const evaluated = await evaluatePageScriptDirect(options.server, script, { browserSessionId: options.params.browserSessionId, tabId: options.rawTargetRef, timeoutMs: options.timeoutMs, name: "scan_extract", signal: options.signal });
+	options.timings.pageScriptMs = Number(options.timings.pageScriptMs ?? 0) + elapsedMs(startedAt);
+	return { ...evaluated, data: validatedScanBundle(evaluated.data) };
+}
+
 async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFingerprint: PageFingerprint | undefined) {
-	const { server, params, rawTargetRef, timeoutMs, scanScript, baseline, timings } = options;
+	const { server, params, rawTargetRef, timeoutMs, baseline, timings } = options;
 	let effectiveBaseline = baseline;
 	let effectiveIdentityBaseline = identityBaselineFor(options);
 	let reanchorReason = options.reanchorReason;
 	const initialFingerprint = seededFingerprint ?? await readCaptureFingerprint(options);
-	const pageScriptStartedAt = Date.now();
-	const evaluated = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract", signal: options.signal });
-	const result = { ...evaluated, data: validatedScanBundle(evaluated.data) };
-	timings.pageScriptMs = Number(timings.pageScriptMs ?? 0) + elapsedMs(pageScriptStartedAt);
-	addBridgeRoundTrips(timings, 1);
+	const result = await evaluateScan(options, options.scanScript);
 	const capturedIdentity = capturedPageIdentity(options, initialFingerprint, result.target);
 	const pageIdentity = capturedIdentity.identity;
 	if (capturedIdentity.reanchorReason) {
@@ -131,31 +123,31 @@ async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFing
 		effectiveBaseline = undefined;
 		effectiveIdentityBaseline = undefined;
 	}
-	const { abmlRead, cacheKey } = await readScanAbml(options, result, effectiveBaseline, effectiveIdentityBaseline, initialFingerprint);
 	const visualRequested = shouldCaptureVisual(params, result.data);
+	const abmlPromise = readScanAbml(options, result, effectiveBaseline, effectiveIdentityBaseline, initialFingerprint);
 	const visualStartedAt = Date.now();
-	let visualCapture: Awaited<ReturnType<typeof captureVisualScreenshot>> | undefined;
-	if (visualRequested) {
-		try {
-			visualCapture = await captureVisualScreenshot(server, { browserSessionId: options.browserSessionId, tabId: options.tabId ?? rawTargetRef as string | number | undefined, timeoutMs, signal: options.signal });
-		} catch {
+	const visualCapturePromise = visualRequested
+		? captureVisualScreenshot(server, { browserSessionId: options.browserSessionId, tabId: options.tabId ?? rawTargetRef as string | number | undefined, timeoutMs, signal: options.signal }).catch(() => {
 			options.signal?.throwIfAborted();
-		}
-	}
-	if (visualRequested) {
-		timings.visualMs = Number(timings.visualMs ?? 0) + elapsedMs(visualStartedAt);
-		addBridgeRoundTrips(timings, 1);
-		if (visualCapture) {
-			timings.screenshotTransportMs = Number(timings.screenshotTransportMs ?? 0) + visualCapture.transportMs;
-			timings.visualDecodeHashMs = Number(timings.visualDecodeHashMs ?? 0) + visualCapture.decodeHashMs;
-			timings.screenshotBytes = Number(timings.screenshotBytes ?? 0) + visualCapture.buffer.length;
-		}
+			return undefined;
+		}).finally(() => {
+			timings.visualMs = Number(timings.visualMs ?? 0) + elapsedMs(visualStartedAt);
+		})
+		: Promise.resolve(undefined);
+	const [abmlRead, visualCapture] = await Promise.all([
+		abmlPromise,
+		visualCapturePromise,
+	]);
+	if (visualCapture) {
+		timings.screenshotTransportMs = Number(timings.screenshotTransportMs ?? 0) + visualCapture.transportMs;
+		timings.visualDecodeHashMs = Number(timings.visualDecodeHashMs ?? 0) + visualCapture.decodeHashMs;
+		timings.screenshotBytes = Number(timings.screenshotBytes ?? 0) + visualCapture.buffer.length;
 	}
 	const finalFingerprint = await readCaptureFingerprint(options);
 	const coherence = initialFingerprint?.pageEpoch && finalFingerprint?.pageEpoch
 		? samePageFingerprint(initialFingerprint, finalFingerprint) ? "stable" as const : "unstable" as const
 		: "unverified" as const;
-	return { result, abmlRead, cacheKey, coherence, stableFingerprint: coherence === "stable" ? finalFingerprint : undefined, pageIdentity, baseline: effectiveBaseline, reanchorReason, visualRequested, visualCapture };
+	return { result, abmlRead, coherence, stableFingerprint: coherence === "stable" ? finalFingerprint : undefined, pageIdentity, baseline: effectiveBaseline, reanchorReason, visualRequested, visualCapture };
 }
 
 export async function executeScanCapture(options: ScanCaptureOptions) {
@@ -177,7 +169,6 @@ export async function executeScanCapture(options: ScanCaptureOptions) {
 				visualCapture: last.visualCapture,
 			};
 		}
-		if (last.cacheKey && options.tabId) invalidateAxRawCache({ browserSessionId: options.browserSessionId, tabId: options.tabId, cacheKey: last.cacheKey });
 		if (attempt < 2) options.timings.abmlCoherenceRetries = attempt;
 	}
 	const error = normalizeError(new BrowserBridgeError("ABML_OBSERVATION_UNSTABLE", "Page changed or could not be verified during DOM+AX observation", { attempts: 2, coherence: last!.coherence }));

@@ -4,20 +4,17 @@ import type { Entity } from "../../src/kernels/abml/entity.ts";
 import { buildActionableLocators, buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities } from "../../src/kernels/abml/entity.ts";
 import { axBackendNodeId, axName, axNodeId, axRole, axValue, boxModelToGeometry, buildAxEntityFromNode, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities } from "../../src/kernels/abml/ax.ts";
 import { addEntityRelations, buildRelationSummary, derivePaintOrderRelationAnchors, deriveStateRelationAnchors, materializeRelationGraph } from "../../src/kernels/abml/relations.ts";
-import { buildInferenceSummary, entitiesForInferenceEvidence, inferenceEvidenceRefs } from "../../src/kernels/abml/inference.ts";
-import type { EntityDiff } from "../../src/kernels/abml/diff.ts";
 import { displayEntityText, groupEntities, isActionableOrStructural, isPureTextLeaf, normalizeEntityText, structureScopeKey, suppressNestedNonControlGroups, templateGroupDescriptorForEntity } from "../../src/kernels/abml/grouping.ts";
 import { buildCollectionModels } from "../../src/kernels/abml/collections.ts";
 import { firstSafeSemanticText, isItemLikePreview, safeContainerLabelText, sanitizeSemanticText } from "../../src/kernels/abml/semanticText.ts";
 import { buildSnapshotProjection } from "../../src/kernels/abml/snapshotProjection.ts";
-import { buildIdentityGraph, identityGraphSummary } from "../../src/kernels/abml/identityGraph.ts";
 import { buildCausalEvents, buildCausalSummary, buildTriggeredRelations } from "../../src/kernels/abml/causal.ts";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../src/capture/inject.ts";
 import { buildScanEntities } from "../../src/scan/summary.ts";
 import { stableRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
 import { deriveSemanticRefAnchors } from "../../src/kernels/abml/semanticRefAnchor.ts";
 import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
-import { invalidateAxRawCache, mergeAxIntoDomEntities, readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
+import { mergeAxIntoDomEntities, readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
 import { registerRefDescriptor, resolveRefUriDetailed } from "../../src/resources/resourceRefs.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 import { scanPage } from "../../capture-src/entries/scanTemplate.ts";
@@ -83,7 +80,7 @@ function createCdpServer(responses: Record<string, MockCdpResponse>) {
 			calls.push({ method, params: command.params as Record<string, unknown> | undefined, ...(typeof command.targetId === "string" ? { targetId: command.targetId } : {}), timeoutMs: typeof command.timeoutMs === "number" ? command.timeoutMs : undefined });
 			const response = responses[method];
 			if (response instanceof Error) throw response;
-			const data = typeof response === "function" ? response(command) : response;
+			const data = await (typeof response === "function" ? response(command) : response);
 			return { id: `mock-${calls.length}`, acknowledged: true, data };
 		},
 	};
@@ -150,7 +147,7 @@ test("partial AX helper truncates over-budget nodes and reports degraded diagnos
 	assert.equal(result.diagnostics.fetchRelatives, true);
 });
 
-test("full AX reader projects snapshot geometry, paint order, relations, and raw cache", async () => {
+test("full AX reader projects fresh snapshot geometry, paint order, and relations", async () => {
 	const nodes = [
 		axNode(42, "button", "Save changes", { properties: [{ name: "controls", value: { relatedNodes: [{ backendDOMNodeId: 77 }] } }] }),
 		axNode(77, "region", "Details"),
@@ -159,7 +156,7 @@ test("full AX reader projects snapshot geometry, paint order, relations, and raw
 		"Accessibility.getFullAXTree": { nodes },
 		"DOMSnapshot.captureSnapshot": domSnapshot(),
 	});
-	const options = { browserSessionId: "session-1", tabId: 7, observationId: "obs-full", capturedAt: 1_000, cacheKey: "full-ax-cache" };
+	const options = { browserSessionId: "session-1", tabId: 7, observationId: "obs-full", capturedAt: 1_000 };
 	const first = await readAxEntities(server, options);
 	assert.equal(first.entities.length, 2);
 	assert.deepEqual(first.entities[0]?.entity.geometry?.box, { x: 10, y: 20, w: 80, h: 30 });
@@ -168,19 +165,31 @@ test("full AX reader projects snapshot geometry, paint order, relations, and raw
 	assert.deepEqual(first.paintOrderEntries?.map((entry) => [entry.backendNodeId, entry.paintOrder]), [[42, 2], [77, 1]]);
 	assert.equal(first.diagnostics?.cdpCalls, 2);
 	assert.equal(first.diagnostics?.geometryCdpCalls, 0);
-	assert.equal(first.diagnostics?.cacheHit, false);
+	assert.equal(first.diagnostics?.status, "ok");
 	assert.equal(first.diagnostics?.snapshotDocumentCount, 1);
 	assert.equal(first.diagnostics?.snapshotDocumentsSkipped, undefined);
 
-	const cached = await readAxEntities(server, options);
-	assert.equal(cached.diagnostics?.cacheHit, true);
-	assert.equal(cached.diagnostics?.cdpCalls, 0);
-	assert.equal(cached.diagnostics?.snapshotDocumentCount, 1);
-	assert.equal(server.calls.length, 2);
-	assert.equal(invalidateAxRawCache(options), true);
 	const refreshed = await readAxEntities(server, options);
-	assert.equal(refreshed.diagnostics?.cacheHit, false);
+	assert.equal(refreshed.diagnostics?.cdpCalls, 2);
+	assert.equal(refreshed.diagnostics?.snapshotDocumentCount, 1);
 	assert.equal(server.calls.length, 4);
+});
+
+test("full AX reader absorbs rendered text fragments before entity and ref creation", async () => {
+	const fragments = Array.from({ length: 20_000 }, (_, index) => [
+		{ nodeId: `static-${index}`, role: { value: "StaticText" }, name: { value: `Row ${index}` } },
+		{ nodeId: `inline-${index}`, role: { value: "InlineTextBox" }, name: { value: `Row ${index}` } },
+	]).flat();
+	const server = createCdpServer({
+		"Accessibility.getFullAXTree": { nodes: [...fragments, axNode(42, "button", "Save"), axNode(77, "button", "Cancel")] },
+		"DOMSnapshot.captureSnapshot": domSnapshot(),
+	});
+	const result = await readAxEntities(server, { tabId: 7, observationId: "obs-fragments" });
+	assert.equal(result.diagnostics?.nodeCount, 40_002);
+	assert.equal(result.diagnostics?.interestingNodeCount, 2);
+	assert.deepEqual(result.entities.map((item) => item.entity.name), ["Save", "Cancel"]);
+	const merged = mergeAxIntoDomEntities([], result.entities).entities;
+	assert.equal(merged.every((item) => resolveRefUriDetailed(item.ref).ok), true);
 });
 
 test("full AX reader redacts password values from AX-only entities and refs", async () => {
@@ -191,7 +200,7 @@ test("full AX reader redacts password values from AX-only entities and refs", as
 			documents: [{ nodes: { backendNodeId: [556], attributes: [[0, 1]] }, layout: { nodeIndex: [], bounds: [] } }],
 		},
 	});
-	const options = { tabId: 7, observationId: "obs-password", cacheKey: "password-cache" };
+	const options = { tabId: 7, observationId: "obs-password" };
 	const result = await readAxEntities(server, options);
 	const built = result.entities[0]!;
 	assert.equal(built.entity.value, undefined);
@@ -201,10 +210,10 @@ test("full AX reader redacts password values from AX-only entities and refs", as
 	const appended = mergeAxIntoDomEntities([], result.entities).entities[0]!;
 	const resolved = resolveRefUriDetailed(appended.ref);
 	assert.equal(resolved.ok ? resolved.ref.descriptor.semantic?.value : "missing", undefined);
-	const cached = await readAxEntities(server, options);
-	assert.equal(cached.entities[0]?.entity.value, undefined);
-	assert.equal(cached.entities[0]?.entity.hints?.valueRedacted, true);
-	assert.equal(cached.diagnostics?.cacheHit, true);
+	const refreshed = await readAxEntities(server, options);
+	assert.equal(refreshed.entities[0]?.entity.value, undefined);
+	assert.equal(refreshed.entities[0]?.entity.hints?.valueRedacted, true);
+	assert.equal(server.calls.length, 6);
 });
 
 test("full AX reader consumes only the main DOMSnapshot document", async () => {
@@ -219,7 +228,7 @@ test("full AX reader consumes only the main DOMSnapshot document", async () => {
 		"DOMSnapshot.captureSnapshot": snapshot,
 		"DOM.getBoxModel": { result: {} },
 	});
-	const options = { tabId: 7, observationId: "obs-multi-document", cacheKey: "multi-document-cache" };
+	const options = { tabId: 7, observationId: "obs-multi-document" };
 	const result = await readAxEntities(server, options);
 
 	assert.deepEqual(result.snapshotGeometryEntries?.map((entry) => entry.backendNodeId), [42, 77]);
@@ -229,9 +238,6 @@ test("full AX reader consumes only the main DOMSnapshot document", async () => {
 	assert.equal(result.entities[1]?.entity.hints?.valueRedacted, true);
 	assert.equal(result.diagnostics?.snapshotDocumentCount, 2);
 	assert.equal(result.diagnostics?.snapshotDocumentsSkipped, 1);
-	const cached = await readAxEntities(server, options);
-	assert.equal(cached.diagnostics?.snapshotDocumentCount, 2);
-	assert.equal(cached.diagnostics?.snapshotDocumentsSkipped, 1);
 });
 
 test("full AX reader keeps snapshot document geometry while projecting viewport state", async () => {
@@ -310,6 +316,26 @@ test("full AX reader degrades from paint snapshot and falls back to bounded box 
 	assert.equal(boxFallback.diagnostics?.snapshotGeometryUnavailable, true);
 	assert.equal(boxFallback.diagnostics?.cdpCalls, 4);
 	assert.equal(boxFallback.diagnostics?.geometryCdpCalls, 1);
+});
+
+test("full AX reader bounds concurrent box geometry fallback", async () => {
+	let active = 0;
+	let maxActive = 0;
+	const nodes = Array.from({ length: 12 }, (_, index) => axNode(index + 1, "button", `Action ${index + 1}`));
+	const server = createCdpServer({
+		"Accessibility.getFullAXTree": { nodes },
+		"DOMSnapshot.captureSnapshot": bridgeFailure("snapshot unavailable"),
+		"DOM.getBoxModel": async () => {
+			active += 1;
+			maxActive = Math.max(maxActive, active);
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			active -= 1;
+			return { result: boxModel(0, 0, 10, 10) };
+		},
+	});
+	const result = await readAxEntities(server, { tabId: 7, observationId: "obs-bounded-box-fallback" });
+	assert.equal(result.diagnostics?.geometryCdpCalls, 12);
+	assert.equal(maxActive, 4);
 });
 
 test("ABML grouping helpers normalize descriptors and suppress nested non-control groups", () => {
@@ -428,11 +454,14 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 		},
 	});
 	assert.equal(projection.summary.templateCount, 2);
-	assert.equal(projection.summary.projectedInstanceRefCount, 25);
+	assert.equal(projection.summary.projectedInstanceRefCount, 0);
 	assert.equal(projection.summary.partialBaseline, true);
 	const projectedRows = projection.templates.find((template) => template.container === "grid" && template.containerName === "Orders" && template.count === 25)!;
 	assert.equal(projectedRows.count, 25);
-	assert.equal(projectedRows.instanceRefCount, 25);
+	assert.equal(projectedRows.instanceRefCount, 0);
+	assert.deepEqual(projectedRows.defaults, { name: "Order 1" });
+	assert.equal(projectedRows.exceptions.length, 24);
+	assert.deepEqual(projectedRows.exceptions[0], { index: 1, values: { name: "Order 2" } });
 	const deltaOnly = projection.templates.find((template) => template.deltaOnly)!;
 	assert.equal(deltaOnly.delta?.appeared.count, 2);
 	assert.equal(deltaOnly.delta?.changed.instances[0]?.fields[0]?.field, "name");
@@ -441,10 +470,11 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	assert.equal(collections[0]!.kind, "table");
 	assert.equal(collections[0]!.completeness, "virtualized");
 	assert.equal(collections[0]!.declaredTotal, 100);
-	assert.equal(collections[0]!.itemRefs.length, 25);
+	assert.equal(collections[0]!.itemRefs.length, 0);
 	assert.equal(buildCollectionModels({ entities: rows, snapshotProjection: buildSnapshotProjection(rows) }).length, 1);
 
 	const duplicatedPositions = Array.from({ length: 24 }, (_, index) => entity(`bp-ref://fragment/${index}`, {
+		kind: "element",
 		role: "div",
 		structure: { setSize: 12, posInSet: index % 12 + 1 },
 		hints: { containerRole: "list", containerKey: "feed" },
@@ -452,7 +482,7 @@ test("ABML collections and snapshot projection handle empty, repeated, and bound
 	const positionalCollection = buildCollectionModels({ entities: duplicatedPositions, snapshotProjection: buildSnapshotProjection(duplicatedPositions) })[0]!;
 	assert.equal(positionalCollection.observedCount, 12);
 	assert.equal(positionalCollection.itemRefCount, 12);
-	assert.equal(positionalCollection.itemRefs.length, 12);
+	assert.equal(positionalCollection.itemRefs.length, 0);
 	assert.equal(positionalCollection.declaredTotal, 12);
 	assert.equal(positionalCollection.completeness, "complete");
 });
@@ -462,7 +492,7 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 		entities: [entity("bp-ref://list/container", { role: "list", kind: "region", name: "Results", hints: { listContainer: true, itemCount: "4" as unknown as number } })],
 		scanEvidence: {
 			listHints: [{ itemCount: "bad", selector: "  ", firstItemPreview: "  " }],
-			actionables: [{ text: "Next page", ref: "bp-ref://control/next" }, { text: "Load more" }],
+			actionables: [{ text: "下一页", rel: "next", ref: "bp-ref://control/next" }, { text: "Load more" }],
 		},
 	});
 	assert.equal(models.length, 1);
@@ -471,6 +501,7 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	assert.equal(models[0]!.completeness, "paginated");
 	assert.equal(models[0]!.paginationControl?.kind, "next");
 	assert.equal(models[0]!.paginationControl?.ref, "bp-ref://control/next");
+	assert.equal(models[0]!.confidence, "high");
 	const independent = buildCollectionModels({
 		entities: [],
 		scanEvidence: {
@@ -549,44 +580,6 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	assert.deepEqual(observeDuplicateCollections.map((collection) => collection.containerNameSource), ["disambiguated", "disambiguated"]);
 });
 
-test("ABML identity graph ignores malformed relations and summarizes duplicate node identities", () => {
-	assert.deepEqual(identityGraphSummary(buildIdentityGraph([])), {
-		entityCount: 0,
-		backendNodeIdCount: 0,
-		backendNodeIdCoverage: 0,
-		anchorCount: 0,
-		triggeredCount: 0,
-		sourceCounts: {},
-	});
-	const graph = buildIdentityGraph([
-		entity("bp-ref://control/save", {
-			name: "Save",
-			locators: [{ by: "backendNodeId", value: 10, targetId: "target-1" }],
-			relations: [
-				{ type: "triggered", targetRef: "bp-ref://network-entry/request-1", source: "timing", confidence: "low" },
-				{ type: "triggered", targetRef: "", source: "timing", confidence: "low" },
-				{ type: "controls", targetRef: "bp-ref://region/dialog", source: "ax", confidence: "high" },
-			] as Entity["relations"],
-		}),
-		entity("bp-ref://control/save-copy", { name: "Save", locators: [{ by: "backendNodeId", value: 10, targetId: "target-1" }] }),
-		entity("bp-ref://region/plain", { kind: "region", role: "region", source: "ax" }),
-	]);
-	assert.equal(graph.entityCount, 3);
-	assert.equal(graph.backendNodeIdCount, 2);
-	assert.equal(graph.triggeredCount, 2);
-	assert.deepEqual(graph.byRef["bp-ref://control/save"]?.triggeredRequests, ["bp-ref://network-entry/request-1", ""]);
-	assert.equal(graph.byRef["bp-ref://control/save"]?.nodeKey, "t:target-1:b:10");
-	assert.equal(graph.byRef["bp-ref://region/plain"], undefined);
-	assert.deepEqual(identityGraphSummary(graph), {
-		entityCount: 3,
-		backendNodeIdCount: 2,
-		backendNodeIdCoverage: 0.667,
-		anchorCount: 0,
-		triggeredCount: 2,
-		sourceCounts: { dom: 2, ax: 1 },
-	});
-});
-
 test("ABML entity builders handle malformed inputs, fallback roles, refs, and dedupe keys", () => {
 	const context = { observationId: "obs-entity", capturedAt: 2_000, url: "notaurl", browserSessionId: "session-1", tabId: 3, targetId: "target-1" };
 	assert.deepEqual(buildActionableLocators({ backendNodeId: "7", selector: " #save ", action: " Save ", role: "button", point: { x: 10.4, y: 20.6 } }), [
@@ -638,6 +631,9 @@ test("ABML entity builders handle malformed inputs, fallback roles, refs, and de
 	const vision = buildVisionRegionFromCanvasActionable({ rect: { x: 0, y: 0, w: 20, h: 10 }, hitOk: false }, context);
 	assert.deepEqual(vision.entity.locators, [{ by: "point", x: 10, y: 5 }]);
 	assert.equal(vision.entity.state.occluded, true);
+	const offscreenVision = buildVisionRegionFromCanvasActionable({ rect: { x: 0, y: 500, w: 20, h: 10 }, point: { x: 10, y: 199 }, inViewport: false }, context);
+	assert.equal(offscreenVision.entity.state.inViewport, false);
+	assert.deepEqual(offscreenVision.entity.locators, []);
 	const deduped = dedupeEntities([
 		{ kind: "control", hints: { selector: "#same", jsonPath: "a" } },
 		{ kind: "control", hints: { selector: "#same", jsonPath: "b" } },
@@ -784,6 +780,8 @@ test("ABML AX helpers cover malformed nodes, structure properties, relation anch
 	assert.equal(axBackendNodeId(node), 11);
 	assert.equal(isInterestingAxNode({ role: { value: "generic" }, name: "" }), false);
 	assert.equal(isInterestingAxNode({ ignored: true, role: "button", name: "Save" }), false);
+	assert.equal(isInterestingAxNode({ role: "StaticText", name: "Rendered copy" }), false);
+	assert.equal(isInterestingAxNode({ role: "InlineTextBox", name: "Rendered copy" }), false);
 	assert.equal(isInterestingAxNode({ role: "generic", backendDOMNodeId: 44, value: "fallback" }), true);
 	assert.equal(boxModelToGeometry({ border: [0, 0, 10, 0, 10, 20, 0, 20] })?.point?.y, 10);
 	assert.equal(boxModelToGeometry({ border: [0, Number.NaN] }), undefined);
@@ -889,6 +887,11 @@ test("ABML relations materialize fallbacks, paint-order occlusion, graph dedupe,
 	assert.equal(paintAnchors.length, 2);
 	assert.equal(paintAnchors[0]!.type, "coveredBy");
 	assert.equal(paintAnchors[0]!.evidence?.overlapRatio, 1);
+	const oversizedPaintAnchors = derivePaintOrderRelationAnchors(paintEntities.slice(0, 2), [
+		{ backendNodeId: 10, paintOrder: 1, bounds: { x: 0, y: 0, w: 100_000, h: 100_000 } },
+		{ backendNodeId: 11, paintOrder: 2, bounds: { x: 1, y: 1, w: 99_999, h: 99_999 } },
+	]);
+	assert.equal(oversizedPaintAnchors.length, 2);
 	const relationRich = addEntityRelations(entity("bp-ref://control/rich"), [
 		{ type: "owns", targetRef: "bp-ref://target/b", source: "dom", confidence: "medium" },
 		{ type: "controls", targetRef: "bp-ref://target/a", source: "ax", confidence: "high", evidence: { ax: true } },
@@ -901,54 +904,6 @@ test("ABML relations materialize fallbacks, paint-order occlusion, graph dedupe,
 	assert.equal(summary.summary.controls, 1);
 	assert.equal(summary.summary.tableCells, 1);
 	assert.equal(summary.highlights.some((highlight) => highlight.type === "cellOf"), false);
-});
-
-test("ABML inference detects anchored intents, dedupes evidence refs, and handles diff fallbacks", () => {
-	const baseSummary = { summary: { expandedTarget: 2, currentIn: 1, tableCells: 51 }, highlights: [] };
-	const entities = [
-		entity("bp-ref://input/password", { role: "textbox", state: { ...entity("x").state, editable: true }, hints: { inputKind: "password" } }),
-		entity("bp-ref://button/login", { role: "button", name: "Sign in", state: { ...entity("x").state, inViewport: true } }),
-		entity("bp-ref://search/box", { role: "searchbox", state: { ...entity("x").state, editable: true } }),
-		...Array.from({ length: 7 }, (_, index) => entity(`bp-ref://filter/${index}`, { role: index % 2 ? "checkbox" : "button", name: `Filter ${index}`, hints: { containerRole: "group", containerName: "Filters" } })),
-		entity("bp-ref://radio/group", { role: "radiogroup" }),
-		entity("bp-ref://expand/1", { role: "button", state: { ...entity("x").state, expanded: false }, relations: [{ type: "expandedTarget", targetRef: "bp-ref://panel/1", source: "dom", confidence: "high" }] }),
-		entity("bp-ref://expand/2", { role: "button", state: { ...entity("x").state, expanded: true }, relations: [{ type: "expandedTarget", targetRef: "bp-ref://panel/2", source: "dom", confidence: "high" }] }),
-		entity("bp-ref://grid/main", { role: "grid" }),
-		entity("bp-ref://nav/current", { role: "link", state: { ...entity("x").state, current: "page" }, relations: [{ type: "currentIn", targetRef: "bp-ref://nav/main", source: "ax", confidence: "high" }] }),
-		entity("bp-ref://dialog/main", { kind: "region", role: "dialog" }),
-		entity("bp-ref://tabs/list", { kind: "region", role: "tablist" }),
-		entity("bp-ref://tab/1", { role: "tab" }),
-		entity("bp-ref://tab/2", { role: "tab" }),
-		entity("bp-ref://alert/status", { kind: "region", role: "status", name: "Saved" }),
-		entity("bp-ref://input/required", { role: "textbox", state: { ...entity("x").state, editable: true, focused: false } }),
-		entity("bp-ref://button/submit", { role: "button", name: "Submit" }),
-	];
-	const diff: EntityDiff = {
-		appeared: ["bp-ref://alert/status"],
-		disappeared: [],
-		focusedRef: "bp-ref://input/required",
-		changed: [{ ref: "bp-ref://button/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } }],
-	};
-	const summary = buildInferenceSummary(entities, baseSummary, diff);
-	assert.deepEqual(summary.intents.map((intent) => intent.intent), ["login", "filter-panel", "single-choice", "multi-choice", "expandable", "data-grid", "navigation", "dialog", "tabbed-interface", "alert-region", "form-dependency"]);
-	assert.equal((summary.intents.find((intent) => intent.intent === "filter-panel")?.evidence?.controlRefs as string[]).length, 7);
-	assert.equal(summary.intents.find((intent) => intent.intent === "alert-region")?.evidence?.fresh, "appeared");
-	assert.equal(summary.intents.find((intent) => intent.intent === "form-dependency")?.evidence?.focusSignal, "focusedRef");
-	assert.equal(inferenceEvidenceRefs(summary).includes("bp-ref://button/submit"), true);
-	assert.ok(entitiesForInferenceEvidence(entities, summary).length > 3);
-	const weakLogin = buildInferenceSummary([entity("bp-ref://password/only", { role: "textbox", state: { ...entity("x").state, editable: true }, hints: { inputKind: "password" } }), entity("bp-ref://oauth", { role: "button", name: "Forgot password" })], { summary: {}, highlights: [] });
-	assert.equal(weakLogin.intents[0]?.confidence, "medium");
-	assert.equal(weakLogin.intents[0]?.evidence, undefined);
-	const transitionDiff: EntityDiff = { appeared: [], disappeared: [], changed: [
-		{ ref: "bp-ref://button/enabled", kind: "state-changed", before: { disabled: true }, after: { disabled: false } },
-		{ ref: "bp-ref://input/lost", kind: "state-changed", before: { focused: true }, after: { focused: false } },
-	] };
-	const transition = buildInferenceSummary([
-		entity("bp-ref://button/enabled", { role: "button" }),
-		entity("bp-ref://input/lost", { role: "textbox", state: { ...entity("x").state, editable: true } }),
-	], { summary: {}, highlights: [] }, transitionDiff);
-	assert.equal(transition.intents.find((intent) => intent.intent === "form-dependency")?.confidence, "medium");
-	assert.deepEqual(buildInferenceSummary([], { summary: {}, highlights: [] }).intents, []);
 });
 
 function projectionKey(containerRole: string, containerName: string, itemRole: string, declaredTotal: number): string {
@@ -971,10 +926,14 @@ test("scan script builder clamps options and injects scan helper blocks determin
 	assert.match(script, /const __name = \(target\) => target;/);
 	assert.match(script, /const BrowserPilotDomAccessibilityApi = \(\(\) => \{/);
 	assert.match(script, /catch \{\s*return null;/);
-	assert.match(script, /"options":\{"maxChars":1000,"maxNodes":4000\}/);
+	assert.match(script, /"options":\{"maxChars":1000,"maxNodes":200000\}/);
 	assert.match(script, /"pageWorldScanSchema":"browser-page-scan\/v1"/);
 	assert.match(source, /fingerprint\s*:\s*scanFingerprint/);
 	assert.match(source, /devicePixelRatio\s*:\s*Number\(window\.devicePixelRatio\s*\|\|\s*1\)/);
+	assert.match(source, /createTreeWalker/);
+	assert.equal((source.match(/if\s*\(!visible\.rendered\)\s*continue;/g) ?? []).length, 2);
+	assert.doesNotMatch(source, /querySelectorAll\('\*'\)/);
+	assert.doesNotMatch(source, /document\.body\s*&&\s*document\.body\.innerText/);
 	assert.match(source, /scrollY\s*:\s*Number\(window\.scrollY\s*\|\|\s*0\)/);
 	assert.match(source, /viewportHeight\s*:\s*Math\.max\(/);
 	assert.doesNotMatch(source, /content\.tree|tree\s*:\s*content|function walk\(|iframeNotes|includeIframes|growthProbe|collectVisibleRows|collectMediaCandidates|mediaCandidates|\binteractive\s*:|window\.scrollTo|\.scrollTop\s*=/);

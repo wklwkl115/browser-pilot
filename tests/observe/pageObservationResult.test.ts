@@ -8,7 +8,20 @@ import { pageObservationResult } from "../../src/commands/resultMiddleware.ts";
 import { isPageObservationV3, isPageObservationView } from "../../src/validation/pageContracts.ts";
 import { OBSERVATION_RESOURCES_DETAIL_KEY, type ObservationResourceDescriptor } from "../../src/commands/observe/observationResources.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
-import { pruneObservationArtifacts } from "../../src/artifacts/artifactFiles.ts";
+import { artifactFallbackName, pruneObservationArtifacts } from "../../src/artifacts/artifactFiles.ts";
+
+test("artifact fallback names stay unique within one clock tick", () => {
+	const now = Date.now;
+	Date.now = () => 123;
+	try {
+		const first = artifactFallbackName("observe-scan");
+		const second = artifactFallbackName("observe-scan");
+		assert.notEqual(first, second);
+		assert.match(first, /^observe-scan-123-[0-9a-f-]+\.json$/);
+	} finally {
+		Date.now = now;
+	}
+});
 
 test("PageObservation returns a bounded view and keeps its canonical artifact", async () => {
 	const built = buildPageObservation({
@@ -21,9 +34,10 @@ test("PageObservation returns a bounded view and keeps its canonical artifact", 
 		snapshot: { snapshotId: "snapshot-1", browserSessionId: "session-1", tabId: 7, targetGeneration: 2, pageEpoch: "page-1", sourceMode: "scan", capturedAt: 1, ttlMs: 300_000 },
 		abmlIntegrated: true,
 		diagnostics: {},
-		providerExecution: { causal: { planned: true, status: "executed", reservedMs: 500, actualMs: 20, bridgeRoundTrips: 2 } },
+		providerExecution: { causal: { planned: true, status: "executed", reservedMs: 500, actualMs: 20 } },
 		causal: { sinceSeq: 0, requests: Array.from({ length: 4 }, (_, index) => ({ ref: `bp-ref://network/${index}`, url: `https://example.test/${index}` })) },
 	});
+	((built.causal as { requests: Array<Record<string, unknown>> }).requests[0]!).internalId = "hidden";
 	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-"));
 	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
 	await mkdir(path.dirname(outputPath), { recursive: true });
@@ -34,24 +48,56 @@ test("PageObservation returns a bounded view and keeps its canonical artifact", 
 
 	assert.equal(isPageObservationView(inline), true);
 	assert.equal(isPageObservationV3(artifact), true);
-	assert.equal(inline.canonical, false);
 	assert.equal(artifact.canonical, true);
 	assert.deepEqual(inline.target, { url: "https://example.test/" });
-	assert.deepEqual(inline.snapshot, { snapshotId: "snapshot-1", capturedAt: 1, ttlMs: 300_000 });
 	assert.equal((artifact.snapshot as Record<string, unknown>).browserSessionId, "session-1");
-	assert.deepEqual((inline.providers as Record<string, unknown>).causal, { status: "executed" });
-	assert.equal((inline.content as { text?: string }).text, "Install dependencies");
-	assert.equal((inline.content as { complete?: boolean }).complete, false);
+	for (const key of ["schema", "tool", "model", "canonical", "snapshot", "providers", "diagnostics"]) assert.equal(inline[key], undefined);
+	assert.equal((inline.content as { text?: string }).text, "Introduction Install dependencies Verify the build");
+	assert.equal((inline.content as { complete?: boolean }).complete, true);
 	assert.equal((artifact.content as { text?: string }).text, "Introduction Install dependencies Verify the build");
 	assert.equal(((inline.causal as { requests: unknown[] }).requests).length, 3);
+	assert.equal((inline.causal as Record<string, unknown>).sinceSeq, undefined);
+	assert.equal(JSON.stringify(inline.causal).includes("internalId"), false);
 	assert.equal(((artifact.causal as { requests: unknown[] }).requests).length, 4);
-	assert.equal(resources.length, 3);
+	assert.equal(resources.length, 1);
 	assert.equal(resources.some((resource) => resource.kind === "details" && resource.jsonPath === "causal"), true);
 	assert.ok(resources.every((resource) => resource.uri.startsWith("browser-pilot://observation/") && resource.path === path.resolve(outputPath)));
 	assert.equal("saved" in inline, false);
 	assert.equal("limits" in inline, false);
 	assert.equal("continuation" in inline, false);
 	assert.equal(result.content[0]?.text.includes("\n"), false);
+});
+
+test("PageObservation exposes degraded accessibility enrichment", () => {
+	const built = buildPageObservation({
+		summary: {}, entities: [], content: "", snapshot: { snapshotId: "degraded", sourceMode: "scan", capturedAt: 1, ttlMs: 1 },
+		abmlIntegrated: true, diagnostics: { axFusion: { degraded: true } },
+	});
+	assert.deepEqual(built.providers.structure, { planned: true, status: "degraded", reason: "accessibility-enrichment-incomplete" });
+});
+
+test("public observation keeps one decision shape for relations and structural changes", async () => {
+	const sourceRef = "bp-ref://control/source";
+	const targetRef = "bp-ref://region/target";
+	const built = buildPageObservation({ summary: {}, entities: [], content: "Changed", snapshot: { snapshotId: "decision-shape", sourceMode: "scan", capturedAt: 1, ttlMs: 30_000 }, abmlIntegrated: true, diagnostics: {} });
+	built.relations = { summary: { controls: 1, internal: -1 }, highlights: [{ type: "controls", sourceRef, targetRef, source: "ax" }] };
+	built.causal = { unavailable: "causal provider deadline exhausted" };
+	built.treeDiff = {
+		summary: { templateCount: 1, changedTemplateCount: 1, appeared: 1, disappeared: 0, changed: 0, reordered: 0 },
+		templates: [{ templateKey: "internal-template", role: "dialog", kind: "region", beforeCount: 0, afterCount: 1, appeared: { count: 1, instances: [{ key: "name:Dialog", ref: targetRef, anchor: "name", confidence: "high", name: "Dialog" }] }, disappeared: { count: 0, instances: [] }, changed: { count: 0, instances: [] } }],
+	};
+	(built.treeDiff.summary as unknown as Record<string, unknown>).internalCount = 1;
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-decision-"));
+	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
+	const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observation.json" });
+	const inline = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+	const resources = result.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
+
+	assert.deepEqual(inline.relations, { summary: { controls: 1 }, highlights: [{ type: "controls", sourceRef, targetRef }] });
+	assert.deepEqual(inline.causal, { unavailable: "Recent request activity was unavailable." });
+	assert.deepEqual(inline.treeDiff, { summary: { templateCount: 1, changedTemplateCount: 1, appeared: 1, disappeared: 0, changed: 0, reordered: 0 } });
+	assert.ok(resources.some((resource) => resource.jsonPath === "treeDiff"));
+	assert.equal(JSON.stringify(inline).includes("internal-template"), false);
 });
 
 test("observation artifacts retain only a recent bounded window", async () => {
@@ -77,6 +123,11 @@ test("observation artifacts retain only a recent bounded window", async () => {
 		await pruneObservationArtifacts(visualEffect);
 		assert.equal((await readdir(artifacts)).filter((name) => name.startsWith("observe-") || name.startsWith("visual-effect-")).length, 256);
 		await access(visualEffect);
+		const screenshot = path.join(artifacts, "screenshot-1.png");
+		await writeFile(screenshot, "png");
+		await pruneObservationArtifacts(screenshot);
+		assert.equal((await readdir(artifacts)).filter((name) => /^(?:observe-|visual-effect-|screenshot-)/.test(name)).length, 256);
+		await access(screenshot);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
@@ -100,13 +151,13 @@ test("agent PageObservation view hides internal baseline and re-anchor bookkeepi
 	const artifact = JSON.parse(await readFile(outputPath, "utf8")) as Record<string, unknown>;
 
 	for (const key of ["baselineSnapshotId", "delta", "reanchorReason"]) assert.equal(inline[key], undefined);
-	assert.equal((inline.diagnostics as Record<string, unknown> | undefined)?.baseline, undefined);
+	assert.equal(inline.diagnostics, undefined);
 	assert.equal(artifact.baselineSnapshotId, "baseline-1");
 	assert.equal(artifact.delta, "session");
 	assert.equal(artifact.reanchorReason, "session_changed");
 });
 
-test("canonical PageObservation keeps the full entity graph and returns every captured action when it fits", async () => {
+test("canonical PageObservation keeps independent semantic entities and returns every captured action when it fits", async () => {
 	const state = { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true };
 	const entities: Entity[] = Array.from({ length: 500 }, (_, index) => ({
 		ref: `bp-ref://element/${index}`,
@@ -128,7 +179,7 @@ test("canonical PageObservation keeps the full entity graph and returns every ca
 		activeTabId: 7,
 		snapshot: { snapshotId: "snapshot-large", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 300_000 },
 		abmlIntegrated: true,
-		diagnostics: { observeTimings: { axNodeCount: 2_000 }, warnings: ["degraded"] },
+		diagnostics: { observeTimings: { axNodeCount: 2_000 }, providerFailures: [{ provider: "visual", code: "VISUAL_CAPTURE_FAILED" }], warnings: ["degraded"] },
 	});
 	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-large-"));
 	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
@@ -140,9 +191,9 @@ test("canonical PageObservation keeps the full entity graph and returns every ca
 	assert.equal(inline.entities, undefined);
 	assert.equal(artifact.entities?.length, 500);
 	assert.ok(Buffer.byteLength(result.content[0]?.text ?? "", "utf8") <= 32 * 1024);
-	assert.deepEqual(inline.diagnostics, { warnings: ["degraded"] });
+	assert.deepEqual(inline.warnings, ["Requested visual evidence was unavailable.", "degraded"]);
 	assert.equal(((inline.actionSpace as { items: unknown[] }).items).length, 20);
-	assert.deepEqual((inline.actionSpace as { coverage: unknown }).coverage, { captured: 20, returned: 20, captureComplete: true, projectionComplete: true });
+	assert.deepEqual((inline.actionSpace as { coverage: unknown }).coverage, { captured: 20, captureComplete: true });
 });
 
 test("action coverage preserves an incomplete empty capture", () => {
@@ -156,8 +207,34 @@ test("action coverage preserves an incomplete empty capture", () => {
 		diagnostics: {},
 	});
 
-	assert.deepEqual(observation.actionSpace?.coverage, { captured: 0, returned: 0, captureComplete: false, projectionComplete: true });
+	assert.deepEqual(observation.actionSpace?.coverage, { captured: 0, captureComplete: false });
 	assert.deepEqual(observation.actionSpace?.items, []);
+});
+
+test("incomplete collections expose an existing control without an empty resource round trip", async () => {
+	const built = buildPageObservation({
+		summary: {}, entities: [], content: "Results", url: "https://example.test/results",
+		snapshot: { snapshotId: "collection-control", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 300_000 },
+		abmlIntegrated: true, diagnostics: {},
+	});
+	built.collections = [{
+		ref: "bp-ref://region/results", kind: "list", name: "Results", observed: 3, total: 10,
+		completeness: "paginated", confidence: "high", itemRefs: ["bp-ref://element/1"],
+		paginationControl: { ref: "bp-ref://control/next", label: "Next", kind: "next" },
+	}];
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-collection-control-"));
+	try {
+		const result = await pageObservationResult({ observation: built, artifactPath: path.join(dir, "observation.json"), fallbackName: "observation.json" });
+		const inline = JSON.parse(result.content[0]?.text ?? "{}") as { frontier?: { items: Array<{ ref: string; controlRef?: string; resourceUri?: string }> } };
+		const resources = result.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
+		const frontier = inline.frontier?.items.find((item) => item.ref === "frontier:collection:0");
+
+		assert.equal(frontier?.controlRef, "bp-ref://control/next");
+		assert.equal(frontier?.resourceUri, undefined);
+		assert.equal(resources.some((resource) => resource.ref === frontier?.ref), false);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
 });
 
 test("every captured action is inline or reachable through the action-space frontier", async () => {
@@ -185,7 +262,7 @@ test("every captured action is inline or reachable through the action-space fron
 	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
 	await mkdir(path.dirname(outputPath), { recursive: true });
 	const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observation.json" });
-	const inline = JSON.parse(result.content[0]?.text ?? "{}") as { actionSpace: { coverage: { captured: number; returned: number; captureComplete: boolean; projectionComplete: boolean }; items: Array<{ ref: string }> }; frontier: { items: Array<{ ref: string; resourceUri?: string }> } };
+	const inline = JSON.parse(result.content[0]?.text ?? "{}") as { actionSpace: { coverage: { captured: number; captureComplete: boolean }; items: Array<{ ref: string }> }; frontier: { items: Array<{ ref: string; resourceUri?: string }> } };
 	const artifact = JSON.parse(await readFile(outputPath, "utf8")) as { actionSpace: { items: Array<{ ref: string }> } };
 	const resources = result.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
 	const continuation = resources.find((resource) => resource.kind === "action-space" && resource.jsonPath === "actionSpace");
@@ -194,8 +271,7 @@ test("every captured action is inline or reachable through the action-space fron
 
 	assert.equal(inline.actionSpace.coverage.captured, entities.length);
 	assert.equal(inline.actionSpace.coverage.captureComplete, false);
-	assert.equal(inline.actionSpace.coverage.returned, inline.actionSpace.items.length);
-	assert.equal(inline.actionSpace.coverage.projectionComplete, false);
+	assert.ok(inline.actionSpace.items.length < inline.actionSpace.coverage.captured);
 	assert.equal(artifact.actionSpace.items.length, entities.length);
 	assert.ok(continuation);
 	assert.ok(inline.frontier.items.some((item) => item.ref === "frontier:action-space" && item.resourceUri === continuation?.uri));
@@ -230,7 +306,7 @@ test("canonical PageObservation bounds repeated structure summaries", async () =
 	built.snapshotProjection = {
 		summary: { templateCount: 100, instanceCount: 400, projectedInstanceRefCount: 400 },
 		templates: Array.from({ length: 100 }, (_, index) => ({
-			templateKey: `template-${index}`, role: "listitem", kind: "element" as const, count: 4, varies: [], constant: {},
+			templateKey: `template-${index}`, role: "listitem", kind: "element" as const, count: 4, varies: [], constant: {}, defaults: {}, exceptions: [],
 			instanceRefs: Array.from({ length: 4 }, (_item, itemIndex) => `bp-ref://element/${index}-${itemIndex}`), instanceRefCount: 4,
 		})),
 	};
@@ -242,16 +318,17 @@ test("canonical PageObservation bounds repeated structure summaries", async () =
 	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
 	await mkdir(path.dirname(outputPath), { recursive: true });
 	const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observation.json" });
-	const inline = JSON.parse(result.content[0]?.text ?? "{}") as { snapshotProjection?: { templates?: unknown[] }; collections?: unknown[]; frontier?: { items?: Array<{ ref?: string }> } };
+	const inline = JSON.parse(result.content[0]?.text ?? "{}") as { content?: { text?: string }; snapshotProjection?: unknown; collections?: unknown[]; frontier?: { items?: Array<{ ref?: string }> } };
 
-	assert.equal(inline.snapshotProjection?.templates?.length, 12);
+	assert.match(inline.content?.text ?? "", /Example page/);
+	assert.equal(inline.snapshotProjection, undefined);
 	assert.equal(inline.collections?.length, 12);
-	assert.ok(inline.frontier?.items?.some((item) => item.ref === "frontier:templates:unavailable"));
+	assert.ok(inline.frontier?.items?.some((item) => item.ref === "frontier:details:structure"));
 	assert.ok(inline.frontier?.items?.some((item) => item.ref === "frontier:collections:unavailable"));
 	assert.ok(Buffer.byteLength(result.content[0]?.text ?? "", "utf8") <= 32 * 1024);
 });
 
-test("canonical PageObservation selects intent-relevant content and bounds frontier resources", async () => {
+test("canonical PageObservation projects the whole page without caller-directed selection", async () => {
 	const headings = Array.from({ length: 30 }, (_, index) => `Section ${index}`);
 	const content = `Navigation ${headings.map((heading) => `${heading} Content for ${heading}.`).join(" ")}`;
 	const built = buildPageObservation({
@@ -262,13 +339,15 @@ test("canonical PageObservation selects intent-relevant content and bounds front
 	const dir = await mkdtemp(path.join(tmpdir(), "browser-pilot-observe-sections-"));
 	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
 	await mkdir(path.dirname(outputPath), { recursive: true });
-	const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observation.json", intent: "Section 23" });
+	const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observation.json" });
 	const inline = JSON.parse(result.content[0]?.text ?? "{}") as { content?: { text?: string }; frontier?: { items?: Array<{ ref?: string }> } };
 	const resources = result.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
 
-	assert.match(inline.content?.text ?? "", /^Section 23\b/);
+	assert.match(inline.content?.text ?? "", /^Navigation\b/);
+	assert.match(inline.content?.text ?? "", /Section 0\b/);
+	assert.match(inline.content?.text ?? "", /Section 23\b/);
 	assert.ok(resources.length <= 12);
-	assert.ok(inline.frontier?.items?.some((item) => item.ref === "frontier:budget"));
+	assert.equal(inline.frontier, undefined);
 });
 
 test("canonical PageObservation keeps truncated root content expandable", async () => {
@@ -286,16 +365,21 @@ test("canonical PageObservation keeps truncated root content expandable", async 
 	const outputPath = path.join(dir, ".browser-pilot", "artifacts", "observation.json");
 	await mkdir(path.dirname(outputPath), { recursive: true });
 	const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observation.json" });
-	const inline = JSON.parse(result.content[0]?.text ?? "{}") as { content?: { text?: string; complete?: boolean }; frontier?: { items?: Array<{ ref?: string; observed?: number; total?: number }> } };
+	const inline = JSON.parse(result.content[0]?.text ?? "{}") as { content?: { text?: string; complete?: boolean }; frontier?: { items?: Array<{ ref?: string; kind?: string; state?: string; observed?: number; total?: number; resourceUri?: string }> } };
 	const resources = result.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
 
-	assert.equal(inline.content?.text?.length, 6_000);
+	assert.ok((inline.content?.text?.length ?? 0) <= 6_000);
+	assert.ok((inline.content?.text?.length ?? 0) > 5_900);
 	assert.equal(inline.content?.complete, false);
-	assert.deepEqual(inline.frontier?.items?.find((item) => item.ref === "frontier:content:root"), { ref: "frontier:content:root", kind: "content", state: "folded", label: "Page content", observed: 6_000, total: content.trim().length, resourceUri: resources.find((resource) => resource.ref === "frontier:content:root")?.uri });
-	assert.equal(resources.find((resource) => resource.ref === "frontier:content:root")?.contentSection, 0);
+	const contentFrontier = inline.frontier?.items?.find((item) => item.ref === "frontier:content:0");
+	assert.equal(contentFrontier?.kind, "content");
+	assert.equal(contentFrontier?.state, "folded");
+	assert.equal(contentFrontier?.total, content.trim().length);
+	assert.equal(contentFrontier?.resourceUri, resources.find((resource) => resource.ref === "frontier:content:0")?.uri);
+	assert.equal(resources.find((resource) => resource.ref === "frontier:content:0")?.contentSection, 0);
 });
 
-test("PageObservation schema guards reject incomplete frontiers and negative collection counts", () => {
+test("PageObservation schema rejects incomplete frontiers, invalid counts, and malformed entities", () => {
 	const base = {
 		schema: "browser-page-observation/v3",
 		tool: "browser_observe",
@@ -307,6 +391,7 @@ test("PageObservation schema guards reject incomplete frontiers and negative col
 	};
 	assert.equal(isPageObservationV3({ ...base, frontier: { items: [{ ref: "content", kind: "content", state: "folded" }] } }), false);
 	assert.equal(isPageObservationV3({ ...base, frontier: { items: [] }, collections: [{ ref: "c", kind: "list", observed: -1, completeness: "complete", confidence: "high", itemRefs: [] }] }), false);
+	assert.equal(isPageObservationV3({ ...base, frontier: { items: [] }, entities: [{ ref: "bp-ref://control/broken" }] }), false);
 });
 
 test("PageObservation keeps one bounded visual observation in canonical and public views", async () => {
@@ -327,7 +412,14 @@ test("PageObservation keeps one bounded visual observation in canonical and publ
 		const result = await pageObservationResult({ observation: built, artifactPath: outputPath, fallbackName: "observe-scan-1.json" });
 		const inline = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
 		const artifact = JSON.parse(await readFile(outputPath, "utf8")) as Record<string, unknown>;
-		assert.deepEqual(inline.visual, visual);
+			assert.deepEqual(inline.visual, {
+				ref: visual.ref,
+				resourceUri: visual.resourceUri,
+				actionableGrounding: true,
+				coordinateSpace: "normalized-image",
+				image: { width: 1280, height: 720 },
+				targets: visual.targets,
+			});
 		assert.deepEqual(artifact.visual, visual);
 		assert.equal(isPageObservationView(inline), true);
 		assert.equal(isPageObservationV3(artifact), true);

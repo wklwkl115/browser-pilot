@@ -1,4 +1,4 @@
-import { integerInRange as numberInRange, redactSensitive, runtimeRecord as asRecord } from "./runtimeSupport.js";
+import { integerInRange as numberInRange, redactSensitive } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
 export type WsSessionState = "opening" | "open" | "closed" | "error";
@@ -29,7 +29,6 @@ export type WsSessionRecord = JsonRecord & {
 	closedAt?: number;
 	lastEventAt?: number;
 	lastError?: string;
-	headers: Record<string, string>;
 	protocols: string[];
 	maxTranscript: number;
 	seq: number;
@@ -50,7 +49,7 @@ function wsSessionKey(tabId: unknown, sessionId: unknown): string {
 	return `${Number(tabId)}:${String(sessionId || BROWSER_PILOT_WS_DEFAULT_SESSION_ID)}`;
 }
 
-function createWsSession(tabId: unknown, config: { sessionId: string; url: string; headers: Record<string, string>; protocols: string[]; maxTranscript: number }): WsSessionRecord {
+function createWsSession(tabId: unknown, config: { sessionId: string; url: string; protocols: string[]; maxTranscript: number }): WsSessionRecord {
 	return {
 		tabId: Number(tabId),
 		sessionId: config.sessionId,
@@ -58,7 +57,6 @@ function createWsSession(tabId: unknown, config: { sessionId: string; url: strin
 		url: config.url,
 		state: "opening",
 		createdAt: Date.now(),
-		headers: config.headers,
 		protocols: config.protocols,
 		maxTranscript: config.maxTranscript,
 		seq: 0,
@@ -94,19 +92,8 @@ function wsSessionSummary(session: WsSessionRecord | null | undefined, fallbackS
 		transcriptCount: session.transcript.length,
 		maxTranscript: session.maxTranscript,
 		protocols: session.protocols.slice(),
-		headers: { ...session.headers },
 		lastEvent: session.transcript.at(-1),
 	};
-}
-
-function normalizeWsHeaders(value: unknown): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [key, item] of Object.entries(asRecord(value))) {
-		const name = String(key || "").trim();
-		if (!name) continue;
-		out[name] = String(item == null ? "" : item);
-	}
-	return out;
 }
 
 function normalizeWsProtocols(value: unknown): string[] {
@@ -114,12 +101,11 @@ function normalizeWsProtocols(value: unknown): string[] {
 	return raw.map((item) => String(item || "").trim()).filter(Boolean);
 }
 
-function normalizeWsOpenConfig(msg: BrowserPilotBridgeCommand | JsonRecord = {}): { sessionId: string; url: string; headers: Record<string, string>; protocols: string[]; maxTranscript: number; timeoutMs: number } {
+function normalizeWsOpenConfig(msg: BrowserPilotBridgeCommand | JsonRecord = {}): { sessionId: string; url: string; protocols: string[]; maxTranscript: number; timeoutMs: number } {
 	const url = String(msg.url || "").trim();
 	return {
 		sessionId: wsSessionId(msg),
 		url,
-		headers: normalizeWsHeaders(msg.headers),
 		protocols: normalizeWsProtocols(msg.protocols),
 		maxTranscript: numberInRange(msg.maxTranscript ?? msg.max_transcript, BROWSER_PILOT_WS_DEFAULT_MAX_TRANSCRIPT, 1, 5000),
 		timeoutMs: numberInRange(msg.timeoutMs ?? msg.timeout_ms, 5000, 100, 120000),
@@ -159,4 +145,4 @@ function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup"): JsonRec
 	return { tabId, removed, reason, sessionIds };
 }
 
-export { wsSessionId, wsSessionKey, numberInRange, createWsSession, rememberWsTranscript, wsSessionSummary, normalizeWsHeaders, normalizeWsProtocols, normalizeWsOpenConfig, getWsSession, collectWsSessionTranscript, cleanupWsSessionsForTab };
+export { wsSessionId, wsSessionKey, numberInRange, createWsSession, rememberWsTranscript, wsSessionSummary, normalizeWsProtocols, normalizeWsOpenConfig, getWsSession, collectWsSessionTranscript, cleanupWsSessionsForTab };

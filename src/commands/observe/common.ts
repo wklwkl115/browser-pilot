@@ -6,7 +6,6 @@ import { currentPageIdentity } from "./pageIdentity.js";
 export type ObserveToolParams = {
 	browserSessionId?: string;
 	targetRef?: string;
-	intent?: string;
 	/** Internal server-selected snapshot; never part of the public tool schema. */
 	baseline?: string;
 	fresh?: boolean;

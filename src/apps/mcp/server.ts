@@ -12,7 +12,7 @@ import { getJsonPath } from "../../utils/jsonPath.js";
 import { redactSensitiveText, redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
 import { PAGE_OBSERVATION_VIEW_JSON_SCHEMA, type PageObservationV3 } from "../../kernels/abml/pageObservation.js";
 import { isPageObservationV3, isPageObservationView } from "../../validation/pageContracts.js";
-import { OBSERVATION_RESOURCE_SCHEMA, OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
+import { OBSERVATION_RESOURCE_URI_PREFIX, OBSERVATION_RESOURCES_DETAIL_KEY, publicCausal, publicCollection, publicGist, publicRelations, publicSnapshotProjection, publicTreeDiff, publicVisual, publicWarnings, semanticContentSections, type ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
 import { publicToolValue } from "../../utils/toolResult.js";
 import { artifactResourceUri } from "../../artifacts/artifactFiles.js";
 
@@ -20,12 +20,19 @@ type JsonRpcId = string | number | null;
 type JsonRpcMessage = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown; result?: unknown; error?: unknown };
 type McpContent = { type: "text"; text: string } | { type: "resource_link"; uri: string; name: string; mimeType?: string };
 type McpTool = { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; annotations?: Record<string, boolean> };
-type McpToolResult = { content: McpContent[]; structuredContent?: Record<string, unknown>; isError?: boolean; _meta?: Record<string, unknown> };
+type McpToolResult = { content: McpContent[]; structuredContent?: Record<string, unknown>; isError?: boolean };
 type McpServerState = { initialized: boolean; projectRoot: string; supportsRoots: boolean; rootRefresh?: Promise<void> };
 type PendingServerRequest = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
 
 const LATEST_PROTOCOL_VERSION = "2025-11-25";
 const PROTOCOL_VERSIONS = new Set([LATEST_PROTOCOL_VERSION]);
+const SERVER_INSTRUCTIONS = [
+	"Use the selected active tab by default; call browser_tabs list only to disambiguate tabs.",
+	"Call browser_observe only when page understanding is required; observed bp-ref values route later calls automatically.",
+	"Use browser_execute for JavaScript and browser_command for native or trusted input.",
+	"Combine deterministic same-page JavaScript in one browser_execute call, attach expect when a write must be verified, and re-observe only when the next decision depends on new page state.",
+	"Read browser-pilot://native-command/<cmd> only when an unfamiliar native command's fields are needed.",
+].join(" ");
 const NATIVE_COMMANDS_URI = "browser-pilot://native-commands";
 const NATIVE_COMMAND_URI_PREFIX = "browser-pilot://native-command/";
 const definitions = browserCommandDefinitions();
@@ -34,7 +41,7 @@ const observationResources = new Map<string, ObservationResourceDescriptor & { p
 const MAX_OBSERVATION_RESOURCES = 1024;
 const OBSERVATION_RESOURCE_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function toolDescription(definition: CommandDefinition): string | undefined {
-	const parts = [definition.description, definition.promptSnippet, ...(definition.promptGuidelines ?? [])]
+	const parts = [definition.description, ...(definition.promptGuidelines ?? [])]
 		.filter((value): value is string => typeof value === "string" && !!value.trim());
 	return [...new Set(parts)].join("\n\n") || undefined;
 }
@@ -44,16 +51,36 @@ function toolAnnotations(name: string): Record<string, boolean> | undefined {
 	return undefined;
 }
 
+function toolOutputSchema(name: string): Record<string, unknown> | undefined {
+	if (name === "browser_observe") return PAGE_OBSERVATION_VIEW_JSON_SCHEMA as unknown as Record<string, unknown>;
+	if (name === "browser_tabs") return {
+		type: "object",
+		properties: { tabs: { type: "array", items: { type: "object", properties: { targetRef: { type: "string" }, url: { type: "string" }, title: { type: "string" }, active: { type: "boolean" }, incognito: { type: "boolean" } }, additionalProperties: false } } },
+		required: ["tabs"],
+		additionalProperties: false,
+	};
+	if (name === "browser_screenshot") return {
+		type: "object",
+		properties: { captured: { type: "boolean" }, width: { type: "number" }, height: { type: "number" }, mime: { type: "string" } },
+		required: ["captured"],
+		additionalProperties: false,
+	};
+	return undefined;
+}
+
 export function mcpTools(): McpTool[] {
-	return definitions.map((definition) => ({
-		name: definition.name,
-		description: toolDescription(definition),
-		inputSchema: definition.parameters && typeof definition.parameters === "object"
-			? definition.parameters as Record<string, unknown>
-			: { type: "object", properties: {} },
-		...(definition.name === "browser_observe" ? { outputSchema: PAGE_OBSERVATION_VIEW_JSON_SCHEMA as unknown as Record<string, unknown> } : {}),
-		...(toolAnnotations(definition.name) ? { annotations: toolAnnotations(definition.name) } : {}),
-	}));
+	return definitions.map((definition) => {
+		const outputSchema = toolOutputSchema(definition.name);
+		return {
+			name: definition.name,
+			description: toolDescription(definition),
+			inputSchema: definition.parameters && typeof definition.parameters === "object"
+				? definition.parameters as Record<string, unknown>
+				: { type: "object", properties: {} },
+			...(outputSchema ? { outputSchema } : {}),
+			...(toolAnnotations(definition.name) ? { annotations: toolAnnotations(definition.name) } : {}),
+		};
+	});
 }
 
 export function mcpProjectRoot(): string {
@@ -114,7 +141,6 @@ function pruneObservationResources(now = Date.now()): void {
 function validObservationResourceTarget(descriptor: ObservationResourceDescriptor): boolean {
 	if (descriptor.kind === "content") return Number.isInteger(descriptor.contentSection) && Number(descriptor.contentSection) >= 0 && descriptor.jsonPath === undefined;
 	if (descriptor.contentSection !== undefined || typeof descriptor.jsonPath !== "string") return false;
-	if (descriptor.kind === "template-instances") return /^snapshotProjection\.templates\[\d+\]\.instanceRefs$/.test(descriptor.jsonPath);
 	if (descriptor.kind === "collection-window") return /^collections\[\d+\]$/.test(descriptor.jsonPath);
 	if (descriptor.kind === "action-space") return descriptor.jsonPath === "actionSpace";
 	if (descriptor.kind === "details") return /^(treeDiff|causal|relations|snapshotProjection|collections|\$)$/.test(descriptor.jsonPath);
@@ -122,25 +148,36 @@ function validObservationResourceTarget(descriptor: ObservationResourceDescripto
 }
 
 function completeSemanticObservation(observation: PageObservationV3): Record<string, unknown> {
+	const title = observation.content?.headings?.[0];
+	const gist = publicGist(observation.gist, title);
+	const visual = publicVisual(observation.visual);
+	const causal = publicCausal(observation.causal);
+	const relations = publicRelations(observation.relations);
+	const snapshotProjection = publicSnapshotProjection(observation.snapshotProjection);
+	const treeDiff = publicTreeDiff(observation.treeDiff);
+	const warnings = publicWarnings(observation.diagnostics);
+	const outline = observation.outline?.flatMap((item) => typeof item.container === "string" && typeof item.memberCount === "number" && Array.isArray(item.memberRefs) ? [{
+		container: item.container,
+		...(typeof item.name === "string" ? { name: item.name } : {}),
+		memberCount: item.memberCount,
+		...(typeof item.controlCount === "number" ? { controlCount: item.controlCount } : {}),
+		memberRefs: item.memberRefs.filter((ref): ref is string => typeof ref === "string" && ref.startsWith("bp-ref://")),
+	}] : []);
+	const collections = observation.collections?.map(publicCollection);
 	return {
-		schema: observation.schema,
-		tool: observation.tool,
-		model: observation.model,
-		canonical: false,
 		target: { ...(observation.target.url ? { url: observation.target.url } : {}) },
-		snapshot: { snapshotId: observation.snapshot.snapshotId, capturedAt: observation.snapshot.capturedAt, ttlMs: observation.snapshot.ttlMs },
 		...(observation.content ? { content: observation.content } : {}),
-		...(observation.visual ? { visual: observation.visual } : {}),
-		...(observation.gist ? { gist: observation.gist } : {}),
-		...(observation.outline ? { outline: observation.outline } : {}),
+		...(visual ? { visual } : {}),
+		...(gist ? { gist } : {}),
+		...(outline?.length ? { outline } : {}),
 		...(observation.actionSpace ? { actionSpace: observation.actionSpace } : {}),
-		...(observation.relations ? { relations: observation.relations } : {}),
-		...(observation.inference ? { inference: observation.inference } : {}),
-		...(observation.causal ? { causal: observation.causal } : {}),
-		...(observation.treeDiff ? { treeDiff: observation.treeDiff } : {}),
-		...(observation.snapshotProjection ? { snapshotProjection: observation.snapshotProjection } : {}),
-		...(observation.collections ? { collections: observation.collections } : {}),
-		providers: Object.fromEntries(Object.entries(observation.providers).map(([provider, item]) => [provider, { status: item.status, ...(item.reason ? { reason: item.reason } : {}) }])),
+		...(relations ? { relations } : {}),
+		...(causal ? { causal } : {}),
+		...(treeDiff ? { treeDiff } : {}),
+		...(snapshotProjection ? { snapshotProjection } : {}),
+		...(collections?.length ? { collections } : {}),
+		...(warnings.length ? { warnings } : {}),
+		...(observation.nextActions?.length ? { nextActions: observation.nextActions } : {}),
 	};
 }
 
@@ -162,20 +199,13 @@ export function registerMcpObservationResources(details: Record<string, unknown>
 			|| descriptor.mimeType !== "application/json" || typeof descriptor.name !== "string" || !descriptor.name.trim()
 			|| typeof descriptor.snapshotId !== "string" || !descriptor.snapshotId.trim() || typeof descriptor.ref !== "string" || !descriptor.ref.trim()
 			|| descriptor.label !== undefined && typeof descriptor.label !== "string"
-			|| !["action-space", "template-instances", "collection-window", "content", "details"].includes(descriptor.kind)
+			|| !["action-space", "collection-window", "content", "details"].includes(descriptor.kind)
 			|| !Number.isFinite(descriptor.expiresAt) || descriptor.expiresAt <= now || !validObservationResourceTarget(descriptor)) continue;
 		observationResources.set(token, { ...descriptor, projectRoot: resolvedProjectRoot });
 		while (observationResources.size > MAX_OBSERVATION_RESOURCES) observationResources.delete(observationResources.keys().next().value!);
 		links.push({ type: "resource_link", uri: descriptor.uri, name: descriptor.name, mimeType: "application/json" });
 	}
 	return links;
-}
-
-function publicResultDetails(details: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-	if (!details) return undefined;
-	const { [OBSERVATION_RESOURCES_DETAIL_KEY]: _resources, ...publicDetails } = details;
-	const projected = publicToolValue(publicDetails) as Record<string, unknown>;
-	return Object.keys(projected).length ? projected : undefined;
 }
 
 function publicContent(content: McpContent[]): McpContent[] {
@@ -194,7 +224,7 @@ function observationSummary(value: Record<string, unknown>): string {
 	const target = record(value.target);
 	const content = record(value.content);
 	const title = record(value.gist).title;
-	const actionables = typeof record(record(value.actionSpace).coverage).returned === "number" ? Number(record(record(value.actionSpace).coverage).returned) : 0;
+	const actionables = Array.isArray(record(value.actionSpace).items) ? (record(value.actionSpace).items as unknown[]).length : 0;
 	const frontier = Array.isArray(record(value.frontier).items) ? record(value.frontier).items as unknown[] : [];
 	return `Observed ${typeof title === "string" ? title : typeof target.url === "string" ? target.url : "page"}: ${actionables} actionables, ${frontier.length} expandable regions${content.complete === false ? ", additional content available" : ""}.`;
 }
@@ -204,8 +234,7 @@ export async function callMcpTool(name: string, args: Record<string, unknown>, s
 	try {
 		const result = await invokeDaemonTool(name, args, projectRoot, signal);
 		const resourceLinks = registerMcpObservationResources(result.details, projectRoot);
-		const details = publicResultDetails(result.details);
-		const link = resourceLink(details, projectRoot);
+		const link = resourceLink(result.details, projectRoot);
 		const isError = result.isError === true || result.terminate === true;
 		const content = isError ? publicContent(result.content) : result.content;
 		const textContent = content.filter((item): item is { type: "text"; text: string } => item.type === "text");
@@ -215,8 +244,7 @@ export async function callMcpTool(name: string, args: Record<string, unknown>, s
 		return {
 			content: [...(observation ? [{ type: "text" as const, text: observationSummary(observation) }] : content), ...resourceLinks, ...(visualLink ? [visualLink] : []), ...(link ? [link] : [])],
 			...(structuredContent ? { structuredContent } : {}),
-				isError,
-			...(details ? { _meta: { "browser-pilot/details": details } } : {}),
+			isError,
 		};
 	} catch (error) {
 		return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -247,7 +275,7 @@ export function mcpResources() {
 	return [{
 		uri: NATIVE_COMMANDS_URI,
 		name: "Browser Pilot native command index",
-		description: "Canonical command names, domains, access modes, and routing requirements accepted by browser_command.",
+		description: "Canonical command names grouped by capability, with access modes and required fields.",
 		mimeType: "application/json",
 	}];
 }
@@ -280,7 +308,7 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 			version: schema.version,
 			domains: Object.fromEntries(Object.entries(schema.domains).map(([domain, commands]) => [domain, commands.filter((command) => publicNames.has(command))]).filter(([, commands]) => commands.length)),
 			commands: Object.fromEntries([...publicNames].map((command) => {
-				const { paramsSchema: _paramsSchema, ...summary } = schema.commands[command]!;
+				const { paramsSchema: _paramsSchema, domain: _domain, tabScoped: _tabScoped, requiredAny: _requiredAny, methods: _methods, methodRequired: _methodRequired, methodSpecs: _methodSpecs, ...summary } = schema.commands[command]!;
 				return [command, summary];
 			})),
 		};
@@ -290,7 +318,9 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 		const command = decodeURIComponent(uri.slice(NATIVE_COMMAND_URI_PREFIX.length));
 		const schema = getNativeCommandProtocolSchema();
 		if (!publicNativeCommandNames().includes(command)) throw new Error(`Unknown native command resource: ${command}`);
-		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify({ name: schema.name, version: schema.version, command, specification: schema.commands[command] }) }] };
+		const spec = schema.commands[command]!;
+		const { requiredAny: _requiredAny, ...paramsSchema } = spec.paramsSchema ?? { type: "object", properties: {}, additionalProperties: false };
+		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify({ command, accessMode: spec.accessMode, ...(spec.notes ? { notes: spec.notes } : {}), paramsSchema }) }] };
 	}
 	const observationToken = observationResourceToken(uri);
 	if (observationToken) {
@@ -315,11 +345,17 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 		} else if (descriptor.jsonPath) {
 			const selected = getJsonPath(observation, descriptor.jsonPath);
 			if (!selected.exists) throw new Error(`Observation resource path is unavailable: ${descriptor.ref}`);
-			value = selected.value;
+			if (descriptor.jsonPath === "causal") value = publicCausal(observation.causal);
+			else if (descriptor.jsonPath === "relations") value = publicRelations(observation.relations);
+			else if (descriptor.jsonPath === "snapshotProjection") value = publicSnapshotProjection(observation.snapshotProjection);
+			else if (descriptor.jsonPath === "treeDiff") value = publicTreeDiff(observation.treeDiff);
+			else if (descriptor.jsonPath === "collections" && Array.isArray(selected.value)) value = selected.value.map((collection) => publicCollection(collection as NonNullable<PageObservationV3["collections"]>[number]));
+			else if (descriptor.kind === "collection-window") value = publicCollection(selected.value as NonNullable<PageObservationV3["collections"]>[number]);
+			else value = selected.value;
 		} else {
 			throw new Error("Observation resource target is invalid");
 		}
-		const payload = publicToolValue(redactSensitiveValue({ schema: OBSERVATION_RESOURCE_SCHEMA, snapshotId: descriptor.snapshotId, ref: descriptor.ref, kind: descriptor.kind, ...(descriptor.label ? { label: descriptor.label } : {}), value }));
+		const payload = publicToolValue(redactSensitiveValue({ ref: descriptor.ref, kind: descriptor.kind, ...(descriptor.label ? { label: descriptor.label } : {}), value }));
 		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(payload) }] };
 	}
 	const requested = safeArtifactPath(uri, projectRoot);
@@ -408,9 +444,10 @@ async function handleRequest(message: JsonRpcMessage, active: Map<JsonRpcId, Abo
 			protocolVersion: PROTOCOL_VERSIONS.has(requested) ? requested : LATEST_PROTOCOL_VERSION,
 			capabilities: { tools: {}, resources: {} },
 			serverInfo: { name: "browser-pilot", version: packageVersion() },
+			instructions: SERVER_INSTRUCTIONS,
 		});
 		state.initialized = true;
-			state.supportsRoots = !!record(capabilities).roots;
+		state.supportsRoots = !!record(capabilities).roots;
 		return;
 	}
 	if (!state.initialized) return error(id, -32002, "Server not initialized");
@@ -434,22 +471,13 @@ async function handleRequest(message: JsonRpcMessage, active: Map<JsonRpcId, Abo
 	if (!name || (rawArgs !== undefined && (!rawArgs || typeof rawArgs !== "object" || Array.isArray(rawArgs)))) {
 		return error(id, -32602, "Invalid tools/call parameters");
 	}
+	if (!byName.has(name)) return error(id, -32602, `Unknown tool: ${name}`);
 	const args = record(rawArgs);
 	const controller = new AbortController();
-	const progressToken = record(params._meta).progressToken;
-	let progress = 0;
-	let heartbeat: NodeJS.Timeout | undefined;
-	if (typeof progressToken === "string" || typeof progressToken === "number") {
-		send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, progress, message: `${name} started` } });
-		// ponytail: elapsed heartbeat; stream daemon phases if semantic progress becomes necessary.
-		heartbeat = setInterval(() => send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, progress: ++progress, message: `${name} is running` } }), 1_000);
-		heartbeat.unref?.();
-	}
 	active.set(id, controller);
 	try {
-			result(id, await callMcpTool(name, args, controller.signal, state.projectRoot));
+		result(id, await callMcpTool(name, args, controller.signal, state.projectRoot));
 	} finally {
-		if (heartbeat) clearInterval(heartbeat);
 		active.delete(id);
 	}
 }

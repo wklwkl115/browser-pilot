@@ -147,3 +147,29 @@ test("exec dispatch routes background tabs directly through persistent CDP", asy
 	assert.equal(result?.result, "cdp-result");
 	assert.equal(createdListeners.size, 0);
 });
+
+test("exec dispatch never replays a timed-out MAIN-world script through CDP", async () => {
+	resetState();
+	executeResult = new Promise(() => {});
+	const value = socket();
+	await handleWsExec({ id: "unknown", tabId: 7, code: "submitPayment()", timeoutMs: 100 }, value);
+
+	assert.equal(executeCalls, 1);
+	assert.equal(cdpCalls.length, 0);
+	assert.equal(messages(value).at(-1)?.type, "error");
+	assert.equal(((messages(value).at(-1)?.error as Record<string, unknown>)?.name), "ExecuteScriptTimeout");
+
+	resetState();
+	executeResult = [];
+	const unknown = socket();
+	await handleWsExec({ id: "empty", tabId: 7, code: "submitPayment()" }, unknown);
+	assert.equal(cdpCalls.length, 0);
+	assert.match(String(((messages(unknown).at(-1)?.error as Record<string, unknown>)?.message)), /outcome is unknown/);
+
+	resetState();
+	executeResult = [{ result: { ok: false, error: { message: "unsafe-eval blocked" }, csp: true } }];
+	const csp = socket();
+	await handleWsExec({ id: "csp", tabId: 7, code: "21 * 2" }, csp);
+	assert.deepEqual(cdpCalls.map((call) => call.method), ["Runtime.evaluate"]);
+	assert.equal(messages(csp).at(-1)?.result, "cdp-result");
+});

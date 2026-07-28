@@ -8,6 +8,7 @@
 // summarizes. No browser, Node, or tools imports — stays inside the abml-kernel boundary.
 import type { Entity, EntityRelation, RelationType } from "./entity.js";
 import { backendNodeKey, cleanTargetId } from "./nodeKey.js";
+import { buildBoundedSpatialIndex, queryBoundedSpatialIndex } from "./spatialIndex.js";
 
 // A relation edge before ref materialization. sourceKey/targetKey are node-id keys in the
 // shared key space "b:<backendDOMNodeId>" | "a:<axNodeId>" — never leaked to callers.
@@ -49,6 +50,7 @@ const TYPE_ORDER: RelationType[] = [
 ];
 
 const PAINT_ORDER_BUCKET_SIZE = 256;
+const MAX_PAINT_ORDER_BUCKETS_PER_RECT = 256;
 const MIN_OCCLUSION_OVERLAP_AREA = 9;
 const MIN_OCCLUSION_OVERLAP_RATIO = 0.02;
 
@@ -150,24 +152,6 @@ function rectIntersectionArea(a: PaintOrderEntry["bounds"], b: PaintOrderEntry["
 	return Math.max(0, right - left) * Math.max(0, bottom - top);
 }
 
-function bucketRange(rect: PaintOrderEntry["bounds"]): { minX: number; maxX: number; minY: number; maxY: number } {
-	return {
-		minX: Math.floor(rect.x / PAINT_ORDER_BUCKET_SIZE),
-		maxX: Math.floor((rect.x + rect.w) / PAINT_ORDER_BUCKET_SIZE),
-		minY: Math.floor(rect.y / PAINT_ORDER_BUCKET_SIZE),
-		maxY: Math.floor((rect.y + rect.h) / PAINT_ORDER_BUCKET_SIZE),
-	};
-}
-
-function bucketKeys(rect: PaintOrderEntry["bounds"]): string[] {
-	const range = bucketRange(rect);
-	const out: string[] = [];
-	for (let x = range.minX; x <= range.maxX; x += 1) {
-		for (let y = range.minY; y <= range.maxY; y += 1) out.push(`${x}:${y}`);
-	}
-	return out;
-}
-
 // DOMSnapshot paint order is the lower-level occlusion spine: layout entries carry
 // backendNodeId + bounds + paintOrder in one sample. Convert that into relation anchors
 // without building an O(n²) matrix. Each lower painted entity keeps only the nearest higher painted
@@ -198,21 +182,15 @@ export function derivePaintOrderRelationAnchors(entities: Entity[], entries: Pai
 	}
 	if (indexed.length < 2) return [];
 	indexed.sort((a, b) => a.paintOrder - b.paintOrder || a.backendNodeId - b.backendNodeId);
-	const buckets = new Map<string, IndexedPaintEntity[]>();
-	for (const item of indexed) {
-		for (const key of bucketKeys(item.bounds)) {
-			const current = buckets.get(key);
-			if (current) current.push(item);
-			else buckets.set(key, [item]);
-		}
-	}
+	const spatialIndex = buildBoundedSpatialIndex(indexed.map((item) => ({ value: item, rect: item.bounds })), {
+		bucketSize: PAINT_ORDER_BUCKET_SIZE,
+		maxBucketsPerRect: MAX_PAINT_ORDER_BUCKETS_PER_RECT,
+	});
 	const anchors: RelationAnchor[] = [];
 	for (const lower of indexed) {
 		const candidates = new Map<string, IndexedPaintEntity>();
-		for (const key of bucketKeys(lower.bounds)) {
-			for (const candidate of buckets.get(key) || []) {
-				if (candidate.key !== lower.key && candidate.paintOrder > lower.paintOrder) candidates.set(candidate.key, candidate);
-			}
+		for (const candidate of queryBoundedSpatialIndex(spatialIndex, lower.bounds)) {
+			if (candidate.key !== lower.key && candidate.paintOrder > lower.paintOrder) candidates.set(candidate.key, candidate);
 		}
 		let best: { item: IndexedPaintEntity; intersection: number; ratio: number } | undefined;
 		for (const candidate of candidates.values()) {

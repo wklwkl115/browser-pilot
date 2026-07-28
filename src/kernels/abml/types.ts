@@ -10,6 +10,7 @@ export type VerificationStatus = "verified" | "unmet" | "inconclusive";
 export type VerificationResult = {
 	status: VerificationStatus;
 	verb: string;
+	retryable?: boolean;
 	expected?: Record<string, unknown>;
 	observed: Record<string, unknown>;
 	evidence: Array<{ kind: string; summary: string; ref?: string; data?: Record<string, unknown> }>;

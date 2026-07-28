@@ -13,8 +13,7 @@ export type CommandRegistrarContext = {
 
 export type CommandRegistrar = (context: CommandRegistrarContext) => void;
 
-export const TAB_SCOPED_TOOL_GUIDELINE = "Use targetRef from browser_tabs list/create to disambiguate several open tabs; omit it to use the selected active tab.";
-export const TARGET_REF_DESCRIPTION = "Stable target reference from browser_tabs list/create (tabHandle). It survives daemon/extension reconnect and unambiguous in-place replacement within the current browser runtime; reacquire after the tab or browser runtime is gone.";
+export const TARGET_REF_DESCRIPTION = "Target returned by browser_tabs; omit it to use the selected active tab.";
 
 export function strictCommandParameters<T extends Record<string, TSchema>>(properties: T) {
 	return Type.Object(properties, { additionalProperties: false });

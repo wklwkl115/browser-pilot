@@ -2,7 +2,7 @@
 //
 // This module classifies repeated page structures as collections and reports whether the observed
 // window is complete. It is perception-only and never asks the browser to scroll/click.
-import type { Entity, EntityKind } from "./entity.js";
+import { isAddressableEntity, type Entity, type EntityKind } from "./entity.js";
 import type { SnapshotProjection, SnapshotProjectionTemplate } from "./snapshotProjection.js";
 import type { StructureTemplate } from "./templating.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
@@ -14,7 +14,6 @@ type ActionableInput = ScanActionable | Record<string, unknown>;
 
 export type CollectionCompleteness =
 	| "complete"
-	| "folded"
 	| "viewport-window"
 	| "virtualized"
 	| "paginated"
@@ -284,7 +283,6 @@ function addDraft(map: Map<string, DraftCollection>, key: string, draft: DraftCo
 function templateDraft(template: StructureTemplate, sourceRank: number): DraftCollection {
 	const observedCount = Math.max(0, template.count);
 	const refs = uniq(template.instanceRefs);
-	const folded = observedCount > refs.length;
 	return {
 		kind: collectionKind(template.container, template.role, template.kind),
 		containerRole: template.container,
@@ -295,7 +293,6 @@ function templateDraft(template: StructureTemplate, sourceRank: number): DraftCo
 		itemRefCount: observedCount,
 		declaredTotal: template.setSize,
 		sourceRank,
-		...(folded ? { preferredCompleteness: "folded", preferredConfidence: "medium" } : {}),
 		dataSources: [{
 			source: "aria",
 			summary: template.setSize !== undefined ? `template has ${observedCount} entity instances across ${template.setSize} declared item positions` : `template has ${observedCount} entity instances`,
@@ -312,7 +309,6 @@ function templateDraft(template: StructureTemplate, sourceRank: number): DraftCo
 function snapshotDraft(template: SnapshotProjectionTemplate): DraftCollection {
 	const observedCount = Math.max(0, template.count);
 	const refs = uniq(template.instanceRefs);
-	const folded = observedCount > refs.length;
 	return {
 		kind: collectionKind(template.container, template.role, template.kind),
 		containerRole: template.container,
@@ -323,7 +319,6 @@ function snapshotDraft(template: SnapshotProjectionTemplate): DraftCollection {
 		itemRefCount: observedCount,
 		declaredTotal: template.setSize,
 		sourceRank: 0,
-		...(folded ? { preferredCompleteness: "folded", preferredConfidence: "medium" } : {}),
 		dataSources: [{
 			source: "snapshot",
 			summary: template.setSize !== undefined ? `snapshot projection has ${observedCount} entity instances across ${template.setSize} declared item positions` : `snapshot projection has ${observedCount} entity instances`,
@@ -368,7 +363,7 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 		const positions = new Set(positioned.keys());
 		const skeletonCount = skeletonsByKey.get(key) || 0;
 		const observedCount = positions.size || itemMembers.length || numberValue(first.hints?.itemCount) || 0;
-		const refs = uniq((positions.size ? [...positioned.values()] : itemMembers).map((entity) => entity.ref));
+		const refs = uniq((positions.size ? [...positioned.values()] : itemMembers).filter(isAddressableEntity).map((entity) => entity.ref));
 		const dataSources: NonNullable<CollectionModel["dataSources"]> = [];
 		if (declaredTotal !== undefined || positions.size) {
 			dataSources.push({
@@ -484,6 +479,19 @@ function paginationEdge(actionables: ActionableInput[] | undefined): { completen
 	for (const [index, actionable] of (actionables ?? []).entries()) {
 		if (actionable.disabled === true || actionable.hidden === true) continue;
 		const text = actionableText(actionable);
+		const rel = new Set((stringValue(actionable.rel) ?? "").toLowerCase().split(/\s+/).filter(Boolean));
+		const relKind = rel.has("next") ? "next" as const : rel.has("prev") || rel.has("previous") ? "previous" as const : undefined;
+		if (relKind) {
+			const ref = stringValue(actionable.ref);
+			const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
+			return {
+				completeness: "paginated",
+				confidence: "high",
+				summary: `HTML rel=${relKind === "next" ? "next" : "prev"} control`,
+				jsonPath: `data.structure.actionables[${index}]`,
+				control: { ...(ref ? { ref } : {}), ...(label ? { label } : {}), kind: relKind },
+			};
+		}
 		if (/\b(next|more|load\s*more|show\s*more|older|newer)\b/.test(text)) {
 			const isPagination = /\b(next|older|newer|page)\b/.test(text);
 			const controlKind = classifyPaginationControlKind(text);
@@ -491,8 +499,8 @@ function paginationEdge(actionables: ActionableInput[] | undefined): { completen
 			const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
 			return {
 					completeness: isPagination ? "paginated" : "lazy",
-				confidence: "medium",
-				summary: isPagination ? "visible next/page control" : "visible load/show more control",
+				confidence: "low",
+				summary: isPagination ? "pagination label heuristic" : "load-more label heuristic",
 				jsonPath: `data.structure.actionables[${index}]`,
 				control: {
 					...(ref ? { ref } : {}),
@@ -515,15 +523,8 @@ function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof p
 			};
 		}
 	}
-	if (draft.preferredCompleteness === "folded") {
-		return {
-			completeness: "folded",
-			confidence: draft.preferredConfidence ?? "medium",
-			reason: "collection has fewer captured refs than observed items",
-		};
-	}
 	if (draft.declaredTotal !== undefined && draft.declaredTotal > 0) {
-		if (draft.observedCount >= draft.declaredTotal && draft.itemRefs.length >= draft.declaredTotal) {
+		if (draft.observedCount >= draft.declaredTotal) {
 			return { completeness: "complete", confidence: "high", reason: `observed ${draft.observedCount} covers declared total ${draft.declaredTotal}` };
 		}
 	}

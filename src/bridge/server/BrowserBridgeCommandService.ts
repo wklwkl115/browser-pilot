@@ -157,7 +157,7 @@ export class BrowserBridgeCommandService {
 			throw new BrowserBridgeError("EXTENSION_CONTRACT_MISMATCH", "Connected Browser Pilot extension build is stale", {
 				expectedBuild: current.extension.expectedBuild,
 				reportedBuild: current.extension.reportedBuild,
-					recovery: { nextActions: ["call browser_command with command={\"cmd\":\"management\",\"method\":\"reload\"}"] },
+				recovery: { nextActions: ["Reload the Browser Pilot extension in chrome://extensions, then retry."] },
 			});
 		}
 	}

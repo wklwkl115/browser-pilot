@@ -64,7 +64,7 @@ export type DaemonContractReport = {
 };
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-const MAX_CONTROL_RESPONSE_BYTES = 1024 * 1024;
+export const MAX_CONTROL_BODY_BYTES = 64 * 1024 * 1024;
 const START_LOCK_STALE_MS = 30_000;
 
 /** User-local state root. Overridable for tests/isolation. */
@@ -291,8 +291,8 @@ export function controlRequest(
 				res.setEncoding("utf8");
 				res.on("data", (chunk) => {
 					responseBytes += Buffer.byteLength(chunk, "utf8");
-					if (responseBytes > MAX_CONTROL_RESPONSE_BYTES) {
-						const error = new Error(`control response too large (>${MAX_CONTROL_RESPONSE_BYTES} bytes)`);
+					if (responseBytes > MAX_CONTROL_BODY_BYTES) {
+						const error = new Error(`control response too large (>${MAX_CONTROL_BODY_BYTES} bytes)`);
 						res.destroy(error);
 						req.destroy(error);
 						safeReject(error);
