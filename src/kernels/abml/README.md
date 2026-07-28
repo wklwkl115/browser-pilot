@@ -13,8 +13,7 @@ kernel; the kernel never depends on the runtime.
    src/browser-runtime/abml/  (browser I/O)  ──imports──▶  src/kernels/abml/  (this)
 ```
 
-This is the whole reason the kernel was split out: it can be read, reasoned about, and unit-tested
-without a browser, and is the candidate for an isolated `@browser-pilot/abml-kernel` package.
+This split keeps the kernel readable and unit-testable without a browser.
 
 ## Agent-native perception contract
 
@@ -52,7 +51,7 @@ The modules below make up the kernel's public surface — consumers import them 
 | `entity.ts` | `Entity` / `EntityState` / `EntityStructure` model + builders. |
 | `ax.ts` | **DOM↔AX merge** — backend identity plus bounded geometry/semantic enrichment, DOM-authoritative physical state, AX-authoritative accessible semantics/state/structure. |
 | `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |
-| `identityGraph.ts`, `nodeKey.ts` | Cross-provider identity evidence and stable node keys. |
+| `nodeKey.ts` | Stable cross-provider node keys. |
 | `identityBootstrap.ts` | Best-effort scan rect ↔ DOMSnapshot backend identity candidate diagnostics. |
 | `spatialIndex.ts` | Shared bounded spatial candidate index with correctness-preserving overflow fallback. |
 | `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
@@ -60,7 +59,7 @@ The modules below make up the kernel's public surface — consumers import them 
 | `semanticRefAnchor.ts` | Semantic ref-anchor candidate derivation for repeated structures. |
 | `snapshotProjection.ts` | M2c living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
 | `collections.ts` | Collection completeness evidence for long, virtualized, lazy, and paginated structures. |
-| `relations.ts`, `causal.ts`, `inference.ts` | Semantic relations, causal evidence, and bounded inference. |
+| `relations.ts`, `causal.ts` | Semantic relations and causal evidence. |
 | `diff.ts`, `verification.ts` | Entity-level changes and post-action verification. |
 | `pageWorldScan.ts`, `pageObservation.ts` | Page-world input and assembled observation contracts. |
 

@@ -53,6 +53,7 @@ export interface ScanActionable {
 	hitOk?: boolean | null;
 	hitTarget?: ScanHitTarget | null;
 	href?: string;
+	rel?: string;
 	occluderSelector?: string;
 	priority?: number;
 	name?: string;
@@ -163,7 +164,7 @@ const actionableProperties = {
 	expanded: booleanSchema, visible: booleanSchema, inViewport: booleanSchema, current: stringSchema, inputKind: stringSchema,
 	controlsSelectors: stringArraySchema, ownsSelectors: stringArraySchema, expandedTargetSelectors: stringArraySchema,
 	position: stringSchema, edgeUtility: booleanSchema, handlers: stringArraySchema, rect: rectSchema, documentRect: rectSchema,
-	point: pointSchema, hitOk: nullableBooleanSchema, hitTarget: { anyOf: [hitTargetSchema, { type: "null" }] }, href: stringSchema,
+	point: pointSchema, hitOk: nullableBooleanSchema, hitTarget: { anyOf: [hitTargetSchema, { type: "null" }] }, href: stringSchema, rel: stringSchema,
 	occluderSelector: stringSchema, priority: numberSchema, name: stringSchema, ariaLabel: stringSchema, ref: stringSchema, hidden: booleanSchema, referenceOnly: booleanSchema,
 	relationOnly: booleanSchema, sourceSelector: stringSchema, sourceRole: nullableStringSchema, sourceName: stringSchema,
 	targetId: stringSchema, cdpTargetId: stringSchema,

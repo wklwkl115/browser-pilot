@@ -22,9 +22,9 @@ test("successful ABML assembly does not require scan fallback entities", () => {
 		causal: undefined,
 		ledgerDeltaFields: {},
 	});
-	assert.equal(result.summary.abmlIntegrated, true);
+	assert.equal("abmlIntegrated" in result.summary, false);
 	assert.deepEqual(result.envelopeEntities, [offscreen, entity]);
-	assert.deepEqual((result.summary.focus as { primary_entities: string[] }).primary_entities, [entity.ref, offscreen.ref]);
+	assert.deepEqual(result.summary.focus.primary_entities, [entity.ref, offscreen.ref]);
 });
 
 test("ABML assembly attributes post-action requests to the recorded action ref", () => {

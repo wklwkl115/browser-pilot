@@ -27,7 +27,7 @@ function isRuntimeResultKey(key: string): boolean {
 		|| /(?:tab|target|session)_(?:id|key|name)$/.test(key);
 }
 
-type PublicToolValueOptions = { preserveExecutionData?: boolean };
+type PublicToolValueOptions = { preserveExecutionData?: boolean; preserveBodyFields?: boolean };
 
 function projectRecord(value: Record<string, unknown>, options: PublicToolValueOptions): Record<string, unknown> {
 	if (isExecutionEnvelope(value)) {
@@ -59,7 +59,7 @@ function normalizeDetails(details: Record<string, unknown>): Record<string, unkn
 
 export function jsonResult(value: unknown, details: Record<string, unknown> = {}, options: PublicToolValueOptions = {}): BrowserTextCommandResult {
 	return {
-		content: [{ type: "text", text: stableJson(publicToolValue(redactSensitiveValue(value), options)) }],
+		content: [{ type: "text", text: stableJson(publicToolValue(redactSensitiveValue(value, { preserveBodyFields: options.preserveBodyFields }), options)) }],
 		details: normalizeDetails(details),
 	};
 }

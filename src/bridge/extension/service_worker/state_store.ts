@@ -5,7 +5,7 @@
 // closed for volatile runtime data (buffers, transcripts, paused requests).
 
 import { chromeApi as chrome, BROWSER_PILOT_WORKER_BOOT_ID } from "./runtimeEnv.js";
-import { runtimeRecord } from "./runtimeSupport.js";
+import { redactSensitive, runtimeRecord } from "./runtimeSupport.js";
 import type { JsonRecord } from "./types.js";
 
 // --- Constants ---
@@ -87,39 +87,6 @@ type RuntimeRecoverySummary = {
   };
 };
 
-// Sensitive field names that must be redacted from persisted config.
-const SENSITIVE_KEYS = new Set([
-  "token",
-  "secret",
-  "password",
-  "passwd",
-  "pwd",
-  "authorization",
-  "cookie",
-  "set-cookie",
-  "apikey",
-  "api_key",
-  "accesstoken",
-  "access_token",
-  "refreshtoken",
-  "refresh_token",
-  "bearer",
-  "body",
-  "bodybase64",
-  "body_base64",
-  "postdata",
-  "post_data",
-  "payloaddata",
-  "payload",
-  "text",
-  "value",
-  "content",
-  "source",
-  "script",
-  "expression",
-  "html",
-]);
-
 const DIRECT_PAYLOAD_KEYS = new Set([
   "body",
   "postdata",
@@ -134,33 +101,29 @@ const DIRECT_PAYLOAD_KEYS = new Set([
   "content",
 ]);
 
-function isSensitiveKey(key: string): boolean {
-  return SENSITIVE_KEYS.has(key.toLowerCase().replace(/[_-]/g, ""));
-}
-
 function normalizeRedactionKey(key: string): string {
-  return key.toLowerCase().replace(/[_-]/g, "");
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function redactConfig(value: unknown, depth = 0, parentKey = ""): unknown {
-  if (value == null) return value;
+function redactPersistedConfig(value: unknown, depth = 0, parentKey = ""): unknown {
   const normalizedParent = normalizeRedactionKey(parentKey);
+  if (DIRECT_PAYLOAD_KEYS.has(normalizedParent)) return "[redacted]";
+  if (value == null) return value;
   if (typeof value === "string") {
-    if (parentKey && isSensitiveKey(parentKey)) return "[REDACTED]";
-    if (DIRECT_PAYLOAD_KEYS.has(normalizedParent)) return "[REDACTED]";
-    if (value.length > 256) return "[REDACTED_LONG]";
+    if (value.length > 256) return "[redacted long value]";
     return value;
   }
   if (typeof value === "number" || typeof value === "boolean") return value;
-  if (typeof value !== "object") return "[REDACTED]";
-  if (depth > 6) return "[REDACTED_DEPTH]";
-  if (Array.isArray(value)) return value.map((v) => redactConfig(v, depth + 1, parentKey));
-  const out: JsonRecord = {};
-  for (const [k, v] of Object.entries(value as JsonRecord)) {
-    if (isSensitiveKey(k)) out[k] = "[REDACTED]";
-    else out[k] = redactConfig(v, depth + 1, k);
-  }
-  return out;
+  if (typeof value !== "object") return "[redacted]";
+  if (depth > 6) return "[redacted depth]";
+  if (Array.isArray(value)) return value.map((v) => redactPersistedConfig(v, depth + 1, parentKey));
+  return Object.fromEntries(
+    Object.entries(value as JsonRecord).map(([k, v]) => [k, redactPersistedConfig(v, depth + 1, k)])
+  ) as JsonRecord;
+}
+
+function redactConfig(value: unknown): unknown {
+  return redactPersistedConfig(redactSensitive(value));
 }
 
 function currentBootId(): string {

@@ -187,7 +187,7 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 					...(effect ? { effect } : {}),
 					...(outcome.verification ? { verification: outcome.verification } : {}),
 				};
-				return jsonResult(value, { mode: "command", command: commandName, ...(visualSaved ? { saved: visualSaved } : {}) });
+				return jsonResult(value, { mode: "command", command: commandName, ...(visualSaved ? { saved: visualSaved } : {}) }, { preserveBodyFields: commandName === "network.body" });
 			});
 		},
 	});

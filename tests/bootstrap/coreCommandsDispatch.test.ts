@@ -333,6 +333,18 @@ test("extension websocket router rejects native command validation errors before
 	assert.match(String(messages[1]?.error), /timeoutMs must be a non-negative integer/);
 });
 
+test("extension websocket router returns a bounded error instead of overflowing the bridge", () => {
+	const socket = { readyState: 1, sent: [] as string[], send(payload: string) { this.sent.push(payload); } };
+	router.sendBrowserPilotBridgeWsCommandResult(socket, "large", { cmd: "network.exportHar" }, {
+		ok: true,
+		data: { value: "x".repeat(router.BROWSER_PILOT_BRIDGE_MAX_RESPONSE_BYTES + 1) },
+	});
+	const [message] = parseSocketMessages(socket);
+	assert.equal(message.type, "error");
+	assert.equal((message.error as Record<string, unknown>).code, "BUFFER_OVERFLOW");
+	assert.ok(socket.sent[0]!.length < 1_000);
+});
+
 test("offscreen transport preserves ext_ready, ACK, and result order", async () => {
 	sentRuntimeMessages.length = 0;
 	let recoveryCalls = 0;
@@ -406,13 +418,13 @@ test("extension runtime helpers redact and normalize malformed error responses",
 	const circular: Record<string, unknown> = { token: "fixture-secret" };
 	circular.self = circular;
 
-	assert.deepEqual(runtimeSupport.bridgeError(undefined, "fixture-secret", { password: "fixture-password", circular }), {
+	assert.deepEqual(runtimeSupport.bridgeError(undefined, "Authorization: Bearer fixture-secret", { password: "fixture-password", circular }), {
 		ok: false,
 		error_code: "INTERNAL_ERROR",
-		error: "[REDACTED]",
+		error: "Authorization: [redacted]",
 		details: {
-			password: "[REDACTED]",
-			circular: { token: "[REDACTED]", self: "[REDACTED_CYCLE]" },
+			password: "[redacted]",
+			circular: { token: "[redacted]", self: "[Circular]" },
 		},
 	});
 
@@ -444,6 +456,30 @@ test("extension runtime state serializes its shared storage blob and reports pre
 	assert.ok(concurrent["network:7:network"]);
 	assert.ok(concurrent["hook:7:hook"]);
 
+	await stateStore.persist("ws", "7:redacted", {
+		url: "wss://user:password@example.test/socket?token=secret&auth=secret",
+		headers: { "set-cookie": "sid=secret", "x-api-key": "secret" },
+		bearer: "secret",
+		source: "console.log('secret')",
+		options: {
+			script: { code: "console.log('secret')" },
+			expression: ["secret"],
+			html: { markup: "<p>secret</p>" },
+		},
+	}, { tabId: 7, sessionId: "redacted" });
+	const redacted = (sessionStorage.browserPilotRuntimeStateV2 as Record<string, { config: unknown }>)["ws:7:redacted"]?.config;
+	assert.deepEqual(redacted, {
+		url: "wss://[redacted]:[redacted]@example.test/socket?token=[redacted]&auth=[redacted]",
+		headers: { "set-cookie": "[redacted]", "x-api-key": "[redacted]" },
+		bearer: "[redacted]",
+		source: "[redacted]",
+		options: {
+			script: "[redacted]",
+			expression: "[redacted]",
+			html: "[redacted]",
+		},
+	});
+
 	await stateStore.persist("ws", "7:lost", { url: "wss://example.test/socket" }, { tabId: 7, sessionId: "lost", recoveryPolicy: "diagnosticOnly" });
 	const persisted = sessionStorage.browserPilotRuntimeStateV2 as Record<string, { workerBootId: string }>;
 	persisted["ws:7:lost"]!.workerBootId = "previous-worker";
@@ -468,6 +504,7 @@ test("extension runtime state serializes its shared storage blob and reports pre
 	assert.equal(recovered["ws:7:lost"]?.workerBootId, stateStore.currentBootId());
 	assert.ok(recovered["intercept:7:during-recovery"]);
 	await stateStore.forget("ws", "7:lost");
+	await stateStore.forget("ws", "7:redacted");
 	await stateStore.forget("intercept", "7:during-recovery");
 });
 

@@ -16,6 +16,7 @@ export type AbmlVerificationObservation = {
 	entity?: Entity;
 	sources?: string[];
 	reason?: string;
+	retryable?: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,6 +82,7 @@ export function verifyAbmlState(
 	return {
 		status,
 		verb,
+		...(observation.retryable !== undefined ? { retryable: observation.retryable } : {}),
 		expected: expectedRecord(expectation),
 		observed: observedRecord(entity),
 		evidence: [{

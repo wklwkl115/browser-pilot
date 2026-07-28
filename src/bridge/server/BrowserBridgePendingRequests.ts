@@ -107,9 +107,9 @@ export class BrowserBridgePendingRequests {
 		if (pending.signal && pending.abortListener) pending.signal.removeEventListener("abort", pending.abortListener);
 	}
 
-	ack(id: string): void {
+	ack(id: string, client: WebSocket): void {
 		const pending = this.pending.get(id);
-		if (pending) {
+		if (pending?.client === client) {
 			pending.acked = true;
 			pending.ackAt = Date.now();
 		}
@@ -125,15 +125,15 @@ export class BrowserBridgePendingRequests {
 		};
 	}
 
-	resolve(id: string, result: unknown, newTabs: unknown[], diagnostics?: Record<string, unknown>): void {
-		const pending = this.take(id);
+	resolve(id: string, client: WebSocket, result: unknown, newTabs: unknown[], diagnostics?: Record<string, unknown>): void {
+		const pending = this.takeFromClient(id, client);
 		if (!pending) return;
 		const latency = this.latency(pending);
 		pending.resolve({ id, tabId: pending.tabId, acknowledged: pending.acked, data: result, newTabs, target: this.resolvedTarget(pending.target), diagnostics: { ...(diagnostics || {}), latency } });
 	}
 
-	rejectBrowserError(id: string, error: unknown, result: unknown, diagnostics?: Record<string, unknown>): void {
-		const pending = this.take(id);
+	rejectBrowserError(id: string, client: WebSocket, error: unknown, result: unknown, diagnostics?: Record<string, unknown>): void {
+		const pending = this.takeFromClient(id, client);
 		if (!pending) return;
 		const latency = this.latency(pending);
 		// Preserve the extension's structured error code (carried on the command result, e.g.
@@ -191,5 +191,10 @@ export class BrowserBridgePendingRequests {
 		this.clearTimers(pending);
 		this.pending.delete(id);
 		return pending;
+	}
+
+	private takeFromClient(id: string, client: WebSocket): PendingRequest | undefined {
+		const pending = this.pending.get(id);
+		return pending?.client === client ? this.take(id) : undefined;
 	}
 }

@@ -6,10 +6,12 @@ import { causalFiredHint } from "../../kernels/abml/causal.js";
 import { isRecord } from "../../utils/params.js";
 import { PAGE_OBSERVATION_SCHEMA_V3, type AgentActionSpace, type CollectionSummary, type CompactActionable, type ObservationSnapshot, type PageObservationV3, type PageTarget, type ProviderExecutionReport, type VisualObservation } from "../../kernels/abml/pageObservation.js";
 import type { CollectionModel } from "../../kernels/abml/collections.js";
-import type { SnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
+import type { ScanSummary } from "./scanAssembly.js";
+
+type PageObservationSummary = Omit<ScanSummary, "focus"> & { focus?: Partial<ScanSummary["focus"]> };
 
 type PageObservationInput = {
-	summary: Record<string, unknown>;
+	summary: PageObservationSummary;
 	entities: Entity[];
 	content: string;
 	headings?: string[];
@@ -57,10 +59,8 @@ function actionScope(entity: Entity): { key: string; name?: string; size?: numbe
 	};
 }
 
-function compactActionSpace(entities: Entity[], focus: Record<string, unknown>, captureComplete: boolean): AgentActionSpace {
-	const primaryRefs = Array.isArray(focus.primary_entities)
-		? focus.primary_entities.flatMap((item) => typeof item === "string" ? [item] : isRecord(item) && typeof item.ref === "string" ? [item.ref] : [])
-		: [];
+function compactActionSpace(entities: Entity[], focus: Partial<ScanSummary["focus"]>, captureComplete: boolean): AgentActionSpace {
+	const primaryRefs = focus.primary_entities ?? [];
 	const rank = new Map(primaryRefs.map((ref, index) => [ref, index]));
 	const candidates = entities
 		.map((entity, index) => ({ entity, index }))
@@ -168,26 +168,26 @@ function pageTarget(snapshot: ObservationSnapshot, url: string | undefined, acti
 	};
 }
 
-function reanchorReason(value: unknown): PageObservationV3["reanchorReason"] {
-	return typeof value === "string" && ["document_changed", "target_replaced", "session_changed", "identity_unproven", "baseline_missing"].includes(value)
-		? value as PageObservationV3["reanchorReason"]
-		: undefined;
-}
-
 export function buildPageObservation(input: PageObservationInput): PageObservationBuild {
-	const focus = isRecord(input.summary.focus) ? input.summary.focus as Record<string, unknown> : {};
-	const gist = isRecord(focus.gist) ? focus.gist : undefined;
-	const outline = Array.isArray(focus.outline) ? focus.outline : undefined;
+	const focus = input.summary.focus ?? {};
+	const gist = focus.gist;
+	const outline = focus.outline ?? [];
+	const axFusion = isRecord(input.diagnostics.axFusion) ? input.diagnostics.axFusion : undefined;
+	const structureDegraded = input.abmlIntegrated && axFusion?.degraded === true;
 	const providerReport: ProviderExecutionReport = {
 		scan: { planned: true, status: "executed" },
-		structure: { planned: true, status: input.abmlIntegrated ? "executed" : "degraded", ...(!input.abmlIntegrated ? { reason: "abml-read-failed" } : {}) },
+		structure: {
+			planned: true,
+			status: input.abmlIntegrated && !structureDegraded ? "executed" : "degraded",
+			...(!input.abmlIntegrated ? { reason: "abml-read-failed" } : structureDegraded ? { reason: "accessibility-enrichment-incomplete" } : {}),
+		},
 		...(input.providerExecution ?? {}),
 	};
-	const fullSnapshotProjection = isRecord(input.summary.snapshotProjection) ? input.summary.snapshotProjection as unknown as SnapshotProjection : undefined;
-	const fullCollections = Array.isArray(input.summary.collections) ? input.summary.collections as CollectionModel[] : [];
+	const fullSnapshotProjection = input.summary.snapshotProjection;
+	const fullCollections = input.summary.collections ?? [];
 	const snapshot = observationSnapshot(input.snapshot);
 	const target = pageTarget(snapshot, input.url, input.activeTabId);
-	const reason = reanchorReason(input.summary.reanchorReason);
+	const reason = input.summary.reanchorReason;
 	const actionSpace = compactActionSpace(input.entities, focus, input.actionCaptureComplete !== false);
 	return {
 		schema: PAGE_OBSERVATION_SCHEMA_V3,
@@ -202,11 +202,10 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 		...(input.summary.delta === "session" ? { delta: "session" as const } : {}),
 		...(typeof input.summary.baselineSnapshotId === "string" ? { baselineSnapshotId: input.summary.baselineSnapshotId } : {}),
 		...(gist ? { gist } : {}),
-		...(outline ? { outline: outline.filter(isRecord) as Array<Record<string, unknown>> } : {}),
+		...(outline.length ? { outline } : {}),
 		...(input.entities.length ? { entities: input.entities } : {}),
 		actionSpace,
-		...(isRecord(focus.relations) ? { relations: focus.relations as PageObservationV3["relations"] } : {}),
-		...(isRecord(input.summary.identity) ? { identity: input.summary.identity } : {}),
+		...(focus.relations ? { relations: focus.relations } : {}),
 		...(input.diff ? { diff: input.diff } : {}),
 		...(input.treeDiff ? { treeDiff: input.treeDiff } : {}),
 		...(input.causal ? { causal: input.causal } : {}),

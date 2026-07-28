@@ -1,6 +1,6 @@
 import { readBrowserAbmlStructure, type BrowserAbmlStructureResult } from "../../browser-runtime/abml/runtime.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { pageFingerprintDiscriminators, readPageFingerprint, samePageFingerprint, type PageFingerprint } from "../pageSignals.js";
+import { readPageFingerprint, samePageFingerprint, type PageFingerprint } from "../pageSignals.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
 import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import type { BaselineResolution } from "./baseline.js";
@@ -10,7 +10,6 @@ import { pageReanchorReason, samePageIdentity } from "../../kernels/session/page
 import { currentPageIdentity, pageIdentityFromUnknown } from "./pageIdentity.js";
 import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js";
 import { validatePageWorldScanBundle } from "../../validation/pageContracts.js";
-import { invalidateAxRawCache } from "../../browser-runtime/abml/axRuntime.js";
 import { BrowserBridgeError, normalizeError } from "../../utils/errors.js";
 import { captureVisualScreenshot, shouldCaptureVisual } from "../visualEvidence.js";
 import { finiteNumber, isRecord } from "../../utils/records.js";
@@ -65,43 +64,8 @@ async function readCaptureFingerprint(options: ScanCaptureOptions): Promise<Page
 
 type ScanEvaluationResult = Omit<Awaited<ReturnType<typeof evaluatePageScriptDirect>>, "data"> & { data: PageWorldScanBundleV1 };
 
-type ScanFrame = { fingerprint: PageFingerprint; result: ScanEvaluationResult; reuseCount: number };
-
-const SCAN_FRAME_MAX = 16;
-const SCAN_REUSE_MAX = 16;
-const scanFrames = new WeakMap<object, Map<string, ScanFrame>>();
-
-function scanFrameKey(options: ScanCaptureOptions, fingerprint: PageFingerprint | undefined): string | undefined {
-	if (!fingerprint?.pageEpoch || !fingerprint.observerEpoch || !options.tabId) return undefined;
-	return JSON.stringify([options.browserSessionId ?? "default", options.tabId, fingerprint.pageEpoch, fingerprint.documentId ?? "", fingerprint.url ?? ""]);
-}
-
-function scanFrameFor(options: ScanCaptureOptions, fingerprint: PageFingerprint | undefined): ScanFrame | undefined {
-	const key = scanFrameKey(options, fingerprint);
-	return key ? scanFrames.get(options.server)?.get(key) : undefined;
-}
-
-function rememberScanFrame(options: ScanCaptureOptions, fingerprint: PageFingerprint, result: ScanEvaluationResult, reuseCount: number): void {
-	const key = scanFrameKey(options, fingerprint);
-	if (!key) return;
-	let frames = scanFrames.get(options.server);
-	if (!frames) {
-		frames = new Map();
-		scanFrames.set(options.server, frames);
-	}
-	frames.delete(key);
-	frames.set(key, { fingerprint, result, reuseCount });
-	while (frames.size > SCAN_FRAME_MAX) frames.delete(frames.keys().next().value!);
-}
-
 function identityBaselineFor(options: ScanCaptureOptions): BaselineResolution | undefined {
 	return options.identityBaseline ?? options.baseline;
-}
-
-export function axCacheKeyForPage(fingerprint: PageFingerprint | undefined): string | undefined {
-	return fingerprint?.pageEpoch && fingerprint.observerEpoch
-		? JSON.stringify(["content", ...pageFingerprintDiscriminators(fingerprint)])
-		: undefined;
 }
 
 async function readScanAbml(
@@ -110,19 +74,15 @@ async function readScanAbml(
 	effectiveBaseline: BaselineResolution | undefined,
 	effectiveIdentityBaseline: BaselineResolution | undefined,
 	fusedPageFingerprint: PageFingerprint | undefined,
-	refreshAxCache: boolean,
 ) {
 	const { browserSessionId, tabId, timeoutMs, captureMaxChars, timings } = options;
 	timings.abmlPrefetchedScan = true;
-	const cacheKey = axCacheKeyForPage(fusedPageFingerprint);
-	if (refreshAxCache && cacheKey && tabId) invalidateAxRawCache({ browserSessionId, tabId, cacheKey });
 	const abmlStartedAt = Date.now();
 	const abmlRead = await readBrowserAbmlStructure(options.server, {
 		baseline: effectiveBaseline?.entities,
 		identityBaseline: effectiveIdentityBaseline?.entities,
 		diffOptions: effectiveBaseline?.partialBaseline ? { partialBaseline: true } : undefined,
 		prefetchedScan: result.data,
-		axCacheKey: cacheKey,
 		pageFingerprint: fusedPageFingerprint,
 	}, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, signal: options.signal });
 	timings.abmlMs = Number(timings.abmlMs ?? 0) + elapsedMs(abmlStartedAt);
@@ -133,7 +93,7 @@ async function readScanAbml(
 		timings.axCdpCalls = Number(timings.axCdpCalls ?? 0) + axCdpCalls;
 	}
 	if (axGeometryCdpCalls !== undefined) timings.axGeometryCdpCalls = Number(timings.axGeometryCdpCalls ?? 0) + axGeometryCdpCalls;
-	return { abmlRead, cacheKey };
+	return abmlRead;
 }
 
 function withCoherenceDiagnostics(abmlRead: BrowserAbmlStructureResult, attempts: number): BrowserAbmlStructureResult {
@@ -149,26 +109,13 @@ async function evaluateScan(options: ScanCaptureOptions, script: string): Promis
 	return { ...evaluated, data: validatedScanBundle(evaluated.data) };
 }
 
-type ResolvedScan = { result: ScanEvaluationResult; fingerprint: PageFingerprint | undefined; reuseCount: number; refreshAxCache: boolean };
-
-async function resolveScan(options: ScanCaptureOptions, seededFingerprint: PageFingerprint | undefined): Promise<ResolvedScan> {
-	const fingerprint = seededFingerprint ?? await readCaptureFingerprint(options);
-	const frame = scanFrameFor(options, fingerprint);
-	const sameFrame = !!frame && !!fingerprint && samePageFingerprint(frame.fingerprint, fingerprint);
-	if (options.params.fresh !== true && frame && frame.reuseCount < SCAN_REUSE_MAX && sameFrame) {
-		options.timings.scanCacheHit = true;
-		return { result: frame.result, fingerprint, reuseCount: frame.reuseCount + 1, refreshAxCache: false };
-	}
-	if (frame) options.timings.scanFullReanchor = true;
-	return { result: await evaluateScan(options, options.scanScript), fingerprint, reuseCount: 0, refreshAxCache: options.params.fresh === true || sameFrame };
-}
-
 async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFingerprint: PageFingerprint | undefined) {
 	const { server, params, rawTargetRef, timeoutMs, baseline, timings } = options;
 	let effectiveBaseline = baseline;
 	let effectiveIdentityBaseline = identityBaselineFor(options);
 	let reanchorReason = options.reanchorReason;
-	const { result, fingerprint: initialFingerprint, reuseCount, refreshAxCache } = await resolveScan(options, seededFingerprint);
+	const initialFingerprint = seededFingerprint ?? await readCaptureFingerprint(options);
+	const result = await evaluateScan(options, options.scanScript);
 	const capturedIdentity = capturedPageIdentity(options, initialFingerprint, result.target);
 	const pageIdentity = capturedIdentity.identity;
 	if (capturedIdentity.reanchorReason) {
@@ -177,7 +124,7 @@ async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFing
 		effectiveIdentityBaseline = undefined;
 	}
 	const visualRequested = shouldCaptureVisual(params, result.data);
-	const abmlPromise = readScanAbml(options, result, effectiveBaseline, effectiveIdentityBaseline, initialFingerprint, refreshAxCache);
+	const abmlPromise = readScanAbml(options, result, effectiveBaseline, effectiveIdentityBaseline, initialFingerprint);
 	const visualStartedAt = Date.now();
 	const visualCapturePromise = visualRequested
 		? captureVisualScreenshot(server, { browserSessionId: options.browserSessionId, tabId: options.tabId ?? rawTargetRef as string | number | undefined, timeoutMs, signal: options.signal }).catch(() => {
@@ -187,7 +134,7 @@ async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFing
 			timings.visualMs = Number(timings.visualMs ?? 0) + elapsedMs(visualStartedAt);
 		})
 		: Promise.resolve(undefined);
-	const [{ abmlRead, cacheKey }, visualCapture] = await Promise.all([
+	const [abmlRead, visualCapture] = await Promise.all([
 		abmlPromise,
 		visualCapturePromise,
 	]);
@@ -200,7 +147,7 @@ async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFing
 	const coherence = initialFingerprint?.pageEpoch && finalFingerprint?.pageEpoch
 		? samePageFingerprint(initialFingerprint, finalFingerprint) ? "stable" as const : "unstable" as const
 		: "unverified" as const;
-	return { result, abmlRead, cacheKey, coherence, stableFingerprint: coherence === "stable" ? finalFingerprint : undefined, pageIdentity, baseline: effectiveBaseline, reanchorReason, visualRequested, visualCapture, reuseCount };
+	return { result, abmlRead, coherence, stableFingerprint: coherence === "stable" ? finalFingerprint : undefined, pageIdentity, baseline: effectiveBaseline, reanchorReason, visualRequested, visualCapture };
 }
 
 export async function executeScanCapture(options: ScanCaptureOptions) {
@@ -212,7 +159,6 @@ export async function executeScanCapture(options: ScanCaptureOptions) {
 		options.timings.observationAttempts = attempt;
 		if (last.coherence === "stable") {
 			options.timings.fusedFingerprint = true;
-			rememberScanFrame(options, last.stableFingerprint!, last.result, last.reuseCount);
 			return {
 				observation: { result: last.result, abmlRead: withCoherenceDiagnostics(last.abmlRead, attempt) },
 				fusedPageFingerprint: last.stableFingerprint,
@@ -223,7 +169,6 @@ export async function executeScanCapture(options: ScanCaptureOptions) {
 				visualCapture: last.visualCapture,
 			};
 		}
-		if (last.cacheKey && options.tabId) invalidateAxRawCache({ browserSessionId: options.browserSessionId, tabId: options.tabId, cacheKey: last.cacheKey });
 		if (attempt < 2) options.timings.abmlCoherenceRetries = attempt;
 	}
 	const error = normalizeError(new BrowserBridgeError("ABML_OBSERVATION_UNSTABLE", "Page changed or could not be verified during DOM+AX observation", { attempts: 2, coherence: last!.coherence }));

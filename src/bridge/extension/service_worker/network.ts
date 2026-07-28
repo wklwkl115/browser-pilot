@@ -205,7 +205,7 @@ async function getNetworkRecorderBody(tabId: number, msg: BrowserPilotBridgeComm
     const trunc = body.base64Encoded ? truncateBase64Body(body.body || '', maxBytes) : truncateStringByBytes(body.body || '', maxBytes);
     out = { ...out, body:trunc.value, bodyTruncated:firstTruthyOr(false, body.bodyTruncated, trunc.truncated), bytes:trunc.bytes };
   }
-  return { ok:true, data:redactSensitive(out) };
+  return { ok:true, data:redactSensitive(out, { preserveBodyFields:true }) };
 }
 function firstTruthyOr<T>(fallback: T, ...values: unknown[]): T {
   for (const value of values) if (value) return value as T;

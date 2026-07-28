@@ -15,7 +15,7 @@ test("page-world scan bundle validates empty and fully populated v1 captures", (
 		content: { headings: ["Checkout"] },
 		structure: {
 			actionables: [
-				{ index: 0, selector: "#pay", tag: "button", role: "button", label: "Pay now", text: "Pay now", clickable: true, editable: false, actionConfidence: "high", disabled: false, focused: false, handlers: [], rect: { x: 1, y: 2, width: 90, height: 30 }, documentRect: { x: 1, y: 202, width: 90, height: 30 }, point: { x: 46, y: 17 }, hitOk: true, hitTarget: null, priority: 100 },
+				{ index: 0, selector: "#pay", tag: "button", role: "button", label: "Pay now", text: "Pay now", rel: "next", clickable: true, editable: false, actionConfidence: "high", disabled: false, focused: false, handlers: [], rect: { x: 1, y: 2, width: 90, height: 30 }, documentRect: { x: 1, y: 202, width: 90, height: 30 }, point: { x: 46, y: 17 }, hitOk: true, hitTarget: null, priority: 100 },
 				{ selector: "#dialog", role: "dialog", name: "Checkout", hidden: true, referenceOnly: true },
 				{ sourceSelector: "#open", sourceRole: "button", sourceName: "Open", controlsSelectors: ["#dialog"], relationOnly: true },
 			],

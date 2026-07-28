@@ -39,8 +39,14 @@ function httpUrlForPort(port: number): string {
   return port === BROWSER_PILOT_BRIDGE_PORT ? BROWSER_PILOT_BRIDGE_HTTP_URL : `http://${BROWSER_PILOT_BRIDGE_HOST}:${port}`;
 }
 
-function post(message: RuntimeMessage): void {
-  void chromeRuntime.sendMessage(message).catch((error: unknown) => console.debug("[BROWSER-PILOT-OFFSCREEN] message failed", error));
+async function post(message: RuntimeMessage): Promise<boolean> {
+  try {
+    await chromeRuntime.sendMessage(message);
+    return true;
+  } catch (error) {
+    console.debug("[BROWSER-PILOT-OFFSCREEN] message failed", error);
+    return false;
+  }
 }
 
 function openPorts(): number[] {
@@ -90,9 +96,10 @@ function cleanupTransportSocket(socket: WebSocket | null, reason = ""): boolean 
     if (current !== socket) continue;
     sockets.delete(port);
     removed = true;
-    post({ type: "browser-pilot-offscreen-disconnected", port, data: { reason } });
+    void post({ type: "browser-pilot-offscreen-disconnected", port, data: { reason } });
   }
   if (!removed) return false;
+  try { if (socket.readyState <= WebSocket.OPEN) socket.close(); } catch (_error) { /* best-effort */ }
   bumpProbeBackoff();
   scheduleProbe();
   return true;
@@ -116,13 +123,17 @@ function connectWS(port: number): void {
   socket.onopen = () => {
     if (sockets.get(port) !== socket) return;
     wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
-    post({ type: "browser-pilot-offscreen-connected", port, data: { openPorts: openPorts() } });
-    scheduleKeepalive();
+    void post({ type: "browser-pilot-offscreen-connected", port, data: { openPorts: openPorts() } }).then((forwarded) => {
+      if (!forwarded) cleanupTransportSocket(socket, "service-worker-unreachable");
+      else scheduleKeepalive();
+    });
   };
   socket.onmessage = (event: MessageEvent) => {
     if (sockets.get(port) !== socket) return;
     try {
-      post({ type: "browser-pilot-offscreen-ws-message", port, data: JSON.parse(String(event.data)) });
+      void post({ type: "browser-pilot-offscreen-ws-message", port, data: JSON.parse(String(event.data)) }).then((forwarded) => {
+        if (!forwarded) cleanupTransportSocket(socket, "service-worker-unreachable");
+      });
     } catch (error) {
       console.error("[BROWSER-PILOT-OFFSCREEN] message parse error", error);
     }
@@ -174,7 +185,7 @@ function handleRuntimeMessage(message: unknown, _sender: unknown, sendResponse: 
 
 function installBrowserPilotOffscreenTransport(): void {
   chromeRuntime.onMessage.addListener(handleRuntimeMessage);
-  post({ type: "browser-pilot-offscreen-ready", data: { openPorts: openPorts() } });
+  void post({ type: "browser-pilot-offscreen-ready", data: { openPorts: openPorts() } });
   void probeAndConnectWS(true);
 }
 

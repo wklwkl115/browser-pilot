@@ -159,7 +159,6 @@ export interface PageObservationV3 {
 	entities?: Entity[];
 	actionSpace?: AgentActionSpace;
 	relations?: RelationSummary;
-	identity?: Record<string, unknown>;
 	diff?: EntityDiff;
 	causal?: CausalSummary;
 	treeDiff?: TreeDiff;
@@ -209,6 +208,27 @@ const ENTITY_STATE_PROPERTIES = {
 	visible: { type: "boolean" }, occluded: { type: "boolean" }, disabled: { type: "boolean" }, focused: { type: "boolean" },
 	checked: { type: "boolean" }, selected: { type: "boolean" }, pressed: { type: "boolean" }, expanded: { type: "boolean" },
 	current: { anyOf: [{ type: "boolean" }, { type: "string" }] }, editable: { type: "boolean" }, inViewport: { type: "boolean" },
+} as const;
+
+const ENTITY_SCHEMA = {
+	type: "object",
+	properties: {
+		ref: { type: "string", pattern: "^bp-ref://" },
+		kind: { enum: ["element", "control", "text", "region", "media", "frame"] },
+		role: { type: "string" }, name: { type: "string" }, value: { type: "string" },
+		state: { type: "object", properties: ENTITY_STATE_PROPERTIES, required: ["visible", "occluded", "disabled", "focused", "editable", "inViewport"], additionalProperties: false },
+		actionability: { type: "object", properties: { actions: { type: "array", minItems: 1, items: { enum: ["click", "edit"] } }, hint: { type: "string" }, confidence: { enum: ["high", "medium"] } }, required: ["actions", "confidence"], additionalProperties: false },
+		scope: { type: "object", properties: { key: { type: "string" }, name: { type: "string" }, position: { type: "number" }, size: { type: "number" } }, required: ["key"], additionalProperties: false },
+		structure: { type: "object", properties: { level: { type: "number" }, setSize: { type: "number" }, posInSet: { type: "number" }, sort: { type: "string" }, landmark: { type: "string" }, rowIndex: { type: "number" }, colIndex: { type: "number" } }, additionalProperties: false },
+		relations: { type: "array", items: { type: "object", properties: { type: { type: "string" }, targetRef: { type: "string" }, source: { enum: ["ax", "dom", "geometry", "timing", "event"] }, confidence: { enum: ["high", "medium", "low"] }, evidence: { type: "object" } }, required: ["type", "targetRef", "source", "confidence"], additionalProperties: false } },
+		source: { enum: ["dom", "ax", "vision"] },
+		locators: { type: "array", items: { type: "object" } },
+		geometry: { type: "object", properties: { box: { type: "object", properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } }, required: ["x", "y", "w", "h"], additionalProperties: false }, point: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false } }, additionalProperties: false },
+		children: { anyOf: [{ type: "array", items: { type: "object" } }, { type: "object", properties: { handle: { type: "string" }, count: { type: "number" } }, required: ["handle", "count"], additionalProperties: false }] },
+		hints: { type: "object" },
+	},
+	required: ["ref", "kind", "role", "state", "source"],
+	additionalProperties: false,
 } as const;
 
 const ACTION_SPACE_SCHEMA = {
@@ -300,9 +320,9 @@ export const PAGE_OBSERVATION_V3_JSON_SCHEMA = {
 		reanchorReason: { enum: ["document_changed", "target_replaced", "session_changed", "identity_unproven", "baseline_missing"] }, delta: { const: "session" }, baselineSnapshotId: { type: "string" },
 		content: { type: "object", properties: { text: { type: "string" }, headings: { type: "array", items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
 		visual: VISUAL_OBSERVATION_SCHEMA,
-		gist: { type: "object" }, outline: { type: "array", items: { type: "object" } }, entities: { type: "array", items: { type: "object" } },
+		gist: { type: "object" }, outline: { type: "array", items: { type: "object" } }, entities: { type: "array", items: ENTITY_SCHEMA },
 		actionSpace: ACTION_SPACE_SCHEMA,
-		relations: { type: "object" }, identity: { type: "object" }, diff: { type: "object" }, causal: { type: "object" }, treeDiff: { type: "object" }, snapshotProjection: { type: "object" }, collections: { type: "array", items: COLLECTION_SCHEMA },
+		relations: { type: "object" }, diff: { type: "object" }, causal: { type: "object" }, treeDiff: { type: "object" }, snapshotProjection: { type: "object" }, collections: { type: "array", items: COLLECTION_SCHEMA },
 		providers: { type: "object", additionalProperties: PROVIDER_ITEM_SCHEMA },
 		frontier: { type: "object", properties: { items: { type: "array", items: FRONTIER_ITEM_SCHEMA } }, required: ["items"], additionalProperties: false },
 		diagnostics: { type: "object" },

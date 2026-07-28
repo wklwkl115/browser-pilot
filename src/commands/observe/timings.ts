@@ -22,7 +22,6 @@ export function finalizedObserveTimings(metrics: ObserveTimingMetrics, data: Pag
 	if (axMs !== undefined) out.axMs = axMs;
 	if (axCdpCalls !== undefined && numericMetric(out.axCdpCalls) === undefined) out.axCdpCalls = axCdpCalls;
 	if (axGeometryCdpCalls !== undefined && numericMetric(out.axGeometryCdpCalls) === undefined) out.axGeometryCdpCalls = axGeometryCdpCalls;
-	if (typeof axDiagnostics?.cacheHit === "boolean") out.axCacheHit = axDiagnostics.cacheHit;
 	const axEnriched = numericMetric(axFusion?.axEnriched);
 	const axOnly = numericMetric(axFusion?.axOnly);
 	if (axEnriched !== undefined) out.axEnriched = axEnriched;

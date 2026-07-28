@@ -479,6 +479,19 @@ function paginationEdge(actionables: ActionableInput[] | undefined): { completen
 	for (const [index, actionable] of (actionables ?? []).entries()) {
 		if (actionable.disabled === true || actionable.hidden === true) continue;
 		const text = actionableText(actionable);
+		const rel = new Set((stringValue(actionable.rel) ?? "").toLowerCase().split(/\s+/).filter(Boolean));
+		const relKind = rel.has("next") ? "next" as const : rel.has("prev") || rel.has("previous") ? "previous" as const : undefined;
+		if (relKind) {
+			const ref = stringValue(actionable.ref);
+			const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
+			return {
+				completeness: "paginated",
+				confidence: "high",
+				summary: `HTML rel=${relKind === "next" ? "next" : "prev"} control`,
+				jsonPath: `data.structure.actionables[${index}]`,
+				control: { ...(ref ? { ref } : {}), ...(label ? { label } : {}), kind: relKind },
+			};
+		}
 		if (/\b(next|more|load\s*more|show\s*more|older|newer)\b/.test(text)) {
 			const isPagination = /\b(next|older|newer|page)\b/.test(text);
 			const controlKind = classifyPaginationControlKind(text);
@@ -486,8 +499,8 @@ function paginationEdge(actionables: ActionableInput[] | undefined): { completen
 			const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
 			return {
 					completeness: isPagination ? "paginated" : "lazy",
-				confidence: "medium",
-				summary: isPagination ? "visible next/page control" : "visible load/show more control",
+				confidence: "low",
+				summary: isPagination ? "pagination label heuristic" : "load-more label heuristic",
 				jsonPath: `data.structure.actionables[${index}]`,
 				control: {
 					...(ref ? { ref } : {}),

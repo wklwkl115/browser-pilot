@@ -231,9 +231,11 @@ async function executeInMainWorld(tabId: number, executionCode: string, timeoutM
     });
     const result = await withTimeout(executePromise, mainWorldTimeoutMs, 'chrome.scripting.executeScript timed out after ' + mainWorldTimeoutMs + 'ms');
     const scriptResults = Array.isArray(result) ? result as Array<{ result?: unknown }> : [];
-    return scriptResults[0]?.result ?? { ok:false, error:{ name:'Error', message:'executeScript returned null (possible CSP or context issue)' }, csp:true };
+    return scriptResults[0]?.result ?? { ok:false, error:{ name:'Error', message:'executeScript returned no result; execution outcome is unknown' }, csp:false };
   } catch (error) {
-    return { ok:false, error:execError(error), csp:true };
+    // executeScript may already be running in the page when our wait expires.
+    // Only an explicit page-world CSP result is safe to retry through CDP.
+    return { ok:false, error:execError(error), csp:false };
   }
 }
 

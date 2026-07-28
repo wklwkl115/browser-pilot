@@ -68,6 +68,14 @@ test("PageObservation returns a bounded view and keeps its canonical artifact", 
 	assert.equal(result.content[0]?.text.includes("\n"), false);
 });
 
+test("PageObservation exposes degraded accessibility enrichment", () => {
+	const built = buildPageObservation({
+		summary: {}, entities: [], content: "", snapshot: { snapshotId: "degraded", sourceMode: "scan", capturedAt: 1, ttlMs: 1 },
+		abmlIntegrated: true, diagnostics: { axFusion: { degraded: true } },
+	});
+	assert.deepEqual(built.providers.structure, { planned: true, status: "degraded", reason: "accessibility-enrichment-incomplete" });
+});
+
 test("public observation keeps one decision shape for relations and structural changes", async () => {
 	const sourceRef = "bp-ref://control/source";
 	const targetRef = "bp-ref://region/target";
@@ -371,7 +379,7 @@ test("canonical PageObservation keeps truncated root content expandable", async 
 	assert.equal(resources.find((resource) => resource.ref === "frontier:content:0")?.contentSection, 0);
 });
 
-test("PageObservation schema guards reject incomplete frontiers and negative collection counts", () => {
+test("PageObservation schema rejects incomplete frontiers, invalid counts, and malformed entities", () => {
 	const base = {
 		schema: "browser-page-observation/v3",
 		tool: "browser_observe",
@@ -383,6 +391,7 @@ test("PageObservation schema guards reject incomplete frontiers and negative col
 	};
 	assert.equal(isPageObservationV3({ ...base, frontier: { items: [{ ref: "content", kind: "content", state: "folded" }] } }), false);
 	assert.equal(isPageObservationV3({ ...base, frontier: { items: [] }, collections: [{ ref: "c", kind: "list", observed: -1, completeness: "complete", confidence: "high", itemRefs: [] }] }), false);
+	assert.equal(isPageObservationV3({ ...base, frontier: { items: [] }, entities: [{ ref: "bp-ref://control/broken" }] }), false);
 });
 
 test("PageObservation keeps one bounded visual observation in canonical and public views", async () => {

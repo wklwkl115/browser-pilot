@@ -8,6 +8,15 @@ const sourcePath = path.join(root, "bridge", "browser_bridge_config.json");
 const serviceWorkerConfigPath = path.join(root, "src/bridge/extension", "service_worker", "config.ts");
 const tsConfigPath = path.join(root, "src", "bridge", "server", "browserBridgeConfig.ts");
 const manifestPath = path.join(root, "src", "bridge", "extension", "static", "manifest.json");
+const check = process.argv.includes("--check");
+
+function writeGenerated(filePath, content) {
+	if (!check) {
+		writeFileSync(filePath, content, "utf8");
+		return;
+	}
+	if (readFileSync(filePath, "utf8") !== content) throw new Error(`generated bridge config is stale: ${path.relative(root, filePath)}`);
+}
 
 function assertConfig(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("browser bridge config must be an object");
@@ -37,7 +46,7 @@ const BROWSER_PILOT_BRIDGE_HTTP_URL = ${JSON.stringify(httpUrl)};
 `;
 const serviceWorkerConfig = `${bridgeConfig}export { BROWSER_PILOT_BRIDGE_HOST, BROWSER_PILOT_BRIDGE_PORT, BROWSER_PILOT_BRIDGE_PORT_RANGE_END, BROWSER_PILOT_BRIDGE_WS_URL, BROWSER_PILOT_BRIDGE_HTTP_URL };
 `;
-writeFileSync(serviceWorkerConfigPath, serviceWorkerConfig, "utf8");
+writeGenerated(serviceWorkerConfigPath, serviceWorkerConfig);
 
 const tsConfig = `// Generated from bridge/browser_bridge_config.json. Do not edit by hand.
 export const DEFAULT_BROWSER_BRIDGE_HOST = ${JSON.stringify(config.host)};
@@ -45,6 +54,6 @@ export const DEFAULT_BROWSER_BRIDGE_PORT = ${JSON.stringify(config.port)};
 export const DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END = ${JSON.stringify(config.portRangeEnd)};
 export const BROWSER_PILOT_EXTENSION_ID = ${JSON.stringify(extensionId)};
 `;
-writeFileSync(tsConfigPath, tsConfig, "utf8");
+writeGenerated(tsConfigPath, tsConfig);
 
-console.log(`synced browser bridge config: ${path.relative(root, serviceWorkerConfigPath)}, ${path.relative(root, tsConfigPath)}`);
+console.log(`${check ? "verified" : "synced"} browser bridge config: ${path.relative(root, serviceWorkerConfigPath)}, ${path.relative(root, tsConfigPath)}`);

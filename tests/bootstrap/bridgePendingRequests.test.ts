@@ -59,7 +59,7 @@ test("request cancellation preserves whether browser dispatch was acknowledged",
 	const inFlight = new AbortController();
 	const promise = pr.send(ws, "in-flight", { tabId: 7, timeoutMs: 5_000, signal: inFlight.signal });
 	const id = lastId(ws);
-	pr.ack(id);
+	pr.ack(id, ws);
 	inFlight.abort();
 	await assert.rejects(promise, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
 		assert.equal(error.code, "BRIDGE_TIMEOUT");
@@ -75,7 +75,7 @@ test("extension-side rejection is lifted into the bridge error", async () => {
 	const ws = fakeSocket();
 	const promise = pr.send(ws, "blocked-action", { tabId: 7, timeoutMs: 5_000 });
 	const id = lastId(ws);
-	pr.rejectBrowserError(id, {
+	pr.rejectBrowserError(id, ws, {
 		code: "INVALID_RULE",
 		message: "dispatch marker failed",
 		details: { dispatchStarted: false, acked: false },
@@ -87,7 +87,7 @@ test("extension-side rejection is lifted into the bridge error", async () => {
 	});
 
 	const barePromise = pr.send(ws, "pre-ack-validation-error", { tabId: 7, timeoutMs: 5_000 });
-	pr.rejectBrowserError(lastId(ws), "invalid command", undefined);
+	pr.rejectBrowserError(lastId(ws), ws, "invalid command", undefined);
 	await assert.rejects(barePromise, (error: Error & { details?: Record<string, unknown> }) => {
 		assert.equal(error.details?.dispatchStarted, false);
 		assert.equal(error.details?.acked, false);
@@ -115,7 +115,7 @@ test("client disconnect immediately fails requests without replay and preserves 
 	const controller = new AbortController();
 	const notAcked = pr.send(ws, "not-acked", { tabId: 1, timeoutMs: 5_000, signal: controller.signal });
 	const acked = pr.send(ws, "acked", { tabId: 2, timeoutMs: 5_000 });
-	pr.ack(lastId(ws));
+	pr.ack(lastId(ws), ws);
 	assert.equal(getEventListeners(controller.signal, "abort").length, 1);
 	assert.equal(pr.rejectClient(ws), 2);
 	await assert.rejects(notAcked, (error: Error & { code?: string; details?: Record<string, unknown> }) => {
@@ -139,9 +139,9 @@ test("resolved requests include bounded latency diagnostics without payload prev
 	const ws = fakeSocket();
 	const promise = pr.send(ws, { cmd: "network.list", url: "https://secret.test/?token=hidden" }, { tabId: 1, timeoutMs: 5_000 });
 	const id = lastId(ws);
-	pr.ack(id);
+	pr.ack(id, ws);
 	await delay(2);
-	pr.resolve(id, { ok: true }, []);
+	pr.resolve(id, ws, { ok: true }, []);
 	const result = await promise;
 	const latency = result.diagnostics?.latency as Record<string, unknown>;
 	assert.equal(typeof latency.totalMs, "number");
@@ -150,6 +150,22 @@ test("resolved requests include bounded latency diagnostics without payload prev
 	assert.equal(latency.deadlineMs, 5_000);
 	assert.equal(latency.acked, true);
 	assert.equal(JSON.stringify(result.diagnostics).includes("secret.test"), false);
+});
+
+test("only the socket that received a request can acknowledge or settle it", async () => {
+	const pr = newPending();
+	const owner = fakeSocket();
+	const other = fakeSocket();
+	const promise = pr.send(owner, "owned", { timeoutMs: 5_000 });
+	const id = lastId(owner);
+
+	pr.ack(id, other);
+	pr.resolve(id, other, "forged", []);
+	assert.equal(pr.snapshot()[0]?.acked, false);
+
+	pr.ack(id, owner);
+	pr.resolve(id, owner, "trusted", []);
+	assert.equal((await promise).data, "trusted");
 });
 
 test("timeout diagnostics select queue depth by browser and tab", () => {

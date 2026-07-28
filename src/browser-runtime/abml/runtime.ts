@@ -35,7 +35,6 @@ export type BrowserAbmlStructureInput = {
 	identityBaseline?: Entity[];
 	diffOptions?: EntityDiffOptions;
 	prefetchedScan?: PageWorldScanBundleV1;
-	axCacheKey?: string;
 	pageFingerprint?: ScanPageFingerprint;
 };
 
@@ -117,21 +116,23 @@ function materializeStructureRelations(entities: Entity[], axRead: AxReadResult)
 	return { entities: relatedEntities, relationCount, relationGraph: materialized?.graph, paintOrderEvidence };
 }
 
-function structureAxFusionDiagnostics(fusion: { diagnostics: AxFusionDiagnostics } | undefined, scanBacked: number, axEntityCount: number): AxFusionDiagnostics {
-	return fusion?.diagnostics ?? {
+function structureAxFusionDiagnostics(fusion: { diagnostics: AxFusionDiagnostics } | undefined, scanBacked: number, axRead: AxReadResult): AxFusionDiagnostics {
+	const providerDegraded = axRead.diagnostics?.status === "degraded" || axRead.diagnostics?.status === "failed";
+	return fusion ? { ...fusion.diagnostics, degraded: fusion.diagnostics.degraded || providerDegraded } : {
 		scanBacked,
 		axEnriched: 0,
 		axOnly: 0,
 		matched: { backend: 0, geometry: 0, semantic: 0 },
-		degraded: axEntityCount > 0,
+		degraded: providerDegraded,
 		skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, targetScopeMismatch: 0, unsafeSemantic: 0 },
 	};
 }
 
 async function structureAxRead(server: AbmlBrowserRuntimeServer, options: Parameters<typeof readAxEntities>[1]): Promise<AxReadResult> {
-	return await readAxEntities(server, options).catch((): AxReadResult => {
+	return await readAxEntities(server, options).catch((error): AxReadResult => {
 		options.signal?.throwIfAborted();
-		return { entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, cacheHit: false, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } };
+		const failure = normalizeError(error);
+		return { entities: [], anchors: [], diagnostics: { status: "failed", axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, error: { ...(failure.code ? { code: failure.code } : {}), message: failure.message }, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } };
 	});
 }
 
@@ -171,7 +172,6 @@ async function readStructure(server: AbmlBrowserRuntimeServer, input: BrowserAbm
 	const axRead = await structureAxRead(server, {
 		...entityContext,
 		timeoutMs,
-		cacheKey: input.axCacheKey,
 		scrollX: data.signals.fingerprint.scrollX,
 		scrollY: data.signals.fingerprint.scrollY,
 		viewportWidth: data.signals.fingerprint.viewportWidth,
@@ -203,7 +203,7 @@ async function readStructure(server: AbmlBrowserRuntimeServer, input: BrowserAbm
 			...(relations.relationGraph?.edgeCount ? { relationGraph: relations.relationGraph } : {}),
 			backendNodeIdBootstrap: bootstrapped.stats,
 			axDiagnostics: axRead.diagnostics,
-			axFusion: structureAxFusionDiagnostics(fusion, entities.length, axRead.entities.length),
+			axFusion: structureAxFusionDiagnostics(fusion, entities.length, axRead),
 			identityReconciliation: reconciliation.diagnostics,
 			...(relations.paintOrderEvidence ? { paintOrderEvidence: relations.paintOrderEvidence } : {}),
 		},

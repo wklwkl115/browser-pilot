@@ -247,6 +247,18 @@ test("commands execution: browser_command preserves large JSON results", async (
 	assert.equal(((result.result as Record<string, unknown>).largeText as string).length, payload.length);
 });
 
+test("commands execution: network.body preserves requested content while redacting embedded credentials", async () => {
+	const runtime = createRuntime({
+		async sendCommand() {
+			return { id: "body", acknowledged: true, data: { body: '{"token":"sec\\"ret","api_key":123,"items":[{"password":"hidden"}],"__proto__":{"marker":"keep"},"ok":true}' } } as BrowserBridgeExecutionResult;
+		},
+	});
+	const command = defineCommand((context) => defineNativeCommand(context), runtime);
+	const result = parseResult(await command.execute({ command: { cmd: "network.body", requestId: "request-1" } }));
+	const body = JSON.parse(String((result.result as Record<string, unknown>).body)) as Record<string, unknown>;
+	assert.deepEqual(body, JSON.parse('{"token":"[redacted]","api_key":"[redacted]","items":[{"password":"[redacted]"}],"__proto__":{"marker":"keep"},"ok":true}'));
+});
+
 test("tool results preserve complete metadata", () => {
 	const diagnosticText = "x".repeat(60_000);
 	assert.equal(jsonResult({}, { diagnosticText }).details?.diagnosticText, diagnosticText);
@@ -261,6 +273,13 @@ test("tool results redact sensitive values by default", () => {
 	const raw = result.content[0]?.text || "";
 	assert.doesNotMatch(raw, /cookie-secret|body-secret|authorization-secret/);
 	assert.deepEqual(JSON.parse(raw), { body: "[redacted body]", cookies: "[redacted]", headers: { Authorization: "[redacted]" } });
+	assert.deepEqual(parseResult(jsonResult({ body: { foo: "secret", nested: { bar: "hidden" } } })), { body: "[redacted body]" });
+});
+
+test("tool result redaction bounds adversarial nesting", () => {
+	let value: Record<string, unknown> = { leaf: "visible" };
+	for (let depth = 0; depth < 20; depth += 1) value = { next: value };
+	assert.match(jsonResult(value).content[0]?.text || "", /redacted depth/);
 });
 
 test("commands execution: browser_command writes return domain data and effect", async () => {
@@ -370,6 +389,7 @@ test("ABML verification refuses to sample a ref after page replacement", async (
 	const runtime = createRuntime({ snapshot() { return { ...baseSnapshot(), tabs: [{ ...baseSnapshot().tabs[0]!, pageEpoch: "page-2" }] }; } });
 	const observation = await readAbmlVerificationObservation({ server: runtime, expectation: { ref, state: { visible: true } }, browserSessionId: "session-1", tabId: 7, rawTarget: "tab-7", timeoutMs: 1_000 });
 	assert.match(observation.reason ?? "", /stale/);
+	assert.equal(observation.retryable, false);
 	assert.equal(runtime.calls.some((call) => call.name === "executeJavaScript"), false);
 });
 

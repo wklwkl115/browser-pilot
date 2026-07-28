@@ -303,6 +303,29 @@ test("BrowserBridgeServer pending request surface records ack/result lifecycle i
 	});
 });
 
+test("BrowserBridgeServer ignores tab state before the extension handshake", async () => {
+	await withServer(async (server) => {
+		const ws = new WebSocket(bridgeUrl(server), { origin: EXTENSION_ORIGIN });
+		await new Promise<void>((resolve, reject) => {
+			ws.once("open", resolve);
+			ws.once("error", reject);
+		});
+		ws.send(JSON.stringify({ type: "tabs_update", tabs: [{ id: 99, url: "https://untrusted.test/", active: true }] }));
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(server.getTabs().length, 0);
+
+		ws.send(JSON.stringify({
+			type: "ext_ready",
+			bridge: { id: "bridge-1", extensionInstanceId: "instance-pre-ready", workerBootId: "worker-1", build: { buildId: readExpectedExtensionBuild().buildId } },
+			tabs: [{ id: 7, url: "https://trusted.test/", active: true }],
+		}));
+		const deadline = Date.now() + 1_000;
+		while (!server.getTabs().length && Date.now() < deadline) await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(server.getTabs()[0]?.url, "https://trusted.test/");
+		ws.close();
+	});
+});
+
 test("BrowserBridgeServer rejects a different browser instance after ownership is established", async () => {
 	await withServer(async (server) => {
 		const owner = await connectExtension(

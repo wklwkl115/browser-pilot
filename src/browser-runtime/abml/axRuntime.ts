@@ -23,7 +23,6 @@ export type AxReadRuntimeOptions = {
 	viewportWidth?: number;
 	viewportHeight?: number;
 	timeoutMs?: number;
-	cacheKey?: string;
 	signal?: AbortSignal;
 };
 
@@ -195,9 +194,11 @@ function resolveAnchorTargets(anchors: RelationAnchor[], builtByKey: Map<string,
 }
 
 export type AxReadDiagnostics = {
+	status: "ok" | "degraded" | "failed";
 	axMs: number;
 	cdpCalls: number;
 	geometryCdpCalls: number;
+	error?: { code?: string; message: string };
 	snapshotGeometryCount?: number;
 	snapshotDocumentCount?: number;
 	snapshotDocumentsSkipped?: number;
@@ -207,7 +208,6 @@ export type AxReadDiagnostics = {
 	paintOrder?: { supported: boolean; entryCount: number; ownerBackendNodeIdCount: number; snapshotUnsupported?: boolean; geometryFallbackUsed?: boolean };
 	nodeCount: number;
 	interestingNodeCount: number;
-	cacheHit: boolean;
 	bounded: { maxGeometryCdpCalls: number; geometryFallbackTruncated: boolean };
 };
 
@@ -232,31 +232,8 @@ export type PartialAxDiagnostics = {
 
 export type PartialAxResult = { nodes: Array<Record<string, unknown>>; diagnostics: PartialAxDiagnostics };
 
-type AxRawCacheEntry = {
-	nodes: Array<Record<string, unknown>>;
-	geometryByBackend: Map<number, ReturnType<typeof boxModelToGeometry> | undefined>;
-	domBackendNodeIds: Set<number>;
-	passwordBackendNodeIds: Set<number>;
-	snapshotDocumentCount: number;
-	snapshotDocumentsSkipped: number;
-	snapshotGeometryEntries?: SnapshotGeometryEntry[];
-	paintOrderEntries?: PaintOrderEntry[];
-};
-
-const AX_RAW_CACHE_MAX = 16;
 const AX_GEOMETRY_FALLBACK_MAX_CALLS = 64;
 const AX_GEOMETRY_FALLBACK_CONCURRENCY = 4;
-const axRawCache = new Map<string, AxRawCacheEntry>();
-
-function axRawCacheKey(options: Pick<AxReadRuntimeOptions, "browserSessionId" | "tabId" | "cacheKey">): string | undefined {
-	if (!options.cacheKey) return undefined;
-	return [options.browserSessionId || "default", options.tabId, options.cacheKey].join("\u0000");
-}
-
-export function invalidateAxRawCache(options: Pick<AxReadRuntimeOptions, "browserSessionId" | "tabId" | "cacheKey">): boolean {
-	const key = axRawCacheKey(options);
-	return key ? axRawCache.delete(key) : false;
-}
 
 function cdpErrorDetails(error: unknown): { code?: string; message: string } {
 	if (isRecord(error)) {
@@ -313,15 +290,6 @@ export async function readPartialAxTree(server: AbmlAxRuntimeServer, options: { 
 		const lowered = details.message.toLowerCase();
 		const unsupported = lowered.includes("wasn't found") || lowered.includes("not found") || lowered.includes("unknown method") || lowered.includes("not supported");
 		return { nodes: [], diagnostics: partialAxDiagnostics({ ...base, cdpCalls: 1, status: "failed", reason: unsupported ? "unsupported" : "error", error: details, elapsedMs: Date.now() - startedAt }) };
-	}
-}
-
-function rememberAxRawCache(key: string, entry: AxRawCacheEntry): void {
-	axRawCache.set(key, entry);
-	while (axRawCache.size > AX_RAW_CACHE_MAX) {
-		const first = axRawCache.keys().next().value;
-		if (first === undefined) break;
-		axRawCache.delete(first);
 	}
 }
 
@@ -442,8 +410,7 @@ type AxSnapshotRead = {
 };
 type AxGeometryRead = { geometryByNode: Map<Record<string, unknown>, AxGeometry | undefined>; geometryFallbackTruncated: boolean };
 
-async function loadAxNodes(sendCdp: AxCdpSender, options: AxReadRuntimeOptions, timeoutMs: number, cached: AxRawCacheEntry | undefined): Promise<Array<Record<string, unknown>>> {
-	if (cached) return cached.nodes;
+async function loadAxNodes(sendCdp: AxCdpSender, options: AxReadRuntimeOptions, timeoutMs: number): Promise<Array<Record<string, unknown>>> {
 	const tree = await sendCdp({ browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs, cdpMethod: "Accessibility.getFullAXTree" });
 	const root = valueRecord(tree.data);
 	const rootResult = valueRecord(root.result);
@@ -487,24 +454,7 @@ async function captureDomSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOp
 	}
 }
 
-function cachedAxSnapshot(cached: AxRawCacheEntry): AxSnapshotRead {
-	return {
-		rawGeometryByBackend: new Map(cached.geometryByBackend),
-		domBackendNodeIds: new Set(cached.domBackendNodeIds),
-		passwordBackendNodeIds: new Set(cached.passwordBackendNodeIds),
-		snapshotEntries: cached.snapshotGeometryEntries ? [...cached.snapshotGeometryEntries] : [],
-		paintOrderEntries: cached.paintOrderEntries ? [...cached.paintOrderEntries] : [],
-		snapshotGeometryCount: cached.snapshotGeometryEntries?.length ?? 0,
-		snapshotGeometryUnavailable: false,
-		snapshotDocumentCount: cached.snapshotDocumentCount,
-		snapshotDocumentsSkipped: cached.snapshotDocumentsSkipped,
-		paintOrderSnapshotUnsupported: false,
-		paintOrderGeometryFallbackUsed: false,
-	};
-}
-
-async function readAxSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOptions, timeoutMs: number, cached: AxRawCacheEntry | undefined): Promise<AxSnapshotRead> {
-	if (cached) return cachedAxSnapshot(cached);
+async function readAxSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOptions, timeoutMs: number): Promise<AxSnapshotRead> {
 	const snapshotStartedAt = new Date().toISOString();
 	const { data, ...captureDiagnostics } = await captureDomSnapshot(sendCdp, options, timeoutMs);
 	const snapshotEndedAt = new Date().toISOString();
@@ -584,13 +534,14 @@ function assembleAxEntities(nodes: Array<Record<string, unknown>>, interestingNo
 	return { entities, anchors };
 }
 
-function projectAxReadResult(input: { startedAt: number; cdpCalls: number; geometryCdpCalls: number; nodes: Array<Record<string, unknown>>; interestingNodes: Array<Record<string, unknown>>; cached: boolean; snapshot: AxSnapshotRead; geometry: AxGeometryRead; assembled: Pick<AxReadResult, "entities" | "anchors"> }): AxReadResult {
+function projectAxReadResult(input: { startedAt: number; cdpCalls: number; geometryCdpCalls: number; nodes: Array<Record<string, unknown>>; interestingNodes: Array<Record<string, unknown>>; snapshot: AxSnapshotRead; geometry: AxGeometryRead; assembled: Pick<AxReadResult, "entities" | "anchors"> }): AxReadResult {
 	const { snapshot, geometry } = input;
 	return {
 		...input.assembled,
 		...(snapshot.snapshotEntries.length ? { snapshotGeometryEntries: snapshot.snapshotEntries } : {}),
 		...(snapshot.paintOrderEntries.length ? { paintOrderEntries: snapshot.paintOrderEntries } : {}),
 		diagnostics: {
+			status: snapshot.snapshotGeometryUnavailable || geometry.geometryFallbackTruncated ? "degraded" : "ok",
 			axMs: Date.now() - input.startedAt,
 			cdpCalls: input.cdpCalls,
 			geometryCdpCalls: input.geometryCdpCalls,
@@ -609,7 +560,6 @@ function projectAxReadResult(input: { startedAt: number; cdpCalls: number; geome
 			},
 			nodeCount: input.nodes.length,
 			interestingNodeCount: input.interestingNodes.length,
-			cacheHit: input.cached,
 			bounded: { maxGeometryCdpCalls: AX_GEOMETRY_FALLBACK_MAX_CALLS, geometryFallbackTruncated: geometry.geometryFallbackTruncated },
 		},
 	};
@@ -619,8 +569,6 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	options.signal?.throwIfAborted();
 	const startedAt = Date.now();
 	const timeoutMs = options.timeoutMs ?? 10_000;
-	const rawCacheKey = axRawCacheKey(options);
-	const cachedRaw = rawCacheKey ? axRawCache.get(rawCacheKey) : undefined;
 	let cdpCalls = 0;
 	let geometryCdpCalls = 0;
 	const sendCdp: AxCdpSender = async (request) => {
@@ -629,8 +577,8 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 		return await sendPersistentCdp(server, { ...request, signal: options.signal });
 	};
 	const [nodes, snapshot] = await Promise.all([
-		loadAxNodes(sendCdp, options, timeoutMs, cachedRaw),
-		readAxSnapshot(sendCdp, options, timeoutMs, cachedRaw),
+		loadAxNodes(sendCdp, options, timeoutMs),
+		readAxSnapshot(sendCdp, options, timeoutMs),
 	]);
 	const interestingNodes = nodes.filter(isInterestingAxNode);
 	const indexes = indexAxNodes(nodes);
@@ -647,9 +595,8 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 			: undefined,
 	};
 	const geometry = await readAxGeometry(sendCdp, options, timeoutMs, interestingNodes, snapshot.rawGeometryByBackend);
-	if (rawCacheKey && !cachedRaw) rememberAxRawCache(rawCacheKey, { nodes, geometryByBackend: snapshot.rawGeometryByBackend, domBackendNodeIds: snapshot.domBackendNodeIds, passwordBackendNodeIds: snapshot.passwordBackendNodeIds, snapshotDocumentCount: snapshot.snapshotDocumentCount, snapshotDocumentsSkipped: snapshot.snapshotDocumentsSkipped, snapshotGeometryEntries: snapshot.snapshotEntries, paintOrderEntries: snapshot.paintOrderEntries });
 	const assembled = assembleAxEntities(nodes, interestingNodes, context, indexes, geometry.geometryByNode, snapshot.domBackendNodeIds, snapshot.passwordBackendNodeIds);
-	return projectAxReadResult({ startedAt, cdpCalls, geometryCdpCalls, nodes, interestingNodes, cached: !!cachedRaw, snapshot, geometry, assembled });
+	return projectAxReadResult({ startedAt, cdpCalls, geometryCdpCalls, nodes, interestingNodes, snapshot, geometry, assembled });
 }
 
 export function mergeAxIntoDomEntities(domEntities: Entity[], axEntities: BuiltEntity[]): { entities: Entity[]; diagnostics: AxFusionDiagnostics } {

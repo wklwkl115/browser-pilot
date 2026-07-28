@@ -111,6 +111,23 @@ test("command effect owns postcondition polling", async () => {
 	assert.equal(attempts, 2);
 });
 
+test("command effect stops polling terminal postcondition failures", async () => {
+	let attempts = 0;
+	const server = { async sendCommand() { return { id: "fingerprint", acknowledged: true, data: undefined }; } } as unknown as BrowserCommandRuntimePort;
+	const startedAt = Date.now();
+	const outcome = await withCommandEffect(server, {
+		timeoutMs: 1_000,
+		deadlineAt: Date.now() + 1_000,
+		verify: async () => {
+			attempts += 1;
+			return { status: "inconclusive", verb: "test", retryable: false, observed: {}, evidence: [], elapsedMs: 0 };
+		},
+	}, async () => bridgeResult);
+	assert.equal(outcome.verification?.retryable, false);
+	assert.equal(attempts, 1);
+	assert.ok(Date.now() - startedAt < 500);
+});
+
 test("command effect keeps an unreadable postcondition inconclusive", async () => {
 	const server = { async sendCommand() { return { id: "fingerprint", acknowledged: true, data: undefined }; } } as unknown as BrowserCommandRuntimePort;
 	const outcome = await withCommandEffect(server, {

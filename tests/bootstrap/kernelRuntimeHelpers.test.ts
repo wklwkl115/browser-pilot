@@ -8,14 +8,13 @@ import { displayEntityText, groupEntities, isActionableOrStructural, isPureTextL
 import { buildCollectionModels } from "../../src/kernels/abml/collections.ts";
 import { firstSafeSemanticText, isItemLikePreview, safeContainerLabelText, sanitizeSemanticText } from "../../src/kernels/abml/semanticText.ts";
 import { buildSnapshotProjection } from "../../src/kernels/abml/snapshotProjection.ts";
-import { buildIdentityGraph, identityGraphSummary } from "../../src/kernels/abml/identityGraph.ts";
 import { buildCausalEvents, buildCausalSummary, buildTriggeredRelations } from "../../src/kernels/abml/causal.ts";
 import { jsonForInlineScript, renderCaptureTemplate } from "../../src/capture/inject.ts";
 import { buildScanEntities } from "../../src/scan/summary.ts";
 import { stableRefIdForDescriptor } from "../../src/kernels/refs/refId.ts";
 import { deriveSemanticRefAnchors } from "../../src/kernels/abml/semanticRefAnchor.ts";
 import type { BrowserBridgeExecutionResult, BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
-import { invalidateAxRawCache, mergeAxIntoDomEntities, readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
+import { mergeAxIntoDomEntities, readAxEntities, readPartialAxTree } from "../../src/browser-runtime/abml/axRuntime.ts";
 import { registerRefDescriptor, resolveRefUriDetailed } from "../../src/resources/resourceRefs.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 import { scanPage } from "../../capture-src/entries/scanTemplate.ts";
@@ -148,7 +147,7 @@ test("partial AX helper truncates over-budget nodes and reports degraded diagnos
 	assert.equal(result.diagnostics.fetchRelatives, true);
 });
 
-test("full AX reader projects snapshot geometry, paint order, relations, and raw cache", async () => {
+test("full AX reader projects fresh snapshot geometry, paint order, and relations", async () => {
 	const nodes = [
 		axNode(42, "button", "Save changes", { properties: [{ name: "controls", value: { relatedNodes: [{ backendDOMNodeId: 77 }] } }] }),
 		axNode(77, "region", "Details"),
@@ -157,7 +156,7 @@ test("full AX reader projects snapshot geometry, paint order, relations, and raw
 		"Accessibility.getFullAXTree": { nodes },
 		"DOMSnapshot.captureSnapshot": domSnapshot(),
 	});
-	const options = { browserSessionId: "session-1", tabId: 7, observationId: "obs-full", capturedAt: 1_000, cacheKey: "full-ax-cache" };
+	const options = { browserSessionId: "session-1", tabId: 7, observationId: "obs-full", capturedAt: 1_000 };
 	const first = await readAxEntities(server, options);
 	assert.equal(first.entities.length, 2);
 	assert.deepEqual(first.entities[0]?.entity.geometry?.box, { x: 10, y: 20, w: 80, h: 30 });
@@ -166,18 +165,13 @@ test("full AX reader projects snapshot geometry, paint order, relations, and raw
 	assert.deepEqual(first.paintOrderEntries?.map((entry) => [entry.backendNodeId, entry.paintOrder]), [[42, 2], [77, 1]]);
 	assert.equal(first.diagnostics?.cdpCalls, 2);
 	assert.equal(first.diagnostics?.geometryCdpCalls, 0);
-	assert.equal(first.diagnostics?.cacheHit, false);
+	assert.equal(first.diagnostics?.status, "ok");
 	assert.equal(first.diagnostics?.snapshotDocumentCount, 1);
 	assert.equal(first.diagnostics?.snapshotDocumentsSkipped, undefined);
 
-	const cached = await readAxEntities(server, options);
-	assert.equal(cached.diagnostics?.cacheHit, true);
-	assert.equal(cached.diagnostics?.cdpCalls, 0);
-	assert.equal(cached.diagnostics?.snapshotDocumentCount, 1);
-	assert.equal(server.calls.length, 2);
-	assert.equal(invalidateAxRawCache(options), true);
 	const refreshed = await readAxEntities(server, options);
-	assert.equal(refreshed.diagnostics?.cacheHit, false);
+	assert.equal(refreshed.diagnostics?.cdpCalls, 2);
+	assert.equal(refreshed.diagnostics?.snapshotDocumentCount, 1);
 	assert.equal(server.calls.length, 4);
 });
 
@@ -190,7 +184,7 @@ test("full AX reader absorbs rendered text fragments before entity and ref creat
 		"Accessibility.getFullAXTree": { nodes: [...fragments, axNode(42, "button", "Save"), axNode(77, "button", "Cancel")] },
 		"DOMSnapshot.captureSnapshot": domSnapshot(),
 	});
-	const result = await readAxEntities(server, { tabId: 7, observationId: "obs-fragments", cacheKey: "fragment-cache" });
+	const result = await readAxEntities(server, { tabId: 7, observationId: "obs-fragments" });
 	assert.equal(result.diagnostics?.nodeCount, 40_002);
 	assert.equal(result.diagnostics?.interestingNodeCount, 2);
 	assert.deepEqual(result.entities.map((item) => item.entity.name), ["Save", "Cancel"]);
@@ -206,7 +200,7 @@ test("full AX reader redacts password values from AX-only entities and refs", as
 			documents: [{ nodes: { backendNodeId: [556], attributes: [[0, 1]] }, layout: { nodeIndex: [], bounds: [] } }],
 		},
 	});
-	const options = { tabId: 7, observationId: "obs-password", cacheKey: "password-cache" };
+	const options = { tabId: 7, observationId: "obs-password" };
 	const result = await readAxEntities(server, options);
 	const built = result.entities[0]!;
 	assert.equal(built.entity.value, undefined);
@@ -216,10 +210,10 @@ test("full AX reader redacts password values from AX-only entities and refs", as
 	const appended = mergeAxIntoDomEntities([], result.entities).entities[0]!;
 	const resolved = resolveRefUriDetailed(appended.ref);
 	assert.equal(resolved.ok ? resolved.ref.descriptor.semantic?.value : "missing", undefined);
-	const cached = await readAxEntities(server, options);
-	assert.equal(cached.entities[0]?.entity.value, undefined);
-	assert.equal(cached.entities[0]?.entity.hints?.valueRedacted, true);
-	assert.equal(cached.diagnostics?.cacheHit, true);
+	const refreshed = await readAxEntities(server, options);
+	assert.equal(refreshed.entities[0]?.entity.value, undefined);
+	assert.equal(refreshed.entities[0]?.entity.hints?.valueRedacted, true);
+	assert.equal(server.calls.length, 6);
 });
 
 test("full AX reader consumes only the main DOMSnapshot document", async () => {
@@ -234,7 +228,7 @@ test("full AX reader consumes only the main DOMSnapshot document", async () => {
 		"DOMSnapshot.captureSnapshot": snapshot,
 		"DOM.getBoxModel": { result: {} },
 	});
-	const options = { tabId: 7, observationId: "obs-multi-document", cacheKey: "multi-document-cache" };
+	const options = { tabId: 7, observationId: "obs-multi-document" };
 	const result = await readAxEntities(server, options);
 
 	assert.deepEqual(result.snapshotGeometryEntries?.map((entry) => entry.backendNodeId), [42, 77]);
@@ -244,9 +238,6 @@ test("full AX reader consumes only the main DOMSnapshot document", async () => {
 	assert.equal(result.entities[1]?.entity.hints?.valueRedacted, true);
 	assert.equal(result.diagnostics?.snapshotDocumentCount, 2);
 	assert.equal(result.diagnostics?.snapshotDocumentsSkipped, 1);
-	const cached = await readAxEntities(server, options);
-	assert.equal(cached.diagnostics?.snapshotDocumentCount, 2);
-	assert.equal(cached.diagnostics?.snapshotDocumentsSkipped, 1);
 });
 
 test("full AX reader keeps snapshot document geometry while projecting viewport state", async () => {
@@ -501,7 +492,7 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 		entities: [entity("bp-ref://list/container", { role: "list", kind: "region", name: "Results", hints: { listContainer: true, itemCount: "4" as unknown as number } })],
 		scanEvidence: {
 			listHints: [{ itemCount: "bad", selector: "  ", firstItemPreview: "  " }],
-			actionables: [{ text: "Next page", ref: "bp-ref://control/next" }, { text: "Load more" }],
+			actionables: [{ text: "下一页", rel: "next", ref: "bp-ref://control/next" }, { text: "Load more" }],
 		},
 	});
 	assert.equal(models.length, 1);
@@ -510,6 +501,7 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	assert.equal(models[0]!.completeness, "paginated");
 	assert.equal(models[0]!.paginationControl?.kind, "next");
 	assert.equal(models[0]!.paginationControl?.ref, "bp-ref://control/next");
+	assert.equal(models[0]!.confidence, "high");
 	const independent = buildCollectionModels({
 		entities: [],
 		scanEvidence: {
@@ -586,44 +578,6 @@ test("ABML collections absorb malformed scan evidence and pagination edges", () 
 	assert.deepEqual(observeDuplicateCollections.map((collection) => collection.containerName), ["筛选 (flex) (1)", "筛选 (flex) (2)"]);
 	assert.equal(new Set(observeDuplicateCollections.map((collection) => collection.containerName)).size, observeDuplicateCollections.length);
 	assert.deepEqual(observeDuplicateCollections.map((collection) => collection.containerNameSource), ["disambiguated", "disambiguated"]);
-});
-
-test("ABML identity graph ignores malformed relations and summarizes duplicate node identities", () => {
-	assert.deepEqual(identityGraphSummary(buildIdentityGraph([])), {
-		entityCount: 0,
-		backendNodeIdCount: 0,
-		backendNodeIdCoverage: 0,
-		anchorCount: 0,
-		triggeredCount: 0,
-		sourceCounts: {},
-	});
-	const graph = buildIdentityGraph([
-		entity("bp-ref://control/save", {
-			name: "Save",
-			locators: [{ by: "backendNodeId", value: 10, targetId: "target-1" }],
-			relations: [
-				{ type: "triggered", targetRef: "bp-ref://network-entry/request-1", source: "timing", confidence: "low" },
-				{ type: "triggered", targetRef: "", source: "timing", confidence: "low" },
-				{ type: "controls", targetRef: "bp-ref://region/dialog", source: "ax", confidence: "high" },
-			] as Entity["relations"],
-		}),
-		entity("bp-ref://control/save-copy", { name: "Save", locators: [{ by: "backendNodeId", value: 10, targetId: "target-1" }] }),
-		entity("bp-ref://region/plain", { kind: "region", role: "region", source: "ax" }),
-	]);
-	assert.equal(graph.entityCount, 3);
-	assert.equal(graph.backendNodeIdCount, 2);
-	assert.equal(graph.triggeredCount, 2);
-	assert.deepEqual(graph.byRef["bp-ref://control/save"]?.triggeredRequests, ["bp-ref://network-entry/request-1", ""]);
-	assert.equal(graph.byRef["bp-ref://control/save"]?.nodeKey, "t:target-1:b:10");
-	assert.equal(graph.byRef["bp-ref://region/plain"], undefined);
-	assert.deepEqual(identityGraphSummary(graph), {
-		entityCount: 3,
-		backendNodeIdCount: 2,
-		backendNodeIdCoverage: 0.667,
-		anchorCount: 0,
-		triggeredCount: 2,
-		sourceCounts: { dom: 2, ax: 1 },
-	});
 });
 
 test("ABML entity builders handle malformed inputs, fallback roles, refs, and dedupe keys", () => {
@@ -933,6 +887,11 @@ test("ABML relations materialize fallbacks, paint-order occlusion, graph dedupe,
 	assert.equal(paintAnchors.length, 2);
 	assert.equal(paintAnchors[0]!.type, "coveredBy");
 	assert.equal(paintAnchors[0]!.evidence?.overlapRatio, 1);
+	const oversizedPaintAnchors = derivePaintOrderRelationAnchors(paintEntities.slice(0, 2), [
+		{ backendNodeId: 10, paintOrder: 1, bounds: { x: 0, y: 0, w: 100_000, h: 100_000 } },
+		{ backendNodeId: 11, paintOrder: 2, bounds: { x: 1, y: 1, w: 99_999, h: 99_999 } },
+	]);
+	assert.equal(oversizedPaintAnchors.length, 2);
 	const relationRich = addEntityRelations(entity("bp-ref://control/rich"), [
 		{ type: "owns", targetRef: "bp-ref://target/b", source: "dom", confidence: "medium" },
 		{ type: "controls", targetRef: "bp-ref://target/a", source: "ax", confidence: "high", evidence: { ax: true } },

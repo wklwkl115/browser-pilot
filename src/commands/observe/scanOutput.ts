@@ -70,7 +70,7 @@ type FinalizeScanObservationOptions = {
 	visualSaved?: { path: string; bytes: number; mime: string };
 };
 
-function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summary: Record<string, unknown>) {
+function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summary: AssemblyResult["summary"]) {
 	const { timings, data, providerFailures } = options;
 	const { observation } = options.capture;
 	const baseline = buildBaselineDiagnostics(options);
@@ -101,7 +101,7 @@ function captureCompleteness(options: FinalizeScanObservationOptions): { content
 
 function buildCanonicalPageObservation(
 	options: FinalizeScanObservationOptions,
-	summary: Record<string, unknown>,
+	summary: AssemblyResult["summary"],
 	diagnostics: ReturnType<typeof buildObserveDiagnostics>,
 ): PageObservation {
 	const { content, data, bridge, snapshotMeta, providerFailures } = options;

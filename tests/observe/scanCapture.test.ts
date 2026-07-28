@@ -1,33 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { axCacheKeyForPage, executeScanCapture } from "../../src/commands/observe/scanCapture.ts";
+import { executeScanCapture } from "../../src/commands/observe/scanCapture.ts";
 import { finalizedObserveTimings } from "../../src/commands/observe/timings.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserRuntimeCommand } from "../../src/ports/BrowserRuntimeTypes.ts";
 import { pageWorldScanBundle } from "../helpers/pageWorldScan.ts";
-
-test("AX cache identity requires page and observer epochs and includes every change discriminator", () => {
-	assert.equal(axCacheKeyForPage({ changeSeq: 1, url: "https://example.test" }), undefined);
-	assert.equal(axCacheKeyForPage({ changeSeq: 1, pageEpoch: "page-1", url: "https://example.test" }), undefined);
-	const base = { changeSeq: 1, observerEpoch: "observer-1", pageEpoch: "page-1", documentId: "doc-1", url: "https://example.test", title: "Example", readyState: "complete", scrollX: 0, scrollY: 0, viewportWidth: 1280, viewportHeight: 720, devicePixelRatio: 1, visibleCount: 4, interactiveCount: 2 };
-	const key = axCacheKeyForPage(base);
-	for (const changed of [
-		{ ...base, observerEpoch: "observer-2" },
-		{ ...base, pageEpoch: "page-2" },
-		{ ...base, documentId: "doc-2" },
-		{ ...base, changeSeq: 2 },
-		{ ...base, url: "https://example.test/next" },
-		{ ...base, title: "Next" },
-		{ ...base, readyState: "interactive" },
-		{ ...base, scrollX: 100 },
-		{ ...base, scrollY: 100 },
-		{ ...base, viewportWidth: 1024 },
-		{ ...base, viewportHeight: 768 },
-		{ ...base, devicePixelRatio: 2 },
-		{ ...base, visibleCount: 5 },
-		{ ...base, interactiveCount: 3 },
-	]) assert.notEqual(key, axCacheKeyForPage(changed));
-});
 
 test("observe diagnostics retain measured visual phases without synthetic totals", () => {
 	const data = pageWorldScanBundle();
@@ -40,7 +17,7 @@ test("observe diagnostics retain measured visual phases without synthetic totals
 
 type FingerprintStep = number | { changeSeq: number; observerEpoch?: string };
 
-function scanCaptureRuntime(sequences: FingerprintStep[], pageEpoch = "page-1") {
+function scanCaptureRuntime(sequences: FingerprintStep[], pageEpoch = "page-1", failFullAx = false) {
 	const calls: string[] = [];
 	const runtime = {
 		calls,
@@ -64,7 +41,10 @@ function scanCaptureRuntime(sequences: FingerprintStep[], pageEpoch = "page-1") 
 				const bundle = pageWorldScanBundle({ signals: { fingerprint: { changeSeq: 0, capturedAt: 10, scrollX: 0, scrollY: 0, viewportWidth: 1280, viewportHeight: 720 } } });
 				return { id: "scan", acknowledged: true, data: { result: { value: bundle } } };
 			}
-			if (method === "Accessibility.getFullAXTree") return { id: "ax", acknowledged: true, data: { nodes: [] } };
+			if (method === "Accessibility.getFullAXTree") {
+				if (failFullAx) throw new Error("AX unavailable");
+				return { id: "ax", acknowledged: true, data: { nodes: [] } };
+			}
 			if (method === "DOMSnapshot.captureSnapshot") return { id: "snapshot", acknowledged: true, data: { documents: [], strings: [] } };
 			throw new Error(`unexpected command: ${method}`);
 		},
@@ -77,70 +57,24 @@ function captureOptions(server: BrowserCommandRuntimePort) {
 	return { server, params: {}, rawTargetRef: 7, browserSessionId: "session-1", tabId: 7, timeoutMs: 2_000, captureMaxChars: 10_000, scanScript: "scan", baseline: undefined, pageFingerprint: undefined, pageIdentity: undefined, reanchorReason: undefined, timings };
 }
 
-function liveFingerprint(changeSeq: number, observerEpoch?: string) {
-	return { changeSeq, ...(observerEpoch ? { observerEpoch } : {}), pageEpoch: "page-cache", documentId: "doc-1", url: "https://example.test/", title: "Example", readyState: "complete", scrollX: 0, scrollY: 0, viewportWidth: 1280, viewportHeight: 720, devicePixelRatio: 1, visibleCount: 0, interactiveCount: 0 };
-}
-
-test("scan capture reuses a stable raw scan while refreshing ABML snapshot ownership", async () => {
-	const server = scanCaptureRuntime([{ changeSeq: 1, observerEpoch: "observer-1" }, { changeSeq: 1, observerEpoch: "observer-1" }], "page-cache-hit");
-	const fingerprint = { ...liveFingerprint(1, "observer-1"), pageEpoch: "page-cache-hit", documentId: "doc-1", visibleCount: 0, interactiveCount: 0 };
+test("scan capture refreshes DOM and AX for every stable observation", async () => {
+	const server = scanCaptureRuntime([{ changeSeq: 1, observerEpoch: "observer-1" }, { changeSeq: 1, observerEpoch: "observer-1" }], "page-1");
+	const fingerprint = { changeSeq: 1, observerEpoch: "observer-1", pageEpoch: "page-1", documentId: "doc-1", url: "https://example.test/", title: "Example", readyState: "complete", scrollX: 0, scrollY: 0, viewportWidth: 1280, viewportHeight: 720, devicePixelRatio: 1, visibleCount: 0, interactiveCount: 0 };
 	const first = await executeScanCapture({ ...captureOptions(server), pageFingerprint: fingerprint });
-	const second = captureOptions(server);
-	const reused = await executeScanCapture({ ...second, pageFingerprint: fingerprint });
-	assert.equal(server.calls.filter((call) => call === "Runtime.evaluate").length, 1);
-	assert.equal(server.calls.filter((call) => call === "Accessibility.getFullAXTree").length, 1);
-	assert.equal(second.timings.scanCacheHit, true);
-	assert.notEqual(first.observation.abmlRead.ok && first.observation.abmlRead.data.snapshotId, reused.observation.abmlRead.ok && reused.observation.abmlRead.data.snapshotId);
-});
-
-test("scan capture fully reanchors changed pages and observer replacements", async () => {
-	const server = scanCaptureRuntime([
-		{ changeSeq: 1, observerEpoch: "observer-1" },
-		{ changeSeq: 2, observerEpoch: "observer-1" },
-		{ changeSeq: 2, observerEpoch: "observer-2" },
-	], "page-cache");
-	await executeScanCapture({ ...captureOptions(server), pageFingerprint: liveFingerprint(1, "observer-1") });
-	const changed = captureOptions(server);
-	await executeScanCapture({ ...changed, pageFingerprint: liveFingerprint(2, "observer-1") });
-	const replaced = captureOptions(server);
-	await executeScanCapture({ ...replaced, pageFingerprint: liveFingerprint(2, "observer-2") });
-	assert.equal(server.calls.filter((call) => call === "Runtime.evaluate").length, 3);
-	assert.equal(server.calls.filter((call) => call === "Accessibility.getFullAXTree").length, 3);
-	assert.equal(server.calls.filter((call) => call === "DOMSnapshot.captureSnapshot").length, 3);
-	assert.equal(changed.timings.scanFullReanchor, true);
-	assert.equal(replaced.timings.scanFullReanchor, true);
-});
-
-test("fresh scan capture bypasses both scan and AX caches", async () => {
-	const server = scanCaptureRuntime([
-		{ changeSeq: 1, observerEpoch: "observer-fresh" },
-		{ changeSeq: 1, observerEpoch: "observer-fresh" },
-	], "page-cache");
-	const fingerprint = liveFingerprint(1, "observer-fresh");
-	await executeScanCapture({ ...captureOptions(server), pageFingerprint: fingerprint });
-	const fresh = captureOptions(server);
-	await executeScanCapture({ ...fresh, params: { fresh: true }, pageFingerprint: fingerprint });
+	const second = await executeScanCapture({ ...captureOptions(server), pageFingerprint: fingerprint });
 	assert.equal(server.calls.filter((call) => call === "Runtime.evaluate").length, 2);
 	assert.equal(server.calls.filter((call) => call === "Accessibility.getFullAXTree").length, 2);
 	assert.equal(server.calls.filter((call) => call === "DOMSnapshot.captureSnapshot").length, 2);
-	assert.equal(fresh.timings.scanCacheHit, undefined);
-	assert.equal(fresh.timings.scanFullReanchor, true);
+	assert.notEqual(first.observation.abmlRead.ok && first.observation.abmlRead.data.snapshotId, second.observation.abmlRead.ok && second.observation.abmlRead.data.snapshotId);
 });
 
-test("stable scan reuse is bounded and refreshes the AX cache on reanchor", async () => {
-	const steps = Array.from({ length: 18 }, () => ({ changeSeq: 1, observerEpoch: "observer-bounded" }));
-	const server = scanCaptureRuntime(steps, "page-bounded");
-	const fingerprint = { ...liveFingerprint(1, "observer-bounded"), pageEpoch: "page-bounded" };
-	let finalTimings: Record<string, number | boolean | undefined> | undefined;
-	for (let index = 0; index < 18; index += 1) {
-		const options = captureOptions(server);
-		await executeScanCapture({ ...options, pageFingerprint: fingerprint });
-		finalTimings = options.timings;
-	}
-	assert.equal(server.calls.filter((call) => call === "Runtime.evaluate").length, 2);
-	assert.equal(server.calls.filter((call) => call === "Accessibility.getFullAXTree").length, 2);
-	assert.equal(server.calls.filter((call) => call === "DOMSnapshot.captureSnapshot").length, 2);
-	assert.equal(finalTimings?.scanFullReanchor, true);
+test("scan capture reports AX provider failure as degraded", async () => {
+	const server = scanCaptureRuntime([1, 1], "page-1", true);
+	const result = await executeScanCapture(captureOptions(server));
+	assert.equal(result.observation.abmlRead.ok, true);
+	if (!result.observation.abmlRead.ok) return;
+	assert.equal((result.observation.abmlRead.data.axDiagnostics as Record<string, unknown>).status, "failed");
+	assert.equal((result.observation.abmlRead.data.axFusion as Record<string, unknown>).degraded, true);
 });
 
 test("scan capture retries one torn DOM+AX observation and accepts the stable retry", async () => {
