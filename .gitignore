@@ -31,3 +31,15 @@ log
 nul
 /tmp-connect.json
 /tmp-exec-out.json
+
+# Promotional / marketing experiments (local-only side projects, not part of the
+# npm package). Remove the relevant line if a project should be tracked later.
+/assets/
+/douyin-promo/
+/remotion-promo/
+/website/
+/browser-pilot-douyin-promo.mp4
+/browser-pilot-douyin-script.html
+/browser-pilot-douyin-script.txt
+/browser-pilot-douyin-voiceover.txt
+/browser-pilot-remotion-douyin.mp4
