@@ -5,10 +5,12 @@ import { spawn } from "node:child_process";
 const scope = process.argv[2] || "all";
 const root = process.cwd();
 const testsDir = path.join(root, "tests");
+// Test directories mirror the source layers they exercise (see README "Project structure").
+const foundation = ["kernels", "runtime", "bridge", "extension"];
 const scopeDirs = {
-	all: ["bootstrap", "commands", "daemon", "mcp", "observe"],
-	mcp: ["bootstrap", "commands", "daemon", "mcp"],
-	observe: ["bootstrap", "observe"],
+	all: [...foundation, "commands", "daemon", "mcp", "observe"],
+	mcp: [...foundation, "commands", "daemon", "mcp"],
+	observe: [...foundation, "observe"],
 };
 
 function walk(dir, out = []) {

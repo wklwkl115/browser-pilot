@@ -7,7 +7,14 @@ import path from "node:path";
 import { Type } from "typebox";
 import { handleInvokeRoute, startDaemon } from "../../src/apps/daemon/server.ts";
 import { invokeDaemonTool } from "../../src/apps/mcp/client.ts";
-import { controlRequest, lockfilePath, readLockfile, removeLockfile, writeLockfile, type DaemonInfo } from "../../src/apps/daemon/daemonControl.ts";
+import {
+	controlRequest,
+	lockfilePath,
+	readLockfile,
+	removeLockfile,
+	writeLockfile,
+	type DaemonInfo,
+} from "../../src/apps/daemon/daemonControl.ts";
 import { createDaemonContractIdentity, localDaemonContractIdentity } from "../../src/apps/daemon/contractIdentity.ts";
 import { strictCommandParameters } from "../../src/commands/commandShared.ts";
 import type { CommandDefinition } from "../../src/commands/commandManifestIndex.ts";
@@ -26,10 +33,7 @@ function restoreEnv() {
 	else process.env.BROWSER_PILOT_DAEMON_STATE_DIR = originalDaemonStateDir;
 }
 
-async function invoke(options: {
-	body: Record<string, unknown>;
-	toolByName: Map<string, CommandDefinition>;
-}) {
+async function invoke(options: { body: Record<string, unknown>; toolByName: Map<string, CommandDefinition> }) {
 	let response: { status: number; json: Record<string, unknown> } | undefined;
 	const contractIdentity = createDaemonContractIdentity([...options.toolByName.values()]);
 	await handleInvokeRoute({
@@ -48,11 +52,11 @@ function tools() {
 	const success: CommandDefinition = {
 		name: "browser_success",
 		parameters: strictCommandParameters({ message: Type.String() }),
-			async execute(params, _signal, ctx) {
-				return {
-					content: [{ type: "text", text: String(params.message) }],
-					details: { cwd: ctx?.cwd },
-				};
+		async execute(params, _signal, ctx) {
+			return {
+				content: [{ type: "text", text: String(params.message) }],
+				details: { cwd: ctx?.cwd },
+			};
 		},
 	};
 	const throwing: CommandDefinition = {
@@ -69,7 +73,11 @@ function tools() {
 			return errorResult(new Error("reported command error"));
 		},
 	};
-	return new Map<string, CommandDefinition>([[success.name, success], [throwing.name, throwing], [failing.name, failing]]);
+	return new Map<string, CommandDefinition>([
+		[success.name, success],
+		[throwing.name, throwing],
+		[failing.name, failing],
+	]);
 }
 
 function daemonInfo(overrides: Partial<DaemonInfo> = {}): DaemonInfo {
@@ -88,20 +96,31 @@ async function startDaemonForRouteTest() {
 	return startDaemon({ writeLock: false, startBridgeEagerly: false });
 }
 
-async function rawControlRequest(handle: Awaited<ReturnType<typeof startDaemonForRouteTest>>, route: string, body: string) {
+async function rawControlRequest(
+	handle: Awaited<ReturnType<typeof startDaemonForRouteTest>>,
+	route: string,
+	body: string,
+) {
 	return await new Promise<{ status: number; json: Record<string, unknown> }>((resolve, reject) => {
-		const req = http.request({
-			host: handle.controlHost,
-			port: handle.controlPort,
-			path: route,
-			method: "POST",
+		const req = http.request(
+			{
+				host: handle.controlHost,
+				port: handle.controlPort,
+				path: route,
+				method: "POST",
 				headers: { "x-browser-pilot-daemon-token": handle.token, "content-type": "application/json" },
-		}, (res) => {
-			let response = "";
-			res.setEncoding("utf8");
-			res.on("data", (chunk: string) => { response += chunk; });
-			res.on("end", () => resolve({ status: res.statusCode ?? 0, json: JSON.parse(response) as Record<string, unknown> }));
-		});
+			},
+			(res) => {
+				let response = "";
+				res.setEncoding("utf8");
+				res.on("data", (chunk: string) => {
+					response += chunk;
+				});
+				res.on("end", () =>
+					resolve({ status: res.statusCode ?? 0, json: JSON.parse(response) as Record<string, unknown> }),
+				);
+			},
+		);
 		req.on("error", reject);
 		req.end(body);
 	});
@@ -112,7 +131,10 @@ test.afterEach(() => {
 });
 
 test("daemon invoke executes directly without browser approval", async () => {
-	const res = await invoke({ body: { tool: "browser_success", params: { message: "ok" }, cwd: "project" }, toolByName: tools() });
+	const res = await invoke({
+		body: { tool: "browser_success", params: { message: "ok" }, cwd: "project" },
+		toolByName: tools(),
+	});
 	assert.equal(res.status, 200);
 	assert.deepEqual(res.json.content, [{ type: "text", text: "ok" }]);
 	assert.deepEqual(res.json.details, { cwd: "project" });
@@ -137,9 +159,15 @@ test("daemon invoke rejects a mismatched contract before command dispatch", asyn
 	const command: CommandDefinition = {
 		name: "browser_never",
 		parameters: strictCommandParameters({}),
-		execute() { dispatched = true; return { content: [] }; },
+		execute() {
+			dispatched = true;
+			return { content: [] };
+		},
 	};
-	const res = await invoke({ body: { tool: command.name, params: {}, contractIdentity: {} }, toolByName: new Map([[command.name, command]]) });
+	const res = await invoke({
+		body: { tool: command.name, params: {}, contractIdentity: {} },
+		toolByName: new Map([[command.name, command]]),
+	});
 	assert.equal(res.status, 409);
 	assert.equal(res.json.code, "DAEMON_CONTRACT_MISMATCH");
 	assert.equal(dispatched, false);
@@ -164,15 +192,28 @@ test("daemon invoke preserves non-terminating command error semantics", async ()
 test("daemon aborts an active invocation when the control client disconnects", async () => {
 	let markStarted!: () => void;
 	let markAborted!: () => void;
-	const started = new Promise<void>((resolve) => { markStarted = resolve; });
-	const aborted = new Promise<void>((resolve) => { markAborted = resolve; });
+	const started = new Promise<void>((resolve) => {
+		markStarted = resolve;
+	});
+	const aborted = new Promise<void>((resolve) => {
+		markAborted = resolve;
+	});
 	const slow: CommandDefinition = {
 		name: "browser_slow",
 		parameters: strictCommandParameters({}),
 		async execute(_params, signal) {
 			assert.ok(signal);
 			markStarted();
-			await new Promise<void>((resolve) => signal.addEventListener("abort", () => { markAborted(); resolve(); }, { once: true }));
+			await new Promise<void>((resolve) =>
+				signal.addEventListener(
+					"abort",
+					() => {
+						markAborted();
+						resolve();
+					},
+					{ once: true },
+				),
+			);
 			return { content: [{ type: "text", text: "aborted" }] };
 		},
 	};
@@ -183,13 +224,18 @@ test("daemon aborts an active invocation when the control client disconnects", a
 			port: handle.controlPort,
 			path: "/invoke",
 			method: "POST",
-				headers: { "x-browser-pilot-daemon-token": handle.token, "content-type": "application/json" },
+			headers: { "x-browser-pilot-daemon-token": handle.token, "content-type": "application/json" },
 		});
 		req.on("error", () => undefined);
 		req.end(JSON.stringify({ tool: "browser_slow", params: {}, contractIdentity: handle.contractIdentity }));
 		await started;
 		req.destroy();
-		await Promise.race([aborted, new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("invoke signal was not aborted")), 1_000))]);
+		await Promise.race([
+			aborted,
+			new Promise<never>((_resolve, reject) =>
+				setTimeout(() => reject(new Error("invoke signal was not aborted")), 1_000),
+			),
+		]);
 	} finally {
 		await handle.close();
 	}
@@ -200,7 +246,11 @@ test("daemon control lockfile treats missing and malformed state as absent", () 
 	assert.equal(readLockfile(), undefined);
 	writeFileSync(lockfilePath(), "{not-json", "utf8");
 	assert.equal(readLockfile(), undefined);
-	writeFileSync(lockfilePath(), JSON.stringify({ pid: process.pid, controlPort: 1, controlHost: "127.0.0.1" }), "utf8");
+	writeFileSync(
+		lockfilePath(),
+		JSON.stringify({ pid: process.pid, controlPort: 1, controlHost: "127.0.0.1" }),
+		"utf8",
+	);
 	assert.equal(readLockfile(), undefined);
 });
 
@@ -220,7 +270,13 @@ test("daemon control lockfile writes and removes token-bearing singleton state",
 test("daemon status, connect, and unknown routes preserve control contracts", async () => {
 	const handle = await startDaemonForRouteTest();
 	try {
-		const unauthorized = await controlRequest({ ...handle, token: "wrong-token" }, "GET", "/status", undefined, 1_000);
+		const unauthorized = await controlRequest(
+			{ ...handle, token: "wrong-token" },
+			"GET",
+			"/status",
+			undefined,
+			1_000,
+		);
 		assert.deepEqual(unauthorized, { status: 401, json: { ok: false, error: "unauthorized" } });
 
 		const initial = await controlRequest(handle, "GET", "/status?tabs=1", undefined, 1_000);
@@ -249,11 +305,19 @@ test("daemon control client preserves responses larger than one MiB", async () =
 	const large: CommandDefinition = {
 		name: "browser_large",
 		parameters: strictCommandParameters({}),
-		execute() { return { content: [{ type: "text" as const, text: payload }] }; },
+		execute() {
+			return { content: [{ type: "text" as const, text: payload }] };
+		},
 	};
 	const handle = await startDaemon({ writeLock: false, startBridgeEagerly: false, commandDefinitions: [large] });
 	try {
-		const response = await controlRequest(handle, "POST", "/invoke", { tool: large.name, params: {}, contractIdentity: handle.contractIdentity }, 2_000);
+		const response = await controlRequest(
+			handle,
+			"POST",
+			"/invoke",
+			{ tool: large.name, params: {}, contractIdentity: handle.contractIdentity },
+			2_000,
+		);
 		assert.equal(response.status, 200);
 		const content = response.json?.content as Array<{ text: string }> | undefined;
 		assert.equal(String(content?.[0]?.text || "").length, payload.length);
@@ -304,7 +368,10 @@ test("MCP client reuses one validated daemon and never replays an uncertain invo
 		await assert.rejects(invokeDaemonTool("browser_tabs", { action: "list" }, process.cwd()));
 		assert.equal(statusRequests, 1);
 		assert.equal(invokeRequests, 3);
-		assert.deepEqual(invokeBodies.map((body) => body.contractIdentity), [contractIdentity, contractIdentity, contractIdentity]);
+		assert.deepEqual(
+			invokeBodies.map((body) => body.contractIdentity),
+			[contractIdentity, contractIdentity, contractIdentity],
+		);
 	} finally {
 		removeLockfile();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -323,7 +390,17 @@ test("daemon control request does not send a pre-aborted invocation", async () =
 		if (!address || typeof address === "string") throw new Error("expected TCP listener address");
 		const controller = new AbortController();
 		controller.abort();
-		await assert.rejects(controlRequest({ controlHost: "127.0.0.1", controlPort: address.port, token: "daemon-token" }, "POST", "/invoke", {}, 1_000, { signal: controller.signal }), { name: "AbortError" });
+		await assert.rejects(
+			controlRequest(
+				{ controlHost: "127.0.0.1", controlPort: address.port, token: "daemon-token" },
+				"POST",
+				"/invoke",
+				{},
+				1_000,
+				{ signal: controller.signal },
+			),
+			{ name: "AbortError" },
+		);
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		assert.equal(hits, 0);
 	} finally {

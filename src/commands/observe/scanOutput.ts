@@ -15,6 +15,7 @@ import type { PageWorldScanBundleV1 } from "../../kernels/abml/pageWorldScan.js"
 import { pageObservationResult } from "../resultMiddleware.js";
 import type { PageObservationBuild } from "./scanProjection.js";
 import type { VisualObservation } from "../../kernels/abml/pageObservation.js";
+import type { currentObserveSnapshotMeta, ObserveToolParams } from "./common.js";
 
 export type ObservationProviderFailure = {
 	provider: string;
@@ -29,20 +30,55 @@ type ProviderResult = Awaited<ReturnType<typeof runObserveProviders>>;
 type PageObservation = PageObservationBuild;
 
 function allSnapshotDocumentsCovered(observation: CaptureResult["observation"]): boolean {
-	const axDiagnostics = observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axDiagnostics) ? observation.abmlRead.data.axDiagnostics : undefined;
-	return Number(axDiagnostics?.snapshotDocumentCount ?? 0) === 1 && Number(axDiagnostics?.snapshotDocumentsSkipped ?? 0) === 0;
+	const axDiagnostics =
+		observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axDiagnostics)
+			? observation.abmlRead.data.axDiagnostics
+			: undefined;
+	return (
+		Number(axDiagnostics?.snapshotDocumentCount ?? 0) === 1 &&
+		Number(axDiagnostics?.snapshotDocumentsSkipped ?? 0) === 0
+	);
 }
 
 function buildBaselineDiagnostics(options: FinalizeScanObservationOptions) {
 	const { baselineRequested, baseline, baselineResolutionError, reanchorReason } = options;
 	if (!baselineRequested && !reanchorReason) return { diagnostics: undefined, warnings: [] as string[] };
 	return {
-		diagnostics: { baselineRequested, baselineApplied: baseline !== undefined, ...(reanchorReason ? { reanchorReason } : {}), ...(baselineResolutionError ? { baselineResolutionError } : {}) },
-		warnings: !baseline && baselineResolutionError
-			? ["Prior page state was unavailable; returned a full observation instead of a diff."]
-			: [],
+		diagnostics: {
+			baselineRequested,
+			baselineApplied: baseline !== undefined,
+			...(reanchorReason ? { reanchorReason } : {}),
+			...(baselineResolutionError ? { baselineResolutionError } : {}),
+		},
+		warnings:
+			!baseline && baselineResolutionError
+				? ["Prior page state was unavailable; returned a full observation instead of a diff."]
+				: [],
 	};
 }
+
+type SnapshotMeta = ReturnType<typeof currentObserveSnapshotMeta>;
+
+/**
+ * What the observe pipeline hands to finalization: the stage results as produced, plus the
+ * request bookkeeping. Every derived value (scan bundle, content text, bridge snapshot, baseline,
+ * re-anchor reason, public fingerprint) is computed once in `finalizeOptions`.
+ */
+export type FinalizeScanObservationInput = {
+	server: BrowserCommandRuntimePort;
+	ctx: CommandResultContext;
+	params: ObserveToolParams;
+	request: { tabs: unknown[]; fallbackName: string; outputPath: string | undefined };
+	session: { baselineRequested: boolean; baselineResolutionError: string | undefined };
+	capture: CaptureResult;
+	providers: ProviderResult;
+	assembly: AssemblyResult;
+	snapshotMeta: SnapshotMeta;
+	timings: ObserveTimingMetrics;
+	providerFailures: ObservationProviderFailure[];
+	renderStartedAt: number;
+	visual?: { visual: VisualObservation; saved?: { path: string; bytes: number; mime: string } };
+};
 
 type FinalizeScanObservationOptions = {
 	server: BrowserCommandRuntimePort;
@@ -58,7 +94,7 @@ type FinalizeScanObservationOptions = {
 	baselineRequested: boolean;
 	baselineResolutionError: string | undefined;
 	reanchorReason: PageReanchorReason | undefined;
-	snapshotMeta: ReturnType<typeof import("./common.js").currentObserveSnapshotMeta>;
+	snapshotMeta: SnapshotMeta;
 	timings: ObserveTimingMetrics;
 	providerFailures: ObservationProviderFailure[];
 	providers: ProviderResult;
@@ -70,19 +106,66 @@ type FinalizeScanObservationOptions = {
 	visualSaved?: { path: string; bytes: number; mime: string };
 };
 
+/** The public fingerprint omits identity internals that only the runtime needs. */
+function publicPageFingerprint(fingerprint: PageFingerprint | undefined): PageFingerprint | undefined {
+	if (!fingerprint) return undefined;
+	const { pageEpoch: _pageEpoch, documentId: _documentId, ...publicFingerprint } = fingerprint;
+	return publicFingerprint;
+}
+
+function finalizeOptions(input: FinalizeScanObservationInput): FinalizeScanObservationOptions {
+	const data = input.capture.observation.result.data;
+	return {
+		server: input.server,
+		ctx: input.ctx,
+		tabs: input.request.tabs,
+		fallbackName: input.request.fallbackName,
+		outputPath: input.request.outputPath,
+		data,
+		content: data.content.text,
+		scanMeta: { schema: data.schema, page: data.page, stats: data.stats },
+		bridge: input.server.snapshot({ browserSessionId: input.params.browserSessionId }),
+		baseline: input.capture.baseline,
+		baselineRequested: input.session.baselineRequested,
+		baselineResolutionError: input.session.baselineResolutionError,
+		reanchorReason: input.capture.reanchorReason,
+		snapshotMeta: input.snapshotMeta,
+		timings: input.timings,
+		providerFailures: input.providerFailures,
+		providers: input.providers,
+		capture: input.capture,
+		assembly: input.assembly,
+		scanPageFingerprint: publicPageFingerprint(input.capture.fusedPageFingerprint),
+		renderStartedAt: input.renderStartedAt,
+		visual: input.visual?.visual,
+		visualSaved: input.visual?.saved,
+	};
+}
+
 function buildObserveDiagnostics(options: FinalizeScanObservationOptions, summary: AssemblyResult["summary"]) {
 	const { timings, data, providerFailures } = options;
 	const { observation } = options.capture;
 	const baseline = buildBaselineDiagnostics(options);
-	const summaryWarnings = Array.isArray(summary.warnings) ? summary.warnings.filter((warning): warning is string => typeof warning === "string") : [];
-	const warnings = [...baseline.warnings, ...summaryWarnings, ...(!allSnapshotDocumentsCovered(observation) ? ["Full document semantic coverage was incomplete."] : [])];
-	const abmlFailure = observation.abmlRead?.ok === false
-		? { code: observation.abmlRead.error.code, message: observation.abmlRead.error.message }
-		: undefined;
+	const summaryWarnings = Array.isArray(summary.warnings)
+		? summary.warnings.filter((warning): warning is string => typeof warning === "string")
+		: [];
+	const warnings = [
+		...baseline.warnings,
+		...summaryWarnings,
+		...(!allSnapshotDocumentsCovered(observation) ? ["Full document semantic coverage was incomplete."] : []),
+	];
+	const abmlFailure =
+		observation.abmlRead?.ok === false
+			? { code: observation.abmlRead.error.code, message: observation.abmlRead.error.message }
+			: undefined;
 	return {
 		observeTimings: finalizedObserveTimings(timings, data, observation.abmlRead),
-		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axFusion) ? { axFusion: observation.abmlRead.data.axFusion } : {}),
-		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.identityReconciliation) ? { identityReconciliation: observation.abmlRead.data.identityReconciliation } : {}),
+		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.axFusion)
+			? { axFusion: observation.abmlRead.data.axFusion }
+			: {}),
+		...(observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.identityReconciliation)
+			? { identityReconciliation: observation.abmlRead.data.identityReconciliation }
+			: {}),
 		...(baseline.diagnostics ? { baseline: baseline.diagnostics } : {}),
 		...(providerFailures.length ? { providerFailures } : {}),
 		...(abmlFailure ? { abmlFailure } : {}),
@@ -157,19 +240,24 @@ function buildLedgerProjection(options: FinalizeScanObservationOptions) {
 	const { attributedEntities } = options.assembly;
 	const key = perceptionLedgerKey(pageIdentityFromUnknown(snapshotMeta));
 	const facts = attributedEntities ? factsFromObservedEntities(attributedEntities) : undefined;
-	const frame: CommandPerceptionLedgerFrame | undefined = key && facts
-		? { key, snapshotId: snapshotMeta.snapshotId, capturedAt: snapshotMeta.capturedAt, facts }
-		: undefined;
+	const frame: CommandPerceptionLedgerFrame | undefined =
+		key && facts
+			? { key, snapshotId: snapshotMeta.snapshotId, capturedAt: snapshotMeta.capturedAt, facts }
+			: undefined;
 	return { frame };
 }
 
-function recordLedgerProjection(options: FinalizeScanObservationOptions, frame: CommandPerceptionLedgerFrame | undefined) {
+function recordLedgerProjection(
+	options: FinalizeScanObservationOptions,
+	frame: CommandPerceptionLedgerFrame | undefined,
+) {
 	const { server } = options;
 	if (!frame || typeof server.recordPerceptionLedgerFrame !== "function") return;
 	server.recordPerceptionLedgerFrame(frame);
 }
 
-export async function finalizeScanObservation(options: FinalizeScanObservationOptions) {
+export async function finalizeScanObservation(input: FinalizeScanObservationInput) {
+	const options = finalizeOptions(input);
 	const { ctx, fallbackName, outputPath } = options;
 	const { summary, treeDiff } = options.assembly;
 	const { causal } = options.providers;

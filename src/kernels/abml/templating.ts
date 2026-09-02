@@ -1,4 +1,4 @@
-// ABML mechanism arm — M1 structure templating (pure core).
+// Concept: "Template" (docs/concepts.md) — structure templating for repeated siblings (pure core).
 //
 // Large pages are flat + full: a 200-row table or a 50-card feed re-emits N near-identical entities.
 // This selector groups repeated siblings while preserving every instance ref. Model-facing folding
@@ -78,11 +78,14 @@ export function buildTemplate(members: Entity[]): StructureTemplate {
 			const value = templateFieldValue(member, field);
 			if (value !== defaultByField.get(field)) values[field] = value ?? null;
 		}
-		return Object.keys(values).length ? [{ index, ...(isAddressableEntity(member) ? { ref: member.ref } : {}), values }] : [];
+		return Object.keys(values).length
+			? [{ index, ...(isAddressableEntity(member) ? { ref: member.ref } : {}), values }]
+			: [];
 	});
-	const setSize = typeof descriptor?.setSize === "number"
-		? descriptor.setSize
-		: members.find((member) => typeof member.structure?.setSize === "number")?.structure?.setSize;
+	const setSize =
+		typeof descriptor?.setSize === "number"
+			? descriptor.setSize
+			: members.find((member) => typeof member.structure?.setSize === "number")?.structure?.setSize;
 	const sampleValue = {
 		...(isAddressableEntity(first) ? { ref: first.ref } : {}),
 		...(first.name ? { name: first.name } : {}),

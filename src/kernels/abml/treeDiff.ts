@@ -1,6 +1,6 @@
-// ABML mechanism arm — M2a living tree-diff (pure core).
+// Concept: "Tree diff" (docs/concepts.md) — template-level diff over repeated structures (pure core).
 //
-// M1 folds repeated sibling entities into structure templates. M2a projects an entity diff onto the
+// templating.ts folds repeated sibling entities into structure templates. This module projects an entity diff onto the
 // same ARIA-grounded template groups so re-observing a large list/table reports O(change) structure
 // changes instead of O(all) repeated entities. This phase intentionally does NOT change bp-ref
 // minting: stable semantic anchors are used only for diff matching here.
@@ -106,7 +106,10 @@ function groupEntities(entities: Entity[]): TemplateGroup[] {
 	return suppressNestedNonControlGroups(rawGroupEntities(entities));
 }
 
-function buildNameCounts(beforeGroups: TemplateGroup[], afterGroups: TemplateGroup[]): Map<string, { before: number; after: number }> {
+function buildNameCounts(
+	beforeGroups: TemplateGroup[],
+	afterGroups: TemplateGroup[],
+): Map<string, { before: number; after: number }> {
 	const counts = new Map<string, { before: number; after: number }>();
 	const bump = (side: "before" | "after", group: TemplateGroup) => {
 		for (const item of group.members) {
@@ -123,14 +126,20 @@ function buildNameCounts(beforeGroups: TemplateGroup[], afterGroups: TemplateGro
 	return counts;
 }
 
-function instanceKey(groupKey: string, item: IndexedEntity, counts: Map<string, { before: number; after: number }>): { key: string; anchor: TreeDiffAnchor; confidence: TreeDiffConfidence } {
+function instanceKey(
+	groupKey: string,
+	item: IndexedEntity,
+	counts: Map<string, { before: number; after: number }>,
+): { key: string; anchor: TreeDiffAnchor; confidence: TreeDiffConfidence } {
 	const name = normalizeEntityText(item.entity.name);
 	if (name) {
 		const count = counts.get(`${groupKey}\u0000${name}`);
-		if ((count?.before ?? 0) <= 1 && (count?.after ?? 0) <= 1) return { key: `name:${name}`, anchor: "name", confidence: "high" };
+		if ((count?.before ?? 0) <= 1 && (count?.after ?? 0) <= 1)
+			return { key: `name:${name}`, anchor: "name", confidence: "high" };
 	}
 	const posInSet = item.entity.structure?.posInSet;
-	if (typeof posInSet === "number" && Number.isFinite(posInSet)) return { key: `pos:${posInSet}`, anchor: "posInSet", confidence: "low" };
+	if (typeof posInSet === "number" && Number.isFinite(posInSet))
+		return { key: `pos:${posInSet}`, anchor: "posInSet", confidence: "low" };
 	return { key: `idx:${item.index + 1}`, anchor: "index", confidence: "low" };
 }
 
@@ -146,7 +155,10 @@ function instanceSummary(match: MatchedInstance): TreeDiffInstance {
 	};
 }
 
-function matchedInstances(group: TemplateGroup, counts: Map<string, { before: number; after: number }>): MatchedInstance[] {
+function matchedInstances(
+	group: TemplateGroup,
+	counts: Map<string, { before: number; after: number }>,
+): MatchedInstance[] {
 	return group.members.map((item, order) => {
 		const key = instanceKey(group.descriptor.key, item, counts);
 		return { ...key, ref: item.entity.ref, entity: item.entity, order };
@@ -167,7 +179,11 @@ function fieldChanges(before: Entity, after: Entity): { fields: TreeDiffFieldCha
 		const beforeValue = templateFieldValue(before, field);
 		const afterValue = templateFieldValue(after, field);
 		if (beforeValue === afterValue) continue;
-		out.push({ field, ...(beforeValue !== undefined ? { before: beforeValue } : {}), ...(afterValue !== undefined ? { after: afterValue } : {}) });
+		out.push({
+			field,
+			...(beforeValue !== undefined ? { before: beforeValue } : {}),
+			...(afterValue !== undefined ? { after: afterValue } : {}),
+		});
 	}
 	return { fields: out, fieldCount: out.length };
 }
@@ -180,10 +196,19 @@ function reordered(before: MatchedInstance[], after: MatchedInstance[]): TreeTem
 	const afterCommon = after.map((item) => item.key).filter((key) => beforeKeySet.has(key));
 	if (beforeCommon.length < 2) return undefined;
 	if (beforeCommon.join("\u0000") === afterCommon.join("\u0000")) return undefined;
-	return { changed: true, commonCount: beforeCommon.length, beforeSample: beforeCommon.slice(0, 12), afterSample: afterCommon.slice(0, 12) };
+	return {
+		changed: true,
+		commonCount: beforeCommon.length,
+		beforeSample: beforeCommon.slice(0, 12),
+		afterSample: afterCommon.slice(0, 12),
+	};
 }
 
-function buildTemplateDiff(beforeGroup: TemplateGroup | undefined, afterGroup: TemplateGroup | undefined, counts: Map<string, { before: number; after: number }>): TreeTemplateDiff | undefined {
+function buildTemplateDiff(
+	beforeGroup: TemplateGroup | undefined,
+	afterGroup: TemplateGroup | undefined,
+	counts: Map<string, { before: number; after: number }>,
+): TreeTemplateDiff | undefined {
 	const descriptor = afterGroup?.descriptor || beforeGroup?.descriptor;
 	if (!descriptor) return undefined;
 	const before = beforeGroup ? matchedInstances(beforeGroup, counts) : [];
@@ -231,26 +256,54 @@ function templateDiffSignalScore(diff: TreeTemplateDiff): number {
 	return diff.changed.count * 40 + diff.appeared.count * 12 + diff.disappeared.count * 12 + (diff.reordered ? 4 : 0);
 }
 
-export function buildTreeDiff(beforeEntities: Entity[], afterEntities: Entity[], options: TreeDiffOptions = {}): TreeDiff {
-	if (options.partialBaseline) return { summary: { templateCount: 0, changedTemplateCount: 0, appeared: 0, disappeared: 0, changed: 0, reordered: 0, partialBaseline: true, unavailable: "treeDiff requires a full baseline; partial baselines suppress structure-level change projection" }, templates: [] };
+export function buildTreeDiff(
+	beforeEntities: Entity[],
+	afterEntities: Entity[],
+	options: TreeDiffOptions = {},
+): TreeDiff {
+	if (options.partialBaseline)
+		return {
+			summary: {
+				templateCount: 0,
+				changedTemplateCount: 0,
+				appeared: 0,
+				disappeared: 0,
+				changed: 0,
+				reordered: 0,
+				partialBaseline: true,
+				unavailable:
+					"treeDiff requires a full baseline; partial baselines suppress structure-level change projection",
+			},
+			templates: [],
+		};
 	const beforeGroups = groupEntities(beforeEntities);
 	const afterGroups = groupEntities(afterEntities);
 	const counts = buildNameCounts(beforeGroups, afterGroups);
-	const allKeys = new Set([...beforeGroups.map((group) => group.descriptor.key), ...afterGroups.map((group) => group.descriptor.key)]);
+	const allKeys = new Set([
+		...beforeGroups.map((group) => group.descriptor.key),
+		...afterGroups.map((group) => group.descriptor.key),
+	]);
 	const beforeByKey = new Map(beforeGroups.map((group) => [group.descriptor.key, group]));
 	const afterByKey = new Map(afterGroups.map((group) => [group.descriptor.key, group]));
 	const templates = Array.from(allKeys)
 		.map((key) => buildTemplateDiff(beforeByKey.get(key), afterByKey.get(key), counts))
 		.filter((item): item is TreeTemplateDiff => !!item)
-		.sort((a, b) => templateDiffSignalScore(b) - templateDiffSignalScore(a) || Math.max(b.beforeCount, b.afterCount) - Math.max(a.beforeCount, a.afterCount));
-	const summary = templates.reduce<TreeDiffSummary>((acc, item) => ({
-		templateCount: acc.templateCount,
-		changedTemplateCount: acc.changedTemplateCount + 1,
-		appeared: acc.appeared + item.appeared.count,
-		disappeared: acc.disappeared + item.disappeared.count,
-		changed: acc.changed + item.changed.count,
-		reordered: acc.reordered + (item.reordered ? 1 : 0),
-	}), { templateCount: allKeys.size, changedTemplateCount: 0, appeared: 0, disappeared: 0, changed: 0, reordered: 0 });
+		.sort(
+			(a, b) =>
+				templateDiffSignalScore(b) - templateDiffSignalScore(a) ||
+				Math.max(b.beforeCount, b.afterCount) - Math.max(a.beforeCount, a.afterCount),
+		);
+	const summary = templates.reduce<TreeDiffSummary>(
+		(acc, item) => ({
+			templateCount: acc.templateCount,
+			changedTemplateCount: acc.changedTemplateCount + 1,
+			appeared: acc.appeared + item.appeared.count,
+			disappeared: acc.disappeared + item.disappeared.count,
+			changed: acc.changed + item.changed.count,
+			reordered: acc.reordered + (item.reordered ? 1 : 0),
+		}),
+		{ templateCount: allKeys.size, changedTemplateCount: 0, appeared: 0, disappeared: 0, changed: 0, reordered: 0 },
+	);
 	const collectNames = (pick: (t: TreeTemplateDiff) => Array<{ name?: string }>): string[] => {
 		const out: string[] = [];
 		for (const t of templates) {
@@ -267,8 +320,13 @@ export function buildTreeDiff(beforeEntities: Entity[], afterEntities: Entity[],
 	const appearedNames = collectNames((t) => t.appeared.instances);
 	const disappearedNames = collectNames((t) => t.disappeared.instances);
 	const changedNames = collectNames((t) => t.changed.instances);
-	const sample = appearedNames.length || disappearedNames.length || changedNames.length
-		? { ...(appearedNames.length ? { appeared: appearedNames } : {}), ...(disappearedNames.length ? { disappeared: disappearedNames } : {}), ...(changedNames.length ? { changed: changedNames } : {}) }
-		: undefined;
+	const sample =
+		appearedNames.length || disappearedNames.length || changedNames.length
+			? {
+					...(appearedNames.length ? { appeared: appearedNames } : {}),
+					...(disappearedNames.length ? { disappeared: disappearedNames } : {}),
+					...(changedNames.length ? { changed: changedNames } : {}),
+				}
+			: undefined;
 	return { summary: sample ? { ...summary, sample } : summary, templates };
 }

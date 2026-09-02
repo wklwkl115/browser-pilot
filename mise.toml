@@ -1,24 +1,27 @@
 min_version = "2024.1.0"
 
+# mise only pins the Node version; every task delegates to the npm scripts in package.json,
+# which remain the single source of truth for CI and contributors without mise.
+
 [tools]
 node = "22"
 
 [tasks.test]
-description = "Run deterministic Node tests for all bootstrap and refactor scopes"
+description = "Run the deterministic Node test suite (npm test)"
 run = "npm test"
 
 [tasks.verify]
-description = "Run the complete deterministic quality gate"
+description = "Run the complete quality gate (npm run verify)"
 run = "npm run verify"
 
 [tasks.test-mcp]
-description = "Run bootstrap + MCP tests"
+description = "Run foundation + command + daemon + MCP tests"
 run = "node scripts/run-tests.mjs mcp"
 
 [tasks.test-observe]
-description = "Run bootstrap + canonical observe tests"
+description = "Run foundation + observe tests"
 run = "node scripts/run-tests.mjs observe"
 
 [tasks.smoke-browser]
-description = "Launch Chrome/Edge and verify the core browser workflow"
+description = "Launch Chrome/Edge and verify the core browser workflow (npm run smoke:browser)"
 run = "npm run smoke:browser"

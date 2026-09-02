@@ -48,15 +48,15 @@ Browser Pilot works with the tabs and authenticated sessions **already open** in
 
 ## How It Differs
 
-| | Browser Pilot | Screenshot-based AI | Puppeteer / Playwright | Selenium |
-|---|---|---|---|---|
-| **Real browser tabs** | Yes &mdash; your logged-in sessions | Headless or separate profile | Headless or launched | Headless or launched |
-| **Page understanding** | Structured DOM model | Pixel-level image inference | Manual selectors | Manual selectors |
-| **Action precision** | Ref-targeted, deterministic | Coordinate clicks, fragile | CSS / XPath selectors | CSS / XPath selectors |
-| **Result verification** | Built-in, target-scoped diff | Re-screenshot + LLM guess | Manual assertions | Manual assertions |
-| **Evidence trail** | Structured artifacts per action | Screenshots only | Screenshots / traces | Screenshots / logs |
-| **Multimodal required** | No | Yes | No | No |
-| **AI agent native** | MCP tools, composable | Varies | Library API | Library API |
+|                         | Browser Pilot                       | Screenshot-based AI          | Puppeteer / Playwright | Selenium              |
+| ----------------------- | ----------------------------------- | ---------------------------- | ---------------------- | --------------------- |
+| **Real browser tabs**   | Yes &mdash; your logged-in sessions | Headless or separate profile | Headless or launched   | Headless or launched  |
+| **Page understanding**  | Structured DOM model                | Pixel-level image inference  | Manual selectors       | Manual selectors      |
+| **Action precision**    | Ref-targeted, deterministic         | Coordinate clicks, fragile   | CSS / XPath selectors  | CSS / XPath selectors |
+| **Result verification** | Built-in, target-scoped diff        | Re-screenshot + LLM guess    | Manual assertions      | Manual assertions     |
+| **Evidence trail**      | Structured artifacts per action     | Screenshots only             | Screenshots / traces   | Screenshots / logs    |
+| **Multimodal required** | No                                  | Yes                          | No                     | No                    |
+| **AI agent native**     | MCP tools, composable               | Varies                       | Library API            | Library API           |
 
 ## Real Workflows
 
@@ -88,6 +88,8 @@ The installer copies the packaged extension to `~/.browser-pilot/extension` and 
 
 Use `--browser edge` or `--browser chrome` when both browsers are installed. After an npm upgrade, run the installer again and click **Reload**.
 
+Run `npx browser-pilot-mcp status` at any time to check the install, the daemon, and the extension link; it prints the next step when something is off.
+
 ### Step 2 &mdash; Configure your MCP client
 
 ```toml
@@ -118,17 +120,19 @@ Then point the MCP client at `dist/src/apps/mcp/bin.js` with `command = "node"`.
 
 Browser Pilot exposes five composable MCP tools:
 
-| Tool | Purpose |
-|---|---|
-| `browser_observe` | Return compact page content, actions, changes, and expandable semantic resources. |
-| `browser_execute` | Run page JavaScript in the selected or ref-owning tab. |
-| `browser_command` | Run trusted input and validated native browser or CDP operations. |
-| `browser_tabs` | List, switch, create, or close connected browser tabs. |
-| `browser_screenshot` | Return a viewport or full-page screenshot as an MCP image resource. |
+| Tool                 | Purpose                                                                           |
+| -------------------- | --------------------------------------------------------------------------------- |
+| `browser_observe`    | Return compact page content, actions, changes, and expandable semantic resources. |
+| `browser_execute`    | Run page JavaScript in the selected or ref-owning tab.                            |
+| `browser_command`    | Run trusted input, waits, and validated native browser or CDP operations.         |
+| `browser_tabs`       | List, switch, create, close, or navigate connected browser tabs.                  |
+| `browser_screenshot` | Return a viewport or full-page screenshot as an MCP image resource.               |
 
-The MCP `tools/list` response is the public syntax authority. [`src/commands/commandCatalog.ts`](src/commands/commandCatalog.ts) owns the public tool list; each `*Command.ts` module owns its schema and handler. Native command schemas are available through `browser-pilot://native-command/<cmd>` resources.
+The MCP `tools/list` response is the public syntax authority. [`src/commands/commandCatalog.ts`](src/commands/commandCatalog.ts) owns the public tool list; each `*Command.ts` module owns its schema and handler. `browser_command` names its **core** commands inline (CDP, trusted input, waits, network recorder, frames, HTML, transfers); **advanced** families (`hook.*`, `intercept.*`, `ws.*`, new-document scripts) stay public but are documented only through the `browser-pilot://native-commands` index and `browser-pilot://native-command/<cmd>` resources.
 
-`browser_observe` accepts `mode: "auto" | "full" | "diff"` and `visual: "auto" | "always" | "never"`. Its inline result contains decision-facing data; irreducible overflow is exposed through typed observation resources. `browser_tabs` always returns `{ "tabs": [...] }`; `browser_screenshot` returns capture metadata plus the image resource.
+`browser_observe` accepts `mode: "auto" | "full" | "diff"` and `visual: "auto" | "always" | "never"`. Its inline result contains decision-facing data; irreducible overflow is exposed through typed observation resources. `browser_tabs` returns `{ "tabs": [...] }` (plus an `effect` for `navigate`); `browser_screenshot` returns capture metadata plus the image resource.
+
+New to the vocabulary (refs, entities, frontier, collections, causal, verification)? Read [docs/concepts.md](docs/concepts.md) first; it explains every term that appears in tool output and walks through the `browser_observe` result key by key.
 
 ## Agent Workflow
 
@@ -138,8 +142,9 @@ observe  ->  choose a bp-ref  ->  execute or command  ->  verify  ->  collect ev
 
 1. **Start with the active tab.** Omit `targetRef` to use the selected tab. List tabs only to disambiguate; create, switch, or close only when the task requires it.
 2. **Observe when needed.** Call `browser_observe` only when the task needs page understanding. Its `bp-ref` values route later actions back to the owning tab automatically.
-3. **Act through the right tool.** Use `browser_execute` for page JavaScript or `browser_command` for native browser operations. Combine deterministic same-page JavaScript in one call.
-4. **Verify writes.** Add `expect` when a write must be verified. Observe again only when the next decision depends on new page state.
+3. **Act through the right tool.** Use `browser_tabs navigate` to load a URL, `browser_command` `input.ref` for trusted input on an observed control (`click`, `type`, `check`, `select`, `focus`, `hover`), and `browser_execute` for page JavaScript. Combine deterministic same-page JavaScript in one call.
+4. **Wait deliberately.** When the next step depends on the page settling, use `wait.loadState`, `wait.selector`, `wait.networkIdle`, or `wait.navigation` through `browser_command` instead of polling.
+5. **Verify writes.** Add `expect` when a write must be verified. Observe again only when the next decision depends on new page state.
 
 <details>
 <summary><strong>Execution and verification contract</strong></summary>
@@ -148,7 +153,7 @@ observe  ->  choose a bp-ref  ->  execute or command  ->  verify  ->  collect ev
 
 Successful `browser_execute` and `browser_command` calls return `{ "result": ..., "effect"?: ..., "verification"?: ... }`; writes may add `effect` and `verification`. An `expect` can be a JavaScript truth expression or a structured ref/state postcondition such as `{ "ref": "bp-ref://control/...", "state": { "pressed": true } }`. Structured verification reads the same ref before and after dispatch, fuses DOM and targeted accessibility state, and returns a target-scoped diff.
 
-Raw CDP uses `command: { cmd: "cdp", method: "Domain.method", params: {...} }`. Targeting remains at the tool-level `targetRef`; runtime session, physical target, timeout, attach, and cleanup state are not public contract fields.
+Trusted input uses `command: { cmd: "input.ref", ref: "bp-ref://...", action: "type", text: "...", clear: true }`; `check` takes `checked`, `select` takes `value`, `label`, or `index`. Raw CDP uses `command: { cmd: "cdp", method: "Domain.method", params: {...} }`. Targeting remains at the tool-level `targetRef`; runtime session, physical target, timeout, attach, and cleanup state are not public contract fields. Waits and transfers get a longer fixed budget than one-shot commands.
 
 </details>
 
@@ -172,14 +177,14 @@ MCP process  --local IPC-->  Node daemon
                         Chrome or Edge tab
 ```
 
-| State | Owner |
-|---|---|
-| MCP protocol and project root | Per-agent MCP process |
-| Daemon lifecycle | User-local daemon |
-| Connections, pending requests, target write queues | `BrowserBridgeServer` |
-| Selected browser and tab session | Session registry |
-| Chrome APIs and CDP sessions | MV3 service worker |
-| Captured evidence | Request-scoped project artifact root |
+| State                                              | Owner                                |
+| -------------------------------------------------- | ------------------------------------ |
+| MCP protocol and project root                      | Per-agent MCP process                |
+| Daemon lifecycle                                   | User-local daemon                    |
+| Connections, pending requests, target write queues | `BrowserBridgeServer`                |
+| Selected browser and tab session                   | Session registry                     |
+| Chrome APIs and CDP sessions                       | MV3 service worker                   |
+| Captured evidence                                  | Request-scoped project artifact root |
 
 Source is organized by responsibility: `src/apps` contains the MCP server and daemon; `src/bridge` owns transport and extension code; `src/commands` owns public tool schemas and orchestration; `src/browser-command-runtime` prepares command execution; `src/browser-page-runtime` evaluates page scripts; `src/browser-runtime` adapts browser I/O; `src/kernels` stays pure. Page scanning lives in `src/scan` and `capture-src`, with observation assembly under `src/commands/observe`.
 
@@ -205,10 +210,16 @@ browser-pilot/
 │   │   └── session/           # Session lifecycle
 │   ├── scan/                  # Page scanning + noise rules
 │   └── utils/                 # Shared utilities
-├── bridge/                    # Generated extension bundle
+├── bridge/                    # Bridge config + generated extension bundle (untracked)
 ├── docs/assets/               # Diagrams + demo GIFs
 ├── scripts/                   # Build + dev scripts
-└── tests/                     # Test suites
+└── tests/                     # Test suites, one directory per layer
+    ├── kernels/               # Pure kernel logic
+    ├── runtime/               # Browser/command runtime helpers
+    ├── bridge/                # Bridge server
+    ├── extension/             # MV3 service worker + page scripts (chrome stubs)
+    ├── commands/, observe/    # Tool orchestration + observation assembly
+    └── daemon/, mcp/          # Daemon control + MCP server
 ```
 
 </details>
@@ -222,14 +233,17 @@ browser-pilot/
 
 ## Development
 
-**Requirements:** Node.js 22+, Chrome or Edge, and [`mise`](https://mise.jdx.dev/) for repository tasks.
+**Requirements:** Node.js 22+ and Chrome or Edge. [`mise`](https://mise.jdx.dev/) is optional; `mise.toml` only pins Node and forwards to the npm scripts below.
 
 ```bash
-mise run verify          # Canonical gate: typecheck + lint + test + build
-mise run smoke-browser   # Browser integration smoke test
+npm run verify           # Canonical gate: generated files + format + typecheck + lint + test + bridge build
+npm test                 # Deterministic Node tests (tests/<layer>/ mirrors src/)
+npm run smoke:browser    # Browser integration smoke test
+npm run format           # Apply Prettier
+npx browser-pilot-mcp status   # Diagnose a local install (source checkout: npm run mcp -- status)
 ```
 
-Runtime source lives under `src/` and `capture-src/`; `dist/` and `bridge/browser_pilot_bridge/` are generated outputs. The bridge host and port range are owned by `bridge/browser_bridge_config.json` &mdash; run `npm run sync:config` after changing it.
+Runtime source lives under `src/` and `capture-src/`; `dist/` and `bridge/browser_pilot_bridge/` are generated outputs and are not tracked. The bridge host and port range are owned by `bridge/browser_bridge_config.json` &mdash; run `npm run sync:config` after changing it. Formatting is owned by Prettier (`.prettierrc.json`); the gate fails on unformatted files.
 
 ## Contributing
 
@@ -241,7 +255,7 @@ Contributions are welcome. Please open an issue first to discuss what you would 
 4. Push to the branch (`git push origin feat/amazing-feature`)
 5. Open a Pull Request
 
-Make sure `mise run verify` passes before submitting.
+Make sure `npm run verify` passes before submitting.
 
 ## License
 

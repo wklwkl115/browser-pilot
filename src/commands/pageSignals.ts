@@ -1,3 +1,5 @@
+// Concept: "Fingerprint bracket" (docs/concepts.md). A lightweight page fingerprint read before and
+// after browser reads or writes, used to detect torn observations and to summarize write effects.
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { isRecord } from "../utils/params.js";
 
@@ -57,7 +59,22 @@ export function normalizePageFingerprint(value: unknown): PageFingerprint | unde
 }
 
 export function pageFingerprintDiscriminators(fingerprint: PageFingerprint): readonly unknown[] {
-	return [fingerprint.changeSeq, fingerprint.observerEpoch, fingerprint.pageEpoch, fingerprint.documentId, fingerprint.url, fingerprint.title, fingerprint.readyState, fingerprint.scrollX, fingerprint.scrollY, fingerprint.viewportWidth, fingerprint.viewportHeight, fingerprint.devicePixelRatio, fingerprint.visibleCount, fingerprint.interactiveCount];
+	return [
+		fingerprint.changeSeq,
+		fingerprint.observerEpoch,
+		fingerprint.pageEpoch,
+		fingerprint.documentId,
+		fingerprint.url,
+		fingerprint.title,
+		fingerprint.readyState,
+		fingerprint.scrollX,
+		fingerprint.scrollY,
+		fingerprint.viewportWidth,
+		fingerprint.viewportHeight,
+		fingerprint.devicePixelRatio,
+		fingerprint.visibleCount,
+		fingerprint.interactiveCount,
+	];
 }
 
 export function samePageFingerprint(left: PageFingerprint, right: PageFingerprint): boolean {
@@ -65,11 +82,23 @@ export function samePageFingerprint(left: PageFingerprint, right: PageFingerprin
 	return pageFingerprintDiscriminators(left).every((value, index) => value === rightValues[index]);
 }
 
-export async function readPageFingerprint(server: BrowserCommandRuntimePort, options: PageSignalOptions): Promise<PageFingerprint | undefined> {
+export async function readPageFingerprint(
+	server: BrowserCommandRuntimePort,
+	options: PageSignalOptions,
+): Promise<PageFingerprint | undefined> {
 	options.signal?.throwIfAborted();
 	if (!options.tabId) return undefined;
 	try {
-		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: Math.min(options.timeoutMs, 2_000), internal: true, signal: options.signal });
+		const result = await server.sendCommand(
+			{ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs },
+			{
+				browserSessionId: options.browserSessionId,
+				tabId: options.tabId,
+				timeoutMs: Math.min(options.timeoutMs, 2_000),
+				internal: true,
+				signal: options.signal,
+			},
+		);
 		return normalizePageFingerprint(result.data);
 	} catch {
 		options.signal?.throwIfAborted();
@@ -77,10 +106,21 @@ export async function readPageFingerprint(server: BrowserCommandRuntimePort, opt
 	}
 }
 
-export async function queryNetworkDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<RecorderDelta> {
+export async function queryNetworkDelta(
+	server: BrowserCommandRuntimePort,
+	options: PageSignalOptions & { sinceSeq: number },
+): Promise<RecorderDelta> {
 	options.signal?.throwIfAborted();
 	if (!options.tabId) return { active: false, items: [] };
-	const res = await server.sendCommand({ cmd: "network.list", sinceSeq: options.sinceSeq, limit: 500 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, signal: options.signal });
+	const res = await server.sendCommand(
+		{ cmd: "network.list", sinceSeq: options.sinceSeq, limit: 500 },
+		{
+			browserSessionId: options.browserSessionId,
+			tabId: options.tabId,
+			timeoutMs: options.timeoutMs,
+			signal: options.signal,
+		},
+	);
 	const data = isRecord(res.data) ? res.data : {};
 	return {
 		active: data.active !== false,
@@ -89,12 +129,24 @@ export async function queryNetworkDelta(server: BrowserCommandRuntimePort, optio
 	};
 }
 
-export async function queryHookDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<RecorderDelta> {
+export async function queryHookDelta(
+	server: BrowserCommandRuntimePort,
+	options: PageSignalOptions & { sinceSeq: number },
+): Promise<RecorderDelta> {
 	options.signal?.throwIfAborted();
 	if (!options.tabId) return { active: false, items: [] };
-	const res = await server.sendCommand({ cmd: "hook.collect", sinceSeq: options.sinceSeq, limit: 200 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, signal: options.signal });
+	const res = await server.sendCommand(
+		{ cmd: "hook.collect", sinceSeq: options.sinceSeq, limit: 200 },
+		{
+			browserSessionId: options.browserSessionId,
+			tabId: options.tabId,
+			timeoutMs: options.timeoutMs,
+			signal: options.signal,
+		},
+	);
 	const data = isRecord(res.data) ? res.data : {};
-	const lastSeq = typeof data.lastSeq === "number" ? data.lastSeq : typeof data.last_seq === "number" ? data.last_seq : undefined;
+	const lastSeq =
+		typeof data.lastSeq === "number" ? data.lastSeq : typeof data.last_seq === "number" ? data.last_seq : undefined;
 	return {
 		active: data.active !== false,
 		...(lastSeq !== undefined ? { lastSeq } : {}),

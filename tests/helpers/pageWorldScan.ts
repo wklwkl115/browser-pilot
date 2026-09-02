@@ -1,7 +1,4 @@
-import {
-	PAGE_WORLD_SCAN_SCHEMA,
-	type PageWorldScanBundleV1,
-} from "../../src/kernels/abml/pageWorldScan.ts";
+import { PAGE_WORLD_SCAN_SCHEMA, type PageWorldScanBundleV1 } from "../../src/kernels/abml/pageWorldScan.ts";
 
 type ScanBundleOverrides = {
 	page?: Partial<PageWorldScanBundleV1["page"]>;
