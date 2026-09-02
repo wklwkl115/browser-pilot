@@ -784,7 +784,7 @@ async function typeIntoRef(ctx: RefDispatch): Promise<BrowserPilotBridgeResponse
 	}
 	const failed = await emit(ctx.tabId, ctx.msg, "Input.insertText", { text }, ctx.sent, ctx.backend?.targetId);
 	if (failed) return refFailure(ctx, "BACKEND_NODE_STALE", cdpErrorText(failed), { phase: "insertText" });
-	return { text: { redacted: true, charCount: text.length, cleared: ctx.msg.clear === true } };
+	return { text: { value: text, charCount: text.length, cleared: ctx.msg.clear === true } };
 }
 
 async function focusRef(ctx: RefDispatch): Promise<BrowserPilotBridgeResponse | JsonRecord> {
@@ -1083,7 +1083,7 @@ async function keys(
 		const failed = await emit(tabId, msg, "Input.insertText", { text: msg.text }, sent);
 		if (failed) return failed;
 		return done("input.keys", startedAt, sent, focusEmulation, {
-			text: { redacted: true, charCount: msg.text.length },
+			text: { value: msg.text, charCount: msg.text.length },
 		});
 	}
 	const items = Array.isArray(msg.keys) ? msg.keys : [];

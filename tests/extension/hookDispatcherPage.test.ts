@@ -95,7 +95,7 @@ function eventsFrom(response: HookResponse): HookEvent[] {
 	return (response.data?.events ?? []) as HookEvent[];
 }
 
-test("page hook owns install, bounded collection, pause, redaction, and console restoration", () => {
+test("page hook owns install, bounded collection, pause, caller-supplied scrubbing, and console restoration", () => {
 	const page = pageHarness();
 	const originalLog = page.console.log;
 	const installed = page.api.install({
@@ -108,26 +108,29 @@ test("page hook owns install, bounded collection, pause, redaction, and console 
 	assert.equal(installed.data?.state, "INSTALLED");
 	assert.notEqual(page.console.log, originalLog);
 
-	const circular: JsonRecord = { secret: "fixture-secret", token: "api-token-42", values: [1, 2, 3] };
+	const circular: JsonRecord = { note: "plain-note", token: "api-token-42", values: [1, 2, 3] };
 	circular.self = circular;
 	page.console.log(circular);
 	page.api.dispatch("hook.pause", { session_id: "page-session" });
-	page.console.log("paused-secret");
+	page.console.log("paused-line");
 	page.api.dispatch("hook.resume", { session_id: "page-session" });
-	page.console.log("fixture-password");
+	page.console.log("Authorization: Bearer kept-verbatim");
 
 	const collected = page.api.collect({ session_id: "page-session", event_types: ["console."], limit: 20 });
 	const consoleEvents = plain(eventsFrom(collected));
 	assert.equal(collected.ok, true);
 	assert.equal(Number(collected.data?.overflow) > 0, true);
 	assert.equal(
-		consoleEvents.some((event) => JSON.stringify(event).includes("paused-secret")),
+		consoleEvents.some((event) => JSON.stringify(event).includes("paused-line")),
 		false,
 	);
+	// Only the caller's pattern is scrubbed; there are no built-in patterns.
 	assert.match(JSON.stringify(consoleEvents), /\[REDACTED\]/);
-	assert.doesNotMatch(JSON.stringify(consoleEvents), /fixture-secret|fixture-password|api-token-42/);
+	assert.doesNotMatch(JSON.stringify(consoleEvents), /api-token-42/);
+	assert.match(JSON.stringify(consoleEvents), /plain-note/);
+	assert.match(JSON.stringify(consoleEvents), /Authorization: Bearer kept-verbatim/);
 	assert.equal(
-		page.consoleCalls.some((entry) => entry.args.includes("paused-secret")),
+		page.consoleCalls.some((entry) => entry.args.includes("paused-line")),
 		true,
 	);
 
@@ -151,7 +154,7 @@ test("page hook records fetch request/response data and restores the original fe
 	assert.equal(page.api.install({ session_id: "network-session", targets: { network: true } }).ok, true);
 	const wrappedFetch = page.window.fetch as typeof fetch;
 	assert.notEqual(wrappedFetch, originalFetch);
-	await wrappedFetch("https://page.example/items", { method: "POST", body: "fixture-secret" });
+	await wrappedFetch("https://page.example/items", { method: "POST", body: "request-body-text" });
 
 	const events = plain(
 		eventsFrom(
@@ -167,7 +170,7 @@ test("page hook records fetch request/response data and restores the original fe
 		["network.request", "network.response"],
 	);
 	assert.equal((events[0]?.data as JsonRecord).url, "https://page.example/items");
-	assert.equal(((events[0]?.data as JsonRecord).body as JsonRecord).sample, "[REDACTED]");
+	assert.equal(((events[0]?.data as JsonRecord).body as JsonRecord).sample, "request-body-text");
 	assert.equal((events[1]?.data as JsonRecord).status, 201);
 
 	assert.equal(page.api.uninstall({ session_id: "network-session" }).ok, true);

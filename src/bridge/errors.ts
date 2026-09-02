@@ -1,5 +1,4 @@
 import { BrowserBridgeError } from "../utils/errors.js";
-import { redactSensitiveText } from "../utils/redaction.js";
 
 /**
  * Build the canonical TAB_NOT_FOUND error with an actionable recovery hint.
@@ -35,18 +34,18 @@ function targetRefForTab(tab: Record<string, unknown>): string | undefined {
 	return typeof value === "string" && value ? value : undefined;
 }
 
+const MAX_ERROR_URL_CHARS = 512;
+
+/** Error payloads list every tab; keep each URL bounded so a data: URL cannot bloat the response. */
 function compactUrlForError(value: string): string {
-	const base = value.split(/[?#]/, 1)[0] || value;
+	if (value.length <= MAX_ERROR_URL_CHARS) return value;
 	try {
 		const url = new URL(value);
-		const suffix = url.search || url.hash ? "?[redacted]" : "";
-		if (url.protocol === "http:" || url.protocol === "https:")
-			return redactSensitiveText(`${url.origin}${url.pathname}${suffix}`);
-		if (["data:", "javascript:", "vbscript:", "mailto:"].includes(url.protocol)) return `${url.protocol}[redacted]`;
-		return redactSensitiveText(`${base}${suffix}`);
+		if (url.protocol === "data:" || url.protocol === "javascript:") return `${url.protocol}[${value.length} chars]`;
 	} catch {
-		return redactSensitiveText(base);
+		/* not a URL; fall through to plain truncation */
 	}
+	return `${value.slice(0, MAX_ERROR_URL_CHARS)}…`;
 }
 
 export function tabNotFoundError(args: {

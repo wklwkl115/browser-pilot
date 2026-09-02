@@ -1,5 +1,5 @@
 import { chromeApi as chrome } from "./runtimeEnv.js";
-import { redactSensitiveValue, type RedactionOptions } from "../../../utils/redaction.js";
+import { safeJsonClone } from "../../../utils/safeClone.js";
 import type {
 	BrowserPilotBridgeCommand,
 	BrowserPilotBridgeResponse,
@@ -57,13 +57,14 @@ export function integerInRange(value: unknown, fallback: number, min: number, ma
 	return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.floor(parsed))) : fallback;
 }
 
-export function redactSensitive(value: unknown, options: RedactionOptions = {}): unknown {
-	return redactSensitiveValue(value, options);
+/** Make a value safe to serialize over the bridge or into storage: cycles broken, depth bounded, content verbatim. */
+export function serializable<T>(value: T): T {
+	return safeJsonClone(value);
 }
 
 export function browserPilotError(errorCode: string, message: unknown, details?: unknown): BrowserPilotBridgeResponse {
-	const text = String(redactSensitive(message || errorCode || "ERROR"));
-	return { ok: false, error_code: errorCode, error: text, details: runtimeRecord(redactSensitive(details || {})) };
+	const text = String(message || errorCode || "ERROR");
+	return { ok: false, error_code: errorCode, error: text, details: runtimeRecord(serializable(details || {})) };
 }
 
 export function bridgeError(
@@ -72,10 +73,10 @@ export function bridgeError(
 	details?: unknown,
 ): BrowserPilotBridgeResponse {
 	const code = errorCode || BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR;
-	const text = String(redactSensitive(message || code));
+	const text = String(message || code);
 	const baseDetails =
 		details && typeof details === "object" ? details : details === undefined ? {} : { raw: details };
-	return { ok: false, error_code: code, error: text, details: runtimeRecord(redactSensitive(baseDetails)) };
+	return { ok: false, error_code: code, error: text, details: runtimeRecord(serializable(baseDetails)) };
 }
 
 function structuredBridgeError(error: unknown, command?: unknown): BrowserPilotBridgeResponse | undefined {

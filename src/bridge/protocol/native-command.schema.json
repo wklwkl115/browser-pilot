@@ -1700,11 +1700,6 @@
       "retryable": true,
       "summary": "Referenced handle etag does not match the current artifact."
     },
-    "PRIVACY_BLOCKED": {
-      "category": "abml.privacy",
-      "retryable": false,
-      "summary": "Requested access is blocked by ABML privacy policy."
-    },
     "ACTIONABILITY_TIMEOUT": {
       "category": "abml.actionability",
       "retryable": true,

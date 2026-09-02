@@ -4,11 +4,9 @@
 // "what fired since baseline" summary for the observe envelope. It reports requests observed in
 // the window and attributes them to a control when an action context is present. CDP initiator
 // metadata (type/url, NOT full call-stack parsing) filters structural noise and elevates
-// confidence when the initiator confirms a script-triggered request. URLs are redacted;
-// no bodies. Pure core: zero browser/Node deps.
+// confidence when the initiator confirms a script-triggered request. URLs are kept verbatim;$([Environment]::NewLine)// no bodies. Pure core: zero browser/Node deps.
 import type { Entity, EntityRelation } from "./entity.js";
 import { finiteNumber as num, isRecord, nonEmptyString as str } from "../../utils/records.js";
-import { redactSensitiveText } from "../../utils/redaction.js";
 import { mintRef } from "../refs/core.js";
 
 export type CausalRequest = {
@@ -29,7 +27,7 @@ export type CausalEvent = {
 	ref: string; // bp-ref://event/<seq|id>
 	type: string; // console | domSink | storage | error | ...
 	at?: number;
-	summary?: string; // redacted; never a raw payload
+	summary?: string; // a compact text summary; never a raw payload
 	selector?: string; // the event's target element, when it names one
 };
 
@@ -62,10 +60,6 @@ function refIdComponent(value: string, fallback: string): string {
 	return cleaned || fallback;
 }
 
-function redactUrl(url: string): string {
-	return redactSensitiveText(url);
-}
-
 function deltaRecordsSinceSeq(
 	records: Array<Record<string, unknown>>,
 	sinceSeq: number,
@@ -80,7 +74,7 @@ function deltaRecordsSinceSeq(
 		.map(({ record, seq }) => ({ record, seq }));
 }
 
-// One network record → a compact, redacted causal request. Tolerant of both the full NetworkRecord
+// One network record → a compact causal request. Tolerant of both the full NetworkRecord
 // shape and the network.list summary shape (fields read defensively, like stream.ts).
 const PASSIVE_INITIATOR_TYPES = new Set(["parser", "preload", "preflight"]);
 
@@ -99,7 +93,7 @@ export function buildCausalRequest(record: Record<string, unknown>): CausalReque
 	return {
 		ref: mintRef("network", refIdComponent(requestId, "request")),
 		...(method ? { method } : {}),
-		...(url ? { url: redactUrl(url) } : {}),
+		...(url ? { url } : {}),
 		...(status !== undefined ? { status } : {}),
 		...(type ? { type } : {}),
 		...(at !== undefined ? { at } : {}),
@@ -122,7 +116,7 @@ export function buildCausalSummary(records: Array<Record<string, unknown>>, sinc
 
 // Event (non-network) causal entries.
 
-// A redacted summary for a hook event: prefer a named text field (message/summary/preview/…),
+// A compact summary for a hook event: prefer a named text field (message/summary/preview/…),
 // never dump the raw payload object. Falls back to undefined so the entry stays compact.
 function eventSummary(data: unknown): string | undefined {
 	if (typeof data === "string") return data;
@@ -158,7 +152,7 @@ function eventSelector(record: Record<string, unknown>): string | undefined {
 	return str(record.selector) || str(data.selector) || (el ? str(el.selector) : undefined);
 }
 
-// One hook event → a compact, redacted causal event. Tolerant of the HookEvent shape
+// One hook event → a compact causal event. Tolerant of the HookEvent shape
 // (`{ seq, type, timestamp, data }`) and defensive field aliases, like buildCausalRequest.
 export function buildCausalEvent(record: Record<string, unknown>, fallbackIndex?: number): CausalEvent {
 	const seq = num(record.seq);
@@ -173,7 +167,7 @@ export function buildCausalEvent(record: Record<string, unknown>, fallbackIndex?
 		ref: mintRef("event", refIdComponent(id, "event")),
 		type,
 		...(at !== undefined ? { at } : {}),
-		...(summary ? { summary: redactSensitiveText(summary) } : {}),
+		...(summary ? { summary } : {}),
 		...(selector ? { selector } : {}),
 	};
 }

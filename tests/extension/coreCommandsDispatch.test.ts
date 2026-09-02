@@ -679,22 +679,22 @@ test("offscreen transport drops queued sends from a superseded connection", asyn
 	}
 });
 
-test("extension runtime helpers redact and normalize malformed error responses", () => {
-	const circular: Record<string, unknown> = { token: "fixture-secret" };
+test("extension runtime helpers keep error content verbatim while breaking cycles", () => {
+	const circular: Record<string, unknown> = { token: "fixture-token" };
 	circular.self = circular;
 
 	assert.deepEqual(
-		runtimeSupport.bridgeError(undefined, "Authorization: Bearer fixture-secret", {
+		runtimeSupport.bridgeError(undefined, "Authorization: Bearer fixture-token", {
 			password: "fixture-password",
 			circular,
 		}),
 		{
 			ok: false,
 			error_code: "INTERNAL_ERROR",
-			error: "Authorization: [redacted]",
+			error: "Authorization: Bearer fixture-token",
 			details: {
-				password: "[redacted]",
-				circular: { token: "[redacted]", self: "[Circular]" },
+				password: "fixture-password",
+				circular: { token: "fixture-token", self: "[Circular]" },
 			},
 		},
 	);
@@ -739,33 +739,36 @@ test("extension runtime state serializes its shared storage blob and reports pre
 	assert.ok(concurrent["network:7:network"]);
 	assert.ok(concurrent["hook:7:hook"]);
 
+	// Persisted recovery state keeps connection facts verbatim but omits payload bodies and page scripts.
 	await stateStore.persist(
 		"ws",
-		"7:redacted",
+		"7:compact",
 		{
-			url: "wss://user:password@example.test/socket?token=secret&auth=secret",
-			headers: { "set-cookie": "sid=secret", "x-api-key": "secret" },
-			bearer: "secret",
-			source: "console.log('secret')",
+			url: "wss://user:password@example.test/socket?token=abc&auth=def",
+			headers: { "set-cookie": "sid=abc", "x-api-key": "key" },
+			bearer: "bearer-value",
+			source: "console.log('hello')",
 			options: {
-				script: { code: "console.log('secret')" },
-				expression: ["secret"],
-				html: { markup: "<p>secret</p>" },
+				script: { code: "console.log('hello')" },
+				expression: ["hello"],
+				html: { markup: "<p>hello</p>" },
+				longValue: "x".repeat(300),
 			},
 		},
-		{ tabId: 7, sessionId: "redacted" },
+		{ tabId: 7, sessionId: "compact" },
 	);
-	const redacted = (sessionStorage.browserPilotRuntimeStateV2 as Record<string, { config: unknown }>)["ws:7:redacted"]
+	const compact = (sessionStorage.browserPilotRuntimeStateV2 as Record<string, { config: unknown }>)["ws:7:compact"]
 		?.config;
-	assert.deepEqual(redacted, {
-		url: "wss://[redacted]:[redacted]@example.test/socket?token=[redacted]&auth=[redacted]",
-		headers: { "set-cookie": "[redacted]", "x-api-key": "[redacted]" },
-		bearer: "[redacted]",
-		source: "[redacted]",
+	assert.deepEqual(compact, {
+		url: "wss://user:password@example.test/socket?token=abc&auth=def",
+		headers: { "set-cookie": "sid=abc", "x-api-key": "key" },
+		bearer: "bearer-value",
+		source: "[omitted]",
 		options: {
-			script: "[redacted]",
-			expression: "[redacted]",
-			html: "[redacted]",
+			script: "[omitted]",
+			expression: "[omitted]",
+			html: "[omitted]",
+			longValue: "[omitted long value]",
 		},
 	});
 
@@ -803,7 +806,7 @@ test("extension runtime state serializes its shared storage blob and reports pre
 	assert.equal(recovered["ws:7:lost"]?.workerBootId, stateStore.currentBootId());
 	assert.ok(recovered["intercept:7:during-recovery"]);
 	await stateStore.forget("ws", "7:lost");
-	await stateStore.forget("ws", "7:redacted");
+	await stateStore.forget("ws", "7:compact");
 	await stateStore.forget("intercept", "7:during-recovery");
 });
 

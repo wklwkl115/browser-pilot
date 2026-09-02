@@ -1,5 +1,3 @@
-import { redactSensitiveText } from "../../../utils/redaction.js";
-
 export type RecoveryTaxonomyLike = {
 	retryable: boolean;
 };
@@ -19,7 +17,6 @@ const ABML_ERROR_CODES = new Set([
 	"HANDLE_EXPIRED",
 	"HANDLE_KIND_MISMATCH",
 	"HANDLE_ETAG_MISMATCH",
-	"PRIVACY_BLOCKED",
 	"ACTIONABILITY_TIMEOUT",
 	"TARGET_OCCLUDED",
 	"TARGET_DISABLED",
@@ -60,8 +57,8 @@ export function uniqueRecoveryActions(actions: Array<string | undefined | false>
 
 function abmlRecoveryActions(code: string, details: Record<string, unknown>): string[] {
 	if (!isAbmlRecoveryCode(code)) return [];
-	const ref = typeof details.ref === "string" ? redactSensitiveText(details.ref) : undefined;
-	const uri = typeof details.uri === "string" ? redactSensitiveText(details.uri) : undefined;
+	const ref = typeof details.ref === "string" ? details.ref : undefined;
+	const uri = typeof details.uri === "string" ? details.uri : undefined;
 	return uniqueRecoveryActions([
 		["REF_NOT_FOUND", "REF_STALE", "HANDLE_NOT_FOUND", "HANDLE_EXPIRED", "HANDLE_ETAG_MISMATCH"].includes(code)
 			? "browser_observe to re-capture fresh refs"
@@ -74,9 +71,6 @@ function abmlRecoveryActions(code: string, details: Record<string, unknown>): st
 			: undefined,
 		code === "HANDLE_KIND_MISMATCH" || code === "INVALID_INPUT"
 			? "retry with a ref/handle and parameters that match the requested operation"
-			: undefined,
-		code === "PRIVACY_BLOCKED"
-			? "use redacted output or evidence scoped to the current page instead of private cross-scope data"
 			: undefined,
 		["ACTIONABILITY_TIMEOUT", "TARGET_OCCLUDED", "TARGET_DISABLED"].includes(code)
 			? "scroll or dismiss overlays in a new operation, or refresh actionability evidence before retrying the action"

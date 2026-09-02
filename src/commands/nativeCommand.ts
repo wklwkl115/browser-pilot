@@ -399,11 +399,11 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 								},
 							}
 						: outcome.effect;
-				return jsonResult(
-					verifiedWriteValue(outcome, effect),
-					{ mode: "command", command: commandName, ...(visualSaved ? { saved: visualSaved } : {}) },
-					{ preserveBodyFields: commandName === "network.body" },
-				);
+				return jsonResult(verifiedWriteValue(outcome, effect), {
+					mode: "command",
+					command: commandName,
+					...(visualSaved ? { saved: visualSaved } : {}),
+				});
 			});
 		},
 	});

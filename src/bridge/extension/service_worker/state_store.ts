@@ -5,7 +5,8 @@
 // closed for volatile runtime data (buffers, transcripts, paused requests).
 
 import { chromeApi as chrome, BROWSER_PILOT_WORKER_BOOT_ID } from "./runtimeEnv.js";
-import { redactSensitive, runtimeRecord } from "./runtimeSupport.js";
+import { runtimeRecord } from "./runtimeSupport.js";
+import { safeJsonClone } from "../../../utils/safeClone.js";
 import type { JsonRecord } from "./types.js";
 
 // --- Constants ---
@@ -96,29 +97,30 @@ const DIRECT_PAYLOAD_KEYS = new Set([
 	"content",
 ]);
 
-function normalizeRedactionKey(key: string): string {
+function normalizePayloadKey(key: string): string {
 	return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function redactPersistedConfig(value: unknown, depth = 0, parentKey = ""): unknown {
-	const normalizedParent = normalizeRedactionKey(parentKey);
-	if (DIRECT_PAYLOAD_KEYS.has(normalizedParent)) return "[redacted]";
+/**
+ * chrome.storage.session holds only what recovery needs to re-arm a recorder: drop payload bodies,
+ * page scripts, and long strings so persisted state stays small. This is storage minimization,
+ * not content filtering; live command results are never passed through here.
+ */
+function compactPersistedConfig(value: unknown, depth = 0, parentKey = ""): unknown {
+	if (DIRECT_PAYLOAD_KEYS.has(normalizePayloadKey(parentKey))) return "[omitted]";
 	if (value == null) return value;
-	if (typeof value === "string") {
-		if (value.length > 256) return "[redacted long value]";
-		return value;
-	}
+	if (typeof value === "string") return value.length > 256 ? "[omitted long value]" : value;
 	if (typeof value === "number" || typeof value === "boolean") return value;
-	if (typeof value !== "object") return "[redacted]";
-	if (depth > 6) return "[redacted depth]";
-	if (Array.isArray(value)) return value.map((v) => redactPersistedConfig(v, depth + 1, parentKey));
+	if (typeof value !== "object") return "[omitted]";
+	if (depth > 6) return "[omitted depth]";
+	if (Array.isArray(value)) return value.map((v) => compactPersistedConfig(v, depth + 1, parentKey));
 	return Object.fromEntries(
-		Object.entries(value as JsonRecord).map(([k, v]) => [k, redactPersistedConfig(v, depth + 1, k)]),
+		Object.entries(value as JsonRecord).map(([k, v]) => [k, compactPersistedConfig(v, depth + 1, k)]),
 	) as JsonRecord;
 }
 
-function redactConfig(value: unknown): unknown {
-	return redactPersistedConfig(redactSensitive(value));
+function compactConfig(value: unknown): unknown {
+	return compactPersistedConfig(safeJsonClone(value));
 }
 
 function currentBootId(): string {
@@ -300,7 +302,7 @@ async function persist<TConfig>(
 		const map = await loadAll();
 		const sk = stateKey(kind, key);
 		const existing = map[sk];
-		const record = makeRecord(kind, key, redactConfig(config) as TConfig, {
+		const record = makeRecord(kind, key, compactConfig(config) as TConfig, {
 			...opts,
 			generation: opts.generation ?? (existing ? existing.generation + 1 : 0),
 			diagnostics: Array.isArray(opts.diagnostics) ? [...opts.diagnostics] : undefined,
@@ -489,7 +491,7 @@ export {
 	summarizeRecovery,
 	registerRecovery,
 	runStartupRecovery,
-	redactConfig,
+	compactConfig,
 	currentBootId,
 	browserPilotSessions,
 	findLostRuntimeSession,

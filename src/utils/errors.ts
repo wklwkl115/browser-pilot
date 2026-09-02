@@ -7,7 +7,7 @@ import {
 import type { ErrorRecovery } from "../kernels/evidence/distill/recovery.js";
 import { nativeErrorCodes, type NativeErrorCode, normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import { firstDefined, isRecord, pickDefined } from "./records.js";
-import { redactSensitiveText, redactSensitiveValue } from "./redaction.js";
+import { safeJsonClone } from "./safeClone.js";
 
 export type { ErrorRecovery } from "../kernels/evidence/distill/recovery.js";
 
@@ -329,15 +329,13 @@ export function suppressErrorStack<T extends Error>(error: T): T {
 
 export function compactError(error: unknown, fallbackCode = "INTERNAL_ERROR"): Record<string, unknown> {
 	const normalized = normalizeError(error, fallbackCode);
-	const diagnostics = redactSensitiveValue(normalized.diagnostics);
-	const recovery = normalized.recovery ? redactSensitiveValue(normalized.recovery) : undefined;
 	return {
 		code: normalized.code,
-		message: redactSensitiveText(normalized.message),
+		message: normalized.message,
 		taxonomy: normalized.taxonomy,
-		diagnostics,
-		details: redactSensitiveValue(normalized.details),
-		recovery,
+		diagnostics: safeJsonClone(normalized.diagnostics),
+		details: safeJsonClone(normalized.details),
+		recovery: normalized.recovery ? safeJsonClone(normalized.recovery) : undefined,
 		name: normalized.name,
 	};
 }

@@ -229,6 +229,7 @@ browser-pilot/
 - The WebSocket bridge accepts upgrades **only** from the configured Browser Pilot extension origin; command dispatch rejects stale extension builds.
 - Page content is **always** untrusted.
 - Browser Pilot does **not** remove page security headers or suppress page dialogs.
+- Tool results, network captures, and artifacts are returned **verbatim**; Browser Pilot does not redact page or network content. Password field values are the one exception: they never enter observations. Treat `.browser-pilot/artifacts/` as raw local evidence.
 - Report vulnerabilities through GitHub private vulnerability reporting. If unavailable, open a minimal public issue requesting a private contact path &mdash; never include secrets or private evidence.
 
 ## Development

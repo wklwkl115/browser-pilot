@@ -16,7 +16,7 @@ import {
 	forget as forgetState,
 	recover as recoverState,
 	registerRecovery,
-	redactConfig,
+	compactConfig,
 } from "./state_store";
 import {
 	addEventListener,
@@ -105,7 +105,7 @@ const BROWSER_PILOT_HOOK_TARGETS: Record<string, { target: string; description: 
 	},
 	cookies: {
 		target: "cookies",
-		description: "document.cookie read/write names with redacted values",
+		description: "document.cookie reads, writes, and snapshots",
 		eventTypes: ["cookies.*"],
 	},
 };
@@ -371,7 +371,7 @@ async function recordSuccessfulHookInstall(
 		await persistState(
 			"hook",
 			`${Number(tabId)}:${sessionId}`,
-			redactConfig({
+			compactConfig({
 				sessionId,
 				targets: args.targets,
 				options: msg.options,

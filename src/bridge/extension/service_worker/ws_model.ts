@@ -1,4 +1,4 @@
-import { integerInRange as numberInRange, redactSensitive } from "./runtimeSupport.js";
+import { integerInRange as numberInRange, serializable } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
 export type WsSessionState = "opening" | "open" | "closed" | "error";
@@ -74,7 +74,7 @@ function rememberWsTranscript(
 ): WsTranscriptEntry | null {
 	if (!session) return null;
 	session.seq += 1;
-	const item = redactSensitive({ seq: session.seq, t: Date.now(), ...entry }) as WsTranscriptEntry;
+	const item = serializable({ seq: session.seq, t: Date.now(), ...entry }) as WsTranscriptEntry;
 	session.transcript.push(item);
 	if (session.transcript.length > session.maxTranscript)
 		session.transcript.splice(0, session.transcript.length - session.maxTranscript);
