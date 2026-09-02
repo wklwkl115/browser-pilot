@@ -104,7 +104,7 @@ test("input.ref type clicks to focus, verifies editability, clears, then inserts
 		const data = result.data as Record<string, Record<string, unknown>>;
 		assert.equal(data.input.action, "type");
 		assert.equal(data.input.resolution, "backendNodeId");
-		assert.deepEqual(data.input.text, { redacted: true, charCount: 18, cleared: true });
+		assert.deepEqual(data.input.text, { value: "hello@example.test", charCount: 18, cleared: true });
 		assert.deepEqual(h.types(), [
 			"mouseMoved",
 			"mousePressed",
@@ -119,7 +119,6 @@ test("input.ref type clicks to focus, verifies editability, clears, then inserts
 		const insert = h.calls.find((call) => call.method === "Input.insertText");
 		assert.equal(insert?.params.text, "hello@example.test");
 		assert.equal(h.methods().indexOf("Input.insertText"), h.methods().length - 1);
-		assert.equal(JSON.stringify(result).includes("hello@example.test"), false);
 	} finally {
 		h.restore();
 	}

@@ -3,7 +3,7 @@
 import { matchNetworkPattern } from "./patterns";
 import {
 	integerInRange as numberInRange,
-	redactSensitive,
+	serializable,
 	runtimeErrorMessage as errorText,
 	runtimeRecord as asRecord,
 } from "./runtimeSupport.js";
@@ -336,7 +336,7 @@ function normalizeNetworkRecorderConfig(msg: BrowserPilotBridgeCommand | JsonRec
 		clearOnStart: msg.clear !== false,
 		storeHeaders: msg.storeHeaders !== false && msg.store_headers !== false,
 		storePostData: captureRequestPostData,
-		createdFrom: redactSensitive({ cmd: msg.cmd, waitId: msg.waitId || msg.wait_id }),
+		createdFrom: serializable({ cmd: msg.cmd, waitId: msg.waitId || msg.wait_id }),
 		filter: () => ({ match: true, reason: "uninitialized" }),
 	};
 	config.filter = makeNetworkRecorderFilter(config);
@@ -418,7 +418,7 @@ function createNetworkRecorder(tabId: unknown, config: NetworkRecorderConfig): N
 }
 function recorderPublicConfig(config: NetworkRecorderConfig | null | undefined): unknown {
 	const { filter: _filter, ...rest } = config || {};
-	return redactSensitive(rest);
+	return serializable(rest);
 }
 function getNetworkRecorder(tabId: unknown, sessionId: unknown): NetworkRecorder | null {
 	return browserPilotNetworkRecorders.get(networkRecorderKey(tabId, sessionId || "default")) || null;
@@ -438,7 +438,7 @@ function rememberNetworkError(
 ): void {
 	if (!recorder) return;
 	const item = { t: Date.now(), where, error: errorText(error || "error"), ...(extra || {}) };
-	recorder.lastErrors.push(redactSensitive(item));
+	recorder.lastErrors.push(serializable(item));
 	if (recorder.lastErrors.length > 50) recorder.lastErrors.splice(0, recorder.lastErrors.length - 50);
 }
 function networkRecorderSummary(recorder: NetworkRecorder | null | undefined): NetworkRecorderSummary | null {
@@ -447,7 +447,7 @@ function networkRecorderSummary(recorder: NetworkRecorder | null | undefined): N
 		waitId: w.waitId,
 		condition: w.condition,
 		age_ms: Date.now() - w.createdAt,
-		criteria: asRecord(redactSensitive(w.criteria || {})),
+		criteria: asRecord(serializable(w.criteria || {})),
 		lastMatchSeq: w.lastMatchSeq || 0,
 	}));
 	const summary: NetworkRecorderSummary = {
@@ -738,13 +738,13 @@ function networkRecordSummary(
 		...networkRecordTrafficSummary(rec),
 	};
 	if (options.includeDetails) Object.assign(out, networkRecordClone(rec, { includeBody: options.includeBody }));
-	return redactSensitive(out) as NetworkRecordSummary;
+	return serializable(out) as NetworkRecordSummary;
 }
 function networkRecordClone(rec: NetworkRecord, options: { includeBody?: boolean } = {}): NetworkRecordSnapshot {
 	options = options || {};
 	const clone = JSON.parse(JSON.stringify(rec || {})) as NetworkRecord;
 	if (!options.includeBody) delete clone.body;
-	return redactSensitive(clone) as NetworkRecordSnapshot;
+	return serializable(clone) as NetworkRecordSnapshot;
 }
 function storeNetworkBody(
 	recorder: NetworkRecorder,

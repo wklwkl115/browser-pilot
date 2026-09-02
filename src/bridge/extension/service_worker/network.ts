@@ -7,7 +7,7 @@ import {
 	browserPilotError,
 	browserPilotPersistentCdp,
 	browserPilotWithTimeout,
-	redactSensitive,
+	serializable,
 	runtimeErrorMessage as errorText,
 	runtimeRecord as asRecord,
 } from "./runtimeSupport.js";
@@ -515,7 +515,7 @@ async function getNetworkRecorderBody(
 			bytes: trunc.bytes,
 		};
 	}
-	return { ok: true, data: redactSensitive(out, { preserveBodyFields: true }) };
+	return { ok: true, data: out };
 }
 function firstTruthyOr<T>(fallback: T, ...values: unknown[]): T {
 	for (const value of values) if (value) return value as T;
@@ -634,7 +634,7 @@ async function exportNetworkRecorderHar(
 			? Array.from(bodyRefs)
 					.map((ref) => recorder.bodyStore.get(String(ref)))
 					.filter((b): b is NetworkBodyStoreEntry => Boolean(b))
-					.map((b) => redactSensitive(b))
+					.map((b) => serializable(b))
 			: undefined;
 		return {
 			ok: true,
@@ -906,7 +906,7 @@ async function waitNetworkRecorder(tabId: number, msg: BrowserPilotBridgeCommand
 				waitId,
 				condition,
 				timeout_ms: 0,
-				criteria: redactSensitive(criteria),
+				criteria: serializable(criteria),
 				recorder: networkRecorderSummary(recorder),
 			},
 		);
@@ -932,7 +932,7 @@ async function waitNetworkRecorder(tabId: number, msg: BrowserPilotBridgeCommand
 				false,
 				BROWSER_PILOT_ERROR_CODES.CANCELLED,
 				"network.wait cancelled",
-				{ criteria: redactSensitive(criteria) },
+				{ criteria: serializable(criteria) },
 			);
 		try {
 			abortController.signal.addEventListener("abort", wait.abortHandler, { once: true });
@@ -949,7 +949,7 @@ async function waitNetworkRecorder(tabId: number, msg: BrowserPilotBridgeCommand
 					"network.wait timed out",
 					{
 						timeout_ms: timeoutMs,
-						criteria: redactSensitive(criteria),
+						criteria: serializable(criteria),
 						lastEntries: recorder.entries.slice(-20).map((r: NetworkRecord) => networkRecordSummary(r)),
 					},
 				),

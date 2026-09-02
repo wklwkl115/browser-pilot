@@ -10,7 +10,7 @@ import {
 	forget as forgetState,
 	recover as recoverState,
 	registerRecovery,
-	redactConfig,
+	compactConfig,
 	summarizeLostRuntimeSession,
 } from "./state_store.js";
 import {
@@ -277,7 +277,7 @@ async function openWs(tabId: number, msg: BrowserPilotBridgeCommand): Promise<Br
 			void persistState(
 				"ws",
 				`${Number(tabId)}:${session.sessionId}`,
-				redactConfig({ url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript }),
+				compactConfig({ url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript }),
 				{ tabId, sessionId: session.sessionId, recoveryPolicy: "diagnosticOnly" },
 			).catch((error) => {
 				console.warn("[BROWSER-PILOT-WS] Failed to persist websocket session state", session.sessionId, error);

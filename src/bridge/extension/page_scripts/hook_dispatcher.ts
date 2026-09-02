@@ -149,12 +149,8 @@ declare global {
 		xpath_large_result_threshold: 500,
 		xpath_large_result_repeat_ticks: 12,
 	};
-	const DEFAULT_REDACT_PATTERNS = [
-		"fixture-secret",
-		"fixture-password",
-		"bearer\\s+fixture-secret",
-		"authorization:\\s*bearer\\s+[^\\s,;\\x29]+",
-	];
+	// Captured payloads are recorded verbatim; scrubbing happens only for patterns the caller passes
+	// through options.redact_patterns.
 	const BROWSER_PILOT_HOOK_MAX_REDACT_PATTERNS = 32;
 	const BROWSER_PILOT_HOOK_REDACT_MAX_PATTERN_CHARS = 512;
 	const BROWSER_PILOT_HOOK_REDACT_MAX_TEXT_CHARS = 65536;
@@ -241,9 +237,7 @@ declare global {
 			options && Array.isArray(options.redact_patterns)
 				? options.redact_patterns.slice(0, BROWSER_PILOT_HOOK_MAX_REDACT_PATTERNS).map(String)
 				: [];
-		redactMatchers = DEFAULT_REDACT_PATTERNS.concat(custom)
-			.map(compileHookRedactPattern)
-			.filter((item): item is RedactMatcher => Boolean(item));
+		redactMatchers = custom.map(compileHookRedactPattern).filter((item): item is RedactMatcher => Boolean(item));
 		return redactMatchers;
 	}
 	function clone(v: unknown): unknown {
@@ -256,7 +250,7 @@ declare global {
 		currentHookRedactors().forEach((item: RedactMatcher) => {
 			out = out.replace(item.regex, "[REDACTED]");
 		});
-		return truncated ? out + "…[redaction input truncated]" : out;
+		return truncated ? out + "…[truncated]" : out;
 	}
 	function redactScalar(v: unknown): unknown | typeof UNHANDLED_CLONE {
 		if (v == null) return v;
@@ -377,17 +371,6 @@ declare global {
 		} catch (_) {
 			return "";
 		}
-	}
-	function redactCookieValue(cookieString: unknown): string {
-		return String(cookieString || "")
-			.split(";")
-			.map((part) => {
-				const idx = part.indexOf("=");
-				const name = (idx >= 0 ? part.slice(0, idx) : part).trim();
-				return name ? name + "=<redacted>" : "";
-			})
-			.filter(Boolean)
-			.join("; ");
 	}
 	function cookieNames(cookieString: unknown): string[] {
 		return String(cookieString || "")
@@ -980,7 +963,7 @@ declare global {
 				push("cookies.read", {
 					names: cookieNames(value),
 					count: cookieNames(value).length,
-					value: redactCookieValue(value),
+					value: safeString(value),
 					stack: stackForEvent(),
 				});
 				return value;
@@ -989,7 +972,7 @@ declare global {
 				const text = String(value || "");
 				push("cookies.write", {
 					name: (text.split("=")[0] || "").trim(),
-					value: redactCookieValue(text),
+					value: safeString(text),
 					stack: stackForEvent(),
 				});
 				return setter?.call(this, value);
@@ -1000,7 +983,7 @@ declare global {
 			push("cookies.snapshot", {
 				names: cookieNames(snapshot),
 				count: cookieNames(snapshot).length,
-				value: redactCookieValue(snapshot),
+				value: safeString(snapshot),
 			});
 		} catch (_error) {
 			/* best-effort cookie snapshot */

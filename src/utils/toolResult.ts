@@ -1,7 +1,7 @@
 import { compactError } from "./errors.js";
 import { stableJson } from "./json.js";
-import { redactSensitiveValue } from "./redaction.js";
 import { isRecord } from "./records.js";
+import { safeJsonClone } from "./safeClone.js";
 
 export type BrowserTextCommandResult = {
 	content: Array<{ type: "text"; text: string }>;
@@ -47,7 +47,7 @@ function isRuntimeResultKey(key: string): boolean {
 	);
 }
 
-type PublicToolValueOptions = { preserveExecutionData?: boolean; preserveBodyFields?: boolean };
+type PublicToolValueOptions = { preserveExecutionData?: boolean };
 
 function projectRecord(value: Record<string, unknown>, options: PublicToolValueOptions): Record<string, unknown> {
 	if (isExecutionEnvelope(value)) {
@@ -80,8 +80,9 @@ export function publicToolValue(value: unknown, options: PublicToolValueOptions 
 	return isRecord(value) ? projectRecord(value, options) : value;
 }
 
+/** Details travel over the daemon's JSON control channel; stableJson breaks cycles and drops undefined. */
 function normalizeDetails(details: Record<string, unknown>): Record<string, unknown> {
-	return JSON.parse(stableJson(redactSensitiveValue(details))) as Record<string, unknown>;
+	return JSON.parse(stableJson(details)) as Record<string, unknown>;
 }
 
 export function jsonResult(
@@ -90,17 +91,7 @@ export function jsonResult(
 	options: PublicToolValueOptions = {},
 ): BrowserTextCommandResult {
 	return {
-		content: [
-			{
-				type: "text",
-				text: stableJson(
-					publicToolValue(
-						redactSensitiveValue(value, { preserveBodyFields: options.preserveBodyFields }),
-						options,
-					),
-				),
-			},
-		],
+		content: [{ type: "text", text: stableJson(publicToolValue(safeJsonClone(value), options)) }],
 		details: normalizeDetails(details),
 	};
 }

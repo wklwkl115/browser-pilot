@@ -1,4 +1,4 @@
-import { integerInRange as numberInRange, redactSensitive, runtimeRecord as asRecord } from "./runtimeSupport.js";
+import { integerInRange as numberInRange, serializable, runtimeRecord as asRecord } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
 export type InterceptPhase = "request" | "response";
@@ -250,7 +250,7 @@ export function normalizeInterceptRule(msg: BrowserPilotBridgeCommand | JsonReco
 export function rememberInterceptTranscript(session: InterceptSession | null | undefined, entry: JsonRecord): void {
 	if (!session) return;
 	session.seq += 1;
-	const item: InterceptTranscriptEntry = redactSensitive({
+	const item: InterceptTranscriptEntry = serializable({
 		seq: session.seq,
 		t: Date.now(),
 		...entry,
@@ -263,7 +263,7 @@ export function rememberInterceptTranscript(session: InterceptSession | null | u
 
 export function rememberInterceptDiagnostic(session: InterceptSession | null | undefined, entry: JsonRecord): void {
 	if (!session) return;
-	session.diagnostics.push(redactSensitive({ t: Date.now(), ...entry }) as JsonRecord);
+	session.diagnostics.push(serializable({ t: Date.now(), ...entry }) as JsonRecord);
 	if (session.diagnostics.length > 100) session.diagnostics.splice(0, session.diagnostics.length - 100);
 }
 

@@ -196,7 +196,6 @@ function registerOwnedRef(
 				topLevelOrigin: "https://example.test",
 			},
 			policy: {
-				redaction: "default",
 				shareableAcrossSessions: false,
 				liveActionsAllowed: options.liveActionsAllowed !== false,
 			},
@@ -228,7 +227,7 @@ function registerVisualRef(options: { artifactPath?: string } = {}): string {
 			kind: "region",
 			locators: [{ by: "point", x: 50, y: 50 }],
 			owner: { browserSessionId: "session-1", tabId: 7, topLevelOrigin: "https://example.test" },
-			policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
+			policy: { shareableAcrossSessions: false, liveActionsAllowed: true },
 			semantic: { role: "region", name: "visual viewport" },
 			geometry: { box: { x: 0, y: 0, w: 100, h: 100 } },
 			observationId: "visual-observation-1",
@@ -430,27 +429,17 @@ test("commands execution: browser_command preserves large JSON results", async (
 	assert.equal(((result.result as Record<string, unknown>).largeText as string).length, payload.length);
 });
 
-test("commands execution: network.body preserves requested content while redacting embedded credentials", async () => {
+test("commands execution: network.body returns the captured body verbatim", async () => {
+	const body =
+		'{"token":"sec\\"ret","api_key":123,"items":[{"password":"hidden"}],"__proto__":{"marker":"keep"},"ok":true}';
 	const runtime = createRuntime({
 		async sendCommand() {
-			return {
-				id: "body",
-				acknowledged: true,
-				data: {
-					body: '{"token":"sec\\"ret","api_key":123,"items":[{"password":"hidden"}],"__proto__":{"marker":"keep"},"ok":true}',
-				},
-			} as BrowserBridgeExecutionResult;
+			return { id: "body", acknowledged: true, data: { body } } as BrowserBridgeExecutionResult;
 		},
 	});
 	const command = defineCommand((context) => defineNativeCommand(context), runtime);
 	const result = parseResult(await command.execute({ command: { cmd: "network.body", requestId: "request-1" } }));
-	const body = JSON.parse(String((result.result as Record<string, unknown>).body)) as Record<string, unknown>;
-	assert.deepEqual(
-		body,
-		JSON.parse(
-			'{"token":"[redacted]","api_key":"[redacted]","items":[{"password":"[redacted]"}],"__proto__":{"marker":"keep"},"ok":true}',
-		),
-	);
+	assert.equal((result.result as Record<string, unknown>).body, body);
 });
 
 test("tool results preserve complete metadata", () => {
@@ -458,28 +447,26 @@ test("tool results preserve complete metadata", () => {
 	assert.equal(jsonResult({}, { diagnosticText }).details?.diagnosticText, diagnosticText);
 });
 
-test("tool results redact sensitive values by default", () => {
-	const result = jsonResult({
-		cookies: [{ name: "session", value: "cookie-secret" }],
-		body: "body-secret",
-		headers: { Authorization: "Bearer authorization-secret" },
-	});
-	const raw = result.content[0]?.text || "";
-	assert.doesNotMatch(raw, /cookie-secret|body-secret|authorization-secret/);
-	assert.deepEqual(JSON.parse(raw), {
-		body: "[redacted body]",
-		cookies: "[redacted]",
-		headers: { Authorization: "[redacted]" },
-	});
-	assert.deepEqual(parseResult(jsonResult({ body: { foo: "secret", nested: { bar: "hidden" } } })), {
-		body: "[redacted body]",
-	});
+test("tool results pass page and network content through without content filtering", () => {
+	const value = {
+		cookies: [{ name: "session", value: "cookie-value" }],
+		body: "body-text",
+		headers: { Authorization: "Bearer header-value" },
+		url: "https://example.test/search?q=browser+automation",
+		text: "Cookie: We use cookies to improve your experience",
+	};
+	assert.deepEqual(parseResult(jsonResult(value)), value);
 });
 
-test("tool result redaction bounds adversarial nesting", () => {
+test("tool results stay serializable for cyclic and deeply nested values", () => {
 	let value: Record<string, unknown> = { leaf: "visible" };
 	for (let depth = 0; depth < 20; depth += 1) value = { next: value };
-	assert.match(jsonResult(value).content[0]?.text || "", /redacted depth/);
+	assert.match(jsonResult(value).content[0]?.text || "", /"leaf": "visible"/);
+	for (let depth = 0; depth < 40; depth += 1) value = { next: value };
+	assert.match(jsonResult(value).content[0]?.text || "", /\[depth limit\]/);
+	const cyclic: Record<string, unknown> = { name: "loop" };
+	cyclic.self = cyclic;
+	assert.match(jsonResult(cyclic).content[0]?.text || "", /\[Circular\]/);
 });
 
 test("commands execution: browser_command writes return domain data and effect", async () => {

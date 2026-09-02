@@ -29,7 +29,6 @@ import { getNativeCommandProtocolSchema } from "../../types/nativeProtocol.js";
 import { packageVersion } from "../daemon/packageInfo.js";
 import { invokeDaemonTool } from "./client.js";
 import { getJsonPath } from "../../utils/jsonPath.js";
-import { redactSensitiveText, redactSensitiveValue } from "../../artifacts/artifactPrivacy.js";
 import { PAGE_OBSERVATION_VIEW_JSON_SCHEMA, type PageObservationV3 } from "../../kernels/abml/pageObservation.js";
 import { isPageObservationV3, isPageObservationView } from "../../validation/pageContracts.js";
 import {
@@ -96,7 +95,7 @@ const OBSERVE_VIEW_KEY_DESCRIPTIONS: Record<keyof typeof PAGE_OBSERVATION_VIEW_J
 	gist: "Title and landmark roles present; one-glance orientation.",
 	outline: "Containers with member counts and refs; the skeleton of the page.",
 	actionSpace:
-		"items: actionable controls with ref, role, name, actions (click/edit), state, scope; coverage says whether all controls were captured.",
+		"items: actionable controls with ref, role, name, current value/placeholder/inputKind for fields, href for links, actions (click/edit), state, scope; coverage says whether all controls were captured.",
 	relations: "Accessibility relation counts plus a few highlights.",
 	causal: "Network requests and page events since the baseline, attributed to the last action, or unavailable.",
 	treeDiff: "Summary of repeated-structure changes since the baseline (appeared/disappeared/changed/reordered).",
@@ -366,11 +365,12 @@ function publicContent(content: McpContent[]): McpContent[] {
 	});
 }
 
+/** Strip runtime routing fields from JSON text; non-JSON text passes through unchanged. */
 function publicJsonText(value: string): string {
 	try {
-		return JSON.stringify(publicToolValue(redactSensitiveValue(JSON.parse(value) as unknown)));
+		return JSON.stringify(publicToolValue(JSON.parse(value) as unknown));
 	} catch {
-		return redactSensitiveText(value);
+		return value;
 	}
 }
 
@@ -573,14 +573,12 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 		} else {
 			throw new Error("Observation resource target is invalid");
 		}
-		const payload = publicToolValue(
-			redactSensitiveValue({
-				ref: descriptor.ref,
-				kind: descriptor.kind,
-				...(descriptor.label ? { label: descriptor.label } : {}),
-				value,
-			}),
-		);
+		const payload = publicToolValue({
+			ref: descriptor.ref,
+			kind: descriptor.kind,
+			...(descriptor.label ? { label: descriptor.label } : {}),
+			value,
+		});
 		return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(payload) }] };
 	}
 	const requested = safeArtifactPath(uri, projectRoot);
@@ -595,7 +593,7 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 	return mimeType === "application/json"
 		? { contents: [{ uri, mimeType, text: publicJsonText(data.toString("utf8")) }] }
 		: mimeType.startsWith("text/")
-			? { contents: [{ uri, mimeType, text: redactSensitiveText(data.toString("utf8")) }] }
+			? { contents: [{ uri, mimeType, text: data.toString("utf8") }] }
 			: { contents: [{ uri, mimeType, blob: data.toString("base64") }] };
 }
 
