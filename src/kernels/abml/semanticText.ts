@@ -69,8 +69,10 @@ function looksLikeUnsafeSemantic(raw: string, stripped: string): boolean {
 		return true;
 	if (/^<[^>]+>$/.test(raw.trim()) && raw.replace(/<[^>]*>/g, "").trim().length === 0) return true;
 	if (/^(?:[.#][A-Za-z0-9_-]+|[A-Za-z][\w-]*(?:[#.:[\]-]|\s*[>+~]\s*)+)$/.test(text)) return true;
+	// A tag name counts as selector-like only when selector punctuation or a combinator follows it;
+	// plain words that merely start with a tag name ("About", "link", "Gallery") are real labels.
 	if (
-		/^(?:div|span|button|a|input|svg|path|g|use|ul|li|section|article|nav|main)(?:[.#:[\]\w-]|\s*[>+~]\s*)+$/i.test(
+		/^(?:div|span|button|a|input|svg|path|g|use|ul|li|section|article|nav|main)(?:[.#:[\]]|\s*[>+~]\s*)[\w\s.#:()[\]>+~="'-]*$/i.test(
 			text,
 		)
 	)
