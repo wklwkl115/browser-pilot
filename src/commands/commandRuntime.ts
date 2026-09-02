@@ -1,3 +1,4 @@
+import type { Static, TObject } from "typebox";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
@@ -10,16 +11,45 @@ import { pageReanchorReason } from "../kernels/session/pageIdentity.js";
 import type { ExecutionRefTarget } from "../browser-command-runtime/executionRef.js";
 import { pageIdentityFromUnknown } from "./observe/pageIdentity.js";
 import { asPositiveInt, optionalTargetRef } from "./commandShared.js";
-import type { BrowserCommandDefinition, BrowserCommandExecuteContext, BrowserCommandSink } from "./commandDefinition.js";
+import type {
+	BrowserCommandDefinition,
+	BrowserCommandExecuteContext,
+	BrowserCommandResult,
+	BrowserCommandSink,
+} from "./commandDefinition.js";
 
 /** Hard ceiling for any command timeout to prevent unbounded hangs. */
 const MAX_COMMAND_TIMEOUT_MS = 300_000;
 
 export type CommandResultContext = BrowserCommandExecuteContext | undefined;
 
-export function defineBrowserCommand(commands: BrowserCommandSink, spec: BrowserCommandDefinition) {
-	commands.define(spec);
-	return spec;
+/**
+ * A tool definition whose `execute` receives parameters typed from its own TypeBox schema.
+ * The daemon validates arguments against `parameters` before calling `execute`, so the cast
+ * at the boundary is sound; command modules never need to re-declare their parameter types.
+ */
+export type TypedBrowserCommandDefinition<T extends TObject> = Omit<
+	BrowserCommandDefinition,
+	"parameters" | "execute"
+> & {
+	parameters: T;
+	execute: (
+		params: Static<T>,
+		signal?: AbortSignal,
+		ctx?: BrowserCommandExecuteContext,
+	) => Promise<BrowserCommandResult> | BrowserCommandResult;
+};
+
+export function defineBrowserCommand<T extends TObject>(
+	commands: BrowserCommandSink,
+	spec: TypedBrowserCommandDefinition<T>,
+): BrowserCommandDefinition {
+	const definition: BrowserCommandDefinition = {
+		...spec,
+		execute: (params, signal, ctx) => spec.execute(params as Static<T>, signal, ctx),
+	};
+	commands.define(definition);
+	return definition;
 }
 
 export function sharedTabScopedToolParams(targetRefDescription?: string) {
@@ -37,15 +67,27 @@ export function targetTabId(params: { targetRef?: string }, body?: Record<string
 	return params.targetRef ?? body?.targetRef ?? body?.tabHandle ?? body?.tabId;
 }
 
-export function resolveLocalTargetTabId(server: Partial<Pick<BrowserCommandRuntimePort, "resolveTargetTabId">>, value: unknown, browserSessionId?: string): number | undefined {
+export function resolveLocalTargetTabId(
+	server: Partial<Pick<BrowserCommandRuntimePort, "resolveTargetTabId">>,
+	value: unknown,
+	browserSessionId?: string,
+): number | undefined {
 	if (value === undefined) return undefined;
 	if (typeof server.resolveTargetTabId === "function") return server.resolveTargetTabId(value, browserSessionId);
 	return normalizeTabId(value);
 }
 
-function soleRefOwner<T extends string | number>(refs: ExecutionRefTarget[], field: "browserSessionId" | "tabId"): T | undefined {
+function soleRefOwner<T extends string | number>(
+	refs: ExecutionRefTarget[],
+	field: "browserSessionId" | "tabId",
+): T | undefined {
 	const values = new Set(refs.map((ref) => ref.owner[field]).filter((value): value is T => value !== undefined));
-	if (values.size > 1) throw new BrowserBridgeError("REF_SCOPE_VIOLATION", `Referenced elements belong to different ${field === "tabId" ? "tabs" : "browser sessions"}`, { refs: refs.map((ref) => ref.refId) });
+	if (values.size > 1)
+		throw new BrowserBridgeError(
+			"REF_SCOPE_VIOLATION",
+			`Referenced elements belong to different ${field === "tabId" ? "tabs" : "browser sessions"}`,
+			{ refs: refs.map((ref) => ref.refId) },
+		);
 	return values.values().next().value;
 }
 
@@ -57,36 +99,67 @@ export function resolveRefExecutionTarget(
 	const allRefs = options.observedRefs?.length ? [...refs, ...options.observedRefs] : refs;
 	if (!allRefs.length) {
 		const tabId = resolveLocalTargetTabId(server, options.rawTarget, options.browserSessionId);
-		return { browserSessionId: options.browserSessionId, rawTarget: options.rawTarget as string | number | undefined, tabId };
+		return {
+			browserSessionId: options.browserSessionId,
+			rawTarget: options.rawTarget as string | number | undefined,
+			tabId,
+		};
 	}
 	const stale = allRefs.find((ref) => !ref.fresh);
 	if (stale) throw new BrowserBridgeError("REF_STALE", "Referenced browser state is stale", { ref: stale.refId });
 	const blocked = refs.find((ref) => ref.policy.liveActionsAllowed !== true);
-	if (blocked) throw new BrowserBridgeError("INVALID_RULE", "Referenced browser state does not allow live actions", { ref: blocked.refId });
+	if (blocked)
+		throw new BrowserBridgeError("INVALID_RULE", "Referenced browser state does not allow live actions", {
+			ref: blocked.refId,
+		});
 	const unowned = allRefs.find((ref) => ref.owner.tabId === undefined);
-	if (unowned) throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Referenced browser state must own a browser tab", { ref: unowned.refId });
+	if (unowned)
+		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Referenced browser state must own a browser tab", {
+			ref: unowned.refId,
+		});
 
 	const ownerSession = soleRefOwner<string>(allRefs, "browserSessionId");
 	const ownerTabId = soleRefOwner<number>(allRefs, "tabId");
 	if (options.browserSessionId && ownerSession && options.browserSessionId !== ownerSession) {
-		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit browserSessionId conflicts with ref ownership", { browserSessionId: options.browserSessionId, ownerBrowserSessionId: ownerSession, refs: allRefs.map((ref) => ref.refId) });
+		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit browserSessionId conflicts with ref ownership", {
+			browserSessionId: options.browserSessionId,
+			ownerBrowserSessionId: ownerSession,
+			refs: allRefs.map((ref) => ref.refId),
+		});
 	}
 	const browserSessionId = ownerSession ?? options.browserSessionId;
 	let canonicalOwnerTabId: number | undefined;
 	try {
-		canonicalOwnerTabId = ownerTabId === undefined ? undefined : resolveLocalTargetTabId(server, ownerTabId, browserSessionId);
+		canonicalOwnerTabId =
+			ownerTabId === undefined ? undefined : resolveLocalTargetTabId(server, ownerTabId, browserSessionId);
 	} catch {
-		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab no longer exists", { ownerTabId, refs: allRefs.map((ref) => ref.refId) });
+		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab no longer exists", {
+			ownerTabId,
+			refs: allRefs.map((ref) => ref.refId),
+		});
 	}
 	if (ownerTabId !== undefined && canonicalOwnerTabId !== ownerTabId) {
-		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab was replaced", { ownerTabId, canonicalOwnerTabId, refs: allRefs.map((ref) => ref.refId) });
+		throw new BrowserBridgeError("REF_STALE", "Referenced browser tab was replaced", {
+			ownerTabId,
+			canonicalOwnerTabId,
+			refs: allRefs.map((ref) => ref.refId),
+		});
 	}
-	const explicitTabId = options.rawTarget === undefined ? undefined : resolveLocalTargetTabId(server, options.rawTarget, browserSessionId);
+	const explicitTabId =
+		options.rawTarget === undefined
+			? undefined
+			: resolveLocalTargetTabId(server, options.rawTarget, browserSessionId);
 	if (options.rawTarget !== undefined && (!Number.isInteger(explicitTabId) || explicitTabId! <= 0)) {
-		throw new BrowserBridgeError("INVALID_TAB_ID", "A valid targetRef is required", { targetRef: options.rawTarget });
+		throw new BrowserBridgeError("INVALID_TAB_ID", "A valid targetRef is required", {
+			targetRef: options.rawTarget,
+		});
 	}
 	if (explicitTabId !== undefined && canonicalOwnerTabId !== undefined && explicitTabId !== canonicalOwnerTabId) {
-		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit targetRef conflicts with ref ownership", { tabId: explicitTabId, ownerTabId: canonicalOwnerTabId, refs: allRefs.map((ref) => ref.refId) });
+		throw new BrowserBridgeError("REF_SCOPE_VIOLATION", "Explicit targetRef conflicts with ref ownership", {
+			tabId: explicitTabId,
+			ownerTabId: canonicalOwnerTabId,
+			refs: allRefs.map((ref) => ref.refId),
+		});
 	}
 	const tabId = canonicalOwnerTabId ?? explicitTabId;
 	const snapshot = server.snapshot({ browserSessionId });
@@ -95,12 +168,32 @@ export function resolveRefExecutionTarget(
 	const currentOrigin = urlOrigin(currentTab?.url);
 	const currentIdentity = pageIdentityFromUnknown({ ...currentTab, browserSessionId: effectiveBrowserSessionId });
 	for (const ref of allRefs) {
-		const scope = classifyRefScope(ref, { browserSessionId: effectiveBrowserSessionId, tabId, topLevelOrigin: currentOrigin });
-		if (!scope.ok) throw new BrowserBridgeError(scope.code, `Ref scope violation: ${scope.reason}`, { ref: ref.refId, browserSessionId: effectiveBrowserSessionId, tabId, topLevelOrigin: currentOrigin });
+		const scope = classifyRefScope(ref, {
+			browserSessionId: effectiveBrowserSessionId,
+			tabId,
+			topLevelOrigin: currentOrigin,
+		});
+		if (!scope.ok)
+			throw new BrowserBridgeError(scope.code, `Ref scope violation: ${scope.reason}`, {
+				ref: ref.refId,
+				browserSessionId: effectiveBrowserSessionId,
+				tabId,
+				topLevelOrigin: currentOrigin,
+			});
 		const reason = pageReanchorReason(ref.pageIdentity, currentIdentity);
-		if (reason) throw new BrowserBridgeError("REF_STALE", "Referenced page identity cannot be proven current", { ref: ref.refId, reason, observed: ref.pageIdentity, current: currentIdentity });
+		if (reason)
+			throw new BrowserBridgeError("REF_STALE", "Referenced page identity cannot be proven current", {
+				ref: ref.refId,
+				reason,
+				observed: ref.pageIdentity,
+				current: currentIdentity,
+			});
 	}
-	return { browserSessionId: effectiveBrowserSessionId, rawTarget: options.rawTarget === undefined ? tabId : options.rawTarget as string | number, tabId };
+	return {
+		browserSessionId: effectiveBrowserSessionId,
+		rawTarget: options.rawTarget === undefined ? tabId : (options.rawTarget as string | number),
+		tabId,
+	};
 }
 
 export function pinTabExecutionTarget(
@@ -116,7 +209,10 @@ export function pinTabExecutionTarget(
 	};
 }
 
-export async function runCommandHandler(handler: () => Promise<BrowserTextCommandResult>, onError: (error: unknown) => BrowserTextCommandResult | Promise<BrowserTextCommandResult> = errorResult): Promise<BrowserTextCommandResult> {
+export async function runCommandHandler(
+	handler: () => Promise<BrowserTextCommandResult>,
+	onError: (error: unknown) => BrowserTextCommandResult | Promise<BrowserTextCommandResult> = errorResult,
+): Promise<BrowserTextCommandResult> {
 	try {
 		return await handler();
 	} catch (error) {
@@ -124,18 +220,28 @@ export async function runCommandHandler(handler: () => Promise<BrowserTextComman
 	}
 }
 
-export function bridgeNestedErrorResult(error: unknown, options: { command?: string; defaultMessage: string; includeCommandInDetails?: boolean }): BrowserTextCommandResult {
-	const details = error && typeof error === "object" && "details" in error ? (error as { details?: unknown }).details : undefined;
+export function bridgeNestedErrorResult(
+	error: unknown,
+	options: { command?: string; defaultMessage: string; includeCommandInDetails?: boolean },
+): BrowserTextCommandResult {
+	const details =
+		error && typeof error === "object" && "details" in error ? (error as { details?: unknown }).details : undefined;
 	const detailsRecord = isRecord(details) ? details : undefined;
 	const result = detailsRecord?.result;
 	if (isRecord(result)) {
 		const record = result;
 		if (typeof record.error_code === "string" && record.error_code) {
 			const resultDetails = isRecord(record.details) ? record.details : {};
-			return errorResult(new BrowserBridgeError(normalizeNativeErrorCode(record.error_code), typeof record.error === "string" ? record.error : options.defaultMessage, {
-				...(options.includeCommandInDetails && options.command ? { command: options.command } : {}),
-				...resultDetails,
-			}));
+			return errorResult(
+				new BrowserBridgeError(
+					normalizeNativeErrorCode(record.error_code),
+					typeof record.error === "string" ? record.error : options.defaultMessage,
+					{
+						...(options.includeCommandInDetails && options.command ? { command: options.command } : {}),
+						...resultDetails,
+					},
+				),
+			);
 		}
 	}
 	return errorResult(error);

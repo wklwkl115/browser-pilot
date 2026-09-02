@@ -1,4 +1,4 @@
-// ABML mechanism arm — M2b semantic ref anchor candidates (pure core).
+// Concept: "Ref" re-anchoring for repeated structures (docs/concepts.md) — semantic anchor candidates (pure core).
 //
 // Repeated-structure instances are matched by semantic keys without changing bp-ref minting.
 import type { Entity, EntityKind } from "./entity.js";
@@ -42,8 +42,9 @@ export type SemanticRefAnchorSummary = {
 };
 
 function groupEntities(entities: Entity[]): TemplateGroup[] {
-	return suppressNestedNonControlGroups(rawGroupEntities(entities))
-		.sort((a, b) => b.members.length - a.members.length);
+	return suppressNestedNonControlGroups(rawGroupEntities(entities)).sort(
+		(a, b) => b.members.length - a.members.length,
+	);
 }
 
 function nameCounts(group: TemplateGroup): Map<string, number> {
@@ -56,7 +57,11 @@ function nameCounts(group: TemplateGroup): Map<string, number> {
 	return counts;
 }
 
-function anchorFor(group: TemplateGroup, item: IndexedEntity, counts: Map<string, number>): SemanticRefAnchor | undefined {
+function anchorFor(
+	group: TemplateGroup,
+	item: IndexedEntity,
+	counts: Map<string, number>,
+): SemanticRefAnchor | undefined {
 	const normalizedName = normalizeEntityText(item.entity.name);
 	const rawName = displayEntityText(item.entity.name);
 	const posInSet = item.entity.structure?.posInSet;
@@ -81,7 +86,12 @@ function anchorFor(group: TemplateGroup, item: IndexedEntity, counts: Map<string
 		};
 	}
 	if (typeof posInSet !== "number") return undefined;
-	return { ...base, confidence: "low", reason: normalizedName ? "duplicate-name" : "missing-name", mintingEligible: false };
+	return {
+		...base,
+		confidence: "low",
+		reason: normalizedName ? "duplicate-name" : "missing-name",
+		mintingEligible: false,
+	};
 }
 
 export function deriveSemanticRefAnchors(entities: Entity[]): SemanticRefAnchorSummary {
@@ -96,14 +106,27 @@ export function deriveSemanticRefAnchors(entities: Entity[]): SemanticRefAnchorS
 	const signatures = new Map<string, number>();
 	for (const { anchor } of anchors) {
 		if (!anchor.mintingEligible) continue;
-		const key = JSON.stringify([anchor.containerRole, anchor.containerName ?? "", anchor.role, anchor.kind, anchor.normalizedName]);
+		const key = JSON.stringify([
+			anchor.containerRole,
+			anchor.containerName ?? "",
+			anchor.role,
+			anchor.kind,
+			anchor.normalizedName,
+		]);
 		signatures.set(key, (signatures.get(key) ?? 0) + 1);
 	}
 	for (const item of anchors) {
 		const anchor = item.anchor;
 		if (!anchor.mintingEligible) continue;
-		const key = JSON.stringify([anchor.containerRole, anchor.containerName ?? "", anchor.role, anchor.kind, anchor.normalizedName]);
-		if ((signatures.get(key) ?? 0) > 1) item.anchor = { ...anchor, confidence: "low", reason: "duplicate-container", mintingEligible: false };
+		const key = JSON.stringify([
+			anchor.containerRole,
+			anchor.containerName ?? "",
+			anchor.role,
+			anchor.kind,
+			anchor.normalizedName,
+		]);
+		if ((signatures.get(key) ?? 0) > 1)
+			item.anchor = { ...anchor, confidence: "low", reason: "duplicate-container", mintingEligible: false };
 	}
 	return {
 		anchors,

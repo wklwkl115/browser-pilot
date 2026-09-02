@@ -1,3 +1,5 @@
+// Concept: "Ref" stability across re-renders (docs/concepts.md). Reconciles entity identity between
+// two observations of the same page using semantic keys, so refs survive DOM churn.
 import type { Entity } from "./entity.js";
 import { normalizeEntityText } from "./grouping.js";
 import { deriveSemanticRefAnchors } from "./semanticRefAnchor.js";
@@ -61,12 +63,25 @@ function templateKeys(entities: Entity[]): Map<string, string> {
 	const keys = new Map<string, string>();
 	for (const { ref, anchor } of deriveSemanticRefAnchors(entities).anchors) {
 		if (!anchor.mintingEligible || anchor.confidence !== "high" || !anchor.normalizedName) continue;
-		keys.set(ref, JSON.stringify([anchor.containerRole ?? "", anchor.containerName ?? "", anchor.role, anchor.kind, anchor.normalizedName]));
+		keys.set(
+			ref,
+			JSON.stringify([
+				anchor.containerRole ?? "",
+				anchor.containerName ?? "",
+				anchor.role,
+				anchor.kind,
+				anchor.normalizedName,
+			]),
+		);
 	}
 	return keys;
 }
 
-function indexByKey(entities: Entity[], indexes: Iterable<number>, keyFor: (entity: Entity) => string | undefined): Map<string, number[]> {
+function indexByKey(
+	entities: Entity[],
+	indexes: Iterable<number>,
+	keyFor: (entity: Entity) => string | undefined,
+): Map<string, number[]> {
 	const out = new Map<string, number[]>();
 	for (const index of indexes) {
 		const key = keyFor(entities[index]!);
@@ -100,7 +115,14 @@ export function reconcileEntityIdentities(previous: Entity[], current: Entity[])
 	const matchedPrevious = new Set<number>();
 	const matchedCurrent = new Set<number>();
 	const ambiguousCurrent = new Set<number>();
-	const diagnostics: IdentityReconciliationDiagnostics = { exact: 0, template: 0, semantic: 0, geometry: 0, created: 0, ambiguous: 0 };
+	const diagnostics: IdentityReconciliationDiagnostics = {
+		exact: 0,
+		template: 0,
+		semantic: 0,
+		geometry: 0,
+		created: 0,
+		ambiguous: 0,
+	};
 	const previousByRef = new Map(previous.map((entity, index) => [entity.ref, index]));
 
 	const match = (previousIndex: number, currentIndex: number, method: MatchMethod) => {
@@ -120,20 +142,29 @@ export function reconcileEntityIdentities(previous: Entity[], current: Entity[])
 
 	const unmatchedPrevious = () => Array.from(previous.keys()).filter((index) => !matchedPrevious.has(index));
 	const unmatchedCurrent = () => Array.from(current.keys()).filter((index) => !matchedCurrent.has(index));
-	const matchUnique = (method: "template" | "semantic", previousKey: (entity: Entity) => string | undefined, currentKey = previousKey) => {
+	const matchUnique = (
+		method: "template" | "semantic",
+		previousKey: (entity: Entity) => string | undefined,
+		currentKey = previousKey,
+	) => {
 		const before = indexByKey(previous, unmatchedPrevious(), previousKey);
 		const after = indexByKey(current, unmatchedCurrent(), currentKey);
 		for (const [key, currentIndexes] of after) {
 			const previousIndexes = before.get(key);
 			if (!previousIndexes) continue;
-			if (previousIndexes.length === 1 && currentIndexes.length === 1) match(previousIndexes[0]!, currentIndexes[0]!, method);
+			if (previousIndexes.length === 1 && currentIndexes.length === 1)
+				match(previousIndexes[0]!, currentIndexes[0]!, method);
 			else for (const index of currentIndexes) ambiguousCurrent.add(index);
 		}
 	};
 
 	const previousTemplates = templateKeys(previous);
 	const currentTemplates = templateKeys(current);
-	matchUnique("template", (entity) => previousTemplates.get(entity.ref), (entity) => currentTemplates.get(entity.ref));
+	matchUnique(
+		"template",
+		(entity) => previousTemplates.get(entity.ref),
+		(entity) => currentTemplates.get(entity.ref),
+	);
 	matchUnique("semantic", scopedSemanticKey);
 	matchUnique("semantic", globalSemanticKey);
 
@@ -151,7 +182,8 @@ export function reconcileEntityIdentities(previous: Entity[], current: Entity[])
 		const previousName = text(previous[previousIndex]!.name);
 		const currentName = text(current[currentIndex]!.name);
 		if (previousName && currentName && previousName !== currentName) continue;
-		if (geometricallyContinuous(previous[previousIndex]!, current[currentIndex]!)) match(previousIndex, currentIndex, "geometry");
+		if (geometricallyContinuous(previous[previousIndex]!, current[currentIndex]!))
+			match(previousIndex, currentIndex, "geometry");
 	}
 
 	diagnostics.created = current.length - matchedCurrent.size;

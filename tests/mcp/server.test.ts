@@ -7,12 +7,23 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { mcpProjectRoot, mcpResources, mcpResourceTemplates, mcpTools, readMcpResource, registerMcpObservationResources } from "../../src/apps/mcp/server.ts";
+import {
+	mcpProjectRoot,
+	mcpResources,
+	mcpResourceTemplates,
+	mcpTools,
+	readMcpResource,
+	registerMcpObservationResources,
+} from "../../src/apps/mcp/server.ts";
 import { publicNativeCommandNames } from "../../src/commands/nativeCommandAccess.ts";
 import { buildPageObservation } from "../../src/commands/observe/scanProjection.ts";
 import { pageObservationResult } from "../../src/commands/resultMiddleware.ts";
-import { OBSERVATION_RESOURCES_DETAIL_KEY, type ObservationResourceDescriptor } from "../../src/commands/observe/observationResources.ts";
+import {
+	OBSERVATION_RESOURCES_DETAIL_KEY,
+	type ObservationResourceDescriptor,
+} from "../../src/commands/observe/observationResources.ts";
 import type { Entity } from "../../src/kernels/abml/entity.ts";
+import { PAGE_OBSERVATION_VIEW_JSON_SCHEMA } from "../../src/kernels/abml/pageObservation.ts";
 
 function resourceText(resource: Awaited<ReturnType<typeof readMcpResource>>): string {
 	const content = resource.contents[0];
@@ -21,30 +32,69 @@ function resourceText(resource: Awaited<ReturnType<typeof readMcpResource>>): st
 
 test("MCP publishes the command catalog as tools", () => {
 	const tools = mcpTools();
-	assert.deepEqual(tools.map((tool) => tool.name), [
-		"browser_tabs", "browser_command", "browser_execute", "browser_observe",
-		"browser_screenshot",
-	]);
+	assert.deepEqual(
+		tools.map((tool) => tool.name),
+		["browser_tabs", "browser_command", "browser_execute", "browser_observe", "browser_screenshot"],
+	);
 	assert.ok(tools.every((tool) => tool.inputSchema.type === "object"));
 	const observeSchema = tools.find((tool) => tool.name === "browser_observe")?.outputSchema;
-	assert.equal(observeSchema?.$id, "browser-page-observation-view/v2");
-	assert.doesNotMatch(JSON.stringify(observeSchema), /browserSessionId|tabId|targetGeneration|pageEpoch|documentId|frameScope|selectionVersion|sourceMode|networkSeq|hookSeq|reanchorReason|baselineSnapshotId|snapshotId|observationId|changeSeq|sinceSeq|sha256|reservedMs|actualMs|bridgeRoundTrips|planned|providers|diagnostics|canonical/);
+	// The advertised schema is shallow and described; the full nested contract stays internal.
+	assert.deepEqual(
+		Object.keys(observeSchema?.properties ?? {}),
+		Object.keys(PAGE_OBSERVATION_VIEW_JSON_SCHEMA.properties),
+	);
+	assert.deepEqual(observeSchema?.required, ["target"]);
+	assert.ok(JSON.stringify(observeSchema).length < 2_500, "observe outputSchema should stay compact");
+	for (const property of Object.values(observeSchema?.properties ?? {}) as Array<Record<string, unknown>>) {
+		assert.equal(typeof property.description, "string");
+		assert.equal("properties" in property, false);
+	}
+	assert.doesNotMatch(
+		JSON.stringify(observeSchema),
+		/browserSessionId|tabId|targetGeneration|pageEpoch|documentId|frameScope|selectionVersion|sourceMode|networkSeq|hookSeq|reanchorReason|baselineSnapshotId|snapshotId|observationId|changeSeq|sinceSeq|sha256|reservedMs|actualMs|bridgeRoundTrips|planned|providers|diagnostics|canonical/,
+	);
 	const observeProperties = observeSchema?.properties as Record<string, unknown>;
-	for (const internal of ["schema", "tool", "model", "canonical", "snapshot", "providers", "diagnostics", "snapshotProjection", "delta", "baselineSnapshotId", "reanchorReason", "entities", "diff", "identity"]) assert.equal(internal in observeProperties, false);
+	for (const internal of [
+		"schema",
+		"tool",
+		"model",
+		"canonical",
+		"snapshot",
+		"providers",
+		"diagnostics",
+		"snapshotProjection",
+		"delta",
+		"baselineSnapshotId",
+		"reanchorReason",
+		"entities",
+		"diff",
+		"identity",
+	])
+		assert.equal(internal in observeProperties, false);
 	const tabs = tools.find((tool) => tool.name === "browser_tabs")!;
 	const tabProperties = tabs.inputSchema.properties as Record<string, Record<string, unknown>>;
-	assert.deepEqual(tabProperties.action.enum, ["list", "switch", "create", "close"]);
+	assert.deepEqual(tabProperties.action.enum, ["list", "switch", "create", "close", "navigate"]);
 	assert.equal("browserSessionId" in tabProperties, false);
-	assert.deepEqual((tabs.outputSchema?.required as string[]), ["tabs"]);
-	assert.match(tabs.description ?? "", /Omit browser_tabs when the selected active tab is already the intended target/);
+	assert.deepEqual(tabs.outputSchema?.required as string[], ["tabs"]);
+	assert.match(
+		tabs.description ?? "",
+		/Omit browser_tabs when the selected active tab is already the intended target/,
+	);
 	const native = tools.find((tool) => tool.name === "browser_command")!;
 	const nativeProperties = native.inputSchema.properties as Record<string, Record<string, unknown>>;
 	const commandProperties = nativeProperties.command.properties as Record<string, Record<string, unknown>>;
-	assert.deepEqual(commandProperties.cmd.enum, publicNativeCommandNames());
+	assert.equal(commandProperties.cmd.enum, undefined);
+	assert.match(String(commandProperties.cmd.description), /Core: .*input\.ref.*Advanced \(/);
 	assert.match(native.description ?? "", /browser-pilot:\/\/native-command\/<cmd>/);
-	assert.match(tools.find((tool) => tool.name === "browser_execute")?.description ?? "", /Combine deterministic same-page reads, writes, and waits in one script/);
-	assert.deepEqual((tools.find((tool) => tool.name === "browser_screenshot")?.outputSchema?.required as string[]), ["captured"]);
-	for (const tool of tools.filter((item) => item.name !== "browser_tabs")) assert.doesNotMatch(tool.description ?? "", /Use targetRef from browser_tabs list\/create/);
+	assert.match(
+		tools.find((tool) => tool.name === "browser_execute")?.description ?? "",
+		/Combine deterministic same-page reads, writes, and waits in one script/,
+	);
+	assert.deepEqual(tools.find((tool) => tool.name === "browser_screenshot")?.outputSchema?.required as string[], [
+		"captured",
+	]);
+	for (const tool of tools.filter((item) => item.name !== "browser_tabs"))
+		assert.doesNotMatch(tool.description ?? "", /Use targetRef from browser_tabs list\/create/);
 });
 
 test("MCP uses the configured project root", () => {
@@ -62,9 +112,20 @@ test("MCP resources expose a compact native index, per-command schemas, and proj
 	assert.equal(mcpResources()[0]?.uri, "browser-pilot://native-commands");
 	const native = await readMcpResource("browser-pilot://native-commands");
 	assert.match(resourceText(native), /"network\.list"/);
-	const nativeResource = JSON.parse(resourceText(native)) as { commands: Record<string, { paramsSchema?: object }> };
+	const nativeResource = JSON.parse(resourceText(native)) as {
+		commands: Record<string, { paramsSchema?: object; tier?: string }>;
+		tiers: { core: string[]; advanced: string[] };
+	};
 	const nativeCommands = nativeResource.commands;
 	assert.equal(Object.hasOwn(nativeResource, "envelope"), false);
+	assert.deepEqual(
+		[...nativeResource.tiers.core, ...nativeResource.tiers.advanced].sort(),
+		publicNativeCommandNames().sort(),
+	);
+	assert.equal(nativeResource.tiers.core.includes("input.ref"), true);
+	assert.equal(nativeResource.tiers.advanced.includes("hook.install"), true);
+	assert.equal(nativeCommands["hook.install"]?.tier, "advanced");
+	assert.equal(nativeCommands["input.ref"]?.tier, undefined);
 	assert.equal(Object.hasOwn(nativeCommands, "tabs"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "management"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "batch"), false);
@@ -74,49 +135,111 @@ test("MCP resources expose a compact native index, per-command schemas, and proj
 	assert.equal(Object.hasOwn(nativeCommands, "hook.clear"), false);
 	assert.equal(Object.hasOwn(nativeCommands, "transfer.download"), true);
 	assert.ok(Object.values(nativeCommands).every((spec) => !spec.paramsSchema));
-	assert.ok(Object.values(nativeCommands).every((spec) => !("domain" in spec) && !("tabScoped" in spec) && !("methodSpecs" in spec)));
+	assert.ok(
+		Object.values(nativeCommands).every(
+			(spec) => !("domain" in spec) && !("tabScoped" in spec) && !("methodSpecs" in spec),
+		),
+	);
 	assert.doesNotMatch(resourceText(native), /requiredAny/);
-	assert.ok(mcpResourceTemplates().some((template) => template.uriTemplate === "browser-pilot://native-command/{command}"));
-	assert.ok(mcpResourceTemplates().some((template) => template.uriTemplate === "browser-pilot://observation/{token}"));
+	assert.ok(
+		mcpResourceTemplates().some((template) => template.uriTemplate === "browser-pilot://native-command/{command}"),
+	);
+	assert.ok(
+		mcpResourceTemplates().some((template) => template.uriTemplate === "browser-pilot://observation/{token}"),
+	);
 	const command = await readMcpResource("browser-pilot://native-command/network.list");
-	const commandResource = JSON.parse(resourceText(command)) as { envelope?: unknown; paramsSchema?: object; specification?: unknown };
+	const commandResource = JSON.parse(resourceText(command)) as {
+		envelope?: unknown;
+		paramsSchema?: object;
+		specification?: unknown;
+	};
 	assert.equal(commandResource.envelope, undefined);
 	assert.equal(commandResource.specification, undefined);
 	assert.ok(commandResource.paramsSchema);
-	await assert.rejects(() => readMcpResource("browser-pilot://native-command/hook.clear"), /unknown native command resource/i);
-	await assert.rejects(() => readMcpResource("browser-pilot://native-command/persistent_cdp"), /unknown native command resource/i);
+	await assert.rejects(
+		() => readMcpResource("browser-pilot://native-command/hook.clear"),
+		/unknown native command resource/i,
+	);
+	await assert.rejects(
+		() => readMcpResource("browser-pilot://native-command/persistent_cdp"),
+		/unknown native command resource/i,
+	);
 
 	const root = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-mcp-"));
 	try {
 		const artifacts = path.join(root, ".browser-pilot", "artifacts");
 		await mkdir(artifacts, { recursive: true });
-		await writeFile(path.join(artifacts, "sample.json"), JSON.stringify({ ok: true, browserSessionId: "private", nested: { tabId: 7, targetRef: "tab-7" } }));
+		await writeFile(
+			path.join(artifacts, "sample.json"),
+			JSON.stringify({ ok: true, browserSessionId: "private", nested: { tabId: 7, targetRef: "tab-7" } }),
+		);
 		const artifact = await readMcpResource("browser-pilot://artifact/sample.json", root);
 		assert.deepEqual(JSON.parse(resourceText(artifact)), { ok: true, nested: { targetRef: "tab-7" } });
-		await assert.rejects(() => readMcpResource("browser-pilot://artifact/..%2Foutside.txt", root), /invalid resource URI/i);
+		await assert.rejects(
+			() => readMcpResource("browser-pilot://artifact/..%2Foutside.txt", root),
+			/invalid resource URI/i,
+		);
 
 		const observationPath = path.join(artifacts, "observation.json");
 		const observation = buildPageObservation({
-			summary: {}, entities: [], content: "Introduction Details", headings: ["Details"], url: "https://example.test/",
-			activeTabId: 1, snapshot: { snapshotId: "snapshot-resource", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 60_000 },
-			abmlIntegrated: true, diagnostics: {},
-			causal: { sinceSeq: 0, requests: Array.from({ length: 4 }, (_, index) => ({ ref: `bp-ref://network/${index}`, url: `https://example.test/${index}` })) },
+			summary: {},
+			entities: [],
+			content: "Introduction Details",
+			headings: ["Details"],
+			url: "https://example.test/",
+			activeTabId: 1,
+			snapshot: { snapshotId: "snapshot-resource", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 60_000 },
+			abmlIntegrated: true,
+			diagnostics: {},
+			causal: {
+				sinceSeq: 0,
+				requests: Array.from({ length: 4 }, (_, index) => ({
+					ref: `bp-ref://network/${index}`,
+					url: `https://example.test/${index}`,
+				})),
+			},
 		});
-		const observed = await pageObservationResult({ observation, artifactPath: observationPath, fallbackName: "observation.json" });
+		const observed = await pageObservationResult({
+			observation,
+			artifactPath: observationPath,
+			fallbackName: "observation.json",
+		});
 		const links = registerMcpObservationResources(observed.details, root);
 		const descriptors = observed.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
 		assert.equal(links.length, 1);
-		assert.equal(descriptors.some((item) => item.kind === "content"), false);
+		assert.equal(
+			descriptors.some((item) => item.kind === "content"),
+			false,
+		);
 		const causal = descriptors.find((item) => item.kind === "details")!;
-		assert.equal(registerMcpObservationResources({ [OBSERVATION_RESOURCES_DETAIL_KEY]: [{ ...causal, uri: "browser-pilot://observation/00000000-0000-0000-0000-000000000000" }] }, root).length, 0);
-		assert.equal(registerMcpObservationResources({ [OBSERVATION_RESOURCES_DETAIL_KEY]: [{ ...causal, expiresAt: Date.now() - 1 }] }, root).length, 0);
+		assert.equal(
+			registerMcpObservationResources(
+				{
+					[OBSERVATION_RESOURCES_DETAIL_KEY]: [
+						{ ...causal, uri: "browser-pilot://observation/00000000-0000-0000-0000-000000000000" },
+					],
+				},
+				root,
+			).length,
+			0,
+		);
+		assert.equal(
+			registerMcpObservationResources(
+				{ [OBSERVATION_RESOURCES_DETAIL_KEY]: [{ ...causal, expiresAt: Date.now() - 1 }] },
+				root,
+			).length,
+			0,
+		);
 		const link = links.find((item) => item.type === "resource_link" && item.uri === causal.uri);
 		assert.equal(link?.type, "resource_link");
 		if (!link || link.type !== "resource_link") throw new Error("observation resource link missing");
 		const expanded = await readMcpResource(link.uri, root);
 		assert.equal(resourceText(expanded).includes(observationPath), false);
 		assert.doesNotMatch(resourceText(expanded), /snapshotId|browser-page-observation-resource/);
-		assert.equal(((JSON.parse(resourceText(expanded)) as { value: { requests: unknown[] } }).value.requests).length, 4);
+		assert.equal(
+			(JSON.parse(resourceText(expanded)) as { value: { requests: unknown[] } }).value.requests.length,
+			4,
+		);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -128,9 +251,18 @@ test("MCP collection resources expose decisions without internal evidence", asyn
 		const artifacts = path.join(root, ".browser-pilot", "artifacts");
 		await mkdir(artifacts, { recursive: true });
 		const observation = buildPageObservation({
-			summary: {}, entities: [], content: "", url: "https://example.test/collections",
-			snapshot: { snapshotId: "snapshot-collection-resource", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 60_000 },
-			abmlIntegrated: true, diagnostics: {},
+			summary: {},
+			entities: [],
+			content: "",
+			url: "https://example.test/collections",
+			snapshot: {
+				snapshotId: "snapshot-collection-resource",
+				sourceMode: "scan",
+				capturedAt: Date.now(),
+				ttlMs: 60_000,
+			},
+			abmlIntegrated: true,
+			diagnostics: {},
 		});
 		observation.collections = Array.from({ length: 13 }, (_, index) => ({
 			ref: `bp-ref://region/collection-${index}`,
@@ -142,19 +274,42 @@ test("MCP collection resources expose decisions without internal evidence", asyn
 			itemRefs: [`bp-ref://element/item-${index}`],
 			collectionId: `internal-${index}`,
 			containerRole: "list",
-			paginationControl: { ref: `bp-ref://control/next-${index}`, label: "Next", kind: "next", internal: "hidden" },
+			paginationControl: {
+				ref: `bp-ref://control/next-${index}`,
+				label: "Next",
+				kind: "next",
+				internal: "hidden",
+			},
 			dataSources: [{ source: "dom", summary: "internal source", confidence: "high" }],
 			evidence: [{ source: "itemEntities", summary: "internal evidence" }],
 		}));
-		const observed = await pageObservationResult({ observation, artifactPath: path.join(artifacts, "collections.json"), fallbackName: "collections.json" });
+		const observed = await pageObservationResult({
+			observation,
+			artifactPath: path.join(artifacts, "collections.json"),
+			fallbackName: "collections.json",
+		});
 		const descriptors = observed.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
 		const descriptor = descriptors.find((item) => item.jsonPath === "collections")!;
-		assert.equal(descriptors.some((item) => item.kind === "collection-window"), false);
+		assert.equal(
+			descriptors.some((item) => item.kind === "collection-window"),
+			false,
+		);
 		registerMcpObservationResources(observed.details, root);
-		const expanded = JSON.parse(resourceText(await readMcpResource(descriptor.uri, root))) as { value: Array<Record<string, unknown>> };
+		const expanded = JSON.parse(resourceText(await readMcpResource(descriptor.uri, root))) as {
+			value: Array<Record<string, unknown>>;
+		};
 		assert.equal(expanded.value.length, 13);
 		for (const collection of expanded.value) {
-			assert.deepEqual(Object.keys(collection), ["ref", "kind", "name", "observed", "completeness", "confidence", "itemRefs", "paginationControl"]);
+			assert.deepEqual(Object.keys(collection), [
+				"ref",
+				"kind",
+				"name",
+				"observed",
+				"completeness",
+				"confidence",
+				"itemRefs",
+				"paginationControl",
+			]);
 			const control = collection.paginationControl as Record<string, unknown>;
 			assert.deepEqual(Object.keys(control), ["ref", "label", "kind"]);
 			assert.match(String(control.ref), /^bp-ref:\/\/control\/next-/);
@@ -169,7 +324,14 @@ test("MCP action-space resources are reachable without exposing the internal ent
 	try {
 		const artifacts = path.join(root, ".browser-pilot", "artifacts");
 		await mkdir(artifacts, { recursive: true });
-		const state = { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true };
+		const state = {
+			visible: true,
+			occluded: false,
+			disabled: false,
+			focused: false,
+			editable: false,
+			inViewport: true,
+		};
 		const entities: Entity[] = Array.from({ length: 320 }, (_, index) => ({
 			ref: `bp-ref://element/action-${index}`,
 			kind: "element",
@@ -180,16 +342,31 @@ test("MCP action-space resources are reachable without exposing the internal ent
 			source: "dom",
 		}));
 		const observation = buildPageObservation({
-			summary: {}, entities, content: "Actions", url: "https://example.test/actions",
-			snapshot: { snapshotId: "snapshot-action-resource", sourceMode: "scan", capturedAt: Date.now(), ttlMs: 60_000 },
-			abmlIntegrated: true, diagnostics: {},
+			summary: {},
+			entities,
+			content: "Actions",
+			url: "https://example.test/actions",
+			snapshot: {
+				snapshotId: "snapshot-action-resource",
+				sourceMode: "scan",
+				capturedAt: Date.now(),
+				ttlMs: 60_000,
+			},
+			abmlIntegrated: true,
+			diagnostics: {},
 		});
-		const observed = await pageObservationResult({ observation, artifactPath: path.join(artifacts, "actions.json"), fallbackName: "actions.json" });
+		const observed = await pageObservationResult({
+			observation,
+			artifactPath: path.join(artifacts, "actions.json"),
+			fallbackName: "actions.json",
+		});
 		const descriptors = observed.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[];
 		const actionDescriptor = descriptors.find((item) => item.kind === "action-space")!;
 		const links = registerMcpObservationResources(observed.details, root);
 		assert.ok(links.some((link) => link.type === "resource_link" && link.uri === actionDescriptor.uri));
-		const expanded = JSON.parse(resourceText(await readMcpResource(actionDescriptor.uri, root))) as { value: { items: unknown[] } };
+		const expanded = JSON.parse(resourceText(await readMcpResource(actionDescriptor.uri, root))) as {
+			value: { items: unknown[] };
+		};
 		assert.equal(expanded.value.items.length, entities.length);
 
 		const semanticDescriptor: ObservationResourceDescriptor = {
@@ -200,7 +377,9 @@ test("MCP action-space resources are reachable without exposing the internal ent
 			jsonPath: "$",
 		};
 		registerMcpObservationResources({ [OBSERVATION_RESOURCES_DETAIL_KEY]: [semanticDescriptor] }, root);
-		const semantic = JSON.parse(resourceText(await readMcpResource(semanticDescriptor.uri, root))) as { value: { entities?: unknown; actionSpace?: { items: unknown[] } } };
+		const semantic = JSON.parse(resourceText(await readMcpResource(semanticDescriptor.uri, root))) as {
+			value: { entities?: unknown; actionSpace?: { items: unknown[] } };
+		};
 		assert.equal(semantic.value.entities, undefined);
 		assert.equal(semantic.value.actionSpace?.items.length, entities.length);
 	} finally {
@@ -217,39 +396,54 @@ test("stdio MCP initialization and tools/list work end to end", async () => {
 	let rootsRequested = false;
 	const lines = createInterface({ input: child.stdout });
 	lines.on("line", (line) => {
-		const message = JSON.parse(line) as { id?: unknown; method?: unknown; params?: unknown } & Record<string, unknown>;
+		const message = JSON.parse(line) as { id?: unknown; method?: unknown; params?: unknown } & Record<
+			string,
+			unknown
+		>;
 		if (message.method === "roots/list") {
 			rootsRequested = true;
-			child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { roots: [{ uri: pathToFileURL(process.cwd()).href, name: "workspace" }] } })}\n`);
+			child.stdin.write(
+				`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { roots: [{ uri: pathToFileURL(process.cwd()).href, name: "workspace" }] } })}\n`,
+			);
 			return;
 		}
 		if (typeof message.id === "number") responses.get(message.id)?.(message);
 	});
-	const request = (id: number, method: string, params: Record<string, unknown> = {}, jsonrpc = "2.0") => new Promise<Record<string, unknown>>((resolve) => {
-		responses.set(id, resolve);
-		child.stdin.write(`${JSON.stringify({ jsonrpc, id, method, params })}\n`);
-	});
+	const request = (id: number, method: string, params: Record<string, unknown> = {}, jsonrpc = "2.0") =>
+		new Promise<Record<string, unknown>>((resolve) => {
+			responses.set(id, resolve);
+			child.stdin.write(`${JSON.stringify({ jsonrpc, id, method, params })}\n`);
+		});
 	try {
-		const invalidVersion = await request(-1, "ping", {}, "1.0");
-		assert.equal((invalidVersion.error as Record<string, unknown>).code, -32600);
+		// The SDK transport drops frames that are not JSON-RPC 2.0 without replying; the server must survive them.
+		child.stdin.write(`${JSON.stringify({ jsonrpc: "1.0", id: -1, method: "ping", params: {} })}\n`);
 		const invalidInitialize = await request(-2, "initialize");
-		assert.equal((invalidInitialize.error as Record<string, unknown>).code, -32602);
-		const beforeInitialize = await request(0, "tools/list");
-		assert.equal((beforeInitialize.error as Record<string, unknown>).code, -32002);
-		const initialized = await request(1, "initialize", { protocolVersion: "2025-11-25", capabilities: { roots: { listChanged: true } }, clientInfo: { name: "test", version: "1" } });
+		assert.ok(Number((invalidInitialize.error as Record<string, unknown>).code) < 0);
+		const initialized = await request(1, "initialize", {
+			protocolVersion: "2025-11-25",
+			capabilities: { roots: { listChanged: true } },
+			clientInfo: { name: "test", version: "1" },
+		});
 		const initializeResult = initialized.result as Record<string, unknown>;
 		assert.equal(initializeResult.protocolVersion, "2025-11-25");
-		assert.match(String(initializeResult.instructions), /Combine deterministic same-page JavaScript in one browser_execute call/);
+		assert.match(
+			String(initializeResult.instructions),
+			/Combine deterministic same-page JavaScript in one browser_execute call/,
+		);
 		child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
 		const listed = await request(2, "tools/list");
-		assert.equal(((listed.result as { tools: unknown[] }).tools).length, mcpTools().length);
+		assert.equal((listed.result as { tools: unknown[] }).tools.length, mcpTools().length);
 		const resources = await request(3, "resources/list");
-		assert.equal(((resources.result as { resources: unknown[] }).resources).length, 1);
+		assert.equal((resources.result as { resources: unknown[] }).resources.length, 1);
 		const native = await request(4, "resources/read", { uri: "browser-pilot://native-commands" });
 		assert.match(JSON.stringify(native.result), /network\.list/);
 		const missing = await request(5, "tools/call", { name: "browser_missing", arguments: {} });
 		assert.equal((missing.error as Record<string, unknown>).code, -32602);
 		assert.match(String((missing.error as Record<string, unknown>).message), /Unknown tool: browser_missing/);
+		const unknownResource = await request(6, "resources/read", { uri: "browser-pilot://native-command/nope" });
+		assert.equal((unknownResource.error as Record<string, unknown>).code, -32002);
+		const unknownMethod = await request(7, "browser/unknown");
+		assert.equal((unknownMethod.error as Record<string, unknown>).code, -32601);
 		assert.equal(rootsRequested, true);
 	} finally {
 		child.stdin.end();

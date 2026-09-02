@@ -24,7 +24,10 @@ function fingerprint(overrides: Partial<PageFingerprint> = {}): PageFingerprint 
 const bridgeResult: BrowserBridgeExecutionResult = { id: "result-1", acknowledged: true, data: { ok: true } };
 
 test("command effect reports an observed settled no-op explicitly", () => {
-	const effect = summarizeCommandEffect(fingerprint(), fingerprint(), bridgeResult, { settled: true, elapsedMs: 12.6 });
+	const effect = summarizeCommandEffect(fingerprint(), fingerprint(), bridgeResult, {
+		settled: true,
+		elapsedMs: 12.6,
+	});
 	assert.deepEqual(effect, {
 		observed: true,
 		changed: false,
@@ -65,30 +68,46 @@ test("command effect degrades without turning missing page signals into no chang
 		settled: false,
 		elapsedMs: 4,
 	});
-	assert.equal(summarizeCommandEffect(undefined, undefined, { ...bridgeResult, newTabs: [{}] }, { settled: false, elapsedMs: 4 }).changed, true);
+	assert.equal(
+		summarizeCommandEffect(
+			undefined,
+			undefined,
+			{ ...bridgeResult, newTabs: [{}] },
+			{ settled: false, elapsedMs: 4 },
+		).changed,
+		true,
+	);
 });
 
 test("command effect samples and settles inside one caller-owned transaction", async () => {
-	const samples = [fingerprint(), fingerprint({ changeSeq: 12, visibleCount: 21 }), fingerprint({ changeSeq: 12, visibleCount: 21 })];
+	const samples = [
+		fingerprint(),
+		fingerprint({ changeSeq: 12, visibleCount: 21 }),
+		fingerprint({ changeSeq: 12, visibleCount: 21 }),
+	];
 	const order: string[] = [];
 	let fingerprintReads = 0;
 	const server = {
 		async sendCommand() {
-			order.push(`fingerprint:${fingerprintReads += 1}`);
+			order.push(`fingerprint:${(fingerprintReads += 1)}`);
 			return { id: "fingerprint", acknowledged: true, data: samples.shift() };
 		},
 	} as unknown as BrowserCommandRuntimePort;
-	const outcome = await withCommandEffect(server, {
-		browserSessionId: "session-1",
-		tabId: 7,
-		timeoutMs: 1_000,
-		deadlineAt: Date.now() + 1_000,
-		quietMs: 0,
-		settleMs: 50,
-	}, async () => {
-		order.push("dispatch");
-		return bridgeResult;
-	});
+	const outcome = await withCommandEffect(
+		server,
+		{
+			browserSessionId: "session-1",
+			tabId: 7,
+			timeoutMs: 1_000,
+			deadlineAt: Date.now() + 1_000,
+			quietMs: 0,
+			settleMs: 50,
+		},
+		async () => {
+			order.push("dispatch");
+			return bridgeResult;
+		},
+	);
 	assert.deepEqual(order, ["fingerprint:1", "dispatch", "fingerprint:2", "fingerprint:3"]);
 	assert.equal(outcome.effect.changed, true);
 	assert.equal(outcome.effect.settled, true);
@@ -97,15 +116,29 @@ test("command effect samples and settles inside one caller-owned transaction", a
 
 test("command effect owns postcondition polling", async () => {
 	let attempts = 0;
-	const server = { async sendCommand() { return { id: "fingerprint", acknowledged: true, data: undefined }; } } as unknown as BrowserCommandRuntimePort;
-	const result = (verified: boolean): VerificationResult => ({ status: verified ? "verified" : "unmet", verb: "test", observed: { verified }, evidence: [], elapsedMs: 0 });
-	const outcome = await withCommandEffect(server, {
-		timeoutMs: 1_000,
-		deadlineAt: Date.now() + 1_000,
-		quietMs: 0,
-		settleMs: 0,
-		verify: async () => result((attempts += 1) === 2),
-	}, async () => bridgeResult);
+	const server = {
+		async sendCommand() {
+			return { id: "fingerprint", acknowledged: true, data: undefined };
+		},
+	} as unknown as BrowserCommandRuntimePort;
+	const result = (verified: boolean): VerificationResult => ({
+		status: verified ? "verified" : "unmet",
+		verb: "test",
+		observed: { verified },
+		evidence: [],
+		elapsedMs: 0,
+	});
+	const outcome = await withCommandEffect(
+		server,
+		{
+			timeoutMs: 1_000,
+			deadlineAt: Date.now() + 1_000,
+			quietMs: 0,
+			settleMs: 0,
+			verify: async () => result((attempts += 1) === 2),
+		},
+		async () => bridgeResult,
+	);
 	assert.equal(outcome.verification?.status, "verified");
 	assert.equal(Object.hasOwn(outcome.effect, "verification"), false);
 	assert.equal(attempts, 2);
@@ -113,29 +146,61 @@ test("command effect owns postcondition polling", async () => {
 
 test("command effect stops polling terminal postcondition failures", async () => {
 	let attempts = 0;
-	const server = { async sendCommand() { return { id: "fingerprint", acknowledged: true, data: undefined }; } } as unknown as BrowserCommandRuntimePort;
-	const startedAt = Date.now();
-	const outcome = await withCommandEffect(server, {
-		timeoutMs: 1_000,
-		deadlineAt: Date.now() + 1_000,
-		verify: async () => {
-			attempts += 1;
-			return { status: "inconclusive", verb: "test", retryable: false, observed: {}, evidence: [], elapsedMs: 0 };
+	const server = {
+		async sendCommand() {
+			return { id: "fingerprint", acknowledged: true, data: undefined };
 		},
-	}, async () => bridgeResult);
+	} as unknown as BrowserCommandRuntimePort;
+	const startedAt = Date.now();
+	const outcome = await withCommandEffect(
+		server,
+		{
+			timeoutMs: 1_000,
+			deadlineAt: Date.now() + 1_000,
+			verify: async () => {
+				attempts += 1;
+				return {
+					status: "inconclusive",
+					verb: "test",
+					retryable: false,
+					observed: {},
+					evidence: [],
+					elapsedMs: 0,
+				};
+			},
+		},
+		async () => bridgeResult,
+	);
 	assert.equal(outcome.verification?.retryable, false);
 	assert.equal(attempts, 1);
 	assert.ok(Date.now() - startedAt < 500);
 });
 
 test("command effect keeps an unreadable postcondition inconclusive", async () => {
-	const server = { async sendCommand() { return { id: "fingerprint", acknowledged: true, data: undefined }; } } as unknown as BrowserCommandRuntimePort;
-	const outcome = await withCommandEffect(server, {
-		timeoutMs: 1_000,
-		deadlineAt: Date.now() + 1_000,
-		initialVerification: { status: "inconclusive", verb: "test", expected: { state: "ready" }, observed: {}, evidence: [], elapsedMs: 0 },
-		verify: async () => { throw new Error("page replaced"); },
-	}, async () => bridgeResult);
+	const server = {
+		async sendCommand() {
+			return { id: "fingerprint", acknowledged: true, data: undefined };
+		},
+	} as unknown as BrowserCommandRuntimePort;
+	const outcome = await withCommandEffect(
+		server,
+		{
+			timeoutMs: 1_000,
+			deadlineAt: Date.now() + 1_000,
+			initialVerification: {
+				status: "inconclusive",
+				verb: "test",
+				expected: { state: "ready" },
+				observed: {},
+				evidence: [],
+				elapsedMs: 0,
+			},
+			verify: async () => {
+				throw new Error("page replaced");
+			},
+		},
+		async () => bridgeResult,
+	);
 	assert.equal(outcome.verification?.status, "inconclusive");
 	assert.deepEqual(outcome.verification?.expected, { state: "ready" });
 });
@@ -158,9 +223,18 @@ test("page fingerprint fallback never swallows cancellation", async () => {
 test("command effect summary stays bounded and stateless under 10k-result pressure", () => {
 	const before = fingerprint();
 	const after = fingerprint({ changeSeq: 11, visibleCount: 21 });
-	const manyTabs = Array.from({ length: 10_000 }, (_, index) => ({ id: index, url: `https://example.test/${index}`, title: "x".repeat(1_000) }));
+	const manyTabs = Array.from({ length: 10_000 }, (_, index) => ({
+		id: index,
+		url: `https://example.test/${index}`,
+		title: "x".repeat(1_000),
+	}));
 	const startedAt = performance.now();
-	let last = summarizeCommandEffect(before, after, { ...bridgeResult, newTabs: manyTabs }, { settled: true, elapsedMs: 10 });
+	let last = summarizeCommandEffect(
+		before,
+		after,
+		{ ...bridgeResult, newTabs: manyTabs },
+		{ settled: true, elapsedMs: 10 },
+	);
 	for (let index = 0; index < 10_000; index += 1) {
 		last = summarizeCommandEffect(before, after, bridgeResult, { settled: true, elapsedMs: 10 });
 	}
@@ -168,7 +242,12 @@ test("command effect summary stays bounded and stateless under 10k-result pressu
 	assert.deepEqual(last, summarizeCommandEffect(before, after, bridgeResult, { settled: true, elapsedMs: 10 }));
 	assert.ok(Buffer.byteLength(JSON.stringify(last)) < 512);
 	assert.ok(elapsedMs < 5_000, `10k summaries took ${Math.round(elapsedMs)}ms`);
-	const boundedTabs = summarizeCommandEffect(before, after, { ...bridgeResult, newTabs: manyTabs }, { settled: true, elapsedMs: 10 });
+	const boundedTabs = summarizeCommandEffect(
+		before,
+		after,
+		{ ...bridgeResult, newTabs: manyTabs },
+		{ settled: true, elapsedMs: 10 },
+	);
 	assert.equal(boundedTabs.newTabs, 10_000);
 	assert.ok(Buffer.byteLength(JSON.stringify(boundedTabs)) < 512);
 });

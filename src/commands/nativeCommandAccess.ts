@@ -1,5 +1,7 @@
 import { canonicalBridgeCommand, getNativeCommandProtocolSchema, type BridgeCommand } from "../types/nativeProtocol.js";
 
+export type NativeCommandTier = "core" | "advanced";
+
 const nativeCommandOwners: Readonly<Record<string, string>> = {
 	tabs: "browser_tabs",
 	"screenshot.capture": "browser_screenshot",
@@ -12,7 +14,19 @@ export function nativeCommandOwner(command: BridgeCommand): string | undefined {
 
 export function publicNativeCommandNames(): string[] {
 	const schema = getNativeCommandProtocolSchema();
-	return Object.keys(schema.commands).filter((cmd) => canonicalBridgeCommand(cmd, schema) === cmd && isPublicNativeCommand({ cmd }));
+	return Object.keys(schema.commands).filter(
+		(cmd) => canonicalBridgeCommand(cmd, schema) === cmd && isPublicNativeCommand({ cmd }),
+	);
+}
+
+/** Public commands agents reach for in ordinary tasks; advanced ones stay behind the resource index. */
+export function coreNativeCommandNames(): string[] {
+	return publicNativeCommandNames().filter((cmd) => nativeCommandTier(cmd) === "core");
+}
+
+export function nativeCommandTier(cmd: string): NativeCommandTier {
+	const schema = getNativeCommandProtocolSchema();
+	return schema.commands[canonicalBridgeCommand(cmd, schema)]?.tier === "advanced" ? "advanced" : "core";
 }
 
 export function isPublicNativeCommand(command: BridgeCommand): boolean {

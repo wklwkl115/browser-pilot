@@ -23,22 +23,33 @@ function invalidateDaemon(info: DaemonInfo): void {
 }
 
 function transportErrorCode(error: unknown): string | undefined {
-	return error && typeof error === "object" && "code" in error ? String((error as NodeJS.ErrnoException).code) : undefined;
+	return error && typeof error === "object" && "code" in error
+		? String((error as NodeJS.ErrnoException).code)
+		: undefined;
 }
 
 function rejectedBeforeDispatch(response: { status: number; json?: Record<string, unknown> }): boolean {
 	return response.status === 401 || (response.status === 409 && response.json?.code === "DAEMON_CONTRACT_MISMATCH");
 }
 
-export async function invokeDaemonTool(tool: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal): Promise<McpToolResult> {
-	const requestedTimeoutMs = Number(params.timeoutMs);
-	const transportTimeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
-		? Math.min(310_000, Math.max(120_000, Math.floor(requestedTimeoutMs) + 10_000))
-		: 120_000;
+/**
+ * Tool timeouts are owned by the daemon (see commandShared.ts); the loopback transport only needs
+ * to outlive the longest daemon-side budget so a slow tool never surfaces as an HTTP timeout.
+ */
+const TRANSPORT_TIMEOUT_MS = 120_000;
+
+export async function invokeDaemonTool(
+	tool: string,
+	params: Record<string, unknown>,
+	cwd: string,
+	signal?: AbortSignal,
+): Promise<McpToolResult> {
+	const transportTimeoutMs = TRANSPORT_TIMEOUT_MS;
 	const body = { tool, params, cwd, contractIdentity: localDaemonContractIdentity() };
-	const request = (daemon: DaemonInfo) => controlRequest(daemon, "POST", "/invoke", body, transportTimeoutMs, {
-		...(signal ? { signal } : {}),
-	});
+	const request = (daemon: DaemonInfo) =>
+		controlRequest(daemon, "POST", "/invoke", body, transportTimeoutMs, {
+			...(signal ? { signal } : {}),
+		});
 	let daemon = await currentDaemon();
 	let response;
 	try {
@@ -57,15 +68,21 @@ export async function invokeDaemonTool(tool: string, params: Record<string, unkn
 	const json = response.json;
 	if (response.status !== 200 || !json || json.ok === false) {
 		return {
-			content: [{ type: "text", text: JSON.stringify(json ?? { error: `daemon /invoke failed (HTTP ${response.status})` }) }],
-				details: json,
-				isError: true,
-				terminate: true,
+			content: [
+				{
+					type: "text",
+					text: JSON.stringify(json ?? { error: `daemon /invoke failed (HTTP ${response.status})` }),
+				},
+			],
+			details: json,
+			isError: true,
+			terminate: true,
 		};
 	}
 	return {
-		content: Array.isArray(json.content) ? json.content as McpToolResult["content"] : [],
-		details: json.details && typeof json.details === "object" ? json.details as Record<string, unknown> : undefined,
+		content: Array.isArray(json.content) ? (json.content as McpToolResult["content"]) : [],
+		details:
+			json.details && typeof json.details === "object" ? (json.details as Record<string, unknown>) : undefined,
 		isError: json.isError === true,
 		terminate: json.terminate === true,
 	};

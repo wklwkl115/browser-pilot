@@ -137,23 +137,41 @@ export default tseslint.config(
 	{
 		files: ["src/kernels/**/*.ts"],
 		rules: {
-			"no-restricted-imports": ["error", {
-				patterns: [
-					{ regex: "^(?!node:)(?!\\.{1,2}/)", message: "Kernel code cannot depend on npm runtime packages." },
-					{ group: ["**/apps/**", "**/bridge/**", "**/browser-runtime/**", "**/commands/**"], message: "Kernel code cannot depend on application or runtime layers." },
-				],
-			}],
+			"no-restricted-imports": [
+				"error",
+				{
+					patterns: [
+						{
+							regex: "^(?!node:)(?!\\.{1,2}/)",
+							message: "Kernel code cannot depend on npm runtime packages.",
+						},
+						{
+							group: ["**/apps/**", "**/bridge/**", "**/browser-runtime/**", "**/commands/**"],
+							message: "Kernel code cannot depend on application or runtime layers.",
+						},
+					],
+				},
+			],
 		},
 	},
 	{
 		files: ["src/kernels/abml/**/*.ts"],
 		rules: {
-			"no-restricted-imports": ["error", {
-				patterns: [
-					{ regex: "^(?!\\.{1,2}/)", message: "The ABML kernel cannot depend on Node or npm runtime packages." },
-					{ group: ["**/apps/**", "**/bridge/**", "**/browser-runtime/**", "**/commands/**"], message: "The ABML kernel cannot depend on application or runtime layers." },
-				],
-			}],
+			"no-restricted-imports": [
+				"error",
+				{
+					patterns: [
+						{
+							regex: "^(?!\\.{1,2}/)",
+							message: "The ABML kernel cannot depend on Node or npm runtime packages.",
+						},
+						{
+							group: ["**/apps/**", "**/bridge/**", "**/browser-runtime/**", "**/commands/**"],
+							message: "The ABML kernel cannot depend on application or runtime layers.",
+						},
+					],
+				},
+			],
 		},
 	},
 	// Refactored orchestration paths keep explicit complexity budgets so their former
@@ -175,21 +193,21 @@ export default tseslint.config(
 			"src/bridge/extension/service_worker/frame.ts",
 			"src/bridge/extension/service_worker/network.ts",
 			"src/bridge/extension/service_worker/network_model.ts",
-				"src/commands/observeCommand.ts",
-				"src/commands/resultMiddleware.ts",
-				"src/commands/tabsCommand.ts",
-				"src/commands/tabsProjection.ts",
-				"src/commands/executeCommand.ts",
-				"src/bridge/extension/service_worker/network_events.ts",
-				"src/bridge/extension/service_worker/hook.ts",
-				"src/bridge/extension/page_scripts/hook_dispatcher.ts",
-				"src/commands/observe/scanRunner.ts",
-				"src/commands/observe/scanSession.ts",
-				"src/commands/observe/scanCapture.ts",
-				"src/commands/observe/scanProviders.ts",
-				"src/commands/observe/scanAssembly.ts",
-				"src/commands/observe/scanOutput.ts",
-			],
+			"src/commands/observeCommand.ts",
+			"src/commands/resultMiddleware.ts",
+			"src/commands/tabsCommand.ts",
+			"src/commands/tabsProjection.ts",
+			"src/commands/executeCommand.ts",
+			"src/bridge/extension/service_worker/network_events.ts",
+			"src/bridge/extension/service_worker/hook.ts",
+			"src/bridge/extension/page_scripts/hook_dispatcher.ts",
+			"src/commands/observe/scanRunner.ts",
+			"src/commands/observe/scanSession.ts",
+			"src/commands/observe/scanCapture.ts",
+			"src/commands/observe/scanProviders.ts",
+			"src/commands/observe/scanAssembly.ts",
+			"src/commands/observe/scanOutput.ts",
+		],
 		rules: {
 			complexity: ["error", 20],
 			"max-lines-per-function": ["error", 150],

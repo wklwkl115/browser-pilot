@@ -16,16 +16,17 @@ test("observe provider degradation never converts cancellation into unavailable 
 		},
 	} as unknown as BrowserCommandRuntimePort;
 	await assert.rejects(
-		() => runObserveProviders({
-			server,
-			params: {},
-			tabId: 7,
-			startedAt: Date.now(),
-			deadlineAt: Date.now() + 5_000,
-			baseline: { entities: [], partialBaseline: false, networkSeq: 0 },
-			timings: {},
-			signal: controller.signal,
-		}),
+		() =>
+			runObserveProviders({
+				server,
+				params: {},
+				tabId: 7,
+				startedAt: Date.now(),
+				deadlineAt: Date.now() + 5_000,
+				baseline: { entities: [], partialBaseline: false, networkSeq: 0 },
+				timings: {},
+				signal: controller.signal,
+			}),
 		(error) => error === controller.signal.reason,
 	);
 });
@@ -37,7 +38,10 @@ test("observe providers retain hook events when network capture is unavailable",
 		},
 		async sendCommand(command: { cmd?: string }) {
 			assert.equal(command.cmd, "hook.collect");
-			return { ok: true, data: { active: true, lastSeq: 1, events: [{ seq: 1, type: "console", data: { message: "saved" } }] } };
+			return {
+				ok: true,
+				data: { active: true, lastSeq: 1, events: [{ seq: 1, type: "console", data: { message: "saved" } }] },
+			};
 		},
 	} as unknown as BrowserCommandRuntimePort;
 	const result = await runObserveProviders({
