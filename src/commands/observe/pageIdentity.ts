@@ -1,6 +1,10 @@
 import type { PageIdentity, PageReanchorReason } from "../../kernels/session/pageIdentity.js";
 import { pageReanchorReason } from "../../kernels/session/pageIdentity.js";
-import type { BrowserCommandRuntimePort, BrowserCommandRuntimeSnapshot, CommandPerceptionLedgerKey } from "../../ports/BrowserCommandRuntimePort.js";
+import type {
+	BrowserCommandRuntimePort,
+	BrowserCommandRuntimeSnapshot,
+	CommandPerceptionLedgerKey,
+} from "../../ports/BrowserCommandRuntimePort.js";
 import { isRecord } from "../../utils/records.js";
 
 type IdentitySignal = {
@@ -22,7 +26,10 @@ function fallbackString(primary: unknown, fallback: unknown): string | undefined
 	return nonEmptyString(primary ?? fallback);
 }
 
-function matchingIdentityTab(bridge: BrowserCommandRuntimeSnapshot, tabId: number | undefined): Record<string, unknown> | undefined {
+function matchingIdentityTab(
+	bridge: BrowserCommandRuntimeSnapshot,
+	tabId: number | undefined,
+): Record<string, unknown> | undefined {
 	return (bridge.tabs ?? []).find((item) => positiveInteger(item.tabId ?? item.id) === tabId);
 }
 
@@ -31,7 +38,10 @@ function tabTargetGeneration(tab: Record<string, unknown> | undefined): number |
 	return positiveInteger(tab.targetGeneration) ?? positiveInteger(tab.generation);
 }
 
-function pageEpochSignalMatchesTab(signal: IdentitySignal | undefined, tab: Record<string, unknown> | undefined): boolean {
+function pageEpochSignalMatchesTab(
+	signal: IdentitySignal | undefined,
+	tab: Record<string, unknown> | undefined,
+): boolean {
 	const signalEpoch = nonEmptyString(signal?.pageEpoch);
 	const tabEpoch = nonEmptyString(tab?.pageEpoch);
 	return !signalEpoch || !tabEpoch || signalEpoch === tabEpoch;
@@ -86,12 +96,14 @@ export function pageIdentityFromUnknown(value: unknown): PageIdentity | undefine
 }
 
 export function perceptionLedgerKey(identity: PageIdentity | undefined): CommandPerceptionLedgerKey | undefined {
-	return identity ? {
-		browserSessionId: identity.browserSessionId,
-		tabId: identity.tabId,
-		targetGeneration: identity.targetGeneration,
-		pageEpoch: identity.pageEpoch,
-	} : undefined;
+	return identity
+		? {
+				browserSessionId: identity.browserSessionId,
+				tabId: identity.tabId,
+				targetGeneration: identity.targetGeneration,
+				pageEpoch: identity.pageEpoch,
+			}
+		: undefined;
 }
 
 export function baselineReanchorReason(

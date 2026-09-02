@@ -8,10 +8,18 @@ export type PreparedExecuteScript = {
 	targetRefs: ExecutionRefTarget[];
 };
 
-function pageDescriptor(descriptor: RefDescriptor): Pick<RefDescriptor, "refId" | "locators" | "geometry" | "semantic"> {
+function pageDescriptor(
+	descriptor: RefDescriptor,
+): Pick<RefDescriptor, "refId" | "locators" | "geometry" | "semantic"> {
 	return {
 		refId: descriptor.refId,
-		locators: descriptor.locators.filter((locator) => locator.by === "css" || locator.by === "xpath" || locator.by === "attrSignature" || locator.by === "textAnchor"),
+		locators: descriptor.locators.filter(
+			(locator) =>
+				locator.by === "css" ||
+				locator.by === "xpath" ||
+				locator.by === "attrSignature" ||
+				locator.by === "textAnchor",
+		),
 		geometry: descriptor.geometry,
 		semantic: descriptor.semantic,
 	};
@@ -32,11 +40,17 @@ function buildRefRegistry(refUris: string[]): { registry: Record<string, unknown
 	return { registry, targetRefs };
 }
 
-export function prepareExecuteStdlib(script: string, options: { refs?: Record<string, string> } = {}): PreparedExecuteScript {
+export function prepareExecuteStdlib(
+	script: string,
+	options: { refs?: Record<string, string> } = {},
+): PreparedExecuteScript {
 	const bindings = options.refs ?? {};
 	const bindingCount = Object.keys(bindings).length;
 	const refUris = Array.from(new Set(Object.values(bindings)));
-	if (bindingCount > MAX_EXECUTION_REFS) throw new BrowserBridgeError("INVALID_RULE", `browser_execute accepts at most ${MAX_EXECUTION_REFS} refs`, { refCount: bindingCount });
+	if (bindingCount > MAX_EXECUTION_REFS)
+		throw new BrowserBridgeError("INVALID_RULE", `browser_execute accepts at most ${MAX_EXECUTION_REFS} refs`, {
+			refCount: bindingCount,
+		});
 	if (!refUris.length && !/\bbrowserPilot\s*\./.test(script)) return { script, targetRefs: [] };
 	const registry = buildRefRegistry(refUris);
 	return {

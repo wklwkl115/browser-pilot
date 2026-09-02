@@ -32,7 +32,10 @@ export class SessionRegistry<TClient = unknown> {
 
 	require(sessionId?: string): SessionAutomationSession<TClient> {
 		const id = String(sessionId || DEFAULT_BROWSER_SESSION_ID).trim() || DEFAULT_BROWSER_SESSION_ID;
-		if (id !== DEFAULT_BROWSER_SESSION_ID) throw new SessionKernelError("SESSION_NOT_FOUND", "Browser Pilot supports one browser session", { browserSessionId: id });
+		if (id !== DEFAULT_BROWSER_SESSION_ID)
+			throw new SessionKernelError("SESSION_NOT_FOUND", "Browser Pilot supports one browser session", {
+				browserSessionId: id,
+			});
 		this.session.lastSeenAt = Date.now();
 		return this.session;
 	}
@@ -46,7 +49,10 @@ export class SessionRegistry<TClient = unknown> {
 		return session.selectedClient && this.isOpenClient(session.selectedClient) ? session.selectedClient : undefined;
 	}
 
-	selectedInfo<TInfo>(session: SessionAutomationSession<TClient>, describe: (client: TClient) => TInfo | undefined): TInfo | undefined {
+	selectedInfo<TInfo>(
+		session: SessionAutomationSession<TClient>,
+		describe: (client: TClient) => TInfo | undefined,
+	): TInfo | undefined {
 		return session.selectedClient ? describe(session.selectedClient) : undefined;
 	}
 

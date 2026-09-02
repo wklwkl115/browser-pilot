@@ -1,4 +1,4 @@
-// exec.js - plain JavaScript execution and CDP fallback for WebSocket requests.
+// Plain JavaScript execution and CDP fallback for WebSocket requests.
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { normalizePersistentBrowserPilotResponse, browserPilotPersistentCdp } from "./runtimeSupport.js";
@@ -7,12 +7,14 @@ import type { JsonRecord, BrowserPilotChromeTab, BrowserPilotWebSocketLike } fro
 const NEW_TAB_OBSERVE_WAIT_MS = 50;
 
 function mayOpenNewTab(code: unknown): boolean {
-  if (typeof code !== "string") return false;
-  return /\bwindow\s*\.\s*open\s*\(|\bopen\s*\(|target\s*=\s*['"]_blank['"]|\.target\s*=\s*['"]_blank['"]|rel\s*=\s*['"][^'"]*\bnoopener\b/i.test(code);
+	if (typeof code !== "string") return false;
+	return /\bwindow\s*\.\s*open\s*\(|\bopen\s*\(|target\s*=\s*['"]_blank['"]|\.target\s*=\s*['"]_blank['"]|rel\s*=\s*['"][^'"]*\bnoopener\b/i.test(
+		code,
+	);
 }
 
 function buildExecScript(code: unknown, errorHandler: string): string {
-  return `(async () => {
+	return `(async () => {
     function smartProcessResult(result) {
       const seen = new WeakSet();
       const MAX_DEPTH = 8;
@@ -130,172 +132,241 @@ function buildExecScript(code: unknown, errorHandler: string): string {
 }
 
 function buildPageScript(code: unknown): string {
-  return buildExecScript(code, `
+	return buildExecScript(
+		code,
+		`
       const errMsg = e.message || String(e);
       return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: errMsg, details: e.details || {} },
         csp: errMsg.includes('Refused to evaluate') || errMsg.includes('unsafe-eval') || errMsg.includes('Content Security Policy') };
-  `);
+  `,
+	);
 }
 
 function buildCdpScript(code: unknown): string {
-  return buildExecScript(code, `
+	return buildExecScript(
+		code,
+		`
       return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: e.message || String(e), details: e.details || {} } };
-  `);
+  `,
+	);
 }
 
 function normalizeExecNavigationUrl(rawUrl: unknown): string {
-  const raw = String(rawUrl || '').trim();
-  if (!raw) throw new Error('Navigation URL is required');
-  const parsed = new URL(raw, 'https://example.invalid');
-  const protocol = parsed.protocol.toLowerCase();
-  if (protocol === 'javascript:' || protocol === 'data:') throw new Error(`Blocked navigation protocol: ${protocol}`);
-  return raw;
+	const raw = String(rawUrl || "").trim();
+	if (!raw) throw new Error("Navigation URL is required");
+	const parsed = new URL(raw, "https://example.invalid");
+	const protocol = parsed.protocol.toLowerCase();
+	if (protocol === "javascript:" || protocol === "data:") throw new Error(`Blocked navigation protocol: ${protocol}`);
+	return raw;
 }
 
-type ExecRequest = JsonRecord & { id?: string | number; tabId?: number; code?: unknown; timeoutMs?: number; timeout_ms?: number };
-type ExecDiagnostics = { mayOpenNewTab: boolean; newTabObservationWaitTriggered: boolean; newTabObservationWaitMs: number; totalMs?: number };
+type ExecRequest = JsonRecord & {
+	id?: string | number;
+	tabId?: number;
+	code?: unknown;
+	timeoutMs?: number;
+	timeout_ms?: number;
+};
+type ExecDiagnostics = {
+	mayOpenNewTab: boolean;
+	newTabObservationWaitTriggered: boolean;
+	newTabObservationWaitMs: number;
+	totalMs?: number;
+};
 
 function execError(error: unknown): { name: string; message: string } {
-  return { name:error instanceof Error ? error.name : 'Error', message:error instanceof Error ? error.message : String(error) };
+	return {
+		name: error instanceof Error ? error.name : "Error",
+		message: error instanceof Error ? error.message : String(error),
+	};
 }
 
 function sendExecMessage(socket: BrowserPilotWebSocketLike, message: JsonRecord): void {
-  socket.send(JSON.stringify(message));
+	socket.send(JSON.stringify(message));
 }
 
 function asJsonRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' ? value as JsonRecord : {};
+	return value && typeof value === "object" ? (value as JsonRecord) : {};
 }
 
-async function handleExecShortcut(data: ExecRequest, codeText: string, socket: BrowserPilotWebSocketLike): Promise<boolean> {
-  const navMatch = codeText.match(/^(?:window\.)?location(?:\.href)?\s*=\s*(['"])(.*?)\1\s*;?$/);
-  if (navMatch) {
-    try {
-      const targetUrl = normalizeExecNavigationUrl(navMatch[2]);
-      await chrome.tabs.update(data.tabId as number, { url: targetUrl });
-      sendExecMessage(socket, { type:'result', id:data.id, result:{ navigated:true, url:targetUrl } });
-    } catch (error) {
-      sendExecMessage(socket, { type:'error', id:data.id, error:execError(error) });
-    }
-    return true;
-  }
-  const gmOpenMatch = codeText.match(/^GM_openInTab\(\s*(['"])(.*?)\1\s*\)\s*;?$/);
-  if (!gmOpenMatch) return false;
-  try {
-    const targetUrl = normalizeExecNavigationUrl(gmOpenMatch[2]);
-    const tab = await chrome.tabs.create({ url:targetUrl, active:true });
-    const newTabs = [{ id:tab.id, tabId:tab.id, url:tab.url || targetUrl, title:tab.title || '' }];
-    sendExecMessage(socket, { type:'result', id:data.id, result:{ opened:true, tabId:tab.id, url:targetUrl }, newTabs });
-  } catch (error) {
-    sendExecMessage(socket, { type:'error', id:data.id, error:execError(error) });
-  }
-  return true;
+async function handleExecShortcut(
+	data: ExecRequest,
+	codeText: string,
+	socket: BrowserPilotWebSocketLike,
+): Promise<boolean> {
+	const navMatch = codeText.match(/^(?:window\.)?location(?:\.href)?\s*=\s*(['"])(.*?)\1\s*;?$/);
+	if (navMatch) {
+		try {
+			const targetUrl = normalizeExecNavigationUrl(navMatch[2]);
+			await chrome.tabs.update(data.tabId as number, { url: targetUrl });
+			sendExecMessage(socket, { type: "result", id: data.id, result: { navigated: true, url: targetUrl } });
+		} catch (error) {
+			sendExecMessage(socket, { type: "error", id: data.id, error: execError(error) });
+		}
+		return true;
+	}
+	const gmOpenMatch = codeText.match(/^GM_openInTab\(\s*(['"])(.*?)\1\s*\)\s*;?$/);
+	if (!gmOpenMatch) return false;
+	try {
+		const targetUrl = normalizeExecNavigationUrl(gmOpenMatch[2]);
+		const tab = await chrome.tabs.create({ url: targetUrl, active: true });
+		const newTabs = [{ id: tab.id, tabId: tab.id, url: tab.url || targetUrl, title: tab.title || "" }];
+		sendExecMessage(socket, {
+			type: "result",
+			id: data.id,
+			result: { opened: true, tabId: tab.id, url: targetUrl },
+			newTabs,
+		});
+	} catch (error) {
+		sendExecMessage(socket, { type: "error", id: data.id, error: execError(error) });
+	}
+	return true;
 }
 
 function totalExecTimeoutMs(data: ExecRequest): number {
-  return Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 30000) || 30000));
+	return Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 30000) || 30000));
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutHandle = setTimeout(() => {
-      const error = new Error(message);
-      error.name = 'ExecuteScriptTimeout';
-      reject(error);
-    }, timeoutMs);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-  }
+	let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<never>((_resolve, reject) => {
+		timeoutHandle = setTimeout(() => {
+			const error = new Error(message);
+			error.name = "ExecuteScriptTimeout";
+			reject(error);
+		}, timeoutMs);
+	});
+	try {
+		return await Promise.race([promise, timeout]);
+	} finally {
+		if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+	}
 }
 
 async function executeInMainWorld(tabId: number, executionCode: string, timeoutMs: number): Promise<unknown> {
-  let backgroundTab = false;
-  try {
-    const probe = await chrome.tabs.get(tabId);
-    backgroundTab = probe.active === false;
-  } catch (_probeError) {
-    /* default to foreground path */
-  }
-  if (backgroundTab) return { ok:false, error:{ name:'BackgroundTab', message:'background tab — routing via CDP to avoid timer throttling' }, csp:true };
-  try {
-    const mainWorldTimeoutMs = Math.max(100, Math.min(2500, Math.floor(timeoutMs / 3)));
-    const executePromise = chrome.scripting.executeScript({
-      target:{ tabId },
-      world:'MAIN',
-      func:async (script: string) => await (0, eval)(script),
-      args:[buildPageScript(executionCode)],
-    });
-    const result = await withTimeout(executePromise, mainWorldTimeoutMs, 'chrome.scripting.executeScript timed out after ' + mainWorldTimeoutMs + 'ms');
-    const scriptResults = Array.isArray(result) ? result as Array<{ result?: unknown }> : [];
-    return scriptResults[0]?.result ?? { ok:false, error:{ name:'Error', message:'executeScript returned no result; execution outcome is unknown' }, csp:false };
-  } catch (error) {
-    // executeScript may already be running in the page when our wait expires.
-    // Only an explicit page-world CSP result is safe to retry through CDP.
-    return { ok:false, error:execError(error), csp:false };
-  }
+	let backgroundTab = false;
+	try {
+		const probe = await chrome.tabs.get(tabId);
+		backgroundTab = probe.active === false;
+	} catch (_probeError) {
+		/* default to foreground path */
+	}
+	if (backgroundTab)
+		return {
+			ok: false,
+			error: { name: "BackgroundTab", message: "background tab — routing via CDP to avoid timer throttling" },
+			csp: true,
+		};
+	try {
+		const mainWorldTimeoutMs = Math.max(100, Math.min(2500, Math.floor(timeoutMs / 3)));
+		const executePromise = chrome.scripting.executeScript({
+			target: { tabId },
+			world: "MAIN",
+			func: async (script: string) => await (0, eval)(script),
+			args: [buildPageScript(executionCode)],
+		});
+		const result = await withTimeout(
+			executePromise,
+			mainWorldTimeoutMs,
+			"chrome.scripting.executeScript timed out after " + mainWorldTimeoutMs + "ms",
+		);
+		const scriptResults = Array.isArray(result) ? (result as Array<{ result?: unknown }>) : [];
+		return (
+			scriptResults[0]?.result ?? {
+				ok: false,
+				error: { name: "Error", message: "executeScript returned no result; execution outcome is unknown" },
+				csp: false,
+			}
+		);
+	} catch (error) {
+		// executeScript may already be running in the page when our wait expires.
+		// Only an explicit page-world CSP result is safe to retry through CDP.
+		return { ok: false, error: execError(error), csp: false };
+	}
 }
 
 function needsCdpFallback(result: unknown): boolean {
-  const record = asJsonRecord(result);
-  return Boolean(result && record.ok === false && record.csp);
+	const record = asJsonRecord(result);
+	return Boolean(result && record.ok === false && record.csp);
 }
 
 async function executeThroughCdp(tabId: number, executionCode: string, timeoutMs: number): Promise<unknown> {
-  try {
-    const cdp = browserPilotPersistentCdp();
-    if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
-    const response = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, 'Runtime.evaluate', {
-      expression:buildCdpScript(executionCode), awaitPromise:true, returnByValue:true,
-    }, { name:'default', persistent:true, focusEmulation:true, timeoutMs }));
-    if (!response || response.ok === false) throw new Error(String(response?.error || response?.message || 'persistent CDP Runtime.evaluate failed'));
-    const responseData = asJsonRecord(response.data);
-    const cdpResult = asJsonRecord(responseData.result || response.result || response.data);
-    const exceptionDetails = cdpResult.exceptionDetails && typeof cdpResult.exceptionDetails === 'object' ? cdpResult.exceptionDetails as JsonRecord : undefined;
-    if (exceptionDetails) {
-      const exception = asJsonRecord(exceptionDetails.exception);
-      return { ok:false, error:{ name:'Error', message:String(exception.description || 'CDP Error') } };
-    }
-    return asJsonRecord(cdpResult.result).value;
-  } catch (error) {
-    return { ok:false, error:{ name:'Error', message:'CDP fallback failed: ' + (error instanceof Error ? error.message : String(error)) } };
-  }
+	try {
+		const cdp = browserPilotPersistentCdp();
+		if (!cdp?.send) throw new Error("persistent CDP helper is not loaded");
+		const response = normalizePersistentBrowserPilotResponse(
+			await cdp.send(
+				tabId,
+				"Runtime.evaluate",
+				{
+					expression: buildCdpScript(executionCode),
+					awaitPromise: true,
+					returnByValue: true,
+				},
+				{ name: "default", persistent: true, focusEmulation: true, timeoutMs },
+			),
+		);
+		if (!response || response.ok === false)
+			throw new Error(String(response?.error || response?.message || "persistent CDP Runtime.evaluate failed"));
+		const responseData = asJsonRecord(response.data);
+		const cdpResult = asJsonRecord(responseData.result || response.result || response.data);
+		const exceptionDetails =
+			cdpResult.exceptionDetails && typeof cdpResult.exceptionDetails === "object"
+				? (cdpResult.exceptionDetails as JsonRecord)
+				: undefined;
+		if (exceptionDetails) {
+			const exception = asJsonRecord(exceptionDetails.exception);
+			return { ok: false, error: { name: "Error", message: String(exception.description || "CDP Error") } };
+		}
+		return asJsonRecord(cdpResult.result).value;
+	} catch (error) {
+		return {
+			ok: false,
+			error: {
+				name: "Error",
+				message: "CDP fallback failed: " + (error instanceof Error ? error.message : String(error)),
+			},
+		};
+	}
 }
 
 async function observePotentialNewTab(newTabIds: Set<number>, diagnostics: ExecDiagnostics): Promise<void> {
-  if (newTabIds.size || !diagnostics.mayOpenNewTab) return;
-  const waitStartedAt = Date.now();
-  await new Promise((resolve) => setTimeout(resolve, NEW_TAB_OBSERVE_WAIT_MS));
-  diagnostics.newTabObservationWaitTriggered = true;
-  diagnostics.newTabObservationWaitMs = Date.now() - waitStartedAt;
+	if (newTabIds.size || !diagnostics.mayOpenNewTab) return;
+	const waitStartedAt = Date.now();
+	await new Promise((resolve) => setTimeout(resolve, NEW_TAB_OBSERVE_WAIT_MS));
+	diagnostics.newTabObservationWaitTriggered = true;
+	diagnostics.newTabObservationWaitMs = Date.now() - waitStartedAt;
 }
 
 async function collectNewTabs(newTabIds: Set<number>): Promise<JsonRecord[]> {
-  const newTabs: JsonRecord[] = [];
-  for (const id of newTabIds) {
-    try {
-      const tab = await chrome.tabs.get(id);
-      newTabs.push({ id:tab.id, url:tab.url, title:tab.title });
-    } catch (_error) {
-      /* best-effort new tab metadata read */
-    }
-  }
-  return newTabs;
+	const newTabs: JsonRecord[] = [];
+	for (const id of newTabIds) {
+		try {
+			const tab = await chrome.tabs.get(id);
+			newTabs.push({ id: tab.id, url: tab.url, title: tab.title });
+		} catch (_error) {
+			/* best-effort new tab metadata read */
+		}
+	}
+	return newTabs;
 }
 
-function sendExecOutcome(data: ExecRequest, socket: BrowserPilotWebSocketLike, result: unknown, newTabs: JsonRecord[], diagnostics: ExecDiagnostics): void {
-  const record = asJsonRecord(result);
-  const envelope = { id:data.id, newTabs, diagnostics:{ execute:diagnostics } };
-  if (record.ok) sendExecMessage(socket, { type:'result', ...envelope, result:record.data });
-  else sendExecMessage(socket, { type:'error', ...envelope, error:record.error || 'Unknown error' });
+function sendExecOutcome(
+	data: ExecRequest,
+	socket: BrowserPilotWebSocketLike,
+	result: unknown,
+	newTabs: JsonRecord[],
+	diagnostics: ExecDiagnostics,
+): void {
+	const record = asJsonRecord(result);
+	const envelope = { id: data.id, newTabs, diagnostics: { execute: diagnostics } };
+	if (record.ok) sendExecMessage(socket, { type: "result", ...envelope, result: record.data });
+	else sendExecMessage(socket, { type: "error", ...envelope, error: record.error || "Unknown error" });
 }
 
 async function handleWsExec(data: ExecRequest, socket: BrowserPilotWebSocketLike): Promise<void> {
 	const tabId = data.tabId;
-  if (!tabId) {
+	if (!tabId) {
 		sendExecMessage(socket, {
 			type: "error",
 			id: data.id,
@@ -308,37 +379,48 @@ async function handleWsExec(data: ExecRequest, socket: BrowserPilotWebSocketLike
 		});
 		return;
 	}
-	const codeText = String(data.code || '').trim();
+	const codeText = String(data.code || "").trim();
 	if (!codeText) {
-		sendExecMessage(socket, { type: "error", id: data.id, error: { name: "InvalidRule", code: "INVALID_RULE", message: "No JavaScript code provided", details: { dispatchStarted: false, acked: false } } });
+		sendExecMessage(socket, {
+			type: "error",
+			id: data.id,
+			error: {
+				name: "InvalidRule",
+				code: "INVALID_RULE",
+				message: "No JavaScript code provided",
+				details: { dispatchStarted: false, acked: false },
+			},
+		});
 		return;
 	}
 	// ACK now means validation and the exact semantic action boundary both succeeded.
-	sendExecMessage(socket, { type:'ack', id:data.id });
-  if (await handleExecShortcut(data, codeText, socket)) return;
-  const newTabIds = new Set<number>();
-  const onCreated = (tab: BrowserPilotChromeTab) => { if (tab.id !== undefined) newTabIds.add(tab.id); };
-  chrome.tabs.onCreated.addListener(onCreated);
-  try {
-    const execStartedAt = Date.now();
-    const execDiagnostics: ExecDiagnostics = {
-      mayOpenNewTab: mayOpenNewTab(data.code),
-      newTabObservationWaitTriggered: false,
-      newTabObservationWaitMs: 0,
-    };
-    const timeoutMs = totalExecTimeoutMs(data);
-    const executionCode = String(data.code || "");
-    let result = await executeInMainWorld(tabId, executionCode, timeoutMs);
-    if (needsCdpFallback(result)) result = await executeThroughCdp(tabId, executionCode, timeoutMs);
-    await observePotentialNewTab(newTabIds, execDiagnostics);
-    chrome.tabs.onCreated.removeListener(onCreated);
-    const newTabs = await collectNewTabs(newTabIds);
-    execDiagnostics.totalMs = Date.now() - execStartedAt;
-    sendExecOutcome(data, socket, result, newTabs, execDiagnostics);
-  } catch (error) {
-    sendExecMessage(socket, { type:'error', id:data.id, error:execError(error) });
-  } finally {
-    chrome.tabs.onCreated.removeListener(onCreated);
-  }
+	sendExecMessage(socket, { type: "ack", id: data.id });
+	if (await handleExecShortcut(data, codeText, socket)) return;
+	const newTabIds = new Set<number>();
+	const onCreated = (tab: BrowserPilotChromeTab) => {
+		if (tab.id !== undefined) newTabIds.add(tab.id);
+	};
+	chrome.tabs.onCreated.addListener(onCreated);
+	try {
+		const execStartedAt = Date.now();
+		const execDiagnostics: ExecDiagnostics = {
+			mayOpenNewTab: mayOpenNewTab(data.code),
+			newTabObservationWaitTriggered: false,
+			newTabObservationWaitMs: 0,
+		};
+		const timeoutMs = totalExecTimeoutMs(data);
+		const executionCode = String(data.code || "");
+		let result = await executeInMainWorld(tabId, executionCode, timeoutMs);
+		if (needsCdpFallback(result)) result = await executeThroughCdp(tabId, executionCode, timeoutMs);
+		await observePotentialNewTab(newTabIds, execDiagnostics);
+		chrome.tabs.onCreated.removeListener(onCreated);
+		const newTabs = await collectNewTabs(newTabIds);
+		execDiagnostics.totalMs = Date.now() - execStartedAt;
+		sendExecOutcome(data, socket, result, newTabs, execDiagnostics);
+	} catch (error) {
+		sendExecMessage(socket, { type: "error", id: data.id, error: execError(error) });
+	} finally {
+		chrome.tabs.onCreated.removeListener(onCreated);
+	}
 }
 export { buildExecScript, buildPageScript, buildCdpScript, handleWsExec };

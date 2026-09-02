@@ -7,7 +7,10 @@ export interface ScanRect {
 	height: number;
 }
 
-export interface ScanPoint { x: number; y: number }
+export interface ScanPoint {
+	x: number;
+	y: number;
+}
 
 export interface ScanHitTarget {
 	tag: string;
@@ -125,12 +128,18 @@ export interface PageWorldScanBundleV1 {
 		canvasRegions: ScanCanvasRegion[];
 	};
 	signals: { fingerprint: ScanPageFingerprint };
-	stats: { nodeCount: number; outputChars: number; truncated: boolean; actionableCount?: number; actionablesComplete?: boolean; visualSurfaceCount?: number; unnamedActionableCount?: number };
+	stats: {
+		nodeCount: number;
+		outputChars: number;
+		truncated: boolean;
+		actionableCount?: number;
+		actionablesComplete?: boolean;
+		visualSurfaceCount?: number;
+		unnamedActionableCount?: number;
+	};
 }
 
-export type ScanBundleValidation =
-	| { ok: true; value: PageWorldScanBundleV1 }
-	| { ok: false; issues: string[] };
+export type ScanBundleValidation = { ok: true; value: PageWorldScanBundleV1 } | { ok: false; issues: string[] };
 
 const stringSchema = { type: "string" } as const;
 const numberSchema = { type: "number" } as const;
@@ -152,23 +161,73 @@ const rectSchema = {
 } as const;
 const hitTargetSchema = {
 	type: "object",
-	properties: { tag: stringSchema, id: stringSchema, class: stringSchema, text: stringSchema, inputLabel: stringSchema },
+	properties: {
+		tag: stringSchema,
+		id: stringSchema,
+		class: stringSchema,
+		text: stringSchema,
+		inputLabel: stringSchema,
+	},
 	required: ["tag", "id", "class", "text"],
 	additionalProperties: false,
 } as const;
 
 const actionableProperties = {
-	index: numberSchema, selector: stringSchema, tag: stringSchema, kind: stringSchema, role: nullableStringSchema, action: stringSchema,
-	label: stringSchema, displayLabel: stringSchema, text: stringSchema, value: stringSchema, clickable: booleanSchema, editable: booleanSchema, actionConfidence: { enum: ["high", "medium"] },
-	disabled: booleanSchema, focused: booleanSchema, checked: booleanSchema, selected: booleanSchema, pressed: booleanSchema,
-	expanded: booleanSchema, visible: booleanSchema, inViewport: booleanSchema, current: stringSchema, inputKind: stringSchema,
-	controlsSelectors: stringArraySchema, ownsSelectors: stringArraySchema, expandedTargetSelectors: stringArraySchema,
-	position: stringSchema, edgeUtility: booleanSchema, handlers: stringArraySchema, rect: rectSchema, documentRect: rectSchema,
-	point: pointSchema, hitOk: nullableBooleanSchema, hitTarget: { anyOf: [hitTargetSchema, { type: "null" }] }, href: stringSchema, rel: stringSchema,
-	occluderSelector: stringSchema, priority: numberSchema, name: stringSchema, ariaLabel: stringSchema, ref: stringSchema, hidden: booleanSchema, referenceOnly: booleanSchema,
-	relationOnly: booleanSchema, sourceSelector: stringSchema, sourceRole: nullableStringSchema, sourceName: stringSchema,
-	targetId: stringSchema, cdpTargetId: stringSchema,
-	scope: { type: "object", properties: { key: stringSchema, name: stringSchema, position: numberSchema, size: numberSchema }, required: ["key", "position", "size"], additionalProperties: false },
+	index: numberSchema,
+	selector: stringSchema,
+	tag: stringSchema,
+	kind: stringSchema,
+	role: nullableStringSchema,
+	action: stringSchema,
+	label: stringSchema,
+	displayLabel: stringSchema,
+	text: stringSchema,
+	value: stringSchema,
+	clickable: booleanSchema,
+	editable: booleanSchema,
+	actionConfidence: { enum: ["high", "medium"] },
+	disabled: booleanSchema,
+	focused: booleanSchema,
+	checked: booleanSchema,
+	selected: booleanSchema,
+	pressed: booleanSchema,
+	expanded: booleanSchema,
+	visible: booleanSchema,
+	inViewport: booleanSchema,
+	current: stringSchema,
+	inputKind: stringSchema,
+	controlsSelectors: stringArraySchema,
+	ownsSelectors: stringArraySchema,
+	expandedTargetSelectors: stringArraySchema,
+	position: stringSchema,
+	edgeUtility: booleanSchema,
+	handlers: stringArraySchema,
+	rect: rectSchema,
+	documentRect: rectSchema,
+	point: pointSchema,
+	hitOk: nullableBooleanSchema,
+	hitTarget: { anyOf: [hitTargetSchema, { type: "null" }] },
+	href: stringSchema,
+	rel: stringSchema,
+	occluderSelector: stringSchema,
+	priority: numberSchema,
+	name: stringSchema,
+	ariaLabel: stringSchema,
+	ref: stringSchema,
+	hidden: booleanSchema,
+	referenceOnly: booleanSchema,
+	relationOnly: booleanSchema,
+	sourceSelector: stringSchema,
+	sourceRole: nullableStringSchema,
+	sourceName: stringSchema,
+	targetId: stringSchema,
+	cdpTargetId: stringSchema,
+	scope: {
+		type: "object",
+		properties: { key: stringSchema, name: stringSchema, position: numberSchema, size: numberSchema },
+		required: ["key", "position", "size"],
+		additionalProperties: false,
+	},
 } as const;
 
 export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
@@ -191,9 +250,63 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 		structure: {
 			type: "object",
 			properties: {
-				actionables: { type: "array", items: { type: "object", properties: actionableProperties, anyOf: [{ required: ["selector"] }, { required: ["sourceSelector"] }], additionalProperties: false } },
-				listHints: { type: "array", items: { type: "object", properties: { selector: stringSchema, itemCount: numberSchema, firstItemPreview: stringSchema, containerLabel: stringSchema }, required: ["selector", "itemCount", "firstItemPreview"], additionalProperties: false } },
-				canvasRegions: { type: "array", items: { type: "object", properties: { index: numberSchema, tag: stringSchema, role: stringSchema, action: stringSchema, label: stringSchema, selector: stringSchema, point: pointSchema, rect: rectSchema, inViewport: booleanSchema, hitOk: nullableBooleanSchema, clickable: booleanSchema, text: stringSchema, visible: booleanSchema }, required: ["index", "tag", "role", "action", "label", "selector", "point", "rect", "hitOk", "clickable"], additionalProperties: false } },
+				actionables: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: actionableProperties,
+						anyOf: [{ required: ["selector"] }, { required: ["sourceSelector"] }],
+						additionalProperties: false,
+					},
+				},
+				listHints: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							selector: stringSchema,
+							itemCount: numberSchema,
+							firstItemPreview: stringSchema,
+							containerLabel: stringSchema,
+						},
+						required: ["selector", "itemCount", "firstItemPreview"],
+						additionalProperties: false,
+					},
+				},
+				canvasRegions: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							index: numberSchema,
+							tag: stringSchema,
+							role: stringSchema,
+							action: stringSchema,
+							label: stringSchema,
+							selector: stringSchema,
+							point: pointSchema,
+							rect: rectSchema,
+							inViewport: booleanSchema,
+							hitOk: nullableBooleanSchema,
+							clickable: booleanSchema,
+							text: stringSchema,
+							visible: booleanSchema,
+						},
+						required: [
+							"index",
+							"tag",
+							"role",
+							"action",
+							"label",
+							"selector",
+							"point",
+							"rect",
+							"hitOk",
+							"clickable",
+						],
+						additionalProperties: false,
+					},
+				},
 			},
 			required: ["actionables", "listHints", "canvasRegions"],
 			additionalProperties: false,
@@ -201,12 +314,45 @@ export const PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA = {
 		signals: {
 			type: "object",
 			properties: {
-				fingerprint: { type: "object", properties: { changeSeq: numberSchema, pageEpoch: stringSchema, documentId: stringSchema, url: stringSchema, title: stringSchema, readyState: stringSchema, devicePixelRatio: numberSchema, scrollX: numberSchema, scrollY: numberSchema, viewportWidth: numberSchema, viewportHeight: numberSchema, visibleCount: numberSchema, interactiveCount: numberSchema, capturedAt: numberSchema }, required: ["changeSeq"], additionalProperties: false },
+				fingerprint: {
+					type: "object",
+					properties: {
+						changeSeq: numberSchema,
+						pageEpoch: stringSchema,
+						documentId: stringSchema,
+						url: stringSchema,
+						title: stringSchema,
+						readyState: stringSchema,
+						devicePixelRatio: numberSchema,
+						scrollX: numberSchema,
+						scrollY: numberSchema,
+						viewportWidth: numberSchema,
+						viewportHeight: numberSchema,
+						visibleCount: numberSchema,
+						interactiveCount: numberSchema,
+						capturedAt: numberSchema,
+					},
+					required: ["changeSeq"],
+					additionalProperties: false,
+				},
 			},
 			required: ["fingerprint"],
 			additionalProperties: false,
 		},
-		stats: { type: "object", properties: { nodeCount: numberSchema, outputChars: numberSchema, truncated: booleanSchema, actionableCount: numberSchema, actionablesComplete: booleanSchema, visualSurfaceCount: numberSchema, unnamedActionableCount: numberSchema }, required: ["nodeCount", "outputChars", "truncated"], additionalProperties: false },
+		stats: {
+			type: "object",
+			properties: {
+				nodeCount: numberSchema,
+				outputChars: numberSchema,
+				truncated: booleanSchema,
+				actionableCount: numberSchema,
+				actionablesComplete: booleanSchema,
+				visualSurfaceCount: numberSchema,
+				unnamedActionableCount: numberSchema,
+			},
+			required: ["nodeCount", "outputChars", "truncated"],
+			additionalProperties: false,
+		},
 	},
 	required: ["schema", "page", "content", "structure", "signals", "stats"],
 	additionalProperties: false,

@@ -2,7 +2,12 @@ import type { BrowserCommandRuntimePort, CommandPerceptionLedgerFrame } from "..
 import type { Entity } from "../../kernels/abml/entity.js";
 import { summarizeEntityDiff, type EntityDiff } from "../../kernels/abml/diff.js";
 import { addEntityRelations, buildRelationSummary, type RelationSummary } from "../../kernels/abml/relations.js";
-import { buildTriggeredRelations, eventTriggeredByEntity, resolveActionEntityRef, type CausalSummary } from "../../kernels/abml/causal.js";
+import {
+	buildTriggeredRelations,
+	eventTriggeredByEntity,
+	resolveActionEntityRef,
+	type CausalSummary,
+} from "../../kernels/abml/causal.js";
 import { buildTreeDiff, type TreeDiff } from "../../kernels/abml/treeDiff.js";
 import { buildSnapshotProjection, type SnapshotProjection } from "../../kernels/abml/snapshotProjection.js";
 import { buildCollectionModels, type CollectionModel } from "../../kernels/abml/collections.js";
@@ -38,8 +43,13 @@ export type ScanSummary = {
 
 type LedgerDeltaFields = Pick<ScanSummary, "delta" | "baselineSnapshotId">;
 
-function abmlAssemblyInputs(observation: CaptureObservation, ledgerFrame: CommandPerceptionLedgerFrame | undefined, baseline: BaselineResolution | undefined) {
-	const ledgerDeltaFields: LedgerDeltaFields = ledgerFrame && baseline?.snapshotId ? { delta: "session", baselineSnapshotId: baseline.snapshotId } : {};
+function abmlAssemblyInputs(
+	observation: CaptureObservation,
+	ledgerFrame: CommandPerceptionLedgerFrame | undefined,
+	baseline: BaselineResolution | undefined,
+) {
+	const ledgerDeltaFields: LedgerDeltaFields =
+		ledgerFrame && baseline?.snapshotId ? { delta: "session", baselineSnapshotId: baseline.snapshotId } : {};
 	return {
 		abmlEntities: observation.abmlRead?.ok === true ? (observation.abmlRead.entities ?? []) : null,
 		abmlDiff: observation.abmlRead?.ok === true && baseline ? observation.abmlRead.diff : undefined,
@@ -48,14 +58,26 @@ function abmlAssemblyInputs(observation: CaptureObservation, ledgerFrame: Comman
 	};
 }
 
-function attributedEntitiesForCausal(entities: Entity[] | null, causal: CausalSummary | undefined, focusedRef: string | undefined, action?: CommandPerceptionLedgerFrame["lastAction"]): Entity[] | null {
+function attributedEntitiesForCausal(
+	entities: Entity[] | null,
+	causal: CausalSummary | undefined,
+	focusedRef: string | undefined,
+	action?: CommandPerceptionLedgerFrame["lastAction"],
+): Entity[] | null {
 	if (!entities || !causal) return entities;
 	const requests = "requests" in causal ? causal.requests : [];
 	const actionEntityRef = requests.length
-		? action ? resolveActionEntityRef(action.ref, undefined, entities) : resolveActionEntityRef(undefined, focusedRef, entities)
+		? action
+			? resolveActionEntityRef(action.ref, undefined, entities)
+			: resolveActionEntityRef(undefined, focusedRef, entities)
 		: undefined;
-	const requestTriggered = actionEntityRef ? buildTriggeredRelations(causal, { hasActionRef: action !== undefined, actionAt: action?.at }) : [];
-	const eventTriggers = eventTriggeredByEntity("events" in causal && Array.isArray(causal.events) ? causal.events : [], entities);
+	const requestTriggered = actionEntityRef
+		? buildTriggeredRelations(causal, { hasActionRef: action !== undefined, actionAt: action?.at })
+		: [];
+	const eventTriggers = eventTriggeredByEntity(
+		"events" in causal && Array.isArray(causal.events) ? causal.events : [],
+		entities,
+	);
 	if (!actionEntityRef && eventTriggers.size === 0) return entities;
 	return entities.map((entity) => {
 		let next = entity;
@@ -80,14 +102,29 @@ function buildBaseSummary(summaryData: PageWorldScanBundleV1): Pick<ScanSummary,
 	return summaryData.stats.truncated ? { warnings: ["page capture reached the internal safety ceiling"] } : {};
 }
 
-function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[], treeDiff: TreeDiff | undefined): ScanSummary {
+function buildIntegratedSummary(
+	options: ScanAssemblyOptions,
+	entities: Entity[],
+	treeDiff: TreeDiff | undefined,
+): ScanSummary {
 	const { summaryData, ledgerDeltaFields } = options;
 	const relations = buildRelationSummary(entities);
 	const snapshotProjection = buildSnapshotProjection(entities, { treeDiff });
-	const collections = buildCollectionModels({ entities, snapshotProjection, scanEvidence: scanCollectionEvidence(summaryData) });
+	const collections = buildCollectionModels({
+		entities,
+		snapshotProjection,
+		scanEvidence: scanCollectionEvidence(summaryData),
+	});
 	const primaryEntities = sortEntitiesBySalience(entities.filter((entity) => entity.kind !== "region")).slice(0, 10);
-	const listEntities = entities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5);
-	const visualRegions = entities.filter((entity) => entity.kind === "region" && (entity.source === "vision" || entity.hints?.visualSurface === true)).slice(0, 4);
+	const listEntities = entities
+		.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true)
+		.slice(0, 5);
+	const visualRegions = entities
+		.filter(
+			(entity) =>
+				entity.kind === "region" && (entity.source === "vision" || entity.hints?.visualSurface === true),
+		)
+		.slice(0, 4);
 	return {
 		...buildBaseSummary(summaryData),
 		...ledgerDeltaFields,
@@ -108,16 +145,25 @@ function buildIntegratedSummary(options: ScanAssemblyOptions, entities: Entity[]
 function buildFallbackSummary(options: ScanAssemblyOptions, entities: Entity[]): ScanSummary {
 	const { summaryData, ledgerDeltaFields } = options;
 	const primaryEntities = sortEntitiesBySalience(entities.filter((entity) => entity.kind !== "region")).slice(0, 10);
-	return { ...buildBaseSummary(summaryData), ...ledgerDeltaFields, focus: { gist: buildPageGist(entities), outline: buildEntityOutline(entities), primary_entities: entityRefs(primaryEntities) } };
+	return {
+		...buildBaseSummary(summaryData),
+		...ledgerDeltaFields,
+		focus: {
+			gist: buildPageGist(entities),
+			outline: buildEntityOutline(entities),
+			primary_entities: entityRefs(primaryEntities),
+		},
+	};
 }
 
 export function assembleScanSummary(options: ScanAssemblyOptions) {
 	const { scanEntityGroups, abmlEntities, abmlDiff, baseline, causal, action } = options;
 	const diffSummary = abmlDiff ? summarizeEntityDiff(abmlDiff, baseline?.entities, abmlEntities ?? []) : undefined;
 	const envelopeDiff = abmlDiff ? { ...abmlDiff, ...(diffSummary ? { summary: diffSummary } : {}) } : undefined;
-	const treeDiff = abmlEntities && baseline
-		? buildTreeDiff(baseline.entities, abmlEntities, { partialBaseline: baseline.partialBaseline })
-		: undefined;
+	const treeDiff =
+		abmlEntities && baseline
+			? buildTreeDiff(baseline.entities, abmlEntities, { partialBaseline: baseline.partialBaseline })
+			: undefined;
 	const attributedEntities = attributedEntitiesForCausal(abmlEntities, causal, abmlDiff?.focusedRef, action);
 	if (attributedEntities) {
 		const summary = buildIntegratedSummary(options, attributedEntities, treeDiff);
@@ -152,9 +198,14 @@ export function prepareScanAssembly(options: {
 		observationId: snapshotMeta.snapshotId,
 		capturedAt: snapshotMeta.capturedAt,
 	};
-	const { abmlEntities, abmlDiff, ledgerDeltaFields, action } = abmlAssemblyInputs(observation, ledgerFrame, baseline);
+	const { abmlEntities, abmlDiff, ledgerDeltaFields, action } = abmlAssemblyInputs(
+		observation,
+		ledgerFrame,
+		baseline,
+	);
 	const summaryData = abmlEntities === null ? registerScanEntityRefs(data, scanEntityContext) : data;
-	const scanEntityGroups = abmlEntities === null ? buildScanEntities(summaryData, { entityContext: scanEntityContext }) : undefined;
+	const scanEntityGroups =
+		abmlEntities === null ? buildScanEntities(summaryData, { entityContext: scanEntityContext }) : undefined;
 	return {
 		assembly: assembleScanSummary({
 			summaryData,

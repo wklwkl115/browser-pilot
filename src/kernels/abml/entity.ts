@@ -109,7 +109,14 @@ export type Entity = {
 };
 
 export function isAddressableEntity(entity: Entity): boolean {
-	return entity.actionability !== undefined || entity.kind === "control" || entity.kind === "region" || entity.kind === "frame" || entity.kind === "media" || Boolean(entity.relations?.length);
+	return (
+		entity.actionability !== undefined ||
+		entity.kind === "control" ||
+		entity.kind === "region" ||
+		entity.kind === "frame" ||
+		entity.kind === "media" ||
+		Boolean(entity.relations?.length)
+	);
 }
 
 export type ScanEntityContext = {
@@ -143,20 +150,29 @@ export type BuiltEntity = {
 
 function stringArray(value: unknown, limit = 8): string[] | undefined {
 	if (!Array.isArray(value)) return undefined;
-	const out = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, limit);
+	const out = value
+		.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+		.slice(0, limit);
 	return out.length ? out : undefined;
 }
 
 function roleForTag(tag: string | undefined): string {
 	switch ((tag || "").toLowerCase()) {
-		case "a": return "link";
-		case "button": return "button";
+		case "a":
+			return "link";
+		case "button":
+			return "button";
 		case "input":
-		case "textarea": return "textbox";
-		case "select": return "combobox";
-		case "img": return "img";
-		case "iframe": return "frame";
-		default: return tag || "generic";
+		case "textarea":
+			return "textbox";
+		case "select":
+			return "combobox";
+		case "img":
+			return "img";
+		case "iframe":
+			return "frame";
+		default:
+			return tag || "generic";
 	}
 }
 
@@ -190,7 +206,10 @@ function geometryPoint(point: unknown): { point?: { x: number; y: number } } | u
 	return { point: { x: Math.round(x), y: Math.round(y) } };
 }
 
-function geometryCenter(geometry: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } }): { x: number; y: number } | undefined {
+function geometryCenter(geometry: {
+	box?: { x: number; y: number; w: number; h: number };
+	point?: { x: number; y: number };
+}): { x: number; y: number } | undefined {
 	if (geometry.point) return geometry.point;
 	if (!geometry.box) return undefined;
 	return {
@@ -203,7 +222,8 @@ function actionEntityKind(node: ScanActionableInput): EntityKind {
 	const tag = stringValue(node.tag)?.toLowerCase();
 	const role = stringValue(node.role)?.toLowerCase();
 	if (node.editable === true) return "control";
-	if (["button", "link", "checkbox", "radio", "switch", "tab", "combobox", "option"].includes(role || "")) return "control";
+	if (["button", "link", "checkbox", "radio", "switch", "tab", "combobox", "option"].includes(role || ""))
+		return "control";
 	if (["button", "a", "input", "textarea", "select"].includes(tag || "")) return "control";
 	return "element";
 }
@@ -215,7 +235,14 @@ function actionEntityState(node: ScanActionableInput): EntityState {
 	// authoritative source. Normalize the token ("false" → not current, "true" → boolean, else
 	// the token e.g. "page"/"step"). This also backfills state.current on real pages.
 	const currentRaw = typeof node.current === "string" ? node.current.trim() : undefined;
-	const current = currentRaw === undefined || currentRaw === "" ? undefined : currentRaw === "false" ? false : currentRaw === "true" ? true : currentRaw;
+	const current =
+		currentRaw === undefined || currentRaw === ""
+			? undefined
+			: currentRaw === "false"
+				? false
+				: currentRaw === "true"
+					? true
+					: currentRaw;
 	return {
 		visible: node.visible !== false && Boolean(rect || point || node.hitOk !== undefined),
 		occluded: node.hitOk === false,
@@ -239,7 +266,8 @@ export function buildActionableLocators(node: ScanActionableInput): Locator[] {
 	const role = stringValue(node.role) || roleForTag(stringValue(node.tag));
 	const name = firstSafeSemanticText([node.action, node.label, node.displayLabel, node.text], 160);
 	const point = geometryPoint(node.point)?.point;
-	if (backendNodeId !== undefined && backendNodeId > 0) locators.push({ by: "backendNodeId", value: backendNodeId, ...(targetId ? { targetId } : {}) });
+	if (backendNodeId !== undefined && backendNodeId > 0)
+		locators.push({ by: "backendNodeId", value: backendNodeId, ...(targetId ? { targetId } : {}) });
 	if (selector) locators.push({ by: "css", value: selector });
 	if (name) locators.push({ by: "textAnchor", value: name, ...(role ? { role } : {}), exact: false });
 	if (point) locators.push({ by: "point", x: point.x, y: point.y });
@@ -276,19 +304,39 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 	const scopeName = sanitizeSemanticText(scope?.name, 80);
 	const scopePosition = numberValue(scope?.position);
 	const scopeSize = numberValue(scope?.size);
-	const actions = [node.clickable === true ? "click" as const : undefined, node.editable === true ? "edit" as const : undefined]
-		.filter((action): action is "click" | "edit" => action !== undefined);
+	const actions = [
+		node.clickable === true ? ("click" as const) : undefined,
+		node.editable === true ? ("edit" as const) : undefined,
+	].filter((action): action is "click" | "edit" => action !== undefined);
 	const rawActionHint = stringValue(node.action);
-	const actionHint = sanitizeSemanticText(rawActionHint, 80)
-		?? (rawActionHint && /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,79}$/u.test(rawActionHint) ? rawActionHint : undefined);
+	const actionHint =
+		sanitizeSemanticText(rawActionHint, 80) ??
+		(rawActionHint && /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,79}$/u.test(rawActionHint) ? rawActionHint : undefined);
 	const entity: Omit<Entity, "ref"> = {
 		kind,
 		role,
 		...(name ? { name } : {}),
 		...(value ? { value } : {}),
 		state: actionEntityState(node),
-		...(actions.length ? { actionability: { actions, ...(actionHint ? { hint: actionHint } : {}), confidence: node.actionConfidence === "high" ? "high" : "medium" } } : {}),
-		...(scopeKey ? { scope: { key: scopeKey, ...(scopeName ? { name: scopeName } : {}), ...(scopePosition !== undefined ? { position: scopePosition } : {}), ...(scopeSize !== undefined ? { size: scopeSize } : {}) } } : {}),
+		...(actions.length
+			? {
+					actionability: {
+						actions,
+						...(actionHint ? { hint: actionHint } : {}),
+						confidence: node.actionConfidence === "high" ? "high" : "medium",
+					},
+				}
+			: {}),
+		...(scopeKey
+			? {
+					scope: {
+						key: scopeKey,
+						...(scopeName ? { name: scopeName } : {}),
+						...(scopePosition !== undefined ? { position: scopePosition } : {}),
+						...(scopeSize !== undefined ? { size: scopeSize } : {}),
+					},
+				}
+			: {}),
 		source: "dom",
 		locators,
 		...(Object.keys(geometry).length ? { geometry } : {}),
@@ -301,7 +349,9 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 			...(Array.isArray(node.handlers) && node.handlers.length ? { handlers: node.handlers } : {}),
 			// The element stacked on top at our center point when the hit-test failed — the occluder.
 			// Resolved to an entity ref (coveredBy/occludes) in relation derivation; harmless if unresolved.
-			...(node.hitOk === false && stringValue(node.occluderSelector) ? { occluderSelector: stringValue(node.occluderSelector) } : {}),
+			...(node.hitOk === false && stringValue(node.occluderSelector)
+				? { occluderSelector: stringValue(node.occluderSelector) }
+				: {}),
 			// aria-controls / aria-owns / expanded target selectors (DOM-sourced so they resolve even when
 			// the target is collapsed/hidden — the AX tree omits those). Materialized by selector.
 			...(controlsSelectors ? { controlsSelectors } : {}),
@@ -339,7 +389,10 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 	};
 }
 
-function listHintNameParts(node: ScanListHintInput, index: number): { name: string; context?: string; source: "safe-label" | "safe-preview" | "fallback" } {
+function listHintNameParts(
+	node: ScanListHintInput,
+	index: number,
+): { name: string; context?: string; source: "safe-label" | "safe-preview" | "fallback" } {
 	const name = firstSafeSemanticText([node.containerLabel], 80);
 	const preview = safeContainerLabelText(node.firstItemPreview, 80);
 	const context = safeContainerLabelText(selectorContext(node.selector), 40);
@@ -364,10 +417,17 @@ function disambiguatedName(name: string, context: string | undefined): string {
 	return `${name} (${context})`;
 }
 
-export function buildRegionEntityFromListHint(node: ScanListHintInput, context: ScanEntityContext, index: number, duplicateNames?: ReadonlySet<string>): BuiltEntity {
+export function buildRegionEntityFromListHint(
+	node: ScanListHintInput,
+	context: ScanEntityContext,
+	index: number,
+	duplicateNames?: ReadonlySet<string>,
+): BuiltEntity {
 	const locators = buildListHintLocators(node);
 	const nameParts = listHintNameParts(node, index);
-	const name = duplicateNames?.has(normalizeNameKey(nameParts.name)) ? disambiguatedName(nameParts.name, nameParts.context) : nameParts.name;
+	const name = duplicateNames?.has(normalizeNameKey(nameParts.name))
+		? disambiguatedName(nameParts.name, nameParts.context)
+		: nameParts.name;
 	const entity: Omit<Entity, "ref"> = {
 		kind: "region",
 		role: "list",
@@ -415,8 +475,42 @@ export function buildRegionEntityFromListHint(node: ScanListHintInput, context: 
 
 function referencedTargetKind(role: string): EntityKind {
 	const normalized = role.toLowerCase();
-	if (["button", "link", "checkbox", "radio", "switch", "tab", "combobox", "option", "textbox", "searchbox", "menuitem", "slider", "spinbutton"].includes(normalized)) return "control";
-	if (["region", "listbox", "menu", "menubar", "dialog", "list", "grid", "table", "navigation", "tabpanel", "group", "tree", "form"].includes(normalized)) return "region";
+	if (
+		[
+			"button",
+			"link",
+			"checkbox",
+			"radio",
+			"switch",
+			"tab",
+			"combobox",
+			"option",
+			"textbox",
+			"searchbox",
+			"menuitem",
+			"slider",
+			"spinbutton",
+		].includes(normalized)
+	)
+		return "control";
+	if (
+		[
+			"region",
+			"listbox",
+			"menu",
+			"menubar",
+			"dialog",
+			"list",
+			"grid",
+			"table",
+			"navigation",
+			"tabpanel",
+			"group",
+			"tree",
+			"form",
+		].includes(normalized)
+	)
+		return "region";
 	if (["heading", "text", "statictext"].includes(normalized)) return "text";
 	return "element";
 }
@@ -486,7 +580,14 @@ export function buildReferencedTargetEntity(node: ScanActionableInput, context: 
 		kind,
 		role,
 		...(name ? { name } : {}),
-		state: { visible: !hidden, occluded: false, disabled: false, focused: false, editable: false, inViewport: !hidden },
+		state: {
+			visible: !hidden,
+			occluded: false,
+			disabled: false,
+			focused: false,
+			editable: false,
+			inViewport: !hidden,
+		},
 		source: "dom",
 		locators,
 		hints: { ...(selector ? { selector } : {}), referencedTarget: true, ...(hidden ? { hidden: true } : {}) },
@@ -522,7 +623,12 @@ export function buildVisionRegionFromCanvasActionable(node: ScanVisionInput, con
 	const point = geometryCenter(geometry);
 	const inViewport = node.inViewport !== false && Boolean(point || geometry.box);
 	const locators: Locator[] = point && inViewport ? [{ by: "point", x: point.x, y: point.y }] : [];
-	const name = stringValue(node.action) || stringValue(node.label) || stringValue(node.text) || stringValue(node.selector) || "canvas region";
+	const name =
+		stringValue(node.action) ||
+		stringValue(node.label) ||
+		stringValue(node.text) ||
+		stringValue(node.selector) ||
+		"canvas region";
 	const entity: Omit<Entity, "ref"> = {
 		kind: "region",
 		role: "region",
@@ -575,7 +681,13 @@ export function withRegisteredRef(entity: Omit<Entity, "ref">, refId: string): E
 	return { ...entity, ref: refId };
 }
 
-export function dedupeEntities<T extends { kind?: unknown; hints?: { selector?: unknown; jsonPath?: unknown; listContainer?: unknown }; locators?: Locator[] }>(entities: T[]): T[] {
+export function dedupeEntities<
+	T extends {
+		kind?: unknown;
+		hints?: { selector?: unknown; jsonPath?: unknown; listContainer?: unknown };
+		locators?: Locator[];
+	},
+>(entities: T[]): T[] {
 	const seen = new Set<string>();
 	const out: T[] = [];
 	for (const entity of entities) {
@@ -583,7 +695,7 @@ export function dedupeEntities<T extends { kind?: unknown; hints?: { selector?: 
 		const jsonPath = stringValue(entity.hints?.jsonPath);
 		const locatorKey = Array.isArray(entity.locators) ? JSON.stringify(entity.locators) : "";
 		const preferSelector = entity.kind === "region" || entity.hints?.listContainer === true;
-		const key = preferSelector ? (selector || locatorKey || jsonPath) : (selector || jsonPath || locatorKey);
+		const key = preferSelector ? selector || locatorKey || jsonPath : selector || jsonPath || locatorKey;
 		if (key && seen.has(key)) continue;
 		if (key) seen.add(key);
 		out.push(entity);

@@ -42,7 +42,8 @@ export function getJsonPath(value: unknown, jsonPath: string | undefined): { exi
 	const parsed = parseJsonPathInternal(jsonPath);
 	if (parsed.invalid) return { exists: false, value: undefined };
 	for (const token of parsed.tokens) {
-		if (current === null || current === undefined || typeof current !== "object") return { exists: false, value: undefined };
+		if (current === null || current === undefined || typeof current !== "object")
+			return { exists: false, value: undefined };
 		if (!Object.prototype.hasOwnProperty.call(current, token)) return { exists: false, value: undefined };
 		current = (current as Record<string | number, unknown>)[token];
 	}

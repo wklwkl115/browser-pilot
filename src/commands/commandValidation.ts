@@ -3,8 +3,7 @@ import { isRecord } from "../utils/records.js";
 import type { BrowserCommandDefinition, ValidationIssue } from "./commandDefinition.js";
 
 export type BrowserCommandValidationResult =
-	| { ok: true; args: Record<string, unknown> }
-	| { ok: false; error: string; issues: ValidationIssue[] };
+	{ ok: true; args: Record<string, unknown> } | { ok: false; error: string; issues: ValidationIssue[] };
 
 function jsonPointer(key: string): string {
 	return `/${key.replace(/~/g, "~0").replace(/\//g, "~1")}`;
@@ -38,8 +37,14 @@ function failure(issues: ValidationIssue[]): BrowserCommandValidationResult {
  * Shared pure validation pipeline used by MCP and daemon invocation.
  * Validation is side-effect free and never strips unknown keys.
  */
-export function validateBrowserCommandArguments(definition: BrowserCommandDefinition, rawArgs: unknown): BrowserCommandValidationResult {
-	if (!isRecord(rawArgs)) return failure([{ code: "ARGUMENTS_OBJECT_REQUIRED", path: "/", message: "Command arguments must be an object" }]);
+export function validateBrowserCommandArguments(
+	definition: BrowserCommandDefinition,
+	rawArgs: unknown,
+): BrowserCommandValidationResult {
+	if (!isRecord(rawArgs))
+		return failure([
+			{ code: "ARGUMENTS_OBJECT_REQUIRED", path: "/", message: "Command arguments must be an object" },
+		]);
 	const keyValidation = keyIssues(definition, rawArgs);
 	if (keyValidation.length) return failure(keyValidation);
 

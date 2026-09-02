@@ -17,7 +17,7 @@ export const TRANSLATION_NOISE_SELECTORS = [
 	".read-frog-translated-content-wrapper",
 	".read-frog-translated-block-content",
 	".read-frog-translated-inline-content",
-	"[class*=\"read-frog-translated\"]",
+	'[class*="read-frog-translated"]',
 	"#goog-gt-tt",
 	"#google_translate_element",
 	".goog-te-banner-frame",
@@ -26,15 +26,15 @@ export const TRANSLATION_NOISE_SELECTORS = [
 	".goog-tooltip",
 	".goog-text-highlight",
 	".skiptranslate",
-	"[class^=\"VIpgJd-\"]",
-	"[class*=\" VIpgJd-\"]",
+	'[class^="VIpgJd-"]',
+	'[class*=" VIpgJd-"]',
 	"#immersive-translate-popup",
 	".immersive-translate-target-wrapper",
 	".immersive-translate-target-translation",
-	"[class*=\"immersive-translate\"]",
+	'[class*="immersive-translate"]',
 	"#mate-translate-tooltip",
 	".mate-translate-tooltip",
-	"[class*=\"mate-translate\"]",
+	'[class*="mate-translate"]',
 ] as const;
 
 export const BROWSER_NOISE_SELECTORS = [
@@ -43,8 +43,8 @@ export const BROWSER_NOISE_SELECTORS = [
 	"#__browser_pilot_bridge_request__",
 	"#aix-drop-panel",
 	"#aix-supported-by",
-	"[id^=\"aix-drop-panel\"]",
-	"[data-testid=\"floating-button-container\"]",
+	'[id^="aix-drop-panel"]',
+	'[data-testid="floating-button-container"]',
 	...TRANSLATION_NOISE_SELECTORS,
 ] as const;
 

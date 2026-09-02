@@ -3,7 +3,19 @@ import { isRecord, nonEmptyString } from "../../utils/records.js";
 import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { registerRefDescriptor, resolveRefUriDetailed } from "../../resources/resourceRefs.js";
 import type { Entity } from "../../kernels/abml/entity.js";
-import { axBackendNodeId, axName, axNodeId, axRole, buildAxEntityFromNode, boxModelToGeometry, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities, type AxContext, type AxFusionDiagnostics } from "../../kernels/abml/ax.js";
+import {
+	axBackendNodeId,
+	axName,
+	axNodeId,
+	axRole,
+	buildAxEntityFromNode,
+	boxModelToGeometry,
+	extractAxPropertyRelationAnchors,
+	isInterestingAxNode,
+	mergeDomAndAxEntities,
+	type AxContext,
+	type AxFusionDiagnostics,
+} from "../../kernels/abml/ax.js";
 import type { BuiltEntity } from "../../kernels/abml/entity.js";
 import type { SnapshotGeometryEntry } from "../../kernels/abml/identityBootstrap.js";
 import type { PaintOrderEntry, RelationAnchor } from "../../kernels/abml/relations.js";
@@ -26,17 +38,37 @@ export type AxReadRuntimeOptions = {
 	signal?: AbortSignal;
 };
 
-export async function sendPersistentCdp(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; targetId?: string; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown>; signal?: AbortSignal }) {
-	const result = await server.sendCommand({
-		cmd: "persistent_cdp",
-		action: "send",
-		tabId: options.tabId,
-		cdpMethod: options.cdpMethod,
-		params: options.params || {},
-		...(options.targetId ? { targetId: options.targetId } : {}),
-		persistent: true,
-		timeoutMs: options.timeoutMs,
-	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, internal: true, signal: options.signal });
+export async function sendPersistentCdp(
+	server: AbmlAxRuntimeServer,
+	options: {
+		browserSessionId?: string;
+		tabId: number;
+		targetId?: string;
+		timeoutMs: number;
+		cdpMethod: string;
+		params?: Record<string, unknown>;
+		signal?: AbortSignal;
+	},
+) {
+	const result = await server.sendCommand(
+		{
+			cmd: "persistent_cdp",
+			action: "send",
+			tabId: options.tabId,
+			cdpMethod: options.cdpMethod,
+			params: options.params || {},
+			...(options.targetId ? { targetId: options.targetId } : {}),
+			persistent: true,
+			timeoutMs: options.timeoutMs,
+		},
+		{
+			browserSessionId: options.browserSessionId,
+			tabId: options.tabId,
+			timeoutMs: options.timeoutMs,
+			internal: true,
+			signal: options.signal,
+		},
+	);
 	assertBridgeCommandSucceeded(result, `persistent_cdp:${options.cdpMethod}`);
 	return result;
 }
@@ -46,10 +78,34 @@ function valueRecord(result: unknown): Record<string, unknown> {
 	return {};
 }
 
-const CONTAINER_ROLES = new Set(["radiogroup", "group", "list", "listbox", "menu", "menubar", "table", "grid", "treegrid", "tree", "tablist", "row", "rowgroup", "feed"]);
+const CONTAINER_ROLES = new Set([
+	"radiogroup",
+	"group",
+	"list",
+	"listbox",
+	"menu",
+	"menubar",
+	"table",
+	"grid",
+	"treegrid",
+	"tree",
+	"tablist",
+	"row",
+	"rowgroup",
+	"feed",
+]);
 const TABLE_ROLES = new Set(["table", "grid", "treegrid"]);
 const CELL_ROLES = new Set(["cell", "gridcell", "columnheader", "rowheader"]);
-const CURRENT_CONTAINER_ROLES = new Set(["navigation", "menu", "menubar", "list", "listbox", "tablist", "tree", "radiogroup"]);
+const CURRENT_CONTAINER_ROLES = new Set([
+	"navigation",
+	"menu",
+	"menubar",
+	"list",
+	"listbox",
+	"tablist",
+	"tree",
+	"radiogroup",
+]);
 
 type AncestorContainerContext = {
 	nearest?: { role: string; name: string | undefined; key?: string };
@@ -63,7 +119,10 @@ function nodeRelationKey(node: Record<string, unknown>): string | undefined {
 	return id ? `a:${id}` : undefined;
 }
 
-function ancestorContainerContext(node: Record<string, unknown>, parentByChildId: Map<string, Record<string, unknown>>): AncestorContainerContext {
+function ancestorContainerContext(
+	node: Record<string, unknown>,
+	parentByChildId: Map<string, Record<string, unknown>>,
+): AncestorContainerContext {
 	let current = node;
 	let nearest: AncestorContainerContext["nearest"];
 	const currentContainerKeys: string[] = [];
@@ -73,7 +132,8 @@ function ancestorContainerContext(node: Record<string, unknown>, parentByChildId
 		const parent = parentByChildId.get(id);
 		if (!parent) break;
 		const role = axRole(parent).toLowerCase();
-		if (!nearest && CONTAINER_ROLES.has(role)) nearest = { role, name: axName(parent), key: nodeRelationKey(parent) };
+		if (!nearest && CONTAINER_ROLES.has(role))
+			nearest = { role, name: axName(parent), key: nodeRelationKey(parent) };
 		if (CURRENT_CONTAINER_ROLES.has(role)) {
 			const key = nodeRelationKey(parent);
 			if (key && !currentContainerKeys.includes(key)) currentContainerKeys.push(key);
@@ -83,7 +143,10 @@ function ancestorContainerContext(node: Record<string, unknown>, parentByChildId
 	return { ...(nearest ? { nearest } : {}), currentContainerKeys };
 }
 
-function collectTableRows(table: Record<string, unknown>, nodeById: Map<string, Record<string, unknown>>): Array<Record<string, unknown>> {
+function collectTableRows(
+	table: Record<string, unknown>,
+	nodeById: Map<string, Record<string, unknown>>,
+): Array<Record<string, unknown>> {
 	const rows: Array<Record<string, unknown>> = [];
 	const visit = (node: Record<string, unknown>, depth: number) => {
 		if (depth > 24) return;
@@ -105,7 +168,10 @@ function collectTableRows(table: Record<string, unknown>, nodeById: Map<string, 
 	return rows;
 }
 
-function collectRowCells(row: Record<string, unknown>, nodeById: Map<string, Record<string, unknown>>): Array<Record<string, unknown>> {
+function collectRowCells(
+	row: Record<string, unknown>,
+	nodeById: Map<string, Record<string, unknown>>,
+): Array<Record<string, unknown>> {
 	const cells: Array<Record<string, unknown>> = [];
 	const childIds = Array.isArray(row.childIds) ? row.childIds : [];
 	for (const childId of childIds) {
@@ -115,7 +181,11 @@ function collectRowCells(row: Record<string, unknown>, nodeById: Map<string, Rec
 	return cells;
 }
 
-function tableRelationAnchors(nodes: Array<Record<string, unknown>>, nodeById: Map<string, Record<string, unknown>>, builtByKey: Map<string, BuiltEntity>): RelationAnchor[] {
+function tableRelationAnchors(
+	nodes: Array<Record<string, unknown>>,
+	nodeById: Map<string, Record<string, unknown>>,
+	builtByKey: Map<string, BuiltEntity>,
+): RelationAnchor[] {
 	const anchors: RelationAnchor[] = [];
 	for (const table of nodes) {
 		if (!TABLE_ROLES.has(axRole(table).toLowerCase())) continue;
@@ -133,11 +203,32 @@ function tableRelationAnchors(nodes: Array<Record<string, unknown>>, nodeById: M
 				const colIndex = built?.entity.structure?.colIndex ?? colPos + 1;
 				const rowIndex = built?.entity.structure?.rowIndex ?? rowPos + 1;
 				if (built) built.entity.structure = { ...(built.entity.structure || {}), rowIndex, colIndex };
-				anchors.push({ sourceKey: cellKey, type: "cellOf", targetKey: tableKey, source: "ax", confidence: "high", evidence: { rowIndex, colIndex } });
-				if (rowKey) anchors.push({ sourceKey: cellKey, type: "rowOf", targetKey: rowKey, source: "ax", confidence: "high" });
+				anchors.push({
+					sourceKey: cellKey,
+					type: "cellOf",
+					targetKey: tableKey,
+					source: "ax",
+					confidence: "high",
+					evidence: { rowIndex, colIndex },
+				});
+				if (rowKey)
+					anchors.push({
+						sourceKey: cellKey,
+						type: "rowOf",
+						targetKey: rowKey,
+						source: "ax",
+						confidence: "high",
+					});
 				if (axRole(cell).toLowerCase() === "columnheader") {
 					headersByCol.set(colIndex, cellKey);
-					anchors.push({ sourceKey: cellKey, type: "headerFor", targetKey: tableKey, source: "ax", confidence: "medium", evidence: { colIndex } });
+					anchors.push({
+						sourceKey: cellKey,
+						type: "headerFor",
+						targetKey: tableKey,
+						source: "ax",
+						confidence: "medium",
+						evidence: { colIndex },
+					});
 				} else {
 					dataCells.push({ cellKey, colIndex });
 				}
@@ -145,13 +236,25 @@ function tableRelationAnchors(nodes: Array<Record<string, unknown>>, nodeById: M
 		});
 		for (const { cellKey, colIndex } of dataCells) {
 			const headerKey = headersByCol.get(colIndex);
-			if (headerKey && headerKey !== cellKey) anchors.push({ sourceKey: cellKey, type: "columnOf", targetKey: headerKey, source: "ax", confidence: "medium", evidence: { colIndex } });
+			if (headerKey && headerKey !== cellKey)
+				anchors.push({
+					sourceKey: cellKey,
+					type: "columnOf",
+					targetKey: headerKey,
+					source: "ax",
+					confidence: "medium",
+					evidence: { colIndex },
+				});
 		}
 	}
 	return anchors;
 }
 
-function nearestBuiltDescendantKey(node: Record<string, unknown>, nodeById: Map<string, Record<string, unknown>>, builtByKey: Map<string, BuiltEntity>): string | undefined {
+function nearestBuiltDescendantKey(
+	node: Record<string, unknown>,
+	nodeById: Map<string, Record<string, unknown>>,
+	builtByKey: Map<string, BuiltEntity>,
+): string | undefined {
 	const queue: unknown[] = Array.isArray(node.childIds) ? [...node.childIds] : [];
 	let firstMatch: string | undefined;
 	let steps = 0;
@@ -170,7 +273,12 @@ function nearestBuiltDescendantKey(node: Record<string, unknown>, nodeById: Map<
 	return firstMatch;
 }
 
-function resolveAnchorTargets(anchors: RelationAnchor[], builtByKey: Map<string, BuiltEntity>, nodeByBackend: Map<number, Record<string, unknown>>, nodeById: Map<string, Record<string, unknown>>): RelationAnchor[] {
+function resolveAnchorTargets(
+	anchors: RelationAnchor[],
+	builtByKey: Map<string, BuiltEntity>,
+	nodeByBackend: Map<number, Record<string, unknown>>,
+	nodeById: Map<string, Record<string, unknown>>,
+): RelationAnchor[] {
 	const out: RelationAnchor[] = [];
 	for (const anchor of anchors) {
 		const match = /^b:(\d+)$/.exec(anchor.targetKey);
@@ -205,13 +313,25 @@ export type AxReadDiagnostics = {
 	snapshotGeometryUnavailable?: boolean;
 	snapshotStartedAt?: string;
 	snapshotEndedAt?: string;
-	paintOrder?: { supported: boolean; entryCount: number; ownerBackendNodeIdCount: number; snapshotUnsupported?: boolean; geometryFallbackUsed?: boolean };
+	paintOrder?: {
+		supported: boolean;
+		entryCount: number;
+		ownerBackendNodeIdCount: number;
+		snapshotUnsupported?: boolean;
+		geometryFallbackUsed?: boolean;
+	};
 	nodeCount: number;
 	interestingNodeCount: number;
 	bounded: { maxGeometryCdpCalls: number; geometryFallbackTruncated: boolean };
 };
 
-export type AxReadResult = { entities: BuiltEntity[]; anchors: RelationAnchor[]; snapshotGeometryEntries?: SnapshotGeometryEntry[]; paintOrderEntries?: PaintOrderEntry[]; diagnostics?: AxReadDiagnostics };
+export type AxReadResult = {
+	entities: BuiltEntity[];
+	anchors: RelationAnchor[];
+	snapshotGeometryEntries?: SnapshotGeometryEntry[];
+	paintOrderEntries?: PaintOrderEntry[];
+	diagnostics?: AxReadDiagnostics;
+};
 
 export type PartialAxStatus = "ok" | "skipped" | "failed" | "degraded";
 
@@ -249,7 +369,19 @@ function partialAxDiagnostics(input: Omit<PartialAxDiagnostics, "provider">): Pa
 	return { provider: "partial-ax", ...input };
 }
 
-export async function readPartialAxTree(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; targetId?: string; backendNodeId?: number; timeoutMs?: number; maxNodes?: number; fetchRelatives?: boolean; signal?: AbortSignal }): Promise<PartialAxResult> {
+export async function readPartialAxTree(
+	server: AbmlAxRuntimeServer,
+	options: {
+		browserSessionId?: string;
+		tabId: number;
+		targetId?: string;
+		backendNodeId?: number;
+		timeoutMs?: number;
+		maxNodes?: number;
+		fetchRelatives?: boolean;
+		signal?: AbortSignal;
+	},
+): Promise<PartialAxResult> {
 	options.signal?.throwIfAborted();
 	const startedAt = Date.now();
 	const timeoutMs = Math.max(250, Math.min(options.timeoutMs ?? 1_500, 5_000));
@@ -257,9 +389,26 @@ export async function readPartialAxTree(server: AbmlAxRuntimeServer, options: { 
 	const fetchRelatives = options.fetchRelatives === true;
 	const targetId = nonEmptyString(options.targetId);
 	const backendNodeId = Number(options.backendNodeId);
-	const base = { backendNodeId: Number.isFinite(backendNodeId) && backendNodeId > 0 ? backendNodeId : undefined, ...(targetId ? { targetId } : {}), fetchRelatives, timeoutMs, maxNodes, cdpCalls: 0, nodeCount: 0, elapsedMs: 0 };
+	const base = {
+		backendNodeId: Number.isFinite(backendNodeId) && backendNodeId > 0 ? backendNodeId : undefined,
+		...(targetId ? { targetId } : {}),
+		fetchRelatives,
+		timeoutMs,
+		maxNodes,
+		cdpCalls: 0,
+		nodeCount: 0,
+		elapsedMs: 0,
+	};
 	if (base.backendNodeId === undefined) {
-		return { nodes: [], diagnostics: partialAxDiagnostics({ ...base, status: "skipped", reason: "missing-backendNodeId", elapsedMs: Date.now() - startedAt }) };
+		return {
+			nodes: [],
+			diagnostics: partialAxDiagnostics({
+				...base,
+				status: "skipped",
+				reason: "missing-backendNodeId",
+				elapsedMs: Date.now() - startedAt,
+			}),
+		};
 	}
 	try {
 		const partial = await sendPersistentCdp(server, {
@@ -273,23 +422,60 @@ export async function readPartialAxTree(server: AbmlAxRuntimeServer, options: { 
 		});
 		const root = valueRecord(partial.data);
 		const rootResult = valueRecord(root.result);
-		const rawNodes = Array.isArray(root.nodes) ? root.nodes : Array.isArray(rootResult.nodes) ? rootResult.nodes : [];
+		const rawNodes = Array.isArray(root.nodes)
+			? root.nodes
+			: Array.isArray(rootResult.nodes)
+				? rootResult.nodes
+				: [];
 		const nodeCount = rawNodes.length;
 		if (!nodeCount) {
-			return { nodes: [], diagnostics: partialAxDiagnostics({ ...base, cdpCalls: 1, status: "degraded", reason: "empty", elapsedMs: Date.now() - startedAt }) };
+			return {
+				nodes: [],
+				diagnostics: partialAxDiagnostics({
+					...base,
+					cdpCalls: 1,
+					status: "degraded",
+					reason: "empty",
+					elapsedMs: Date.now() - startedAt,
+				}),
+			};
 		}
-		const nodes = rawNodes.filter(isRecord).slice(0, maxNodes).map((node) => ({ ...node }));
+		const nodes = rawNodes
+			.filter(isRecord)
+			.slice(0, maxNodes)
+			.map((node) => ({ ...node }));
 		const overBudget = nodeCount > maxNodes;
 		return {
 			nodes,
-			diagnostics: partialAxDiagnostics({ ...base, cdpCalls: 1, nodeCount, status: overBudget ? "degraded" : "ok", ...(overBudget ? { reason: "over-budget" } : {}), elapsedMs: Date.now() - startedAt }),
+			diagnostics: partialAxDiagnostics({
+				...base,
+				cdpCalls: 1,
+				nodeCount,
+				status: overBudget ? "degraded" : "ok",
+				...(overBudget ? { reason: "over-budget" } : {}),
+				elapsedMs: Date.now() - startedAt,
+			}),
 		};
 	} catch (error) {
 		options.signal?.throwIfAborted();
 		const details = cdpErrorDetails(error);
 		const lowered = details.message.toLowerCase();
-		const unsupported = lowered.includes("wasn't found") || lowered.includes("not found") || lowered.includes("unknown method") || lowered.includes("not supported");
-		return { nodes: [], diagnostics: partialAxDiagnostics({ ...base, cdpCalls: 1, status: "failed", reason: unsupported ? "unsupported" : "error", error: details, elapsedMs: Date.now() - startedAt }) };
+		const unsupported =
+			lowered.includes("wasn't found") ||
+			lowered.includes("not found") ||
+			lowered.includes("unknown method") ||
+			lowered.includes("not supported");
+		return {
+			nodes: [],
+			diagnostics: partialAxDiagnostics({
+				...base,
+				cdpCalls: 1,
+				status: "failed",
+				reason: unsupported ? "unsupported" : "error",
+				error: details,
+				elapsedMs: Date.now() - startedAt,
+			}),
+		};
 	}
 }
 
@@ -307,7 +493,11 @@ function geometryFromSnapshotBounds(value: unknown): AxGeometry | undefined {
 	};
 }
 
-function viewportGeometry(geometry: NonNullable<AxGeometry>, scrollX: number, scrollY: number): NonNullable<AxGeometry> {
+function viewportGeometry(
+	geometry: NonNullable<AxGeometry>,
+	scrollX: number,
+	scrollY: number,
+): NonNullable<AxGeometry> {
 	const box = geometry.box;
 	const point = geometry.point;
 	return {
@@ -321,17 +511,32 @@ function snapshotString(strings: unknown[], index: unknown): string {
 	return typeof text === "string" ? text : String(index ?? "");
 }
 
-function snapshotAttrs(nodes: Record<string, unknown>, strings: unknown[], nodeIndex: number): Record<string, string> | undefined {
-	const raw = Array.isArray(nodes.attributes) && Array.isArray(nodes.attributes[nodeIndex]) ? nodes.attributes[nodeIndex] as unknown[] : [];
+function snapshotAttrs(
+	nodes: Record<string, unknown>,
+	strings: unknown[],
+	nodeIndex: number,
+): Record<string, string> | undefined {
+	const raw =
+		Array.isArray(nodes.attributes) && Array.isArray(nodes.attributes[nodeIndex])
+			? (nodes.attributes[nodeIndex] as unknown[])
+			: [];
 	const out: Record<string, string> = {};
-	for (let i = 0; i + 1 < raw.length; i += 2) out[snapshotString(strings, raw[i])] = snapshotString(strings, raw[i + 1]);
+	for (let i = 0; i + 1 < raw.length; i += 2)
+		out[snapshotString(strings, raw[i])] = snapshotString(strings, raw[i + 1]);
 	return Object.keys(out).length ? out : undefined;
 }
 
-type SnapshotLayoutEntry = { backendNodeId: number; geometry: NonNullable<AxGeometry>; attrs?: Record<string, string>; paintOrder?: number };
+type SnapshotLayoutEntry = {
+	backendNodeId: number;
+	geometry: NonNullable<AxGeometry>;
+	attrs?: Record<string, string>;
+	paintOrder?: number;
+};
 
 function snapshotLayoutViews(value: unknown, scrollX: number, scrollY: number) {
-	const root = isRecord(valueRecord(value).result) ? valueRecord(value).result as Record<string, unknown> : valueRecord(value);
+	const root = isRecord(valueRecord(value).result)
+		? (valueRecord(value).result as Record<string, unknown>)
+		: valueRecord(value);
 	const documents = Array.isArray(root.documents) ? root.documents : [];
 	const strings = Array.isArray(root.strings) ? root.strings : [];
 	const documentCount = documents.length;
@@ -349,12 +554,21 @@ function snapshotLayoutViews(value: unknown, scrollX: number, scrollY: number) {
 		const attrs = snapshotAttrs(nodes, strings, nodeIndex);
 		if (!attrs) continue;
 		attrsByNodeIndex.set(nodeIndex, attrs);
-		if (Object.entries(attrs).some(([name, attrValue]) => name.toLowerCase() === "type" && attrValue.toLowerCase() === "password")) passwordBackendNodeIds.add(backendNodeId);
+		if (
+			Object.entries(attrs).some(
+				([name, attrValue]) => name.toLowerCase() === "type" && attrValue.toLowerCase() === "password",
+			)
+		)
+			passwordBackendNodeIds.add(backendNodeId);
 	}
 	const entries: SnapshotLayoutEntry[] = [];
 	const nodeIndexes = Array.isArray(layout.nodeIndex) ? layout.nodeIndex : [];
 	const bounds = Array.isArray(layout.bounds) ? layout.bounds : [];
-	const paintOrders = Array.isArray(layout.paintOrders) ? layout.paintOrders : Array.isArray(layout.paintOrder) ? layout.paintOrder : [];
+	const paintOrders = Array.isArray(layout.paintOrders)
+		? layout.paintOrders
+		: Array.isArray(layout.paintOrder)
+			? layout.paintOrder
+			: [];
 	for (let i = 0; i < nodeIndexes.length; i += 1) {
 		const nodeIndex = Number(nodeIndexes[i]);
 		const backendNodeId = Number(backendIds[nodeIndex]);
@@ -363,18 +577,43 @@ function snapshotLayoutViews(value: unknown, scrollX: number, scrollY: number) {
 		if (!geometry) continue;
 		const paintOrder = Number(paintOrders[i]);
 		const attrs = attrsByNodeIndex.get(nodeIndex);
-		entries.push({ backendNodeId, geometry, ...(attrs ? { attrs } : {}), ...(Number.isFinite(paintOrder) ? { paintOrder } : {}) });
+		entries.push({
+			backendNodeId,
+			geometry,
+			...(attrs ? { attrs } : {}),
+			...(Number.isFinite(paintOrder) ? { paintOrder } : {}),
+		});
 	}
 	const uniqueEntries = uniqueSnapshotLayoutEntries(entries);
 	return {
-		geometryByBackend: new Map(entries.map((entry) => [entry.backendNodeId, viewportGeometry(entry.geometry, scrollX, scrollY)])),
-		snapshotEntries: uniqueEntries.map((entry) => ({ backendNodeId: entry.backendNodeId, bounds: entry.geometry.box!, ...(entry.attrs ? { attrs: entry.attrs } : {}) })),
-		paintOrderEntries: uniqueSnapshotLayoutEntries(entries.filter((entry) => entry.paintOrder !== undefined)).map((entry) => ({ backendNodeId: entry.backendNodeId, paintOrder: entry.paintOrder!, bounds: entry.geometry.box! })),
+		geometryByBackend: new Map(
+			entries.map((entry) => [entry.backendNodeId, viewportGeometry(entry.geometry, scrollX, scrollY)]),
+		),
+		snapshotEntries: uniqueEntries.map((entry) => ({
+			backendNodeId: entry.backendNodeId,
+			bounds: entry.geometry.box!,
+			...(entry.attrs ? { attrs: entry.attrs } : {}),
+		})),
+		paintOrderEntries: uniqueSnapshotLayoutEntries(entries.filter((entry) => entry.paintOrder !== undefined)).map(
+			(entry) => ({
+				backendNodeId: entry.backendNodeId,
+				paintOrder: entry.paintOrder!,
+				bounds: entry.geometry.box!,
+			}),
+		),
 		domBackendNodeIds,
 		passwordBackendNodeIds,
 		snapshotDocumentCount: documentCount,
 		snapshotDocumentsSkipped: Math.max(0, documentCount - 1),
-	} satisfies { geometryByBackend: Map<number, AxGeometry>; snapshotEntries: SnapshotGeometryEntry[]; paintOrderEntries: PaintOrderEntry[]; domBackendNodeIds: Set<number>; passwordBackendNodeIds: Set<number>; snapshotDocumentCount: number; snapshotDocumentsSkipped: number };
+	} satisfies {
+		geometryByBackend: Map<number, AxGeometry>;
+		snapshotEntries: SnapshotGeometryEntry[];
+		paintOrderEntries: PaintOrderEntry[];
+		domBackendNodeIds: Set<number>;
+		passwordBackendNodeIds: Set<number>;
+		snapshotDocumentCount: number;
+		snapshotDocumentsSkipped: number;
+	};
 }
 
 function uniqueSnapshotLayoutEntries(entries: SnapshotLayoutEntry[]): SnapshotLayoutEntry[] {
@@ -408,13 +647,29 @@ type AxSnapshotRead = {
 	paintOrderSnapshotUnsupported: boolean;
 	paintOrderGeometryFallbackUsed: boolean;
 };
-type AxGeometryRead = { geometryByNode: Map<Record<string, unknown>, AxGeometry | undefined>; geometryFallbackTruncated: boolean };
+type AxGeometryRead = {
+	geometryByNode: Map<Record<string, unknown>, AxGeometry | undefined>;
+	geometryFallbackTruncated: boolean;
+};
 
-async function loadAxNodes(sendCdp: AxCdpSender, options: AxReadRuntimeOptions, timeoutMs: number): Promise<Array<Record<string, unknown>>> {
-	const tree = await sendCdp({ browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs, cdpMethod: "Accessibility.getFullAXTree" });
+async function loadAxNodes(
+	sendCdp: AxCdpSender,
+	options: AxReadRuntimeOptions,
+	timeoutMs: number,
+): Promise<Array<Record<string, unknown>>> {
+	const tree = await sendCdp({
+		browserSessionId: options.browserSessionId,
+		tabId: options.tabId,
+		timeoutMs,
+		cdpMethod: "Accessibility.getFullAXTree",
+	});
 	const root = valueRecord(tree.data);
 	const rootResult = valueRecord(root.result);
-	return Array.isArray(root.nodes) ? root.nodes as Array<Record<string, unknown>> : Array.isArray(rootResult.nodes) ? rootResult.nodes as Array<Record<string, unknown>> : [];
+	return Array.isArray(root.nodes)
+		? (root.nodes as Array<Record<string, unknown>>)
+		: Array.isArray(rootResult.nodes)
+			? (rootResult.nodes as Array<Record<string, unknown>>)
+			: [];
 }
 
 function indexAxNodes(nodes: Array<Record<string, unknown>>): AxNodeIndexes {
@@ -435,26 +690,62 @@ function indexAxNodes(nodes: Array<Record<string, unknown>>): AxNodeIndexes {
 	return { parentByChildId, nodeById, nodeByBackend };
 }
 
-async function requestDomSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOptions, timeoutMs: number, includePaintOrder: boolean): Promise<unknown> {
-	const params = { computedStyles: [], includeDOMRects: true, ...(includePaintOrder ? { includePaintOrder: true } : {}) };
-	return (await sendCdp({ browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs, cdpMethod: "DOMSnapshot.captureSnapshot", params })).data;
+async function requestDomSnapshot(
+	sendCdp: AxCdpSender,
+	options: AxReadRuntimeOptions,
+	timeoutMs: number,
+	includePaintOrder: boolean,
+): Promise<unknown> {
+	const params = {
+		computedStyles: [],
+		includeDOMRects: true,
+		...(includePaintOrder ? { includePaintOrder: true } : {}),
+	};
+	return (
+		await sendCdp({
+			browserSessionId: options.browserSessionId,
+			tabId: options.tabId,
+			timeoutMs,
+			cdpMethod: "DOMSnapshot.captureSnapshot",
+			params,
+		})
+	).data;
 }
 
 async function captureDomSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOptions, timeoutMs: number) {
 	try {
-		return { data: await requestDomSnapshot(sendCdp, options, timeoutMs, true), paintOrderSnapshotUnsupported: false, paintOrderGeometryFallbackUsed: false, snapshotGeometryUnavailable: false };
+		return {
+			data: await requestDomSnapshot(sendCdp, options, timeoutMs, true),
+			paintOrderSnapshotUnsupported: false,
+			paintOrderGeometryFallbackUsed: false,
+			snapshotGeometryUnavailable: false,
+		};
 	} catch {
 		options.signal?.throwIfAborted();
 		try {
-			return { data: await requestDomSnapshot(sendCdp, options, timeoutMs, false), paintOrderSnapshotUnsupported: true, paintOrderGeometryFallbackUsed: true, snapshotGeometryUnavailable: false };
+			return {
+				data: await requestDomSnapshot(sendCdp, options, timeoutMs, false),
+				paintOrderSnapshotUnsupported: true,
+				paintOrderGeometryFallbackUsed: true,
+				snapshotGeometryUnavailable: false,
+			};
 		} catch {
 			options.signal?.throwIfAborted();
-			return { data: undefined, paintOrderSnapshotUnsupported: true, paintOrderGeometryFallbackUsed: false, snapshotGeometryUnavailable: true };
+			return {
+				data: undefined,
+				paintOrderSnapshotUnsupported: true,
+				paintOrderGeometryFallbackUsed: false,
+				snapshotGeometryUnavailable: true,
+			};
 		}
 	}
 }
 
-async function readAxSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOptions, timeoutMs: number): Promise<AxSnapshotRead> {
+async function readAxSnapshot(
+	sendCdp: AxCdpSender,
+	options: AxReadRuntimeOptions,
+	timeoutMs: number,
+): Promise<AxSnapshotRead> {
 	const snapshotStartedAt = new Date().toISOString();
 	const { data, ...captureDiagnostics } = await captureDomSnapshot(sendCdp, options, timeoutMs);
 	const snapshotEndedAt = new Date().toISOString();
@@ -474,67 +765,124 @@ async function readAxSnapshot(sendCdp: AxCdpSender, options: AxReadRuntimeOption
 	};
 }
 
-async function readAxGeometry(sendCdp: AxCdpSender, options: AxReadRuntimeOptions, timeoutMs: number, nodes: Array<Record<string, unknown>>, rawGeometryByBackend: Map<number, AxGeometry | undefined>): Promise<AxGeometryRead> {
+async function readAxGeometry(
+	sendCdp: AxCdpSender,
+	options: AxReadRuntimeOptions,
+	timeoutMs: number,
+	nodes: Array<Record<string, unknown>>,
+	rawGeometryByBackend: Map<number, AxGeometry | undefined>,
+): Promise<AxGeometryRead> {
 	const geometryByNode = new Map<Record<string, unknown>, AxGeometry | undefined>();
 	let geometryFallbackAttempts = 0;
 	let geometryFallbackTruncated = false;
-	// ponytail: four CDP reads at a time avoids 64-call bursts; raise only from browser traces.
+	// Tuning note: four CDP reads at a time avoids 64-call bursts; raise only from browser traces.
 	for (let offset = 0; offset < nodes.length; offset += AX_GEOMETRY_FALLBACK_CONCURRENCY) {
-		await Promise.all(nodes.slice(offset, offset + AX_GEOMETRY_FALLBACK_CONCURRENCY).map(async (node) => {
-			const backendNodeId = Number(node.backendDOMNodeId ?? node.backendNodeId);
-			if (!Number.isFinite(backendNodeId) || backendNodeId <= 0) return;
-			if (rawGeometryByBackend.has(backendNodeId)) {
-				geometryByNode.set(node, rawGeometryByBackend.get(backendNodeId));
-				return;
-			}
-			if (geometryFallbackAttempts >= AX_GEOMETRY_FALLBACK_MAX_CALLS) {
-				geometryFallbackTruncated = true;
-				geometryByNode.set(node, undefined);
-				return;
-			}
-			geometryFallbackAttempts += 1;
-			try {
-				const box = await sendCdp({ browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs, cdpMethod: "DOM.getBoxModel", params: { backendNodeId } });
-				const geometry = boxModelToGeometry(valueRecord(box.data).result ?? valueRecord(box.data));
-				rawGeometryByBackend.set(backendNodeId, geometry);
-				geometryByNode.set(node, geometry);
-			} catch {
-				options.signal?.throwIfAborted();
-				rawGeometryByBackend.set(backendNodeId, undefined);
-				geometryByNode.set(node, undefined);
-			}
-		}));
+		await Promise.all(
+			nodes.slice(offset, offset + AX_GEOMETRY_FALLBACK_CONCURRENCY).map(async (node) => {
+				const backendNodeId = Number(node.backendDOMNodeId ?? node.backendNodeId);
+				if (!Number.isFinite(backendNodeId) || backendNodeId <= 0) return;
+				if (rawGeometryByBackend.has(backendNodeId)) {
+					geometryByNode.set(node, rawGeometryByBackend.get(backendNodeId));
+					return;
+				}
+				if (geometryFallbackAttempts >= AX_GEOMETRY_FALLBACK_MAX_CALLS) {
+					geometryFallbackTruncated = true;
+					geometryByNode.set(node, undefined);
+					return;
+				}
+				geometryFallbackAttempts += 1;
+				try {
+					const box = await sendCdp({
+						browserSessionId: options.browserSessionId,
+						tabId: options.tabId,
+						timeoutMs,
+						cdpMethod: "DOM.getBoxModel",
+						params: { backendNodeId },
+					});
+					const geometry = boxModelToGeometry(valueRecord(box.data).result ?? valueRecord(box.data));
+					rawGeometryByBackend.set(backendNodeId, geometry);
+					geometryByNode.set(node, geometry);
+				} catch {
+					options.signal?.throwIfAborted();
+					rawGeometryByBackend.set(backendNodeId, undefined);
+					geometryByNode.set(node, undefined);
+				}
+			}),
+		);
 	}
 	return { geometryByNode, geometryFallbackTruncated };
 }
 
-function assembleAxEntities(nodes: Array<Record<string, unknown>>, interestingNodes: Array<Record<string, unknown>>, context: AxContext, indexes: AxNodeIndexes, geometryByNode: Map<Record<string, unknown>, AxGeometry | undefined>, domBackendNodeIds: Set<number>, passwordBackendNodeIds: Set<number>): Pick<AxReadResult, "entities" | "anchors"> {
+function assembleAxEntities(
+	nodes: Array<Record<string, unknown>>,
+	interestingNodes: Array<Record<string, unknown>>,
+	context: AxContext,
+	indexes: AxNodeIndexes,
+	geometryByNode: Map<Record<string, unknown>, AxGeometry | undefined>,
+	domBackendNodeIds: Set<number>,
+	passwordBackendNodeIds: Set<number>,
+): Pick<AxReadResult, "entities" | "anchors"> {
 	const entities: BuiltEntity[] = [];
 	const builtByKey = new Map<string, BuiltEntity>();
 	const propertyAnchors: RelationAnchor[] = [];
 	const currentContainerCandidatesByKey = new Map<string, string[]>();
 	for (const node of interestingNodes) {
 		const backendNodeId = axBackendNodeId(node);
-		const redactValue = backendNodeId === undefined || !domBackendNodeIds.has(backendNodeId) || passwordBackendNodeIds.has(backendNodeId);
+		const redactValue =
+			backendNodeId === undefined ||
+			!domBackendNodeIds.has(backendNodeId) ||
+			passwordBackendNodeIds.has(backendNodeId);
 		const built = buildAxEntityFromNode(node, context, geometryByNode.get(node), { redactValue });
 		const ancestors = ancestorContainerContext(node, indexes.parentByChildId);
-		if (ancestors.nearest) built.entity.hints = { ...(built.entity.hints || {}), containerRole: ancestors.nearest.role, ...(ancestors.nearest.name ? { containerName: ancestors.nearest.name } : {}), ...(ancestors.nearest.key ? { containerKey: ancestors.nearest.key } : {}) };
+		if (ancestors.nearest)
+			built.entity.hints = {
+				...(built.entity.hints || {}),
+				containerRole: ancestors.nearest.role,
+				...(ancestors.nearest.name ? { containerName: ancestors.nearest.name } : {}),
+				...(ancestors.nearest.key ? { containerKey: ancestors.nearest.key } : {}),
+			};
 		entities.push(built);
 		const sourceKey = nodeRelationKey(node);
 		if (!sourceKey) continue;
 		builtByKey.set(sourceKey, built);
-		if (ancestors.currentContainerKeys.length) currentContainerCandidatesByKey.set(sourceKey, ancestors.currentContainerKeys);
-		for (const anchor of extractAxPropertyRelationAnchors(node)) propertyAnchors.push({ sourceKey, type: anchor.type, targetKey: anchor.targetKey, source: "ax", confidence: "high" });
+		if (ancestors.currentContainerKeys.length)
+			currentContainerCandidatesByKey.set(sourceKey, ancestors.currentContainerKeys);
+		for (const anchor of extractAxPropertyRelationAnchors(node))
+			propertyAnchors.push({
+				sourceKey,
+				type: anchor.type,
+				targetKey: anchor.targetKey,
+				source: "ax",
+				confidence: "high",
+			});
 	}
 	for (const [key, candidates] of currentContainerCandidatesByKey) {
 		const containerKeys = candidates.filter((candidate) => candidate !== key && builtByKey.has(candidate));
-		if (containerKeys.length) builtByKey.get(key)!.entity.hints = { ...(builtByKey.get(key)!.entity.hints || {}), currentContainerKeys: containerKeys };
+		if (containerKeys.length)
+			builtByKey.get(key)!.entity.hints = {
+				...(builtByKey.get(key)!.entity.hints || {}),
+				currentContainerKeys: containerKeys,
+			};
 	}
-	const anchors = resolveAnchorTargets([...propertyAnchors, ...tableRelationAnchors(nodes, indexes.nodeById, builtByKey)], builtByKey, indexes.nodeByBackend, indexes.nodeById);
+	const anchors = resolveAnchorTargets(
+		[...propertyAnchors, ...tableRelationAnchors(nodes, indexes.nodeById, builtByKey)],
+		builtByKey,
+		indexes.nodeByBackend,
+		indexes.nodeById,
+	);
 	return { entities, anchors };
 }
 
-function projectAxReadResult(input: { startedAt: number; cdpCalls: number; geometryCdpCalls: number; nodes: Array<Record<string, unknown>>; interestingNodes: Array<Record<string, unknown>>; snapshot: AxSnapshotRead; geometry: AxGeometryRead; assembled: Pick<AxReadResult, "entities" | "anchors"> }): AxReadResult {
+function projectAxReadResult(input: {
+	startedAt: number;
+	cdpCalls: number;
+	geometryCdpCalls: number;
+	nodes: Array<Record<string, unknown>>;
+	interestingNodes: Array<Record<string, unknown>>;
+	snapshot: AxSnapshotRead;
+	geometry: AxGeometryRead;
+	assembled: Pick<AxReadResult, "entities" | "anchors">;
+}): AxReadResult {
 	const { snapshot, geometry } = input;
 	return {
 		...input.assembled,
@@ -547,7 +895,9 @@ function projectAxReadResult(input: { startedAt: number; cdpCalls: number; geome
 			geometryCdpCalls: input.geometryCdpCalls,
 			...(snapshot.snapshotGeometryCount ? { snapshotGeometryCount: snapshot.snapshotGeometryCount } : {}),
 			...(snapshot.snapshotDocumentCount ? { snapshotDocumentCount: snapshot.snapshotDocumentCount } : {}),
-			...(snapshot.snapshotDocumentsSkipped ? { snapshotDocumentsSkipped: snapshot.snapshotDocumentsSkipped } : {}),
+			...(snapshot.snapshotDocumentsSkipped
+				? { snapshotDocumentsSkipped: snapshot.snapshotDocumentsSkipped }
+				: {}),
 			...(snapshot.snapshotGeometryUnavailable ? { snapshotGeometryUnavailable: true } : {}),
 			...(snapshot.snapshotStartedAt ? { snapshotStartedAt: snapshot.snapshotStartedAt } : {}),
 			...(snapshot.snapshotEndedAt ? { snapshotEndedAt: snapshot.snapshotEndedAt } : {}),
@@ -560,12 +910,18 @@ function projectAxReadResult(input: { startedAt: number; cdpCalls: number; geome
 			},
 			nodeCount: input.nodes.length,
 			interestingNodeCount: input.interestingNodes.length,
-			bounded: { maxGeometryCdpCalls: AX_GEOMETRY_FALLBACK_MAX_CALLS, geometryFallbackTruncated: geometry.geometryFallbackTruncated },
+			bounded: {
+				maxGeometryCdpCalls: AX_GEOMETRY_FALLBACK_MAX_CALLS,
+				geometryFallbackTruncated: geometry.geometryFallbackTruncated,
+			},
 		},
 	};
 }
 
-export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxReadRuntimeOptions): Promise<AxReadResult> {
+export async function readAxEntities(
+	server: AbmlAxRuntimeServer,
+	options: AxReadRuntimeOptions,
+): Promise<AxReadResult> {
 	options.signal?.throwIfAborted();
 	const startedAt = Date.now();
 	const timeoutMs = options.timeoutMs ?? 10_000;
@@ -590,29 +946,58 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 		url: options.url,
 		observationId: options.observationId,
 		capturedAt: options.capturedAt ?? Date.now(),
-		viewport: options.viewportWidth !== undefined && options.viewportHeight !== undefined
-			? { width: options.viewportWidth, height: options.viewportHeight }
-			: undefined,
+		viewport:
+			options.viewportWidth !== undefined && options.viewportHeight !== undefined
+				? { width: options.viewportWidth, height: options.viewportHeight }
+				: undefined,
 	};
 	const geometry = await readAxGeometry(sendCdp, options, timeoutMs, interestingNodes, snapshot.rawGeometryByBackend);
-	const assembled = assembleAxEntities(nodes, interestingNodes, context, indexes, geometry.geometryByNode, snapshot.domBackendNodeIds, snapshot.passwordBackendNodeIds);
-	return projectAxReadResult({ startedAt, cdpCalls, geometryCdpCalls, nodes, interestingNodes, snapshot, geometry, assembled });
+	const assembled = assembleAxEntities(
+		nodes,
+		interestingNodes,
+		context,
+		indexes,
+		geometry.geometryByNode,
+		snapshot.domBackendNodeIds,
+		snapshot.passwordBackendNodeIds,
+	);
+	return projectAxReadResult({
+		startedAt,
+		cdpCalls,
+		geometryCdpCalls,
+		nodes,
+		interestingNodes,
+		snapshot,
+		geometry,
+		assembled,
+	});
 }
 
-export function mergeAxIntoDomEntities(domEntities: Entity[], axEntities: BuiltEntity[]): { entities: Entity[]; diagnostics: AxFusionDiagnostics } {
+export function mergeAxIntoDomEntities(
+	domEntities: Entity[],
+	axEntities: BuiltEntity[],
+): { entities: Entity[]; diagnostics: AxFusionDiagnostics } {
 	const merged = mergeDomAndAxEntities(domEntities, axEntities);
 	for (const entity of merged.merged) {
 		if (!Array.isArray(entity.hints?.mergedSources)) continue;
 		const resolved = resolveRefUriDetailed(entity.ref);
 		if (!resolved.ok) continue;
 		const semantic = resolved.ref.descriptor.semantic;
-		registerRefDescriptor({ descriptor: {
-			...resolved.ref.descriptor,
-			refId: entity.ref,
-			locators: entity.locators ?? [],
-			semantic: { role: entity.role, ...(entity.name ? { name: entity.name } : {}), ...(entity.value ? { value: entity.value } : {}), ...(semantic?.state ? { state: semantic.state } : {}), ...(semantic?.anchor ? { anchor: semantic.anchor } : {}) },
-			...(entity.geometry ? { geometry: entity.geometry } : {}),
-		} });
+		registerRefDescriptor({
+			descriptor: {
+				...resolved.ref.descriptor,
+				refId: entity.ref,
+				locators: entity.locators ?? [],
+				semantic: {
+					role: entity.role,
+					...(entity.name ? { name: entity.name } : {}),
+					...(entity.value ? { value: entity.value } : {}),
+					...(semantic?.state ? { state: semantic.state } : {}),
+					...(semantic?.anchor ? { anchor: semantic.anchor } : {}),
+				},
+				...(entity.geometry ? { geometry: entity.geometry } : {}),
+			},
+		});
 	}
 	const appended = merged.unmatchedAx.map((item) => {
 		const refId = registerRefDescriptor({ descriptor: item.descriptor });

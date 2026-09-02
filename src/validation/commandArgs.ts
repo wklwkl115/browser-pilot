@@ -18,7 +18,8 @@ function pointer(path: unknown): string {
 
 function describeUnknownProperties(schema: TSchema, value: unknown): string | undefined {
 	const s = schema as { additionalProperties?: unknown; properties?: Record<string, unknown> };
-	if (s.additionalProperties !== false || !s.properties || typeof value !== "object" || value === null) return undefined;
+	if (s.additionalProperties !== false || !s.properties || typeof value !== "object" || value === null)
+		return undefined;
 	const accepted = Object.keys(s.properties);
 	const acceptedSet = new Set(accepted);
 	const unknown = Object.keys(value as Record<string, unknown>).filter((k) => !acceptedSet.has(k));
@@ -42,10 +43,7 @@ function describeMissingRequired(schema: TSchema, value: unknown): string | unde
 	return `missing required parameter${missing.length > 1 ? "s" : ""} ${named}`;
 }
 
-export function validateCommandArgs(
-	schema: unknown,
-	rawArgs: unknown,
-): CommandValidationResult {
+export function validateCommandArgs(schema: unknown, rawArgs: unknown): CommandValidationResult {
 	if (!schema || typeof schema !== "object") {
 		return { ok: true, args: (rawArgs as Record<string, unknown>) ?? {} };
 	}
@@ -75,7 +73,7 @@ export function validateCommandArgs(
 				.join("; ");
 			const unknownNote = describeUnknownProperties(tSchema, converted);
 			const missingNote = describeMissingRequired(tSchema, converted);
-			const friendly = unknownNote ? `${unknownNote}. ${detail}` : missingNote ?? detail;
+			const friendly = unknownNote ? `${unknownNote}. ${detail}` : (missingNote ?? detail);
 			return { ok: false, error: `Invalid parameters — ${friendly}`, issues };
 		}
 

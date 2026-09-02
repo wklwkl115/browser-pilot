@@ -40,15 +40,27 @@ export function shouldCaptureVisual(params: Pick<ObserveToolParams, "visual">, d
 	return Number(data.stats.visualSurfaceCount ?? 0) > 0 || Number(data.stats.unnamedActionableCount ?? 0) > 0;
 }
 
-export async function captureVisualScreenshot(server: BrowserCommandRuntimePort, options: { browserSessionId?: string; tabId: string | number | undefined; timeoutMs: number; signal?: AbortSignal }): Promise<VisualScreenshotCapture | undefined> {
+export async function captureVisualScreenshot(
+	server: BrowserCommandRuntimePort,
+	options: { browserSessionId?: string; tabId: string | number | undefined; timeoutMs: number; signal?: AbortSignal },
+): Promise<VisualScreenshotCapture | undefined> {
 	const transportStartedAt = Date.now();
-	const result = await server.sendCommand({ cmd: "screenshot.capture", format: "png", captureBeyondViewport: false, fallback: true, timeoutMs: options.timeoutMs }, {
-		browserSessionId: options.browserSessionId,
-		tabId: options.tabId,
-		timeoutMs: options.timeoutMs,
-		internal: true,
-		signal: options.signal,
-	});
+	const result = await server.sendCommand(
+		{
+			cmd: "screenshot.capture",
+			format: "png",
+			captureBeyondViewport: false,
+			fallback: true,
+			timeoutMs: options.timeoutMs,
+		},
+		{
+			browserSessionId: options.browserSessionId,
+			tabId: options.tabId,
+			timeoutMs: options.timeoutMs,
+			internal: true,
+			signal: options.signal,
+		},
+	);
 	const transportMs = Math.max(0, Date.now() - transportStartedAt);
 	const capturedAt = Date.now();
 	const data = isRecord(result.data) ? result.data : {};
@@ -60,7 +72,8 @@ export async function captureVisualScreenshot(server: BrowserCommandRuntimePort,
 	if (!dimensions) return undefined;
 	const sha256 = createHash("sha256").update(decoded.buffer).digest("hex");
 	const decodeHashMs = Math.max(0, Date.now() - decodeStartedAt);
-	const captureMethod = typeof data.method === "string" ? data.method : typeof data.fallback === "string" ? data.fallback : "unknown";
+	const captureMethod =
+		typeof data.method === "string" ? data.method : typeof data.fallback === "string" ? data.fallback : "unknown";
 	return {
 		buffer: decoded.buffer,
 		mime: decoded.mime,
@@ -75,20 +88,37 @@ export async function captureVisualScreenshot(server: BrowserCommandRuntimePort,
 	};
 }
 
-function completeVisualFingerprint(fingerprint: PageFingerprint | undefined): fingerprint is PageFingerprint & Required<Pick<PageFingerprint, "scrollX" | "scrollY" | "viewportWidth" | "viewportHeight" | "devicePixelRatio">> {
-	return !!fingerprint
-		&& Number.isFinite(fingerprint.changeSeq)
-		&& Number.isFinite(fingerprint.scrollX)
-		&& Number.isFinite(fingerprint.scrollY)
-		&& Number(fingerprint.viewportWidth) > 0
-		&& Number(fingerprint.viewportHeight) > 0
-		&& Number(fingerprint.devicePixelRatio) > 0;
+function completeVisualFingerprint(
+	fingerprint: PageFingerprint | undefined,
+): fingerprint is PageFingerprint &
+	Required<Pick<PageFingerprint, "scrollX" | "scrollY" | "viewportWidth" | "viewportHeight" | "devicePixelRatio">> {
+	return (
+		!!fingerprint &&
+		Number.isFinite(fingerprint.changeSeq) &&
+		Number.isFinite(fingerprint.scrollX) &&
+		Number.isFinite(fingerprint.scrollY) &&
+		Number(fingerprint.viewportWidth) > 0 &&
+		Number(fingerprint.viewportHeight) > 0 &&
+		Number(fingerprint.devicePixelRatio) > 0
+	);
 }
 
-function visualTargets(entities: Entity[], viewportWidth: number, viewportHeight: number): VisualObservation["targets"] {
+function visualTargets(
+	entities: Entity[],
+	viewportWidth: number,
+	viewportHeight: number,
+): VisualObservation["targets"] {
 	const clamp = (value: number) => Math.max(0, Math.min(1, value));
 	return entities
-		.filter((entity) => entity.state.inViewport && entity.geometry?.box && (entity.actionability || entity.kind === "control" || entity.kind === "frame" || entity.hints?.visualSurface === true))
+		.filter(
+			(entity) =>
+				entity.state.inViewport &&
+				entity.geometry?.box &&
+				(entity.actionability ||
+					entity.kind === "control" ||
+					entity.kind === "frame" ||
+					entity.hints?.visualSurface === true),
+		)
 		.slice(0, 128)
 		.map((entity) => {
 			const box = entity.geometry!.box!;
@@ -113,7 +143,8 @@ export async function materializeVisualObservation(options: {
 	projectRoot: string;
 	url?: string;
 }): Promise<{ visual: VisualObservation; saved: { path: string; bytes: number; mime: string }; writeMs: number }> {
-	if (!completeVisualFingerprint(options.fingerprint)) throw new Error("visual screenshot has no coherent viewport fingerprint");
+	if (!completeVisualFingerprint(options.fingerprint))
+		throw new Error("visual screenshot has no coherent viewport fingerprint");
 	const fingerprint = options.fingerprint;
 	const screenshotPath = path.join(path.dirname(options.outputPath), `${path.parse(options.outputPath).name}.png`);
 	const resourceUri = artifactResourceUri(screenshotPath, options.projectRoot);
@@ -122,8 +153,12 @@ export async function materializeVisualObservation(options: {
 	const saved = await saveBuffer(options.capture.buffer, screenshotPath, options.capture.mime);
 	const writeMs = Math.max(0, Date.now() - writeStartedAt);
 	const imageToCss: RefVisualBinding["imageToCss"] = [
-		fingerprint.viewportWidth / options.capture.width, 0, 0,
-		fingerprint.viewportHeight / options.capture.height, 0, 0,
+		fingerprint.viewportWidth / options.capture.width,
+		0,
+		0,
+		fingerprint.viewportHeight / options.capture.height,
+		0,
+		0,
 	];
 	const actionableGrounding = options.capture.actionableGrounding;
 	const binding: RefVisualBinding = {
@@ -153,7 +188,9 @@ export async function materializeVisualObservation(options: {
 			geometry: { box: { x: 0, y: 0, w: fingerprint.viewportWidth, h: fingerprint.viewportHeight } },
 			observationId: options.snapshot.snapshotId,
 			documentEpoch: {
-				...(options.snapshot.targetGeneration !== undefined ? { targetGeneration: options.snapshot.targetGeneration } : {}),
+				...(options.snapshot.targetGeneration !== undefined
+					? { targetGeneration: options.snapshot.targetGeneration }
+					: {}),
 				...(options.snapshot.pageEpoch ? { pageEpoch: options.snapshot.pageEpoch } : {}),
 				...(options.snapshot.documentId ? { documentId: options.snapshot.documentId } : {}),
 				changeSeq: fingerprint.changeSeq,
@@ -187,7 +224,10 @@ export async function materializeVisualObservation(options: {
 				devicePixelRatio: fingerprint.devicePixelRatio,
 				imageToCss,
 			},
-			targets: fingerprint.viewportWidth > 0 && fingerprint.viewportHeight > 0 ? visualTargets(options.entities, fingerprint.viewportWidth, fingerprint.viewportHeight) : [],
+			targets:
+				fingerprint.viewportWidth > 0 && fingerprint.viewportHeight > 0
+					? visualTargets(options.entities, fingerprint.viewportWidth, fingerprint.viewportHeight)
+					: [],
 		},
 		saved,
 		writeMs,
@@ -196,19 +236,25 @@ export async function materializeVisualObservation(options: {
 
 export function visualFingerprintMatches(binding: RefVisualBinding, fingerprint: PageFingerprint | undefined): boolean {
 	const expected = binding.fingerprint;
-	return !!fingerprint
-		&& fingerprint.changeSeq === expected.changeSeq
-		&& fingerprint.pageEpoch === expected.pageEpoch
-		&& fingerprint.documentId === expected.documentId
-		&& fingerprint.url === expected.url
-		&& fingerprint.scrollX === expected.scrollX
-		&& fingerprint.scrollY === expected.scrollY
-		&& fingerprint.viewportWidth === expected.viewportWidth
-		&& fingerprint.viewportHeight === expected.viewportHeight
-		&& fingerprint.devicePixelRatio === expected.devicePixelRatio;
+	return (
+		!!fingerprint &&
+		fingerprint.changeSeq === expected.changeSeq &&
+		fingerprint.pageEpoch === expected.pageEpoch &&
+		fingerprint.documentId === expected.documentId &&
+		fingerprint.url === expected.url &&
+		fingerprint.scrollX === expected.scrollX &&
+		fingerprint.scrollY === expected.scrollY &&
+		fingerprint.viewportWidth === expected.viewportWidth &&
+		fingerprint.viewportHeight === expected.viewportHeight &&
+		fingerprint.devicePixelRatio === expected.devicePixelRatio
+	);
 }
 
-export function registerVisualTargetRef(base: RefDescriptor, point: { x: number; y: number }, to?: { x: number; y: number }): string {
+export function registerVisualTargetRef(
+	base: RefDescriptor,
+	point: { x: number; y: number },
+	to?: { x: number; y: number },
+): string {
 	if (!base.visual) throw new Error("visual target requires a visual observation ref");
 	const visual = base.visual;
 	const x = point.x * visual.fingerprint.viewportWidth;

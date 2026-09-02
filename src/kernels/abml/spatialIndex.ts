@@ -15,7 +15,11 @@ export type BoundedSpatialIndex<T> = {
 
 type SpatialBucketRange = { minX: number; maxX: number; minY: number; maxY: number };
 
-function spatialBucketRange(rect: SpatialRect, bucketSize: number, maxBucketsPerRect: number): SpatialBucketRange | undefined {
+function spatialBucketRange(
+	rect: SpatialRect,
+	bucketSize: number,
+	maxBucketsPerRect: number,
+): SpatialBucketRange | undefined {
 	if (![rect.x, rect.y, rect.w, rect.h].every(Number.isFinite)) return undefined;
 	const minX = Math.floor(rect.x / bucketSize);
 	const maxX = Math.floor((rect.x + rect.w) / bucketSize);
@@ -33,9 +37,15 @@ function visitSpatialBuckets(range: SpatialBucketRange, visit: (key: string) => 
 	}
 }
 
-export function buildBoundedSpatialIndex<T>(items: Iterable<{ value: T; rect: SpatialRect }>, options: BoundedSpatialIndexOptions): BoundedSpatialIndex<T> {
+export function buildBoundedSpatialIndex<T>(
+	items: Iterable<{ value: T; rect: SpatialRect }>,
+	options: BoundedSpatialIndexOptions,
+): BoundedSpatialIndex<T> {
 	const bucketSize = Number.isFinite(options.bucketSize) && options.bucketSize > 0 ? options.bucketSize : 1;
-	const maxBucketsPerRect = Number.isFinite(options.maxBucketsPerRect) && options.maxBucketsPerRect > 0 ? Math.floor(options.maxBucketsPerRect) : 1;
+	const maxBucketsPerRect =
+		Number.isFinite(options.maxBucketsPerRect) && options.maxBucketsPerRect > 0
+			? Math.floor(options.maxBucketsPerRect)
+			: 1;
 	const values: T[] = [];
 	const buckets = new Map<string, T[]>();
 	const overflow: T[] = [];

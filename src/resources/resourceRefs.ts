@@ -16,8 +16,7 @@ export type RegisteredRefRecord = {
 export type ResolvedRefRecord = RegisteredRefRecord & { fresh?: boolean };
 
 export type ResolveRefResult =
-	| { ok: true; ref: ResolvedRefRecord }
-	| { ok: false; code: "HANDLE_NOT_FOUND" | "REF_STALE"; error: string };
+	{ ok: true; ref: ResolvedRefRecord } | { ok: false; code: "HANDLE_NOT_FOUND" | "REF_STALE"; error: string };
 
 export type RegisterRefDescriptorParams = {
 	descriptor: Omit<ResourceRefDescriptor, "refId"> & { refId?: string };
@@ -46,7 +45,10 @@ function parseBrowserPilotRefUri(uri: string): { kind?: RefKind; id: string } | 
 
 export function registerRefDescriptor(params: RegisterRefDescriptorParams): string {
 	pruneExpiredAmortized();
-	const refId = params.descriptor.refId || stableRefIdForDescriptor(params.descriptor) || makeBrowserPilotRefUri(params.descriptor.kind, randomUUID());
+	const refId =
+		params.descriptor.refId ||
+		stableRefIdForDescriptor(params.descriptor) ||
+		makeBrowserPilotRefUri(params.descriptor.kind, randomUUID());
 	const parsed = parseBrowserPilotRefUri(refId);
 	if (!parsed) throw new Error(`Invalid bp-ref URI: ${refId}`);
 	const descriptor: ResourceRefDescriptor = { ...params.descriptor, refId };

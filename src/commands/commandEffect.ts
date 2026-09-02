@@ -50,10 +50,12 @@ function changedString(after: string | undefined, before: string | undefined): b
 }
 
 function pageGenerationChanged(before: PageFingerprint, after: PageFingerprint): boolean {
-	return changedString(after.pageEpoch, before.pageEpoch)
-		|| changedString(after.documentId, before.documentId)
-		|| changedString(after.url, before.url)
-		|| after.changeSeq < before.changeSeq;
+	return (
+		changedString(after.pageEpoch, before.pageEpoch) ||
+		changedString(after.documentId, before.documentId) ||
+		changedString(after.url, before.url) ||
+		after.changeSeq < before.changeSeq
+	);
 }
 
 function newTabCount(result: BrowserBridgeExecutionResult): number {
@@ -81,12 +83,13 @@ export function summarizeCommandEffect(
 	const changeSeqDelta = navigated ? undefined : Math.max(0, after.changeSeq - before.changeSeq);
 	const visibleCountDelta = finiteDelta(after.visibleCount, before.visibleCount);
 	const interactiveCountDelta = finiteDelta(after.interactiveCount, before.interactiveCount);
-	const pageChanged = navigated
-		|| (changeSeqDelta ?? 0) > 0
-		|| (visibleCountDelta ?? 0) !== 0
-		|| (interactiveCountDelta ?? 0) !== 0
-		|| changedString(after.title, before.title)
-		|| changedString(after.readyState, before.readyState);
+	const pageChanged =
+		navigated ||
+		(changeSeqDelta ?? 0) > 0 ||
+		(visibleCountDelta ?? 0) !== 0 ||
+		(interactiveCountDelta ?? 0) !== 0 ||
+		changedString(after.title, before.title) ||
+		changedString(after.readyState, before.readyState);
 
 	return {
 		observed: true,
@@ -94,7 +97,14 @@ export function summarizeCommandEffect(
 		settled: options.settled && after.readyState !== "loading",
 		elapsedMs: Math.max(0, Math.round(options.elapsedMs)),
 		page: {
-			...(navigated ? { navigation: { ...(before.url ? { from: before.url } : {}), ...(after.url ? { to: after.url } : {}) } } : {}),
+			...(navigated
+				? {
+						navigation: {
+							...(before.url ? { from: before.url } : {}),
+							...(after.url ? { to: after.url } : {}),
+						},
+					}
+				: {}),
 			...(changeSeqDelta !== undefined ? { changeSeqDelta } : {}),
 			...(after.readyState ? { readyState: after.readyState } : {}),
 			...(visibleCountDelta !== undefined ? { visibleCountDelta } : {}),
@@ -117,7 +127,10 @@ function waitFor(ms: number, signal?: AbortSignal): Promise<void> {
 	});
 }
 
-async function captureFingerprint(server: BrowserCommandRuntimePort, options: CommandEffectOptions): Promise<PageFingerprint | undefined> {
+async function captureFingerprint(
+	server: BrowserCommandRuntimePort,
+	options: CommandEffectOptions,
+): Promise<PageFingerprint | undefined> {
 	if (options.tabId === undefined || options.signal?.aborted) return undefined;
 	const remainingMs = Math.max(0, options.deadlineAt - Date.now());
 	if (remainingMs === 0) return undefined;
@@ -133,13 +146,20 @@ function withVerificationElapsed(result: VerificationResult, startedAt: number):
 	return { ...result, elapsedMs: Math.max(0, Math.round(Date.now() - startedAt)) };
 }
 
-function inconclusiveVerification(last: VerificationResult | undefined, startedAt: number, summary: string): VerificationResult {
+function inconclusiveVerification(
+	last: VerificationResult | undefined,
+	startedAt: number,
+	summary: string,
+): VerificationResult {
 	if (last) {
-		return withVerificationElapsed({
-			...last,
-			status: "inconclusive",
-			evidence: [...last.evidence, { kind: "verification-runtime", summary }],
-		}, startedAt);
+		return withVerificationElapsed(
+			{
+				...last,
+				status: "inconclusive",
+				evidence: [...last.evidence, { kind: "verification-runtime", summary }],
+			},
+			startedAt,
+		);
 	}
 	return {
 		status: "inconclusive",
@@ -164,8 +184,11 @@ async function verifyPostcondition(options: CommandEffectOptions): Promise<Verif
 		}
 		await waitFor(Math.min(EFFECT_QUIET_MS, Math.max(0, options.deadlineAt - Date.now())), options.signal);
 	}
-	if (options.signal?.aborted) return inconclusiveVerification(last, startedAt, "Postcondition observation was cancelled");
-	return last ? withVerificationElapsed(last, startedAt) : inconclusiveVerification(undefined, startedAt, "Postcondition was not observed before the deadline");
+	if (options.signal?.aborted)
+		return inconclusiveVerification(last, startedAt, "Postcondition observation was cancelled");
+	return last
+		? withVerificationElapsed(last, startedAt)
+		: inconclusiveVerification(undefined, startedAt, "Postcondition was not observed before the deadline");
 }
 
 export async function withCommandEffect<T extends BrowserBridgeExecutionResult>(
@@ -181,7 +204,10 @@ export async function withCommandEffect<T extends BrowserBridgeExecutionResult>(
 
 	if (before) {
 		const quietMs = Math.max(0, options.quietMs ?? EFFECT_QUIET_MS);
-		const settleDeadline = Math.min(options.deadlineAt, Date.now() + Math.max(0, options.settleMs ?? EFFECT_SETTLE_MS));
+		const settleDeadline = Math.min(
+			options.deadlineAt,
+			Date.now() + Math.max(0, options.settleMs ?? EFFECT_SETTLE_MS),
+		);
 		let previous = after;
 		while (!options.signal?.aborted && Date.now() + quietMs <= settleDeadline) {
 			await waitFor(quietMs, options.signal);

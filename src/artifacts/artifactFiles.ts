@@ -10,7 +10,11 @@ const OBSERVATION_MAX_FILES = 256;
 const OBSERVATION_MAX_BYTES = 64 * 1024 * 1024;
 let observationPruneTail = Promise.resolve();
 
-export function resolveArtifactPath(ctx: { cwd?: string } | undefined, requested: string | undefined, fallbackName: string): string {
+export function resolveArtifactPath(
+	ctx: { cwd?: string } | undefined,
+	requested: string | undefined,
+	fallbackName: string,
+): string {
 	const base = ctx?.cwd || process.cwd();
 	const target = requested?.trim() || path.join(".browser-pilot", "artifacts", fallbackName);
 	return path.isAbsolute(target) ? target : path.resolve(base, target);
@@ -28,10 +32,20 @@ export function artifactResourceUri(savedPath: string, projectRoot: string): str
 	return `browser-pilot://artifact/${relative.split(path.sep).map(encodeURIComponent).join("/")}`;
 }
 
-export async function saveTextArtifact(ctx: { cwd?: string } | undefined, requested: string | undefined, fallbackName: string, content: string): Promise<{ path: string; chars: number; bytes: number; privacy: Record<string, unknown> }> {
+export async function saveTextArtifact(
+	ctx: { cwd?: string } | undefined,
+	requested: string | undefined,
+	fallbackName: string,
+	content: string,
+): Promise<{ path: string; chars: number; bytes: number; privacy: Record<string, unknown> }> {
 	const outputPath = resolveArtifactPath(ctx, requested, fallbackName);
 	await atomicWriteText(outputPath, content);
-	return { path: outputPath, chars: content.length, bytes: Buffer.byteLength(content, "utf8"), privacy: browserArtifactPrivacyMetadata() };
+	return {
+		path: outputPath,
+		chars: content.length,
+		bytes: Buffer.byteLength(content, "utf8"),
+		privacy: browserArtifactPrivacyMetadata(),
+	};
 }
 
 async function pruneObservationArtifactDirectory(outputPath: string): Promise<void> {
@@ -39,21 +53,34 @@ async function pruneObservationArtifactDirectory(outputPath: string): Promise<vo
 	const dir = path.dirname(outputPath);
 	const currentStem = path.parse(path.resolve(outputPath)).name;
 	const entries = await readdir(dir, { withFileTypes: true });
-	const files = (await Promise.all(entries
-		.filter((entry) => entry.isFile() && OBSERVATION_ARTIFACT.test(entry.name))
-		.map(async (entry) => {
-			const filePath = path.join(dir, entry.name);
-			const metadata = await stat(filePath).catch(() => undefined);
-			return metadata ? { filePath, size: metadata.size, mtimeMs: metadata.mtimeMs } : undefined;
-		})))
+	const files = (
+		await Promise.all(
+			entries
+				.filter((entry) => entry.isFile() && OBSERVATION_ARTIFACT.test(entry.name))
+				.map(async (entry) => {
+					const filePath = path.join(dir, entry.name);
+					const metadata = await stat(filePath).catch(() => undefined);
+					return metadata ? { filePath, size: metadata.size, mtimeMs: metadata.mtimeMs } : undefined;
+				}),
+		)
+	)
 		.filter((file): file is { filePath: string; size: number; mtimeMs: number } => file !== undefined)
-		.sort((a, b) => Number(path.parse(b.filePath).name === currentStem) - Number(path.parse(a.filePath).name === currentStem) || b.mtimeMs - a.mtimeMs);
+		.sort(
+			(a, b) =>
+				Number(path.parse(b.filePath).name === currentStem) -
+					Number(path.parse(a.filePath).name === currentStem) || b.mtimeMs - a.mtimeMs,
+		);
 	let keptFiles = 0;
 	let keptBytes = 0;
 	const cutoff = Date.now() - OBSERVATION_MAX_AGE_MS;
 	for (const file of files) {
 		const current = path.parse(file.filePath).name === currentStem;
-		if (!current && (file.mtimeMs < cutoff || keptFiles >= OBSERVATION_MAX_FILES || keptBytes + file.size > OBSERVATION_MAX_BYTES)) {
+		if (
+			!current &&
+			(file.mtimeMs < cutoff ||
+				keptFiles >= OBSERVATION_MAX_FILES ||
+				keptBytes + file.size > OBSERVATION_MAX_BYTES)
+		) {
 			await rm(file.filePath, { force: true });
 			continue;
 		}
@@ -63,7 +90,9 @@ async function pruneObservationArtifactDirectory(outputPath: string): Promise<vo
 }
 
 export function pruneObservationArtifacts(outputPath: string): Promise<void> {
-	observationPruneTail = observationPruneTail.then(() => pruneObservationArtifactDirectory(outputPath)).catch(() => {});
+	observationPruneTail = observationPruneTail
+		.then(() => pruneObservationArtifactDirectory(outputPath))
+		.catch(() => {});
 	return observationPruneTail;
 }
 
@@ -86,7 +115,11 @@ export function decodeDataUrl(dataUrl: string): { buffer: Buffer; mime: string }
 	return { buffer: decodeStrictBase64Payload(match[2]), mime: match[1] };
 }
 
-export async function saveBuffer(buffer: Buffer, outputPath: string, mime: string): Promise<{ path: string; bytes: number; mime: string }> {
+export async function saveBuffer(
+	buffer: Buffer,
+	outputPath: string,
+	mime: string,
+): Promise<{ path: string; bytes: number; mime: string }> {
 	await mkdir(path.dirname(outputPath), { recursive: true });
 	await writeFile(outputPath, buffer);
 	return { path: outputPath, bytes: buffer.length, mime };

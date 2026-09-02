@@ -9,7 +9,12 @@ function entityVersionStamp(entity: Entity): string {
 		value: entity.value,
 		state: entity.state,
 		structure: entity.structure,
-		relations: entity.relations?.map((rel) => ({ type: rel.type, targetRef: rel.targetRef, source: rel.source, confidence: rel.confidence })),
+		relations: entity.relations?.map((rel) => ({
+			type: rel.type,
+			targetRef: rel.targetRef,
+			source: rel.source,
+			confidence: rel.confidence,
+		})),
 	});
 }
 
@@ -26,6 +31,7 @@ function entityStableStamp(entity: Entity): string {
 
 export function factsFromObservedEntities(entities: Entity[]): Record<string, CommandPerceptionLedgerFactState> {
 	const facts: Record<string, CommandPerceptionLedgerFactState> = {};
-	for (const entity of entities) facts[entity.ref] = { versionStamp: entityVersionStamp(entity), stableStamp: entityStableStamp(entity) };
+	for (const entity of entities)
+		facts[entity.ref] = { versionStamp: entityVersionStamp(entity), stableStamp: entityStableStamp(entity) };
 	return facts;
 }

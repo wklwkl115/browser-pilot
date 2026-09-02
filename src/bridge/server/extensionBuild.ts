@@ -24,14 +24,19 @@ function packageRoot(): string {
 }
 
 function expectedExtensionBuildManifestPath(): string {
-	return process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST
-		|| path.join(packageRoot(), "bridge", "browser_pilot_bridge", "dist", "build-manifest.json");
+	return (
+		process.env.BROWSER_PILOT_EXPECTED_EXTENSION_BUILD_MANIFEST ||
+		path.join(packageRoot(), "bridge", "browser_pilot_bridge", "dist", "build-manifest.json")
+	);
 }
 
 export function readExpectedExtensionBuild(): ExpectedExtensionBuild {
 	const manifestPath = expectedExtensionBuildManifestPath();
 	try {
-		const parsed = parseJsonOrThrow<Record<string, unknown>>(readFileSync(manifestPath, "utf8"), "extension build manifest");
+		const parsed = parseJsonOrThrow<Record<string, unknown>>(
+			readFileSync(manifestPath, "utf8"),
+			"extension build manifest",
+		);
 		return {
 			buildId: typeof parsed.buildId === "string" ? parsed.buildId : undefined,
 			manifestPath,

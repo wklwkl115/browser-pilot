@@ -1,7 +1,12 @@
 import { prepareExecuteStdlib } from "../executeStdlib.js";
 import { buildAxEntityFromNode, mergeKnownDomAndAxEntity } from "../../kernels/abml/ax.js";
 import { buildDomEntityFromScanActionable, type Entity, type ScanEntityContext } from "../../kernels/abml/entity.js";
-import { verificationDiff, verifyAbmlState, type AbmlStateExpectation, type AbmlVerificationObservation } from "../../kernels/abml/verification.js";
+import {
+	verificationDiff,
+	verifyAbmlState,
+	type AbmlStateExpectation,
+	type AbmlVerificationObservation,
+} from "../../kernels/abml/verification.js";
 import { readPartialAxTree } from "../../browser-runtime/abml/axRuntime.js";
 import { resolveRefUriDetailed, selectorFromRef, type ResourceRefDescriptor } from "../../resources/resourceRefs.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
@@ -74,24 +79,38 @@ function targetId(descriptor: ResourceRefDescriptor): string | undefined {
 	return descriptor.owner?.targetId || descriptor.locators?.find((item) => item.by === "backendNodeId")?.targetId;
 }
 
-function axNodeForBackend(nodes: Array<Record<string, unknown>>, id: number | undefined): Record<string, unknown> | undefined {
+function axNodeForBackend(
+	nodes: Array<Record<string, unknown>>,
+	id: number | undefined,
+): Record<string, unknown> | undefined {
 	if (id === undefined) return undefined;
 	return nodes.find((node) => Number(node.backendDOMNodeId ?? node.backendNodeId) === id);
 }
 
-function staleRefReason(options: AbmlVerificationRuntimeOptions, descriptor: ResourceRefDescriptor): string | undefined {
+function staleRefReason(
+	options: AbmlVerificationRuntimeOptions,
+	descriptor: ResourceRefDescriptor,
+): string | undefined {
 	const snapshot = options.server.snapshot({ browserSessionId: options.browserSessionId });
 	const tab = snapshot.tabs.find((item) => Number(item.tabId ?? item.id) === options.tabId);
 	const expected = descriptor.documentEpoch;
 	const targetGeneration = Number(tab?.targetGeneration ?? tab?.generation);
 	const pageEpoch = typeof tab?.pageEpoch === "string" ? tab.pageEpoch : undefined;
-	if (descriptor.owner.tabId !== options.tabId || (descriptor.owner.browserSessionId && descriptor.owner.browserSessionId !== snapshot.browserSessionId)) return "ABML target ref belongs to a different page target";
-	if (!expected || !Number.isInteger(targetGeneration) || !pageEpoch) return "ABML target page identity cannot be proven current";
-	if (expected.targetGeneration !== targetGeneration || expected.pageEpoch !== pageEpoch) return "ABML target ref became stale after page replacement";
+	if (
+		descriptor.owner.tabId !== options.tabId ||
+		(descriptor.owner.browserSessionId && descriptor.owner.browserSessionId !== snapshot.browserSessionId)
+	)
+		return "ABML target ref belongs to a different page target";
+	if (!expected || !Number.isInteger(targetGeneration) || !pageEpoch)
+		return "ABML target page identity cannot be proven current";
+	if (expected.targetGeneration !== targetGeneration || expected.pageEpoch !== pageEpoch)
+		return "ABML target ref became stale after page replacement";
 	return undefined;
 }
 
-export async function readAbmlVerificationObservation(options: AbmlVerificationRuntimeOptions): Promise<AbmlVerificationObservation> {
+export async function readAbmlVerificationObservation(
+	options: AbmlVerificationRuntimeOptions,
+): Promise<AbmlVerificationObservation> {
 	const resolved = resolveRefUriDetailed(options.expectation.ref);
 	if (!resolved.ok) return { reason: resolved.error, retryable: false };
 	const descriptor = resolved.ref.descriptor;
@@ -133,12 +152,15 @@ export async function readAbmlVerificationObservation(options: AbmlVerificationR
 
 	let dom: Entity | undefined;
 	if (domResult.status === "fulfilled" && isRecord(domResult.value.data)) {
-		const built = buildDomEntityFromScanActionable({
-			...domResult.value.data,
-			...(selectorFromRef(descriptor) ? { selector: selectorFromRef(descriptor) } : {}),
-			...(id !== undefined ? { backendNodeId: id } : {}),
-			...(targetId(descriptor) ? { targetId: targetId(descriptor) } : {}),
-		}, context);
+		const built = buildDomEntityFromScanActionable(
+			{
+				...domResult.value.data,
+				...(selectorFromRef(descriptor) ? { selector: selectorFromRef(descriptor) } : {}),
+				...(id !== undefined ? { backendNodeId: id } : {}),
+				...(targetId(descriptor) ? { targetId: targetId(descriptor) } : {}),
+			},
+			context,
+		);
 		dom = { ...built.entity, ref: options.expectation.ref };
 	}
 
@@ -147,23 +169,27 @@ export async function readAbmlVerificationObservation(options: AbmlVerificationR
 		const node = axNodeForBackend(axResult.value.nodes, id);
 		if (node) ax = buildAxEntityFromNode(node, { ...context, observationId: descriptor.observationId }).entity;
 	}
-	const entity = dom && ax
-		? mergeKnownDomAndAxEntity(dom, ax)
-		: dom ?? (ax ? { ...ax, ref: options.expectation.ref } : undefined);
+	const entity =
+		dom && ax
+			? mergeKnownDomAndAxEntity(dom, ax)
+			: (dom ?? (ax ? { ...ax, ref: options.expectation.ref } : undefined));
 	if (entity) {
 		delete entity.name;
 		delete entity.value;
 	}
 	const sources = [...(dom ? ["dom"] : []), ...(ax ? ["ax"] : [])];
-	return entity
-		? { entity, sources }
-		: { reason: "ABML target state was unavailable", sources };
+	return entity ? { entity, sources } : { reason: "ABML target state was unavailable", sources };
 }
 
 export async function prepareAbmlVerification(options: AbmlVerificationRuntimeOptions & { verb: string }) {
 	const before = await readAbmlVerificationObservation(options);
 	return {
-		initialVerification: verifyAbmlState(options.verb, options.expectation, { reason: "Postcondition observation did not complete" }, 0),
+		initialVerification: verifyAbmlState(
+			options.verb,
+			options.expectation,
+			{ reason: "Postcondition observation did not complete" },
+			0,
+		),
 		verify: async () => {
 			const after = await readAbmlVerificationObservation(options);
 			const result = verifyAbmlState(options.verb, options.expectation, after, 0);
