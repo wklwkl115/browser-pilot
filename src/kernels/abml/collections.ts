@@ -7,7 +7,7 @@ import type { SnapshotProjection, SnapshotProjectionTemplate } from "./snapshotP
 import type { StructureTemplate } from "./templating.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
 import type { ScanActionable, ScanListHint } from "./pageWorldScan.js";
-import { nonEmptyString as stringValue } from "../../utils/records.js";
+import { isRecord, nonEmptyString as stringValue } from "../../utils/records.js";
 
 type ListHintInput = ScanListHint | Record<string, unknown>;
 type ActionableInput = ScanActionable | Record<string, unknown>;
@@ -92,9 +92,22 @@ type DraftCollection = {
 	sourceRank: number;
 	preferredCompleteness?: CollectionCompleteness;
 	preferredConfidence?: CollectionConfidence;
+	/** Viewport-relative union of member geometry; anchors pagination controls to their collection. */
+	box?: Box;
 	dataSources: NonNullable<CollectionModel["dataSources"]>;
 	evidence: CollectionModel["evidence"];
 };
+
+type Box = { x: number; y: number; w: number; h: number };
+
+function unionBox(boxes: Box[]): Box | undefined {
+	if (!boxes.length) return undefined;
+	const minX = Math.min(...boxes.map((box) => box.x));
+	const minY = Math.min(...boxes.map((box) => box.y));
+	const maxX = Math.max(...boxes.map((box) => box.x + box.w));
+	const maxY = Math.max(...boxes.map((box) => box.y + box.h));
+	return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
 
 const COLLECTION_ITEM_ROLES = new Set([
 	"article",
@@ -285,6 +298,9 @@ function addDraft(map: Map<string, DraftCollection>, key: string, draft: DraftCo
 		sourceRank: Math.min(existing.sourceRank, draft.sourceRank),
 		preferredCompleteness: existing.preferredCompleteness ?? draft.preferredCompleteness,
 		preferredConfidence: existing.preferredConfidence ?? draft.preferredConfidence,
+		...(existing.box || draft.box
+			? { box: unionBox([...(existing.box ? [existing.box] : []), ...(draft.box ? [draft.box] : [])]) }
+			: {}),
 		dataSources,
 		evidence,
 	});
@@ -433,6 +449,7 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 				ref: first.ref,
 			});
 		}
+		const box = unionBox(members.flatMap((entity) => (entity.geometry?.box ? [entity.geometry.box] : [])));
 		addDraft(drafts, key, {
 			kind: collectionKind(containerRole, role, first.kind),
 			containerRef: first.hints?.listContainer === true ? first.ref : undefined,
@@ -445,6 +462,7 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 			...(positions.size ? { observedPositions: positions.size } : {}),
 			declaredTotal,
 			sourceRank: 1,
+			...(box ? { box } : {}),
 			...(skeletonCount > 0 ? { preferredCompleteness: "lazy", preferredConfidence: "medium" } : {}),
 			dataSources,
 			evidence,
@@ -512,69 +530,147 @@ function actionableText(actionable: ActionableInput): string {
 		.toLowerCase();
 }
 
+// Pagination vocabulary. English uses word boundaries; CJK has no word boundaries so those
+// alternatives match as substrings. Keep every entry a short, unambiguous navigation phrase.
+const PREVIOUS_PATTERN =
+	/\bprevious\b|\bprev\b|\bback\b|\bnewer\b|上一页|上页|前一页|前へ|前のページ|zurück|précédent|anterior/i;
+const NEXT_PATTERN = /\bnext\b|\bolder\b|下一页|下页|后一页|次へ|次のページ|weiter|nächste|suivant|siguiente/i;
+const LOAD_MORE_PATTERN =
+	/\bload\s*more\b|加载更多|载入更多|读取更多|さらに読み込む|mehr laden|charger plus|cargar más/i;
+const SHOW_MORE_PATTERN =
+	/\bshow\s*more\b|\bview\s*more\b|\bsee\s*more\b|查看更多|显示更多|展开更多|更多|もっと見る|mehr anzeigen|voir plus|ver más/i;
+const PAGE_WORD_PATTERN = /\bpage\b|\bpages\b|第\s*\d+\s*页|页码|翻页|末页|首页|ページ/i;
+
+type PaginationEdge = {
+	completeness: "paginated" | "lazy";
+	confidence: CollectionConfidence;
+	summary: string;
+	jsonPath?: string;
+	control: PaginationControl;
+	rect?: { x: number; y: number; w: number; h: number };
+};
+
 function classifyPaginationControlKind(text: string): PaginationControlKind {
-	if (/\bprevious\b|\bprev\b|\bback\b/.test(text)) return "previous";
-	if (/\bnext\b|\bolder\b|\bnewer\b/.test(text)) return "next";
-	if (/\bload\s*more\b/.test(text)) return "load-more";
-	if (/\bshow\s*more\b/.test(text)) return "show-more";
+	if (PREVIOUS_PATTERN.test(text)) return "previous";
+	if (NEXT_PATTERN.test(text)) return "next";
+	if (LOAD_MORE_PATTERN.test(text)) return "load-more";
+	if (SHOW_MORE_PATTERN.test(text)) return "show-more";
 	return "other";
 }
 
-function paginationEdge(actionables: ActionableInput[] | undefined):
-	| {
-			completeness: "paginated" | "lazy";
-			confidence: CollectionConfidence;
-			summary: string;
-			jsonPath?: string;
-			control: PaginationControl;
-	  }
-	| undefined {
+function actionableRect(actionable: ActionableInput): PaginationEdge["rect"] {
+	const rect: Record<string, unknown> | undefined = isRecord(actionable.rect) ? actionable.rect : undefined;
+	const x = numberValue(rect?.x);
+	const y = numberValue(rect?.y);
+	const w = numberValue(rect?.width ?? rect?.w);
+	const h = numberValue(rect?.height ?? rect?.h);
+	return x !== undefined && y !== undefined && w !== undefined && h !== undefined ? { x, y, w, h } : undefined;
+}
+
+function paginationEdgeFor(actionable: ActionableInput, index: number): PaginationEdge | undefined {
+	if (actionable.disabled === true || actionable.hidden === true) return undefined;
+	const ref = stringValue(actionable.ref);
+	const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
+	const control = (kind: PaginationControlKind): PaginationControl => ({
+		...(ref ? { ref } : {}),
+		...(label ? { label } : {}),
+		kind,
+	});
+	const rect = actionableRect(actionable);
+	const rel = new Set((stringValue(actionable.rel) ?? "").toLowerCase().split(/\s+/).filter(Boolean));
+	const relKind = rel.has("next") ? "next" : rel.has("prev") || rel.has("previous") ? "previous" : undefined;
+	if (relKind)
+		return {
+			completeness: "paginated",
+			confidence: "high",
+			summary: `HTML rel=${relKind === "next" ? "next" : "prev"} control`,
+			jsonPath: `data.structure.actionables[${index}]`,
+			control: control(relKind),
+			...(rect ? { rect } : {}),
+		};
+	const text = actionableText(actionable);
+	const kind = classifyPaginationControlKind(text);
+	if (kind === "other") return undefined;
+	const isPagination = kind === "next" || kind === "previous" || PAGE_WORD_PATTERN.test(text);
+	return {
+		completeness: isPagination ? "paginated" : "lazy",
+		confidence: "low",
+		summary: isPagination ? "pagination label heuristic" : "load-more label heuristic",
+		jsonPath: `data.structure.actionables[${index}]`,
+		control: control(kind),
+		...(rect ? { rect } : {}),
+	};
+}
+
+function paginationEdges(actionables: ActionableInput[] | undefined): PaginationEdge[] {
+	const edges: PaginationEdge[] = [];
 	for (const [index, actionable] of (actionables ?? []).entries()) {
-		if (actionable.disabled === true || actionable.hidden === true) continue;
-		const text = actionableText(actionable);
-		const rel = new Set((stringValue(actionable.rel) ?? "").toLowerCase().split(/\s+/).filter(Boolean));
-		const relKind = rel.has("next")
-			? ("next" as const)
-			: rel.has("prev") || rel.has("previous")
-				? ("previous" as const)
-				: undefined;
-		if (relKind) {
-			const ref = stringValue(actionable.ref);
-			const label =
-				stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
-			return {
-				completeness: "paginated",
-				confidence: "high",
-				summary: `HTML rel=${relKind === "next" ? "next" : "prev"} control`,
-				jsonPath: `data.structure.actionables[${index}]`,
-				control: { ...(ref ? { ref } : {}), ...(label ? { label } : {}), kind: relKind },
-			};
-		}
-		if (/\b(next|more|load\s*more|show\s*more|older|newer)\b/.test(text)) {
-			const isPagination = /\b(next|older|newer|page)\b/.test(text);
-			const controlKind = classifyPaginationControlKind(text);
-			const ref = stringValue(actionable.ref);
-			const label =
-				stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
-			return {
-				completeness: isPagination ? "paginated" : "lazy",
-				confidence: "low",
-				summary: isPagination ? "pagination label heuristic" : "load-more label heuristic",
-				jsonPath: `data.structure.actionables[${index}]`,
-				control: {
-					...(ref ? { ref } : {}),
-					...(label ? { label } : {}),
-					kind: controlKind,
-				},
-			};
+		const edge = paginationEdgeFor(actionable, index);
+		if (edge) edges.push(edge);
+	}
+	return edges;
+}
+
+function draftBox(draft: DraftCollection, entitiesByRef: Map<string, Entity>): Box | undefined {
+	const boxes: Box[] = draft.box ? [draft.box] : [];
+	for (const ref of [...(draft.containerRef ? [draft.containerRef] : []), ...draft.itemRefs]) {
+		const box = entitiesByRef.get(ref)?.geometry?.box;
+		if (box) boxes.push(box);
+	}
+	return unionBox(boxes);
+}
+
+/**
+ * Pagination controls sit inside their collection (load-more inside a feed, "Next" in a table
+ * footer) or directly below it, horizontally overlapping. Score each control against each
+ * collection by that vertical gap and give every collection at most its closest control.
+ */
+function assignPaginationEdges(
+	drafts: DraftCollection[],
+	edges: PaginationEdge[],
+	entitiesByRef: Map<string, Entity>,
+): Map<DraftCollection, PaginationEdge> {
+	const assigned = new Map<DraftCollection, PaginationEdge>();
+	if (!edges.length) return assigned;
+	if (drafts.length === 1 && edges.some((edge) => !edge.rect)) {
+		// Without geometry the page-level heuristic only makes sense when there is a single collection.
+		const best = edges.find((edge) => edge.confidence === "high") ?? edges[0]!;
+		assigned.set(drafts[0]!, best);
+		return assigned;
+	}
+	const boxes = drafts.map((draft) => draftBox(draft, entitiesByRef));
+	const candidates: Array<{ draftIndex: number; edge: PaginationEdge; gap: number }> = [];
+	for (const edge of edges) {
+		if (!edge.rect) continue;
+		const centerX = edge.rect.x + edge.rect.w / 2;
+		for (const [draftIndex, box] of boxes.entries()) {
+			if (!box) continue;
+			const horizontallyAligned = centerX >= box.x - 48 && centerX <= box.x + box.w + 48;
+			if (!horizontallyAligned) continue;
+			const inside = edge.rect.y >= box.y && edge.rect.y <= box.y + box.h;
+			const below = edge.rect.y >= box.y + box.h;
+			const maxGap = Math.max(160, Math.min(480, box.h * 0.5));
+			const gap = inside ? 0 : edge.rect.y - (box.y + box.h);
+			if (!inside && (!below || gap > maxGap)) continue;
+			candidates.push({ draftIndex, edge, gap });
 		}
 	}
-	return undefined;
+	candidates.sort(
+		(a, b) => (a.edge.confidence === "high" ? 0 : 1) - (b.edge.confidence === "high" ? 0 : 1) || a.gap - b.gap,
+	);
+	const usedEdges = new Set<PaginationEdge>();
+	for (const candidate of candidates) {
+		const draft = drafts[candidate.draftIndex]!;
+		if (assigned.has(draft) || usedEdges.has(candidate.edge)) continue;
+		assigned.set(draft, candidate.edge);
+		usedEdges.add(candidate.edge);
+	}
+	return assigned;
 }
 
 function completenessForDraft(
 	draft: DraftCollection,
-	edge?: ReturnType<typeof paginationEdge>,
+	edge?: PaginationEdge,
 ): { completeness: CollectionCompleteness; confidence: CollectionConfidence; reason: string } {
 	if (draft.declaredTotal !== undefined && draft.declaredTotal > 0) {
 		if (draft.observedCount < draft.declaredTotal) {
@@ -628,7 +724,7 @@ function completenessForDraft(
 function modelFromDraft(
 	index: number,
 	draft: DraftCollection,
-	edge?: ReturnType<typeof paginationEdge>,
+	edge?: PaginationEdge,
 	ambiguousNames?: Set<string>,
 ): CollectionModel {
 	const collectionId = `c${index + 1}`;
@@ -730,7 +826,8 @@ export function buildCollectionModels(input: BuildCollectionModelsInput): Collec
 				b.observedCount - a.observedCount ||
 				(b.declaredTotal ?? 0) - (a.declaredTotal ?? 0),
 		);
-	const edge = sortedDrafts.length === 1 ? paginationEdge(input.scanEvidence?.actionables) : undefined;
+	const entitiesByRef = new Map(input.entities.map((entity) => [entity.ref, entity]));
+	const edges = assignPaginationEdges(sortedDrafts, paginationEdges(input.scanEvidence?.actionables), entitiesByRef);
 	const outputAmbiguousNames = ambiguousContainerNames(sortedDrafts);
 	const inputAmbiguousNames = ambiguousContainerNames([...drafts.values()]);
 	return uniqueCollectionNames(
@@ -738,7 +835,7 @@ export function buildCollectionModels(input: BuildCollectionModelsInput): Collec
 			modelFromDraft(
 				index,
 				draft,
-				edge,
+				edges.get(draft),
 				outputAmbiguousNames.has(normalizeNameKey(draft.containerName))
 					? outputAmbiguousNames
 					: inputAmbiguousNames,

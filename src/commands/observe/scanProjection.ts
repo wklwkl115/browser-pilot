@@ -106,11 +106,18 @@ function compactActionSpace(
 			}
 			compactScope = { id, ...(scope.position ? { position: scope.position } : {}) };
 		}
+		const inputKind = typeof entity.hints?.inputKind === "string" ? entity.hints.inputKind : undefined;
+		const placeholder = typeof entity.hints?.placeholder === "string" ? entity.hints.placeholder : undefined;
+		const href = typeof entity.hints?.href === "string" ? entity.hints.href : undefined;
 		return {
 			ref: entity.ref,
 			kind: entity.kind,
 			role: entity.role,
 			...(entity.name ? { name: entity.name } : {}),
+			...(entity.value !== undefined && inputKind !== "password" ? { value: entity.value } : {}),
+			...(placeholder ? { placeholder } : {}),
+			...(inputKind && inputKind !== "text" ? { inputKind } : {}),
+			...(href ? { href } : {}),
 			actions: entity.actionability?.actions ?? fallbackActions(entity),
 			...(entity.actionability?.hint ? { hint: entity.actionability.hint } : {}),
 			confidence: entity.actionability?.confidence ?? "medium",

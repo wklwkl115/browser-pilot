@@ -138,6 +138,7 @@ const LANDMARK_ROLES = new Set([
 const AX_AUTHORITATIVE_STATE = ["checked", "selected", "pressed", "expanded"] as const;
 const GEOMETRY_MATCH_RADIUS_PX = 24;
 const COINCIDENT_BOX_IOU = 0.8;
+const FUSION_DEGRADED_SKIP_RATIO = 0.05;
 const AX_GEOMETRY_BUCKET_SIZE = 64;
 const MAX_AX_GEOMETRY_BUCKETS_PER_RECT = 256;
 
@@ -638,15 +639,27 @@ function compatibleMatchRoles(left: string, right: string): boolean {
 	);
 }
 
+/** Names that differ only in digits ("Inbox (3)" vs "Inbox (4)") describe the same control with a live counter. */
+function looselyEqualNames(left: string, right: string): boolean {
+	const collapse = (value: string) => value.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
+	return collapse(left) === collapse(right);
+}
+
 function axMatchScore(
 	dom: EntityMatchInfo,
 	ax: EntityMatchInfo,
 ): { score: number; geometryBacked: boolean } | undefined {
 	if (dom.targetId !== ax.targetId) return undefined;
 	if (!compatibleMatchRoles(dom.role, ax.role)) return undefined;
-	if (dom.name !== undefined && ax.name !== undefined && dom.name !== ax.name) return undefined;
 	const iou = boxIoU(dom.box, ax.box);
-	if (iou !== undefined && iou >= COINCIDENT_BOX_IOU) return { score: 120 + iou * 10, geometryBacked: true };
+	const coincident = iou !== undefined && iou >= COINCIDENT_BOX_IOU;
+	if (dom.name !== undefined && ax.name !== undefined && dom.name !== ax.name) {
+		// Only coincident geometry may excuse a name difference, and only a digits-only one: the box proves it
+		// is the same node while the DOM and AX readers saw the counter at different instants.
+		if (!coincident || !looselyEqualNames(dom.name, ax.name)) return undefined;
+		return { score: 110 + iou * 10, geometryBacked: true };
+	}
+	if (coincident) return { score: 120 + iou * 10, geometryBacked: true };
 	const nameMatch = dom.name !== undefined && dom.name === ax.name;
 	const roleMatch = dom.role === ax.role;
 	const dist = pointDistance(dom.point, ax.point);
@@ -938,6 +951,9 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 	commitUnique(semanticProposals, "semantic", "ambiguousSemantic");
 	const unmatchedAx = axEntities.filter((_, index) => !usedAx[index] && !unsafeAx[index]);
 	diagnostics.axOnly = unmatchedAx.length;
-	diagnostics.degraded = Object.values(diagnostics.skipped).some((count) => count > 0);
+	// A page is "degraded" when more than a small share of AX nodes could not be fused; a handful of
+	// ambiguous matches on a large page is normal and must not mark the whole enrichment unreliable.
+	const skippedTotal = Object.values(diagnostics.skipped).reduce((sum, count) => sum + count, 0);
+	diagnostics.degraded = skippedTotal > Math.floor(axEntities.length * FUSION_DEGRADED_SKIP_RATIO);
 	return { merged, unmatchedAx, diagnostics };
 }

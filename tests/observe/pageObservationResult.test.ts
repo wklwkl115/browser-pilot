@@ -454,6 +454,67 @@ test("action projection prefers DOM scope while preserving independent AX struct
 	assert.deepEqual(observation.entities?.[0]?.structure, { posInSet: 5, setSize: 100 });
 });
 
+test("action projection carries field values, placeholders, input kinds, and link targets", () => {
+	const state = { visible: true, occluded: false, disabled: false, focused: false, editable: true, inViewport: true };
+	const entities: Entity[] = [
+		{
+			ref: "bp-ref://control/email",
+			kind: "control",
+			role: "textbox",
+			name: "Email",
+			value: "alice@example.test",
+			state,
+			actionability: { actions: ["edit"], confidence: "high" },
+			hints: { inputKind: "email", placeholder: "you@example.com" },
+			source: "dom",
+		},
+		{
+			ref: "bp-ref://control/password",
+			kind: "control",
+			role: "textbox",
+			name: "Password",
+			value: "leaked?",
+			state,
+			actionability: { actions: ["edit"], confidence: "high" },
+			hints: { inputKind: "password" },
+			source: "dom",
+		},
+		{
+			ref: "bp-ref://control/docs",
+			kind: "control",
+			role: "link",
+			name: "Docs",
+			state: { ...state, editable: false },
+			actionability: { actions: ["click"], confidence: "high" },
+			hints: { href: "https://example.test/docs" },
+			source: "dom",
+		},
+	];
+	const observation = buildPageObservation({
+		summary: { focus: {} },
+		entities,
+		content: "Sign in",
+		url: "https://example.test/",
+		snapshot: { snapshotId: "fields", sourceMode: "scan", capturedAt: 1, ttlMs: 300_000 },
+		abmlIntegrated: true,
+		diagnostics: {},
+	});
+	const items = observation.actionSpace?.items ?? [];
+	const byRef = new Map(items.map((item) => [item.ref, item]));
+	assert.deepEqual(
+		{
+			value: byRef.get("bp-ref://control/email")?.value,
+			placeholder: byRef.get("bp-ref://control/email")?.placeholder,
+			inputKind: byRef.get("bp-ref://control/email")?.inputKind,
+		},
+		{ value: "alice@example.test", placeholder: "you@example.com", inputKind: "email" },
+	);
+	assert.equal(byRef.get("bp-ref://control/password")?.value, undefined);
+	assert.equal(byRef.get("bp-ref://control/password")?.inputKind, "password");
+	assert.equal(byRef.get("bp-ref://control/docs")?.href, "https://example.test/docs");
+	assert.equal(isPageObservationV3(observation), true);
+});
+
 test("canonical PageObservation bounds repeated structure summaries", async () => {
 	const built = buildPageObservation({
 		summary: {},

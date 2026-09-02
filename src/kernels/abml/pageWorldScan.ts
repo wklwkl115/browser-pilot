@@ -44,6 +44,7 @@ export interface ScanActionable {
 	inViewport?: boolean;
 	current?: string;
 	inputKind?: string;
+	placeholder?: string;
 	controlsSelectors?: string[];
 	ownsSelectors?: string[];
 	expandedTargetSelectors?: string[];
@@ -196,6 +197,7 @@ const actionableProperties = {
 	inViewport: booleanSchema,
 	current: stringSchema,
 	inputKind: stringSchema,
+	placeholder: stringSchema,
 	controlsSelectors: stringArraySchema,
 	ownsSelectors: stringArraySchema,
 	expandedTargetSelectors: stringArraySchema,

@@ -43,6 +43,13 @@ export interface CompactActionable {
 	kind: string;
 	role: string;
 	name?: string;
+	/** Current field content (inputs, textareas, selects, contenteditable); never present for password fields. */
+	value?: string;
+	placeholder?: string;
+	/** HTML input type for text-like controls (email, search, number, ...). */
+	inputKind?: string;
+	/** Absolute link target for links. */
+	href?: string;
 	actions: EntityAction[];
 	hint?: string;
 	confidence: "high" | "medium";
@@ -364,6 +371,10 @@ const ACTION_SPACE_SCHEMA = {
 					kind: { type: "string", minLength: 1 },
 					role: { type: "string", minLength: 1 },
 					name: { type: "string" },
+					value: { type: "string" },
+					placeholder: { type: "string" },
+					inputKind: { type: "string" },
+					href: { type: "string" },
 					actions: { type: "array", minItems: 1, items: { enum: ["click", "edit"] } },
 					hint: { type: "string" },
 					confidence: { enum: ["high", "medium"] },

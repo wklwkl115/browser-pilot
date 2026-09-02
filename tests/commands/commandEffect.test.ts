@@ -4,7 +4,12 @@ import test from "node:test";
 import { summarizeCommandEffect, withCommandEffect } from "../../src/commands/commandEffect.ts";
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import type { BrowserBridgeExecutionResult } from "../../src/ports/BrowserRuntimeTypes.ts";
-import { readPageFingerprint, type PageFingerprint } from "../../src/commands/pageSignals.ts";
+import {
+	coherentPageFingerprint,
+	readPageFingerprint,
+	samePageFingerprint,
+	type PageFingerprint,
+} from "../../src/commands/pageSignals.ts";
 import type { VerificationResult } from "../../src/kernels/abml/types.ts";
 
 function fingerprint(overrides: Partial<PageFingerprint> = {}): PageFingerprint {
@@ -22,6 +27,25 @@ function fingerprint(overrides: Partial<PageFingerprint> = {}): PageFingerprint 
 }
 
 const bridgeResult: BrowserBridgeExecutionResult = { id: "result-1", acknowledged: true, data: { ok: true } };
+
+test("observation coherence tolerates bounded mutation drift but not structural or identity change", () => {
+	const before = fingerprint({ changeSeq: 10 });
+	assert.deepEqual(coherentPageFingerprint(before, fingerprint({ changeSeq: 10 })), {
+		coherent: true,
+		changeSeqDrift: 0,
+	});
+	assert.deepEqual(coherentPageFingerprint(before, fingerprint({ changeSeq: 18, title: "(2) Example" })), {
+		coherent: true,
+		changeSeqDrift: 8,
+	});
+	assert.equal(coherentPageFingerprint(before, fingerprint({ changeSeq: 40 })).coherent, false);
+	assert.equal(coherentPageFingerprint(before, fingerprint({ changeSeq: 9 })).coherent, false);
+	assert.equal(coherentPageFingerprint(before, fingerprint({ changeSeq: 12, visibleCount: 21 })).coherent, false);
+	assert.equal(coherentPageFingerprint(before, fingerprint({ changeSeq: 12, scrollY: 300 })).coherent, false);
+	assert.equal(coherentPageFingerprint(before, fingerprint({ changeSeq: 12, pageEpoch: "page-2" })).coherent, false);
+	// The settle check used for write effects stays exact.
+	assert.equal(samePageFingerprint(before, fingerprint({ changeSeq: 11 })), false);
+});
 
 test("command effect reports an observed settled no-op explicitly", () => {
 	const effect = summarizeCommandEffect(fingerprint(), fingerprint(), bridgeResult, {
@@ -174,6 +198,67 @@ test("command effect stops polling terminal postcondition failures", async () =>
 	assert.equal(outcome.verification?.retryable, false);
 	assert.equal(attempts, 1);
 	assert.ok(Date.now() - startedAt < 500);
+});
+
+test("command effect declares a stable unmet postcondition early once the page has settled", async () => {
+	let attempts = 0;
+	const server = {
+		async sendCommand() {
+			return { id: "fingerprint", acknowledged: true, data: fingerprint() };
+		},
+	} as unknown as BrowserCommandRuntimePort;
+	const startedAt = Date.now();
+	const outcome = await withCommandEffect(
+		server,
+		{
+			tabId: 7,
+			timeoutMs: 15_000,
+			deadlineAt: Date.now() + 15_000,
+			quietMs: 0,
+			settleMs: 50,
+			verify: async () => {
+				attempts += 1;
+				return { status: "unmet", verb: "test", observed: { pressed: false }, evidence: [], elapsedMs: 0 };
+			},
+		},
+		async () => bridgeResult,
+	);
+	assert.equal(outcome.effect.settled, true);
+	assert.equal(outcome.verification?.status, "unmet");
+	assert.equal(attempts, 3);
+	assert.ok(Date.now() - startedAt < 2_000, "a stable unmet state must not consume the tool timeout");
+	assert.match(outcome.verification?.evidence.at(-1)?.summary ?? "", /settled and target state stayed unchanged/);
+});
+
+test("command effect keeps polling with backoff while the postcondition keeps changing, within its own budget", async () => {
+	let attempts = 0;
+	const server = {
+		async sendCommand() {
+			return { id: "fingerprint", acknowledged: true, data: fingerprint() };
+		},
+	} as unknown as BrowserCommandRuntimePort;
+	const startedAt = Date.now();
+	const outcome = await withCommandEffect(
+		server,
+		{
+			tabId: 7,
+			timeoutMs: 15_000,
+			deadlineAt: Date.now() + 15_000,
+			quietMs: 0,
+			settleMs: 0,
+			verifyBudgetMs: 700,
+			verify: async () => {
+				attempts += 1;
+				return { status: "unmet", verb: "test", observed: { count: attempts }, evidence: [], elapsedMs: 0 };
+			},
+		},
+		async () => bridgeResult,
+	);
+	assert.equal(outcome.verification?.status, "unmet");
+	const elapsed = Date.now() - startedAt;
+	assert.ok(elapsed >= 600 && elapsed < 3_000, `polling should stop at its own budget, took ${elapsed}ms`);
+	// 100 + 200 + 400 ms of backoff fits four reads inside a 700ms budget; fixed 100ms polling would need seven.
+	assert.ok(attempts >= 3 && attempts <= 5, `expected geometric backoff, saw ${attempts} reads`);
 });
 
 test("command effect keeps an unreadable postcondition inconclusive", async () => {

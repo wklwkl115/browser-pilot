@@ -328,6 +328,28 @@ export function scanPage(config: any) {
 			);
 		return el.isContentEditable || el.getAttribute("contenteditable") === "true";
 	}
+	// Current field content so the agent can confirm what a form holds; password fields never report a value.
+	function editableValueOf(el) {
+		const tag = el.tagName;
+		if (tag === "INPUT") {
+			const type = String(el.type || "text").toLowerCase();
+			if (
+				["password", "hidden", "file", "button", "submit", "reset", "image", "checkbox", "radio"].includes(type)
+			)
+				return undefined;
+			return clean(el.value ?? "", 160);
+		}
+		if (tag === "TEXTAREA") return clean(el.value ?? "", 160);
+		if (tag === "SELECT") {
+			const selected = Array.from(el.selectedOptions || []).map((option) =>
+				clean(option.label || option.textContent || option.value, 80),
+			);
+			return clean(selected.join(", "), 160);
+		}
+		if (el.isContentEditable || el.getAttribute("contenteditable") === "true")
+			return clean(el.textContent || "", 160);
+		return undefined;
+	}
 	function frameworkHandlers(el) {
 		const cached = HANDLER_CACHE.get(el);
 		if (cached) return cached;
@@ -662,6 +684,8 @@ export function scanPage(config: any) {
 			const ownsSelectors = refTargets(el, "aria-owns");
 			const expandedAttr = el.getAttribute && el.getAttribute("aria-expanded");
 			const edgeHint = edgeUtilityHint(visible, style);
+			const fieldValue = editableValueOf(el);
+			const placeholder = el.getAttribute ? clean(el.getAttribute("placeholder") || "", 120) : "";
 			let label = labelOf(el);
 			let elText = clean(el.innerText || el.textContent || "", 120);
 			if (pseudoCheckCount < PSEUDO_CHECK_LIMIT) {
@@ -700,6 +724,8 @@ export function scanPage(config: any) {
 				...(expandedAttr === "true" || expandedAttr === "false" ? { expanded: expandedAttr === "true" } : {}),
 				...(currentAttr ? { current: currentAttr } : {}),
 				...(el.tagName === "INPUT" && el.type ? { inputKind: String(el.type).toLowerCase() } : {}),
+				...(fieldValue !== undefined ? { value: fieldValue } : {}),
+				...(placeholder ? { placeholder } : {}),
 				...(controlsSelectors.length ? { controlsSelectors } : {}),
 				...(ownsSelectors.length ? { ownsSelectors } : {}),
 				...((expandedAttr === "true" || expandedAttr === "false") && controlsSelectors.length

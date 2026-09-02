@@ -292,7 +292,11 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 		...(geometryPoint(node.point) || {}),
 	};
 	const name = firstSafeSemanticText([node.action, node.label, node.displayLabel, node.text], 160);
-	const value = node.editable === true ? undefined : sanitizeSemanticText(node.value, 160);
+	// The scan never reports password contents; every other field value is decision-relevant and kept.
+	const inputKind = stringValue(node.inputKind);
+	const value = inputKind === "password" ? undefined : sanitizeSemanticText(node.value, 160);
+	const placeholder = sanitizeSemanticText(node.placeholder, 120);
+	const href = stringValue(node.href);
 	const controlsSelectors = stringArray(node.controlsSelectors);
 	const ownsSelectors = stringArray(node.ownsSelectors);
 	const expandedTargetSelectors = stringArray(node.expandedTargetSelectors);
@@ -358,7 +362,9 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 			...(ownsSelectors ? { ownsSelectors } : {}),
 			...(expandedTargetSelectors ? { expandedTargetSelectors } : {}),
 			// HTML input type (e.g. "password", "search", "email"). AX only exposes the role.
-			...(stringValue(node.inputKind) ? { inputKind: stringValue(node.inputKind) } : {}),
+			...(inputKind ? { inputKind } : {}),
+			...(placeholder ? { placeholder } : {}),
+			...(href ? { href } : {}),
 		},
 	};
 	const capturedAt = context.capturedAt;

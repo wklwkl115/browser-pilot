@@ -60,7 +60,7 @@ The tuple (browser session, tab, target generation, page epoch) is the **page id
 
 ### Fingerprint bracket
 
-A page can mutate between the DOM read and the accessibility read. Browser Pilot records a lightweight page **fingerprint** (URL, change counter, scroll, viewport, element counts) before and after the reads. If the two fingerprints differ, the observation is "torn": it retries once, then degrades to a scan-only model and says so in diagnostics. A screenshot attached by `visual: "always"` is captured inside the same bracket, which is what makes the pixel boxes in `visual.targets` trustworthy.
+A page can mutate between the DOM read and the accessibility read. Browser Pilot records a lightweight page **fingerprint** (URL, change counter, scroll, viewport, element counts) before and after the reads. The observation is "torn" when the document identity, layout, or visible/interactive element counts changed, or when the mutation counter drifted by more than a small tolerance (live regions such as carousels and timers mutate constantly without changing which controls exist). A torn observation retries once, then degrades to a scan-only model and says so in diagnostics. A screenshot attached by `visual: "always"` is captured inside the same bracket, which is what makes the pixel boxes in `visual.targets` trustworthy.
 
 ### Perception ledger
 
@@ -114,21 +114,21 @@ Add `expect` to a write to get a `verification`. `expect` is either a JavaScript
 
 The inline result (the observation view) has these top-level keys. All except `target` are optional and appear only when they carry information.
 
-| Key           | What it is for                                                                                                                                               |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `target`      | `{ url }` of the observed tab.                                                                                                                               |
-| `content`     | Readable page text, `headings`, and `complete: false` when text was folded into a frontier resource.                                                         |
-| `gist`        | `title` and landmark roles present (`main`, `navigation`, ...). A one-glance orientation.                                                                    |
-| `outline`     | Containers with member counts and refs. The skeleton of the page.                                                                                            |
-| `actionSpace` | `items`: compact actionables with `ref`, `role`, `name`, `actions` (`click` / `edit`), `state`, `scope`. `coverage` says whether all controls were captured. |
-| `collections` | Recognised lists/tables with completeness (see above).                                                                                                       |
-| `relations`   | Relation counts plus highlights.                                                                                                                             |
-| `causal`      | Requests and events since the baseline, or `unavailable`.                                                                                                    |
-| `treeDiff`    | Summary of repeated-structure changes since the baseline.                                                                                                    |
-| `visual`      | When a screenshot was attached: image `ref`, `resourceUri`, size, and normalized `targets` boxes per ref.                                                    |
-| `frontier`    | Everything not inlined, with resource URIs or the reason it is unavailable.                                                                                  |
-| `warnings`    | Human-readable notes about degraded providers or partial capture.                                                                                            |
-| `nextActions` | Short hints about sensible follow-ups.                                                                                                                       |
+| Key           | What it is for                                                                                                                                                                                                                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `target`      | `{ url }` of the observed tab.                                                                                                                                                                                                                                                                  |
+| `content`     | Readable page text, `headings`, and `complete: false` when text was folded into a frontier resource.                                                                                                                                                                                            |
+| `gist`        | `title` and landmark roles present (`main`, `navigation`, ...). A one-glance orientation.                                                                                                                                                                                                       |
+| `outline`     | Containers with member counts and refs. The skeleton of the page.                                                                                                                                                                                                                               |
+| `actionSpace` | `items`: compact actionables with `ref`, `role`, `name`, `actions` (`click` / `edit`), `state`, `scope`; fields also carry their current `value`, `placeholder`, and `inputKind`, links their `href`. Password fields never report a value. `coverage` says whether all controls were captured. |
+| `collections` | Recognised lists/tables with completeness (see above).                                                                                                                                                                                                                                          |
+| `relations`   | Relation counts plus highlights.                                                                                                                                                                                                                                                                |
+| `causal`      | Requests and events since the baseline, or `unavailable`.                                                                                                                                                                                                                                       |
+| `treeDiff`    | Summary of repeated-structure changes since the baseline.                                                                                                                                                                                                                                       |
+| `visual`      | When a screenshot was attached: image `ref`, `resourceUri`, size, and normalized `targets` boxes per ref.                                                                                                                                                                                       |
+| `frontier`    | Everything not inlined, with resource URIs or the reason it is unavailable.                                                                                                                                                                                                                     |
+| `warnings`    | Human-readable notes about degraded providers or partial capture.                                                                                                                                                                                                                               |
+| `nextActions` | Short hints about sensible follow-ups.                                                                                                                                                                                                                                                          |
 
 Alongside the JSON, the MCP result includes `resource_link` entries for every frontier resource, the screenshot, and the saved canonical artifact.
 

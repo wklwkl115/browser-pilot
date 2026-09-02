@@ -6,6 +6,15 @@ import { readPageFingerprint, samePageFingerprint, type PageFingerprint } from "
 const EFFECT_SIGNAL_TIMEOUT_MS = 250;
 const EFFECT_QUIET_MS = 100;
 const EFFECT_SETTLE_MS = 300;
+/**
+ * Postcondition polling has its own budget and backs off geometrically: a wrong `expect` must not
+ * consume the whole tool timeout, and a page that has settled with an unchanged target state is
+ * declared unmet after a few identical reads instead of being re-read until the deadline.
+ */
+const VERIFY_BUDGET_MS = 5_000;
+const VERIFY_INITIAL_POLL_MS = 100;
+const VERIFY_MAX_POLL_MS = 1_000;
+const VERIFY_STABLE_UNMET_ROUNDS = 3;
 
 export type CommandEffect = {
 	observed: boolean;
@@ -37,6 +46,8 @@ type CommandEffectOptions = {
 	signal?: AbortSignal;
 	quietMs?: number;
 	settleMs?: number;
+	/** Upper bound for postcondition polling; defaults to VERIFY_BUDGET_MS and never exceeds deadlineAt. */
+	verifyBudgetMs?: number;
 	initialVerification?: VerificationResult;
 	verify?: () => Promise<VerificationResult>;
 };
@@ -170,19 +181,45 @@ function inconclusiveVerification(
 	};
 }
 
-async function verifyPostcondition(options: CommandEffectOptions): Promise<VerificationResult | undefined> {
+function withVerificationNote(result: VerificationResult, summary: string): VerificationResult {
+	return { ...result, evidence: [...result.evidence, { kind: "verification-runtime", summary }] };
+}
+
+async function verifyPostcondition(
+	options: CommandEffectOptions,
+	pageSettled: boolean,
+): Promise<VerificationResult | undefined> {
 	if (!options.verify) return undefined;
 	const startedAt = Date.now();
+	const deadlineAt = Math.min(options.deadlineAt, startedAt + (options.verifyBudgetMs ?? VERIFY_BUDGET_MS));
 	let last = options.initialVerification;
-	while (!options.signal?.aborted && Date.now() < options.deadlineAt) {
+	let pollMs = VERIFY_INITIAL_POLL_MS;
+	let stableUnmetRounds = 0;
+	let lastObserved: string | undefined;
+	let rounds = 0;
+	while (!options.signal?.aborted && Date.now() < deadlineAt) {
 		try {
 			last = await options.verify();
+			rounds += 1;
 			if (last.status === "verified") return withVerificationElapsed(last, startedAt);
 			if (last.retryable === false) return withVerificationElapsed(last, startedAt);
+			// Once the page has settled, an unmet state that stops changing will not become met by waiting.
+			const observed = last.status === "unmet" ? JSON.stringify(last.observed) : undefined;
+			stableUnmetRounds = observed !== undefined && observed === lastObserved ? stableUnmetRounds + 1 : 0;
+			lastObserved = observed;
+			if (pageSettled && stableUnmetRounds >= VERIFY_STABLE_UNMET_ROUNDS - 1)
+				return withVerificationElapsed(
+					withVerificationNote(
+						last,
+						`Page settled and target state stayed unchanged across ${rounds} checks`,
+					),
+					startedAt,
+				);
 		} catch {
 			return inconclusiveVerification(last, startedAt, "Postcondition observation failed");
 		}
-		await waitFor(Math.min(EFFECT_QUIET_MS, Math.max(0, options.deadlineAt - Date.now())), options.signal);
+		await waitFor(Math.min(pollMs, Math.max(0, deadlineAt - Date.now())), options.signal);
+		pollMs = Math.min(VERIFY_MAX_POLL_MS, pollMs * 2);
 	}
 	if (options.signal?.aborted)
 		return inconclusiveVerification(last, startedAt, "Postcondition observation was cancelled");
@@ -222,7 +259,7 @@ export async function withCommandEffect<T extends BrowserBridgeExecutionResult>(
 			previous = current;
 		}
 	}
-	const verification = await verifyPostcondition(options);
+	const verification = await verifyPostcondition(options, settled);
 
 	return {
 		result,
