@@ -597,7 +597,7 @@ test("ABML grouping text helpers handle normal, empty, malformed, and boundary-s
 	assert.equal(isActionableOrStructural({ role: "InlineTextBox", kind: "element" }), false);
 });
 
-test("ABML causal projection preserves complete redacted deltas", () => {
+test("ABML causal projection preserves complete deltas with verbatim URLs", () => {
 	const records = Array.from({ length: 15 }, (_, index) => ({
 		seq: index + 1,
 		requestId: `request-${index}`,
@@ -606,7 +606,7 @@ test("ABML causal projection preserves complete redacted deltas", () => {
 	}));
 	const causal = buildCausalSummary(records, 0);
 	assert.equal("requests" in causal && causal.requests.length, 15);
-	assert.ok("requests" in causal && causal.requests[0]!.url!.length > 200);
+	assert.equal("requests" in causal && causal.requests[0]!.url, records[0]!.request.url);
 	assert.equal(buildTriggeredRelations(causal).length, 15);
 	const timed = buildCausalSummary([{ seq: 1, requestId: "timed", createdAt: 10, updatedAt: 30 }], 0);
 	assert.equal("requests" in timed && timed.requests[0]?.at, 10);
@@ -1033,12 +1033,25 @@ test("ABML entity builders handle malformed inputs, fallback roles, refs, and de
 	assert.deepEqual(action.entity.hints?.controlsSelectors, ["#panel"]);
 	assert.equal(action.descriptor.owner.topLevelOrigin, undefined);
 	const editable = buildDomEntityFromScanActionable(
-		{ tag: "input", editable: true, current: "false", value: "secret", point: { x: 3, y: 4 } },
+		{
+			tag: "input",
+			editable: true,
+			current: "false",
+			value: "typed text",
+			placeholder: "Email",
+			point: { x: 3, y: 4 },
+		},
 		{ ...context, url: "https://example.test/form" },
 	);
-	assert.equal(editable.entity.value, undefined);
+	assert.equal(editable.entity.value, "typed text");
+	assert.equal(editable.entity.hints?.placeholder, "Email");
 	assert.equal(editable.entity.state.current, undefined);
 	assert.equal(editable.descriptor.owner.topLevelOrigin, "https://example.test");
+	const password = buildDomEntityFromScanActionable(
+		{ tag: "input", editable: true, inputKind: "password", value: "hunter2", point: { x: 3, y: 4 } },
+		{ ...context, url: "https://example.test/form" },
+	);
+	assert.equal(password.entity.value, undefined);
 	const scopedLike = buildDomEntityFromScanActionable(
 		{
 			tag: "span",
@@ -1085,12 +1098,12 @@ test("ABML entity builders handle malformed inputs, fallback roles, refs, and de
 	);
 	assert.equal(unnamedIcon.entity.name, undefined);
 	assert.deepEqual(unnamedIcon.entity.locators, []);
-	const editableWithSecret = buildDomEntityFromScanActionable(
-		{ tag: "input", editable: true, label: "Search", value: "private query" },
+	const editableWithValue = buildDomEntityFromScanActionable(
+		{ tag: "input", editable: true, label: "Search", value: "current query" },
 		context,
 	);
-	assert.equal(editableWithSecret.entity.name, "Search");
-	assert.equal(editableWithSecret.entity.value, undefined);
+	assert.equal(editableWithValue.entity.name, "Search");
+	assert.equal(editableWithValue.entity.value, "current query");
 	assert.equal(
 		buildControlsSourceEntity(
 			{ sourceSelector: "#tabs", sourceRole: "tablist", sourceName: "Tabs", controlsSelectors: ["#panel"] },

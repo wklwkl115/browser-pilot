@@ -135,6 +135,48 @@ test("geometry enriches semantics without promoting AX identity while competing 
 	assert.equal(competing.unmatchedAx.length, 2);
 });
 
+test("coincident geometry tolerates names that differ only by a live counter", () => {
+	const box = { x: 0, y: 0, w: 120, h: 30 };
+	const counter = mergeDomAndAxEntities(
+		[domEntity("bp-ref://dom/inbox", { name: "Inbox (3)", geometry: { box } })],
+		[axEntity("button", "Inbox (4)", { box })],
+	);
+	assert.equal(counter.diagnostics.axEnriched, 1);
+	assert.equal(counter.diagnostics.matched.geometry, 1);
+	assert.equal(counter.merged[0]?.name, "Inbox (4)");
+
+	// Word changes are still a different control even when the boxes coincide...
+	const renamed = mergeDomAndAxEntities(
+		[domEntity("bp-ref://dom/save", { name: "Save", geometry: { box } })],
+		[axEntity("button", "Cancel", { box })],
+	);
+	assert.equal(renamed.diagnostics.axEnriched, 0);
+	// ...and digit-only differences without coincident geometry get no such leniency.
+	const apart = mergeDomAndAxEntities(
+		[domEntity("bp-ref://dom/page1", { name: "Page 1", geometry: { point: { x: 10, y: 10 } } })],
+		[axEntity("button", "Page 2", { point: { x: 10, y: 10 } })],
+	);
+	assert.equal(apart.diagnostics.axEnriched, 0);
+});
+
+test("fusion marks enrichment degraded only when a meaningful share of AX nodes could not be fused", () => {
+	const box = (index: number) => ({ x: 0, y: index * 40, w: 100, h: 30 });
+	const dom = Array.from({ length: 100 }, (_, index) =>
+		domEntity(`bp-ref://dom/${index}`, { name: `Item ${index}`, geometry: { box: box(index) } }),
+	);
+	const ax = dom.map((entity, index) => axEntity("button", entity.name!, { box: box(index) }));
+	// Two AX nodes land on the same DOM box: ambiguous, skipped, but 2% of the page is not "degraded".
+	const fewAmbiguous = mergeDomAndAxEntities(dom, [...ax, axEntity("button", "Item 0", { box: box(0) })]);
+	assert.equal(fewAmbiguous.diagnostics.skipped.ambiguousGeometry, 2);
+	assert.equal(fewAmbiguous.diagnostics.degraded, false);
+	// Ten contested boxes out of ~110 AX nodes crosses the threshold.
+	const manyAmbiguous = mergeDomAndAxEntities(dom, [
+		...ax,
+		...Array.from({ length: 10 }, (_, index) => axEntity("button", `Item ${index}`, { box: box(index) })),
+	]);
+	assert.equal(manyAmbiguous.diagnostics.degraded, true);
+});
+
 test("fusion rejects conflicting names and target-scoped backend identities", () => {
 	const nameConflict = mergeDomAndAxEntities(
 		[domEntity("bp-ref://dom/name", { name: "Parent", geometry: { box: { x: 0, y: 0, w: 100, h: 30 } } })],

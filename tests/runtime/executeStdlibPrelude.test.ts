@@ -191,6 +191,71 @@ test("browserPilot.resolve fails closed when repeated semantic candidates share 
 	assert.equal((context.__result as { el?: FakeElement }).el, null);
 });
 
+test("browserPilot.resolve matches truncated observation names as a prefix", () => {
+	const { context } = createContext();
+	const longName = "Open the quarterly revenue report for the EMEA region including all subsidiaries and adjustments";
+	const button = element("BUTTON", "long-name", `${longName} for fiscal year 2026 and beyond`, rect(40, 30, 200, 40));
+	context.document.querySelectorAll = () => [button];
+	context.document.elementFromPoint = () => button;
+	const ref = "bp-ref://control/long-name";
+	const registry = {
+		[ref]: {
+			ok: true,
+			fresh: true,
+			descriptor: {
+				refId: ref,
+				locators: [{ by: "css", value: "#long-name" }],
+				semantic: { role: "button", name: `${longName}\u2026` },
+			},
+		},
+	};
+	vm.runInContext(
+		`${stdlibPrelude(registry)}\nglobalThis.__result = browserPilot.resolve(${JSON.stringify(ref)});`,
+		vm.createContext(context),
+	);
+	const result = context.__result as { el?: FakeElement; freshness?: string; warning?: string };
+	assert.equal(result.el, button);
+	assert.equal(result.warning, undefined);
+});
+
+test("browserPilot.resolve accepts a uniquely identified element whose name changed, with a warning", () => {
+	const { context } = createContext();
+	const renamed = element("BUTTON", "submit", "Saving…", rect(40, 30, 120, 40));
+	context.document.querySelectorAll = (selector: string) => (selector === "#submit" ? [renamed] : []);
+	context.document.elementFromPoint = () => renamed;
+	const ref = "bp-ref://control/submit";
+	const registry = {
+		[ref]: {
+			ok: true,
+			fresh: true,
+			descriptor: {
+				refId: ref,
+				locators: [{ by: "css", value: "#submit" }],
+				semantic: { role: "button", name: "Save" },
+			},
+		},
+	};
+	vm.runInContext(
+		`${stdlibPrelude(registry)}\nglobalThis.__result = browserPilot.resolve(${JSON.stringify(ref)});`,
+		vm.createContext(context),
+	);
+	const result = context.__result as { el?: FakeElement; warning?: string };
+	assert.equal(result.el, renamed);
+	assert.match(result.warning ?? "", /name_mismatch/);
+
+	// A role change still means a different control.
+	const roleChanged = createContext();
+	const link = element("A", "submit", "Save", rect(40, 30, 120, 40));
+	link.getAttribute = (name: string) => (name === "href" ? "/save" : name === "id" ? "submit" : null);
+	roleChanged.context.document.querySelectorAll = () => [link];
+	roleChanged.context.document.elementFromPoint = () => link;
+	vm.runInContext(
+		`${stdlibPrelude(registry)}\nglobalThis.__result = browserPilot.resolve(${JSON.stringify(ref)});`,
+		vm.createContext(roleChanged.context),
+	);
+	assert.equal((roleChanged.context.__result as { el?: FakeElement }).el, null);
+});
+
 test("browserPilot.resolve never switches identity to a visible duplicate", () => {
 	const { context } = createContext();
 	const occluded = element("BUTTON", "occluded-save", "Save", rect(40, 30, 120, 40));

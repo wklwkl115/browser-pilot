@@ -1,6 +1,6 @@
 import { readBrowserAbmlStructure, type BrowserAbmlStructureResult } from "../../browser-runtime/abml/runtime.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { readPageFingerprint, samePageFingerprint, type PageFingerprint } from "../pageSignals.js";
+import { coherentPageFingerprint, readPageFingerprint, type PageFingerprint } from "../pageSignals.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
 import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import type { BaselineResolution } from "./baseline.js";
@@ -136,6 +136,7 @@ async function evaluateScan(options: ScanCaptureOptions, script: string): Promis
 		timeoutMs: options.timeoutMs,
 		name: "scan_extract",
 		signal: options.signal,
+		reusable: true,
 	});
 	options.timings.pageScriptMs = Number(options.timings.pageScriptMs ?? 0) + elapsedMs(startedAt);
 	return { ...evaluated, data: validatedScanBundle(evaluated.data) };
@@ -180,12 +181,17 @@ async function executeScanCaptureAttempt(options: ScanCaptureOptions, seededFing
 		timings.screenshotBytes = Number(timings.screenshotBytes ?? 0) + visualCapture.buffer.length;
 	}
 	const finalFingerprint = await readCaptureFingerprint(options);
-	const coherence =
+	const bracket =
 		initialFingerprint?.pageEpoch && finalFingerprint?.pageEpoch
-			? samePageFingerprint(initialFingerprint, finalFingerprint)
-				? ("stable" as const)
-				: ("unstable" as const)
-			: ("unverified" as const);
+			? coherentPageFingerprint(initialFingerprint, finalFingerprint)
+			: undefined;
+	if (bracket?.coherent && bracket.changeSeqDrift > 0)
+		timings.fusedFingerprintDrift = Math.max(Number(timings.fusedFingerprintDrift ?? 0), bracket.changeSeqDrift);
+	const coherence = !bracket
+		? ("unverified" as const)
+		: bracket.coherent
+			? ("stable" as const)
+			: ("unstable" as const);
 	return {
 		result,
 		abmlRead,

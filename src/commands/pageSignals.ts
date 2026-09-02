@@ -82,6 +82,42 @@ export function samePageFingerprint(left: PageFingerprint, right: PageFingerprin
 	return pageFingerprintDiscriminators(left).every((value, index) => value === rightValues[index]);
 }
 
+/**
+ * Mutation records an observation bracket may absorb before it counts as torn. Live regions
+ * (carousels, timers, ad slots) mutate constantly without changing which controls exist; the
+ * structural counts still have to match exactly.
+ */
+export const OBSERVATION_CHANGE_SEQ_TOLERANCE = 12;
+
+export type FingerprintCoherence = { coherent: boolean; changeSeqDrift: number; reason?: string };
+
+/** Coherence for DOM+AX fusion: same document, same layout, same control counts, bounded mutation drift. */
+export function coherentPageFingerprint(
+	before: PageFingerprint,
+	after: PageFingerprint,
+	tolerance = OBSERVATION_CHANGE_SEQ_TOLERANCE,
+): FingerprintCoherence {
+	const drift = after.changeSeq - before.changeSeq;
+	const identityKeys: Array<keyof PageFingerprint> = ["observerEpoch", "pageEpoch", "documentId", "url"];
+	for (const key of identityKeys)
+		if (before[key] !== after[key]) return { coherent: false, changeSeqDrift: drift, reason: `${key} changed` };
+	const layoutKeys: Array<keyof PageFingerprint> = [
+		"readyState",
+		"scrollX",
+		"scrollY",
+		"viewportWidth",
+		"viewportHeight",
+		"devicePixelRatio",
+		"visibleCount",
+		"interactiveCount",
+	];
+	for (const key of layoutKeys)
+		if (before[key] !== after[key]) return { coherent: false, changeSeqDrift: drift, reason: `${key} changed` };
+	if (drift < 0 || drift > tolerance)
+		return { coherent: false, changeSeqDrift: drift, reason: `changeSeq drifted by ${drift}` };
+	return { coherent: true, changeSeqDrift: drift };
+}
+
 export async function readPageFingerprint(
 	server: BrowserCommandRuntimePort,
 	options: PageSignalOptions,

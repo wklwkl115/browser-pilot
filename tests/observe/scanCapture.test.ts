@@ -34,6 +34,7 @@ function scanCaptureRuntime(sequences: FingerprintStep[], pageEpoch = "page-1", 
 	const calls: string[] = [];
 	const runtime = {
 		calls,
+		scanCommands: [] as BrowserRuntimeCommand[],
 		snapshot() {
 			return {
 				browserSessionId: "session-1",
@@ -54,6 +55,7 @@ function scanCaptureRuntime(sequences: FingerprintStep[], pageEpoch = "page-1", 
 		async sendCommand(command: BrowserRuntimeCommand) {
 			const method = typeof command.cdpMethod === "string" ? command.cdpMethod : String(command.cmd);
 			calls.push(method);
+			if (method === "Runtime.evaluate") runtime.scanCommands.push(command);
 			if (command.cmd === "content.fingerprint") {
 				const step = sequences.shift();
 				const changeSeq = typeof step === "number" ? step : step?.changeSeq;
@@ -112,7 +114,7 @@ function scanCaptureRuntime(sequences: FingerprintStep[], pageEpoch = "page-1", 
 				return { id: "snapshot", acknowledged: true, data: { documents: [], strings: [] } };
 			throw new Error(`unexpected command: ${method}`);
 		},
-	} as unknown as BrowserCommandRuntimePort & { calls: string[] };
+	} as unknown as BrowserCommandRuntimePort & { calls: string[]; scanCommands: BrowserRuntimeCommand[] };
 	return runtime;
 }
 
@@ -164,6 +166,11 @@ test("scan capture refreshes DOM and AX for every stable observation", async () 
 	assert.equal(server.calls.filter((call) => call === "Runtime.evaluate").length, 2);
 	assert.equal(server.calls.filter((call) => call === "Accessibility.getFullAXTree").length, 2);
 	assert.equal(server.calls.filter((call) => call === "DOMSnapshot.captureSnapshot").length, 2);
+	// The scan script is re-run verbatim, so it opts into the extension's compiled-script cache.
+	assert.equal(server.scanCommands.length, 2);
+	assert.equal(server.scanCommands[0]!.precompile, true);
+	assert.equal(typeof server.scanCommands[0]!.scriptHash, "string");
+	assert.equal(server.scanCommands[0]!.scriptHash, server.scanCommands[1]!.scriptHash);
 	assert.notEqual(
 		first.observation.abmlRead.ok && first.observation.abmlRead.data.snapshotId,
 		second.observation.abmlRead.ok && second.observation.abmlRead.data.snapshotId,
@@ -180,7 +187,8 @@ test("scan capture reports AX provider failure as degraded", async () => {
 });
 
 test("scan capture retries one torn DOM+AX observation and accepts the stable retry", async () => {
-	const server = scanCaptureRuntime([2, 3, 3]);
+	// First bracket: seeded changeSeq 1 → 40 (far beyond the drift tolerance) is torn; retry 40 → 40 is stable.
+	const server = scanCaptureRuntime([40, 40, 40]);
 	const options = {
 		...captureOptions(server),
 		pageFingerprint: {
@@ -222,8 +230,22 @@ test("scan capture retries one torn DOM+AX observation and accepts the stable re
 	]);
 });
 
+test("scan capture absorbs bounded mutation drift when identity and control counts are unchanged", async () => {
+	const server = scanCaptureRuntime([10, 14]);
+	const options = captureOptions(server);
+	const result = await executeScanCapture(options);
+	assert.equal(result.observation.abmlRead.ok, true);
+	assert.deepEqual(
+		result.observation.abmlRead.ok ? result.observation.abmlRead.data.observationCoherence : undefined,
+		{ status: "stable", attempts: 1 },
+	);
+	assert.equal(result.fusedPageFingerprint?.changeSeq, 14);
+	assert.equal(options.timings.fusedFingerprintDrift, 4);
+	assert.equal(options.timings.abmlCoherenceRetries, undefined);
+});
+
 test("scan capture rejects repeatedly torn fusion and falls back to scan entities", async () => {
-	const server = scanCaptureRuntime([1, 2, 3, 4]);
+	const server = scanCaptureRuntime([1, 100, 200, 300]);
 	const result = await executeScanCapture(captureOptions(server));
 	assert.equal(result.observation.abmlRead.ok, false);
 	assert.equal(

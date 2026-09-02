@@ -29,12 +29,25 @@ function boundedInt(value: unknown, fallback: number, min: number, max: number):
 	return Math.max(min, Math.min(max, safe));
 }
 
+/** The script is pure in its options; every observe asks for the same budget, so build it once per budget. */
+const scanScriptCache = new Map<string, string>();
+
 export function buildScanScript(options: BrowserScanOptions = {}): string {
 	const opts = {
 		maxChars: boundedInt(options.maxChars, 35_000, 1_000, 500_000),
 		// Tuning note: 200k-node safety ceiling; raise only after capture can be chunked within the tool deadline.
 		maxNodes: boundedInt(options.maxNodes, 200_000, 100, 200_000),
 	};
+	const cacheKey = `${opts.maxChars}:${opts.maxNodes}`;
+	const cached = scanScriptCache.get(cacheKey);
+	if (cached) return cached;
+	const script = renderScanScript(opts);
+	if (scanScriptCache.size >= 8) scanScriptCache.delete(scanScriptCache.keys().next().value!);
+	scanScriptCache.set(cacheKey, script);
+	return script;
+}
+
+function renderScanScript(opts: { maxChars: number; maxNodes: number }): string {
 	const config = {
 		options: opts,
 		ignoreIds: BROWSER_NOISE_IDS,

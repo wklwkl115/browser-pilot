@@ -39,20 +39,33 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
 
   function expectedFor(input, locator) {
     const semantic = input && input.semantic || {};
-    const semanticName = normalize(semantic.name);
+    const rawName = String(semantic.name || "");
+    // Observation names are bounded at 160 chars and end with an ellipsis when cut; match them as a prefix.
+    const truncated = rawName.endsWith("\u2026");
+    const semanticName = normalize(truncated ? rawName.slice(0, -1) : rawName);
     return {
       role: normalize(semantic.role || locator && locator.role),
       name: semanticName || normalize(locator && locator.by === "textAnchor" ? locator.value : ""),
-      exact: semanticName ? true : locator && locator.by === "textAnchor" ? locator.exact !== false : true
+      exact: semanticName ? !truncated : locator && locator.by === "textAnchor" ? locator.exact !== false : true,
+      truncated
     };
   }
 
-  function matches(el, expected) {
+  function roleMatches(el, expected) {
+    if (!expected.role) return true;
     const actualRole = roleOf(el);
+    return actualRole === expected.role || ([actualRole, expected.role].includes("img") && [actualRole, expected.role].includes("image"));
+  }
+
+  function nameMatches(el, expected) {
+    if (!expected.name) return true;
     const actualName = nameOf(el);
-    if (expected.role && actualRole !== expected.role && !([actualRole, expected.role].includes("img") && [actualRole, expected.role].includes("image"))) return false;
-    if (expected.name && (expected.exact ? actualName !== expected.name : !actualName.includes(expected.name))) return false;
-    return true;
+    if (expected.truncated) return actualName.startsWith(expected.name);
+    return expected.exact ? actualName === expected.name : actualName.includes(expected.name);
+  }
+
+  function matches(el, expected) {
+    return roleMatches(el, expected) && nameMatches(el, expected);
   }
 
   function geometryBox(input) {
@@ -65,9 +78,17 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
 
   function choose(nodes, input, locator) {
     const expected = expectedFor(input, locator);
-    const candidates = Array.from(new Set(nodes)).filter(el => el && el.nodeType === 1 && matches(el, expected));
+    const elements = Array.from(new Set(nodes)).filter(el => el && el.nodeType === 1);
+    const candidates = elements.filter(el => matches(el, expected));
     if (candidates.length === 1) return { el: candidates[0] };
-    if (!candidates.length) return { reason: nodes.length ? "semantic_mismatch" : "not_found" };
+    if (!candidates.length) {
+      // An identity locator (css/xpath/attributes) that lands on exactly one element of the right role is
+      // the element we observed; a differing accessible name is a rename, not a different control.
+      const identityLocator = locator && ["css", "xpath", "attrSignature"].includes(locator.by);
+      const sameRole = identityLocator ? elements.filter(el => roleMatches(el, expected)) : [];
+      if (sameRole.length === 1) return { el: sameRole[0], warning: "name_mismatch" };
+      return { reason: nodes.length ? "semantic_mismatch" : "not_found" };
+    }
     const target = geometryBox(input);
     if (!target || ![target.x, target.y, target.width, target.height].every(Number.isFinite)) return { reason: "ambiguous", candidateCount: candidates.length };
     const tx = target.x + target.width / 2;
@@ -108,7 +129,10 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
   function point(el, input, scroll) {
     if (!el || el.nodeType !== 1) return { ok: false, reason: "not_found" };
     const expected = expectedFor(input || {}, null);
-    if (!matches(el, expected)) return { ok: false, reason: "semantic_mismatch", actualRole: roleOf(el) };
+    // el is already the identified node (backend id or unique locator): a role change means a different
+    // control, a name change is reported but does not block the action.
+    if (!roleMatches(el, expected)) return { ok: false, reason: "semantic_mismatch", actualRole: roleOf(el) };
+    const warning = nameMatches(el, expected) ? undefined : "name_mismatch";
     if (scroll && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center", inline: "center" });
     const rect = el.getBoundingClientRect();
     const style = typeof getComputedStyle === "function" ? getComputedStyle(el) : null;
@@ -117,12 +141,13 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
     if ((!rect.width && !rect.height) || style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0" || style.pointerEvents === "none")) return { ok: false, reason: "not_hittable" };
     if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= viewportH || rect.left >= viewportW) return { ok: false, reason: "outside_viewport" };
     const samples = [[0.5, 0.5], [0.25, 0.5], [0.75, 0.5], [0.5, 0.25], [0.5, 0.75]];
-    if (typeof document.elementFromPoint !== "function") return { ok: true, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    const found = (x, y) => (warning ? { ok: true, x, y, warning } : { ok: true, x, y });
+    if (typeof document.elementFromPoint !== "function") return found(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2));
     for (const pair of samples) {
       const x = Math.round(Math.max(0, Math.min(viewportW - 1, rect.left + rect.width * pair[0])));
       const y = Math.round(Math.max(0, Math.min(viewportH - 1, rect.top + rect.height * pair[1])));
       const hit = document.elementFromPoint(x, y);
-      if (hit && (hit === el || el.contains(hit))) return { ok: true, x, y };
+      if (hit && (hit === el || el.contains(hit))) return found(x, y);
     }
     return { ok: false, reason: "occluded" };
   }
@@ -130,16 +155,17 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
   function resolve(input) {
     const tried = [];
     let fallback = null;
+    let fallbackWarning;
     let reason = "not_found";
     for (const locator of Array.isArray(input && input.locators) ? input.locators : []) {
       if (!["css", "xpath", "attrSignature", "textAnchor"].includes(locator && locator.by)) continue;
       tried.push(locator.by);
       const selected = choose(nodesFor(locator), input, locator);
       if (!selected.el) { reason = selected.reason || reason; continue; }
-      fallback ||= selected.el;
-      if (point(selected.el, input, false).ok) return { ok: true, el: selected.el, tried, actionable: true };
+      if (!fallback) { fallback = selected.el; fallbackWarning = selected.warning; }
+      if (point(selected.el, input, false).ok) return { ok: true, el: selected.el, tried, actionable: true, ...(selected.warning ? { warning: selected.warning } : {}) };
     }
-    if (fallback) return { ok: true, el: fallback, tried, actionable: false, warning: "resolved element is present but not visibly hittable" };
+    if (fallback) return { ok: true, el: fallback, tried, actionable: false, warning: fallbackWarning ? fallbackWarning + "; resolved element is present but not visibly hittable" : "resolved element is present but not visibly hittable" };
     return { ok: false, reason, tried };
   }
 

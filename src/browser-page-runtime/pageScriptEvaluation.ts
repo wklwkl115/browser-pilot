@@ -17,10 +17,40 @@ function runtimeExceptionMessage(data: Record<string, unknown>): string | undefi
 			: "Runtime.evaluate failed";
 }
 
+const scriptHashByText = new Map<string, string>();
+const MAX_HASHED_SCRIPTS = 32;
+
+/**
+ * Stable per-script hash so the extension can cache the compiled script (Runtime.compileScript)
+ * after it has seen the same source twice. The 47KB page scan runs on every observe; without this
+ * the browser re-parses it each time.
+ */
+function scriptHash(script: string): string {
+	const cached = scriptHashByText.get(script);
+	if (cached) return cached;
+	let hash = 2166136261;
+	for (let index = 0; index < script.length; index += 1) {
+		hash ^= script.charCodeAt(index);
+		hash = Math.imul(hash, 16777619);
+	}
+	const value = `${(hash >>> 0).toString(36)}:${script.length}`;
+	if (scriptHashByText.size >= MAX_HASHED_SCRIPTS) scriptHashByText.delete(scriptHashByText.keys().next().value!);
+	scriptHashByText.set(script, value);
+	return value;
+}
+
 export async function evaluatePageScriptDirect(
 	server: Pick<BrowserCommandRuntimePort, "sendCommand">,
 	script: string,
-	options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number; name: string; signal?: AbortSignal },
+	options: {
+		browserSessionId?: string;
+		tabId?: unknown;
+		timeoutMs: number;
+		name: string;
+		signal?: AbortSignal;
+		/** Opt into compiled-script reuse for scripts that are re-run verbatim (page scans). */
+		reusable?: boolean;
+	},
 ): Promise<BrowserBridgeExecutionResult> {
 	const result = await server.sendCommand(
 		{
@@ -30,6 +60,7 @@ export async function evaluatePageScriptDirect(
 			name: "browser-pilot-script-eval",
 			persistent: true,
 			timeoutMs: options.timeoutMs,
+			...(options.reusable ? { precompile: true, scriptHash: scriptHash(script) } : {}),
 			params: { expression: script, awaitPromise: true, returnByValue: true },
 		},
 		{
