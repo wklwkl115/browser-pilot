@@ -47,7 +47,12 @@ export class BrowserBridgeClientHeartbeat {
 	probe(now = Date.now()): void {
 		const timeout = staleTimeoutMs();
 		for (const { ws, info, idleMs } of this.clients.staleClients(timeout, now)) {
-			console.warn("[browser-pilot-bridge] Closing stale WebSocket client", { clientId: info.id, extensionId: info.extensionId, idleMs, staleTimeoutMs: timeout });
+			console.warn("[browser-pilot-bridge] Closing stale WebSocket client", {
+				clientId: info.id,
+				extensionId: info.extensionId,
+				idleMs,
+				staleTimeoutMs: timeout,
+			});
 			this.onStale(ws, "stale_timeout");
 			try {
 				ws.terminate();
@@ -61,7 +66,11 @@ export class BrowserBridgeClientHeartbeat {
 				this.clients.markPingSent(ws);
 				ws.ping();
 			} catch (error) {
-				console.warn("[browser-pilot-bridge] WebSocket heartbeat ping failed", { clientId: info.id, extensionId: info.extensionId, error: errorToPlain(error) });
+				console.warn("[browser-pilot-bridge] WebSocket heartbeat ping failed", {
+					clientId: info.id,
+					extensionId: info.extensionId,
+					error: errorToPlain(error),
+				});
 				this.onStale(ws, "ping_failed");
 				try {
 					ws.terminate();

@@ -12,8 +12,20 @@ import { BrowserBridgeSessionState } from "./BrowserBridgeSessionState.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
-import type { BrowserCommandTargetTransactionInput, CommandPerceptionLedgerFrame, CommandPerceptionLedgerKey } from "../../ports/BrowserCommandRuntimePort.js";
-import type { BrowserAutomationSession, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, ExecuteOptions } from "./types.js";
+import type {
+	BrowserCommandTargetTransactionInput,
+	CommandPerceptionLedgerFrame,
+	CommandPerceptionLedgerKey,
+} from "../../ports/BrowserCommandRuntimePort.js";
+import type {
+	BrowserAutomationSession,
+	BrowserBridgeExecutionResult,
+	BrowserBridgeSnapshot,
+	BrowserBridgeTargetInfo,
+	BrowserObservationSnapshotInfo,
+	BrowserTabInfo,
+	ExecuteOptions,
+} from "./types.js";
 
 const MAX_KNOWN_RECORDER_STATES = 128;
 
@@ -34,10 +46,22 @@ export class BrowserBridgeServer {
 	private readonly extensionReadyWaiters = new Set<() => void>();
 	private readonly knownRecorderStates = new Map<string, { active: boolean; lastSeq?: number }>();
 
-	constructor(options: { host?: string; port?: number; portRangeEnd?: number; maxPayloadBytes?: number; handshakeTimeoutMs?: number } = {}) {
+	constructor(
+		options: {
+			host?: string;
+			port?: number;
+			portRangeEnd?: number;
+			maxPayloadBytes?: number;
+			handshakeTimeoutMs?: number;
+		} = {},
+	) {
 		this.host = options.host || process.env.BROWSER_PILOT_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
 		this.requestedPort = options.port || normalizePort(process.env.BROWSER_PILOT_BRIDGE_PORT);
-		this.portRangeEnd = Math.max(this.requestedPort, options.portRangeEnd || normalizePort(process.env.BROWSER_PILOT_BRIDGE_PORT_RANGE_END, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END));
+		this.portRangeEnd = Math.max(
+			this.requestedPort,
+			options.portRangeEnd ||
+				normalizePort(process.env.BROWSER_PILOT_BRIDGE_PORT_RANGE_END, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END),
+		);
 		this.clients = new BrowserBridgeClientRegistry(() => this.port);
 		this.state = new BrowserBridgeSessionState();
 		this.queues = new BrowserCommandQueueRegistry();
@@ -56,7 +80,8 @@ export class BrowserBridgeServer {
 			getPort: () => this.port,
 			getTabs: (opts) => this.getTabs(opts),
 			snapshot: (opts) => this.snapshot(opts),
-			waitForExtensionReady: (browserSessionId, timeoutMs) => this.waitForExtensionReady(browserSessionId, timeoutMs),
+			waitForExtensionReady: (browserSessionId, timeoutMs) =>
+				this.waitForExtensionReady(browserSessionId, timeoutMs),
 		});
 		this.clientMessageService = new BrowserBridgeClientMessageService({
 			clients: this.clients,
@@ -73,8 +98,15 @@ export class BrowserBridgeServer {
 			notifyExtensionReady: () => this.notifyExtensionReady(),
 			handshakeTimeoutMs: options.handshakeTimeoutMs,
 		});
-		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws, reason) => this.unregisterClient(ws, reason));
-		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd, maxPayloadBytes: options.maxPayloadBytes });
+		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws, reason) =>
+			this.unregisterClient(ws, reason),
+		);
+		this.httpEndpoint = new BrowserBridgeHttpServer(
+			this.host,
+			this.requestedPort,
+			(ws) => this.registerClient(ws),
+			{ portRangeEnd: this.portRangeEnd, maxPayloadBytes: options.maxPayloadBytes },
+		);
 	}
 
 	get port(): number {
@@ -135,7 +167,10 @@ export class BrowserBridgeServer {
 		return this.tabs.lastTabSyncAt;
 	}
 
-	async refreshTabs(timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserTabInfo[]> {
+	async refreshTabs(
+		timeoutMs = 5_000,
+		options: { browserSessionId?: string; signal?: AbortSignal } = {},
+	): Promise<BrowserTabInfo[]> {
 		return await this.commandService.refreshTabs(timeoutMs, options);
 	}
 
@@ -173,7 +208,10 @@ export class BrowserBridgeServer {
 		return true;
 	}
 
-	async waitForExtensionReconnect(previousClientId: string | undefined, timeoutMs = 10_000): Promise<BrowserBridgeSnapshot> {
+	async waitForExtensionReconnect(
+		previousClientId: string | undefined,
+		timeoutMs = 10_000,
+	): Promise<BrowserBridgeSnapshot> {
 		const deadline = Date.now() + Math.max(100, Math.floor(timeoutMs));
 		let last = this.snapshot();
 		while (Date.now() <= deadline) {
@@ -182,18 +220,35 @@ export class BrowserBridgeServer {
 			if (last.extensionConnected && currentId && currentId !== previousClientId) return last;
 			await delay(100);
 		}
-		throw new BrowserBridgeError("BROWSER_EXTENSION_RECONNECT_TIMEOUT", `Browser extension did not reconnect in ${timeoutMs}ms`, { previousClientId, snapshot: last });
+		throw new BrowserBridgeError(
+			"BROWSER_EXTENSION_RECONNECT_TIMEOUT",
+			`Browser extension did not reconnect in ${timeoutMs}ms`,
+			{ previousClientId, snapshot: last },
+		);
 	}
 
-	async switchTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
+	async switchTab(
+		tabId: number | string,
+		timeoutMs = 5_000,
+		options: { browserSessionId?: string; signal?: AbortSignal } = {},
+	): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.switchTab(tabId, timeoutMs, options);
 	}
 
-	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string; incognito?: boolean; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
+	async createTab(
+		url: string,
+		active = true,
+		timeoutMs = 5_000,
+		options: { browserSessionId?: string; incognito?: boolean; signal?: AbortSignal } = {},
+	): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.createTab(url, active, timeoutMs, options);
 	}
 
-	async closeTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string; signal?: AbortSignal } = {}): Promise<BrowserBridgeExecutionResult> {
+	async closeTab(
+		tabId: number | string,
+		timeoutMs = 5_000,
+		options: { browserSessionId?: string; signal?: AbortSignal } = {},
+	): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.closeTab(tabId, timeoutMs, options);
 	}
 
@@ -201,14 +256,19 @@ export class BrowserBridgeServer {
 		return await this.commandService.executeJavaScript(script, options);
 	}
 
-	async sendCommand(command: import("../../types/nativeProtocol.js").BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
+	async sendCommand(
+		command: import("../../types/nativeProtocol.js").BridgeCommand,
+		options: ExecuteOptions = {},
+	): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.sendCommand(command, options);
 	}
 
 	async withTargetTransaction<T>(input: BrowserCommandTargetTransactionInput, run: () => Promise<T>): Promise<T> {
 		const browserSession = this.browserSession(input.browserSessionId);
 		const target = this.tabs.resolveTargetRef(input.targetRef ?? input.tabId, browserSession.id);
-		return await this.queues.withTransaction(target?.browserId ?? browserSession.id, input.tabId, run, { signal: input.signal });
+		return await this.queues.withTransaction(target?.browserId ?? browserSession.id, input.tabId, run, {
+			signal: input.signal,
+		});
 	}
 
 	resolveTargetTabId(value: unknown, browserSessionId?: string): number {
@@ -217,20 +277,34 @@ export class BrowserBridgeServer {
 		throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId or targetRef is required", { tabId: value });
 	}
 
-	private recorderStateKey(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined): string {
+	private recorderStateKey(
+		kind: "network" | "hook",
+		browserSessionId: string | undefined,
+		tabId: number | undefined,
+	): string {
 		return `${kind}:${browserSessionId ?? "default"}:${tabId ?? "selected"}`;
 	}
 
-	getKnownRecorderState(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined): { active: boolean; lastSeq?: number } | undefined {
+	getKnownRecorderState(
+		kind: "network" | "hook",
+		browserSessionId: string | undefined,
+		tabId: number | undefined,
+	): { active: boolean; lastSeq?: number } | undefined {
 		const state = this.knownRecorderStates.get(this.recorderStateKey(kind, browserSessionId, tabId));
 		return state ? { ...state } : undefined;
 	}
 
-	recordKnownRecorderState(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined, state: { active: boolean; lastSeq?: number }): void {
+	recordKnownRecorderState(
+		kind: "network" | "hook",
+		browserSessionId: string | undefined,
+		tabId: number | undefined,
+		state: { active: boolean; lastSeq?: number },
+	): void {
 		const key = this.recorderStateKey(kind, browserSessionId, tabId);
 		this.knownRecorderStates.delete(key);
 		this.knownRecorderStates.set(key, { ...state });
-		while (this.knownRecorderStates.size > MAX_KNOWN_RECORDER_STATES) this.knownRecorderStates.delete(this.knownRecorderStates.keys().next().value!);
+		while (this.knownRecorderStates.size > MAX_KNOWN_RECORDER_STATES)
+			this.knownRecorderStates.delete(this.knownRecorderStates.keys().next().value!);
 	}
 
 	clearKnownRecorderStatesForReplacement(fromTabId: number, toTabId: number, browserSessionId: string): void {
@@ -240,7 +314,12 @@ export class BrowserBridgeServer {
 		}
 	}
 
-	createObservationSnapshot(snapshot: Omit<BrowserObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): BrowserObservationSnapshotInfo {
+	createObservationSnapshot(
+		snapshot: Omit<BrowserObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & {
+			snapshotId?: string;
+			ttlMs?: number;
+		},
+	): BrowserObservationSnapshotInfo {
 		return this.state.observationSnapshots.create(snapshot);
 	}
 
@@ -264,8 +343,19 @@ export class BrowserBridgeServer {
 		return JSON.stringify(errorToPlain(error), null, 2);
 	}
 
-	private timeoutDiagnostics(tabId: number | undefined, timeoutMs: number, acked: boolean, target?: BrowserBridgeTargetInfo): Record<string, unknown> {
-		return buildBridgeTimeoutDiagnostics(this.snapshot(), tabId, timeoutMs, acked, this.tabs.resolvedTarget(target));
+	private timeoutDiagnostics(
+		tabId: number | undefined,
+		timeoutMs: number,
+		acked: boolean,
+		target?: BrowserBridgeTargetInfo,
+	): Record<string, unknown> {
+		return buildBridgeTimeoutDiagnostics(
+			this.snapshot(),
+			tabId,
+			timeoutMs,
+			acked,
+			this.tabs.resolvedTarget(target),
+		);
 	}
 
 	private registerClient(ws: WebSocket): void {
@@ -291,5 +381,4 @@ export class BrowserBridgeServer {
 	private browserSession(browserSessionId?: string): BrowserAutomationSession {
 		return this.state.browserSessions.require(browserSessionId);
 	}
-
 }

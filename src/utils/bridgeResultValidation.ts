@@ -20,13 +20,20 @@ export function assertBridgeCommandSucceeded(result: { data?: unknown }, command
 	const nestedError = recordValue(data.error);
 	const rawDetails = recordValue(data.details) || {};
 	const nestedDetails = recordValue(nestedError?.details) || {};
-	const code = typeof data.error_code === "string" && data.error_code ? data.error_code
-		: typeof nestedError?.code === "string" && nestedError.code ? nestedError.code
-			: "BROWSER_COMMAND_FAILED";
-	const message = typeof nestedError?.message === "string" && nestedError.message ? nestedError.message
-		: typeof data.error === "string" && data.error ? data.error
-			: typeof data.message === "string" && data.message ? data.message
-				: `${command} failed`;
+	const code =
+		typeof data.error_code === "string" && data.error_code
+			? data.error_code
+			: typeof nestedError?.code === "string" && nestedError.code
+				? nestedError.code
+				: "BROWSER_COMMAND_FAILED";
+	const message =
+		typeof nestedError?.message === "string" && nestedError.message
+			? nestedError.message
+			: typeof data.error === "string" && data.error
+				? data.error
+				: typeof data.message === "string" && data.message
+					? data.message
+					: `${command} failed`;
 	const error = createCodedError({
 		name: "BrowserCommandError",
 		code,

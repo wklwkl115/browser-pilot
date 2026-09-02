@@ -72,9 +72,12 @@ export function bridgeResultFailure(data: unknown): { message: string; details: 
 	if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
 	const record = data as Record<string, unknown>;
 	if (record.ok !== false) return undefined;
-	const message = typeof record.error === "string" && record.error ? record.error
-		: typeof record.message === "string" && record.message ? record.message
-			: "Browser bridge command failed";
+	const message =
+		typeof record.error === "string" && record.error
+			? record.error
+			: typeof record.message === "string" && record.message
+				? record.message
+				: "Browser bridge command failed";
 	const details = recordValue(record.details) || {};
 	return { message, details };
 }
@@ -100,7 +103,6 @@ export function delay(ms: number, signal?: AbortSignal): Promise<void> {
 		currentSignal?.addEventListener("abort", onAbort, { once: true });
 	});
 }
-
 
 export function tabSessionSummary(session: BrowserTabSession): Record<string, unknown> {
 	return {

@@ -27,7 +27,11 @@ function candidatePaths(browser?: BrowserName): BrowserCandidate[] {
 	const override = process.env.BROWSER_PILOT_BROWSER;
 	if (override) {
 		const basename = path.basename(override).toLowerCase();
-		const overrideBrowser = basename.includes("edge") ? "edge" : basename.includes("chrome") || basename.includes("chromium") ? "chrome" : browser ?? "chrome";
+		const overrideBrowser = basename.includes("edge")
+			? "edge"
+			: basename.includes("chrome") || basename.includes("chromium")
+				? "chrome"
+				: (browser ?? "chrome");
 		add(overrideBrowser, override);
 	}
 
@@ -83,14 +87,19 @@ export async function openExtensionsPage(browser?: BrowserName): Promise<OpenedB
 			// Try the next installed browser.
 		}
 	}
-	throw new Error(`No supported browser found. Set BROWSER_PILOT_BROWSER or open ${browser === "edge" ? "edge://extensions" : "chrome://extensions"} manually.`);
+	throw new Error(
+		`No supported browser found. Set BROWSER_PILOT_BROWSER or open ${browser === "edge" ? "edge://extensions" : "chrome://extensions"} manually.`,
+	);
 }
 
 export function parseInstallBrowser(args: string[]): BrowserName | undefined {
 	if (args.length === 0) return undefined;
-	const value = args.length === 1 && args[0]?.startsWith("--browser=")
-		? args[0].slice("--browser=".length)
-		: args.length === 2 && args[0] === "--browser" ? args[1] : undefined;
+	const value =
+		args.length === 1 && args[0]?.startsWith("--browser=")
+			? args[0].slice("--browser=".length)
+			: args.length === 2 && args[0] === "--browser"
+				? args[1]
+				: undefined;
 	if (value === "chrome" || value === "edge") return value;
 	throw new Error("Usage: browser-pilot-mcp install [--browser chrome|edge]");
 }
@@ -102,8 +111,13 @@ export async function installBrowserExtension(options: InstallOptions = {}) {
 	const installDir = path.resolve(options.installDir ?? path.join(stateDir(), "extension"));
 	if (path.resolve(sourceDir) === installDir) throw new Error("Extension source and install directory must differ");
 	for (const relative of REQUIRED_EXTENSION_FILES) {
-		try { await access(path.join(sourceDir, relative)); }
-		catch { throw new Error(`Packaged extension is incomplete: missing ${relative}. Run npm run build:bridge for a source checkout.`); }
+		try {
+			await access(path.join(sourceDir, relative));
+		} catch {
+			throw new Error(
+				`Packaged extension is incomplete: missing ${relative}. Run npm run build:bridge for a source checkout.`,
+			);
+		}
 	}
 	await mkdir(path.dirname(installDir), { recursive: true, mode: 0o700 });
 	await rm(installDir, { recursive: true, force: true });
@@ -112,6 +126,9 @@ export async function installBrowserExtension(options: InstallOptions = {}) {
 		const opened = await (options.openPage ?? openExtensionsPage)(options.browser);
 		return { version: packageVersion(), installDir, ...opened };
 	} catch (cause) {
-		throw new Error(`Extension copied to ${installDir}, but its browser extensions page could not be opened: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+		throw new Error(
+			`Extension copied to ${installDir}, but its browser extensions page could not be opened: ${cause instanceof Error ? cause.message : String(cause)}`,
+			{ cause },
+		);
 	}
 }

@@ -7,7 +7,11 @@ export function elapsedMs(startedAt: number): number {
 	return Math.max(0, Date.now() - startedAt);
 }
 
-export function finalizedObserveTimings(metrics: ObserveTimingMetrics, data: PageWorldScanBundleV1, abmlRead: unknown): Record<string, unknown> {
+export function finalizedObserveTimings(
+	metrics: ObserveTimingMetrics,
+	data: PageWorldScanBundleV1,
+	abmlRead: unknown,
+): Record<string, unknown> {
 	const out: Record<string, unknown> = { ...metrics };
 	const abmlData = isRecord(abmlRead) && abmlRead.ok === true && isRecord(abmlRead.data) ? abmlRead.data : undefined;
 	const axDiagnostics = isRecord(abmlData?.axDiagnostics) ? abmlData.axDiagnostics : undefined;
@@ -21,7 +25,8 @@ export function finalizedObserveTimings(metrics: ObserveTimingMetrics, data: Pag
 	if (axNodeCount !== undefined) out.axNodeCount = axNodeCount;
 	if (axMs !== undefined) out.axMs = axMs;
 	if (axCdpCalls !== undefined && numericMetric(out.axCdpCalls) === undefined) out.axCdpCalls = axCdpCalls;
-	if (axGeometryCdpCalls !== undefined && numericMetric(out.axGeometryCdpCalls) === undefined) out.axGeometryCdpCalls = axGeometryCdpCalls;
+	if (axGeometryCdpCalls !== undefined && numericMetric(out.axGeometryCdpCalls) === undefined)
+		out.axGeometryCdpCalls = axGeometryCdpCalls;
 	const axEnriched = numericMetric(axFusion?.axEnriched);
 	const axOnly = numericMetric(axFusion?.axOnly);
 	if (axEnriched !== undefined) out.axEnriched = axEnriched;

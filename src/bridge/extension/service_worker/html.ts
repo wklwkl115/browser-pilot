@@ -1,36 +1,58 @@
-// html.js - Browser Pilot HTML/text snapshot command.
+// Browser Pilot HTML/text snapshot command.
 
 import { BROWSER_PILOT_ERROR_CODES, browserPilotError, browserPilotEval } from "./runtimeSupport.js";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 
 const BROWSER_PILOT_HTML_MAX_BYTES = 4 * 1024 * 1024;
 
-async function handleBrowserPilotHtml(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
-  const opts = (msg && msg.options && typeof msg.options === 'object') ? msg.options as JsonRecord : {};
-  const pick = (...names: string[]): unknown => {
-    for (const name of names) {
-      if (msg && msg[name] !== undefined) return msg[name];
-      if (opts && opts[name] !== undefined) return opts[name];
-    }
-    return undefined;
-  };
-  const selector = pick('selector');
-  const rawMode = pick('mode') ?? 'outer';
-  const normalizedMode = String(rawMode).replace(/[-_]/g, '').toLowerCase();
-  const modeAliases: Record<string, string> = { raw: 'outer', fragment: 'inner', textcontent: 'text' };
-  const mode = modeAliases[normalizedMode] || normalizedMode;
-  const maxBytesRaw = pick('max_bytes', 'maxBytes');
-  const maxCharsRaw = pick('max_chars', 'maxChars');
-  const maxBytes = maxBytesRaw === undefined || maxBytesRaw === null || maxBytesRaw === '' ? BROWSER_PILOT_HTML_MAX_BYTES : Number(maxBytesRaw);
-  const maxChars = maxCharsRaw === undefined || maxCharsRaw === null || maxCharsRaw === '' ? null : Number(maxCharsRaw);
-  if (!['outer', 'inner', 'text'].includes(mode)) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'html.get mode must be outer, inner, text, raw, or fragment', { cmd: msg.cmd, mode: rawMode });
-  if (!Number.isFinite(maxBytes) || maxBytes < 0 || maxBytes > BROWSER_PILOT_HTML_MAX_BYTES) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, `html.get max_bytes/maxBytes must be between 0 and ${BROWSER_PILOT_HTML_MAX_BYTES}`, { cmd: msg.cmd, maxBytes: maxBytesRaw });
-  if (maxChars !== null && (!Number.isFinite(maxChars) || maxChars < 0)) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, 'html.get max_chars/maxChars must be a non-negative number', { cmd: msg.cmd, maxChars: maxCharsRaw });
-  const expression = `(async () => {
-    const selector = ${JSON.stringify(selector === undefined || selector === null || selector === '' ? null : String(selector))};
+async function handleBrowserPilotHtml(
+	tabId: number,
+	msg: BrowserPilotBridgeCommand,
+): Promise<BrowserPilotBridgeResponse> {
+	const opts = msg && msg.options && typeof msg.options === "object" ? (msg.options as JsonRecord) : {};
+	const pick = (...names: string[]): unknown => {
+		for (const name of names) {
+			if (msg && msg[name] !== undefined) return msg[name];
+			if (opts && opts[name] !== undefined) return opts[name];
+		}
+		return undefined;
+	};
+	const selector = pick("selector");
+	const rawMode = pick("mode") ?? "outer";
+	const normalizedMode = String(rawMode).replace(/[-_]/g, "").toLowerCase();
+	const modeAliases: Record<string, string> = { raw: "outer", fragment: "inner", textcontent: "text" };
+	const mode = modeAliases[normalizedMode] || normalizedMode;
+	const maxBytesRaw = pick("max_bytes", "maxBytes");
+	const maxCharsRaw = pick("max_chars", "maxChars");
+	const maxBytes =
+		maxBytesRaw === undefined || maxBytesRaw === null || maxBytesRaw === ""
+			? BROWSER_PILOT_HTML_MAX_BYTES
+			: Number(maxBytesRaw);
+	const maxChars =
+		maxCharsRaw === undefined || maxCharsRaw === null || maxCharsRaw === "" ? null : Number(maxCharsRaw);
+	if (!["outer", "inner", "text"].includes(mode))
+		return browserPilotError(
+			BROWSER_PILOT_ERROR_CODES.INVALID_RULE,
+			"html.get mode must be outer, inner, text, raw, or fragment",
+			{ cmd: msg.cmd, mode: rawMode },
+		);
+	if (!Number.isFinite(maxBytes) || maxBytes < 0 || maxBytes > BROWSER_PILOT_HTML_MAX_BYTES)
+		return browserPilotError(
+			BROWSER_PILOT_ERROR_CODES.INVALID_RULE,
+			`html.get max_bytes/maxBytes must be between 0 and ${BROWSER_PILOT_HTML_MAX_BYTES}`,
+			{ cmd: msg.cmd, maxBytes: maxBytesRaw },
+		);
+	if (maxChars !== null && (!Number.isFinite(maxChars) || maxChars < 0))
+		return browserPilotError(
+			BROWSER_PILOT_ERROR_CODES.INVALID_RULE,
+			"html.get max_chars/maxChars must be a non-negative number",
+			{ cmd: msg.cmd, maxChars: maxCharsRaw },
+		);
+	const expression = `(async () => {
+    const selector = ${JSON.stringify(selector === undefined || selector === null || selector === "" ? null : String(selector))};
     const mode = ${JSON.stringify(mode)};
     const maxBytes = ${JSON.stringify(Math.floor(maxBytes))};
-    const maxChars = ${maxChars === null ? 'null' : JSON.stringify(Math.floor(maxChars))};
+    const maxChars = ${maxChars === null ? "null" : JSON.stringify(Math.floor(maxChars))};
     const encoder = new TextEncoder();
     function sliceUtf8(str, limit) {
       if (limit === null || limit === undefined) return str;
@@ -76,10 +98,15 @@ async function handleBrowserPilotHtml(tabId: number, msg: BrowserPilotBridgeComm
     if (maxBytes !== null && encoder.encode(html).length > maxBytes) { html = sliceUtf8(html, maxBytes); truncated = true; }
     return { ok: true, data: { html, truncated, original_length, bytes: encoder.encode(html).length, original_bytes, selector, mode, counts, text_length: structure.text_length, text_bytes: structure.text_bytes, titles: structure.titles, structure } };
   })()`;
-  const res = await browserPilotEval(tabId, expression, true);
-  if (!res || res.ok === false) return res;
-  const data = res.data && typeof res.data === 'object' ? res.data as BrowserPilotBridgeResponse : undefined;
-  if (data && data.ok === false) return browserPilotError(data.error_code || BROWSER_PILOT_ERROR_CODES.SELECTOR_NOT_FOUND, data.error || 'html.get failed', data.details || { selector, mode: rawMode });
-  return data && data.ok === true ? data : { ok: true, data: res.data };
+	const res = await browserPilotEval(tabId, expression, true);
+	if (!res || res.ok === false) return res;
+	const data = res.data && typeof res.data === "object" ? (res.data as BrowserPilotBridgeResponse) : undefined;
+	if (data && data.ok === false)
+		return browserPilotError(
+			data.error_code || BROWSER_PILOT_ERROR_CODES.SELECTOR_NOT_FOUND,
+			data.error || "html.get failed",
+			data.details || { selector, mode: rawMode },
+		);
+	return data && data.ok === true ? data : { ok: true, data: res.data };
 }
 export { BROWSER_PILOT_HTML_MAX_BYTES, handleBrowserPilotHtml };

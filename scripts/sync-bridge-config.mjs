@@ -15,25 +15,32 @@ function writeGenerated(filePath, content) {
 		writeFileSync(filePath, content, "utf8");
 		return;
 	}
-	if (readFileSync(filePath, "utf8") !== content) throw new Error(`generated bridge config is stale: ${path.relative(root, filePath)}`);
+	if (readFileSync(filePath, "utf8") !== content)
+		throw new Error(`generated bridge config is stale: ${path.relative(root, filePath)}`);
 }
 
 function assertConfig(value) {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("browser bridge config must be an object");
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		throw new Error("browser bridge config must be an object");
 	const host = String(value.host || "").trim();
 	const port = Number(value.port);
 	const portRangeEnd = value.portRangeEnd === undefined ? port : Number(value.portRangeEnd);
 	if (!host) throw new Error("browser bridge config requires host");
-	if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error("browser bridge config requires port 1..65535");
-	if (!Number.isInteger(portRangeEnd) || portRangeEnd < port || portRangeEnd > 65535) throw new Error("browser bridge config requires portRangeEnd >= port and <= 65535");
+	if (!Number.isInteger(port) || port <= 0 || port > 65535)
+		throw new Error("browser bridge config requires port 1..65535");
+	if (!Number.isInteger(portRangeEnd) || portRangeEnd < port || portRangeEnd > 65535)
+		throw new Error("browser bridge config requires portRangeEnd >= port and <= 65535");
 	return { host, port, portRangeEnd };
 }
 
 const config = assertConfig(JSON.parse(readFileSync(sourcePath, "utf8")));
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-if (typeof manifest.key !== "string" || !manifest.key) throw new Error("extension manifest requires a stable public key");
+if (typeof manifest.key !== "string" || !manifest.key)
+	throw new Error("extension manifest requires a stable public key");
 const extensionHash = createHash("sha256").update(Buffer.from(manifest.key, "base64")).digest().subarray(0, 16);
-const extensionId = Array.from(extensionHash, (byte) => String.fromCharCode(97 + (byte >> 4), 97 + (byte & 15))).join("");
+const extensionId = Array.from(extensionHash, (byte) => String.fromCharCode(97 + (byte >> 4), 97 + (byte & 15))).join(
+	"",
+);
 const wsUrl = `ws://${config.host}:${config.port}`;
 const httpUrl = `http://${config.host}:${config.port}`;
 
@@ -56,4 +63,6 @@ export const BROWSER_PILOT_EXTENSION_ID = ${JSON.stringify(extensionId)};
 `;
 writeGenerated(tsConfigPath, tsConfig);
 
-console.log(`${check ? "verified" : "synced"} browser bridge config: ${path.relative(root, serviceWorkerConfigPath)}, ${path.relative(root, tsConfigPath)}`);
+console.log(
+	`${check ? "verified" : "synced"} browser bridge config: ${path.relative(root, serviceWorkerConfigPath)}, ${path.relative(root, tsConfigPath)}`,
+);

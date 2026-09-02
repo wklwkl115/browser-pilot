@@ -6,13 +6,7 @@
     "strict": true,
     "noImplicitAny": true,
     "noEmit": true,
-    "lib": [
-      "ES2022",
-      "DOM",
-      "WebWorker"
-    ]
+    "lib": ["ES2022", "DOM", "WebWorker"]
   },
-  "include": [
-    "src/bridge/extension/**/*.ts"
-  ]
+  "include": ["src/bridge/extension/**/*.ts"]
 }

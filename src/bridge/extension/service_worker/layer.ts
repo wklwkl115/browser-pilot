@@ -1,6 +1,14 @@
-// layer.js - internal LayerTree mechanism probes.
+// Internal LayerTree mechanism probes.
 
-import { BROWSER_PILOT_ERROR_CODES, normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotPersistentCdp, integerInRange as asPositiveInt, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
+import {
+	BROWSER_PILOT_ERROR_CODES,
+	normalizePersistentBrowserPilotResponse,
+	browserPilotError,
+	browserPilotPersistentCdp,
+	integerInRange as asPositiveInt,
+	runtimeErrorMessage as errorText,
+	runtimeRecord as asRecord,
+} from "./runtimeSupport.js";
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 
@@ -8,10 +16,17 @@ function arrayValue(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];
 }
 
-async function cdpSend(tabId: number, method: string, params: JsonRecord = {}, timeoutMs?: number): Promise<JsonRecord> {
+async function cdpSend(
+	tabId: number,
+	method: string,
+	params: JsonRecord = {},
+	timeoutMs?: number,
+): Promise<JsonRecord> {
 	const cdp = browserPilotPersistentCdp();
 	if (!cdp?.send) throw new Error("persistent CDP helper is not loaded");
-	const response = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, method, params, { persistent: true, name: "layer_probe", timeoutMs }));
+	const response = normalizePersistentBrowserPilotResponse(
+		await cdp.send(tabId, method, params, { persistent: true, name: "layer_probe", timeoutMs }),
+	);
 	if (!response || response.ok === false) {
 		const error = asRecord(response?.error);
 		throw new Error(String(error.message || response?.message || response?.error || `${method} failed`));
@@ -27,13 +42,19 @@ function snapshotString(strings: unknown[], index: unknown): string {
 function snapshotAttrs(nodes: JsonRecord, strings: unknown[], nodeIndex: number): JsonRecord {
 	const raw = arrayValue(arrayValue(nodes.attributes)[nodeIndex]);
 	const out: JsonRecord = {};
-	for (let i = 0; i + 1 < raw.length; i += 2) out[snapshotString(strings, raw[i])] = snapshotString(strings, raw[i + 1]);
+	for (let i = 0; i + 1 < raw.length; i += 2)
+		out[snapshotString(strings, raw[i])] = snapshotString(strings, raw[i + 1]);
 	return out;
 }
 
 async function probeDomSnapshotPaintOrder(tabId: number, timeoutMs: number, maxLayers: number): Promise<JsonRecord> {
 	try {
-		const snapshot = await cdpSend(tabId, "DOMSnapshot.captureSnapshot", { computedStyles: [], includeDOMRects: true, includePaintOrder: true }, timeoutMs);
+		const snapshot = await cdpSend(
+			tabId,
+			"DOMSnapshot.captureSnapshot",
+			{ computedStyles: [], includeDOMRects: true, includePaintOrder: true },
+			timeoutMs,
+		);
 		const strings = arrayValue(snapshot.strings);
 		const entries: JsonRecord[] = [];
 		for (const documentSnapshot of arrayValue(snapshot.documents)) {
@@ -60,7 +81,9 @@ async function probeDomSnapshotPaintOrder(tabId: number, timeoutMs: number, maxL
 				});
 			}
 		}
-		const ownerIds = Array.from(new Set(entries.map((item) => Number(item.backendNodeId)).filter((id) => Number.isFinite(id) && id > 0))).sort((a, b) => a - b);
+		const ownerIds = Array.from(
+			new Set(entries.map((item) => Number(item.backendNodeId)).filter((id) => Number.isFinite(id) && id > 0)),
+		).sort((a, b) => a - b);
 		return {
 			supported: entries.length > 0,
 			paintOrderCount: entries.length,
@@ -69,7 +92,14 @@ async function probeDomSnapshotPaintOrder(tabId: number, timeoutMs: number, maxL
 			proof: entries.length ? "domsnapshot-paint-order-backend-node-id-present" : "domsnapshot-paint-order-empty",
 		};
 	} catch (error) {
-		return { supported: false, paintOrderCount: 0, ownerBackendNodeIds: [], entries: [], proof: "domsnapshot-paint-order-not-available", error: errorText(error) };
+		return {
+			supported: false,
+			paintOrderCount: 0,
+			ownerBackendNodeIds: [],
+			entries: [],
+			proof: "domsnapshot-paint-order-not-available",
+			error: errorText(error),
+		};
 	}
 }
 
@@ -93,18 +123,27 @@ async function probeLayerTree(tabId: number, msg: BrowserPilotBridgeCommand): Pr
 	const maxEvents = asPositiveInt(msg.maxEvents ?? msg.max_events, 3, 1, 20);
 	const maxLayers = asPositiveInt(msg.maxLayers ?? msg.max_layers, 80, 1, 500);
 	const cdp = browserPilotPersistentCdp();
-	if (!cdp?.send) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", { tabId, cmd: "layer.probe" });
+	if (!cdp?.send)
+		return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", {
+			tabId,
+			cmd: "layer.probe",
+		});
 
 	const events: JsonRecord[] = [];
-	const subscriptionId = subscribeBrowserPilotCdp(tabId, "LayerTree.layerTreeDidChange", (_source, _method, params) => {
-		if (events.length >= maxEvents) return;
-		const layers = Array.isArray(params.layers) ? params.layers.map((item) => asRecord(item)) : [];
-		events.push({
-			layerCount: layers.length,
-			layers: layers.slice(0, maxLayers).map(summarizeLayer),
-			truncated: layers.length > maxLayers,
-		});
-	}, { waitId: "layer.probe", kind: "layer.probe", cdpSubscriptions: [] });
+	const subscriptionId = subscribeBrowserPilotCdp(
+		tabId,
+		"LayerTree.layerTreeDidChange",
+		(_source, _method, params) => {
+			if (events.length >= maxEvents) return;
+			const layers = Array.isArray(params.layers) ? params.layers.map((item) => asRecord(item)) : [];
+			events.push({
+				layerCount: layers.length,
+				layers: layers.slice(0, maxLayers).map(summarizeLayer),
+				truncated: layers.length > maxLayers,
+			});
+		},
+		{ waitId: "layer.probe", kind: "layer.probe", cdpSubscriptions: [] },
+	);
 
 	let enabled = false;
 	let enableError: string | undefined;
@@ -116,9 +155,31 @@ async function probeLayerTree(tabId: number, msg: BrowserPilotBridgeCommand): Pr
 		} catch (error) {
 			enableError = errorText(error);
 			const paintOrder = await probeDomSnapshotPaintOrder(tabId, timeoutMs, maxLayers);
-			return { ok: true, data: { tabId, supported: false, enabled: false, enableError, events: [], eventCount: 0, ownerBackendNodeIds: [], paintOrder, proof: paintOrder.supported ? "paint-order-fallback-present" : "not-available" } };
+			return {
+				ok: true,
+				data: {
+					tabId,
+					supported: false,
+					enabled: false,
+					enableError,
+					events: [],
+					eventCount: 0,
+					ownerBackendNodeIds: [],
+					paintOrder,
+					proof: paintOrder.supported ? "paint-order-fallback-present" : "not-available",
+				},
+			};
 		}
-		await cdpSend(tabId, "Runtime.evaluate", { expression: "(() => { void document.body?.offsetHeight; return true; })()", awaitPromise: true, returnByValue: true }, Math.min(timeoutMs, 2_000)).catch(() => {});
+		await cdpSend(
+			tabId,
+			"Runtime.evaluate",
+			{
+				expression: "(() => { void document.body?.offsetHeight; return true; })()",
+				awaitPromise: true,
+				returnByValue: true,
+			},
+			Math.min(timeoutMs, 2_000),
+		).catch(() => {});
 		await new Promise((resolve) => setTimeout(resolve, waitMs));
 		const ownerIds = new Set<number>();
 		for (const event of events) {
@@ -145,14 +206,23 @@ async function probeLayerTree(tabId: number, msg: BrowserPilotBridgeCommand): Pr
 	} finally {
 		if (subscriptionId) unsubscribeBrowserPilotCdp(subscriptionId);
 		if (enabled) {
-			try { await cdpSend(tabId, "LayerTree.disable", {}, Math.min(timeoutMs, 2_000)); }
-			catch (error) { disableError = errorText(error); }
+			try {
+				await cdpSend(tabId, "LayerTree.disable", {}, Math.min(timeoutMs, 2_000));
+			} catch (error) {
+				disableError = errorText(error);
+			}
 		}
 		if (disableError) console.warn("[BROWSER-PILOT-LAYER] LayerTree.disable failed", disableError);
 	}
 }
 
-export async function handleBrowserPilotLayerCommand(cmd: string, tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+export async function handleBrowserPilotLayerCommand(
+	cmd: string,
+	tabId: number,
+	msg: BrowserPilotBridgeCommand,
+): Promise<BrowserPilotBridgeResponse> {
 	if (cmd === "layer.probe") return await probeLayerTree(tabId, msg);
-	return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, "Unknown Browser Pilot layer command: " + cmd, { cmd });
+	return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_RULE, "Unknown Browser Pilot layer command: " + cmd, {
+		cmd,
+	});
 }

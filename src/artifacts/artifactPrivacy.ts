@@ -10,6 +10,7 @@ export function browserArtifactPrivacyMetadata() {
 		localOnly: true,
 		retention: "manual_cleanup",
 		cleanup: BROWSER_ARTIFACT_CLEANUP_HINT,
-		summaryRedaction: "cookie/token/authorization/body/postData/websocket payload fields are redacted from summaries by default",
+		summaryRedaction:
+			"cookie/token/authorization/body/postData/websocket payload fields are redacted from summaries by default",
 	};
 }

@@ -3,7 +3,18 @@ import type { EntityDiff } from "./diff.js";
 import { diffEntities } from "./diff.js";
 import type { VerificationResult, VerificationStatus } from "./types.js";
 
-const BOOLEAN_STATE_KEYS = ["visible", "occluded", "disabled", "focused", "checked", "selected", "pressed", "expanded", "editable", "inViewport"] as const;
+const BOOLEAN_STATE_KEYS = [
+	"visible",
+	"occluded",
+	"disabled",
+	"focused",
+	"checked",
+	"selected",
+	"pressed",
+	"expanded",
+	"editable",
+	"inViewport",
+] as const;
 const EXPECTATION_KEYS = new Set(["ref", "state"]);
 const STATE_KEYS = new Set<string>([...BOOLEAN_STATE_KEYS, "current"]);
 
@@ -29,7 +40,8 @@ export function isAbmlStateExpectation(value: unknown): value is AbmlStateExpect
 	if (!isRecord(value.state) || Object.keys(value.state).length === 0) return false;
 	for (const [key, item] of Object.entries(value.state)) {
 		if (!STATE_KEYS.has(key)) return false;
-		if (key === "current" ? typeof item !== "boolean" && typeof item !== "string" : typeof item !== "boolean") return false;
+		if (key === "current" ? typeof item !== "boolean" && typeof item !== "string" : typeof item !== "boolean")
+			return false;
 	}
 	return true;
 }
@@ -49,7 +61,10 @@ function observedRecord(entity: Entity | undefined): Record<string, unknown> {
 	};
 }
 
-function expectationComparison(expectation: AbmlStateExpectation, entity: Entity): { missing: string[]; mismatched: string[] } {
+function expectationComparison(
+	expectation: AbmlStateExpectation,
+	entity: Entity,
+): { missing: string[]; mismatched: string[] } {
 	const missing: string[] = [];
 	const mismatched: string[] = [];
 	for (const [key, expected] of Object.entries(expectation.state)) {
@@ -74,27 +89,31 @@ export function verifyAbmlState(
 		: !entity || comparison.missing.length
 			? "inconclusive"
 			: "verified";
-	const summary = status === "verified"
-		? "ABML postcondition observed"
-		: status === "unmet"
-			? `ABML postcondition unmet: ${comparison.mismatched.join(", ")}`
-			: observation.reason || `ABML state unavailable${comparison.missing.length ? `: ${comparison.missing.join(", ")}` : ""}`;
+	const summary =
+		status === "verified"
+			? "ABML postcondition observed"
+			: status === "unmet"
+				? `ABML postcondition unmet: ${comparison.mismatched.join(", ")}`
+				: observation.reason ||
+					`ABML state unavailable${comparison.missing.length ? `: ${comparison.missing.join(", ")}` : ""}`;
 	return {
 		status,
 		verb,
 		...(observation.retryable !== undefined ? { retryable: observation.retryable } : {}),
 		expected: expectedRecord(expectation),
 		observed: observedRecord(entity),
-		evidence: [{
-			kind: "abml-state",
-			summary,
-			ref: expectation.ref,
-			data: {
-				...(observation.sources?.length ? { sources: observation.sources } : {}),
-				...(comparison.missing.length ? { missing: comparison.missing } : {}),
-				...(comparison.mismatched.length ? { mismatched: comparison.mismatched } : {}),
+		evidence: [
+			{
+				kind: "abml-state",
+				summary,
+				ref: expectation.ref,
+				data: {
+					...(observation.sources?.length ? { sources: observation.sources } : {}),
+					...(comparison.missing.length ? { missing: comparison.missing } : {}),
+					...(comparison.mismatched.length ? { mismatched: comparison.mismatched } : {}),
+				},
 			},
-		}],
+		],
 		elapsedMs: Math.max(0, Math.round(elapsedMs)),
 	};
 }

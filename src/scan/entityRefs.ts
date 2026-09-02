@@ -1,4 +1,11 @@
-import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, type ScanEntityContext } from "../kernels/abml/entity.js";
+import {
+	buildControlsSourceEntity,
+	buildDomEntityFromScanActionable,
+	buildReferencedTargetEntity,
+	buildRegionEntityFromListHint,
+	buildVisionRegionFromCanvasActionable,
+	type ScanEntityContext,
+} from "../kernels/abml/entity.js";
 import { registerRefDescriptor } from "../resources/resourceRefs.js";
 import { isRecord } from "../utils/records.js";
 import type { PageWorldScanBundleV1, ScanListHint } from "../kernels/abml/pageWorldScan.js";
@@ -33,17 +40,27 @@ function listHintDuplicateNames(listHints: ScanListHint[], context: ScanEntityCo
 export function registerScanEntityRefs(data: PageWorldScanBundleV1, context: ScanEntityContext): PageWorldScanBundleV1 {
 	const actionables = data.structure.actionables.map((item) => {
 		const node = item;
-		if (node.referenceOnly === true) return annotateNode(node, "referencedTarget", refFor(buildReferencedTargetEntity(node, context)));
-		if (node.relationOnly === true) return annotateNode(node, "controlsSource", refFor(buildControlsSourceEntity(node, context)));
+		if (node.referenceOnly === true)
+			return annotateNode(node, "referencedTarget", refFor(buildReferencedTargetEntity(node, context)));
+		if (node.relationOnly === true)
+			return annotateNode(node, "controlsSource", refFor(buildControlsSourceEntity(node, context)));
 		return annotateNode(node, "domAction", refFor(buildDomEntityFromScanActionable(node, context)));
 	});
 	const duplicateListNames = listHintDuplicateNames(data.structure.listHints, context);
-	const nextListHints = data.structure.listHints.map((node, index) => annotateNode(node, "listRegion", refFor(buildRegionEntityFromListHint(node, context, index, duplicateListNames))));
+	const nextListHints = data.structure.listHints.map((node, index) =>
+		annotateNode(
+			node,
+			"listRegion",
+			refFor(buildRegionEntityFromListHint(node, context, index, duplicateListNames)),
+		),
+	);
 
 	let nextActionables = actionables;
 	let nextCanvasRegions = data.structure.canvasRegions;
 	if (data.structure.canvasRegions.length) {
-		nextCanvasRegions = data.structure.canvasRegions.map((node) => annotateNode(node, "visionRegion", refFor(buildVisionRegionFromCanvasActionable(node, context))));
+		nextCanvasRegions = data.structure.canvasRegions.map((node) =>
+			annotateNode(node, "visionRegion", refFor(buildVisionRegionFromCanvasActionable(node, context))),
+		);
 	} else {
 		nextActionables = actionables.map((item) => {
 			if (String(item.tag || "").toLowerCase() !== "canvas") return item;
@@ -52,6 +69,11 @@ export function registerScanEntityRefs(data: PageWorldScanBundleV1, context: Sca
 	}
 	return {
 		...data,
-		structure: { ...data.structure, actionables: nextActionables, listHints: nextListHints, canvasRegions: nextCanvasRegions },
+		structure: {
+			...data.structure,
+			actionables: nextActionables,
+			listHints: nextListHints,
+			canvasRegions: nextCanvasRegions,
+		},
 	};
 }

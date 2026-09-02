@@ -26,7 +26,8 @@ function containerNameOf(entity: Entity): string | undefined {
 
 function groupSignalOf(entity: Entity): ["c", string, string, string] | ["s", number] | undefined {
 	const containerRole = containerRoleOf(entity);
-	if (containerRole) return ["c", containerRole, containerNameOf(entity) ?? "", str(entity.hints?.containerKey) ?? ""];
+	if (containerRole)
+		return ["c", containerRole, containerNameOf(entity) ?? "", str(entity.hints?.containerKey) ?? ""];
 	const setSize = entity.structure?.setSize;
 	if (typeof setSize === "number" && setSize >= MIN_TEMPLATE_INSTANCES) return ["s", setSize];
 	return undefined;
@@ -53,11 +54,15 @@ export function templateGroupDescriptorForEntity(entity: Entity): TemplateGroupD
 	return { key, role: entity.role, kind: entity.kind, setSize };
 }
 
-export function structureScopeKey(descriptor: Pick<TemplateGroupDescriptor, "container" | "containerName" | "containerKey" | "setSize">): string {
+export function structureScopeKey(
+	descriptor: Pick<TemplateGroupDescriptor, "container" | "containerName" | "containerKey" | "setSize">,
+): string {
 	return descriptor.container
-		? JSON.stringify(descriptor.containerKey
-			? ["c", descriptor.container, descriptor.containerName || "", descriptor.containerKey]
-			: ["c", descriptor.container, descriptor.containerName || ""])
+		? JSON.stringify(
+				descriptor.containerKey
+					? ["c", descriptor.container, descriptor.containerName || "", descriptor.containerKey]
+					: ["c", descriptor.container, descriptor.containerName || ""],
+			)
 		: JSON.stringify(["s", descriptor.setSize ?? ""]);
 }
 
@@ -107,7 +112,13 @@ export function groupEntities(entities: Entity[]): TemplateGroup[] {
 }
 
 export function suppressNestedNonControlGroups<T extends TemplateGroup>(groups: T[]): T[] {
-	const scopesWithControls = new Set(groups.filter((group) => group.descriptor.kind === "control").map((group) => structureScopeKey(group.descriptor)));
+	const scopesWithControls = new Set(
+		groups
+			.filter((group) => group.descriptor.kind === "control")
+			.map((group) => structureScopeKey(group.descriptor)),
+	);
 	if (!scopesWithControls.size) return groups;
-	return groups.filter((group) => group.descriptor.kind === "control" || !scopesWithControls.has(structureScopeKey(group.descriptor)));
+	return groups.filter(
+		(group) => group.descriptor.kind === "control" || !scopesWithControls.has(structureScopeKey(group.descriptor)),
+	);
 }

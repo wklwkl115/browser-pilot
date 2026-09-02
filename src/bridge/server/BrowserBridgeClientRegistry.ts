@@ -33,7 +33,13 @@ export class BrowserBridgeClientRegistry {
 	private pendingReconnectAt?: number;
 	private readonly pendingReconnectAtByInstance = new Map<string, number>();
 	private readonly lastWorkerBootByInstance = new Map<string, string>();
-	private readonly _metrics: BridgeConnectionMetrics = { connects: 0, reconnects: 0, swRestarts: 0, duplicates: 0, disconnects: 0 };
+	private readonly _metrics: BridgeConnectionMetrics = {
+		connects: 0,
+		reconnects: 0,
+		swRestarts: 0,
+		duplicates: 0,
+		disconnects: 0,
+	};
 	private readonly getPort: () => number;
 	private readonly expectedBuild: ExpectedExtensionBuild;
 
@@ -72,12 +78,19 @@ export class BrowserBridgeClientRegistry {
 	}
 
 	/** Tally an ext_ready handshake by its classified kind, and record reconnect latency. */
-	recordConnect(kind: "cold" | "reconnect" | "sw-restart" | "duplicate", instanceId?: string, workerBootId?: string): void {
+	recordConnect(
+		kind: "cold" | "reconnect" | "sw-restart" | "duplicate",
+		instanceId?: string,
+		workerBootId?: string,
+	): void {
 		this._metrics.connects += 1;
 		if (kind === "reconnect" || kind === "sw-restart") {
 			this._metrics.reconnects += 1;
-			const disconnectedAt = instanceId ? this.pendingReconnectAtByInstance.get(instanceId) : this.pendingReconnectAt;
-			if (typeof disconnectedAt === "number") this._metrics.lastReconnectLatencyMs = Math.max(0, Date.now() - disconnectedAt);
+			const disconnectedAt = instanceId
+				? this.pendingReconnectAtByInstance.get(instanceId)
+				: this.pendingReconnectAt;
+			if (typeof disconnectedAt === "number")
+				this._metrics.lastReconnectLatencyMs = Math.max(0, Date.now() - disconnectedAt);
 			if (instanceId) this.pendingReconnectAtByInstance.delete(instanceId);
 			else this.pendingReconnectAt = undefined;
 		}
@@ -132,7 +145,10 @@ export class BrowserBridgeClientRegistry {
 		}
 	}
 
-	staleClients(maxIdleMs: number, now = Date.now()): Array<{ ws: WebSocket; info: BrowserBridgeClientInfo; idleMs: number }> {
+	staleClients(
+		maxIdleMs: number,
+		now = Date.now(),
+	): Array<{ ws: WebSocket; info: BrowserBridgeClientInfo; idleMs: number }> {
 		return Array.from(this.clientInfo.entries())
 			.map(([ws, info]) => ({ ws, info, idleMs: now - info.lastSeenAt }))
 			.filter(({ ws, idleMs }) => !CLOSED_STATES.has(ws.readyState as 2 | 3) && idleMs > maxIdleMs);
@@ -140,7 +156,8 @@ export class BrowserBridgeClientRegistry {
 
 	updateClientInfo(ws: WebSocket, bridgeOrExtension: unknown): void {
 		const current = this.clientInfo.get(ws);
-		if (!current || !bridgeOrExtension || typeof bridgeOrExtension !== "object" || Array.isArray(bridgeOrExtension)) return;
+		if (!current || !bridgeOrExtension || typeof bridgeOrExtension !== "object" || Array.isArray(bridgeOrExtension))
+			return;
 		const raw = bridgeOrExtension as Record<string, unknown>;
 		if (typeof raw.id === "string") current.extensionId = raw.id;
 		if (typeof raw.name === "string") current.name = raw.name;
@@ -154,8 +171,10 @@ export class BrowserBridgeClientRegistry {
 		if (buildComparison.manifestPath !== undefined) current.buildManifestPath = buildComparison.manifestPath;
 		if (typeof raw.userAgent === "string") current.userAgent = raw.userAgent;
 		if (typeof raw.workerBootId === "string") current.workerBootId = raw.workerBootId;
-		if (typeof raw.workerStartedAt === "number" && Number.isFinite(raw.workerStartedAt)) current.workerStartedAt = raw.workerStartedAt;
-		if (typeof raw.captureContractVersion === "number" && Number.isInteger(raw.captureContractVersion)) current.captureContractVersion = raw.captureContractVersion;
+		if (typeof raw.workerStartedAt === "number" && Number.isFinite(raw.workerStartedAt))
+			current.workerStartedAt = raw.workerStartedAt;
+		if (typeof raw.captureContractVersion === "number" && Number.isInteger(raw.captureContractVersion))
+			current.captureContractVersion = raw.captureContractVersion;
 		updateExtensionInstanceIdentity(current, raw.extensionInstanceId);
 	}
 
@@ -168,12 +187,18 @@ export class BrowserBridgeClientRegistry {
 	 *   cold        — the very first handshake of this bridge's lifetime.
 	 * Pure read — call recordHandshake() separately to advance the everHandshaked flag.
 	 */
-	classifyConnect(keep: WebSocket, instanceId: string | undefined, workerBootId: string | undefined): "cold" | "reconnect" | "sw-restart" | "duplicate" {
+	classifyConnect(
+		keep: WebSocket,
+		instanceId: string | undefined,
+		workerBootId: string | undefined,
+	): "cold" | "reconnect" | "sw-restart" | "duplicate" {
 		if (instanceId) {
 			for (const [ws, info] of this.clientInfo.entries()) {
 				if (ws === keep || CLOSED_STATES.has(ws.readyState as 2 | 3)) continue;
 				if (info.extensionInstanceId !== instanceId) continue;
-				return info.workerBootId && workerBootId && info.workerBootId === workerBootId ? "duplicate" : "sw-restart";
+				return info.workerBootId && workerBootId && info.workerBootId === workerBootId
+					? "duplicate"
+					: "sw-restart";
 			}
 			const previousWorkerBootId = this.lastWorkerBootByInstance.get(instanceId);
 			if (previousWorkerBootId && workerBootId && previousWorkerBootId !== workerBootId) return "sw-restart";
@@ -183,7 +208,9 @@ export class BrowserBridgeClientRegistry {
 
 	hasOpenInstanceClient(instanceId: string | undefined, exclude?: WebSocket): boolean {
 		if (!instanceId) return false;
-		return Array.from(this.clientInfo.entries()).some(([ws, info]) => ws !== exclude && info.extensionInstanceId === instanceId && isOpen(ws));
+		return Array.from(this.clientInfo.entries()).some(
+			([ws, info]) => ws !== exclude && info.extensionInstanceId === instanceId && isOpen(ws),
+		);
 	}
 
 	recordHandshake(): void {
@@ -212,7 +239,10 @@ export class BrowserBridgeClientRegistry {
 	}
 
 	connectedClientInfos(): BrowserBridgeClientInfo[] {
-		return Array.from(this.clients).filter((ws) => !CLOSED_STATES.has(ws.readyState as 2 | 3)).map((ws) => this.clientInfo.get(ws)).filter((item): item is BrowserBridgeClientInfo => !!item);
+		return Array.from(this.clients)
+			.filter((ws) => !CLOSED_STATES.has(ws.readyState as 2 | 3))
+			.map((ws) => this.clientInfo.get(ws))
+			.filter((item): item is BrowserBridgeClientInfo => !!item);
 	}
 
 	info(ws: WebSocket): BrowserBridgeClientInfo | undefined {
@@ -225,7 +255,10 @@ export class BrowserBridgeClientRegistry {
 
 	browserIdForClient(client: WebSocket): string {
 		const info = this.clientInfo.get(client);
-		if (!info?.id) throw new BrowserBridgeError("UNKNOWN_BROWSER_CLIENT", "Browser bridge client is not registered", { port: this.getPort() });
+		if (!info?.id)
+			throw new BrowserBridgeError("UNKNOWN_BROWSER_CLIENT", "Browser bridge client is not registered", {
+				port: this.getPort(),
+			});
 		return info.id;
 	}
 }

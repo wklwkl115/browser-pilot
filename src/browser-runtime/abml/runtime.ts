@@ -12,7 +12,11 @@ import type { Entity } from "../../kernels/abml/entity.js";
 import { diffEntities, type EntityDiff, type EntityDiffOptions } from "../../kernels/abml/diff.js";
 import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
 import { bootstrapScanBackendNodeIds } from "../../kernels/abml/identityBootstrap.js";
-import { materializeRelationGraph, derivePaintOrderRelationAnchors, deriveStateRelationAnchors } from "../../kernels/abml/relations.js";
+import {
+	materializeRelationGraph,
+	derivePaintOrderRelationAnchors,
+	deriveStateRelationAnchors,
+} from "../../kernels/abml/relations.js";
 import type { AxFusionDiagnostics } from "../../kernels/abml/ax.js";
 import { defaultRefPolicyForKind } from "../../kernels/refs/refPolicy.js";
 import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
@@ -20,7 +24,10 @@ import { reconcileEntityIdentities } from "../../kernels/abml/identityReconcilia
 import type { PageWorldScanBundleV1, ScanPageFingerprint } from "../../kernels/abml/pageWorldScan.js";
 import { validatePageWorldScanBundle } from "../../validation/pageContracts.js";
 
-export type AbmlBrowserRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand" | "snapshot" | "createObservationSnapshot">;
+export type AbmlBrowserRuntimeServer = Pick<
+	BrowserCommandRuntimePort,
+	"sendCommand" | "snapshot" | "createObservationSnapshot"
+>;
 
 export type BrowserAbmlRuntimeOptions = {
 	browserSessionId?: string;
@@ -45,7 +52,10 @@ export type BrowserAbmlStructureResult =
 const DEFAULT_ACTION_TIMEOUT_MS = 5_000;
 const DEFAULT_SCAN_CAPTURE_MAX_CHARS = 100_000;
 
-function tabPageIdentity(tabs: Array<Record<string, unknown>>, tabId: number): { targetGeneration?: number; pageEpoch?: string } {
+function tabPageIdentity(
+	tabs: Array<Record<string, unknown>>,
+	tabId: number,
+): { targetGeneration?: number; pageEpoch?: string } {
 	const tab = tabs.find((item) => normalizeTabId(item.tabId ?? item.id) === tabId);
 	return {
 		targetGeneration: numberValue(tab?.targetGeneration ?? tab?.generation),
@@ -53,8 +63,23 @@ function tabPageIdentity(tabs: Array<Record<string, unknown>>, tabId: number): {
 	};
 }
 
-function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessionId?: string; tabId?: number; targetGeneration?: number; pageEpoch?: string; documentId?: string; changeSeq?: number; url?: string; observationId: string; capturedAt: number }): Entity[] {
-	const anchors = deriveSemanticRefAnchors(entities).anchors.filter((item) => item.anchor.mintingEligible && item.anchor.confidence === "high");
+function remintSemanticTemplateRefs(
+	entities: Entity[],
+	context: {
+		browserSessionId?: string;
+		tabId?: number;
+		targetGeneration?: number;
+		pageEpoch?: string;
+		documentId?: string;
+		changeSeq?: number;
+		url?: string;
+		observationId: string;
+		capturedAt: number;
+	},
+): Entity[] {
+	const anchors = deriveSemanticRefAnchors(entities).anchors.filter(
+		(item) => item.anchor.mintingEligible && item.anchor.confidence === "high",
+	);
 	if (!anchors.length) return entities;
 	const anchorByRef = new Map(anchors.map((item) => [item.ref, item.anchor]));
 	return entities.map((entity) => {
@@ -70,14 +95,21 @@ function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessio
 					...(urlOrigin(context.url) ? { topLevelOrigin: urlOrigin(context.url) } : {}),
 				},
 				policy: defaultRefPolicyForKind(entity.kind),
-				semantic: { role: entity.role, ...(entity.name ? { name: entity.name } : {}), ...(entity.value ? { value: entity.value } : {}), anchor },
+				semantic: {
+					role: entity.role,
+					...(entity.name ? { name: entity.name } : {}),
+					...(entity.value ? { value: entity.value } : {}),
+					anchor,
+				},
 				...(entity.geometry ? { geometry: entity.geometry } : {}),
 				observationId: context.observationId,
 				documentEpoch: {
 					...(context.targetGeneration !== undefined ? { targetGeneration: context.targetGeneration } : {}),
 					...(context.pageEpoch ? { pageEpoch: context.pageEpoch } : {}),
 					...(context.documentId ? { documentId: context.documentId } : {}),
-					...(context.changeSeq !== undefined ? { changeSeq: context.changeSeq, mutationEpoch: context.changeSeq } : {}),
+					...(context.changeSeq !== undefined
+						? { changeSeq: context.changeSeq, mutationEpoch: context.changeSeq }
+						: {}),
 					url: context.url,
 					capturedAt: context.capturedAt,
 				},
@@ -104,54 +136,114 @@ function applyIdentityReconciliation(current: Entity[], input: BrowserAbmlStruct
 
 function materializeStructureRelations(entities: Entity[], axRead: AxReadResult) {
 	const paintOrderEntries = axRead.paintOrderEntries ?? [];
-	const anchors = [...axRead.anchors, ...deriveStateRelationAnchors(entities), ...derivePaintOrderRelationAnchors(entities, paintOrderEntries)];
+	const anchors = [
+		...axRead.anchors,
+		...deriveStateRelationAnchors(entities),
+		...derivePaintOrderRelationAnchors(entities, paintOrderEntries),
+	];
 	const materialized = anchors.length ? materializeRelationGraph(entities, anchors) : undefined;
 	const relatedEntities = materialized?.entities ?? entities;
 	const relationCount = relatedEntities.reduce((sum, entity) => sum + (entity.relations?.length ?? 0), 0);
-	const paintOrderEvidence = paintOrderEntries.length ? {
-		entryCount: paintOrderEntries.length,
-		ownerBackendNodeIdCount: new Set(paintOrderEntries.map((entry) => entry.backendNodeId)).size,
-		entries: paintOrderEntries,
-	} : undefined;
+	const paintOrderEvidence = paintOrderEntries.length
+		? {
+				entryCount: paintOrderEntries.length,
+				ownerBackendNodeIdCount: new Set(paintOrderEntries.map((entry) => entry.backendNodeId)).size,
+				entries: paintOrderEntries,
+			}
+		: undefined;
 	return { entities: relatedEntities, relationCount, relationGraph: materialized?.graph, paintOrderEvidence };
 }
 
-function structureAxFusionDiagnostics(fusion: { diagnostics: AxFusionDiagnostics } | undefined, scanBacked: number, axRead: AxReadResult): AxFusionDiagnostics {
+function structureAxFusionDiagnostics(
+	fusion: { diagnostics: AxFusionDiagnostics } | undefined,
+	scanBacked: number,
+	axRead: AxReadResult,
+): AxFusionDiagnostics {
 	const providerDegraded = axRead.diagnostics?.status === "degraded" || axRead.diagnostics?.status === "failed";
-	return fusion ? { ...fusion.diagnostics, degraded: fusion.diagnostics.degraded || providerDegraded } : {
-		scanBacked,
-		axEnriched: 0,
-		axOnly: 0,
-		matched: { backend: 0, geometry: 0, semantic: 0 },
-		degraded: providerDegraded,
-		skipped: { ambiguousBackend: 0, ambiguousGeometry: 0, ambiguousSemantic: 0, targetScopeMismatch: 0, unsafeSemantic: 0 },
-	};
+	return fusion
+		? { ...fusion.diagnostics, degraded: fusion.diagnostics.degraded || providerDegraded }
+		: {
+				scanBacked,
+				axEnriched: 0,
+				axOnly: 0,
+				matched: { backend: 0, geometry: 0, semantic: 0 },
+				degraded: providerDegraded,
+				skipped: {
+					ambiguousBackend: 0,
+					ambiguousGeometry: 0,
+					ambiguousSemantic: 0,
+					targetScopeMismatch: 0,
+					unsafeSemantic: 0,
+				},
+			};
 }
 
-async function structureAxRead(server: AbmlBrowserRuntimeServer, options: Parameters<typeof readAxEntities>[1]): Promise<AxReadResult> {
+async function structureAxRead(
+	server: AbmlBrowserRuntimeServer,
+	options: Parameters<typeof readAxEntities>[1],
+): Promise<AxReadResult> {
 	return await readAxEntities(server, options).catch((error): AxReadResult => {
 		options.signal?.throwIfAborted();
 		const failure = normalizeError(error);
-		return { entities: [], anchors: [], diagnostics: { status: "failed", axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, error: { ...(failure.code ? { code: failure.code } : {}), message: failure.message }, snapshotGeometryUnavailable: true, nodeCount: 0, interestingNodeCount: 0, bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false } } };
+		return {
+			entities: [],
+			anchors: [],
+			diagnostics: {
+				status: "failed",
+				axMs: 0,
+				cdpCalls: 0,
+				geometryCdpCalls: 0,
+				error: { ...(failure.code ? { code: failure.code } : {}), message: failure.message },
+				snapshotGeometryUnavailable: true,
+				nodeCount: 0,
+				interestingNodeCount: 0,
+				bounded: { maxGeometryCdpCalls: 64, geometryFallbackTruncated: false },
+			},
+		};
 	});
 }
 
-async function readStructure(server: AbmlBrowserRuntimeServer, input: BrowserAbmlStructureInput, options: BrowserAbmlRuntimeOptions) {
+async function readStructure(
+	server: AbmlBrowserRuntimeServer,
+	input: BrowserAbmlStructureInput,
+	options: BrowserAbmlRuntimeOptions,
+) {
 	options.signal?.throwIfAborted();
 	const bridge = server.snapshot({ browserSessionId: options.browserSessionId });
 	const browserSessionId = options.browserSessionId ?? bridge.browserSessionId;
 	const tabId = normalizeTabId(options.tabId) ?? bridge.defaultTabId;
-	if (!tabId) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available for ABML read", { browserSessionId });
+	if (!tabId)
+		throw new BrowserBridgeError("NO_TAB", "No target browser tab is available for ABML read", {
+			browserSessionId,
+		});
 	const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
-	const rawData = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ maxChars: Math.max(options.maxChars ?? DEFAULT_SCAN_CAPTURE_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS) }), {
-		browserSessionId,
-		tabId,
-		timeoutMs,
-		name: "abml_read_scan",
-		signal: options.signal,
-	})).data;
+	const rawData =
+		input.prefetchedScan ??
+		(
+			await evaluatePageScriptDirect(
+				server,
+				buildScanScript({
+					maxChars: Math.max(
+						options.maxChars ?? DEFAULT_SCAN_CAPTURE_MAX_CHARS,
+						DEFAULT_SCAN_CAPTURE_MAX_CHARS,
+					),
+				}),
+				{
+					browserSessionId,
+					tabId,
+					timeoutMs,
+					name: "abml_read_scan",
+					signal: options.signal,
+				},
+			)
+		).data;
 	const bundle = validatePageWorldScanBundle(rawData);
-	if (!bundle.ok) throw new BrowserBridgeError("SCAN_BUNDLE_INVALID", "ABML structure read received an invalid browser-page-scan/v1 bundle", { issues: bundle.issues.slice(0, 20) });
+	if (!bundle.ok)
+		throw new BrowserBridgeError(
+			"SCAN_BUNDLE_INVALID",
+			"ABML structure read received an invalid browser-page-scan/v1 bundle",
+			{ issues: bundle.issues.slice(0, 20) },
+		);
 	const data = bundle.value;
 	const pageFingerprint = input.pageFingerprint ?? data.signals.fingerprint;
 	const { targetGeneration, pageEpoch } = tabPageIdentity(bridge.tabs, tabId);
@@ -168,7 +260,17 @@ async function readStructure(server: AbmlBrowserRuntimeServer, input: BrowserAbm
 		sourceMode: "scan",
 		capturedAt: scanCapturedAt,
 	});
-	const entityContext = { browserSessionId: bridge.browserSessionId, tabId, targetGeneration, pageEpoch, documentId: pageFingerprint.documentId, changeSeq: pageFingerprint.changeSeq, url: data.page.url, observationId: snapshot.snapshotId, capturedAt: snapshot.capturedAt };
+	const entityContext = {
+		browserSessionId: bridge.browserSessionId,
+		tabId,
+		targetGeneration,
+		pageEpoch,
+		documentId: pageFingerprint.documentId,
+		changeSeq: pageFingerprint.changeSeq,
+		url: data.page.url,
+		observationId: snapshot.snapshotId,
+		capturedAt: snapshot.capturedAt,
+	};
 	const axRead = await structureAxRead(server, {
 		...entityContext,
 		timeoutMs,
@@ -210,7 +312,11 @@ async function readStructure(server: AbmlBrowserRuntimeServer, input: BrowserAbm
 	};
 }
 
-export async function readBrowserAbmlStructure(server: AbmlBrowserRuntimeServer, input: BrowserAbmlStructureInput, options: BrowserAbmlRuntimeOptions = {}): Promise<BrowserAbmlStructureResult> {
+export async function readBrowserAbmlStructure(
+	server: AbmlBrowserRuntimeServer,
+	input: BrowserAbmlStructureInput,
+	options: BrowserAbmlRuntimeOptions = {},
+): Promise<BrowserAbmlStructureResult> {
 	try {
 		const result = await readStructure(server, input, options);
 		const diff = input.baseline ? diffEntities(input.baseline, result.entities, input.diffOptions) : undefined;

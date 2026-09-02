@@ -3,7 +3,11 @@ import { redactSensitiveValue } from "../artifacts/artifactPrivacy.js";
 import { pruneObservationArtifacts, saveTextArtifact } from "../artifacts/artifactFiles.js";
 import type { PageObservationV3, PageObservationView } from "../kernels/abml/pageObservation.js";
 import { publicToolValue, type BrowserTextCommandResult } from "../utils/toolResult.js";
-import { OBSERVATION_RESOURCES_DETAIL_KEY, projectObservationOverflow, projectObservationResources } from "./observe/observationResources.js";
+import {
+	OBSERVATION_RESOURCES_DETAIL_KEY,
+	projectObservationOverflow,
+	projectObservationResources,
+} from "./observe/observationResources.js";
 
 type ArtifactContext = { cwd?: string } | undefined;
 

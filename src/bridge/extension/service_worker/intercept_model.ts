@@ -67,7 +67,11 @@ function asString(value: unknown): string | undefined {
 }
 
 function asStage(value: unknown): InterceptPhase {
-	return String(value || "request").trim().toLowerCase() === "response" ? "response" : "request";
+	return String(value || "request")
+		.trim()
+		.toLowerCase() === "response"
+		? "response"
+		: "request";
 }
 
 function asAction(value: unknown): InterceptAction {
@@ -93,9 +97,14 @@ function encodeBase64Utf8(text: string): string {
 	return btoa(unescape(encodeURIComponent(text)));
 }
 
-export function normalizeInterceptHeaders(value: unknown, fallbackContentType?: string): Array<{ name: string; value: string }> {
+export function normalizeInterceptHeaders(
+	value: unknown,
+	fallbackContentType?: string,
+): Array<{ name: string; value: string }> {
 	const headers = Array.isArray(value)
-		? value.map((item) => ({ name: String(asRecord(item).name || ""), value: String(asRecord(item).value || "") })).filter((item) => item.name)
+		? value
+				.map((item) => ({ name: String(asRecord(item).name || ""), value: String(asRecord(item).value || "") }))
+				.filter((item) => item.name)
 		: Object.entries(asRecord(value)).map(([name, entryValue]) => ({ name, value: String(entryValue) }));
 	if (!headers.length && fallbackContentType) headers.push({ name: "content-type", value: fallbackContentType });
 	return headers;
@@ -130,7 +139,9 @@ export function normalizeInterceptRequestPatch(value: unknown): { cdpPatch: Json
 		mutatedFields.push("interceptResponse");
 		summary.interceptResponse = interceptResponse;
 	}
-	const bodyBase64 = asString(patch.bodyBase64 ?? patch.body_base64 ?? patch.postDataBase64 ?? patch.post_data_base64);
+	const bodyBase64 = asString(
+		patch.bodyBase64 ?? patch.body_base64 ?? patch.postDataBase64 ?? patch.post_data_base64,
+	);
 	if (bodyBase64) {
 		cdpPatch.postData = bodyBase64;
 		mutatedFields.push("postData");
@@ -155,7 +166,11 @@ export function defaultInterceptSessionId(msg: BrowserPilotBridgeCommand | JsonR
 }
 
 function normalizeInterceptStages(value: unknown): InterceptPhase[] {
-	const raw = Array.isArray(value) ? value : value === undefined || value === null ? ["request", "response"] : [value];
+	const raw = Array.isArray(value)
+		? value
+		: value === undefined || value === null
+			? ["request", "response"]
+			: [value];
 	const out: InterceptPhase[] = [];
 	for (const item of raw) {
 		const stage = asStage(item);
@@ -164,15 +179,27 @@ function normalizeInterceptStages(value: unknown): InterceptPhase[] {
 	return out.length ? out : ["request", "response"];
 }
 
-export function normalizeInterceptInstallConfig(msg: BrowserPilotBridgeCommand | JsonRecord = {}): { sessionId: string; maxTranscript: number; stages: InterceptPhase[] } {
+export function normalizeInterceptInstallConfig(msg: BrowserPilotBridgeCommand | JsonRecord = {}): {
+	sessionId: string;
+	maxTranscript: number;
+	stages: InterceptPhase[];
+} {
 	return {
 		sessionId: defaultInterceptSessionId(msg),
-		maxTranscript: numberInRange(msg.maxTranscript ?? msg.max_transcript, BROWSER_PILOT_INTERCEPT_DEFAULT_MAX_TRANSCRIPT, 1, 5000),
+		maxTranscript: numberInRange(
+			msg.maxTranscript ?? msg.max_transcript,
+			BROWSER_PILOT_INTERCEPT_DEFAULT_MAX_TRANSCRIPT,
+			1,
+			5000,
+		),
 		stages: normalizeInterceptStages(msg.stages ?? msg.requestStages ?? msg.request_stages),
 	};
 }
 
-export function createInterceptSession(tabId: unknown, config: { sessionId: string; maxTranscript: number; stages: InterceptPhase[] }): InterceptSession {
+export function createInterceptSession(
+	tabId: unknown,
+	config: { sessionId: string; maxTranscript: number; stages: InterceptPhase[] },
+): InterceptSession {
 	return {
 		tabId: Number(tabId),
 		sessionId: config.sessionId,
@@ -194,19 +221,25 @@ export function getInterceptSession(tabId: unknown, sessionId: unknown): Interce
 	return browserPilotInterceptSessions.get(interceptSessionKey(tabId, sessionId)) || null;
 }
 
-export function getActiveInterceptSession(tabId: unknown, msg: BrowserPilotBridgeCommand | JsonRecord | null | undefined): InterceptSession | null {
+export function getActiveInterceptSession(
+	tabId: unknown,
+	msg: BrowserPilotBridgeCommand | JsonRecord | null | undefined,
+): InterceptSession | null {
 	return getInterceptSession(tabId, defaultInterceptSessionId(msg));
 }
 
 export function normalizeInterceptRule(msg: BrowserPilotBridgeCommand | JsonRecord = {}): InterceptRule {
 	const matcher = asRecord(msg.matcher);
 	return {
-		ruleId: asString(msg.ruleId ?? msg.rule_id) || `intrule_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+		ruleId:
+			asString(msg.ruleId ?? msg.rule_id) || `intrule_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
 		createdAt: Date.now(),
 		matcher: {
 			urlContains: asString(matcher.urlContains ?? matcher.url_contains ?? msg.urlContains ?? msg.url_contains),
 			method: asString(matcher.method ?? msg.method)?.toUpperCase(),
-			resourceType: asString(matcher.resourceType ?? matcher.resource_type ?? msg.resourceType ?? msg.resource_type),
+			resourceType: asString(
+				matcher.resourceType ?? matcher.resource_type ?? msg.resourceType ?? msg.resource_type,
+			),
 			stage: asStage(matcher.stage ?? msg.stage),
 		},
 		action: asAction(msg.action),
@@ -217,9 +250,14 @@ export function normalizeInterceptRule(msg: BrowserPilotBridgeCommand | JsonReco
 export function rememberInterceptTranscript(session: InterceptSession | null | undefined, entry: JsonRecord): void {
 	if (!session) return;
 	session.seq += 1;
-	const item: InterceptTranscriptEntry = redactSensitive({ seq: session.seq, t: Date.now(), ...entry }) as InterceptTranscriptEntry;
+	const item: InterceptTranscriptEntry = redactSensitive({
+		seq: session.seq,
+		t: Date.now(),
+		...entry,
+	}) as InterceptTranscriptEntry;
 	session.transcript.push(item);
-	if (session.transcript.length > session.maxTranscript) session.transcript.splice(0, session.transcript.length - session.maxTranscript);
+	if (session.transcript.length > session.maxTranscript)
+		session.transcript.splice(0, session.transcript.length - session.maxTranscript);
 	session.lastEventAt = Date.now();
 }
 
@@ -261,7 +299,10 @@ export function interceptSessionSummary(session: InterceptSession | null | undef
 	};
 }
 
-export function interceptRuleMatches(rule: InterceptRule, candidate: { stage: InterceptPhase; url?: unknown; method?: unknown; resourceType?: unknown }): boolean {
+export function interceptRuleMatches(
+	rule: InterceptRule,
+	candidate: { stage: InterceptPhase; url?: unknown; method?: unknown; resourceType?: unknown },
+): boolean {
 	const matcher = rule.matcher || {};
 	if (matcher.stage && matcher.stage !== candidate.stage) return false;
 	if (matcher.urlContains && !String(candidate.url || "").includes(matcher.urlContains)) return false;
