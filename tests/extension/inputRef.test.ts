@@ -394,6 +394,34 @@ test("input.ref focus uses DOM.focus and falls back to a trusted click for non-f
 	}
 });
 
+test("input.ref reports hit-test failures with actionability codes instead of stale identity", async () => {
+	for (const [reason, code] of [
+		["occluded", "TARGET_OCCLUDED"],
+		["outside_viewport", "ACTIONABILITY_TIMEOUT"],
+		["not_hittable", "ACTIONABILITY_TIMEOUT"],
+		["semantic_mismatch", "REF_STALE"],
+		["not_found", "BACKEND_NODE_STALE"],
+	] as const) {
+		const h = harness((call) =>
+			call.method === "Runtime.callFunctionOn" || call.method === "Runtime.evaluate"
+				? cdpValue({ ok: false, reason })
+				: undefined,
+		);
+		try {
+			const result = await input.handleBrowserPilotRefInputCommand("input.ref", 7, {
+				cmd: "input.ref",
+				action: "click",
+				target: REF_TARGET,
+			});
+			assert.equal(result.ok, false, reason);
+			assert.equal(result.error_code, code, `${reason} should map to ${code}`);
+			assert.equal(h.methods().includes("Input.dispatchMouseEvent"), false);
+		} finally {
+			h.restore();
+		}
+	}
+});
+
 test("input.ref hover on a DOM ref only moves the pointer", async () => {
 	const h = harness();
 	try {

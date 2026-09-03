@@ -176,6 +176,25 @@ function backendFailure(
 		? "OOPIF_SESSION_UNSUPPORTED"
 		: "BACKEND_NODE_STALE";
 }
+
+/**
+ * Map the page runtime's hit-test verdict to the error code whose recovery hint fits: an occluded
+ * or unreachable control is an actionability problem the agent can act on (dismiss overlays,
+ * scroll), not stale identity that re-observing would fix.
+ */
+function pointFailureCode(reason: unknown): string {
+	switch (String(reason || "not_found")) {
+		case "occluded":
+			return "TARGET_OCCLUDED";
+		case "not_hittable":
+		case "outside_viewport":
+			return "ACTIONABILITY_TIMEOUT";
+		case "semantic_mismatch":
+			return "REF_STALE";
+		default:
+			return "BACKEND_NODE_STALE";
+	}
+}
 function cleanString(v: unknown): string | undefined {
 	if (typeof v !== "string") return undefined;
 	const text = v.trim();
@@ -390,7 +409,7 @@ async function visualRefPoint(
 		toValue = rec(value.to);
 	if (value.ok !== true || x === undefined || y === undefined)
 		return failRef(
-			"BACKEND_NODE_STALE",
+			pointFailureCode(value.reason),
 			`input.ref visual target failed: ${String(value.reason || "not_found")}`,
 			startedAt,
 			target,
@@ -483,7 +502,7 @@ async function liveRefPoint(
 		y = opt(value.y);
 	if (value.ok !== true || x === undefined || y === undefined)
 		return failRef(
-			"BACKEND_NODE_STALE",
+			pointFailureCode(value.reason),
 			`input.ref live locator failed: ${String(value.reason || "not_found")}`,
 			startedAt,
 			target,
@@ -540,7 +559,7 @@ async function backendPoint(
 		y = opt(value.y);
 	if (value.ok !== true || x === undefined || y === undefined)
 		return failRef(
-			"BACKEND_NODE_STALE",
+			pointFailureCode(value.reason),
 			`input.ref live backend validation failed: ${String(value.reason || "not_found")}`,
 			startedAt,
 			target,

@@ -10,7 +10,7 @@ import {
 	sharedTabScopedToolParams,
 } from "./commandRuntime.js";
 import { compactTabForList } from "./tabsProjection.js";
-import { DEFAULT_TOOL_TIMEOUT_MS, strictCommandParameters } from "./commandShared.js";
+import { LONG_RUNNING_TOOL_TIMEOUT_MS, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { withBrowserOperation } from "./browserOperation.js";
 import { withCommandEffect } from "./commandEffect.js";
@@ -69,7 +69,8 @@ async function navigateTab(
 	params: { targetRef?: string; url: string; waitUntil?: string },
 	signal: AbortSignal | undefined,
 ): Promise<{ tabs: Record<string, unknown>[]; effect: unknown }> {
-	const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
+	// A navigation waits for the page to load, so it gets the long-running budget rather than the one-shot one.
+	const timeoutMs = LONG_RUNNING_TOOL_TIMEOUT_MS;
 	const explicitTabId = resolveLocalTargetTabId(server, params.targetRef);
 	const target = pinTabExecutionTarget(server, {
 		rawTarget: params.targetRef,
