@@ -349,12 +349,14 @@ export function controlRequest(
 	});
 }
 
-/** GET /status; undefined if the daemon is unreachable. */
-export async function pingStatus(
-	info: DaemonInfo,
-	timeoutMs = 1_500,
-	opts: { tabs?: boolean } = {},
-): Promise<DaemonStatus | undefined> {
+function isConnectionRefused(error: unknown): boolean {
+	return (error as NodeJS.ErrnoException | undefined)?.code === "ECONNREFUSED";
+}
+
+type StatusProbe = { status?: DaemonStatus; refused: boolean };
+
+/** GET /status, distinguishing "nothing listens on the recorded port" from other failures. */
+async function probeStatus(info: DaemonInfo, timeoutMs: number, opts: { tabs?: boolean }): Promise<StatusProbe> {
 	try {
 		const { status, json } = await controlRequest(
 			info,
@@ -363,22 +365,33 @@ export async function pingStatus(
 			undefined,
 			timeoutMs,
 		);
-		if (status === 200 && json) return json as unknown as DaemonStatus;
-	} catch {
-		/* unreachable */
+		return { status: status === 200 && json ? (json as unknown as DaemonStatus) : undefined, refused: false };
+	} catch (error) {
+		return { refused: isConnectionRefused(error) };
 	}
-	return undefined;
 }
 
-/** Read the lockfile and confirm the daemon answers. Cleans up a lockfile whose pid is dead. */
+/** GET /status; undefined if the daemon is unreachable. */
+export async function pingStatus(
+	info: DaemonInfo,
+	timeoutMs = 1_500,
+	opts: { tabs?: boolean } = {},
+): Promise<DaemonStatus | undefined> {
+	return (await probeStatus(info, timeoutMs, opts)).status;
+}
+
+/**
+ * Read the lockfile and confirm the daemon answers. The lockfile is written only after the
+ * control server is listening, so a refused connection means the listener is gone even when the
+ * recorded pid is alive: operating systems reuse pids, and a lockfile that survives a reboot or a
+ * crash would otherwise pin the daemon to an unrelated process forever.
+ */
 export async function findDaemon(opts: { tabs?: boolean } = {}): Promise<FoundDaemon | undefined> {
 	const info = readLockfile();
 	if (!info) return undefined;
-	const status = await pingStatus(info, 1_500, opts);
-	if (status) return { info, status };
-	// Not answering. Only reclaim the lockfile if the process is gone — a live but
-	// slow-starting daemon must not have its lockfile yanked out from under it.
-	if (!isPidAlive(info.pid)) removeLockfile();
+	const probe = await probeStatus(info, 1_500, opts);
+	if (probe.status) return { info, status: probe.status };
+	if (probe.refused || !isPidAlive(info.pid)) removeLockfile();
 	return undefined;
 }
 
@@ -475,6 +488,7 @@ function removeLockfileForPid(pid: number): void {
  */
 export async function replaceStaleDaemon(info: DaemonInfo, opts: { graceMs?: number } = {}): Promise<void> {
 	let acknowledged = false;
+	let refused = false;
 	try {
 		const response = await controlRequest(
 			info,
@@ -484,11 +498,13 @@ export async function replaceStaleDaemon(info: DaemonInfo, opts: { graceMs?: num
 			2_000,
 		);
 		acknowledged = response.status === 200 && response.json?.ok !== false;
-	} catch {
-		/* reported below with a stable replacement failure */
+	} catch (error) {
+		refused = isConnectionRefused(error);
 	}
 	if (!acknowledged) {
-		if (!isPidAlive(info.pid)) {
+		// No listener on the recorded port: the daemon is gone and the pid, if alive, belongs to
+		// something else. Reclaim the lockfile instead of waiting on a process we do not own.
+		if (refused || !isPidAlive(info.pid)) {
 			removeLockfileForPid(info.pid);
 			return;
 		}

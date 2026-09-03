@@ -1635,6 +1635,86 @@
       "retryable": true,
       "summary": "Persistent CDP could not attach or recover a child target session."
     },
+    "TARGET_DETACH_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "Persistent CDP could not detach a child target session."
+    },
+    "ATTACH_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "chrome.debugger could not attach to the tab (another debugger may own it)."
+    },
+    "DETACH_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "chrome.debugger could not detach from the tab."
+    },
+    "SEND_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "A CDP command failed inside the browser; see details for the raw protocol error."
+    },
+    "SESSION_LIMIT": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "The extension's persistent CDP session table is full; idle sessions are released over time."
+    },
+    "SCRIPT_LIMIT": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "Too many new-document scripts are registered for this tab; remove one before adding another."
+    },
+    "SCRIPT_TOO_LARGE": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "The submitted script exceeds the size the extension accepts; split or shorten it."
+    },
+    "SCRIPT_NOT_FOUND": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "No new-document script with that identifier is registered for this tab."
+    },
+    "FRAME_NOT_FOUND": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "The requested frame is not in the tab's current frame tree."
+    },
+    "FRAME_EVAL_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "Evaluating in the requested frame failed; the frame may have navigated or detached."
+    },
+    "NO_TAB_ID": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "The CDP command reached the extension without a tab id."
+    },
+    "NO_TARGET_ID": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "The command requires a targetId or sessionId."
+    },
+    "NO_METHOD": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "A raw CDP send requires a method name."
+    },
+    "NO_SOURCE": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "Adding a new-document script requires source text."
+    },
+    "NO_IDENTIFIER": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "Removing a new-document script requires its identifier."
+    },
+    "UNKNOWN_ACTION": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "The persistent CDP action is not one the extension implements."
+    },
     "NO_TAB": {
       "category": "driver.tab",
       "retryable": true,

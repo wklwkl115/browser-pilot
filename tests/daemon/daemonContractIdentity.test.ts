@@ -15,8 +15,11 @@ import {
 } from "../../src/apps/daemon/contractIdentity.ts";
 import {
 	controlRequest,
+	findDaemon,
 	isDaemonReadyForReuse,
+	readLockfile,
 	replaceStaleDaemon,
+	writeLockfile,
 	type DaemonInfo,
 	type FoundDaemon,
 } from "../../src/apps/daemon/daemonControl.ts";
@@ -77,6 +80,41 @@ test("full identity comparison and daemon reuse reject every mismatched field", 
 		false,
 	);
 	assert.equal(isDaemonReadyForReuse({ ...found, info: { ...info, contractIdentity: undefined } }), false);
+});
+
+test("a lockfile whose control port refuses connections is reclaimed even when its pid was reused", async () => {
+	// Reserve a port, then close it so nothing listens there; process.pid stands in for a reused pid.
+	const probe = http.createServer();
+	await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+	const address = probe.address();
+	assert.ok(address && typeof address === "object");
+	const closedPort = address.port;
+	await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+	const stateDir = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-lock-"));
+	const previousStateDir = process.env.BROWSER_PILOT_DAEMON_STATE_DIR;
+	process.env.BROWSER_PILOT_DAEMON_STATE_DIR = stateDir;
+	try {
+		const info: DaemonInfo = {
+			pid: process.pid,
+			controlHost: "127.0.0.1",
+			controlPort: closedPort,
+			token: "token",
+			startedAt: new Date(0).toISOString(),
+			version: "stale",
+		};
+		writeLockfile(info);
+		assert.equal(readLockfile()?.pid, process.pid);
+		assert.equal(await findDaemon(), undefined);
+		assert.equal(readLockfile(), undefined, "findDaemon reclaims a lockfile nobody listens behind");
+
+		writeLockfile(info);
+		await replaceStaleDaemon(info, { graceMs: 10 });
+		assert.equal(readLockfile(), undefined, "replacement reclaims instead of waiting on a foreign pid");
+	} finally {
+		if (previousStateDir === undefined) delete process.env.BROWSER_PILOT_DAEMON_STATE_DIR;
+		else process.env.BROWSER_PILOT_DAEMON_STATE_DIR = previousStateDir;
+	}
 });
 
 test("graceful stale replacement fails explicitly when a live daemon refuses shutdown", async () => {
