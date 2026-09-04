@@ -51,7 +51,7 @@ export function prepareExecuteStdlib(
 		throw new BrowserBridgeError("INVALID_RULE", `browser_execute accepts at most ${MAX_EXECUTION_REFS} refs`, {
 			refCount: bindingCount,
 		});
-	if (!refUris.length && !/\bbrowserPilot\s*\./.test(script)) return { script, targetRefs: [] };
+	if (!refUris.length && !/\bbrowserPilot\b/.test(script)) return { script, targetRefs: [] };
 	const registry = buildRefRegistry(refUris);
 	return {
 		script: `${stdlibPrelude(registry.registry, bindings)}\n${script}`,

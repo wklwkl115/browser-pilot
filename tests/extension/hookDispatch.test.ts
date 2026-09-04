@@ -126,6 +126,21 @@ test("hook dispatch keeps evaluate and unknown-command boundaries stable", async
 	assert.equal((await hook.handleBrowserPilotHookCommand("toString", 7, {})).error_code, "INVALID_RULE");
 });
 
+test("dispatcher readiness accepts a prospective session only while no page session exists", async () => {
+	dispatches.splice(0);
+	pageResponses.set("hook.status", {
+		ok: false,
+		error_code: "SESSION_NOT_FOUND",
+		error: "hook.status sessionId was not found",
+	});
+	const confirmed = await hook.confirmBrowserPilotDispatcher(7, "scripting", "prospective-session");
+	assert.equal(confirmed.ok, true);
+	assert.deepEqual(dispatches.at(-1), {
+		command: "hook.status",
+		args: { session_id: "prospective-session" },
+	});
+});
+
 test("hook install_targets expands explicit targets and records reusable session metadata", async () => {
 	dispatches.splice(0);
 	pageResponses.set("hook.status", { ok: false, error_code: "NO_SESSION", error: "not installed" });
@@ -162,7 +177,7 @@ test("hook install owns its stable session and reconfiguration lifecycle", async
 	pageResponses.set("hook.status", { ok: true, data: { state: "INSTALLED" } });
 	pageResponses.set("hook.install", [
 		{ ok: false, error_code: "ALREADY_INSTALLED", error: "different configuration" },
-		{ ok: true, data: { session_id: "default", state: "INSTALLED", dispatcher_version: "1.0" } },
+		{ ok: true, data: { session_id: "installed-7", state: "INSTALLED", dispatcher_version: "1.0" } },
 	]);
 	const installed = await hook.handleBrowserPilotHookCommand("hook.install", 7, {
 		targets: ["console", "websocket"],
@@ -170,11 +185,17 @@ test("hook install owns its stable session and reconfiguration lifecycle", async
 	assert.equal(installed.ok, true);
 	assert.equal((installed.data as JsonRecord).reconfigured, true);
 	assert.equal((installed.data as JsonRecord).history_lost, true);
+	const statusArgs = dispatches.filter((entry) => entry.command === "hook.status").map((entry) => entry.args);
+	assert.equal(statusArgs.length, 2);
+	assert.equal(
+		statusArgs.every((args) => args.session_id === "installed-7"),
+		true,
+	);
 	assert.deepEqual(
 		dispatches.filter((entry) => entry.command === "hook.install").map((entry) => entry.args),
 		[
-			{ session_id: "default", targets: { console: true, websocket: true }, force: false },
-			{ session_id: "default", targets: { console: true, websocket: true }, force: true },
+			{ session_id: "installed-7", targets: { console: true, websocket: true }, force: false },
+			{ session_id: "installed-7", targets: { console: true, websocket: true }, force: true },
 		],
 	);
 });

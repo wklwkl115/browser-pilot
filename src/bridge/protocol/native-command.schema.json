@@ -1750,11 +1750,6 @@
       "retryable": true,
       "summary": "ABML ref is stale."
     },
-    "REF_AMBIGUOUS": {
-      "category": "abml.ref",
-      "retryable": true,
-      "summary": "ABML ref resolved ambiguously."
-    },
     "REF_SCOPE_VIOLATION": {
       "category": "abml.session",
       "retryable": true,
@@ -1764,21 +1759,6 @@
       "category": "abml.ref",
       "retryable": true,
       "summary": "Referenced handle was not found."
-    },
-    "HANDLE_EXPIRED": {
-      "category": "abml.ref",
-      "retryable": true,
-      "summary": "Referenced handle expired."
-    },
-    "HANDLE_KIND_MISMATCH": {
-      "category": "abml.input",
-      "retryable": false,
-      "summary": "Referenced handle kind does not match the expected kind."
-    },
-    "HANDLE_ETAG_MISMATCH": {
-      "category": "abml.ref",
-      "retryable": true,
-      "summary": "Referenced handle etag does not match the current artifact."
     },
     "ACTIONABILITY_TIMEOUT": {
       "category": "abml.actionability",
@@ -1799,26 +1779,6 @@
       "category": "abml.actionability",
       "retryable": false,
       "summary": "Target is not editable."
-    },
-    "BACKEND_UNAVAILABLE": {
-      "category": "abml.backend",
-      "retryable": true,
-      "summary": "Required backend is unavailable."
-    },
-    "CROSS_ORIGIN_BLOCKED": {
-      "category": "abml.backend",
-      "retryable": false,
-      "summary": "Requested operation is blocked by cross-origin frame boundaries."
-    },
-    "VERIFY_FAILED": {
-      "category": "abml.verification",
-      "retryable": true,
-      "summary": "Post-action verification failed."
-    },
-    "VERIFY_INCONCLUSIVE": {
-      "category": "abml.verification",
-      "retryable": true,
-      "summary": "Post-action verification was inconclusive."
     },
     "INVALID_INPUT": {
       "category": "abml.input",

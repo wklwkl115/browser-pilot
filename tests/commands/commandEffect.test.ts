@@ -88,10 +88,27 @@ test("command effect distinguishes DOM change, navigation, and new tabs", () => 
 test("command effect degrades without turning missing page signals into no change", () => {
 	assert.deepEqual(summarizeCommandEffect(undefined, undefined, bridgeResult, { settled: true, elapsedMs: 4 }), {
 		observed: false,
+		unobservedReason: "fingerprint-unavailable",
 		changed: null,
 		settled: false,
 		elapsedMs: 4,
 	});
+	assert.equal(
+		summarizeCommandEffect(undefined, undefined, bridgeResult, {
+			settled: true,
+			elapsedMs: 4,
+			unobservedReason: "no-tab",
+		}).unobservedReason,
+		"no-tab",
+	);
+	const grown = summarizeCommandEffect(
+		fingerprint({ elementCount: 400 }),
+		fingerprint({ elementCount: 412 }),
+		bridgeResult,
+		{ settled: true, elapsedMs: 4 },
+	);
+	assert.equal(grown.changed, true);
+	assert.equal(grown.page?.elementCountDelta, 12);
 	assert.equal(
 		summarizeCommandEffect(
 			undefined,
@@ -200,7 +217,7 @@ test("command effect stops polling terminal postcondition failures", async () =>
 	assert.ok(Date.now() - startedAt < 500);
 });
 
-test("command effect declares a stable unmet postcondition early once the page has settled", async () => {
+test("command effect bounds an unchanged unmet postcondition by its verification budget", async () => {
 	let attempts = 0;
 	const server = {
 		async sendCommand() {
@@ -216,6 +233,7 @@ test("command effect declares a stable unmet postcondition early once the page h
 			deadlineAt: Date.now() + 15_000,
 			quietMs: 0,
 			settleMs: 50,
+			verifyBudgetMs: 700,
 			verify: async () => {
 				attempts += 1;
 				return { status: "unmet", verb: "test", observed: { pressed: false }, evidence: [], elapsedMs: 0 };
@@ -225,9 +243,81 @@ test("command effect declares a stable unmet postcondition early once the page h
 	);
 	assert.equal(outcome.effect.settled, true);
 	assert.equal(outcome.verification?.status, "unmet");
-	assert.equal(attempts, 3);
-	assert.ok(Date.now() - startedAt < 2_000, "a stable unmet state must not consume the tool timeout");
-	assert.match(outcome.verification?.evidence.at(-1)?.summary ?? "", /settled and target state stayed unchanged/);
+	assert.ok(attempts >= 3 && attempts <= 5);
+	const elapsed = Date.now() - startedAt;
+	assert.ok(elapsed >= 650 && elapsed < 3_000, `expected verification budget, got ${elapsed}ms`);
+});
+
+test("command effect waits for delayed success after three identical unmet observations", async () => {
+	let attempts = 0;
+	const server = {
+		async sendCommand() {
+			return { id: "fingerprint", acknowledged: true, data: fingerprint() };
+		},
+	} as unknown as BrowserCommandRuntimePort;
+	const outcome = await withCommandEffect(
+		server,
+		{
+			tabId: 7,
+			timeoutMs: 2_000,
+			deadlineAt: Date.now() + 2_000,
+			quietMs: 0,
+			settleMs: 50,
+			verify: async () => {
+				const ready = ++attempts >= 4;
+				return {
+					status: ready ? "verified" : "unmet",
+					verb: "test",
+					observed: { ready },
+					evidence: [],
+					elapsedMs: 0,
+				};
+			},
+		},
+		async () => bridgeResult,
+	);
+	assert.equal(outcome.effect.settled, true);
+	assert.equal(outcome.verification?.status, "verified");
+	assert.equal(attempts, 4);
+});
+
+test("command effect stops retrying when the caller cancels verification", async () => {
+	const controller = new AbortController();
+	let attempts = 0;
+	const outcome = await withCommandEffect(
+		{} as BrowserCommandRuntimePort,
+		{
+			timeoutMs: 2_000,
+			deadlineAt: Date.now() + 2_000,
+			signal: controller.signal,
+			verify: async () => {
+				attempts++;
+				controller.abort();
+				return { status: "unmet", verb: "test", observed: {}, evidence: [], elapsedMs: 0 };
+			},
+		},
+		async () => bridgeResult,
+	);
+	assert.equal(attempts, 1);
+	assert.equal(outcome.verification?.status, "inconclusive");
+	assert.match(outcome.verification?.evidence.at(-1)?.summary ?? "", /cancelled/);
+});
+
+test("command effect never extends verification past the caller deadline", async () => {
+	const startedAt = Date.now();
+	const outcome = await withCommandEffect(
+		{} as BrowserCommandRuntimePort,
+		{
+			timeoutMs: 350,
+			deadlineAt: startedAt + 350,
+			verifyBudgetMs: 5_000,
+			verify: async () => ({ status: "unmet", verb: "test", observed: {}, evidence: [], elapsedMs: 0 }),
+		},
+		async () => bridgeResult,
+	);
+	assert.equal(outcome.verification?.status, "unmet");
+	const elapsed = Date.now() - startedAt;
+	assert.ok(elapsed >= 300 && elapsed < 1_500, `caller deadline was not respected: ${elapsed}ms`);
 });
 
 test("command effect keeps polling with backoff while the postcondition keeps changing, within its own budget", async () => {

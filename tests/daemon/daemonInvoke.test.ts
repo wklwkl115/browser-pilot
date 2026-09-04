@@ -241,6 +241,26 @@ test("daemon aborts an active invocation when the control client disconnects", a
 	}
 });
 
+test("daemon exits after a configured idle period without an extension or control request", async () => {
+	let markShutdown!: () => void;
+	const shutdown = new Promise<void>((resolve) => {
+		markShutdown = resolve;
+	});
+	const handle = await startDaemon({
+		writeLock: false,
+		startBridgeEagerly: false,
+		idleTimeoutMs: 30,
+		onShutdown: markShutdown,
+	});
+	await Promise.race([
+		shutdown,
+		new Promise<never>((_resolve, reject) =>
+			setTimeout(() => reject(new Error("idle daemon did not shut down")), 1_000),
+		),
+	]);
+	await handle.close();
+});
+
 test("daemon control lockfile treats missing and malformed state as absent", () => {
 	isolateDaemonState();
 	assert.equal(readLockfile(), undefined);

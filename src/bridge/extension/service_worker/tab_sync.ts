@@ -90,8 +90,8 @@ async function sendTabsUpdate() {
 	const openSockets = sockets.filter((socket) => socket.readyState === WebSocket.OPEN);
 	if (!openSockets.length) return;
 	pruneReplacementRing();
-	const tabs = ((await chrome.tabs.query({})) as BrowserPilotChromeTab[]).filter(
-		(t: BrowserPilotChromeTab) => isScriptable(t.url || "") && !/streamlit/i.test(t.title || ""),
+	const tabs = ((await chrome.tabs.query({})) as BrowserPilotChromeTab[]).filter((t: BrowserPilotChromeTab) =>
+		isScriptable(t.url || ""),
 	);
 	const tabsWithIdentity = await Promise.all(
 		tabs.map(async (t: BrowserPilotChromeTab) => ({

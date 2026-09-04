@@ -854,6 +854,34 @@ test("tab sync coalesces concurrent events without letting an older snapshot ove
 	);
 });
 
+test("tab sync includes scriptable Streamlit tabs", async () => {
+	tabQueryOverride = async () => [
+		{ id: 21, url: "https://streamlit.example.test/", title: "Streamlit Dashboard", active: true, windowId: 1 },
+		{ id: 22, url: "chrome://settings/", title: "Streamlit Settings", active: false, windowId: 1 },
+	];
+	const sent: Array<Record<string, unknown>> = [];
+	const socket = {
+		readyState: 1,
+		send(payload: string) {
+			sent.push(JSON.parse(payload) as Record<string, unknown>);
+		},
+	};
+	tabSync.setBrowserPilotTabSyncTransport({
+		getSocket: () => socket,
+		getSockets: () => [socket],
+		probe: async () => {},
+	});
+	try {
+		await tabSync.sendTabsUpdate();
+	} finally {
+		tabQueryOverride = undefined;
+	}
+	assert.deepEqual(
+		(sent[0]?.tabs as Array<Record<string, unknown>>).map((tab) => ({ id: tab.id, title: tab.title })),
+		[{ id: 21, title: "Streamlit Dashboard" }],
+	);
+});
+
 test("hook/session cleanup preserves page identity while actual tab removal forgets it", async () => {
 	pageIdentity.resetBrowserPilotPageIdentitiesForTest();
 	const initial = pageIdentity.ensureBrowserPilotPageIdentity(77, "https://example.test/");

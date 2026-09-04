@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { access, cp, mkdir, rm } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { stateDir } from "../daemon/daemonControl.js";
 import { packageRoot, packageVersion } from "../daemon/packageInfo.js";
+import { installExtensionFiles } from "./installTransaction.js";
 
 export type BrowserName = "chrome" | "edge";
 
@@ -12,11 +13,10 @@ type OpenedBrowser = BrowserCandidate & { page: string };
 type InstallOptions = {
 	sourceDir?: string;
 	installDir?: string;
+	stateDirectory?: string;
 	browser?: BrowserName;
 	openPage?: (browser?: BrowserName) => Promise<OpenedBrowser>;
 };
-
-const REQUIRED_EXTENSION_FILES = ["manifest.json", "dist/service-worker.js"];
 
 function candidatePaths(browser?: BrowserName): BrowserCandidate[] {
 	const home = os.homedir();
@@ -109,19 +109,7 @@ export async function installBrowserExtension(options: InstallOptions = {}) {
 	const sourceDir = options.sourceDir ?? (root ? path.join(root, "bridge", "browser_pilot_bridge") : undefined);
 	if (!sourceDir) throw new Error("Browser Pilot package root was not found");
 	const installDir = path.resolve(options.installDir ?? path.join(stateDir(), "extension"));
-	if (path.resolve(sourceDir) === installDir) throw new Error("Extension source and install directory must differ");
-	for (const relative of REQUIRED_EXTENSION_FILES) {
-		try {
-			await access(path.join(sourceDir, relative));
-		} catch {
-			throw new Error(
-				`Packaged extension is incomplete: missing ${relative}. Run npm run build:bridge for a source checkout.`,
-			);
-		}
-	}
-	await mkdir(path.dirname(installDir), { recursive: true, mode: 0o700 });
-	await rm(installDir, { recursive: true, force: true });
-	await cp(sourceDir, installDir, { recursive: true, force: true });
+	await installExtensionFiles(sourceDir, installDir, options.stateDirectory ?? path.dirname(installDir));
 	try {
 		const opened = await (options.openPage ?? openExtensionsPage)(options.browser);
 		return { version: packageVersion(), installDir, ...opened };

@@ -12,6 +12,14 @@ import type { PageWorldScanBundleV1, ScanListHint } from "../kernels/abml/pageWo
 
 type Built = ReturnType<typeof buildDomEntityFromScanActionable>;
 
+export const REGISTERED_SCAN_REF_LIMITS = {
+	actionables: 8_000,
+	references: 400,
+	controlsSources: 400,
+	listRegions: 300,
+	canvasRegions: 100,
+} as const;
+
 function refFor(built: Built): string {
 	return registerRefDescriptor({ descriptor: built.descriptor });
 }
@@ -38,7 +46,23 @@ function listHintDuplicateNames(listHints: ScanListHint[], context: ScanEntityCo
 }
 
 export function registerScanEntityRefs(data: PageWorldScanBundleV1, context: ScanEntityContext): PageWorldScanBundleV1 {
-	const actionables = data.structure.actionables.map((item) => {
+	const primary = data.structure.actionables.filter(
+		(item) => item.referenceOnly !== true && item.relationOnly !== true,
+	);
+	const references = data.structure.actionables.filter((item) => item.referenceOnly === true);
+	const controlsSources = data.structure.actionables.filter((item) => item.relationOnly === true);
+	const boundedActionables = [
+		...primary.slice(0, REGISTERED_SCAN_REF_LIMITS.actionables),
+		...references.slice(0, REGISTERED_SCAN_REF_LIMITS.references),
+		...controlsSources.slice(0, REGISTERED_SCAN_REF_LIMITS.controlsSources),
+	];
+	const boundedListHints = data.structure.listHints.slice(0, REGISTERED_SCAN_REF_LIMITS.listRegions);
+	const boundedCanvasRegions = data.structure.canvasRegions.slice(0, REGISTERED_SCAN_REF_LIMITS.canvasRegions);
+	const refsTruncated =
+		boundedActionables.length !== data.structure.actionables.length ||
+		boundedListHints.length !== data.structure.listHints.length ||
+		boundedCanvasRegions.length !== data.structure.canvasRegions.length;
+	const actionables = boundedActionables.map((item) => {
 		const node = item;
 		if (node.referenceOnly === true)
 			return annotateNode(node, "referencedTarget", refFor(buildReferencedTargetEntity(node, context)));
@@ -46,8 +70,8 @@ export function registerScanEntityRefs(data: PageWorldScanBundleV1, context: Sca
 			return annotateNode(node, "controlsSource", refFor(buildControlsSourceEntity(node, context)));
 		return annotateNode(node, "domAction", refFor(buildDomEntityFromScanActionable(node, context)));
 	});
-	const duplicateListNames = listHintDuplicateNames(data.structure.listHints, context);
-	const nextListHints = data.structure.listHints.map((node, index) =>
+	const duplicateListNames = listHintDuplicateNames(boundedListHints, context);
+	const nextListHints = boundedListHints.map((node, index) =>
 		annotateNode(
 			node,
 			"listRegion",
@@ -56,9 +80,9 @@ export function registerScanEntityRefs(data: PageWorldScanBundleV1, context: Sca
 	);
 
 	let nextActionables = actionables;
-	let nextCanvasRegions = data.structure.canvasRegions;
-	if (data.structure.canvasRegions.length) {
-		nextCanvasRegions = data.structure.canvasRegions.map((node) =>
+	let nextCanvasRegions = boundedCanvasRegions;
+	if (boundedCanvasRegions.length) {
+		nextCanvasRegions = boundedCanvasRegions.map((node) =>
 			annotateNode(node, "visionRegion", refFor(buildVisionRegionFromCanvasActionable(node, context))),
 		);
 	} else {
@@ -74,6 +98,10 @@ export function registerScanEntityRefs(data: PageWorldScanBundleV1, context: Sca
 			actionables: nextActionables,
 			listHints: nextListHints,
 			canvasRegions: nextCanvasRegions,
+		},
+		stats: {
+			...data.stats,
+			...(refsTruncated ? { actionablesComplete: false } : {}),
 		},
 	};
 }

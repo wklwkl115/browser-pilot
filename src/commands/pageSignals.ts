@@ -16,6 +16,7 @@ export type PageFingerprint = {
 	viewportWidth?: number;
 	viewportHeight?: number;
 	devicePixelRatio?: number;
+	elementCount?: number;
 	visibleCount?: number;
 	interactiveCount?: number;
 	capturedAt?: number;
@@ -52,6 +53,7 @@ export function normalizePageFingerprint(value: unknown): PageFingerprint | unde
 		...(typeof record.viewportWidth === "number" ? { viewportWidth: record.viewportWidth } : {}),
 		...(typeof record.viewportHeight === "number" ? { viewportHeight: record.viewportHeight } : {}),
 		...(typeof record.devicePixelRatio === "number" ? { devicePixelRatio: record.devicePixelRatio } : {}),
+		...(typeof record.elementCount === "number" ? { elementCount: record.elementCount } : {}),
 		...(typeof record.visibleCount === "number" ? { visibleCount: record.visibleCount } : {}),
 		...(typeof record.interactiveCount === "number" ? { interactiveCount: record.interactiveCount } : {}),
 		...(typeof record.capturedAt === "number" ? { capturedAt: record.capturedAt } : {}),
@@ -72,6 +74,7 @@ export function pageFingerprintDiscriminators(fingerprint: PageFingerprint): rea
 		fingerprint.viewportWidth,
 		fingerprint.viewportHeight,
 		fingerprint.devicePixelRatio,
+		fingerprint.elementCount,
 		fingerprint.visibleCount,
 		fingerprint.interactiveCount,
 	];
@@ -108,6 +111,7 @@ export function coherentPageFingerprint(
 		"viewportWidth",
 		"viewportHeight",
 		"devicePixelRatio",
+		"elementCount",
 		"visibleCount",
 		"interactiveCount",
 	];

@@ -1172,6 +1172,17 @@ declare global {
 		const nextMs = Math.min(maxMs, Math.max(1, xpathPollMs || 5000) * (xpathIdleTicks >= idleAfter ? 4 : 1));
 		xpathTimer = scheduleTimer(checkXPaths, nextMs);
 	}
+	function forcedReinstallSessionError(
+		opts: HookRecord,
+		requestedSessionId: string,
+		sameSession: boolean,
+	): HookResponse | null {
+		if (opts.force !== true || sameSession) return null;
+		return structuredError(ERROR_CODES.INVALID_SESSION, "Forced hook reinstall requires the current sessionId", {
+			state,
+			requested_session_id: requestedSessionId,
+		});
+	}
 
 	function install(optsInput?: unknown): HookResponse {
 		const opts = asRecord(optsInput);
@@ -1211,6 +1222,8 @@ declare global {
 		const sameSession = session_id === requestedSessionId;
 		const sameFingerprint = install_fingerprint === requestedFingerprint;
 		if (state !== "CREATED" && state !== "CLOSED") {
+			const forcedSessionError = forcedReinstallSessionError(opts, requestedSessionId, sameSession);
+			if (forcedSessionError) return forcedSessionError;
 			if (opts.force !== true && sameSession && sameFingerprint) {
 				return {
 					ok: true,
@@ -1251,7 +1264,7 @@ declare global {
 					},
 				);
 			}
-			uninstall({ force: true, reason: "force_reinstall" });
+			uninstall({ session_id, reason: "force_reinstall" });
 		}
 		resetDiagnostics();
 		session_id = requestedSessionId;
@@ -1335,12 +1348,11 @@ declare global {
 						state,
 					});
 		}
-		if (expectedSessionId && expectedSessionId !== String(session_id)) {
-			return structuredError(
-				ERROR_CODES.INVALID_SESSION,
-				op + " sessionId does not match the installed Browser Pilot session",
-				{ state, requested_session_id: expectedSessionId, current_session_id: session_id },
-			);
+		if (!expectedSessionId || expectedSessionId !== String(session_id)) {
+			return structuredError(ERROR_CODES.INVALID_SESSION, op + " requires the current Browser Pilot sessionId", {
+				state,
+				...(expectedSessionId ? { requested_session_id: expectedSessionId } : {}),
+			});
 		}
 		return null;
 	}
@@ -1556,10 +1568,8 @@ declare global {
 	}
 	function uninstall(optsInput?: unknown): HookResponse {
 		const opts = asRecord(optsInput);
-		if (opts.force !== true) {
-			const miss = requireSession("hook.uninstall", expectedSessionIdFrom(opts));
-			if (miss) return miss;
-		}
+		const miss = requireSession("hook.uninstall", expectedSessionIdFrom(opts));
+		if (miss) return miss;
 		cleanup_warnings = [];
 		restoreHookFunctions();
 		restoreHookDescriptors();
@@ -1618,36 +1628,17 @@ declare global {
 		}
 	}
 
-	window.__BROWSER_PILOT_HOOKS__ = {
+	const publicApi = Object.freeze({
 		version: VERSION,
 		dispatcher_version: VERSION,
-		ERROR_CODES,
-		COMMAND_CANONICAL,
-		install,
-		collect,
-		status,
-		uninstall,
-		clearBuffer,
-		pause,
-		resume,
-		evaluate,
 		dispatch,
-		getState: () => state,
-		getSessionId: () => session_id,
-		getBuffer: () => bufferSnapshot(),
-		getStats: () => Object.assign({}, stats),
-		getInstallFingerprint: () => install_fingerprint,
-		getOwnerSessionId: () => owner_session_id,
-		getInstallEpoch: () => install_epoch,
-		getCleanupWarnings: () => cleanup_warnings.slice(),
-		getResidueSignatures: () => residue_signatures.slice(),
-		getBufferStats: () =>
-			Object.assign(
-				{ count: buffer_count, size: buffer_size, usage: buffer_count / buffer_size, overflow },
-				bufferMetrics(),
-			),
-		getPerfStats: () => perfSnapshot(),
-	};
+	});
+	Object.defineProperty(window, "__BROWSER_PILOT_HOOKS__", {
+		value: publicApi,
+		writable: false,
+		configurable: false,
+		enumerable: false,
+	});
 	setState("CREATED", "bootstrap");
 })();
 

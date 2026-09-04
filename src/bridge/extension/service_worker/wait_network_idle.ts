@@ -5,6 +5,7 @@ import {
 	finishBrowserPilotWait,
 	makeWaitId,
 	normalizeBrowserPilotTimeoutMs,
+	recordWaitDiagnosticError,
 	recordWaitEvent,
 	registerWait,
 	waitAbortMessage,
@@ -137,9 +138,20 @@ async function waitForNetworkIdle(tabId: number, msg: BrowserPilotBridgeCommand)
 			inflight: 0,
 			immediate: true,
 		});
-	await attachDebuggerForWait(record, ["Network"]).catch((e: unknown) => {
-		record.lastError = e instanceof Error ? e.message : String(e);
+	let attachError: unknown;
+	await attachDebuggerForWait(record, ["Network"]).catch((error: unknown) => {
+		attachError = error;
+		recordWaitDiagnosticError(record, "Network.enable", error);
 	});
+	if (attachError)
+		return finishBrowserPilotWait(
+			record,
+			false,
+			null,
+			BROWSER_PILOT_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED,
+			"wait.networkIdle could not observe network activity",
+			{ diagnostics: record.diagnostics.slice(-20), last_error: record.lastError },
+		);
 	return await new Promise<BrowserPilotBridgeResponse>((resolve) => {
 		const complete = (res: BrowserPilotBridgeResponse) => {
 			try {
@@ -162,8 +174,8 @@ async function waitForNetworkIdle(tabId: number, msg: BrowserPilotBridgeCommand)
 			record.listeners.push({
 				remove: () => record.abortController.signal.removeEventListener("abort", failIfAbort),
 			});
-		} catch (_) {
-			/* best-effort abort listener registration */
+		} catch (error) {
+			recordWaitDiagnosticError(record, "wait_network_idle_abort_listener", error);
 		}
 		const armIdle = () => {
 			maybeExpireLongPolling();
@@ -203,6 +215,7 @@ async function waitForNetworkIdle(tabId: number, msg: BrowserPilotBridgeCommand)
 							ignored: ignored.slice(-100),
 							events: record.cdpEvents.slice(-50),
 							last_error: record.lastError,
+							diagnostics: record.diagnostics.slice(-20),
 						},
 					),
 				),

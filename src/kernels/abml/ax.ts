@@ -61,6 +61,8 @@ export type AxFusionDiagnostics = {
 	axOnly: number;
 	matched: { backend: number; geometry: number; semantic: number };
 	degraded: boolean;
+	publishedAxOnly?: number;
+	axOnlyTruncated?: boolean;
 	skipped: {
 		ambiguousBackend: number;
 		ambiguousGeometry: number;
@@ -639,10 +641,20 @@ function compatibleMatchRoles(left: string, right: string): boolean {
 	);
 }
 
-/** Names that differ only in digits ("Inbox (3)" vs "Inbox (4)") describe the same control with a live counter. */
+/** A final parenthesized/bracketed number ("Inbox (3)" vs "Inbox (4)") is a live counter. */
 function looselyEqualNames(left: string, right: string): boolean {
-	const collapse = (value: string) => value.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
-	return collapse(left) === collapse(right);
+	const counter = (value: string) => {
+		const match = value.match(/^(.*?)\s*(\(\d+\)|\[\d+\])$/);
+		return match ? { label: match[1]!.trim().toLowerCase(), style: match[2]![0] } : undefined;
+	};
+	const leftCounter = counter(left);
+	const rightCounter = counter(right);
+	return (
+		leftCounter !== undefined &&
+		rightCounter !== undefined &&
+		leftCounter.label === rightCounter.label &&
+		leftCounter.style === rightCounter.style
+	);
 }
 
 function axMatchScore(

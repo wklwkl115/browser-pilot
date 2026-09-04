@@ -15,13 +15,20 @@ import {
 	makeWaitId,
 	normalizeBrowserPilotTimeoutMs,
 	normalizeWaitState,
+	recordWaitDiagnosticError,
 	recordWaitEvent,
 	registerWait,
 	waitAbortMessage,
 } from "./wait_coordinator";
 import { waitForNetworkIdle } from "./wait_network_idle";
 import { waitForSelector } from "./wait_selector";
-import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse, BrowserPilotChromeTab } from "./types";
+import type {
+	JsonRecord,
+	BrowserPilotBridgeCommand,
+	BrowserPilotBridgeResponse,
+	BrowserPilotChromeTab,
+	BrowserPilotWaitRecord,
+} from "./types";
 
 type LoadMetrics = JsonRecord & {
 	readyState?: string;
@@ -182,10 +189,10 @@ async function waitForNavigation(tabId: number, msg: BrowserPilotBridgeCommand):
 	};
 	const currentNavigationState = async (source: string): Promise<NavigationState> => {
 		const tab = await chrome.tabs.get(tabId).catch((e) => {
-			record.lastError = errorText(e);
+			recordWaitDiagnosticError(record, `${source}:chrome.tabs.get`, e);
 			return null;
 		});
-		const metrics = await queryLoadMetrics(tabId).catch(() => null);
+		const metrics = await queryLoadMetricsForWait(record, tabId, `${source}:load_metrics`);
 		const url = metrics?.url || tab?.url || null;
 		recordWaitEvent(record, {
 			method: "wait.navigation.currentUrl",
@@ -221,7 +228,7 @@ async function waitForNavigation(tabId: number, msg: BrowserPilotBridgeCommand):
 				immediate: true,
 				tabStatus: current.tab?.status,
 				readyState: current.metrics?.readyState,
-				diagnostics,
+				diagnostics: { ...diagnostics, runtime: record.diagnostics.slice(-20) },
 				events: record.cdpEvents.slice(-50),
 			});
 		return finishBrowserPilotWait(
@@ -243,7 +250,7 @@ async function waitForNavigation(tabId: number, msg: BrowserPilotBridgeCommand):
 				tabStatus: current.tab?.status,
 				readyState: current.metrics?.readyState,
 				reason: current.reason,
-				diagnostics,
+				diagnostics: { ...diagnostics, runtime: record.diagnostics.slice(-20) },
 				events: record.cdpEvents.slice(-50),
 			},
 		);
@@ -269,6 +276,7 @@ async function waitForNavigation(tabId: number, msg: BrowserPilotBridgeCommand):
 			const currentUrl = dataRuntimeResult.value || resultResult.value || null;
 			if (currentUrl) record.diagnostics.push({ source: "Runtime.evaluate", currentUrl });
 		} catch (error) {
+			recordWaitDiagnosticError(record, "wait_navigation_probe", error);
 			console.warn("[BROWSER-PILOT-WAIT] wait.navigation probe Runtime.evaluate failed", tabId, error);
 		}
 	}
@@ -285,7 +293,7 @@ async function waitForNavigation(tabId: number, msg: BrowserPilotBridgeCommand):
 			waitUntil,
 			source,
 			url: typeof extra.url === "string" ? extra.url : lastUrl || null,
-			diagnostics,
+			diagnostics: { ...diagnostics, runtime: record.diagnostics.slice(-20) },
 			events: record.cdpEvents.slice(-50),
 			...extra,
 		});
@@ -350,7 +358,7 @@ async function waitForNavigation(tabId: number, msg: BrowserPilotBridgeCommand):
 		const checkCurrent = async (source: string): Promise<void> => {
 			if (completed) return;
 			const tab = await chrome.tabs.get(tabId).catch((e) => {
-				record.lastError = errorText(e);
+				recordWaitDiagnosticError(record, `${source}:chrome.tabs.get`, e);
 				return null;
 			});
 			const url = tab?.url || lastUrl;
@@ -359,7 +367,7 @@ async function waitForNavigation(tabId: number, msg: BrowserPilotBridgeCommand):
 			if (!urlMatches(url)) return;
 			if (waitUntil === "commit" || waitUntil === "committed")
 				return finish(true, source || "currentUrl", { url, stage: "commit", tabStatus: tab?.status });
-			const metrics = await queryLoadMetrics(tabId).catch(() => null);
+			const metrics = await queryLoadMetricsForWait(record, tabId, `${source}:load_metrics`);
 			if (
 				waitUntil === "domcontentloaded" &&
 				(metrics?.readyState === "interactive" ||
@@ -398,8 +406,8 @@ async function waitForNavigation(tabId: number, msg: BrowserPilotBridgeCommand):
 			record.listeners.push({
 				remove: () => record.abortController.signal.removeEventListener("abort", failIfAbort),
 			});
-		} catch (_) {
-			/* best-effort abort listener registration */
+		} catch (error) {
+			recordWaitDiagnosticError(record, "wait_navigation_abort_listener", error);
 		}
 		const onTabsUpdated = (changedTabId: number, changeInfo: JsonRecord, updatedTab: BrowserPilotChromeTab) => {
 			if (Number(changedTabId) !== Number(tabId)) return;
@@ -557,7 +565,7 @@ async function waitForNavigation(tabId: number, msg: BrowserPilotBridgeCommand):
 				chrome.debugger
 					.sendCommand({ tabId }, "Page.setLifecycleEventsEnabled", { enabled: true })
 					.catch((e) => {
-						record.lastError = errorText(e);
+						recordWaitDiagnosticError(record, "Page.setLifecycleEventsEnabled", e);
 					});
 			})
 			.catch((e) => {
@@ -581,11 +589,31 @@ function loadStateSatisfied(
 }
 async function queryLoadMetrics(tabId: number): Promise<LoadMetrics | null> {
 	const expr = `(() => ({readyState:document.readyState, url:location.href, title:document.title, domContentLoaded:document.readyState==='interactive'||document.readyState==='complete', load:document.readyState==='complete'}))()`;
-	const res = await browserPilotEval(tabId, expr, true).catch(
-		(e) => ({ ok: false, error: errorText(e) }) as BrowserPilotBridgeResponse,
-	);
+	const res = await browserPilotEval(tabId, expr, true);
+	if (!res || res.ok === false) {
+		const nestedError = asRecord(res?.error);
+		const responseError =
+			nestedError.message ||
+			(typeof res?.error === "string" ? res.error : null) ||
+			res?.message ||
+			res?.error_code ||
+			"Runtime.evaluate load metrics probe failed";
+		throw new Error(String(responseError));
+	}
 	const value = res && res.ok ? res.data || res.result || null : null;
 	return value && typeof value === "object" && !Array.isArray(value) ? (value as LoadMetrics) : null;
+}
+async function queryLoadMetricsForWait(
+	record: BrowserPilotWaitRecord,
+	tabId: number,
+	source: string,
+): Promise<LoadMetrics | null> {
+	try {
+		return await queryLoadMetrics(tabId);
+	} catch (error) {
+		recordWaitDiagnosticError(record, source, error);
+		return null;
+	}
 }
 async function waitForLoadState(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
 	const targetState = normalizeWaitState(msg.state || msg.loadState || msg.load_state || "complete"); // Page.lifecycleEvent document.readyState timeoutMs === 0
@@ -602,10 +630,10 @@ async function waitForLoadState(tabId: number, msg: BrowserPilotBridgeCommand): 
 		abortController: msg.abortController,
 	});
 	const tab = await chrome.tabs.get(tabId).catch((e) => {
-		record.lastError = errorText(e);
+		recordWaitDiagnosticError(record, "initial:chrome.tabs.get", e);
 		return null;
 	});
-	const metrics = await queryLoadMetrics(tabId).catch(() => null);
+	const metrics = await queryLoadMetricsForWait(record, tabId, "initial:load_metrics");
 	if (loadStateSatisfied(targetState, tab, metrics))
 		return finishBrowserPilotWait(record, true, {
 			state: targetState,
@@ -621,7 +649,13 @@ async function waitForLoadState(tabId: number, msg: BrowserPilotBridgeCommand): 
 			null,
 			BROWSER_PILOT_ERROR_CODES.TIMEOUT,
 			"wait.loadState immediate check failed",
-			{ timeout_ms: 0, targetState, readyState: metrics?.readyState, tabStatus: tab?.status },
+			{
+				timeout_ms: 0,
+				targetState,
+				readyState: metrics?.readyState,
+				tabStatus: tab?.status,
+				diagnostics: record.diagnostics.slice(-20),
+			},
 		);
 	return await new Promise<BrowserPilotBridgeResponse>((resolve) => {
 		const complete = (res: BrowserPilotBridgeResponse): void => resolve(res);
@@ -636,8 +670,8 @@ async function waitForLoadState(tabId: number, msg: BrowserPilotBridgeCommand): 
 			record.listeners.push({
 				remove: () => record.abortController.signal.removeEventListener("abort", failIfAbort),
 			});
-		} catch (_) {
-			/* best-effort abort listener registration */
+		} catch (error) {
+			recordWaitDiagnosticError(record, "wait_load_state_abort_listener", error);
 		}
 		const timeoutHandle = setTimeout(
 			() =>
@@ -652,6 +686,7 @@ async function waitForLoadState(tabId: number, msg: BrowserPilotBridgeCommand): 
 							timeout_ms: timeoutMs,
 							targetState,
 							last_error: record.lastError,
+							diagnostics: record.diagnostics.slice(-20),
 							events: record.cdpEvents.slice(-50),
 						},
 					),
@@ -690,7 +725,7 @@ async function waitForLoadState(tabId: number, msg: BrowserPilotBridgeCommand): 
 				chrome.debugger
 					.sendCommand({ tabId }, "Page.setLifecycleEventsEnabled", { enabled: true })
 					.catch((e) => {
-						record.lastError = errorText(e);
+						recordWaitDiagnosticError(record, "Page.setLifecycleEventsEnabled", e);
 					});
 			})
 			.catch((e) => {
@@ -722,8 +757,11 @@ async function waitForLoadState(tabId: number, msg: BrowserPilotBridgeCommand): 
 		// a listener sees it and the wait would hang until timeout (observed: navigateAndWait false-timeout
 		// on an already-/fast-loading page). This backstop catches a state that became satisfied during arming.
 		void (async () => {
-			const recheckTab = await chrome.tabs.get(tabId).catch(() => null);
-			const recheckMetrics = await queryLoadMetrics(tabId).catch(() => null);
+			const recheckTab = await chrome.tabs.get(tabId).catch((error) => {
+				recordWaitDiagnosticError(record, "recheck:chrome.tabs.get", error);
+				return null;
+			});
+			const recheckMetrics = await queryLoadMetricsForWait(record, tabId, "recheck:load_metrics");
 			if (loadStateSatisfied(targetState, recheckTab, recheckMetrics)) {
 				complete(
 					finishBrowserPilotWait(record, true, {

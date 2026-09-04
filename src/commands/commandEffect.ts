@@ -3,21 +3,29 @@ import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.
 import type { VerificationResult } from "../kernels/abml/types.js";
 import { readPageFingerprint, samePageFingerprint, type PageFingerprint } from "./pageSignals.js";
 
-const EFFECT_SIGNAL_TIMEOUT_MS = 250;
+/**
+ * Budget for one fingerprint read. The content script does a bounded layout pass, which on heavy
+ * pages can take a few hundred milliseconds; a budget that is too tight turns every write on such
+ * pages into an unobserved effect.
+ */
+const EFFECT_SIGNAL_TIMEOUT_MS = 1_000;
 const EFFECT_QUIET_MS = 100;
 const EFFECT_SETTLE_MS = 300;
 /**
  * Postcondition polling has its own budget and backs off geometrically: a wrong `expect` must not
- * consume the whole tool timeout, and a page that has settled with an unchanged target state is
- * declared unmet after a few identical reads instead of being re-read until the deadline.
+ * consume the whole tool timeout. A quiet page does not prove asynchronous work is finished,
+ * so retryable unmet states keep polling until success, cancellation, or the verification deadline.
  */
 const VERIFY_BUDGET_MS = 5_000;
 const VERIFY_INITIAL_POLL_MS = 100;
 const VERIFY_MAX_POLL_MS = 1_000;
-const VERIFY_STABLE_UNMET_ROUNDS = 3;
+
+export type CommandEffectUnobservedReason = "no-tab" | "deadline-exhausted" | "fingerprint-unavailable";
 
 export type CommandEffect = {
 	observed: boolean;
+	/** Present when observed is false: why the page could not be fingerprinted around the write. */
+	unobservedReason?: CommandEffectUnobservedReason;
 	changed: boolean | null;
 	settled: boolean;
 	elapsedMs: number;
@@ -25,6 +33,7 @@ export type CommandEffect = {
 		navigation?: { from?: string; to?: string };
 		changeSeqDelta?: number;
 		readyState?: string;
+		elementCountDelta?: number;
 		visibleCountDelta?: number;
 		interactiveCountDelta?: number;
 	};
@@ -77,12 +86,13 @@ export function summarizeCommandEffect(
 	before: PageFingerprint | undefined,
 	after: PageFingerprint | undefined,
 	result: BrowserBridgeExecutionResult,
-	options: { settled: boolean; elapsedMs: number },
+	options: { settled: boolean; elapsedMs: number; unobservedReason?: CommandEffectUnobservedReason },
 ): CommandEffect {
 	const newTabs = newTabCount(result);
 	if (!before || !after) {
 		return {
 			observed: false,
+			unobservedReason: options.unobservedReason ?? "fingerprint-unavailable",
 			changed: newTabs > 0 ? true : null,
 			settled: false,
 			elapsedMs: Math.max(0, Math.round(options.elapsedMs)),
@@ -92,11 +102,13 @@ export function summarizeCommandEffect(
 
 	const navigated = pageGenerationChanged(before, after);
 	const changeSeqDelta = navigated ? undefined : Math.max(0, after.changeSeq - before.changeSeq);
+	const elementCountDelta = finiteDelta(after.elementCount, before.elementCount);
 	const visibleCountDelta = finiteDelta(after.visibleCount, before.visibleCount);
 	const interactiveCountDelta = finiteDelta(after.interactiveCount, before.interactiveCount);
 	const pageChanged =
 		navigated ||
 		(changeSeqDelta ?? 0) > 0 ||
+		(elementCountDelta ?? 0) !== 0 ||
 		(visibleCountDelta ?? 0) !== 0 ||
 		(interactiveCountDelta ?? 0) !== 0 ||
 		changedString(after.title, before.title) ||
@@ -118,6 +130,7 @@ export function summarizeCommandEffect(
 				: {}),
 			...(changeSeqDelta !== undefined ? { changeSeqDelta } : {}),
 			...(after.readyState ? { readyState: after.readyState } : {}),
+			...(elementCountDelta !== undefined ? { elementCountDelta } : {}),
 			...(visibleCountDelta !== undefined ? { visibleCountDelta } : {}),
 			...(interactiveCountDelta !== undefined ? { interactiveCountDelta } : {}),
 		},
@@ -138,19 +151,23 @@ function waitFor(ms: number, signal?: AbortSignal): Promise<void> {
 	});
 }
 
+type FingerprintCapture = { fingerprint?: PageFingerprint; reason?: CommandEffectUnobservedReason };
+
 async function captureFingerprint(
 	server: BrowserCommandRuntimePort,
 	options: CommandEffectOptions,
-): Promise<PageFingerprint | undefined> {
-	if (options.tabId === undefined || options.signal?.aborted) return undefined;
+): Promise<FingerprintCapture> {
+	if (options.tabId === undefined) return { reason: "no-tab" };
+	if (options.signal?.aborted) return { reason: "deadline-exhausted" };
 	const remainingMs = Math.max(0, options.deadlineAt - Date.now());
-	if (remainingMs === 0) return undefined;
-	return await readPageFingerprint(server, {
+	if (remainingMs === 0) return { reason: "deadline-exhausted" };
+	const fingerprint = await readPageFingerprint(server, {
 		browserSessionId: options.browserSessionId,
 		tabId: options.tabId,
 		timeoutMs: Math.max(1, Math.min(EFFECT_SIGNAL_TIMEOUT_MS, options.timeoutMs, remainingMs)),
 		signal: options.signal,
 	});
+	return fingerprint ? { fingerprint } : { reason: "fingerprint-unavailable" };
 }
 
 function withVerificationElapsed(result: VerificationResult, startedAt: number): VerificationResult {
@@ -181,40 +198,17 @@ function inconclusiveVerification(
 	};
 }
 
-function withVerificationNote(result: VerificationResult, summary: string): VerificationResult {
-	return { ...result, evidence: [...result.evidence, { kind: "verification-runtime", summary }] };
-}
-
-async function verifyPostcondition(
-	options: CommandEffectOptions,
-	pageSettled: boolean,
-): Promise<VerificationResult | undefined> {
+async function verifyPostcondition(options: CommandEffectOptions): Promise<VerificationResult | undefined> {
 	if (!options.verify) return undefined;
 	const startedAt = Date.now();
 	const deadlineAt = Math.min(options.deadlineAt, startedAt + (options.verifyBudgetMs ?? VERIFY_BUDGET_MS));
 	let last = options.initialVerification;
 	let pollMs = VERIFY_INITIAL_POLL_MS;
-	let stableUnmetRounds = 0;
-	let lastObserved: string | undefined;
-	let rounds = 0;
 	while (!options.signal?.aborted && Date.now() < deadlineAt) {
 		try {
 			last = await options.verify();
-			rounds += 1;
 			if (last.status === "verified") return withVerificationElapsed(last, startedAt);
 			if (last.retryable === false) return withVerificationElapsed(last, startedAt);
-			// Once the page has settled, an unmet state that stops changing will not become met by waiting.
-			const observed = last.status === "unmet" ? JSON.stringify(last.observed) : undefined;
-			stableUnmetRounds = observed !== undefined && observed === lastObserved ? stableUnmetRounds + 1 : 0;
-			lastObserved = observed;
-			if (pageSettled && stableUnmetRounds >= VERIFY_STABLE_UNMET_ROUNDS - 1)
-				return withVerificationElapsed(
-					withVerificationNote(
-						last,
-						`Page settled and target state stayed unchanged across ${rounds} checks`,
-					),
-					startedAt,
-				);
 		} catch {
 			return inconclusiveVerification(last, startedAt, "Postcondition observation failed");
 		}
@@ -234,9 +228,11 @@ export async function withCommandEffect<T extends BrowserBridgeExecutionResult>(
 	dispatch: () => Promise<T>,
 ): Promise<{ result: T; effect: CommandEffect; verification?: VerificationResult }> {
 	const startedAt = Date.now();
-	const before = await captureFingerprint(server, options);
+	const beforeCapture = await captureFingerprint(server, options);
+	const before = beforeCapture.fingerprint;
 	const result = await dispatch();
-	let after = await captureFingerprint(server, options);
+	const afterCapture = await captureFingerprint(server, options);
+	let after = afterCapture.fingerprint;
 	let settled = false;
 
 	if (before) {
@@ -249,7 +245,7 @@ export async function withCommandEffect<T extends BrowserBridgeExecutionResult>(
 		while (!options.signal?.aborted && Date.now() + quietMs <= settleDeadline) {
 			await waitFor(quietMs, options.signal);
 			if (options.signal?.aborted) break;
-			const current = await captureFingerprint(server, { ...options, deadlineAt: settleDeadline });
+			const current = (await captureFingerprint(server, { ...options, deadlineAt: settleDeadline })).fingerprint;
 			if (!current) continue;
 			after = current;
 			if (previous && samePageFingerprint(previous, current) && current.readyState !== "loading") {
@@ -259,11 +255,15 @@ export async function withCommandEffect<T extends BrowserBridgeExecutionResult>(
 			previous = current;
 		}
 	}
-	const verification = await verifyPostcondition(options, settled);
+	const verification = await verifyPostcondition(options);
 
 	return {
 		result,
-		effect: summarizeCommandEffect(before, after, result, { settled, elapsedMs: Date.now() - startedAt }),
+		effect: summarizeCommandEffect(before, after, result, {
+			settled,
+			elapsedMs: Date.now() - startedAt,
+			unobservedReason: beforeCapture.reason ?? afterCapture.reason,
+		}),
 		...(verification ? { verification } : {}),
 	};
 }

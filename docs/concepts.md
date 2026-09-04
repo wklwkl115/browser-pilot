@@ -106,9 +106,11 @@ Accessibility relations between entities: `labelledBy`, `describedBy`, `controls
 
 ### Effect and verification
 
-Writes through `browser_execute` and `browser_command`, and `browser_tabs navigate`, return an `effect`: did the page observably change (`changed`), did it settle (`settled`), did navigation happen, did new tabs open, how many DOM changes were counted.
+Writes through `browser_execute` and `browser_command`, and `browser_tabs navigate`, return an `effect`: did the page observably change (`changed`), did it settle (`settled`), did navigation happen, did new tabs open, how many DOM changes were counted. When the page could not be fingerprinted around the write, `observed` is `false` and `unobservedReason` says why (`no-tab`, `deadline-exhausted`, or `fingerprint-unavailable`).
 
 Add `expect` to a write to get a `verification`. `expect` is either a JavaScript truth expression or a structured postcondition such as `{ "ref": "bp-ref://control/...", "state": { "pressed": true } }`. Browser Pilot reads the ref before and after the write and returns `status` (`verified`, `unmet`, `inconclusive`), the observed state, the evidence used, and a target-scoped diff. Verification is scoped to the ref you named; it does not re-observe the whole page.
+
+A quiet page is not proof that asynchronous work has finished. Retryable postconditions keep polling until success, cancellation, or the verification budget (up to five seconds, bounded by the caller deadline). `unmet` means the condition was not observed within that budget; it does not mean the write was rolled back. Do not blindly repeat a write after an unmet or inconclusive result. For longer workflows, use an explicit wait and inspect the resulting business state.
 
 ## What `browser_observe` returns
 

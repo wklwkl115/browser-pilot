@@ -234,11 +234,14 @@ browser-pilot/
 npm run verify           # 统一检查：生成物 + 格式 + 类型检查 + lint + 测试 + 扩展构建
 npm test                 # 确定性 Node 测试（tests/<layer>/ 与 src/ 分层对应）
 npm run smoke:browser    # 浏览器集成冒烟测试
+npm run eval:browser     # 任务评测：输出成功率、耗时和响应大小
 npm run format           # 用 Prettier 格式化
 npx browser-pilot-mcp status   # 诊断本机安装（源码目录下用 npm run mcp -- status）
 ```
 
 运行时代码位于 `src/` 和 `capture-src/`；`dist/` 与 `bridge/browser_pilot_bridge/` 是生成目录，不纳入版本控制。桥接主机和端口范围由 `bridge/browser_bridge_config.json` 管理 &mdash; 修改后运行 `npm run sync:config`。代码格式由 Prettier（`.prettierrc.json`）统一管理，未格式化的文件会导致检查失败。
+
+评测场景、指标和适用范围见[浏览器任务评测](docs/browser-evaluation.md)；验证语义和安装失败处理见[可靠性与恢复](docs/reliability.md)。
 
 ## 贡献
 

@@ -10,6 +10,7 @@ import { BrowserBridgeServer } from "../../src/bridge/server/BrowserBridgeServer
 import type { BrowserCommandRuntimePort } from "../../src/ports/BrowserCommandRuntimePort.ts";
 import { readExpectedExtensionBuild } from "../../src/bridge/server/extensionBuild.ts";
 import { BROWSER_PILOT_EXTENSION_ID } from "../../src/bridge/server/browserBridgeConfig.ts";
+import { BRIDGE_SECRET_MISMATCH_REASON } from "../../src/bridge/server/BrowserBridgeClientMessageService.ts";
 
 const EXTENSION_ORIGIN = `chrome-extension://${BROWSER_PILOT_EXTENSION_ID}`;
 
@@ -99,7 +100,13 @@ async function reserveConsecutivePorts(host = "127.0.0.1"): Promise<{ blocker: P
 async function openExtension(
 	server: BrowserBridgeServer,
 	tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }],
-	identity: { extensionId?: string; extensionInstanceId?: string; workerBootId?: string; buildId?: string } = {},
+	identity: {
+		extensionId?: string;
+		extensionInstanceId?: string;
+		workerBootId?: string;
+		buildId?: string;
+		bridgeSecret?: string;
+	} = {},
 ): Promise<{ ws: WebSocket; closed: Promise<{ code: number; reason: string }> }> {
 	const ws = new WebSocket(bridgeUrl(server), { origin: EXTENSION_ORIGIN });
 	await new Promise<void>((resolve, reject) => {
@@ -114,6 +121,7 @@ async function openExtension(
 			type: "ext_ready",
 			bridge: {
 				id: identity.extensionId ?? "bridge-1",
+				...(identity.bridgeSecret ? { secret: identity.bridgeSecret } : {}),
 				extensionInstanceId: identity.extensionInstanceId ?? "instance-1",
 				workerBootId: identity.workerBootId ?? "worker-1",
 				build: { buildId: identity.buildId ?? readExpectedExtensionBuild().buildId },
@@ -128,7 +136,13 @@ async function openExtension(
 async function connectExtension(
 	server: BrowserBridgeServer,
 	tabs: Array<Record<string, unknown>> = [{ id: 7, url: "https://example.test/", title: "Example", active: true }],
-	identity: { extensionId?: string; extensionInstanceId?: string; workerBootId?: string; buildId?: string } = {},
+	identity: {
+		extensionId?: string;
+		extensionInstanceId?: string;
+		workerBootId?: string;
+		buildId?: string;
+		bridgeSecret?: string;
+	} = {},
 ): Promise<WebSocket> {
 	const { ws } = await openExtension(server, tabs, identity);
 	const expectedInstanceId = identity.extensionInstanceId ?? "instance-1";
@@ -247,6 +261,25 @@ test("BrowserBridgeServer closes clients that do not complete ext_ready", async 
 		while (server.snapshot().connectedClients && Date.now() < disconnectDeadline)
 			await new Promise((resolve) => setTimeout(resolve, 5));
 		assert.equal(server.snapshot().connectedClients, 0);
+	} finally {
+		await server.stop();
+	}
+});
+
+test("BrowserBridgeServer requires the configured extension pairing secret", async () => {
+	const server = await startIsolatedServer({ bridgeSecret: () => "paired-secret-value-with-at-least-32-chars" });
+	try {
+		const rejected = await openExtension(server);
+		assert.deepEqual(await within(rejected.closed, "secret mismatch close"), {
+			code: 1008,
+			reason: BRIDGE_SECRET_MISMATCH_REASON,
+		});
+		assert.equal(server.snapshot().connectedClients, 0);
+		const accepted = await connectExtension(server, undefined, {
+			bridgeSecret: "paired-secret-value-with-at-least-32-chars",
+		});
+		assert.equal(server.snapshot().extensionConnected, true);
+		accepted.close();
 	} finally {
 		await server.stop();
 	}

@@ -9,10 +9,6 @@ type HookEvent = { seq: number; type: string; data: unknown };
 type HookResponse = { ok: boolean; data?: JsonRecord; error_code?: string };
 type HookApi = {
 	dispatch(command: string, args?: JsonRecord): HookResponse;
-	install(args?: JsonRecord): HookResponse;
-	collect(args?: JsonRecord): HookResponse;
-	status(args?: JsonRecord): HookResponse;
-	uninstall(args?: JsonRecord): HookResponse;
 };
 
 const dispatcherSource = await readFile(
@@ -77,10 +73,18 @@ function pageHarness(overrides: JsonRecord = {}) {
 	};
 	Object.assign(windowObject, { window: windowObject, console: pageConsole });
 	dispatcherScript.runInContext(vm.createContext(sandbox));
-	const api = windowObject.__BROWSER_PILOT_HOOKS__ as HookApi;
-	assert.equal(typeof api?.dispatch, "function");
+	const exposed = windowObject.__BROWSER_PILOT_HOOKS__ as HookApi;
+	assert.equal(typeof exposed?.dispatch, "function");
+	const api = {
+		dispatch: exposed.dispatch,
+		install: (args?: JsonRecord) => exposed.dispatch("hook.install", args),
+		collect: (args?: JsonRecord) => exposed.dispatch("hook.collect", args),
+		status: (args?: JsonRecord) => exposed.dispatch("hook.status", args),
+		uninstall: (args?: JsonRecord) => exposed.dispatch("hook.uninstall", args),
+	};
 	return {
 		api,
+		exposed,
 		console: pageConsole,
 		consoleCalls,
 		posted,
@@ -90,6 +94,17 @@ function pageHarness(overrides: JsonRecord = {}) {
 		},
 	};
 }
+
+test("page hook exposes only an immutable dispatcher and rejects unowned session access", () => {
+	const page = pageHarness();
+	assert.deepEqual(Object.keys(page.exposed).sort(), ["dispatch", "dispatcher_version", "version"]);
+	assert.equal(Object.isFrozen(page.exposed), true);
+	assert.equal(Object.getOwnPropertyDescriptor(page.window, "__BROWSER_PILOT_HOOKS__")?.writable, false);
+	assert.equal(page.api.install({ session_id: "owned", targets: { console: true } }).ok, true);
+	assert.equal(page.exposed.dispatch("hook.collect", {}).error_code, "INVALID_SESSION");
+	assert.equal(page.exposed.dispatch("hook.uninstall", { force: true }).error_code, "INVALID_SESSION");
+	assert.equal(page.api.uninstall({ session_id: "owned" }).ok, true);
+});
 
 function eventsFrom(response: HookResponse): HookEvent[] {
 	return (response.data?.events ?? []) as HookEvent[];

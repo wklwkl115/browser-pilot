@@ -1,72 +1,21 @@
-import { spawn } from "node:child_process";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import http from "node:http";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { WebSocket } from "ws";
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const extensionDir = path.join(root, "bridge", "browser_pilot_bridge");
-const launchTimeoutMs = Math.max(5_000, Number(process.env.BROWSER_PILOT_SMOKE_LAUNCH_TIMEOUT_MS || 20_000));
-
-function delay(ms) {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function existingBrowserCandidates() {
-	const candidates = [process.env.BROWSER_PILOT_SMOKE_BROWSER];
-	if (process.platform === "win32") {
-		candidates.push(
-			path.join(
-				process.env.PROGRAMFILES || "C:\\Program Files",
-				"Google",
-				"Chrome for Testing",
-				"Application",
-				"chrome.exe",
-			),
-			path.join(
-				process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)",
-				"Microsoft",
-				"Edge",
-				"Application",
-				"msedge.exe",
-			),
-			path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
-		);
-	} else if (process.platform === "darwin") {
-		candidates.push(
-			"/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-		);
-	} else {
-		candidates.push(
-			"/usr/bin/google-chrome-for-testing",
-			"/usr/bin/google-chrome",
-			"/usr/bin/chromium",
-			"/usr/bin/chromium-browser",
-			"/usr/bin/microsoft-edge",
-		);
-	}
-	const found = [];
-	for (const candidate of [...new Set(candidates.filter(Boolean))]) {
-		try {
-			await access(candidate);
-			found.push(candidate);
-		} catch {
-			// Try the next conventional browser path.
-		}
-	}
-	return found;
-}
+import {
+	invoke,
+	waitForStatus,
+	resultText,
+	resultEnvelope,
+	repositoryRoot as root,
+	withBrowserHarness,
+} from "./lib/browser-harness.mjs";
 
 async function startFixtureServer() {
 	const server = http.createServer((req, res) => {
 		const requestUrl = new URL(req.url || "/", "http://127.0.0.1");
 		const body = requestUrl.pathname.startsWith("/api/")
 			? JSON.stringify({ ok: true, path: req.url })
-			: `<!doctype html><html><head><title>Browser Pilot Smoke</title></head><body><main><h1 id="smoke-marker">Browser Pilot Smoke</h1><button id="smoke-action" type="button" onclick="this.dataset.clicked='yes'">Run smoke</button><canvas id="visual-surface" width="240" height="120" style="display:block;border:1px solid #000"></canvas><input id="visual-input" aria-label="Visual input"></main><script>
+			: `<!doctype html><html><head><title>Browser Pilot Smoke</title></head><body><main><h1 id="smoke-marker">Browser Pilot Smoke</h1><button id="smoke-action" type="button" onclick="this.dataset.clicked='yes'">Run smoke</button><canvas id="visual-surface" width="240" height="120" style="display:block;border:1px solid #000"></canvas><input id="visual-input" aria-label="Visual input"><form id="smoke-form" onsubmit="return false"><label>Full name <input id="full-name" name="fullName" value="Old Name" placeholder="Your name"></label><label><input id="agree" type="checkbox"> Agree to terms</label><label>Country <select id="country"><option value="us">United States</option><option value="cn">China</option><option value="jp">Japan</option></select></label></form></main><script>
 					const canvas=document.querySelector('#visual-surface'),ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#1266cc';ctx.fillRect(20,20,80,60);
 					canvas.addEventListener('click',event=>{canvas.dataset.clickX=String(Math.round(event.offsetX));canvas.dataset.clickY=String(Math.round(event.offsetY));canvas.dataset.clickCount=String(Number(canvas.dataset.clickCount||0)+1);ctx.fillStyle='#d22';ctx.fillRect(event.offsetX,event.offsetY,8,8)});
 					canvas.addEventListener('mousedown',event=>{canvas.dataset.dragStart=Math.round(event.offsetX)+','+Math.round(event.offsetY)});canvas.addEventListener('mouseup',event=>{canvas.dataset.dragEnd=Math.round(event.offsetX)+','+Math.round(event.offsetY)});
@@ -91,35 +40,6 @@ async function startFixtureServer() {
 		url: "http://127.0.0.1:" + address.port + "/",
 		close: () => new Promise((resolve) => server.close(resolve)),
 	};
-}
-
-async function daemonJson(daemon, pathname, init = {}, timeoutMs = 10_000) {
-	const response = await fetch(`http://${daemon.controlHost}:${daemon.controlPort}${pathname}`, {
-		...init,
-		headers: {
-			"x-browser-pilot-daemon-token": daemon.token,
-			...(init.body ? { "content-type": "application/json" } : {}),
-			...init.headers,
-		},
-		signal: AbortSignal.timeout(timeoutMs),
-	});
-	const value = await response.json();
-	if (!response.ok) throw new Error(`${pathname} returned HTTP ${response.status}: ${JSON.stringify(value)}`);
-	return value;
-}
-
-function resultText(result) {
-	return Array.isArray(result?.content)
-		? result.content.map((item) => (typeof item?.text === "string" ? item.text : "")).join("\n")
-		: "";
-}
-
-function resultEnvelope(result, label) {
-	try {
-		return JSON.parse(resultText(result));
-	} catch {
-		throw new Error(`${label} did not return JSON: ${resultText(result)}`);
-	}
 }
 
 function requireEffect(value, label, options = {}) {
@@ -152,165 +72,7 @@ async function requirePngResource(resourceUri, label) {
 		throw new Error(`${label} resource is not a PNG: ${resourceUri}`);
 }
 
-async function invoke(daemon, tool, params, transportTimeoutMs = 10_000) {
-	const result = await daemonJson(
-		daemon,
-		"/invoke",
-		{
-			method: "POST",
-			body: JSON.stringify({ tool, params, cwd: root, contractIdentity: daemon.contractIdentity }),
-		},
-		transportTimeoutMs,
-	);
-	if (result.ok !== true || result.terminate === true)
-		throw new Error(`${tool} failed: ${resultText(result) || JSON.stringify(result)}`);
-	return result;
-}
-
-async function waitForStatus(daemon, predicate, label) {
-	const deadline = Date.now() + launchTimeoutMs;
-	let last;
-	do {
-		last = await daemonJson(daemon, "/status?tabs=1");
-		if (predicate(last)) return last;
-		await delay(250);
-	} while (Date.now() < deadline);
-	throw new Error(`${label} timed out after ${launchTimeoutMs}ms; last status=${JSON.stringify(last)}`);
-}
-
-function captureProcessOutput(child) {
-	let output = "";
-	const append = (chunk) => {
-		output = (output + String(chunk)).slice(-8_000);
-	};
-	child.stdout?.on("data", append);
-	child.stderr?.on("data", append);
-	return () => output;
-}
-
-async function closeBrowserViaCdp(profileDir) {
-	let endpoint;
-	try {
-		const [portLine, socketPath] = (await readFile(path.join(profileDir, "DevToolsActivePort"), "utf8"))
-			.trim()
-			.split(/\r?\n/);
-		const port = Number(portLine);
-		if (!Number.isInteger(port) || port <= 0 || !socketPath?.startsWith("/")) return false;
-		endpoint = `ws://127.0.0.1:${port}${socketPath}`;
-	} catch {
-		return false;
-	}
-	return await new Promise((resolve) => {
-		const socket = new WebSocket(endpoint);
-		let settled = false;
-		const finish = (value) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			resolve(value);
-		};
-		const timer = setTimeout(() => {
-			socket.terminate();
-			finish(false);
-		}, 2_000);
-		socket.once("open", () => socket.send(JSON.stringify({ id: 1, method: "Browser.close" })));
-		socket.on("message", (data) => {
-			try {
-				const message = JSON.parse(String(data));
-				if (message?.id !== 1) return;
-				if (message.error) finish(false);
-				else finish(true);
-			} catch {
-				/* wait for the Browser.close response or socket close */
-			}
-		});
-		socket.once("close", () => finish(true));
-		socket.once("error", () => finish(false));
-	});
-}
-
-async function stopBrowser(child, profileDir) {
-	if (profileDir && (await closeBrowserViaCdp(profileDir))) await delay(1_000);
-	if (!child || child.exitCode !== null) return;
-	child.kill();
-	const exited = await Promise.race([
-		new Promise((resolve) => child.once("exit", () => resolve(true))),
-		delay(2_000).then(() => false),
-	]);
-	if (exited || child.exitCode !== null) return;
-	child.kill("SIGKILL");
-	await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(2_000)]);
-}
-
-async function removeProfileDir(profileDir) {
-	try {
-		await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-	} catch (error) {
-		const code = error && typeof error === "object" ? String(error.code || "") : "";
-		if (!["EBUSY", "ENOTEMPTY", "EPERM"].includes(code)) throw error;
-		console.warn(
-			`[browser-pilot-smoke] temporary profile cleanup was deferred after a Windows file lock (${code}): ${path.basename(profileDir)}`,
-		);
-	}
-}
-
-async function launchConnectedBrowser(daemon, fixtureUrl, profileRoot) {
-	const candidates = await existingBrowserCandidates();
-	if (!candidates.length)
-		throw new Error("no Chrome/Edge/Chromium executable found; set BROWSER_PILOT_SMOKE_BROWSER");
-	const failures = [];
-	for (const executable of candidates) {
-		const profileDir = await mkdtemp(path.join(profileRoot, "candidate-"));
-		const child = spawn(
-			executable,
-			[
-				"--headless=new",
-				"--disable-gpu",
-				"--no-first-run",
-				"--no-default-browser-check",
-				"--remote-debugging-port=0",
-				"--enable-features=Prerender2",
-				"--disable-features=PreloadingHoldback,Prerender2MemoryControls",
-				`--user-data-dir=${profileDir}`,
-				`--disable-extensions-except=${extensionDir}`,
-				`--load-extension=${extensionDir}`,
-				"--window-size=1280,900",
-				fixtureUrl,
-			],
-			{ stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
-		);
-		const output = captureProcessOutput(child);
-		try {
-			const status = await waitForStatus(
-				daemon,
-				(value) =>
-					value.extensionConnected === true &&
-					Array.isArray(value.tabs) &&
-					value.tabs.some((tab) => String(tab?.url || "").startsWith(fixtureUrl)),
-				`extension handshake via ${executable}`,
-			);
-			return { child, executable, status, output, profileDir };
-		} catch (error) {
-			failures.push({
-				executable,
-				error: error instanceof Error ? error.message : String(error),
-				output: output(),
-			});
-			await stopBrowser(child, profileDir);
-		}
-	}
-	throw new Error(`no browser completed the extension handshake: ${JSON.stringify(failures)}`);
-}
-
-await import("./build-bridge.mjs");
-const profileDir = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-smoke-"));
-const { startDaemon } = await import("../src/apps/daemon/server.ts");
-const fixture = await startFixtureServer();
-const daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true });
-let browser;
-try {
-	if (!daemon.bridgePort) throw new Error("daemon did not start the browser bridge");
-	browser = await launchConnectedBrowser(daemon, fixture.url, profileDir);
+await withBrowserHarness(startFixtureServer, async ({ daemon, browser, fixture }) => {
 	const tab = browser.status.tabs.find((item) => String(item?.url || "").startsWith(fixture.url));
 	const tabId = Number(tab?.tabId ?? tab?.id);
 	if (!Number.isInteger(tabId) || tabId <= 0) throw new Error(`fixture tab was not routable: ${JSON.stringify(tab)}`);
@@ -554,6 +316,105 @@ try {
 	);
 	if (bound.result?.id !== "smoke-action" || bound.result?.tag !== "BUTTON")
 		throw new Error(`browser_execute did not bind the observed ref: ${JSON.stringify(bound)}`);
+
+	// Trusted form input through observed refs: type (replace), check, select, then confirm through observe.
+	const formItems = observed.actionSpace.items;
+	const itemByName = (name) => formItems.find((entity) => entity?.name === name);
+	const nameField = itemByName("Full name");
+	const agreeBox = itemByName("Agree to terms");
+	const countrySelect = itemByName("Country");
+	if (!nameField?.ref || !agreeBox?.ref || !countrySelect?.ref)
+		throw new Error(
+			`browser_observe did not expose the form controls: ${JSON.stringify(formItems.map((item) => item?.name))}`,
+		);
+	if (nameField.value !== "Old Name" || nameField.placeholder !== "Your name")
+		throw new Error(`browser_observe did not project the field value/placeholder: ${JSON.stringify(nameField)}`);
+	const typed = resultEnvelope(
+		await invoke(daemon, "browser_command", {
+			command: { cmd: "input.ref", action: "type", ref: nameField.ref, text: "Ada Lovelace", clear: true },
+			expect: "document.querySelector('#full-name').value === 'Ada Lovelace'",
+		}),
+		"input.ref type",
+	);
+	if (typed.verification?.status !== "verified")
+		throw new Error(`input.ref type was not verified: ${JSON.stringify(typed)}`);
+	const checked = resultEnvelope(
+		await invoke(daemon, "browser_command", {
+			command: { cmd: "input.ref", action: "check", ref: agreeBox.ref },
+			expect: { ref: agreeBox.ref, state: { checked: true } },
+		}),
+		"input.ref check",
+	);
+	if (checked.result?.input?.check?.applied !== true || checked.verification?.status !== "verified")
+		throw new Error(`input.ref check did not toggle and verify: ${JSON.stringify(checked)}`);
+	const selected = resultEnvelope(
+		await invoke(daemon, "browser_command", {
+			command: { cmd: "input.ref", action: "select", ref: countrySelect.ref, label: "China" },
+			expect: "document.querySelector('#country').value === 'cn'",
+		}),
+		"input.ref select",
+	);
+	if (selected.verification?.status !== "verified")
+		throw new Error(`input.ref select was not verified: ${JSON.stringify(selected)}`);
+	const formState = resultEnvelope(
+		await invoke(daemon, "browser_execute", {
+			targetRef,
+			readOnly: true,
+			script: "({name:document.querySelector('#full-name').value,agree:document.querySelector('#agree').checked,country:document.querySelector('#country').value})",
+		}),
+		"form state",
+	).result;
+	if (formState.name !== "Ada Lovelace" || formState.agree !== true || formState.country !== "cn")
+		throw new Error(`trusted form input did not land: ${JSON.stringify(formState)}`);
+	const reobserved = resultEnvelope(
+		await invoke(daemon, "browser_observe", { targetRef, mode: "full", visual: "never" }),
+		"browser_observe after form input",
+	);
+	const reobservedName = reobserved.actionSpace?.items?.find((entity) => entity?.name === "Full name");
+	if (reobservedName?.value !== "Ada Lovelace")
+		throw new Error(`browser_observe did not reflect the typed value: ${JSON.stringify(reobservedName)}`);
+	const unmet = resultEnvelope(
+		await invoke(daemon, "browser_command", {
+			command: { cmd: "input.ref", action: "check", ref: agreeBox.ref, checked: true },
+			expect: { ref: agreeBox.ref, state: { checked: false } },
+		}),
+		"input.ref unmet expectation",
+	);
+	if (
+		unmet.verification?.status !== "unmet" ||
+		unmet.verification.elapsedMs < 4_800 ||
+		unmet.verification.elapsedMs > 7_000
+	)
+		throw new Error(
+			`unmet expectation did not respect its verification budget: ${JSON.stringify(unmet.verification)}`,
+		);
+
+	for (const delayMs of [600, 1_000]) {
+		const delayed = resultEnvelope(
+			await invoke(daemon, "browser_execute", {
+				targetRef,
+				script: `document.body.dataset.delayedReady = 'no'; setTimeout(() => { document.body.dataset.delayedReady = 'yes'; }, ${delayMs}); true`,
+				expect: "document.body.dataset.delayedReady === 'yes'",
+			}),
+			"delayed postcondition",
+		);
+		if (delayed.verification?.status !== "verified") throw new Error(`Delayed ${delayMs}ms postcondition failed`);
+	}
+
+	const waited = resultEnvelope(
+		await invoke(daemon, "browser_command", {
+			targetRef,
+			command: { cmd: "wait.selector", selector: "#smoke-marker", state: "visible" },
+		}),
+		"browser_command wait.selector",
+	);
+	if (waited.code) throw new Error(`wait.selector failed: ${JSON.stringify(waited)}`);
+	const loaded = resultEnvelope(
+		await invoke(daemon, "browser_command", { targetRef, command: { cmd: "wait.loadState", state: "complete" } }),
+		"browser_command wait.loadState",
+	);
+	if (loaded.code) throw new Error(`wait.loadState failed: ${JSON.stringify(loaded)}`);
+
 	resultEnvelope(
 		await invoke(daemon, "browser_execute", {
 			targetRef,
@@ -610,8 +471,19 @@ try {
 		await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }),
 		"semantic mismatch input.ref",
 	);
-	if (semanticMismatch.code !== "BACKEND_NODE_STALE")
+	if (semanticMismatch.code !== "REF_STALE")
 		throw new Error(`input.ref did not reject changed semantics: ${JSON.stringify(semanticMismatch)}`);
+	// Reads stay lenient: a script may still resolve the renamed control and inspect it.
+	const renamedRead = resultEnvelope(
+		await invoke(daemon, "browser_execute", {
+			refs: { action: actionRef },
+			readOnly: true,
+			script: "({text:browserPilot.refs.action?.textContent})",
+		}),
+		"renamed control read",
+	);
+	if (renamedRead.result?.text !== "Changed action")
+		throw new Error(`browser_execute could not read the renamed control: ${JSON.stringify(renamedRead)}`);
 	resultEnvelope(
 		await invoke(daemon, "browser_execute", {
 			targetRef,
@@ -623,7 +495,7 @@ try {
 		await invoke(daemon, "browser_command", { command: { cmd: "input.ref", action: "click", ref: actionRef } }),
 		"occluded input.ref",
 	);
-	if (occluded.code !== "BACKEND_NODE_STALE")
+	if (occluded.code !== "TARGET_OCCLUDED")
 		throw new Error(`input.ref did not reject an occluded target: ${JSON.stringify(occluded)}`);
 	resultEnvelope(
 		await invoke(daemon, "browser_execute", {
@@ -707,6 +579,19 @@ try {
 	const navigationEffect = requireEffect(navigated, "navigation browser_execute", { settled: false });
 	if (!navigationEffect.page?.navigation)
 		throw new Error(`navigation browser_execute did not report navigation: ${JSON.stringify(navigationEffect)}`);
+	const toolNavigated = resultEnvelope(
+		await invoke(daemon, "browser_tabs", {
+			action: "navigate",
+			targetRef,
+			url: `${fixture.url}tool-navigated`,
+			waitUntil: "complete",
+		}),
+		"browser_tabs navigate",
+	);
+	if (!String(toolNavigated.tabs?.[0]?.url || "").startsWith(`${fixture.url}tool-navigated`))
+		throw new Error(`browser_tabs navigate did not land on the target: ${JSON.stringify(toolNavigated)}`);
+	if (toolNavigated.effect?.page?.navigation?.to !== `${fixture.url}tool-navigated`)
+		throw new Error(`browser_tabs navigate did not report its navigation: ${JSON.stringify(toolNavigated.effect)}`);
 
 	console.log(
 		JSON.stringify(
@@ -734,6 +619,11 @@ try {
 					"canonical-observe",
 					"direct-observe-content",
 					"ref-execute",
+					"form-value-projection",
+					"input-ref-type-check-select",
+					"unmet-expectation-bounded-budget",
+					"delayed-postcondition-success",
+					"wait-selector-loadstate",
 					"ref-rerender-rebound",
 					"ref-input-effect",
 					"ref-observation-continuity",
@@ -744,15 +634,11 @@ try {
 					"burst-effect",
 					"new-tab-effect",
 					"navigation-effect",
+					"tabs-navigate",
 				],
 			},
 			null,
 			2,
 		),
 	);
-} finally {
-	await stopBrowser(browser?.child, browser?.profileDir);
-	await daemon.close();
-	await fixture.close();
-	await removeProfileDir(profileDir);
-}
+});

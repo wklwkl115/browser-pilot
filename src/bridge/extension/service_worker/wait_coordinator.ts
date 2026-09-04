@@ -1,4 +1,4 @@
-import { BROWSER_PILOT_ERROR_CODES, browserPilotError } from "./runtimeSupport.js";
+import { BROWSER_PILOT_ERROR_CODES, browserPilotError, runtimeErrorMessage } from "./runtimeSupport.js";
 import {
 	cleanupBrowserPilotCdpTab,
 	releaseBrowserPilotCdpDomains,
@@ -29,6 +29,8 @@ type TerminalWaitRecord = JsonRecord & {
 
 const BROWSER_PILOT_TERMINAL_WAIT_MAX_AGE_MS = 300000;
 const BROWSER_PILOT_TERMINAL_WAIT_MAX_RECORDS = 200;
+const BROWSER_PILOT_WAIT_ERROR_DIAGNOSTIC_LIMIT = 20;
+const BROWSER_PILOT_WAIT_ERROR_MESSAGE_LIMIT = 500;
 
 class WaitCoordinator {
 	activeWaits = new Map<string, BrowserPilotWaitRecord>();
@@ -350,6 +352,44 @@ function recordWaitEvent(record: BrowserPilotWaitRecord, event?: JsonRecord): vo
 	record.cdpEvents.push({ t: record.lastEventAt, ...(event || {}) });
 	if (record.cdpEvents.length > 200) record.cdpEvents.splice(0, record.cdpEvents.length - 200);
 }
+function recordWaitDiagnosticError(
+	record: BrowserPilotWaitRecord,
+	source: string,
+	error: unknown,
+	details: JsonRecord = {},
+): JsonRecord {
+	const message = runtimeErrorMessage(error).slice(0, BROWSER_PILOT_WAIT_ERROR_MESSAGE_LIMIT);
+	record.lastError = message;
+	const diagnostics = record.diagnostics;
+	let existing: JsonRecord | undefined;
+	for (let index = diagnostics.length - 1; index >= 0; index -= 1) {
+		const candidate = diagnostics[index];
+		if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+		const item = candidate as JsonRecord;
+		if (item.kind === "wait_error" && item.source === source && item.error === message) {
+			existing = item;
+			break;
+		}
+	}
+	const now = Date.now();
+	if (existing) {
+		existing.occurrences = Number(existing.occurrences || 1) + 1;
+		existing.lastAt = now;
+	} else {
+		const errorIndexes = diagnostics
+			.map((item, index) =>
+				item && typeof item === "object" && !Array.isArray(item) && (item as JsonRecord).kind === "wait_error"
+					? index
+					: -1,
+			)
+			.filter((index) => index >= 0);
+		if (errorIndexes.length >= BROWSER_PILOT_WAIT_ERROR_DIAGNOSTIC_LIMIT) diagnostics.splice(errorIndexes[0]!, 1);
+		existing = { t: now, kind: "wait_error", source, error: message, occurrences: 1, ...details };
+		diagnostics.push(existing);
+	}
+	recordWaitEvent(record, { method: "wait.error", source, error: message, ...details });
+	return existing;
+}
 function shouldAbortWaitCleanupReason(reason?: string): boolean {
 	// Completing a wait is cleanup, not cancellation.  Aborting the wait's own
 	// controller while finishBrowserPilotWait() is building an OK/TIMEOUT/failed result
@@ -515,6 +555,7 @@ export {
 	normalizeWaitState,
 	registerWait,
 	recordWaitEvent,
+	recordWaitDiagnosticError,
 	shouldAbortWaitCleanupReason,
 	clearWait,
 	cleanupBrowserPilotWait,

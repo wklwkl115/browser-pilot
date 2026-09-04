@@ -481,7 +481,7 @@ test("commands execution: browser_command writes return domain data and effect",
 	assert.equal((outcome.result as Record<string, unknown>).active, true);
 	assert.deepEqual(
 		{ ...(outcome.effect as Record<string, unknown>), elapsedMs: 0 },
-		{ observed: false, changed: null, settled: false, elapsedMs: 0 },
+		{ observed: false, unobservedReason: "fingerprint-unavailable", changed: null, settled: false, elapsedMs: 0 },
 	);
 });
 
@@ -876,7 +876,7 @@ test("commands execution: browser_execute separates script result and effect", a
 	assert.deepEqual(envelope.result, { answer: 42, script: "return 42" });
 	assert.deepEqual(
 		{ ...(envelope.effect as Record<string, unknown>), elapsedMs: 0 },
-		{ observed: false, changed: null, settled: false, elapsedMs: 0 },
+		{ observed: false, unobservedReason: "fingerprint-unavailable", changed: null, settled: false, elapsedMs: 0 },
 	);
 });
 
@@ -1031,6 +1031,14 @@ test("commands execution: browser_execute binds refs and routes to their owner",
 		{ ...(execute?.args[1] as Record<string, unknown>), signal: undefined },
 		{ browserSessionId: "session-1", tabId: 7, timeoutMs: 15000, accessMode: "write", signal: undefined },
 	);
+});
+
+test("commands execution: browser_execute injects stdlib for destructured namespace access", async () => {
+	const runtime = createRuntime();
+	const command = defineCommand((context) => defineExecuteCommand(context), runtime);
+	await command.execute({ script: "const { refs } = browserPilot; return Object.keys(refs)" });
+	const execute = runtime.calls.find((call) => call.name === "executeJavaScript");
+	assert.match(String(execute?.args[0]), /const browserPilot =/);
 });
 
 test("commands execution: read-only ref literals skip write lifecycle", async () => {

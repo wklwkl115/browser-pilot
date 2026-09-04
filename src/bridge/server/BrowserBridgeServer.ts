@@ -53,6 +53,12 @@ export class BrowserBridgeServer {
 			portRangeEnd?: number;
 			maxPayloadBytes?: number;
 			handshakeTimeoutMs?: number;
+			/**
+			 * Shared secret the extension must present in its ext_ready handshake. The Origin header
+			 * alone only proves the caller is a browser page; any local process can forge it against
+			 * the loopback bridge. Omit to accept any extension build (hermetic tests, dev checkouts).
+			 */
+			bridgeSecret?: string | (() => string | undefined);
 		} = {},
 	) {
 		this.host = options.host || process.env.BROWSER_PILOT_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
@@ -97,6 +103,7 @@ export class BrowserBridgeServer {
 			},
 			notifyExtensionReady: () => this.notifyExtensionReady(),
 			handshakeTimeoutMs: options.handshakeTimeoutMs,
+			bridgeSecret: options.bridgeSecret,
 		});
 		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws, reason) =>
 			this.unregisterClient(ws, reason),
