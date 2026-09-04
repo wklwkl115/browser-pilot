@@ -22,11 +22,12 @@ import {
 	mkdirSync,
 	openSync,
 	readFileSync,
+	renameSync,
 	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { packageRoot } from "./packageInfo.js";
 import {
@@ -90,6 +91,73 @@ export function startLockfilePath(): string {
 	return path.join(stateDir(), "browser-daemon.starting.json");
 }
 
+export function bridgeSecretPath(root = stateDir()): string {
+	return path.join(root, "bridge-secret");
+}
+
+export function ensurePrivateStateDirectory(root = stateDir()): void {
+	mkdirSync(root, { recursive: true, mode: 0o700 });
+	if (process.platform !== "win32") {
+		chmodSync(root, 0o700);
+		return;
+	}
+	const username = process.env.USERNAME;
+	if (!username) throw new Error("Cannot secure Browser Pilot state: USERNAME is unavailable");
+	const principal = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${username}` : username;
+	const result = spawnSync(
+		"icacls",
+		[
+			root,
+			"/inheritance:r",
+			"/grant:r",
+			`${principal}:(OI)(CI)(F)`,
+			"*S-1-5-18:(OI)(CI)(F)",
+			"*S-1-5-32-544:(OI)(CI)(F)",
+			"/T",
+			"/C",
+		],
+		{ encoding: "utf8", windowsHide: true },
+	);
+	if (result.error || result.status !== 0)
+		throw new Error(
+			`Cannot secure Browser Pilot state ACL: ${result.error?.message || result.stderr.trim() || `icacls exited ${result.status}`}`,
+		);
+	// /inheritance:r applies recursively, so existing child files also need explicit grants before
+	// their inherited entries are removed. Keep inheritable grants on the root for future files.
+	const childResult = spawnSync(
+		"icacls",
+		[root, "/grant:r", `${principal}:(F)`, "*S-1-5-18:(F)", "*S-1-5-32-544:(F)", "/T", "/C"],
+		{ encoding: "utf8", windowsHide: true },
+	);
+	if (childResult.error || childResult.status !== 0)
+		throw new Error(
+			`Cannot secure Browser Pilot child ACLs: ${childResult.error?.message || childResult.stderr.trim() || `icacls exited ${childResult.status}`}`,
+		);
+}
+
+export function readBridgeSecret(root = stateDir()): string | undefined {
+	try {
+		const secret = readFileSync(bridgeSecretPath(root), "utf8").trim();
+		return secret.length >= 32 ? secret : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export function writeBridgeSecret(secret: string, root = stateDir()): void {
+	if (secret.length < 32) throw new Error("browser bridge secret must contain at least 32 characters");
+	ensurePrivateStateDirectory(root);
+	// Never truncate the live pairing file: a failed update must leave the previous secret usable.
+	const temporary = path.join(root, `.bridge-secret-${randomUUID()}.tmp`);
+	try {
+		writeFileSync(temporary, `${secret}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+		if (process.platform !== "win32") chmodSync(temporary, 0o600);
+		renameSync(temporary, bridgeSecretPath(root));
+	} finally {
+		rmSync(temporary, { force: true });
+	}
+}
+
 export function readLockfile(): DaemonInfo | undefined {
 	try {
 		const parsed = JSON.parse(readFileSync(lockfilePath(), "utf8")) as Partial<DaemonInfo>;
@@ -108,7 +176,7 @@ export function readLockfile(): DaemonInfo | undefined {
 }
 
 export function writeLockfile(info: DaemonInfo): void {
-	mkdirSync(path.dirname(lockfilePath()), { recursive: true, mode: 0o700 });
+	ensurePrivateStateDirectory(path.dirname(lockfilePath()));
 	writeFileSync(lockfilePath(), `${JSON.stringify(info, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 	if (process.platform !== "win32") chmodSync(lockfilePath(), 0o600);
 }
@@ -179,7 +247,7 @@ function releaseOwnedStartLock(token: string): void {
 }
 
 function tryAcquireStartLock(): { release: () => void } | undefined {
-	mkdirSync(path.dirname(startLockfilePath()), { recursive: true, mode: 0o700 });
+	ensurePrivateStateDirectory(path.dirname(startLockfilePath()));
 	try {
 		const fd = openSync(startLockfilePath(), "wx", 0o600);
 		const token = randomUUID();

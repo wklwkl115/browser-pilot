@@ -22,7 +22,13 @@ import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
-import { MAX_CONTROL_BODY_BYTES, writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
+import {
+	MAX_CONTROL_BODY_BYTES,
+	writeLockfile,
+	removeLockfile,
+	readBridgeSecret,
+	type DaemonInfo,
+} from "./daemonControl.js";
 import { daemonVersion } from "./packageInfo.js";
 import {
 	compareDaemonContractIdentity,
@@ -31,6 +37,7 @@ import {
 } from "./contractIdentity.js";
 
 export const DAEMON_VERSION = daemonVersion();
+const DEFAULT_DAEMON_IDLE_TIMEOUT_MS = 15 * 60_000;
 
 export interface DaemonHandle {
 	controlHost: string;
@@ -44,6 +51,8 @@ export interface DaemonHandle {
 export interface StartDaemonOptions {
 	/** Write the user-local singleton lockfile (default true). Tests pass false. */
 	writeLock?: boolean;
+	/** Explicit pairing secret for an isolated embedded bridge; otherwise use user-local pairing state. */
+	bridgeSecret?: string;
 	/**
 	 * Bind the BrowserBridgeServer immediately on startup instead of lazily on the
 	 * first /connect or /invoke (default: same as writeLock). Eager binding lets the
@@ -52,6 +61,8 @@ export interface StartDaemonOptions {
 	 * tests (writeLock:false) skip it to avoid binding a real port.
 	 */
 	startBridgeEagerly?: boolean;
+	/** Exit after this long without control traffic while no extension is connected. Zero disables it. */
+	idleTimeoutMs?: number;
 	/** Called after /shutdown closes the server, or by its bounded terminal fallback if a close callback stalls. */
 	onShutdown?: () => void;
 	/** Hermetic test injection: replace the command registry without adding a public validation route. */
@@ -83,7 +94,16 @@ type DaemonControlContext = {
 	draining: boolean;
 	close: () => Promise<void>;
 	onShutdown: StartDaemonOptions["onShutdown"];
+	lastActivityAt: number;
+	activeControlRequests: number;
 };
+
+function daemonIdleTimeoutMs(options: StartDaemonOptions, writeLock: boolean): number {
+	const configured = options.idleTimeoutMs ?? process.env.BROWSER_PILOT_DAEMON_IDLE_TIMEOUT_MS;
+	if (configured === undefined) return writeLock ? DEFAULT_DAEMON_IDLE_TIMEOUT_MS : 0;
+	const value = Number(configured);
+	return Number.isFinite(value) ? Math.max(0, Math.round(value)) : writeLock ? DEFAULT_DAEMON_IDLE_TIMEOUT_MS : 0;
+}
 
 function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 	return new Promise((resolve, reject) => {
@@ -393,7 +413,10 @@ async function handleControlRequest(
 /** Construct the daemon, start its control server, and (optionally) write the lockfile. */
 export async function startDaemon(options: StartDaemonOptions = {}): Promise<DaemonHandle> {
 	const writeLock = options.writeLock ?? true;
-	const bridgeServer = new BrowserBridgeServer();
+	const bridgeServer = new BrowserBridgeServer({
+		bridgeSecret: options.bridgeSecret ?? (writeLock ? readBridgeSecret : undefined),
+	});
+	const idleTimeoutMs = daemonIdleTimeoutMs(options, writeLock);
 
 	let startPromise: Promise<void> | undefined;
 	const ensureStarted: EnsureStarted = async () => {
@@ -421,9 +444,11 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 
 	const token = randomBytes(24).toString("hex");
 	let closing = false;
+	let idleTimer: NodeJS.Timeout | undefined;
 	const close = async (): Promise<void> => {
 		if (closing) return;
 		closing = true;
+		if (idleTimer) clearInterval(idleTimer);
 		await new Promise<void>((resolve) => {
 			server.close(() => resolve());
 			server.closeIdleConnections?.();
@@ -448,8 +473,22 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		draining: false,
 		close,
 		onShutdown: options.onShutdown,
+		lastActivityAt: Date.now(),
+		activeControlRequests: 0,
 	};
-	const server = http.createServer((req, res) => void handleControlRequest(controlContext, req, res));
+	const server = http.createServer((req, res) => {
+		controlContext.lastActivityAt = Date.now();
+		controlContext.activeControlRequests += 1;
+		let completed = false;
+		const complete = () => {
+			if (completed) return;
+			completed = true;
+			controlContext.activeControlRequests = Math.max(0, controlContext.activeControlRequests - 1);
+		};
+		res.once("finish", complete);
+		res.once("close", complete);
+		void handleControlRequest(controlContext, req, res);
+	});
 
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
@@ -488,6 +527,23 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 			contractIdentity,
 		};
 		writeLockfile(info);
+	}
+
+	if (idleTimeoutMs > 0) {
+		idleTimer = setInterval(
+			() => {
+				if (closing || controlContext.draining || controlContext.activeControlRequests > 0) return;
+				if (bridgeServer.running && bridgeServer.snapshot().connectedClients > 0) {
+					controlContext.lastActivityAt = Date.now();
+					return;
+				}
+				if (Date.now() - controlContext.lastActivityAt < idleTimeoutMs) return;
+				controlContext.draining = true;
+				scheduleShutdown(controlContext);
+			},
+			Math.max(10, Math.min(60_000, Math.floor(idleTimeoutMs / 4))),
+		);
+		idleTimer.unref();
 	}
 
 	return {

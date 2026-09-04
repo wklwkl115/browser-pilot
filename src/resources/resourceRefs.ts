@@ -29,7 +29,7 @@ export function selectorFromRef(descriptor: ResourceRefDescriptor): string | und
 	return undefined;
 }
 
-const REF_STORE_MAX_ENTRIES = 10_000;
+const REF_STORE_MAX_ENTRIES = 12_000;
 const PRUNE_EVERY_REGISTRATIONS = 128;
 const refStore = new Map<string, RegisteredRefRecord>();
 let registrationsSincePrune = 0;

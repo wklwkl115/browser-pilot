@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import type { BrowserPilotChromeTab } from "../../src/bridge/extension/service_worker/types.ts";
 
 type CreatedListener = (tab: BrowserPilotChromeTab) => void;
@@ -10,6 +11,7 @@ const createCalls: Array<Record<string, unknown>> = [];
 const cdpCalls: Array<{ method: string; params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
 let executeCalls = 0;
 let backgroundTab = false;
+let pageEval: ((script: string) => unknown) | undefined;
 let executeResult: unknown = [{ result: { ok: true, data: "main-result" } }];
 
 const chromeStub = {
@@ -36,9 +38,18 @@ const chromeStub = {
 		},
 	},
 	scripting: {
-		async executeScript() {
+		async executeScript(options: { func: (script: string) => Promise<unknown>; args: string[] }) {
 			executeCalls += 1;
 			for (const listener of createdListeners) listener({ id: 9, url: "https://new.example/", title: "New tab" });
+			if (pageEval)
+				return [
+					{
+						result: await runInNewContext(
+							`(${options.func.toString()})(${JSON.stringify(options.args[0])})`,
+							{ eval: pageEval },
+						),
+					},
+				];
 			return executeResult;
 		},
 	},
@@ -73,6 +84,7 @@ function resetState(): void {
 	cdpCalls.length = 0;
 	executeCalls = 0;
 	backgroundTab = false;
+	pageEval = undefined;
 	executeResult = [{ result: { ok: true, data: "main-result" } }];
 }
 
@@ -211,4 +223,51 @@ test("exec dispatch never replays a timed-out MAIN-world script through CDP", as
 		["Runtime.evaluate"],
 	);
 	assert.equal(messages(csp).at(-1)?.result, "cdp-result");
+});
+
+test("exec dispatch preserves a pre-execution CSP denial and safely falls back to CDP", async () => {
+	resetState();
+	pageEval = () => {
+		throw new EvalError("Refused to evaluate a string because unsafe-eval violates Content Security Policy");
+	};
+	const value = socket();
+	await handleWsExec({ id: "csp-outer", tabId: 7, code: "21 * 2" }, value);
+	assert.equal(executeCalls, 1);
+	assert.deepEqual(
+		cdpCalls.map((call) => call.method),
+		["Runtime.evaluate"],
+	);
+	assert.equal(messages(value).at(-1)?.result, "cdp-result");
+});
+
+test("exec dispatch does not replay a rejection after the injected script started", async () => {
+	resetState();
+	let writes = 0;
+	pageEval = () => {
+		writes++;
+		return Promise.reject(new EvalError("unsafe-eval blocked after a side effect"));
+	};
+	const value = socket();
+	await handleWsExec({ id: "after-start", tabId: 7, code: "submitPayment()" }, value);
+	assert.equal(writes, 1);
+	assert.equal(cdpCalls.length, 0);
+	assert.equal(messages(value).at(-1)?.type, "error");
+});
+
+test("exec dispatch does not treat a user-script CSP-like error as a pre-execution denial", async () => {
+	resetState();
+	const effect = { count: 0 };
+	pageEval = (script) => runInNewContext(script, { effect });
+	const value = socket();
+	await handleWsExec(
+		{
+			id: "user-error",
+			tabId: 7,
+			code: "effect.count++; throw new EvalError('unsafe-eval denied after mutation')",
+		},
+		value,
+	);
+	assert.equal(effect.count, 1);
+	assert.equal(cdpCalls.length, 0);
+	assert.equal(messages(value).at(-1)?.type, "error");
 });

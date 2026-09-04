@@ -57,7 +57,8 @@
     "format:check": "prettier --check src tests scripts capture-src docs .github index.ts eslint.config.js \"*.md\" \"*.json\"",
     "verify": "npm run check:generated && npm run format:check && npm run typecheck && npm run typecheck:bridge && npm run typecheck:tests && npm run lint && npm test && npm run build:bridge",
     "smoke:browser": "node --import tsx scripts/run-browser-smoke.mjs --quiet",
-    "prepack": "npm run check:generated && npm run build && node scripts/build-bridge.mjs --quiet"
+    "prepack": "npm run check:generated && npm run build && node scripts/build-bridge.mjs --quiet",
+    "eval:browser": "node --import tsx scripts/run-browser-eval.mjs --quiet"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

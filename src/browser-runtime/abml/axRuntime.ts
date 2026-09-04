@@ -21,6 +21,7 @@ import type { SnapshotGeometryEntry } from "../../kernels/abml/identityBootstrap
 import type { PaintOrderEntry, RelationAnchor } from "../../kernels/abml/relations.js";
 
 export type AbmlAxRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
+const MAX_PUBLISHED_AX_ONLY_REFS = 500;
 
 export type AxReadRuntimeOptions = {
 	browserSessionId?: string;
@@ -999,9 +1000,17 @@ export function mergeAxIntoDomEntities(
 			},
 		});
 	}
-	const appended = merged.unmatchedAx.map((item) => {
+	const publishedAxOnly = merged.unmatchedAx.slice(0, MAX_PUBLISHED_AX_ONLY_REFS);
+	const axOnlyTruncated = publishedAxOnly.length !== merged.unmatchedAx.length;
+	const appended = publishedAxOnly.map((item) => {
 		const refId = registerRefDescriptor({ descriptor: item.descriptor });
 		return { ...item.entity, ref: refId };
 	});
-	return { entities: [...merged.merged, ...appended], diagnostics: merged.diagnostics };
+	return {
+		entities: [...merged.merged, ...appended],
+		diagnostics: {
+			...merged.diagnostics,
+			...(axOnlyTruncated ? { degraded: true, publishedAxOnly: appended.length, axOnlyTruncated: true } : {}),
+		},
+	};
 }

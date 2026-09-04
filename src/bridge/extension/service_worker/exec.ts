@@ -137,7 +137,7 @@ function buildPageScript(code: unknown): string {
 		`
       const errMsg = e.message || String(e);
       return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: errMsg, details: e.details || {} },
-        csp: errMsg.includes('Refused to evaluate') || errMsg.includes('unsafe-eval') || errMsg.includes('Content Security Policy') };
+        csp: false };
   `,
 	);
 }
@@ -262,7 +262,24 @@ async function executeInMainWorld(tabId: number, executionCode: string, timeoutM
 		const executePromise = chrome.scripting.executeScript({
 			target: { tabId },
 			world: "MAIN",
-			func: async (script: string) => await (0, eval)(script),
+			func: async (script: string) => {
+				let running: unknown;
+				try {
+					// Capture only a synchronous rejection of the outer eval: the user script has not run.
+					running = (0, eval)(script);
+				} catch (error) {
+					const detail = error as { name?: unknown; message?: unknown };
+					const name = String(detail?.name ?? "Error");
+					const message = String(detail?.message ?? error);
+					return {
+						ok: false,
+						error: { name, message },
+						csp: name === "EvalError" && /unsafe-eval|content security policy/i.test(message),
+					};
+				}
+				// Do not classify a later rejection as safe to replay; side effects may already have happened.
+				return await running;
+			},
 			args: [buildPageScript(executionCode)],
 		});
 		const result = await withTimeout(

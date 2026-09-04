@@ -1,4 +1,5 @@
 import { BROWSER_PILOT_BRIDGE_PORT } from "./config";
+import { BROWSER_PILOT_BRIDGE_SECRET_PLACEHOLDER } from "../../security/bridgePairing.js";
 import { chromeApi as chrome } from "./runtimeEnv";
 import {
 	isScriptable,
@@ -283,6 +284,7 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
 			type: "ext_ready",
 			bridge: {
 				...browserPilotBridgeInfo(),
+				secret: BROWSER_PILOT_BRIDGE_SECRET_PLACEHOLDER,
 				bridgePort: port,
 				primaryPort,
 				...(extensionInstanceId ? { extensionInstanceId } : {}),

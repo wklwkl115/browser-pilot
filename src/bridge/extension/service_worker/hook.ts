@@ -39,17 +39,23 @@ async function injectBrowserPilotDispatcherViaCdp(tabId: number): Promise<Browse
 	return { ok: true, data: { method: "cdp_fallback" } };
 }
 
-async function confirmBrowserPilotDispatcher(tabId: number, method: string): Promise<BrowserPilotBridgeResponse> {
-	const ping = await callPageBrowserPilot(tabId, "hook.status", {}).catch((e: unknown) =>
-		browserPilotError(BROWSER_PILOT_ERROR_CODES.INJECTION_FAILED, e instanceof Error ? e.message : String(e), {
-			method,
-		}),
+async function confirmBrowserPilotDispatcher(
+	tabId: number,
+	method: string,
+	sessionId?: string,
+): Promise<BrowserPilotBridgeResponse> {
+	const ping = await callPageBrowserPilot(tabId, "hook.status", sessionId ? { session_id: sessionId } : {}).catch(
+		(e: unknown) =>
+			browserPilotError(BROWSER_PILOT_ERROR_CODES.INJECTION_FAILED, e instanceof Error ? e.message : String(e), {
+				method,
+			}),
 	);
 	if (
 		ping &&
 		(ping.ok ||
 			ping.error_code === BROWSER_PILOT_ERROR_CODES.NOT_INSTALLED ||
-			ping.error_code === BROWSER_PILOT_ERROR_CODES.NO_SESSION)
+			ping.error_code === BROWSER_PILOT_ERROR_CODES.NO_SESSION ||
+			ping.error_code === BROWSER_PILOT_ERROR_CODES.SESSION_NOT_FOUND)
 	)
 		return { ok: true, data: { method, ping: ping.ok ? "installed" : "loaded" } };
 	return browserPilotError(
@@ -65,8 +71,10 @@ function browserPilotHookSessionId(msg: BrowserPilotBridgeCommand | null | undef
 	return raw === undefined || raw === null || raw === "" ? null : String(raw);
 }
 
-function browserPilotHookSessionArgs(msg: BrowserPilotBridgeCommand): JsonRecord {
-	const sessionId = browserPilotHookSessionId(msg);
+function browserPilotHookSessionArgs(msg: BrowserPilotBridgeCommand, tabId?: number): JsonRecord {
+	const sessionId =
+		browserPilotHookSessionId(msg) ??
+		(tabId === undefined ? null : String(browserPilotSessions.get(Number(tabId))?.session_id || "") || null);
 	return sessionId ? { session_id: sessionId } : {};
 }
 
@@ -179,9 +187,16 @@ function expandBrowserPilotHookTargets(input: unknown): {
 	return { targets, expanded, rejected };
 }
 
-function hookInstallArgsFromMessage(msg: BrowserPilotBridgeCommand, targetOverride?: JsonRecord): JsonRecord {
+function hookInstallArgsFromMessage(
+	msg: BrowserPilotBridgeCommand,
+	tabId: number,
+	targetOverride?: JsonRecord,
+): JsonRecord {
+	const currentSessionId = browserPilotSessions.get(Number(tabId))?.session_id;
+	const generatedSessionId =
+		globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 	return {
-		session_id: msg.session_id || msg.sessionId || "default",
+		session_id: msg.session_id || msg.sessionId || currentSessionId || `browser-pilot-hook-${generatedSessionId}`,
 		targets: targetOverride || msg.targets,
 		options: msg.options,
 		buffer_size:
@@ -194,7 +209,7 @@ function hookInstallArgsFromMessage(msg: BrowserPilotBridgeCommand, targetOverri
 	};
 }
 
-async function ensureBrowserPilotDispatcher(tabId: number): Promise<BrowserPilotBridgeResponse> {
+async function ensureBrowserPilotDispatcher(tabId: number, sessionId?: string): Promise<BrowserPilotBridgeResponse> {
 	const timeoutMs = 3000;
 	let scriptingErr: unknown;
 	try {
@@ -207,7 +222,7 @@ async function ensureBrowserPilotDispatcher(tabId: number): Promise<BrowserPilot
 			timeoutMs,
 			"chrome.scripting.executeScript(files)",
 		);
-		const confirmed = await confirmBrowserPilotDispatcher(tabId, "scripting");
+		const confirmed = await confirmBrowserPilotDispatcher(tabId, "scripting", sessionId);
 		if (confirmed.ok) return confirmed;
 		scriptingErr = new Error("readiness check failed");
 	} catch (injectErr) {
@@ -216,7 +231,7 @@ async function ensureBrowserPilotDispatcher(tabId: number): Promise<BrowserPilot
 	try {
 		const cdp = await injectBrowserPilotDispatcherViaCdp(tabId);
 		if (cdp.ok) {
-			const confirmed = await confirmBrowserPilotDispatcher(tabId, "cdp_fallback");
+			const confirmed = await confirmBrowserPilotDispatcher(tabId, "cdp_fallback", sessionId);
 			if (confirmed.ok)
 				return {
 					ok: true,
@@ -391,10 +406,10 @@ async function installHook(
 ): Promise<BrowserPilotBridgeResponse> {
 	const targets = resolveHookInstallTargets(cmd, msg);
 	if (targets.error) return targets.error;
-	const injected = await ensureBrowserPilotDispatcher(tabId);
+	const args = hookInstallArgsFromMessage(msg, tabId, targets.targetOverride);
+	const injected = await ensureBrowserPilotDispatcher(tabId, String(args.session_id || "") || undefined);
 	if (!injected.ok) return injected;
-	const args = hookInstallArgsFromMessage(msg, targets.targetOverride);
-	const beforeStatus = await callPageBrowserPilot(tabId, "hook.status", browserPilotHookSessionArgs(msg), {
+	const beforeStatus = await callPageBrowserPilot(tabId, "hook.status", browserPilotHookSessionArgs(msg, tabId), {
 		timeoutMs: msg.timeoutMs ?? msg.timeout_ms,
 	}).catch(() => null);
 	let response = await callPageBrowserPilot(tabId, "hook.install", args);
@@ -412,7 +427,7 @@ async function hookStatus(
 	tabId: number,
 	msg: BrowserPilotBridgeCommand,
 ): Promise<BrowserPilotBridgeResponse> {
-	const response = await callPageBrowserPilot(tabId, "hook.status", browserPilotHookSessionArgs(msg), {
+	const response = await callPageBrowserPilot(tabId, "hook.status", browserPilotHookSessionArgs(msg, tabId), {
 		timeoutMs: msg.timeoutMs ?? msg.timeout_ms,
 	});
 	const session = browserPilotSessions.get(tabId);
@@ -433,7 +448,7 @@ async function collectHookEvents(
 		tabId,
 		"hook.collect",
 		{
-			...browserPilotHookSessionArgs(msg),
+			...browserPilotHookSessionArgs(msg, tabId),
 			since_seq: msg.sinceSeq ?? msg.since_seq,
 			limit: msg.limit,
 			event_types: msg.eventTypes ?? msg.event_types,
@@ -450,7 +465,7 @@ async function runHookSessionCommand(
 	msg: BrowserPilotBridgeCommand,
 ): Promise<BrowserPilotBridgeResponse> {
 	return (
-		(await callPageBrowserPilot(tabId, cmd, browserPilotHookSessionArgs(msg))) ||
+		(await callPageBrowserPilot(tabId, cmd, browserPilotHookSessionArgs(msg, tabId))) ||
 		browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, cmd + " returned no response", { cmd })
 	);
 }
@@ -514,7 +529,7 @@ async function uninstallHook(
 			{ tabId, session_id: requestedSessionId, current_session_id: localSession.session_id },
 		);
 	}
-	const response = await callPageBrowserPilot(tabId, "hook.uninstall", browserPilotHookSessionArgs(msg));
+	const response = await callPageBrowserPilot(tabId, "hook.uninstall", browserPilotHookSessionArgs(msg, tabId));
 	if (shouldCleanupHookUninstall(response))
 		await cleanupUninstalledHook(
 			tabId,

@@ -239,12 +239,15 @@ browser-pilot/
 ```bash
 npm run verify           # Canonical gate: generated files + format + typecheck + lint + test + bridge build
 npm test                 # Deterministic Node tests (tests/<layer>/ mirrors src/)
-npm run smoke:browser    # Browser integration smoke test
+npm run smoke:browser    # Browser integration smoke test (headless Chrome/Edge; also runs in CI)
+npm run eval:browser     # Repeatable task evaluation; JSON success/latency/output-size report
 npm run format           # Apply Prettier
 npx browser-pilot-mcp status   # Diagnose a local install (source checkout: npm run mcp -- status)
 ```
 
 Runtime source lives under `src/` and `capture-src/`; `dist/` and `bridge/browser_pilot_bridge/` are generated outputs and are not tracked. The bridge host and port range are owned by `bridge/browser_bridge_config.json` &mdash; run `npm run sync:config` after changing it. Formatting is owned by Prettier (`.prettierrc.json`); the gate fails on unformatted files.
+
+See [Browser task evaluation](docs/browser-evaluation.md) for scenarios, metrics, and interpretation limits, and [Reliability and recovery](docs/reliability.md) for verification and installation failure semantics.
 
 ## Contributing
 

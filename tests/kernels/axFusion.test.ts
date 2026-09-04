@@ -151,6 +151,11 @@ test("coincident geometry tolerates names that differ only by a live counter", (
 		[axEntity("button", "Cancel", { box })],
 	);
 	assert.equal(renamed.diagnostics.axEnriched, 0);
+	const amountChanged = mergeDomAndAxEntities(
+		[domEntity("bp-ref://dom/transfer", { name: "Transfer $100", geometry: { box } })],
+		[axEntity("button", "Transfer $900", { box })],
+	);
+	assert.equal(amountChanged.diagnostics.axEnriched, 0);
 	// ...and digit-only differences without coincident geometry get no such leniency.
 	const apart = mergeDomAndAxEntities(
 		[domEntity("bp-ref://dom/page1", { name: "Page 1", geometry: { point: { x: 10, y: 10 } } })],

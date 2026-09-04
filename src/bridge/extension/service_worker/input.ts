@@ -277,12 +277,25 @@ function runtimeValue(response: BrowserPilotBridgeResponse): JsonRecord {
 	return rec(rec(rec(rec(response.data).result).result).value);
 }
 
-const REF_POINT_FUNCTION = `function(input) { return (${PAGE_REF_RUNTIME_SOURCE}).point(this, { semantic: input }, true); }`;
+// Trusted input is strict about semantics: a renamed control is rejected so the agent re-observes first.
+const REF_POINT_FUNCTION = `function(input) { return (${PAGE_REF_RUNTIME_SOURCE}).point(this, { semantic: input, strictSemantic: true }, true); }`;
+
+/** Page-side helper source: find the nearest ancestor-or-self matching a selector, crossing shadow hosts. */
+const CLOSEST_ACROSS_SHADOW_SOURCE = `function closestAcrossShadow(start, selector) {
+	let node = start;
+	while (node) {
+		if (node.closest) { const hit = node.closest(selector); if (hit) return hit; }
+		const root = node.getRootNode ? node.getRootNode() : null;
+		node = root && root.host ? root.host : null;
+	}
+	return null;
+}`;
 
 /** Read checked/pressed state from the nearest toggle control (native or ARIA) around `this`. */
 const CHECK_STATE_FUNCTION = `function() {
+	${CLOSEST_ACROSS_SHADOW_SOURCE}
 	const selector = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[role="menuitemcheckbox"],[role="menuitemradio"],[aria-pressed]';
-	const control = (this.closest && this.closest(selector)) || this;
+	const control = closestAcrossShadow(this, selector) || this;
 	const attr = name => (control.getAttribute ? control.getAttribute(name) : null);
 	const tag = String(control.tagName || "").toLowerCase();
 	const type = tag === "input" ? String(control.type || "").toLowerCase() : "";
@@ -299,7 +312,8 @@ const CHECK_STATE_FUNCTION = `function() {
 
 /** Select an option on the nearest <select> around `this` by value, label, or index, then notify the page. */
 const SELECT_OPTION_FUNCTION = `function(input) {
-	const el = (this.closest && this.closest("select")) || this;
+	${CLOSEST_ACROSS_SHADOW_SOURCE}
+	const el = closestAcrossShadow(this, "select") || this;
 	if (String(el.tagName || "").toLowerCase() !== "select") return { ok: false, reason: "not_select", tag: String(this.tagName || "").toLowerCase() };
 	if (el.disabled) return { ok: false, reason: "disabled" };
 	const normalize = value => String(value == null ? "" : value).replace(/\\s+/g, " ").trim();
@@ -477,7 +491,7 @@ async function liveRefPoint(
 			target,
 		);
 	const expression = `(() => {
-	  const input = ${JSON.stringify({ locators, point: fallback, semantic: { role, name }, kind })};
+	  const input = ${JSON.stringify({ locators, point: fallback, semantic: { role, name }, kind, strictSemantic: true })};
 	  const runtime = ${PAGE_REF_RUNTIME_SOURCE};
 	  const resolved = runtime.resolve(input);
 	  let el = resolved.ok ? resolved.el : null;
@@ -630,6 +644,8 @@ async function liveNode(ctx: RefDispatch, phase: string): Promise<LiveNode | Bro
 	const targetId = ctx.backend?.targetId ?? targetIdFor(ctx.target);
 	let backendNodeId = ctx.backend?.backendNodeId;
 	if (backendNodeId === undefined) {
+		// Form verbs act on the light-DOM control; hitting a <select> or <input> through its UA shadow
+		// DOM would resolve to an internal div the page functions cannot recognise.
 		const located = await cdp(
 			ctx.tabId,
 			ctx.msg,
@@ -637,7 +653,7 @@ async function liveNode(ctx: RefDispatch, phase: string): Promise<LiveNode | Bro
 			{
 				x: Math.round(ctx.resolved.point.x),
 				y: Math.round(ctx.resolved.point.y),
-				includeUserAgentShadowDOM: true,
+				includeUserAgentShadowDOM: false,
 			},
 			targetId,
 		);

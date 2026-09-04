@@ -243,6 +243,51 @@ test("browserPilot.resolve accepts a uniquely identified element whose name chan
 	assert.equal(result.el, renamed);
 	assert.match(result.warning ?? "", /name_mismatch/);
 
+	// Actions are strict: the same renamed control is rejected so the agent re-observes first...
+	const strict = createContext();
+	strict.context.document.querySelectorAll = (selector: string) => (selector === "#submit" ? [renamed] : []);
+	strict.context.document.elementFromPoint = () => renamed;
+	vm.runInContext(
+		`globalThis.__result = (${PAGE_REF_RUNTIME_SOURCE}).resolve(${JSON.stringify({
+			locators: [{ by: "css", value: "#submit" }],
+			semantic: { role: "button", name: "Save" },
+			strictSemantic: true,
+		})});`,
+		vm.createContext(strict.context),
+	);
+	assert.equal((strict.context.__result as { el?: FakeElement }).el, undefined);
+	assert.equal((strict.context.__result as { reason?: string }).reason, "semantic_mismatch");
+	// ...unless only a counter changed.
+	const counter = createContext();
+	const inbox = element("BUTTON", "inbox", "Inbox (4)", rect(40, 30, 120, 40));
+	counter.context.document.querySelectorAll = () => [inbox];
+	counter.context.document.elementFromPoint = () => inbox;
+	vm.runInContext(
+		`globalThis.__result = (${PAGE_REF_RUNTIME_SOURCE}).resolve(${JSON.stringify({
+			locators: [{ by: "css", value: "#inbox" }],
+			semantic: { role: "button", name: "Inbox (3)" },
+			strictSemantic: true,
+		})});`,
+		vm.createContext(counter.context),
+	);
+	assert.equal((counter.context.__result as { el?: FakeElement }).el, inbox);
+	assert.equal((counter.context.__result as { warning?: string }).warning, "name_counter_changed");
+	// Digits in amounts and identifiers are semantics, not counters.
+	const amount = createContext();
+	const transfer = element("BUTTON", "transfer", "Transfer $900", rect(40, 30, 120, 40));
+	amount.context.document.querySelectorAll = () => [transfer];
+	amount.context.document.elementFromPoint = () => transfer;
+	vm.runInContext(
+		`globalThis.__result = (${PAGE_REF_RUNTIME_SOURCE}).resolve(${JSON.stringify({
+			locators: [{ by: "css", value: "#transfer" }],
+			semantic: { role: "button", name: "Transfer $100" },
+			strictSemantic: true,
+		})});`,
+		vm.createContext(amount.context),
+	);
+	assert.equal((amount.context.__result as { el?: FakeElement }).el, undefined);
+	assert.equal((amount.context.__result as { reason?: string }).reason, "semantic_mismatch");
+
 	// A role change still means a different control.
 	const roleChanged = createContext();
 	const link = element("A", "submit", "Save", rect(40, 30, 120, 40));

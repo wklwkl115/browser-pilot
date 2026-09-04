@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import { timingSafeEqual } from "node:crypto";
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
@@ -31,7 +32,11 @@ type BrowserBridgeClientMessageServiceDeps = {
 	clearRecorderStateForReplacement?: (fromTabId: number, toTabId: number, browserSessionId: string) => void;
 	notifyExtensionReady?: () => void;
 	handshakeTimeoutMs?: number;
+	/** When set, ext_ready must carry a matching `secret`; unpaired extensions are closed with 1008. */
+	bridgeSecret?: string | (() => string | undefined);
 };
+
+export const BRIDGE_SECRET_MISMATCH_REASON = "secret_mismatch";
 
 type AppliedTabReplacement = ReturnType<BrowserTabSessionRouter["applyTabReplacements"]>[number];
 
@@ -111,7 +116,7 @@ export class BrowserBridgeClientMessageService {
 		if (type !== "ext_ready" && !this.readyClients.has(ws)) return;
 		this.deps.clients.markSeen(ws);
 		if (type === "ping") return;
-		if (type === "ext_ready" && !this.isValidExtensionReady(message)) return;
+		if (type === "ext_ready" && !this.isValidExtensionReady(ws, message)) return;
 		if (type === "ext_ready" || type === "tabs_update") {
 			const defaultSession = this.deps.browserSessions.defaultSession();
 			const selectedClient = this.deps.browserSessions.selectedOpenClient(defaultSession);
@@ -207,15 +212,25 @@ export class BrowserBridgeClientMessageService {
 		this.handshakeTimers.delete(ws);
 	}
 
-	private isValidExtensionReady(message: IncomingMessage): boolean {
+	private isValidExtensionReady(ws: WebSocket, message: IncomingMessage): boolean {
 		const bridge = message.bridge;
-		return (
+		const validIdentity =
 			!!bridge &&
 			typeof bridge === "object" &&
 			!Array.isArray(bridge) &&
 			typeof (bridge as Record<string, unknown>).id === "string" &&
-			(bridge as Record<string, unknown>).id !== ""
-		);
+			(bridge as Record<string, unknown>).id !== "";
+		if (!validIdentity) return false;
+		const configured = this.deps.bridgeSecret;
+		const expected = typeof configured === "function" ? configured() : configured;
+		if (!expected) return true;
+		const actual = (bridge as Record<string, unknown>).secret;
+		const actualBytes = Buffer.from(typeof actual === "string" ? actual : "");
+		const expectedBytes = Buffer.from(expected);
+		if (actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes)) return true;
+		this.unregisterClient(ws, BRIDGE_SECRET_MISMATCH_REASON);
+		if (ws.readyState === WebSocket.OPEN) ws.close(1008, BRIDGE_SECRET_MISMATCH_REASON);
+		return false;
 	}
 
 	private redactMessageError(error: unknown, raw: string): Record<string, unknown> {

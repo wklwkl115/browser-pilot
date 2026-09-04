@@ -27,11 +27,22 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
     return normalize(tag);
   }
 
+  // Accessible-name rule for <label>Country <select>…</select></label>: the label's text minus the labelled
+  // control's own content, so the heuristic agrees with the AX name the observation reported.
+  function labelTextExcluding(label, control) {
+    if (typeof document.createTreeWalker !== "function" || !control || typeof control.contains !== "function") return label.textContent || "";
+    const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
+    let out = "";
+    let node;
+    while ((node = walker.nextNode())) if (!control.contains(node)) out += node.textContent + " ";
+    return out;
+  }
+
   function nameOf(el) {
     if (!el) return "";
     const labelledBy = String(el.getAttribute && el.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean)
       .map(id => typeof document.getElementById === "function" ? document.getElementById(id)?.textContent || "" : "").join(" ");
-    const labels = el.labels ? Array.from(el.labels).map(label => label.textContent || "").join(" ") : "";
+    const labels = el.labels ? Array.from(el.labels).map(label => labelTextExcluding(label, el)).join(" ") : "";
     const type = normalize(el.type || el.getAttribute && el.getAttribute("type"));
     const buttonValue = String(el.tagName || "").toUpperCase() === "INPUT" && ["button", "submit", "reset", "image"].includes(type) ? el.value : "";
     return normalize(el.getAttribute && el.getAttribute("aria-label") || labelledBy || labels || el.getAttribute && el.getAttribute("placeholder") || el.getAttribute && el.getAttribute("alt") || buttonValue || el.innerText || el.textContent || el.getAttribute && el.getAttribute("title") || "");
@@ -64,6 +75,27 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
     return expected.exact ? actualName === expected.name : actualName.includes(expected.name);
   }
 
+  // "Inbox (3)" vs "Inbox (4)": a live counter, not a different control.
+  function nameLooselyMatches(el, expected) {
+    if (!expected.name) return true;
+    const counter = value => {
+      const match = String(value).match(/^(.*?)\s*(\(\d+\)|\[\d+\])$/);
+      return match ? { label: normalize(match[1]), style: match[2][0] } : null;
+    };
+    const actual = counter(nameOf(el));
+    const wanted = counter(expected.name);
+    return !!actual && !!wanted && actual.label === wanted.label && actual.style === wanted.style;
+  }
+
+  // Actions (input.strictSemantic) must not fire on a control whose label changed meaning since it was
+  // observed ("Follow" -> "Unfollow"); reads may proceed with a warning so scripts can inspect it.
+  function nameAcceptable(el, expected, input) {
+    if (nameMatches(el, expected)) return { ok: true };
+    if (nameLooselyMatches(el, expected)) return { ok: true, warning: "name_counter_changed" };
+    if (input && input.strictSemantic) return { ok: false };
+    return { ok: true, warning: "name_mismatch" };
+  }
+
   function matches(el, expected) {
     return roleMatches(el, expected) && nameMatches(el, expected);
   }
@@ -83,10 +115,13 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
     if (candidates.length === 1) return { el: candidates[0] };
     if (!candidates.length) {
       // An identity locator (css/xpath/attributes) that lands on exactly one element of the right role is
-      // the element we observed; a differing accessible name is a rename, not a different control.
+      // the element we observed; whether a changed accessible name is acceptable depends on the caller.
       const identityLocator = locator && ["css", "xpath", "attrSignature"].includes(locator.by);
       const sameRole = identityLocator ? elements.filter(el => roleMatches(el, expected)) : [];
-      if (sameRole.length === 1) return { el: sameRole[0], warning: "name_mismatch" };
+      if (sameRole.length === 1) {
+        const verdict = nameAcceptable(sameRole[0], expected, input);
+        if (verdict.ok) return verdict.warning ? { el: sameRole[0], warning: verdict.warning } : { el: sameRole[0] };
+      }
       return { reason: nodes.length ? "semantic_mismatch" : "not_found" };
     }
     const target = geometryBox(input);
@@ -129,10 +164,12 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
   function point(el, input, scroll) {
     if (!el || el.nodeType !== 1) return { ok: false, reason: "not_found" };
     const expected = expectedFor(input || {}, null);
-    // el is already the identified node (backend id or unique locator): a role change means a different
-    // control, a name change is reported but does not block the action.
+    // el is already the identified node (backend id or unique locator): a role change always means a
+    // different control; a name change is judged by nameAcceptable according to the caller's strictness.
     if (!roleMatches(el, expected)) return { ok: false, reason: "semantic_mismatch", actualRole: roleOf(el) };
-    const warning = nameMatches(el, expected) ? undefined : "name_mismatch";
+    const verdict = nameAcceptable(el, expected, input);
+    if (!verdict.ok) return { ok: false, reason: "semantic_mismatch", actualName: nameOf(el) };
+    const warning = verdict.warning;
     if (scroll && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center", inline: "center" });
     const rect = el.getBoundingClientRect();
     const style = typeof getComputedStyle === "function" ? getComputedStyle(el) : null;
@@ -152,6 +189,12 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
     return { ok: false, reason: "occluded" };
   }
 
+  // "we found the identified element but its semantics changed" beats "a weaker locator found nothing".
+  const REASON_RANK = { not_found: 0, ambiguous: 1, semantic_mismatch: 2 };
+  function strongerReason(current, next) {
+    return (REASON_RANK[next] || 0) >= (REASON_RANK[current] || 0) ? next : current;
+  }
+
   function resolve(input) {
     const tried = [];
     let fallback = null;
@@ -161,7 +204,7 @@ export const PAGE_REF_RUNTIME_SOURCE = String.raw`(() => {
       if (!["css", "xpath", "attrSignature", "textAnchor"].includes(locator && locator.by)) continue;
       tried.push(locator.by);
       const selected = choose(nodesFor(locator), input, locator);
-      if (!selected.el) { reason = selected.reason || reason; continue; }
+      if (!selected.el) { reason = strongerReason(reason, selected.reason || "not_found"); continue; }
       if (!fallback) { fallback = selected.el; fallbackWarning = selected.warning; }
       if (point(selected.el, input, false).ok) return { ok: true, el: selected.el, tried, actionable: true, ...(selected.warning ? { warning: selected.warning } : {}) };
     }

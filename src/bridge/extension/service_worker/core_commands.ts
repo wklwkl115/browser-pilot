@@ -109,6 +109,8 @@ async function readContentFingerprintViaScript(tabId: number): Promise<JsonRecor
 	const results = await chrome.scripting.executeScript({
 		target: { tabId },
 		func: () => {
+			const interactiveSelector = "a[href],button,input,textarea,select,[role='button'],[role='link'],[tabindex]";
+			const visibleSampleLimit = 300;
 			type BrowserPilotFallbackFingerprintState = {
 				seq: number;
 				at: number;
@@ -140,16 +142,14 @@ async function readContentFingerprintViaScript(tabId: number): Promise<JsonRecor
 				});
 			}
 			const root = document.body ?? document.documentElement;
-			const walker = root ? document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT) : undefined;
-			let vc = 0;
-			let ic = 0;
-			let scanned = 0;
-			while (walker && scanned < 500 && walker.nextNode()) {
-				scanned += 1;
-				const element = walker.currentNode as Element;
+			const elementCount = document.getElementsByTagName("*").length;
+			const interactive = root ? root.querySelectorAll(interactiveSelector) : [];
+			const interactiveCount = interactive.length;
+			const stride = Math.max(1, Math.ceil(interactiveCount / visibleSampleLimit));
+			let visibleCount = 0;
+			for (let index = 0; index < interactiveCount; index += stride) {
 				try {
-					if (element.matches("a[href],button,input,textarea,select,[role='button'],[tabindex]")) ic += 1;
-					const rect = element.getBoundingClientRect();
+					const rect = interactive[index]!.getBoundingClientRect();
 					if (
 						(rect.width > 0 || rect.height > 0) &&
 						rect.bottom > 0 &&
@@ -157,7 +157,7 @@ async function readContentFingerprintViaScript(tabId: number): Promise<JsonRecor
 						rect.top < window.innerHeight &&
 						rect.left < window.innerWidth
 					)
-						vc += 1;
+						visibleCount += 1;
 				} catch {
 					/* ignore per-node geometry errors */
 				}
@@ -173,8 +173,9 @@ async function readContentFingerprintViaScript(tabId: number): Promise<JsonRecor
 				viewportWidth: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
 				viewportHeight: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0),
 				devicePixelRatio: Number(window.devicePixelRatio || 1),
-				visibleCount: vc,
-				interactiveCount: ic,
+				elementCount,
+				visibleCount,
+				interactiveCount,
 				capturedAt: state.at,
 			};
 			return data;
