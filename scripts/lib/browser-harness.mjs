@@ -92,8 +92,8 @@ function resultEnvelope(result, label) {
 	}
 }
 
-async function invoke(daemon, tool, params, transportTimeoutMs = 10_000, cwd = root) {
-	const result = await daemonJson(
+async function requestTool(daemon, tool, params, transportTimeoutMs = 10_000, cwd = root) {
+	return await daemonJson(
 		daemon,
 		"/invoke",
 		{
@@ -102,6 +102,10 @@ async function invoke(daemon, tool, params, transportTimeoutMs = 10_000, cwd = r
 		},
 		transportTimeoutMs,
 	);
+}
+
+async function invoke(daemon, tool, params, transportTimeoutMs = 10_000, cwd = root) {
+	const result = await requestTool(daemon, tool, params, transportTimeoutMs, cwd);
 	if (result.ok !== true || result.terminate === true)
 		throw new Error(`${tool} failed: ${resultText(result) || JSON.stringify(result)}`);
 	return result;
@@ -272,7 +276,18 @@ export async function withBrowserHarness(createFixture, run) {
 		daemon = await startDaemon({ writeLock: false, startBridgeEagerly: true, bridgeSecret: secret });
 		if (!daemon.bridgePort) throw new Error("daemon did not start the browser bridge");
 		browser = await launchConnectedBrowser(daemon, fixture.url, profileDir, extensionDir);
-		return await run({ daemon, browser, fixture });
+		const restartBrowser = async () => {
+			await stopBrowser(browser?.child, browser?.profileDir);
+			await waitForStatus(
+				daemon,
+				(value) => value.extensionConnected === false,
+				"extension disconnect after browser shutdown",
+			);
+			browser = undefined;
+			browser = await launchConnectedBrowser(daemon, fixture.url, profileDir, extensionDir);
+			return browser;
+		};
+		return await run({ daemon, browser, fixture, restartBrowser });
 	} finally {
 		try {
 			await stopBrowser(browser?.child, browser?.profileDir);
@@ -290,4 +305,4 @@ export async function withBrowserHarness(createFixture, run) {
 	}
 }
 
-export { invoke, resultText, resultEnvelope, waitForStatus };
+export { invoke, requestTool, resultText, resultEnvelope, waitForStatus };

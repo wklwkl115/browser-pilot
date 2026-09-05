@@ -1,4 +1,6 @@
-export const evaluationTasks = [
+import { extendedEvaluationTasks } from "./browser-eval-extended-tasks.mjs";
+
+const coreTasks = [
 	{
 		id: "async-form",
 		kind: "workflow",
@@ -88,7 +90,7 @@ export const evaluationTasks = [
 			const rejected = await ctx.call(
 				"browser_command",
 				{ command: { cmd: "input.ref", action: "click", ref: staleRef } },
-				true,
+				["BACKEND_NODE_STALE"],
 			);
 			ctx.assert(
 				rejected.code === "BACKEND_NODE_STALE",
@@ -103,3 +105,5 @@ export const evaluationTasks = [
 		},
 	},
 ];
+
+export const evaluationTasks = [...coreTasks.map((task) => ({ ...task, suite: "core" })), ...extendedEvaluationTasks];

@@ -228,14 +228,14 @@ browser-pilot/
 
 ## 开发
 
-**环境要求：** Node.js 22+、Chrome 或 Edge。[`mise`](https://mise.jdx.dev/) 可选；`mise.toml` 只负责钉住 Node 版本并转发到下面的 npm 脚本。
+**环境要求：** Node.js 22+；浏览器集成检查还需要 Chrome 或 Edge。[`mise`](https://mise.jdx.dev/) 可选；`mise.toml` 只负责钉住 Node 版本并转发到下面的 npm 脚本。
 
 ```bash
 npm run verify           # 统一检查：生成物 + 格式 + 类型检查 + lint + 测试 + 扩展构建
 npm test                 # 确定性 Node 测试（tests/<layer>/ 与 src/ 分层对应）
 npm run smoke:browser    # 浏览器集成冒烟测试
 npm run eval:browser     # 任务评测：输出成功率、耗时和响应大小
-npm run format           # 用 Prettier 格式化
+npx prettier --check <files>  # 检查修改文件；使用 --write 格式化
 npx browser-pilot-mcp status   # 诊断本机安装（源码目录下用 npm run mcp -- status）
 ```
 
@@ -245,15 +245,17 @@ npx browser-pilot-mcp status   # 诊断本机安装（源码目录下用 npm run
 
 ## 贡献
 
-欢迎贡献。请先开 issue 讨论你想改变的内容。
+欢迎贡献。重大架构、公共接口或兼容性变更仍有需求未明确时，先讨论相关问题；已有 issue 或明确的任务讨论即可，常规修复和文档修改不要求另开 issue。
 
 1. Fork 本仓库
-2. 创建功能分支（`git checkout -b feat/amazing-feature`）
+2. 创建功能分支（例如 `git checkout -b codex/amazing-feature`）
 3. 提交更改（`git commit -m 'feat: add amazing feature'`）
-4. 推送到分支（`git push origin feat/amazing-feature`）
+4. 推送到分支（`git push origin codex/amazing-feature`）
 5. 发起 Pull Request
 
-提交前请确保 `npm run verify` 通过。
+按改动影响选择本地检查，具体见[仓库规则](AGENTS.md#testing-guidelines)。纯文档改动检查内容、引用和格式；行为改动增加针对性回归，影响浏览器行为时增加真实浏览器检查。`observe` 和 `mcp` 测试范围都包含多个基础层；单文件测试使用 `node --import tsx --test tests/<layer>/<name>.test.ts`。
+
+CI 在 PR 和 `main` 分支推送时运行，避免功能分支 push 与 PR 重复执行。纯文档改动走轻量检查，其他或无法判断的改动保留 Linux、Windows 双平台完整验证和浏览器检查；`ci result` 汇总两条路径的结果。发布检查仍为必需。交付时报告已完成的检查及阻塞项，没有新变化时不必为每次本地提交重复验证。本地任务完成、提交和发布是按用户授权范围执行的不同操作。
 
 ## 许可证
 
