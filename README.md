@@ -234,14 +234,14 @@ browser-pilot/
 
 ## Development
 
-**Requirements:** Node.js 22+ and Chrome or Edge. [`mise`](https://mise.jdx.dev/) is optional; `mise.toml` only pins Node and forwards to the npm scripts below.
+**Requirements:** Node.js 22+; Chrome or Edge for browser integration checks. [`mise`](https://mise.jdx.dev/) is optional; `mise.toml` only pins Node and forwards to the npm scripts below.
 
 ```bash
 npm run verify           # Canonical gate: generated files + format + typecheck + lint + test + bridge build
 npm test                 # Deterministic Node tests (tests/<layer>/ mirrors src/)
 npm run smoke:browser    # Browser integration smoke test (headless Chrome/Edge; also runs in CI)
 npm run eval:browser     # Repeatable task evaluation; JSON success/latency/output-size report
-npm run format           # Apply Prettier
+npx prettier --check <files>  # Check changed files; use --write to format them
 npx browser-pilot-mcp status   # Diagnose a local install (source checkout: npm run mcp -- status)
 ```
 
@@ -251,15 +251,17 @@ See [Browser task evaluation](docs/browser-evaluation.md) for scenarios, metrics
 
 ## Contributing
 
-Contributions are welcome. Please open an issue first to discuss what you would like to change.
+Contributions are welcome. Discuss unresolved requirements for major architecture, public-interface, or compatibility changes first. An existing issue or explicit task discussion is sufficient; routine fixes and documentation updates do not require a new issue.
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/amazing-feature`)
+2. Create a feature branch (for example, `git checkout -b codex/amazing-feature`)
 3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to the branch (`git push origin feat/amazing-feature`)
+4. Push to the branch (`git push origin codex/amazing-feature`)
 5. Open a Pull Request
 
-Make sure `npm run verify` passes before submitting.
+Choose local checks by the change's impact using the [repository guidelines](AGENTS.md#testing-guidelines). Documentation-only work needs content, reference, and formatting checks; behavior changes need focused regression coverage, with real-browser checks for affected browser behavior. The `observe` and `mcp` test scopes include multiple foundation layers; use `node --import tsx --test tests/<layer>/<name>.test.ts` for a single test file.
+
+CI runs for pull requests and pushes to `main`, avoiding duplicate feature-branch push runs. Documentation-only changes take the lightweight route; other or unknown changes run full verification and browser checks on Linux and Windows. The `ci result` check summarizes both routes. Release checks remain mandatory. Report completed checks and any blockers; unchanged passing checks need not be rerun for every local commit. Local task completion, committing, and publishing are separate operations governed by the requested scope.
 
 ## License
 

@@ -7,7 +7,7 @@ const shell = (
 ) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head>
 <body><main><h1>${title}</h1>${body}</main><script>${script}</script></body></html>`;
 
-function taskPage(pathname, run) {
+function taskPage(pathname, run, crossOrigin) {
 	if (pathname === "/async-form")
 		return shell(
 			"Support request",
@@ -66,11 +66,69 @@ function taskPage(pathname, run) {
 			next.onclick = () => { window.dangerCount++; }; document.querySelector('#safe-action').replaceWith(next);
 		};`,
 		);
+	if (pathname === "/failed-submit")
+		return shell(
+			"Failed request",
+			`
+		<button id="send-failed">Send failing request</button><p id="status" role="status">Ready</p>`,
+			`
+		window.savedCount = 0;
+		document.querySelector('#send-failed').onclick = async () => {
+			const response = await fetch('/api/failure?run=${run}', {method:'POST'});
+			const status = document.querySelector('#status'); status.dataset.httpStatus = String(response.status);
+			if (response.ok) { window.savedCount++; status.textContent = 'Saved'; }
+			else { status.textContent = 'Not saved'; status.dataset.failed = 'yes'; }
+		};`,
+		);
+	if (pathname === "/spa")
+		return shell(
+			"Workspace settings",
+			`
+		<label>Workspace name <input id="workspace-name" value="Original"></label>
+		<button id="settings">Open settings</button><section id="route">Home</section>`,
+			`
+		window.documentBoot = crypto.randomUUID();
+		document.querySelector('#settings').onclick = () => { history.pushState({}, '', '/spa/settings'); document.querySelector('#route').textContent = 'Settings'; };`,
+		);
+	if (pathname === "/tab-owner")
+		return shell(
+			"Tab ownership",
+			`<button id="save" onclick="window.savedCount++">Save draft</button>`,
+			"window.savedCount = 0;",
+		);
+	if (pathname === "/occlusion")
+		return shell(
+			"Occlusion guard",
+			`
+		<button id="cover">Cover action</button><button id="protected" onclick="window.protectedCount++">Protected action</button>`,
+			`
+		window.protectedCount = 0;
+		document.querySelector('#cover').onclick = () => {
+			const rect = document.querySelector('#protected').getBoundingClientRect(); const cover = document.createElement('div');
+			Object.assign(cover.style, {position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',zIndex:'2147483647'});
+			document.body.append(cover);
+		};`,
+		);
+	if (pathname.startsWith("/frames/")) {
+		const mode = pathname.split("/").at(-1);
+		const child =
+			mode === "same" ? "/frame-child" : mode === "nested" ? "/frame-middle" : crossOrigin + "/frame-child";
+		return shell(
+			"Frame host",
+			`<label>Parent value <input id="frame-value" value="parent"></label><iframe id="child-frame" title="Child form" src="${child}"></iframe>`,
+		);
+	}
+	if (pathname === "/frame-middle")
+		return shell("Middle frame", `<iframe title="Nested child" src="${crossOrigin}/frame-child"></iframe>`);
+	if (pathname === "/frame-child")
+		return shell("Child form", '<label>Child value <input id="frame-value" value="child"></label>');
 	return shell("Browser task evaluation", "<p>Controlled local fixtures only.</p>");
 }
 
 export async function startEvaluationFixtures() {
 	const submissions = new Map();
+	const failedRequests = new Map();
+	let crossOrigin;
 	const timers = new Set();
 	const later = (delay, callback) => {
 		const timer = setTimeout(() => {
@@ -79,16 +137,15 @@ export async function startEvaluationFixtures() {
 		}, delay);
 		timers.add(timer);
 	};
-	const server = http.createServer((req, res) => {
+	const handle = (req, res) => {
 		const url = new URL(req.url, "http://127.0.0.1");
 		const run = Number(url.searchParams.get("run")) || 0;
-		const send = (value, type = "application/json") => {
+		const send = (value, type = "application/json", status = 200) => {
 			if (res.destroyed) return;
-			res.writeHead(200, {
+			res.writeHead(status, {
 				"content-type": type,
 				"cache-control": "no-store",
-				"content-security-policy":
-					"default-src 'self'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'",
+				"content-security-policy": `default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self' ${crossOrigin}; object-src 'none'`,
 			});
 			res.end(type === "application/json" ? JSON.stringify(value) : value);
 		};
@@ -102,6 +159,9 @@ export async function startEvaluationFixtures() {
 				submissions.set(run, [...(submissions.get(run) ?? []), text]);
 				later(650, () => send({ id: "CASE-001" }));
 			});
+		} else if (url.pathname === "/api/failure" && req.method === "POST") {
+			failedRequests.set(run, (failedRequests.get(run) ?? 0) + 1);
+			later(250, () => send({ error: "fixture unavailable" }, "application/json", 503));
 		} else if (url.pathname === "/api/invoices")
 			later(950, () =>
 				send([
@@ -109,21 +169,36 @@ export async function startEvaluationFixtures() {
 					{ id: "INV-OVERDUE", status: "overdue" },
 				]),
 			);
-		else send(taskPage(url.pathname, run), "text/html; charset=utf-8");
-	});
-	await new Promise((resolve, reject) => {
-		server.once("error", reject);
-		server.listen(0, "127.0.0.1", resolve);
-	});
+		else send(taskPage(url.pathname, run, crossOrigin), "text/html; charset=utf-8");
+	};
+	const childServer = http.createServer(handle);
+	const server = http.createServer(handle);
+	const listen = (instance) =>
+		new Promise((resolve, reject) => {
+			instance.once("error", reject);
+			instance.listen(0, "127.0.0.1", resolve);
+		});
+	const close = (instance) =>
+		new Promise((resolve) => {
+			instance.close(resolve);
+			instance.closeAllConnections();
+		});
+	try {
+		await listen(childServer);
+		crossOrigin = `http://127.0.0.1:${childServer.address().port}`;
+		await listen(server);
+	} catch (error) {
+		await Promise.all([close(server), close(childServer)]);
+		throw error;
+	}
 	return {
 		url: `http://127.0.0.1:${server.address().port}/`,
+		crossOrigin,
 		submissions: (run) => submissions.get(run) ?? [],
+		failedRequests: (run) => failedRequests.get(run) ?? 0,
 		close: async () => {
 			for (const timer of timers) clearTimeout(timer);
-			await new Promise((resolve) => {
-				server.close(resolve);
-				server.closeAllConnections();
-			});
+			await Promise.all([close(server), close(childServer)]);
 		},
 	};
 }

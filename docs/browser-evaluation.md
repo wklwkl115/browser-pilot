@@ -6,14 +6,17 @@
 
 ```sh
 npm run eval:browser
-npm run eval:browser -- --rounds 10 --output .cache/browser-eval/baseline.json
+npm run eval:browser -- --list
+npm run eval:browser -- --suite core --rounds 3
+npm run eval:browser -- --task frame-cross --task browser-reconnect --rounds 3
+npm run eval:browser -- --suite all --rounds 10 --output .cache/browser-eval/baseline.json
 ```
 
-Node.js 22+ and Chrome/Edge are required. Set `BROWSER_PILOT_SMOKE_BROWSER` to choose the executable, as for `npm run smoke:browser`. The default is three rounds; valid round counts are 1–50. No external URL or authenticated-account input is accepted.
+Node.js 22+ and Chrome/Edge are required. Set `BROWSER_PILOT_SMOKE_BROWSER` to choose the executable, as for `npm run smoke:browser`. The default is all 12 tasks for three rounds; valid round counts are 1–50. Select `core` (4), `extended` (8), or `all` with `--suite`. Repeat `--task` to select named tasks within that suite. `--list` lists the selected scenarios without launching a browser. Unknown IDs, empty selections, and conflicting filters fail before execution. No external URL or authenticated-account input is accepted.
 
-The shared harness creates a temporary browser profile and a private copy of the extension with an ephemeral pairing secret. It does not install into the user's extension directory or use their cookies. Browser startup/build time is outside task timing. Each attempt navigates to fresh fixture state; failed writes are never automatically retried.
+The shared harness creates a temporary browser profile and a private copy of the extension with an ephemeral pairing secret. It does not install into the user's extension directory or use their cookies. Initial browser startup/build time is outside task timing; an explicit restart inside a recovery task is included. Each attempt navigates to fresh fixture state; failed writes are never automatically retried.
 
-## Scenarios
+## Scenarios (fixture version 2)
 
 | Task                   | Kind     | Independent completion check                                                                                                    |
 | ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -22,24 +25,44 @@ The shared harness creates a temporary browser profile and a private copy of the
 | `rerender-ref`         | Workflow | Replace a button with an equivalent DOM node, use the original ref, and assert exactly one save.                                |
 | `stale-target-guard`   | Safety   | Replace a safe action with a different action; require explicit stale-ref rejection and verify the replacement was not clicked. |
 
+The four scenarios above form the `core` suite. The `extended` suite adds:
+
+| Task                      | Kind     | Completion or safety oracle                                                                                                                         |
+| ------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `failed-submit-no-replay` | Safety   | A 503 response produces one request, no saved record, and an explicit failure UI.                                                                   |
+| `spa-ref-continuity`      | Workflow | A history route change preserves document identity and an existing input ref.                                                                       |
+| `multitab-ref-ownership`  | Safety   | A ref updates its owning tab while a second active tab with identical labels remains untouched.                                                     |
+| `frame-same`              | Workflow | Read/write a same-origin child frame without modifying its parent.                                                                                  |
+| `frame-cross`             | Workflow | Read/write a different-origin child frame while parent-page same-origin restrictions remain intact.                                                 |
+| `frame-nested`            | Workflow | Discover and operate on a nested child while retaining hierarchy and parent isolation.                                                              |
+| `occluded-control-guard`  | Safety   | Covered controls reject input and execute no action.                                                                                                |
+| `browser-reconnect`       | Recovery | Close the browser, wait for disconnect, reconnect a fresh isolated profile to the same daemon, reject old refs, and use a freshly observed control. |
+
+Frame origins use two loopback ports: they are cross-origin but same-site. This does not test out-of-process cross-site frames (OOPIFs). The restart case intentionally uses a fresh profile; persisted login/session restoration is not claimed.
+
 Fixtures retain a CSP that blocks page `eval`. Evaluation therefore also exercises safe CDP fallback without removing page security headers. Control selection requires one matching control, not a similarly named label.
 
 ## Report
 
-The default report is `.cache/browser-eval/report.json`. It records Node/platform/browser metadata, extension build identity, fixture version, per-attempt results, and per-task/overall summaries:
+The default report is `.cache/browser-eval/report.json`. It records Node/platform/browser metadata, extension build identity, fixture version, the selected task IDs, planned attempt count, per-attempt results, and per-task/per-kind/overall summaries:
 
 - success rate, attempted/passed/failed counts;
 - P50/P95/max task latency using nearest-rank percentiles;
 - success-only latency separately, so early failures cannot make a broken run look faster;
 - tool-call counts, serialized response JSON UTF-8 bytes, and inline text length in UTF-16 code units;
-- failure category/code, including observation, tool, verification, assertion, and transport errors.
+- per-step timing, response sizes, verification status, and explicitly expected rejections;
+- failure category/code, including observation, tool, verification, assertion, transport, and recovery errors.
 
 Output counts cover completed tool responses only; resource bodies not requested by the task are excluded. Bytes/characters are **not token counts**: model-specific tokenization is not performed. A harness failure produces a nonzero exit code and a report with `harnessFailure`; zero attempts never yields a 100% success rate. Any failed or missing task also returns nonzero.
 
-Ordinary CI runs two rounds and retains only the summary JSON; the Windows release gate runs three rounds. Raw local captures remain under the report directory's `.browser-pilot/artifacts/` and are not uploaded.
+For changes outside the documentation-only route, CI runs all scenarios for two rounds on Linux and Windows and retains only the summary JSON with OS-specific artifact names; the Windows release gate always runs all scenarios for three rounds. See [repository guidelines](../AGENTS.md#testing-guidelines) for validation triggers. Raw local captures remain under the report directory's `.browser-pilot/artifacts/` and are not uploaded.
 
 ## Interpret results
 
 Compare the same fixture version, browser build, Node version, platform, and round count. Treat P95 from a few samples as a smoke indicator, not a production latency estimate. Inspect workflow and safety results separately; passing a rejection test is not a completed business transaction.
 
-There are no performance thresholds yet. Record repeated baselines before setting budgets. Real authenticated sites, long-running sessions, browser restarts, cross-origin frames, and model planning remain outside this suite. Add those as explicit scenarios rather than generalizing from the current success rate.
+There are no performance thresholds yet. Record repeated baselines before setting budgets. Real authenticated sites, hour-scale sessions, persisted-profile recovery, OOPIFs, uploads/downloads, and model planning remain outside this suite. Add those as explicit scenarios rather than generalizing from the current success rate.
+
+## Extending the suite
+
+Keep fixtures deterministic and loopback-only. Each task must have a stable ID, suite, kind, and an independent completion oracle; asserting only a successful tool envelope is insufficient. Negative tests must name the expected rejection code and verify that no action occurred. Keep retries out of mutating tasks. Add fixture/contract tests under `tests/runtime/` or `tests/extension/`, update the catalog test when intentionally changing coverage, and increment `fixtureVersion` when changing existing scenario semantics. Keep raw responses, secrets, and user data out of the summary report.

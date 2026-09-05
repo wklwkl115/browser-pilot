@@ -95,7 +95,7 @@ jobs:
         run: npm run smoke:browser
 
       - name: Evaluate browser tasks
-        run: npm run eval:browser -- --rounds 3
+        run: npm run eval:browser -- --suite all --rounds 3
 
   publish:
     name: npm trusted publish

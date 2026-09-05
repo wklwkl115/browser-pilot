@@ -1,8 +1,12 @@
 export function parseEvaluationArgs(args) {
-	const options = { rounds: 3, output: ".cache/browser-eval/report.json" };
+	const options = { rounds: 3, output: ".cache/browser-eval/report.json", suite: "all", tasks: [], list: false };
 	for (let index = 0; index < args.length; index++) {
 		const arg = args[index];
 		if (arg === "--quiet") continue;
+		if (arg === "--list") {
+			options.list = true;
+			continue;
+		}
 		if (arg === "--rounds") {
 			const value = args[++index];
 			if (!/^[1-9]\d*$/.test(value ?? "") || Number(value) > 50)
@@ -12,6 +16,14 @@ export function parseEvaluationArgs(args) {
 			const value = args[++index];
 			if (!value || value.startsWith("--")) throw new Error("--output requires a file path");
 			options.output = value;
+		} else if (arg === "--suite") {
+			const value = args[++index];
+			if (!["core", "extended", "all"].includes(value)) throw new Error("--suite must be core, extended, or all");
+			options.suite = value;
+		} else if (arg === "--task") {
+			const value = args[++index];
+			if (!value || value.startsWith("--")) throw new Error("--task requires a task ID");
+			options.tasks.push(value);
 		} else throw new Error(`Unknown evaluation argument: ${arg}`);
 	}
 	return options;
@@ -46,4 +58,19 @@ export function summarizeAttempts(attempts) {
 		responseTextChars: attempts.reduce((total, attempt) => total + attempt.responseTextChars, 0),
 		errors,
 	};
+}
+
+export function selectEvaluationTasks(tasks, options) {
+	const ids = new Set();
+	for (const task of tasks) {
+		if (ids.has(task.id)) throw new Error(`Duplicate task ID: ${task.id}`);
+		ids.add(task.id);
+	}
+	const selected = tasks.filter((task) => options.suite === "all" || task.suite === options.suite);
+	for (const id of options.tasks) {
+		if (!selected.some((task) => task.id === id)) throw new Error(`Unknown task or excluded by suite: ${id}`);
+	}
+	const result = options.tasks.length ? selected.filter((task) => options.tasks.includes(task.id)) : selected;
+	if (!result.length) throw new Error("No evaluation tasks selected");
+	return result;
 }
