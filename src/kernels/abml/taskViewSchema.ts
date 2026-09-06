@@ -268,6 +268,9 @@ export const TASK_VIEW_METADATA_SCHEMA = {
 				mandatoryGroupsFolded: count,
 				mandatoryGroupsUnavailable: count,
 				contextComplete: flag,
+				packetsInline: count,
+				packetsFolded: count,
+				packetsUnavailable: count,
 			},
 			required: [
 				"groupsTotal",
@@ -295,7 +298,51 @@ export const TASK_VIEW_METADATA_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
-export const TASK_PROJECTION_ARTIFACT_SCHEMA = {
+export const TASK_PACKET_SCHEMA = {
+	...TASK_BUNDLE_SCHEMA,
+	properties: {
+		...TASK_BUNDLE_SCHEMA.properties,
+		bundleId: text,
+		packetKind: { enum: ["field", "action"] },
+		question: text,
+		scope: {
+			type: "object",
+			properties: {
+				policy: { const: "field-context-v1" },
+				snapshotId: text,
+				subjectRef: text,
+				ownerRef: text,
+				identityRefs: strings,
+				dependencyRefs: strings,
+				contextComplete: flag,
+				excludedCount: count,
+				exclusions: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: { ref: text, reason: text },
+						required: ["ref", "reason"],
+						additionalProperties: false,
+					},
+				},
+			},
+			required: [
+				"policy",
+				"snapshotId",
+				"subjectRef",
+				"identityRefs",
+				"dependencyRefs",
+				"contextComplete",
+				"excludedCount",
+				"exclusions",
+			],
+			additionalProperties: false,
+		},
+	},
+	required: [...TASK_BUNDLE_SCHEMA.required, "bundleId", "packetKind", "question", "scope"],
+} as const;
+
+const PRE_PACKET_ARTIFACT_SCHEMA = {
 	type: "object",
 	properties: {
 		schema: { const: TASK_PROJECTION_SCHEMA },
@@ -322,10 +369,25 @@ export const TASK_PROJECTION_ARTIFACT_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
-export const LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA = {
-	...TASK_PROJECTION_ARTIFACT_SCHEMA,
+export const TASK_PROJECTION_ARTIFACT_SCHEMA = {
+	...PRE_PACKET_ARTIFACT_SCHEMA,
+	properties: { ...PRE_PACKET_ARTIFACT_SCHEMA.properties, packets: { type: "array", items: TASK_PACKET_SCHEMA } },
+	required: [...PRE_PACKET_ARTIFACT_SCHEMA.required, "packets"],
+} as const;
+
+export const V2_TASK_PROJECTION_ARTIFACT_SCHEMA = {
+	...PRE_PACKET_ARTIFACT_SCHEMA,
 	properties: {
-		...TASK_PROJECTION_ARTIFACT_SCHEMA.properties,
+		...PRE_PACKET_ARTIFACT_SCHEMA.properties,
+		schema: { const: "browser-task-projection/v2" },
+		policy: { const: "literal-context-v2" },
+	},
+} as const;
+
+export const LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA = {
+	...PRE_PACKET_ARTIFACT_SCHEMA,
+	properties: {
+		...PRE_PACKET_ARTIFACT_SCHEMA.properties,
 		schema: { const: "browser-task-projection/v1" },
 		policy: { const: "literal-context-v1" },
 		bundles: { type: "array", items: LEGACY_TASK_BUNDLE_SCHEMA },

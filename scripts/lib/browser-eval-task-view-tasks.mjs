@@ -25,7 +25,8 @@ export const taskViewEvaluationTasks = [
 			const presentation = ctx.presentation();
 			const textView = JSON.parse(presentation.content.find((item) => item.type === "text").text);
 			ctx.assert(
-				textView.task.matchScope.candidateCount === 1 && textView.bundles.length > 0,
+				textView.task.matchScope.candidateCount === 1 &&
+					textView.bundles.length + (textView.packets?.length ?? 0) > 0,
 				"TEXT_HOST_CONTEXT",
 				"Text-only consumer lost task context",
 			);
@@ -48,7 +49,7 @@ export const taskViewEvaluationTasks = [
 				view: { focus: { refs: [note] }, fields: ["Note"], intent: "read" },
 			});
 			ctx.assert(
-				focused.bundles.some((bundle) =>
+				[...focused.bundles, ...(focused.packets ?? [])].some((bundle) =>
 					bundle.facts.some((fact) => fact.ref === note && fact.value === "Draft"),
 				),
 				"TASK_SELF_CONTAINED",
@@ -75,14 +76,14 @@ export const taskViewEvaluationTasks = [
 				"Task check invented a business receipt",
 			);
 			ctx.assert(
-				checked.bundles.some((bundle) =>
+				[...checked.bundles, ...(checked.packets ?? [])].some((bundle) =>
 					bundle.facts.some((fact) => fact.name === "Saved locally" || fact.text === "Saved locally"),
 				),
 				"CHECK_FEEDBACK",
 				"Check omitted visible save feedback",
 			);
 			ctx.assert(
-				checked.bundles.some((bundle) =>
+				[...checked.bundles, ...(checked.packets ?? [])].some((bundle) =>
 					bundle.facts.some(
 						(fact) => fact.name === "Note requires review" || fact.text === "Note requires review",
 					),

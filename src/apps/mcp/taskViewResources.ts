@@ -2,9 +2,10 @@ import { Value } from "typebox/value";
 import {
 	TASK_PROJECTION_ARTIFACT_SCHEMA,
 	LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA,
+	V2_TASK_PROJECTION_ARTIFACT_SCHEMA,
 } from "../../kernels/abml/taskViewSchema.js";
 import { foldedTaskEvidence } from "../../kernels/abml/taskEvidence.js";
-import { TASK_PROJECTION_POLICY, type TaskProjectionArtifact } from "../../kernels/abml/taskView.js";
+import { TASK_PROJECTION_POLICY, type TaskProjectionArtifact, type TaskPacket } from "../../kernels/abml/taskView.js";
 import { taskSnapshotEvidence } from "../../kernels/abml/taskViewSelection.js";
 import { isPageObservationV3 } from "../../validation/pageContracts.js";
 import type { ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
@@ -18,8 +19,8 @@ export function validTaskEvidenceDescriptor(descriptor: ObservationResourceDescr
 		descriptor.jsonPath === undefined &&
 		descriptor.contentSection === undefined &&
 		descriptor.taskProjection === undefined &&
-		descriptor.taskEvidence?.policy === TASK_PROJECTION_POLICY &&
-		typeof descriptor.taskEvidence.sha256 === "string" &&
+		[TASK_PROJECTION_POLICY, "literal-context-v2"].includes(descriptor.taskEvidence?.policy ?? "") &&
+		typeof descriptor.taskEvidence?.sha256 === "string" &&
 		/^[a-f0-9]{64}$/.test(descriptor.taskEvidence.sha256)
 	);
 }
@@ -52,10 +53,14 @@ export function validTaskResourceDescriptor(descriptor: ObservationResourceDescr
 /** A derived URI addresses one group or one bounded index page under the registered snapshot token. */
 export function taskResourceSuffix(
 	uri: string,
-): { base: string; kind: "index" | "groups" | "scope"; index: number } | undefined {
-	const match = /^(.*)\/(index|groups|scope)\/(0|[1-9][0-9]{0,5})$/.exec(uri);
+): { base: string; kind: "index" | "groups" | "scope" | "packets" | "packet-index"; index: number } | undefined {
+	const match = /^(.*)\/(index|groups|scope|packets|packet-index)\/(0|[1-9][0-9]{0,5})$/.exec(uri);
 	return match
-		? { base: match[1]!, kind: match[2] as "index" | "groups" | "scope", index: Number(match[3]) }
+		? {
+				base: match[1]!,
+				kind: match[2] as "index" | "groups" | "scope" | "packets" | "packet-index",
+				index: Number(match[3]),
+			}
 		: undefined;
 }
 
@@ -69,6 +74,7 @@ export function readTaskProjectionResource(
 	const parsed: unknown = JSON.parse(text);
 	if (
 		!Value.Check(TASK_PROJECTION_ARTIFACT_SCHEMA, parsed) &&
+		!Value.Check(V2_TASK_PROJECTION_ARTIFACT_SCHEMA, parsed) &&
 		!Value.Check(LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA, parsed)
 	)
 		throw new Error("Invalid task projection artifact");
@@ -77,6 +83,16 @@ export function readTaskProjectionResource(
 		throw new Error("Task projection snapshot mismatch");
 	const selector = taskResourceSuffix(uri);
 	if (selector?.base !== undefined && selector.base !== descriptor.uri) throw new Error("Invalid task resource URI");
+	if (selector?.kind === "packets") {
+		const packet = artifact.packets?.[selector.index];
+		if (!packet) throw new Error("Task packet is unavailable");
+		return packetResource(artifact, packet);
+	}
+	if (selector?.kind === "packet-index") {
+		if (!artifact.packets || (selector.index && selector.index * INDEX_PAGE_SIZE >= artifact.packets.length))
+			throw new Error("Task packet index is unavailable");
+		return packetIndex(artifact, descriptor.uri, selector.index);
+	}
 	if (selector?.kind === "groups") {
 		const group = artifact.bundles[selector.index];
 		if (!group) throw new Error("Task group is unavailable");
@@ -99,6 +115,7 @@ export function readTaskProjectionResource(
 			},
 		},
 		scopeUri: `${descriptor.uri}/scope/0`,
+		...(artifact.packets ? { packetIndex: packetIndex(artifact, descriptor.uri, 0) } : {}),
 		groups: artifact.bundles.slice(start, start + INDEX_PAGE_SIZE).map((bundle, offset) => ({
 			id: bundle.id,
 			kind: bundle.kind,
@@ -118,6 +135,48 @@ export function readTaskProjectionResource(
 		...(start + INDEX_PAGE_SIZE < artifact.bundles.length
 			? { nextUri: `${descriptor.uri}/index/${page + 1}` }
 			: {}),
+	};
+}
+
+function packetResource(artifact: TaskProjectionArtifact, packet: TaskPacket) {
+	return {
+		schema: artifact.schema,
+		policy: artifact.policy,
+		snapshotId: artifact.snapshotId,
+		canonicalSha256: artifact.canonicalSha256,
+		capturedAt: artifact.capturedAt,
+		expiresAt: artifact.expiresAt,
+		task: {
+			...resourceTask(artifact, 0, 0),
+			outputScope: {
+				...resourceTask(artifact, 0, 0).outputScope,
+				packetsInline: 1,
+				packetsFolded: (artifact.packets?.length ?? 0) - 1,
+			},
+		},
+		packet,
+	};
+}
+
+function packetIndex(artifact: TaskProjectionArtifact, baseUri: string, page: number) {
+	const packets = artifact.packets ?? [];
+	const start = page * INDEX_PAGE_SIZE;
+	return {
+		resourceUri: `${baseUri}/packet-index/${page}`,
+		packets: packets.slice(start, start + INDEX_PAGE_SIZE).map((packet, offset) => ({
+			id: packet.id,
+			bundleId: packet.bundleId,
+			question: packet.question,
+			packetKind: packet.packetKind,
+			subjectRef: packet.scope.subjectRef,
+			ownerRef: packet.scope.ownerRef,
+			contextComplete: packet.scope.contextComplete,
+			factCount: packet.facts.length,
+			...foldedTaskEvidence(packet, packet.id, `${baseUri}/packets/${start + offset}`),
+			resourceUri: `${baseUri}/packets/${start + offset}`,
+			resourceJsonBytes: Buffer.byteLength(JSON.stringify(packetResource(artifact, packet))),
+		})),
+		...(start + INDEX_PAGE_SIZE < packets.length ? { nextUri: `${baseUri}/packet-index/${page + 1}` } : {}),
 	};
 }
 
@@ -142,6 +201,7 @@ function resourceTask(artifact: TaskProjectionArtifact, inline: number, mandator
 				(artifact.task.outputScope.mandatoryGroupsUnavailable ?? 0) -
 				mandatoryInline,
 			contextComplete: artifact.task.outputScope.contextComplete && inline === artifact.bundles.length,
+			...(artifact.packets ? { packetsInline: 0, packetsFolded: artifact.packets.length } : {}),
 		},
 	};
 }

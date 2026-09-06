@@ -67,6 +67,22 @@ export type DecisionBundle = TaskEvidence & {
 	text?: string;
 	changes: Array<{ ref: string; kind: string; fields: string[] }>;
 };
+export type TaskPacket = DecisionBundle & {
+	bundleId: string;
+	packetKind: "field" | "action";
+	question: string;
+	scope: {
+		policy: "field-context-v1";
+		snapshotId: string;
+		subjectRef: string;
+		ownerRef?: string;
+		identityRefs: string[];
+		dependencyRefs: string[];
+		contextComplete: boolean;
+		excludedCount: number;
+		exclusions: Array<{ ref: string; reason: string }>;
+	};
+};
 export type TaskViewMetadata = {
 	intent: NormalizedTaskViewSpec["intent"];
 	focus: NormalizedTaskViewSpec["focus"];
@@ -99,13 +115,16 @@ export type TaskViewMetadata = {
 		mandatoryGroupsFolded: number;
 		mandatoryGroupsUnavailable: number;
 		contextComplete: boolean;
+		packetsInline?: number;
+		packetsFolded?: number;
+		packetsUnavailable?: number;
 	};
 	limitations: string[];
 };
-export type TaskProjectionPlan = { task: TaskViewMetadata; bundles: DecisionBundle[] };
+export type TaskProjectionPlan = { task: TaskViewMetadata; bundles: DecisionBundle[]; packets?: TaskPacket[] };
 
-export const TASK_PROJECTION_SCHEMA = "browser-task-projection/v2" as const;
-export const TASK_PROJECTION_POLICY = "literal-context-v2" as const;
+export const TASK_PROJECTION_SCHEMA = "browser-task-projection/v3" as const;
+export const TASK_PROJECTION_POLICY = "literal-context-v3" as const;
 export type TaskProjectionArtifact = TaskProjectionPlan & {
 	schema: typeof TASK_PROJECTION_SCHEMA;
 	policy: typeof TASK_PROJECTION_POLICY;

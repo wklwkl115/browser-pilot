@@ -11,6 +11,7 @@ import {
 } from "./taskView.js";
 import { addTaskGap, bindTaskRemedies, emptyTaskEvidence, REQUIREMENT_KINDS } from "./taskEvidence.js";
 import { taskContext, taskEntityIndex, taskObjectRoot, taskRelations, type TaskEntityIndex } from "./taskViewGraph.js";
+import { planTaskPackets } from "./taskPackets.js";
 
 const MAX_GROUPS = 256;
 const MAX_FACT_TEXT = 8192;
@@ -43,7 +44,12 @@ function entityMatches(entity: Entity, query: string): TaskMatch[] {
 	});
 }
 
-function fact(entity: Entity, allowActions: boolean, evidence: TaskEvidence, textLimit = MAX_FACT_TEXT): TaskFact {
+export function taskFact(
+	entity: Entity,
+	allowActions: boolean,
+	evidence: TaskEvidence,
+	textLimit = MAX_FACT_TEXT,
+): TaskFact {
 	const copyText = (value: string | undefined) => {
 		if (value === undefined) return undefined;
 		if (value.length > textLimit) {
@@ -100,7 +106,7 @@ export function taskSnapshotEvidence(observation: PageObservationV3) {
 		capturedAt: observation.snapshot.capturedAt,
 		selectionComplete: index.complete && observation.entities !== undefined,
 		entities: index.entities.map((entity) => ({
-			...fact(entity, true, evidence, Infinity),
+			...taskFact(entity, true, evidence, Infinity),
 			...(index.parent.has(entity.ref) ? { structuralParentRef: index.parent.get(entity.ref) } : {}),
 			relations: taskRelations(entity).map((relation) => ({
 				type: relation.type,
@@ -199,7 +205,7 @@ function buildBundle(
 	const mandatory = GLOBAL_ROLES.has(role) && anchor.state.visible;
 	const selected = context.entities;
 	const facts = selected.map((entity) =>
-		fact(entity, !context.gaps.includes("object-context-unavailable") || candidate.explicit, context),
+		taskFact(entity, !context.gaps.includes("object-context-unavailable") || candidate.explicit, context),
 	);
 	const members = new Set(selected.map((entity) => entity.ref));
 	const changes = (observation.diff?.changed ?? [])
@@ -374,6 +380,7 @@ export function projectTaskView(observation: PageObservationV3, spec: Normalized
 	for (const [name, provider] of Object.entries(observation.providers))
 		if (provider.status === "failed" || provider.status === "degraded")
 			limitations.push(`Capture provider ${name}: ${provider.status}.`);
+	const packetPlan = planTaskPackets(index, bundles, spec, observation);
 	return {
 		task: {
 			intent: spec.intent,
@@ -411,10 +418,14 @@ export function projectTaskView(observation: PageObservationV3, spec: Normalized
 				mandatoryGroupsUnavailable: global.length - bundles.filter((bundle) => bundle.mandatory).length,
 				contextComplete:
 					complete && !selected.unresolved.length && capturedContextComplete(observation, bundles),
+				packetsInline: 0,
+				packetsFolded: packetPlan.packets.length,
+				packetsUnavailable: packetPlan.unavailable,
 			},
 			limitations,
 		},
 		bundles,
+		packets: packetPlan.packets,
 	};
 }
 

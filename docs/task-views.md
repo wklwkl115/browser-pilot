@@ -57,7 +57,7 @@ The implementation uses captured structure and typed relationships. For DOM cont
 
 ## Budgets and resources
 
-The canonical observation is saved unchanged before task selection. Selection precedes generic projection limits. The task view is limited to 32 KiB of serialized UTF-8 JSON and folds whole bundles. If a mandatory group cannot fit, the view discloses the folded blocker and does not fill the space with actionable candidate fragments.
+The canonical observation is saved unchanged before task selection. Selection precedes generic projection limits. The task view is limited to 32 KiB of serialized UTF-8 JSON and folds whole bundles or dependency-complete packets. If a mandatory group cannot fit, the view discloses the folded blocker and does not fill the space with actionable candidate fragments.
 
 Internal bounds include 20,000 indexed entities, 256 materialized object groups and 128 facts per group. A text-only match can add one evidence group. Preferred fields are ranked before the context bound. Bounded text excerpts and incomplete relationships are disclosed; the original captured model remains independently available. These limits do not authorize further page exploration.
 
@@ -81,7 +81,7 @@ Task index entries include `resourceJsonBytes` (UTF-8 bytes of the full group JS
 
 Each bundle exposes `requirements`, `gapDetails`, and `remedies`. The compatibility `gaps: string[]` is derived from `gapDetails` codes. Gap and remedy IDs are scoped to the saved task artifact; refs cite captured evidence and do not grant execution permission.
 
-The four requirements remain `local` (fields and related context), `owner` (captured structural owner), `identity` (captured object identification context), and `actions` (applicable controls with object context and known dependencies). Identification completeness is scoped to the observed object; it does not prove a globally unique business identifier. This policy still uses whole-object requirements, not field packets.
+The four requirements remain `local` (fields and related context), `owner` (captured structural owner), `identity` (captured object identification context), and `actions` (applicable controls with object context and known dependencies). Identification completeness is scoped to the observed object; it does not prove a globally unique business identifier. Group requirements cover the logical object; packet requirements cover their explicitly declared subject and dependencies.
 
 Each requirement contains independent `evidence` and `delivery` states, plus `reasonCodes`, `evidenceRefs`, and `gapIds`:
 
@@ -106,4 +106,14 @@ Each `gapDetails` item includes its requirement, layer, related refs, human-read
 
 When selection or association needs inspection beyond the materialized group, an additional registered evidence resource reads the saved canonical artifact. It returns public facts, captured typed relations, structural parent refs and capture boundaries, with password values and locator internals omitted. Text is not truncated by the group's text limit. The entity index remains bounded at 20,000 and reports `selectionComplete`; this resource is a broad, explicit expansion, not a dependency-complete packet. Its SHA-256, snapshot identity, expiry, project scope and projection policy are checked before reading. It never queries the page or operation registry. The existing whole-page semantic resource and `/groups/...` resources retain their meanings.
 
-New artifacts use `browser-task-projection/v2` and `literal-context-v2`. The reader still accepts valid v1 artifacts and returns their original bundle shape; it does not fabricate structured requirements for historical artifacts. Unknown or mismatched schema/policy versions fail. The task artifact digest binds the normalized task spec, canonical digest and saved requirements together. Reading any expansion leaves the saved report unchanged; only a new assessment with the missing evidence can remove a capture or association gap.
+New artifacts use `browser-task-projection/v3` and `literal-context-v3`. The reader still accepts valid v1 and v2 artifacts and returns their original bundle shape; it does not fabricate structured requirements or packets for historical artifacts. Unknown or mismatched schema/policy versions fail. The task artifact digest binds the normalized task spec, canonical digest and saved requirements together. Reading any expansion leaves the saved report unchanged; only a new assessment with the missing evidence can remove a capture or association gap.
+
+## Progressive field packets
+
+`packets` are independent delivery units alongside `bundles`. A focused editable/control ref or a captured field matching `fields` can produce a field/action packet from the canonical entity index, including fields beyond the group's 128-fact materialization bound. Each packet identifies its `bundleId`, question, subject, owner, snapshot, identification refs and complete dependency refs. `/groups/...` continues to read the saved logical group; it does not return a packet.
+
+The fixed `field-context-v1` policy retains the subject, captured owner, static heading/rowheader/cell identification fields, same-owner clickable controls and feedback, then follows captured label, description, column, occlusion and control relations transitively. Unknown ownership and uncaptured dependencies remain gaps. Unrelated fields are excluded by policy, with an exclusion count and up to 16 representative reasons; budget changes never alter these rules. Packet context completeness is scoped to these dependencies, and does not imply that the whole form is displayed.
+
+The planner materializes up to 256 packets with at most 128 required entities each. Larger dependency sets count as `packetsUnavailable`, with no false expansion promise. Required text is not truncated: an oversized error folds the whole packet, preserving the exact error in its resource. `packetsInline` and `packetsFolded` describe delivery independently of whole-group scope. Mandatory dialogs and blockers still take precedence. Packets that share an owner reuse the same captured refs; each resource retains its own identification context so it can be understood independently.
+
+The task index includes a `packetIndex` with generated packet URIs, question, owner, gaps, completeness and exact expanded `resourceJsonBytes`. Follow its index/next URI for additional bounded pages. Packet reads include snapshot and canonical digest, capture/expiry times, task scope and the saved packet. They use no live browser or operation registry. Standard MCP resource reading and text/structured tool output expose the same evidence boundaries; the link alone does not mean a host has read the packet.
