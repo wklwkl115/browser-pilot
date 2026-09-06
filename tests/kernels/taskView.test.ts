@@ -199,7 +199,9 @@ test("bounded global groups remain counted and absent capture cannot assert no m
 	const bounded = projectTaskView(taskObservation(alerts), prepareTaskView({ focus: { query: "missing" } })!);
 	assert.equal(bounded.task.status, "unresolved");
 	assert.equal(bounded.task.outputScope.mandatoryGroups, 270);
-	assert.equal(bounded.task.outputScope.mandatoryGroupsFolded, 14);
+	assert.equal(bounded.task.outputScope.mandatoryGroupsFolded, 0);
+	assert.equal(bounded.task.outputScope.mandatoryGroupsUnavailable, 14);
+	assert.equal(bounded.task.outputScope.groupsUnavailable, 14);
 	const absent = projectTaskView(
 		taskObservation([], { content: undefined, actionSpace: undefined, providers: {} }),
 		prepareTaskView({ focus: { query: "missing" } })!,

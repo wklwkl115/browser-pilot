@@ -16,6 +16,7 @@ import {
 import { readMcpResource, registerMcpObservationResources, renderMcpToolResult } from "../../src/apps/mcp/server.ts";
 import { isPageObservationView } from "../../src/validation/pageContracts.ts";
 import type { PageObservationView } from "../../src/kernels/abml/pageObservation.ts";
+import { readTaskProjectionResource } from "../../src/apps/mcp/taskViewResources.ts";
 
 function resourceText(value: Awaited<ReturnType<typeof readMcpResource>>) {
 	const first = value.contents[0]!;
@@ -222,4 +223,165 @@ test("historical task groups preserve uncertain actions and ordinary row identit
 	assert.ok(!group.bundle.facts.some((fact: { ref: string }) => fact.ref === save.ref));
 	assert.ok(group.bundle.gaps.includes("context-actions-unknown"));
 	assert.equal(group.task.outputScope.contextComplete, false);
+	assert.equal(index.groups[0].requirements.actions.evidence, "unknown");
+	assert.equal(index.groups[0].requirements.actions.delivery, "folded");
+	assert.equal(group.bundle.requirements.actions.evidence, "unknown");
+	assert.equal(group.bundle.requirements.actions.delivery, "partial");
+	const gap = group.bundle.gapDetails.find(
+		(item: any) => item.requirement === "actions" && item.layer === "association",
+	);
+	assert.ok(gap.relatedRefs.includes("bp-ref://region/actions"));
+	const remedies = group.bundle.remedies.filter((item: any) => gap.remedyIds.includes(item.id));
+	assert.ok(remedies.some((item: any) => item.kind === "disambiguate"));
+	const read = remedies.find((item: any) => item.kind === "read-snapshot");
+	assert.ok(read.mayAddress.includes(gap.id));
+	await readMcpResource(read.resourceUri, cwd);
+	assert.deepEqual(resourceText(await readMcpResource(index.groups[0].resourceUri, cwd)), group);
+});
+
+test("budget folding preserves evidence and offers a read that changes only delivery", async (t) => {
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-task-evidence-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	const invoice = taskInvoice();
+	const observation = taskObservation([invoice.record]);
+	const spec = prepareTaskView({ focus: { refs: [invoice.note.ref] }, intent: "interact" })!;
+	const plan = projectTaskView(observation, spec);
+	const before = JSON.stringify(plan);
+	const small = packTaskView(observation, plan, "browser-pilot://observation/test", { items: [] }, 2500);
+	const large = packTaskView(observation, plan, "browser-pilot://observation/test", { items: [] });
+	assert.equal(small.bundles!.length, 0);
+	assert.equal(large.bundles!.length, 1);
+	assert.equal(JSON.stringify(plan), before, "packing must not mutate stored evidence");
+	const result = await pageObservationResult({
+		observation,
+		view: spec,
+		ctx: { cwd },
+		fallbackName: "evidence.json",
+	});
+	registerMcpObservationResources(result.details, cwd);
+	const descriptor = (result.details![OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[]).find(
+		(r) => r.taskProjection,
+	)!;
+	const index = resourceText(await readMcpResource(descriptor.uri, cwd));
+	const summary = index.groups[0];
+	const gap = summary.gapDetails.find((item: any) => item.layer === "delivery" && item.requirement === "actions");
+	const read = summary.remedies.find((item: any) => gap.remedyIds.includes(item.id));
+	assert.equal(read.resourceUri, summary.resourceUri);
+	assert.ok(read.mayAddress.includes(gap.id));
+	const expanded = resourceText(await readMcpResource(read.resourceUri, cwd));
+	for (const kind of ["local", "owner", "identity", "actions"] as const) {
+		assert.equal(summary.requirements[kind].evidence, "complete");
+		assert.equal(summary.requirements[kind].delivery, "folded");
+		assert.equal(expanded.bundle.requirements[kind].evidence, "complete");
+		assert.equal(expanded.bundle.requirements[kind].delivery, "inline");
+		assert.deepEqual(expanded.bundle.requirements[kind], large.bundles![0]!.requirements[kind]);
+	}
+	assert.deepEqual(expanded.bundle.gapDetails, []);
+	const artifact = JSON.parse(await readFile(descriptor.path, "utf8"));
+	assert.equal(artifact.schema, "browser-task-projection/v2");
+	assert.equal(artifact.policy, "literal-context-v2");
+	delete artifact.bundles[0].requirements;
+	const invalid = JSON.stringify(artifact);
+	assert.throws(
+		() =>
+			readTaskProjectionResource(
+				invalid,
+				{ ...descriptor, taskProjection: { sha256: taskArtifactHash(invalid) } },
+				descriptor.uri,
+			),
+		/Invalid task projection/,
+	);
+});
+
+test("selection remedies read canonical evidence and v1 groups keep their original shape", async (t) => {
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-task-selection-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	const fields = Array.from({ length: 150 }, (_, i) => taskEntity(`field-${i}`, "cell", `Field ${i}`));
+	const form = taskEntity("form", "form", "INV-2048", fields);
+	const result = await pageObservationResult({
+		observation: taskObservation([form]),
+		ctx: { cwd },
+		fallbackName: "selection.json",
+		view: prepareTaskView({ focus: { refs: [form.ref] } }),
+	});
+	registerMcpObservationResources(result.details, cwd);
+	const descriptor = (result.details![OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[]).find(
+		(r) => r.taskProjection,
+	)!;
+	const index = resourceText(await readMcpResource(descriptor.uri, cwd));
+	const group = resourceText(await readMcpResource(index.groups[0].resourceUri, cwd));
+	assert.equal(group.bundle.requirements.local.evidence, "complete");
+	assert.equal(group.bundle.requirements.local.delivery, "partial");
+	const gap = group.bundle.gapDetails.find((item: any) => item.code === "context-selection-limit");
+	const remedy = group.bundle.remedies.find((item: any) => gap.remedyIds.includes(item.id));
+	assert.equal(remedy.kind, "read-snapshot");
+	assert.notEqual(remedy.resourceUri, index.groups[0].resourceUri);
+	const canonical = resourceText(await readMcpResource(remedy.resourceUri, cwd));
+	assert.ok(JSON.stringify(canonical).includes(fields[149]!.ref));
+	assert.deepEqual(resourceText(await readMcpResource(index.groups[0].resourceUri, cwd)), group);
+	const legacy = JSON.parse(await readFile(descriptor.path, "utf8"));
+	legacy.schema = "browser-task-projection/v1";
+	legacy.policy = "literal-context-v1";
+	delete legacy.task.outputScope.groupsUnavailable;
+	delete legacy.task.outputScope.mandatoryGroupsUnavailable;
+	for (const bundle of legacy.bundles) {
+		delete bundle.requirements;
+		delete bundle.gapDetails;
+		delete bundle.remedies;
+	}
+	const text = JSON.stringify(legacy);
+	const legacyDescriptor = { ...descriptor, taskProjection: { sha256: taskArtifactHash(text) } };
+	const restored = readTaskProjectionResource(text, legacyDescriptor, `${descriptor.uri}/groups/0`) as any;
+	assert.deepEqual(restored.bundle, legacy.bundles[0]);
+	const legacyIndex = readTaskProjectionResource(text, legacyDescriptor, descriptor.uri) as any;
+	assert.equal(legacyIndex.groups[0].requirements, undefined);
+	legacy.policy = "literal-context-v2";
+	const incompatible = JSON.stringify(legacy);
+	assert.throws(
+		() =>
+			readTaskProjectionResource(
+				incompatible,
+				{ ...descriptor, taskProjection: { sha256: taskArtifactHash(incompatible) } },
+				descriptor.uri,
+			),
+		/Invalid task projection/,
+	);
+});
+
+test("evidence expansion preserves long text, hides password values and rejects snapshot tampering", async (t) => {
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-task-evidence-guard-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	const note = taskEntity("note", "textbox", "Note");
+	note.value = "long captured value ".repeat(1000);
+	const password = taskEntity("password", "textbox", "Password");
+	password.hints = { inputKind: "password", selector: "#private-locator" };
+	password.value = "never-expose-this-value";
+	const form = taskEntity("form", "form", "INV-2048", [note, password]);
+	const result = await pageObservationResult({
+		observation: taskObservation([form]),
+		ctx: { cwd },
+		fallbackName: "guard.json",
+		view: prepareTaskView({ focus: { refs: [note.ref] }, intent: "interact" }),
+	});
+	registerMcpObservationResources(result.details, cwd);
+	const descriptor = (result.details![OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[]).find(
+		(r) => r.taskEvidence,
+	)!;
+	assert.ok(descriptor);
+	const value = resourceText(await readMcpResource(descriptor.uri, cwd));
+	assert.equal(value.entities.find((entity: any) => entity.ref === note.ref).value, note.value);
+	assert.ok(!JSON.stringify(value).includes(password.value));
+	assert.ok(!JSON.stringify(value).includes("private-locator"));
+	note.value = "changed live value";
+	assert.deepEqual(resourceText(await readMcpResource(descriptor.uri, cwd)), value);
+	await assert.rejects(readMcpResource(`${descriptor.uri}/groups/0`, cwd), /no task groups/);
+	await assert.rejects(readMcpResource(descriptor.uri, path.join(cwd, "other")), /Unknown observation resource/);
+	const badPolicy = {
+		...descriptor,
+		uri: `browser-pilot://observation/${randomUUID()}`,
+		taskEvidence: { ...descriptor.taskEvidence!, policy: "future" },
+	};
+	assert.equal(registerMcpObservationResources({ [OBSERVATION_RESOURCES_DETAIL_KEY]: [badPolicy] }, cwd).length, 0);
+	await writeFile(descriptor.path, "{}", "utf8");
+	await assert.rejects(readMcpResource(descriptor.uri, cwd), /digest/);
 });

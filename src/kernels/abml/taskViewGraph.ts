@@ -1,7 +1,8 @@
-import { assessTaskContext, planOwnerContext, type TaskContextRequirements } from "./taskContextCoverage.js";
+import { assessTaskContext, planOwnerContext } from "./taskContextCoverage.js";
+import { addTaskGap, retainTaskEvidence } from "./taskEvidence.js";
 import type { Entity, EntityRelation } from "./entity.js";
 import { entityRelationKeys } from "./relations.js";
-import { normalizeTaskText, type NormalizedTaskViewSpec } from "./taskView.js";
+import { normalizeTaskText, type NormalizedTaskViewSpec, type TaskEvidence, type TaskGap } from "./taskView.js";
 
 export const TASK_ENTITY_LIMIT = 20_000;
 export const TASK_CONTEXT_LIMIT = 128;
@@ -99,7 +100,7 @@ export function taskContext(
 	index: TaskEntityIndex,
 	anchor: Entity,
 	preferences: { spec: NormalizedTaskViewSpec; matchedRefs: Set<string>; changedRefs: Set<string> },
-): { entities: Entity[]; gaps: string[]; requirements: TaskContextRequirements } {
+): TaskEvidence & { entities: Entity[]; candidates: Entity[] } {
 	const root = taskObjectRoot(index, anchor);
 	const members = new Map<string, Entity>([
 		[anchor.ref, anchor],
@@ -107,14 +108,23 @@ export function taskContext(
 	]);
 	const pending = [...(index.children.get(root.ref) ?? [])];
 	const visited = new Set<string>([root.ref]);
-	const gaps = new Set<string>();
+	const issues: Array<Omit<TaskGap, "id" | "remedyIds">> = [];
+	const missing = (code: string, relatedRefs: string[], reason: string, layer: TaskGap["layer"] = "capture") =>
+		issues.push({ code, relatedRefs, reason, layer, requirement: "local" });
+	if (!index.complete)
+		missing(
+			"entity-index-limit",
+			[],
+			"The bounded index did not inspect the entire canonical snapshot.",
+			"selection",
+		);
 	for (let position = 0; position < pending.length; position++) {
 		const ref = pending[position]!;
 		if (visited.has(ref)) continue;
 		visited.add(ref);
 		const entity = index.byRef.get(ref);
 		if (!entity) {
-			gaps.add("structural-member-unavailable");
+			missing("structural-member-unavailable", [ref], "A referenced structural member was not captured.");
 			continue;
 		}
 		members.set(ref, entity);
@@ -123,14 +133,18 @@ export function taskContext(
 	const localRefs = new Set(members.keys());
 	const ownerPlan = planOwnerContext(index, root);
 	for (const ref of ownerPlan.refs) members.set(ref, index.byRef.get(ref)!);
-	const rank = (entity: Entity) => contextRank(entity, anchor.ref, root.ref, preferences);
-	const ranked = [...members.values()].sort((a, b) => rank(a) - rank(b));
-	const chosen = new Map(ranked.slice(0, TASK_CONTEXT_LIMIT).map((entity) => [entity.ref, entity]));
-	if (members.size > chosen.size) gaps.add("context-selection-limit");
-	if (root.ref === anchor.ref && !index.children.has(root.ref) && !index.parent.has(root.ref))
-		gaps.add("object-context-unavailable");
-	const dependencies = [...chosen.values()];
-	for (let i = 0; i < dependencies.length && chosen.size <= TASK_CONTEXT_LIMIT; i++) {
+	// Resolve captured dependencies before selection so limits cannot hide missing relations.
+	const dependencies = [...members.values()];
+	for (let i = 0; i < dependencies.length; i++) {
+		const source = dependencies[i]!;
+		if (source.children && !Array.isArray(source.children))
+			missing(
+				"uncaptured-children",
+				[source.ref],
+				"This entity has children that are not present in the snapshot.",
+			);
+		if (source.hints?.contextTextIncomplete === true)
+			missing("captured-context-text-incomplete", [source.ref], "Captured context text is incomplete.");
 		for (const edge of taskRelations(dependencies[i]!)) {
 			if (
 				!["labelledBy", "describedBy", "columnOf", "coveredBy", "controls", "expandedTarget"].includes(
@@ -138,42 +152,53 @@ export function taskContext(
 				)
 			)
 				continue;
-			if (chosen.has(edge.targetRef)) continue;
+			if (members.has(edge.targetRef)) continue;
 			const target = index.byRef.get(edge.targetRef);
 			if (!target) {
-				gaps.add("related-context-unavailable");
+				missing(
+					"related-context-unavailable",
+					[source.ref, edge.targetRef],
+					index.complete
+						? `Captured ${edge.type} relation points to an unavailable node.`
+						: `Captured ${edge.type} target is outside the bounded index; capture absence is not established.`,
+					index.complete ? "capture" : "selection",
+				);
 				continue;
 			}
-			if (chosen.size >= TASK_CONTEXT_LIMIT) {
-				gaps.add("context-selection-limit");
-				continue;
-			}
-			chosen.set(target.ref, target);
+			members.set(target.ref, target);
+			localRefs.add(target.ref);
 			dependencies.push(target);
 		}
 	}
-	if (Array.from(chosen.values()).some((entity) => entity.children && !Array.isArray(entity.children)))
-		gaps.add("uncaptured-children");
-	const requirements = assessTaskContext({
+	const evidence = assessTaskContext({
 		anchor,
 		localRefs,
 		candidates: members,
-		selected: chosen,
 		ownerPlan,
 		intent: preferences.spec.intent,
 		focused:
 			preferences.matchedRefs.has(anchor.ref) ||
 			("refs" in preferences.spec.focus && preferences.spec.focus.refs.includes(anchor.ref)),
-		captureIncomplete:
-			!index.complete ||
-			gaps.has("structural-member-unavailable") ||
-			gaps.has("uncaptured-children") ||
-			gaps.has("related-context-unavailable") ||
-			gaps.has("context-selection-limit"),
+		issues,
 	});
-	for (const [requirement, status] of Object.entries(requirements))
-		if (status === "unknown" || status === "incomplete") gaps.add(`context-${requirement}-${status}`);
-	return { entities: [...chosen.values()], gaps: [...gaps], requirements };
+	if (
+		root.ref === anchor.ref &&
+		!index.children.has(root.ref) &&
+		!index.parent.has(root.ref) &&
+		evidence.requirements.owner.evidence === "unknown"
+	)
+		addTaskGap(evidence, {
+			code: "object-context-unavailable",
+			requirement: "owner",
+			layer: "association",
+			relatedRefs: [root.ref],
+			reason: "This captured entity has no established object context.",
+		});
+	const rank = (entity: Entity) => contextRank(entity, anchor.ref, root.ref, preferences);
+	const ranked = [...members.values()].sort((a, b) => rank(a) - rank(b));
+	const chosen = ranked.slice(0, TASK_CONTEXT_LIMIT);
+	retainTaskEvidence(evidence, new Set(chosen.map((entity) => entity.ref)));
+	return { ...evidence, entities: chosen, candidates: [...members.values()] };
 }
 
 function contextRank(

@@ -40,7 +40,7 @@ const spec = {
 	additionalProperties: false,
 } as const;
 
-export const TASK_BUNDLE_SCHEMA = {
+const LEGACY_TASK_BUNDLE_SCHEMA = {
 	type: "object",
 	properties: {
 		id: text,
@@ -115,6 +115,97 @@ export const TASK_BUNDLE_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
+const requirement = { enum: ["local", "owner", "identity", "actions"] } as const;
+const report = {
+	type: "object",
+	properties: {
+		evidence: { enum: ["complete", "incomplete", "unknown", "not-applicable"] },
+		delivery: { enum: ["inline", "partial", "folded", "unavailable", "not-applicable"] },
+		reasonCodes: strings,
+		evidenceRefs: strings,
+		gapIds: strings,
+	},
+	required: ["evidence", "delivery", "reasonCodes", "evidenceRefs", "gapIds"],
+	additionalProperties: false,
+} as const;
+export const TASK_BUNDLE_SCHEMA = {
+	...LEGACY_TASK_BUNDLE_SCHEMA,
+	properties: {
+		...LEGACY_TASK_BUNDLE_SCHEMA.properties,
+		requirements: {
+			type: "object",
+			properties: { local: report, owner: report, identity: report, actions: report },
+			required: ["local", "owner", "identity", "actions"],
+			additionalProperties: false,
+		},
+		gapDetails: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					id: text,
+					code: text,
+					requirement,
+					layer: { enum: ["delivery", "selection", "capture", "association", "freshness"] },
+					relatedRefs: strings,
+					reason: text,
+					remedyIds: strings,
+				},
+				required: ["id", "code", "requirement", "layer", "relatedRefs", "reason", "remedyIds"],
+				additionalProperties: false,
+			},
+		},
+		remedies: {
+			type: "array",
+			items: {
+				anyOf: [
+					{
+						type: "object",
+						properties: {
+							id: text,
+							kind: { const: "read-snapshot" },
+							resourceUri: text,
+							mayAddress: strings,
+							resourceJsonBytes: count,
+						},
+						required: ["id", "kind", "resourceUri", "mayAddress"],
+						additionalProperties: false,
+					},
+					{
+						type: "object",
+						properties: {
+							id: text,
+							kind: { const: "observe-again" },
+							reason: text,
+							changesSnapshot: { const: true },
+						},
+						required: ["id", "kind", "reason", "changesSnapshot"],
+						additionalProperties: false,
+					},
+					{
+						type: "object",
+						properties: { id: text, kind: { const: "disambiguate" }, candidateRefs: strings, reason: text },
+						required: ["id", "kind", "candidateRefs", "reason"],
+						additionalProperties: false,
+					},
+					{
+						type: "object",
+						properties: {
+							id: text,
+							kind: { const: "page-action-required" },
+							relatedRefs: strings,
+							reason: text,
+						},
+						required: ["id", "kind", "relatedRefs", "reason"],
+						additionalProperties: false,
+					},
+				],
+			},
+		},
+	},
+	required: [...LEGACY_TASK_BUNDLE_SCHEMA.required, "requirements", "gapDetails", "remedies"],
+} as const;
+
 export const TASK_VIEW_METADATA_SCHEMA = {
 	type: "object",
 	properties: {
@@ -172,8 +263,10 @@ export const TASK_VIEW_METADATA_SCHEMA = {
 				groupsTotal: count,
 				groupsInline: count,
 				groupsFolded: count,
+				groupsUnavailable: count,
 				mandatoryGroups: count,
 				mandatoryGroupsFolded: count,
+				mandatoryGroupsUnavailable: count,
 				contextComplete: flag,
 			},
 			required: [
@@ -227,4 +320,14 @@ export const TASK_PROJECTION_ARTIFACT_SCHEMA = {
 		"bundles",
 	],
 	additionalProperties: false,
+} as const;
+
+export const LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA = {
+	...TASK_PROJECTION_ARTIFACT_SCHEMA,
+	properties: {
+		...TASK_PROJECTION_ARTIFACT_SCHEMA.properties,
+		schema: { const: "browser-task-projection/v1" },
+		policy: { const: "literal-context-v1" },
+		bundles: { type: "array", items: LEGACY_TASK_BUNDLE_SCHEMA },
+	},
 } as const;

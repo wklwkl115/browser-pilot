@@ -1,16 +1,48 @@
 import { Value } from "typebox/value";
-import { TASK_PROJECTION_ARTIFACT_SCHEMA } from "../../kernels/abml/taskViewSchema.js";
-import type { TaskProjectionArtifact } from "../../kernels/abml/taskView.js";
+import {
+	TASK_PROJECTION_ARTIFACT_SCHEMA,
+	LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA,
+} from "../../kernels/abml/taskViewSchema.js";
+import { foldedTaskEvidence } from "../../kernels/abml/taskEvidence.js";
+import { TASK_PROJECTION_POLICY, type TaskProjectionArtifact } from "../../kernels/abml/taskView.js";
+import { taskSnapshotEvidence } from "../../kernels/abml/taskViewSelection.js";
+import { isPageObservationV3 } from "../../validation/pageContracts.js";
 import type { ObservationResourceDescriptor } from "../../commands/observe/observationResources.js";
 import { taskArtifactHash } from "../../commands/observe/taskViewProjection.js";
 
 const INDEX_PAGE_SIZE = 16;
+
+export function validTaskEvidenceDescriptor(descriptor: ObservationResourceDescriptor): boolean {
+	return (
+		descriptor.kind === "details" &&
+		descriptor.jsonPath === undefined &&
+		descriptor.contentSection === undefined &&
+		descriptor.taskProjection === undefined &&
+		descriptor.taskEvidence?.policy === TASK_PROJECTION_POLICY &&
+		typeof descriptor.taskEvidence.sha256 === "string" &&
+		/^[a-f0-9]{64}$/.test(descriptor.taskEvidence.sha256)
+	);
+}
+
+export function readTaskEvidenceResource(text: string, descriptor: ObservationResourceDescriptor): unknown {
+	if (!validTaskEvidenceDescriptor(descriptor) || taskArtifactHash(text) !== descriptor.taskEvidence!.sha256)
+		throw new Error("Task evidence resource digest or policy mismatch");
+	const observation: unknown = JSON.parse(text);
+	if (
+		!isPageObservationV3(observation) ||
+		observation.snapshot.snapshotId !== descriptor.snapshotId ||
+		observation.snapshot.capturedAt + observation.snapshot.ttlMs !== descriptor.expiresAt
+	)
+		throw new Error("Task evidence snapshot mismatch");
+	return taskSnapshotEvidence(observation);
+}
 
 export function validTaskResourceDescriptor(descriptor: ObservationResourceDescriptor): boolean {
 	return (
 		descriptor.kind === "details" &&
 		descriptor.jsonPath === undefined &&
 		descriptor.contentSection === undefined &&
+		descriptor.taskEvidence === undefined &&
 		!!descriptor.taskProjection &&
 		typeof descriptor.taskProjection.sha256 === "string" &&
 		/^[a-f0-9]{64}$/.test(descriptor.taskProjection.sha256)
@@ -35,7 +67,11 @@ export function readTaskProjectionResource(
 	if (!validTaskResourceDescriptor(descriptor) || taskArtifactHash(text) !== descriptor.taskProjection!.sha256)
 		throw new Error("Task projection resource digest mismatch");
 	const parsed: unknown = JSON.parse(text);
-	if (!Value.Check(TASK_PROJECTION_ARTIFACT_SCHEMA, parsed)) throw new Error("Invalid task projection artifact");
+	if (
+		!Value.Check(TASK_PROJECTION_ARTIFACT_SCHEMA, parsed) &&
+		!Value.Check(LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA, parsed)
+	)
+		throw new Error("Invalid task projection artifact");
 	const artifact = parsed as TaskProjectionArtifact;
 	if (artifact.snapshotId !== descriptor.snapshotId || artifact.expiresAt !== descriptor.expiresAt)
 		throw new Error("Task projection snapshot mismatch");
@@ -74,6 +110,9 @@ export function readTaskProjectionResource(
 			resourceJsonBytes: Buffer.byteLength(JSON.stringify(groupResource(artifact, bundle))),
 			exceedsInlineBudget: Buffer.byteLength(JSON.stringify(groupResource(artifact, bundle))) > 32 * 1024,
 			gaps: bundle.gaps,
+			...(bundle.requirements
+				? foldedTaskEvidence(bundle, bundle.id, `${descriptor.uri}/groups/${start + offset}`)
+				: {}),
 			resourceUri: `${descriptor.uri}/groups/${start + offset}`,
 		})),
 		...(start + INDEX_PAGE_SIZE < artifact.bundles.length
@@ -96,8 +135,12 @@ function resourceTask(artifact: TaskProjectionArtifact, inline: number, mandator
 		outputScope: {
 			...artifact.task.outputScope,
 			groupsInline: inline,
-			groupsFolded: artifact.task.outputScope.groupsTotal - inline,
-			mandatoryGroupsFolded: artifact.task.outputScope.mandatoryGroups - mandatoryInline,
+			groupsFolded:
+				artifact.task.outputScope.groupsTotal - (artifact.task.outputScope.groupsUnavailable ?? 0) - inline,
+			mandatoryGroupsFolded:
+				artifact.task.outputScope.mandatoryGroups -
+				(artifact.task.outputScope.mandatoryGroupsUnavailable ?? 0) -
+				mandatoryInline,
 			contextComplete: artifact.task.outputScope.contextComplete && inline === artifact.bundles.length,
 		},
 	};

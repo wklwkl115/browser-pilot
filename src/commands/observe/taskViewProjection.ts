@@ -3,6 +3,7 @@ import path from "node:path";
 import { artifactFallbackName, saveTextArtifact } from "../../artifacts/artifactFiles.js";
 import { stableJson } from "../../utils/json.js";
 import { projectTaskView } from "../../kernels/abml/taskViewSelection.js";
+import { bindTaskRemedies } from "../../kernels/abml/taskEvidence.js";
 import {
 	TASK_PROJECTION_POLICY,
 	TASK_PROJECTION_SCHEMA,
@@ -35,8 +36,8 @@ function taskOutput(plan: TaskProjectionPlan, included: DecisionBundle[], compac
 		outputScope: {
 			...plan.task.outputScope,
 			groupsInline: included.length,
-			groupsFolded: plan.task.outputScope.groupsTotal - included.length,
-			mandatoryGroupsFolded: plan.task.outputScope.mandatoryGroups - inlineMandatory,
+			groupsFolded: plan.bundles.length - included.length,
+			mandatoryGroupsFolded: plan.bundles.filter((bundle) => bundle.mandatory).length - inlineMandatory,
 			contextComplete: plan.task.outputScope.contextComplete && included.length === plan.bundles.length,
 		},
 	};
@@ -76,7 +77,7 @@ export function packTaskView(
 		},
 	});
 	// Fold entire bundles. A control is never copied into an independent action list.
-	let foldedMandatory = plan.task.outputScope.mandatoryGroupsFolded > 0;
+	let foldedMandatory = plan.task.outputScope.mandatoryGroupsUnavailable > 0;
 	for (const bundle of plan.bundles) {
 		if (foldedMandatory && !bundle.mandatory) continue;
 		included.push(bundle);
@@ -117,6 +118,21 @@ export async function projectTaskObservation(
 	spec: NormalizedTaskViewSpec,
 ): Promise<{ observation: PageObservationView; resources: ObservationResourceDescriptor[] }> {
 	const plan = projectTaskView(observation, spec);
+	const canonical = projectObservationOverflow(observation, canonicalPath);
+	const canonicalResource = canonical.resources.find((item) => item.jsonPath === "$")!;
+	const evidenceResource: ObservationResourceDescriptor | undefined = plan.bundles.some((bundle) =>
+		bundle.gapDetails.some((gap) => gap.layer === "selection" || gap.layer === "association"),
+	)
+		? {
+				...canonicalResource,
+				uri: `${OBSERVATION_RESOURCE_URI_PREFIX}${randomUUID()}`,
+				name: "Captured task evidence and typed relationships",
+				ref: "frontier:task-evidence",
+				jsonPath: undefined,
+				taskEvidence: { sha256: taskArtifactHash(canonicalText), policy: TASK_PROJECTION_POLICY },
+			}
+		: undefined;
+	for (const bundle of plan.bundles) bindTaskRemedies(bundle, bundle.id, evidenceResource?.uri);
 	const artifact: TaskProjectionArtifact = {
 		schema: TASK_PROJECTION_SCHEMA,
 		policy: TASK_PROJECTION_POLICY,
@@ -141,11 +157,12 @@ export async function projectTaskObservation(
 		kind: "details",
 		taskProjection: { sha256: taskArtifactHash(text) },
 	};
-	const canonical = projectObservationOverflow(observation, canonicalPath);
-	const canonicalResource = canonical.resources.find((item) => item.jsonPath === "$")!;
 	const canonicalItem = canonical.observation.frontier!.items.find(
 		(item) => item.resourceUri === canonicalResource.uri,
 	)!;
 	const projected = packTaskView(observation, plan, resource.uri, { items: [canonicalItem] });
-	return { observation: projected, resources: [resource, canonicalResource] };
+	return {
+		observation: projected,
+		resources: [resource, canonicalResource, ...(evidenceResource ? [evidenceResource] : [])],
+	};
 }
