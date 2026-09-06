@@ -1,7 +1,7 @@
 import { checkOwnerContextVariants, checkExactTargetDuringRouteChange } from "./browser-eval-context-checks.mjs";
 
-function taskFact(ctx, bundle, name) {
-	const facts = bundle.facts.filter((fact) => fact.name === name && fact.actions?.length);
+function taskFact(ctx, bundle, name, action) {
+	const facts = bundle.facts.filter((fact) => fact.name === name && fact.actions?.includes(action));
 	ctx.assert(facts.length === 1, "TASK_CONTROL_IDENTITY", `Expected one ${name} control in the selected record`);
 	return facts[0].ref;
 }
@@ -42,8 +42,8 @@ export const taskViewEvaluationTasks = [
 				"PORTAL_CONTEXT",
 				"Related error outside the form was omitted",
 			);
-			const note = taskFact(ctx, expanded.bundle, "Note");
-			const save = taskFact(ctx, expanded.bundle, "Save");
+			const note = taskFact(ctx, expanded.bundle, "Note", "edit");
+			const save = taskFact(ctx, expanded.bundle, "Save", "click");
 			const focused = await ctx.observe({
 				mode: "diff",
 				view: { focus: { refs: [note] }, fields: ["Note"], intent: "read" },

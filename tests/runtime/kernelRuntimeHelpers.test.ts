@@ -269,6 +269,87 @@ test("full AX reader projects fresh snapshot geometry, paint order, and relation
 	assert.equal(server.calls.length, 4);
 });
 
+test("captured table headers retain unique column evidence and disclose competing headers", async () => {
+	for (const competing of [false, true]) {
+		const nodes = [
+			axNode(1, "table", "Invoices", { childIds: ["ax-2", "ax-4", ...(competing ? ["ax-6"] : [])] }),
+			axNode(2, "row", "Header", { childIds: ["ax-3"] }),
+			axNode(3, "columnheader", "Invoice"),
+			axNode(4, "row", "Record", { childIds: ["ax-5"] }),
+			axNode(5, "cell", "INV-2048"),
+			...(competing
+				? [
+						axNode(6, "row", "Second header", { childIds: ["ax-7"] }),
+						axNode(7, "columnheader", "Other identifier"),
+					]
+				: []),
+		];
+		const result = await readAxEntities(
+			createCdpServer({
+				"Accessibility.getFullAXTree": { nodes },
+				"DOMSnapshot.captureSnapshot": {
+					strings: [],
+					documents: [
+						{
+							nodes: {
+								backendNodeId: nodes.map((node) => node.backendDOMNodeId),
+								attributes: nodes.map(() => []),
+							},
+							layout: {
+								nodeIndex: nodes.map((_, i) => i),
+								bounds: nodes.map((_, i) => [0, i * 30, 100, 20]),
+								paintOrders: nodes.map((_, i) => i),
+							},
+						},
+					],
+				},
+			}),
+			{ tabId: 7, observationId: `table-headers-${competing}` },
+		);
+		assert.equal(
+			result.anchors.some(
+				(edge) => edge.sourceKey === "b:5" && edge.type === "columnOf" && edge.targetKey === "b:3",
+			),
+			!competing,
+		);
+		assert.equal(
+			result.entities.find((built) => built.entity.name === "INV-2048")!.entity.hints
+				?.contextRelationsIncomplete === true,
+			competing,
+		);
+		assert.ok(result.anchors.some((edge) => edge.sourceKey === "b:5" && edge.type === "rowOf"));
+	}
+});
+
+test("captured form paths count element siblings without counting the HTML doctype", async () => {
+	const result = await readAxEntities(
+		createCdpServer({
+			"Accessibility.getFullAXTree": { nodes: [axNode(5, "form", "Editor")] },
+			"DOMSnapshot.captureSnapshot": {
+				strings: ["#document", "html", "HTML", "BODY", "FORM"],
+				documents: [
+					{
+						nodes: {
+							backendNodeId: [1, 2, 3, 4, 5],
+							nodeName: [0, 1, 2, 3, 4],
+							nodeType: [9, 10, 1, 1, 1],
+							parentIndex: [-1, 0, 0, 2, 3],
+							attributes: [[], [], [], [], []],
+						},
+						layout: { nodeIndex: [4], bounds: [[0, 0, 100, 100]], paintOrders: [1] },
+					},
+				],
+			},
+		}),
+		{ tabId: 7, observationId: "form-path" },
+	);
+	assert.deepEqual(result.snapshotDomIds!.find((item) => item.backendNodeId === 5)!.path, [
+		{ tag: "html", index: 1 },
+		{ tag: "body", index: 1 },
+		{ tag: "form", index: 1 },
+	]);
+});
+
 test("full AX reader absorbs rendered text fragments before entity and ref creation", async () => {
 	const fragments = Array.from({ length: 20_000 }, (_, index) => [
 		{ nodeId: `static-${index}`, role: { value: "StaticText" }, name: { value: `Row ${index}` } },

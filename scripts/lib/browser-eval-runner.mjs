@@ -4,6 +4,7 @@ import { requestTool, resultEnvelope, resultText, repositoryRoot, withBrowserHar
 import { startEvaluationFixtures } from "./browser-eval-fixtures.mjs";
 import { summarizeAttempts } from "./evaluation-metrics.mjs";
 import { renderMcpToolResult, readMcpResource } from "../../src/apps/mcp/server.ts";
+import { compareTaskViewCosts } from "./task-view-costs.mjs";
 
 function fail(category, code, message) {
 	throw Object.assign(new Error(message), { category, code });
@@ -18,12 +19,14 @@ function fixtureTarget(browser, fixture) {
 
 function taskContext(daemon, session, fixture, round, metrics, artifactRoot, restartBrowser) {
 	let lastPresentation;
+	let lastRaw;
 	const call = async (tool, params, expectedErrors = []) => {
 		metrics.toolCalls++;
 		const started = performance.now();
 		const step = { tool, success: false };
 		try {
 			const raw = await requestTool(daemon, tool, params, 20_000, artifactRoot);
+			lastRaw = raw;
 			lastPresentation = Array.isArray(raw.content)
 				? renderMcpToolResult(tool, raw, artifactRoot)
 				: { content: [{ type: "text", text: JSON.stringify(raw) }], isError: true };
@@ -59,6 +62,17 @@ function taskContext(daemon, session, fixture, round, metrics, artifactRoot, res
 		round,
 		call,
 		presentation: () => lastPresentation,
+		compareTaskViews: async () => {
+			metrics.contextCosts = await compareTaskViewCosts(lastRaw, artifactRoot);
+		},
+		beginTaskEffects: () => {
+			metrics.executionCostStart = metrics.mcpResponseJsonBytes ?? 0;
+		},
+		recoverableGap: (addressed) => {
+			metrics.recoverableGaps ??= { attempted: 0, addressed: 0 };
+			metrics.recoverableGaps.attempted++;
+			metrics.recoverableGaps.addressed += Number(addressed);
+		},
 		readResource: async (uri) => {
 			const started = performance.now();
 			const result = await readMcpResource(uri, artifactRoot);
@@ -75,7 +89,13 @@ function taskContext(daemon, session, fixture, round, metrics, artifactRoot, res
 			metrics.responseTextChars += text.length;
 			metrics.steps.push({
 				operation: "resource-read",
-				resourceKind: /\/groups\/\d+$/.test(uri) ? "group" : /\/scope\/\d+$/.test(uri) ? "scope" : "index",
+				resourceKind: /\/packets\/\d+$/.test(uri)
+					? "packet"
+					: /\/groups\/\d+$/.test(uri)
+						? "group"
+						: /\/scope\/\d+$/.test(uri)
+							? "scope"
+							: "index",
 				success: true,
 				responseJsonBytes: bytes,
 				responseTextChars: text.length,
@@ -151,7 +171,7 @@ export async function runBrowserEvaluation(options, tasks) {
 	const attempts = [];
 	const metadata = {
 		schemaVersion: 2,
-		fixtureVersion: 6,
+		fixtureVersion: 7,
 		generatedAt: new Date().toISOString(),
 		node: process.version,
 		platform: process.platform,
@@ -203,6 +223,16 @@ export async function runBrowserEvaluation(options, tasks) {
 						};
 					} finally {
 						metrics.durationMs = Math.round(performance.now() - started);
+						if (metrics.contextCosts && metrics.executionCostStart !== undefined) {
+							const common = metrics.mcpResponseJsonBytes - metrics.executionCostStart;
+							metrics.contextCosts.commonExecutionAndCheckBytes = common;
+							metrics.contextCosts.completedTask = Object.fromEntries(
+								["page", "wholeGroup", "progressivePacket"].map((key) => [
+									key,
+									metrics.contextCosts[key] + common,
+								]),
+							);
+						}
 						attempts.push(metrics);
 						console.error(
 							`[browser-eval] ${task.id} round=${round} ${metrics.success ? "PASS" : "FAIL"} ${metrics.durationMs}ms`,

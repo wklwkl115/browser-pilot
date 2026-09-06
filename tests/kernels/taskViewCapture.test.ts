@@ -1,6 +1,39 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { attachCapturedTaskContext } from "../../src/kernels/abml/taskViewCapture.ts";
+
+test("structured form identity ignores JSON property ordering without upgrading locators", () => {
+	const form = taskEntity("form-without-id", "form", "Editor");
+	form.locators = [{ by: "css", value: "body > form:nth-of-type(1)" }];
+	form.hints = {
+		referencedTarget: true,
+		capturedDomPath: [
+			{ index: 1, tag: "html" },
+			{ index: 1, tag: "body" },
+			{ index: 1, tag: "form" },
+		],
+	};
+	const captured = { ...form, hints: { backendNodeId: 88, contextText: "Captured identity" }, locators: undefined };
+	const result = attachCapturedTaskContext(
+		[form],
+		[captured],
+		[],
+		[
+			{
+				id: "",
+				backendNodeId: 88,
+				path: [
+					{ tag: "html", index: 1 },
+					{ tag: "body", index: 1 },
+					{ tag: "form", index: 1 },
+				],
+			},
+		],
+	);
+	assert.equal(result[0]!.hints!.contextText, "Captured identity");
+	assert.deepEqual(result[0]!.locators, form.locators);
+	assert.equal(result[0]!.ref, form.ref);
+});
 import { taskEntity, taskObservation } from "../helpers/taskView.ts";
 import { projectTaskView } from "../../src/kernels/abml/taskViewSelection.ts";
 import { prepareTaskView } from "../../src/commands/observe/taskViewInput.ts";

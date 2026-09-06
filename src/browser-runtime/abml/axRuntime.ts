@@ -198,7 +198,7 @@ function tableRelationAnchors(
 		const tableKey = nodeRelationKey(table);
 		if (!tableKey) continue;
 		const rows = collectTableRows(table, nodeById);
-		const headersByCol = new Map<number, string>();
+		const headersByCol = new Map<number, string | null>();
 		const dataCells: Array<{ cellKey: string; colIndex: number }> = [];
 		rows.forEach((row, rowPos) => {
 			const rowKey = nodeRelationKey(row);
@@ -226,7 +226,10 @@ function tableRelationAnchors(
 						confidence: "high",
 					});
 				if (axRole(cell).toLowerCase() === "columnheader") {
-					headersByCol.set(colIndex, cellKey);
+					headersByCol.set(
+						colIndex,
+						headersByCol.has(colIndex) && headersByCol.get(colIndex) !== cellKey ? null : cellKey,
+					);
 					anchors.push({
 						sourceKey: cellKey,
 						type: "headerFor",
@@ -242,6 +245,10 @@ function tableRelationAnchors(
 		});
 		for (const { cellKey, colIndex } of dataCells) {
 			const headerKey = headersByCol.get(colIndex);
+			if (headerKey === null) {
+				const built = builtByKey.get(cellKey);
+				if (built) built.entity.hints = { ...built.entity.hints, contextRelationsIncomplete: true };
+			}
 			if (headerKey && headerKey !== cellKey)
 				anchors.push({
 					sourceKey: cellKey,
@@ -610,7 +617,7 @@ function snapshotLayoutViews(value: unknown, scrollX: number, scrollY: number) {
 		),
 		domBackendNodeIds,
 		passwordBackendNodeIds,
-		snapshotDomIds: capturedDomIds(attrsByNodeIndex, backendIds),
+		snapshotDomIds: capturedDomIds(attrsByNodeIndex, backendIds, nodes, strings),
 		snapshotDocumentCount: documentCount,
 		snapshotDocumentsSkipped: Math.max(0, documentCount - 1),
 	} satisfies {
@@ -634,10 +641,40 @@ function uniqueSnapshotLayoutEntries(entries: SnapshotLayoutEntry[]): SnapshotLa
 	});
 }
 
-function capturedDomIds(attributes: Map<number, Record<string, string>>, backendIds: unknown[]): CapturedDomId[] {
-	return [...attributes].flatMap(([index, attrs]) =>
-		attrs.id ? [{ id: attrs.id, backendNodeId: Number(backendIds[index]) }] : [],
-	);
+function capturedDomIds(
+	attributes: Map<number, Record<string, string>>,
+	backendIds: unknown[],
+	nodes: Record<string, unknown>,
+	strings: unknown[],
+): CapturedDomId[] {
+	const names = Array.isArray(nodes.nodeName)
+		? nodes.nodeName.map((name) => snapshotString(strings, name).toLowerCase())
+		: [];
+	const parents = Array.isArray(nodes.parentIndex) ? nodes.parentIndex : [];
+	const nodeTypes = Array.isArray(nodes.nodeType) ? nodes.nodeType : [];
+	const counts = new Map<string, number>();
+	const positions = names.map((tag, i) => {
+		if (Number(nodeTypes[i]) !== 1) return 0;
+		const key = `${String(parents[i])}|${tag}`;
+		const position = (counts.get(key) ?? 0) + 1;
+		counts.set(key, position);
+		return position;
+	});
+	const result: CapturedDomId[] = [];
+	for (let i = 0; i < backendIds.length; i++) {
+		const id = attributes.get(i)?.id ?? "";
+		if (!id && (Number(nodeTypes[i]) !== 1 || i >= 20_000)) continue;
+		const path: Array<{ tag: string; index: number }> = [];
+		const visited = new Set<number>();
+		for (let at = i; at >= 0 && !visited.has(at) && path.length < 64; at = Number(parents[at] ?? -1)) {
+			visited.add(at);
+			const tag = names[at];
+			if (Number(nodeTypes[at]) !== 1 || !tag || !/^[a-z][a-z0-9-]*$/.test(tag)) break;
+			path.unshift({ tag, index: positions[at]! });
+		}
+		result.push({ id, backendNodeId: Number(backendIds[i]), ...(path[0]?.tag === "html" ? { path } : {}) });
+	}
+	return result;
 }
 
 type AxCdpRequest = Parameters<typeof sendPersistentCdp>[1];

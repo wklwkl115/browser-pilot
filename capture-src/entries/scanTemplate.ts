@@ -501,9 +501,78 @@ export function scanPage(config: any) {
 					role: roleOf(target),
 					name: labelOf(target) || clean(target.innerText || target.textContent || "", 80) || "",
 					hidden: isHidden(target),
+					...(["aria-labelledby", "aria-describedby"].includes(attr) ? capturedRelationText(target) : {}),
 				});
 		}
 		return out;
+	}
+	function capturedRelationText(target) {
+		const text = String(target.innerText || target.textContent || "");
+		return {
+			contextText: text.slice(0, 8192),
+			contextTextIncomplete: text.length > 8192,
+			contextTextSource: "dom",
+		};
+	}
+	function capturedDomPath(target) {
+		const path = [];
+		for (
+			let current = target;
+			current && current.nodeType === Node.ELEMENT_NODE && path.length < 64;
+			current = current.parentElement
+		)
+			path.unshift({
+				tag: current.tagName.toLowerCase(),
+				index: current === document.documentElement ? 1 : siblingSelectorIndex(current) || 1,
+			});
+		return path[0] && path[0].tag === "html" ? path : undefined;
+	}
+	function captureRelationTarget(target, targetMap, forcedRole) {
+		const selector = selectorFor(target);
+		if (targetMap && !targetMap.has(selector))
+			targetMap.set(selector, {
+				selector,
+				role: forcedRole || roleOf(target),
+				name: labelOf(target) || clean(target.innerText || target.textContent || "", 160),
+				hidden: isHidden(target),
+				...(forcedRole === "form" ? { capturedDomPath: capturedDomPath(target) } : {}),
+				...(!forcedRole ? capturedRelationText(target) : {}),
+			});
+		if (targetMap && forcedRole) targetMap.get(selector).role = forcedRole;
+		return selector;
+	}
+	function nativeContext(el, targetMap) {
+		const labels = Array.from(el.labels || [])
+			.slice(0, 32)
+			.map((label) => captureRelationTarget(label, targetMap));
+		const labelledBy = refTargets(el, "aria-labelledby", targetMap);
+		const describedBy = refTargets(el, "aria-describedby", targetMap);
+		const nativeForm = /^(BUTTON|INPUT|SELECT|TEXTAREA|OUTPUT|FIELDSET|OBJECT)$/.test(el.tagName);
+		const owner = nativeForm ? el.form : undefined;
+		const incomplete =
+			["aria-labelledby", "aria-describedby"].some((attr) => {
+				const ids = String(el.getAttribute(attr) || "")
+					.trim()
+					.split(/\s+/)
+					.filter(Boolean);
+				return ids.length > 32 || ids.some((id) => !document.getElementById(id));
+			}) ||
+			(el.labels && el.labels.length > 32);
+		return {
+			...(el.tagName === "LABEL" ? capturedRelationText(el) : {}),
+			capturedDomPath: capturedDomPath(el),
+			...(nativeForm
+				? {
+						formOwnerObserved: true,
+						...(owner ? { formOwnerSelector: captureRelationTarget(owner, targetMap, "form") } : {}),
+					}
+				: {}),
+			...(labels.length || labelledBy.length
+				? { labelledBySelectors: [...new Set([...labels, ...labelledBy])] }
+				: {}),
+			...(describedBy.length ? { describedBySelectors: describedBy } : {}),
+			...(incomplete ? { contextRelationsIncomplete: true } : {}),
+		};
 	}
 	function hitTargetInfo(hit, owner) {
 		const tag = hit.tagName ? hit.tagName.toLowerCase() : "";
@@ -726,6 +795,7 @@ export function scanPage(config: any) {
 				...(el.tagName === "INPUT" && el.type ? { inputKind: String(el.type).toLowerCase() } : {}),
 				...(fieldValue !== undefined ? { value: fieldValue } : {}),
 				...(placeholder ? { placeholder } : {}),
+				...nativeContext(el),
 				...(controlsSelectors.length ? { controlsSelectors } : {}),
 				...(ownsSelectors.length ? { ownsSelectors } : {}),
 				...((expandedAttr === "true" || expandedAttr === "false") && controlsSelectors.length
@@ -915,6 +985,7 @@ export function scanPage(config: any) {
 		const targetMap = new Map();
 		const pairs = [];
 		for (const el of elements) {
+			if (el.hasAttribute) nativeContext(el, targetMap);
 			if (!el.hasAttribute || (!el.hasAttribute("aria-controls") && !el.hasAttribute("aria-owns"))) continue;
 			const ctlSelectors = refTargets(el, "aria-controls", targetMap);
 			const ownsSelectors = refTargets(el, "aria-owns", targetMap);

@@ -278,8 +278,8 @@ test("budget folding preserves evidence and offers a read that changes only deli
 	}
 	assert.deepEqual(expanded.bundle.gapDetails, []);
 	const artifact = JSON.parse(await readFile(descriptor.path, "utf8"));
-	assert.equal(artifact.schema, "browser-task-projection/v3");
-	assert.equal(artifact.policy, "literal-context-v3");
+	assert.equal(artifact.schema, "browser-task-projection/v4");
+	assert.equal(artifact.policy, "literal-context-v4");
 	delete artifact.bundles[0].requirements;
 	const invalid = JSON.stringify(artifact);
 	assert.throws(
@@ -329,6 +329,7 @@ test("selection remedies read canonical evidence and v1 groups keep their origin
 		delete bundle.requirements;
 		delete bundle.gapDetails;
 		delete bundle.remedies;
+		delete bundle.relationEvidence;
 	}
 	const text = JSON.stringify(legacy);
 	const legacyDescriptor = { ...descriptor, taskProjection: { sha256: taskArtifactHash(text) } };

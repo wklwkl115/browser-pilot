@@ -61,7 +61,7 @@ const LEGACY_TASK_BUNDLE_SCHEMA = {
 					name: text,
 					value: text,
 					text,
-					textSource: { const: "ax" },
+					textSource: { enum: ["ax", "dom"] },
 					source: { enum: ["dom", "ax", "vision"] },
 					actions: { type: "array", items: { enum: ["click", "edit"] } },
 					state: {
@@ -132,6 +132,22 @@ export const TASK_BUNDLE_SCHEMA = {
 	...LEGACY_TASK_BUNDLE_SCHEMA,
 	properties: {
 		...LEGACY_TASK_BUNDLE_SCHEMA.properties,
+		relationEvidence: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					fromRef: text,
+					toRef: text,
+					relation: text,
+					snapshotId: text,
+					basis: { enum: ["native-association", "captured-structure", "explicit-relation"] },
+					source: { enum: ["dom", "ax"] },
+				},
+				required: ["fromRef", "toRef", "relation", "basis", "snapshotId", "source"],
+				additionalProperties: false,
+			},
+		},
 		requirements: {
 			type: "object",
 			properties: { local: report, owner: report, identity: report, actions: report },
@@ -308,7 +324,7 @@ export const TASK_PACKET_SCHEMA = {
 		scope: {
 			type: "object",
 			properties: {
-				policy: { const: "field-context-v1" },
+				policy: { const: "field-context-v2" },
 				snapshotId: text,
 				subjectRef: text,
 				ownerRef: text,
@@ -381,6 +397,31 @@ export const V2_TASK_PROJECTION_ARTIFACT_SCHEMA = {
 		...PRE_PACKET_ARTIFACT_SCHEMA.properties,
 		schema: { const: "browser-task-projection/v2" },
 		policy: { const: "literal-context-v2" },
+	},
+} as const;
+
+export const V3_TASK_PROJECTION_ARTIFACT_SCHEMA = {
+	...TASK_PROJECTION_ARTIFACT_SCHEMA,
+	properties: {
+		...TASK_PROJECTION_ARTIFACT_SCHEMA.properties,
+		schema: { const: "browser-task-projection/v3" },
+		policy: { const: "literal-context-v3" },
+		packets: {
+			type: "array",
+			items: {
+				...TASK_PACKET_SCHEMA,
+				properties: {
+					...TASK_PACKET_SCHEMA.properties,
+					scope: {
+						...TASK_PACKET_SCHEMA.properties.scope,
+						properties: {
+							...TASK_PACKET_SCHEMA.properties.scope.properties,
+							policy: { const: "field-context-v1" },
+						},
+					},
+				},
+			},
+		},
 	},
 } as const;
 

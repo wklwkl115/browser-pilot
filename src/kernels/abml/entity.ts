@@ -63,6 +63,7 @@ export type EntityStructure = {
 // (state.current, state.expanded, hints.containerRole) stay for old callers — relations
 // are additive provenance, not a replacement.
 export type RelationType =
+	| "formOwner"
 	| "labelledBy"
 	| "describedBy"
 	| "controls"
@@ -363,6 +364,19 @@ export function buildDomEntityFromScanActionable(node: ScanActionableInput, cont
 			...(expandedTargetSelectors ? { expandedTargetSelectors } : {}),
 			// HTML input type (e.g. "password", "search", "email"). AX only exposes the role.
 			...(inputKind ? { inputKind } : {}),
+			...(node.formOwnerObserved === true ? { formOwnerObserved: true } : {}),
+			...(Array.isArray(node.capturedDomPath) ? { capturedDomPath: node.capturedDomPath } : {}),
+			...(node.contextRelationsIncomplete === true ? { contextRelationsIncomplete: true } : {}),
+			...(typeof node.contextText === "string"
+				? {
+						contextText: node.contextText,
+						contextTextIncomplete: node.contextTextIncomplete === true,
+						contextTextSource: "dom",
+					}
+				: {}),
+			...(stringValue(node.formOwnerSelector) ? { formOwnerSelector: stringValue(node.formOwnerSelector) } : {}),
+			...(Array.isArray(node.labelledBySelectors) ? { labelledBySelectors: node.labelledBySelectors } : {}),
+			...(Array.isArray(node.describedBySelectors) ? { describedBySelectors: node.describedBySelectors } : {}),
 			...(placeholder ? { placeholder } : {}),
 			...(href ? { href } : {}),
 		},
@@ -596,7 +610,19 @@ export function buildReferencedTargetEntity(node: ScanActionableInput, context: 
 		},
 		source: "dom",
 		locators,
-		hints: { ...(selector ? { selector } : {}), referencedTarget: true, ...(hidden ? { hidden: true } : {}) },
+		hints: {
+			...(selector ? { selector } : {}),
+			referencedTarget: true,
+			...(Array.isArray(node.capturedDomPath) ? { capturedDomPath: node.capturedDomPath } : {}),
+			...(hidden ? { hidden: true } : {}),
+			...(typeof node.contextText === "string"
+				? {
+						contextText: node.contextText,
+						contextTextIncomplete: node.contextTextIncomplete === true,
+						contextTextSource: "dom",
+					}
+				: {}),
+		},
 	};
 	const capturedAt = context.capturedAt;
 	const origin = memoizedUrlOrigin(context.url);

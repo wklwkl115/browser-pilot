@@ -1,5 +1,5 @@
 import http from "node:http";
-import { taskViewFixture } from "./browser-eval-task-view-fixture.mjs";
+import { taskViewFixture, progressiveTaskFixture } from "./browser-eval-task-view-fixture.mjs";
 
 const shell = (
 	title,
@@ -9,6 +9,10 @@ const shell = (
 <body><main><h1>${title}</h1>${body}</main><script>${script}</script></body></html>`;
 
 function taskPage(pathname, run, crossOrigin) {
+	if (pathname === "/task-progressive") {
+		const fixture = progressiveTaskFixture();
+		return shell("Progressive invoice context", fixture.body, fixture.script);
+	}
 	if (pathname === "/task-view") {
 		const fixture = taskViewFixture();
 		return shell("Task view invoices", fixture.body, fixture.script);

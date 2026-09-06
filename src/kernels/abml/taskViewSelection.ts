@@ -12,6 +12,7 @@ import {
 import { addTaskGap, bindTaskRemedies, emptyTaskEvidence, REQUIREMENT_KINDS } from "./taskEvidence.js";
 import { taskContext, taskEntityIndex, taskObjectRoot, taskRelations, type TaskEntityIndex } from "./taskViewGraph.js";
 import { planTaskPackets } from "./taskPackets.js";
+import { taskRelationEvidence } from "./taskOwnership.js";
 
 const MAX_GROUPS = 256;
 const MAX_FACT_TEXT = 8192;
@@ -78,7 +79,9 @@ export function taskFact(
 		source: entity.source,
 		...(name !== undefined ? { name } : {}),
 		...(value !== undefined ? { value } : {}),
-		...(text ? { text, textSource: "ax" } : {}),
+		...(text
+			? { text, textSource: entity.hints?.contextTextSource === "dom" ? ("dom" as const) : ("ax" as const) }
+			: {}),
 		state: {
 			visible: state.visible,
 			occluded: state.occluded,
@@ -247,6 +250,7 @@ function buildBundle(
 						: "literal-match",
 		],
 		facts,
+		relationEvidence: taskRelationEvidence(index, members, observation.snapshot.snapshotId),
 		matches: candidate.matches
 			.slice(0, 128)
 			.map((match) => ({ ...match, text: match.text.slice(0, MAX_FACT_TEXT) })),

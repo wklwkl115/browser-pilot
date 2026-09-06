@@ -12,11 +12,11 @@ npm run eval:browser -- --task frame-cross --task browser-reconnect --rounds 3
 npm run eval:browser -- --suite all --rounds 10 --output .cache/browser-eval/baseline.json
 ```
 
-Node.js 22+ and Chrome/Edge are required. Set `BROWSER_PILOT_SMOKE_BROWSER` to choose the executable, as for `npm run smoke:browser`. The default is all 14 tasks for three rounds; valid round counts are 1–50. Select `core` (4), `extended` (10), or `all` with `--suite`. Repeat `--task` to select named tasks within that suite. `--list` lists the selected scenarios without launching a browser. Unknown IDs, empty selections, and conflicting filters fail before execution. No external URL or authenticated-account input is accepted.
+Node.js 22+ and Chrome/Edge are required. Set `BROWSER_PILOT_SMOKE_BROWSER` to choose the executable, as for `npm run smoke:browser`. The default is all 15 tasks for three rounds; valid round counts are 1–50. Select `core` (4), `extended` (11), or `all` with `--suite`. Repeat `--task` to select named tasks within that suite. `--list` lists the selected scenarios without launching a browser. Unknown IDs, empty selections, and conflicting filters fail before execution. No external URL or authenticated-account input is accepted.
 
 The shared harness creates a temporary browser profile and a private copy of the extension with an ephemeral pairing secret. It does not install into the user's extension directory or use their cookies. Initial browser startup/build time is outside task timing; an explicit restart inside a recovery task is included. Each attempt navigates to fresh fixture state; failed writes are never automatically retried.
 
-## Scenarios (fixture version 6)
+## Scenarios (fixture version 7)
 
 | Task                   | Kind     | Independent completion check                                                                                                                                                      |
 | ---------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -78,4 +78,8 @@ There are no performance thresholds yet. Record repeated baselines before settin
 
 Keep fixtures deterministic and loopback-only. Each task must have a stable ID, suite, kind, and an independent completion oracle; asserting only a successful tool envelope is insufficient. Negative tests must name the expected rejection code and verify that no action occurred. Keep retries out of mutating tasks. Add fixture/contract tests under `tests/runtime/` or `tests/extension/`, update the catalog test when intentionally changing coverage, and increment `fixtureVersion` when changing existing scenario semantics. Keep raw responses, secrets, and user data out of the summary report.
 
-Resource costs are also reported as cumulative `resourceResponseJsonBytes` and maximum `maxResourceResponseJsonBytes`; resource steps identify index/group/scope reads. Fixture version 6 also checks sibling action-group uncertainty, identity in ordinary row cells, and a controlled same-document route change at the DOM condition read.
+Resource costs are also reported as cumulative `resourceResponseJsonBytes` and maximum `maxResourceResponseJsonBytes`; resource steps identify index/group/scope/packet reads. Fixture version 7 retains a genuinely unassociated custom control in the sibling-group test, independently of newly captured native form evidence.
+
+`task-view-progressive` adds a 180-field form, an externally associated native Save, labels, a related error and another form. It requires a complete independent Note packet, checks native ownership provenance, edits only the intended form once, and verifies identical historical packet reads after the write.
+
+`recoverableGaps` counts attempted versus successfully addressed captured-evidence gaps, not successful resource requests. `contextCosts` replays three delivery paths over the same saved snapshot and task spec with the same 32 KiB budget: a public page plus full captured-evidence expansion, whole groups, and progressive packets. It includes rendered MCP tool envelopes and exact saved resource/index wrappers. `completedTask` adds the same measured execution/check tail to each path. This is a deterministic counterfactual byte comparison, not three independent model runs. Actual `mcpResponseJsonBytes` still includes every resource read performed by the scenario, including extra historical/independence checks; it is reported separately. No token savings or arbitrary-host model performance is claimed.
