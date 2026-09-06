@@ -1,10 +1,16 @@
 import type { Entity } from "./entity.js";
 import type { PageObservationV3 } from "./pageObservation.js";
 import { taskContext, taskRelations, type TaskEntityIndex } from "./taskViewGraph.js";
-import { planOwnerContext } from "./taskContextCoverage.js";
+import { assessTaskContext, planOwnerContext } from "./taskContextCoverage.js";
 import { taskObjectRoot } from "./taskViewGraph.js";
-import { addTaskGap, bindTaskRemedies, emptyTaskEvidence, REQUIREMENT_KINDS } from "./taskEvidence.js";
-import { normalizeTaskText, type DecisionBundle, type NormalizedTaskViewSpec, type TaskPacket } from "./taskView.js";
+import { bindTaskRemedies, retainTaskEvidence } from "./taskEvidence.js";
+import {
+	normalizeTaskText,
+	type DecisionBundle,
+	type NormalizedTaskViewSpec,
+	type TaskPacket,
+	type TaskGap,
+} from "./taskView.js";
 import { taskFact } from "./taskViewSelection.js";
 import { taskRelationEvidence, taskIdentityFields } from "./taskOwnership.js";
 
@@ -68,73 +74,52 @@ function createPacket(
 	subject: Entity,
 	candidates: Entity[],
 	snapshotId: string,
+	spec: NormalizedTaskViewSpec,
 ): TaskPacket | undefined {
 	const { ownerPlan, identity, members, missing } = packetMembers(index, subject, candidates);
 	if (members.size > MAX_DEPENDENCIES) return undefined;
-	const evidence = emptyTaskEvidence();
 	const refs = [...members.keys()];
-	for (const kind of REQUIREMENT_KINDS) {
-		const report = evidence.requirements[kind];
-		report.evidence = "complete";
-		report.delivery = "inline";
-		report.evidenceRefs = kind === "owner" ? (ownerPlan.owner ? [ownerPlan.owner.ref] : []) : refs;
-	}
-	if (ownerPlan.nativeOwnerAbsent) {
-		evidence.requirements.actions.evidence = "unknown";
-		addTaskGap(evidence, {
-			code: "native-form-owner-absent",
-			requirement: "actions",
-			layer: "association",
-			relatedRefs: [subject.ref],
-			reason: "The control has no native form owner; its operation's ownership remains unproven.",
+	const issues: Array<Omit<TaskGap, "id" | "remedyIds">> = [];
+	const incomplete = [...members.values()].filter(
+		(entity) =>
+			(entity.children && !Array.isArray(entity.children)) ||
+			entity.hints?.contextTextIncomplete === true ||
+			entity.hints?.contextRelationsIncomplete === true,
+	);
+	if (!index.complete)
+		issues.push({
+			code: "entity-index-limit",
+			requirement: "local",
+			layer: "selection",
+			relatedRefs: [],
+			reason: "The bounded index did not inspect the entire canonical snapshot.",
 		});
-	}
-	if (!ownerPlan.owner) {
-		for (const kind of ["owner", "identity", "actions"] as const) {
-			evidence.requirements[kind].evidence = "unknown";
-			addTaskGap(evidence, {
-				code: `context-${kind}-unknown`,
-				requirement: kind,
-				layer: "association",
-				relatedRefs: [subject.ref],
-				reason: "The packet has no proven captured object owner.",
-			});
-		}
-	}
-	for (const kind of ["identity", "actions"] as const) {
-		if (!ownerPlan.unknownBoundaries.size) continue;
-		evidence.requirements[kind].evidence = "unknown";
-		addTaskGap(evidence, {
-			code: `context-${kind}-unknown`,
-			requirement: kind,
-			layer: "association",
-			relatedRefs: [...ownerPlan.unknownBoundaries],
-			reason: "Sibling boundaries have unproven ownership; inspection does not establish association.",
+	if (missing.length)
+		issues.push({
+			code: "packet-dependency-unavailable",
+			requirement: "local",
+			layer: index.complete ? "capture" : "selection",
+			relatedRefs: missing,
+			reason: "Required relation targets are unavailable in the inspected snapshot scope.",
 		});
-	}
-	for (const kind of ["local", "identity", "actions"] as const) {
-		const incomplete = [...members.values()].filter(
-			(entity) =>
-				(entity.children && !Array.isArray(entity.children)) ||
-				entity.hints?.contextTextIncomplete === true ||
-				entity.hints?.contextRelationsIncomplete === true,
-		);
-		if (missing.length || incomplete.length || !index.complete) {
-			evidence.requirements[kind].evidence = index.complete ? "incomplete" : "unknown";
-			addTaskGap(evidence, {
-				code: "packet-dependency-unavailable",
-				requirement: kind,
-				layer: index.complete ? "capture" : "selection",
-				relatedRefs: [...missing, ...incomplete.map((entity) => entity.ref)],
-				reason: "Required context is absent or incomplete in the inspected snapshot scope.",
-			});
-		}
-	}
-	for (const kind of REQUIREMENT_KINDS)
-		if (evidence.requirements[kind].evidence !== "complete")
-			evidence.requirements[kind].delivery = evidence.requirements[kind].evidenceRefs.length
-				? "partial"
-				: "unavailable";
+	if (incomplete.length)
+		issues.push({
+			code: "packet-dependency-unavailable",
+			requirement: "local",
+			layer: "capture",
+			relatedRefs: incomplete.map((entity) => entity.ref),
+			reason: "Required captured context is explicitly incomplete.",
+		});
+	const evidence = assessTaskContext({
+		anchor: subject,
+		localRefs: new Set(refs),
+		candidates: members,
+		ownerPlan,
+		intent: spec.intent,
+		focused: true,
+		issues,
+	});
+	retainTaskEvidence(evidence, new Set(refs));
 	const excluded = candidates.filter((entity) => !members.has(entity.ref));
 	return {
 		...evidence,
@@ -193,7 +178,14 @@ export function planTaskPackets(
 			});
 			const packet =
 				packets.length < MAX_PACKETS
-					? createPacket(index, bundle, subject, subjectContext.candidates, observation.snapshot.snapshotId)
+					? createPacket(
+							index,
+							bundle,
+							subject,
+							subjectContext.candidates,
+							observation.snapshot.snapshotId,
+							spec,
+						)
 					: undefined;
 			if (!packet) {
 				unavailable++;

@@ -1,0 +1,407 @@
+[
+  {
+    "filename": "v4-owned.json",
+    "schema": "browser-task-projection/v4",
+    "policy": "literal-context-v4",
+    "producerCommit": "75c2aafd5387cbf6e4186416783d65aeba3c7f05",
+    "producerModule": "src/commands/observe/taskViewProjection.ts",
+    "producerModuleSha256": "dbcfb4ba0232aff58b398d85dfcfd625905577464ff73b29c90fb18c35b692b4",
+    "artifactSha256": "003f8df2246b3b76a995ea23a3e3895acf9ca36db3ab0fc2de500afe1ec4e99b",
+    "canonicalSha256": "a994b765a4b6e8bf6b1e0e056762b8995096b426361bc94b42f35fe9c76bf25e",
+    "nodeVersion": "v26.3.1",
+    "input": {
+      "schema": "browser-page-observation/v3",
+      "tool": "browser_observe",
+      "model": "PageObservation",
+      "canonical": true,
+      "target": {
+        "url": "https://example.test/invoices",
+        "browserSessionId": "session-1",
+        "tabId": 7,
+        "targetGeneration": 1,
+        "pageEpoch": "page-1"
+      },
+      "snapshot": {
+        "snapshotId": "history-owned",
+        "browserSessionId": "session-1",
+        "tabId": 7,
+        "targetGeneration": 1,
+        "pageEpoch": "page-1",
+        "url": "https://example.test/invoices",
+        "sourceMode": "scan",
+        "capturedAt": 1000,
+        "ttlMs": 60000
+      },
+      "entities": [
+        {
+          "ref": "bp-ref://region/invariant-owner",
+          "kind": "region",
+          "role": "form",
+          "name": "INV-2048",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "hints": {
+            "selector": "#invoice"
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-id",
+          "kind": "region",
+          "role": "heading",
+          "name": "INV-2048",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "hints": {
+            "contextParentRef": "bp-ref://region/invariant-owner"
+          }
+        },
+        {
+          "ref": "bp-ref://control/invariant-note",
+          "kind": "control",
+          "role": "textbox",
+          "name": "Note",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": true,
+            "inViewport": true
+          },
+          "actionability": {
+            "actions": ["edit"],
+            "confidence": "high"
+          },
+          "value": "Draft",
+          "hints": {
+            "contextParentRef": "bp-ref://region/invariant-wrapper"
+          },
+          "relations": [
+            {
+              "type": "describedBy",
+              "targetRef": "bp-ref://region/invariant-description",
+              "source": "ax",
+              "confidence": "high"
+            }
+          ]
+        },
+        {
+          "ref": "bp-ref://control/invariant-save",
+          "kind": "control",
+          "role": "button",
+          "name": "Save",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "actionability": {
+            "actions": ["click"],
+            "confidence": "high"
+          },
+          "hints": {
+            "contextParentRef": "bp-ref://region/invariant-owner"
+          },
+          "relations": []
+        },
+        {
+          "ref": "bp-ref://region/invariant-wrapper",
+          "kind": "region",
+          "role": "group",
+          "name": "Fields",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "hints": {
+            "contextParentRef": "bp-ref://region/invariant-owner"
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-description",
+          "kind": "region",
+          "role": "paragraph",
+          "name": "Review this invoice before saving.",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        }
+      ],
+      "providers": {
+        "structure": {
+          "planned": true,
+          "status": "executed"
+        }
+      },
+      "frontier": {
+        "items": []
+      },
+      "content": {
+        "text": "Invoice workspace",
+        "headings": ["Invoice workspace"],
+        "complete": true
+      },
+      "actionSpace": {
+        "items": [],
+        "scopes": [],
+        "coverage": {
+          "captured": 0,
+          "captureComplete": true
+        }
+      }
+    },
+    "spec": {
+      "focus": {
+        "refs": ["bp-ref://control/invariant-note"]
+      },
+      "intent": "interact",
+      "fields": ["Note"]
+    },
+    "evidenceStates": [
+      {
+        "id": "task-group-1",
+        "gaps": [],
+        "evidence": {
+          "local": "complete",
+          "owner": "complete",
+          "identity": "complete",
+          "actions": "complete"
+        }
+      }
+    ]
+  },
+  {
+    "filename": "v4-mixed-gap.json",
+    "schema": "browser-task-projection/v4",
+    "policy": "literal-context-v4",
+    "producerCommit": "75c2aafd5387cbf6e4186416783d65aeba3c7f05",
+    "producerModule": "src/commands/observe/taskViewProjection.ts",
+    "producerModuleSha256": "dbcfb4ba0232aff58b398d85dfcfd625905577464ff73b29c90fb18c35b692b4",
+    "artifactSha256": "6d6b8be8374ac94d5dac1de89c8c89f341f73e16513f03dce540da26b94f6bf7",
+    "canonicalSha256": "10300fd098c670626e9af58bc36c51ff54c4a223bfe7bbc8b0bd5b1f83e93a7a",
+    "nodeVersion": "v26.3.1",
+    "input": {
+      "schema": "browser-page-observation/v3",
+      "tool": "browser_observe",
+      "model": "PageObservation",
+      "canonical": true,
+      "target": {
+        "url": "https://example.test/invoices",
+        "browserSessionId": "session-1",
+        "tabId": 7,
+        "targetGeneration": 1,
+        "pageEpoch": "page-1"
+      },
+      "snapshot": {
+        "snapshotId": "history-mixed-gap",
+        "browserSessionId": "session-1",
+        "tabId": 7,
+        "targetGeneration": 1,
+        "pageEpoch": "page-1",
+        "url": "https://example.test/invoices",
+        "sourceMode": "scan",
+        "capturedAt": 1000,
+        "ttlMs": 60000
+      },
+      "entities": [
+        {
+          "ref": "bp-ref://region/invariant-owner",
+          "kind": "region",
+          "role": "form",
+          "name": "INV-2048",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "hints": {
+            "selector": "#invoice"
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-id",
+          "kind": "region",
+          "role": "heading",
+          "name": "INV-2048",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "hints": {
+            "contextParentRef": "bp-ref://region/invariant-owner"
+          }
+        },
+        {
+          "ref": "bp-ref://control/invariant-note",
+          "kind": "control",
+          "role": "textbox",
+          "name": "Note",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": true,
+            "inViewport": true
+          },
+          "actionability": {
+            "actions": ["edit"],
+            "confidence": "high"
+          },
+          "value": "Draft",
+          "hints": {
+            "contextParentRef": "bp-ref://region/invariant-wrapper"
+          },
+          "relations": [
+            {
+              "type": "describedBy",
+              "targetRef": "bp-ref://region/invariant-description",
+              "source": "ax",
+              "confidence": "high"
+            }
+          ]
+        },
+        {
+          "ref": "bp-ref://control/invariant-save",
+          "kind": "control",
+          "role": "button",
+          "name": "Save",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "actionability": {
+            "actions": ["click"],
+            "confidence": "high"
+          },
+          "hints": {
+            "contextParentRef": "bp-ref://region/historical-action-group"
+          },
+          "relations": []
+        },
+        {
+          "ref": "bp-ref://region/invariant-wrapper",
+          "kind": "region",
+          "role": "group",
+          "name": "Fields",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "hints": {
+            "contextParentRef": "bp-ref://region/invariant-owner"
+          }
+        },
+        {
+          "ref": "bp-ref://region/historical-action-group",
+          "kind": "region",
+          "role": "group",
+          "name": "Actions",
+          "source": "ax",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "hints": {
+            "contextParentRef": "bp-ref://region/invariant-owner"
+          }
+        }
+      ],
+      "providers": {
+        "structure": {
+          "planned": true,
+          "status": "executed"
+        }
+      },
+      "frontier": {
+        "items": []
+      },
+      "content": {
+        "text": "Invoice workspace",
+        "headings": ["Invoice workspace"],
+        "complete": true
+      },
+      "actionSpace": {
+        "items": [],
+        "scopes": [],
+        "coverage": {
+          "captured": 0,
+          "captureComplete": true
+        }
+      }
+    },
+    "spec": {
+      "focus": {
+        "refs": ["bp-ref://control/invariant-note"]
+      },
+      "intent": "interact",
+      "fields": ["Note"]
+    },
+    "evidenceStates": [
+      {
+        "id": "task-group-1",
+        "gaps": ["related-context-unavailable", "context-identity-unknown", "context-actions-unknown"],
+        "evidence": {
+          "local": "incomplete",
+          "owner": "complete",
+          "identity": "unknown",
+          "actions": "unknown"
+        }
+      }
+    ]
+  }
+]

@@ -111,7 +111,9 @@ export function assessTaskContext(options: {
 		for (const kind of ["local", "identity", "actions"] as const) {
 			if (!applicable[kind]) continue;
 			if (kind !== issue.requirement) addTaskGap(result, { ...issue, requirement: kind });
-			result.requirements[kind].evidence = issue.layer === "capture" ? "incomplete" : "unknown";
+			if (issue.layer === "capture") result.requirements[kind].evidence = "incomplete";
+			else if (result.requirements[kind].evidence !== "incomplete")
+				result.requirements[kind].evidence = "unknown";
 		}
 	}
 	for (const kind of ["owner", "identity", "actions"] as const) {
@@ -125,7 +127,7 @@ export function assessTaskContext(options: {
 				layer: "association",
 				relatedRefs: ownerPlan.owner ? [...ownerPlan.unknownBoundaries] : [anchor.ref],
 				reason: ownerPlan.owner
-					? "Captured sibling group/region boundaries have no proven ownership; reading their contents does not prove association."
+					? "Captured boundaries or declared native associations have no unambiguous ownership; reading their contents does not prove association."
 					: "No captured structural owner establishes this object's context.",
 			});
 		} else if (kind !== "owner" && ownerPlan.unavailableRefs.size) {

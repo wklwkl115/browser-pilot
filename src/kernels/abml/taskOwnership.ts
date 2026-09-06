@@ -77,13 +77,35 @@ function provenControlBoundary(index: TaskEntityIndex, boundary: string): boolea
 export function supplementNativeOwnership(index: TaskEntityIndex, plan: OwnerContextPlan): OwnerContextPlan {
 	if (plan.owner?.role.toLowerCase() !== "form") return plan;
 	if (plan.owner.hints?.contextStructureIncomplete === true) plan.unknownBoundaries.add(plan.owner.ref);
+	const unprovenNativeRefs = new Set<string>();
 	for (const entity of index.entities) {
-		if (nativeFormOwner(index, entity)?.ref === plan.owner.ref && !independentOwner(index, entity, plan.owner.ref))
+		const native = nativeFormOwner(index, entity);
+		if (native?.ref === plan.owner.ref && !independentOwner(index, entity, plan.owner.ref))
 			plan.refs.add(entity.ref);
+		else if (
+			!native &&
+			declaredOwnerMatches(entity, plan.owner) &&
+			!independentOwner(index, entity, plan.owner.ref)
+		)
+			unprovenNativeRefs.add(entity.ref);
 	}
 	for (const boundary of plan.unknownBoundaries)
 		if (provenControlBoundary(index, boundary)) plan.unknownBoundaries.delete(boundary);
+	for (const ref of unprovenNativeRefs) plan.unknownBoundaries.add(ref);
 	return plan;
+}
+
+function declaredOwnerMatches(entity: Entity, owner: Entity): boolean {
+	const target = (item: Entity) => {
+		const locator = item.locators?.find((entry) => entry.by === "backendNodeId");
+		return item.hints?.targetId ?? (locator?.by === "backendNodeId" ? locator.targetId : undefined);
+	};
+	return (
+		typeof owner.hints?.selector === "string" &&
+		entity.hints?.formOwnerObserved === true &&
+		entity.hints.formOwnerSelector === owner.hints.selector &&
+		target(entity) === target(owner)
+	);
 }
 
 export function taskRelationEvidence(
