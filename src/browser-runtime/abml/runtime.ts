@@ -12,6 +12,7 @@ import type { Entity } from "../../kernels/abml/entity.js";
 import { diffEntities, type EntityDiff, type EntityDiffOptions } from "../../kernels/abml/diff.js";
 import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
 import { bootstrapScanBackendNodeIds } from "../../kernels/abml/identityBootstrap.js";
+import { attachCapturedTaskContext } from "../../kernels/abml/taskViewCapture.js";
 import {
 	materializeRelationGraph,
 	derivePaintOrderRelationAnchors,
@@ -293,7 +294,7 @@ async function readStructure(
 	const reconciliation = applyIdentityReconciliation(mergedEntities, input);
 	const relations = materializeStructureRelations(reconciliation.entities, axRead);
 	return {
-		entities: relations.entities,
+		entities: capturedTaskContext(relations.entities, axRead),
 		data: {
 			snapshotId: snapshot.snapshotId,
 			observationId: snapshot.snapshotId,
@@ -325,4 +326,13 @@ export async function readBrowserAbmlStructure(
 		options.signal?.throwIfAborted();
 		return { ok: false, error: normalizeError(error) };
 	}
+}
+
+function capturedTaskContext(entities: Entity[], axRead: AxReadResult): Entity[] {
+	return attachCapturedTaskContext(
+		entities,
+		axRead.entities.map((built) => built.entity),
+		axRead.anchors,
+		axRead.snapshotDomIds ?? [],
+	);
 }

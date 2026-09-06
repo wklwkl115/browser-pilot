@@ -133,6 +133,8 @@ MCP 的 `tools/list` 响应是公开语法的准确信息源。[`src/commands/co
 
 `browser_observe` 支持 `mode: "auto" | "full" | "diff"` 和 `visual: "auto" | "always" | "never"`。内联结果只保留当前决策需要的数据，无法继续压缩的内容通过带类型的观察资源提供。`browser_tabs` 返回 `{ "tabs": [...] }`（`navigate` 额外附带 `effect`）；`browser_screenshot` 返回截图元数据和图片资源。
 
+需要聚焦对象时，可传入 `view: { focus: { query: "INV-2048" }, intent: "locate" }`，定位后改用返回的 ref 和关注字段。任务视图保留对象身份、候选歧义、错误与观察范围，不自动执行操作。详见[任务视图](docs/task-views.md)。
+
 第一次接触 ref、entity、frontier、collection、causal、verification 这些词？先读 [docs/concepts.md](docs/concepts.md)（英文），它逐个解释工具输出里出现的术语，并按字段讲解 `browser_observe` 的返回结构。
 
 ## 智能体工作流程

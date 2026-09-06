@@ -3,6 +3,7 @@ import path from "node:path";
 import { requestTool, resultEnvelope, resultText, repositoryRoot, withBrowserHarness } from "./browser-harness.mjs";
 import { startEvaluationFixtures } from "./browser-eval-fixtures.mjs";
 import { summarizeAttempts } from "./evaluation-metrics.mjs";
+import { renderMcpToolResult, readMcpResource } from "../../src/apps/mcp/server.ts";
 
 function fail(category, code, message) {
 	throw Object.assign(new Error(message), { category, code });
@@ -16,12 +17,18 @@ function fixtureTarget(browser, fixture) {
 }
 
 function taskContext(daemon, session, fixture, round, metrics, artifactRoot, restartBrowser) {
+	let lastPresentation;
 	const call = async (tool, params, expectedErrors = []) => {
 		metrics.toolCalls++;
 		const started = performance.now();
 		const step = { tool, success: false };
 		try {
 			const raw = await requestTool(daemon, tool, params, 20_000, artifactRoot);
+			lastPresentation = Array.isArray(raw.content)
+				? renderMcpToolResult(tool, raw, artifactRoot)
+				: { content: [{ type: "text", text: JSON.stringify(raw) }], isError: true };
+			step.mcpResponseJsonBytes = Buffer.byteLength(JSON.stringify(lastPresentation));
+			metrics.mcpResponseJsonBytes = (metrics.mcpResponseJsonBytes ?? 0) + step.mcpResponseJsonBytes;
 			step.responseJsonBytes = Buffer.byteLength(JSON.stringify(raw));
 			step.responseTextChars = resultText(raw).length;
 			metrics.responseJsonBytes += step.responseJsonBytes;
@@ -51,6 +58,28 @@ function taskContext(daemon, session, fixture, round, metrics, artifactRoot, res
 		fixture,
 		round,
 		call,
+		presentation: () => lastPresentation,
+		readResource: async (uri) => {
+			const started = performance.now();
+			const result = await readMcpResource(uri, artifactRoot);
+			const bytes = Buffer.byteLength(JSON.stringify(result));
+			const text = result.contents
+				.filter((item) => "text" in item)
+				.map((item) => item.text)
+				.join("\n");
+			metrics.resourceReads = (metrics.resourceReads ?? 0) + 1;
+			metrics.responseJsonBytes += bytes;
+			metrics.mcpResponseJsonBytes = (metrics.mcpResponseJsonBytes ?? 0) + bytes;
+			metrics.responseTextChars += text.length;
+			metrics.steps.push({
+				operation: "resource-read",
+				success: true,
+				responseJsonBytes: bytes,
+				responseTextChars: text.length,
+				durationMs: Math.round(performance.now() - started),
+			});
+			return JSON.parse(text);
+		},
 		navigate: (page) =>
 			call("browser_tabs", {
 				action: "navigate",
@@ -81,7 +110,8 @@ function taskContext(daemon, session, fixture, round, metrics, artifactRoot, res
 			}
 		},
 		native: (command) => call("browser_command", { targetRef: session.targetRef, command }),
-		observe: () => call("browser_observe", { targetRef: session.targetRef, mode: "full", visual: "never" }),
+		observe: (params = {}) =>
+			call("browser_observe", { targetRef: session.targetRef, mode: "full", visual: "never", ...params }),
 		read: async (script) =>
 			(await call("browser_execute", { targetRef: session.targetRef, readOnly: true, script })).result,
 		input: (ref, action, extra = {}, expect) =>
@@ -118,7 +148,7 @@ export async function runBrowserEvaluation(options, tasks) {
 	const attempts = [];
 	const metadata = {
 		schemaVersion: 2,
-		fixtureVersion: 3,
+		fixtureVersion: 4,
 		generatedAt: new Date().toISOString(),
 		node: process.version,
 		platform: process.platform,

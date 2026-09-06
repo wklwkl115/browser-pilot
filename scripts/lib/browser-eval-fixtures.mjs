@@ -1,4 +1,5 @@
 import http from "node:http";
+import { taskViewFixture } from "./browser-eval-task-view-fixture.mjs";
 
 const shell = (
 	title,
@@ -8,6 +9,10 @@ const shell = (
 <body><main><h1>${title}</h1>${body}</main><script>${script}</script></body></html>`;
 
 function taskPage(pathname, run, crossOrigin) {
+	if (pathname === "/task-view") {
+		const fixture = taskViewFixture();
+		return shell("Task view invoices", fixture.body, fixture.script);
+	}
 	if (pathname === "/async-form")
 		return shell(
 			"Support request",

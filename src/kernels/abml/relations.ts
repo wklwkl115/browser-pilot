@@ -64,7 +64,7 @@ function typeRank(type: RelationType): number {
 //   s:<selector>          — DOM endpoints (occlusion relations match by CSS selector)
 // Target-scoped backend identities never register a bare fallback: backend ids are only unique
 // within their CDP target/session.
-export function entityRelationKeys(entity: Entity): string[] {
+export function entityRelationKeys(entity: Pick<Entity, "hints" | "locators">): string[] {
 	const keys: string[] = [];
 	const locator = entity.locators?.find((item) => item.by === "backendNodeId");
 	const locatorBackend = locator?.by === "backendNodeId" ? Number(locator.value) : NaN;

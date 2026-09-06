@@ -5,6 +5,8 @@ import type { TreeDiff } from "./treeDiff.js";
 import type { SnapshotProjection } from "./snapshotProjection.js";
 import type { RelationSummary } from "./relations.js";
 import type { PageReanchorReason } from "../session/pageIdentity.js";
+import type { DecisionBundle, TaskViewMetadata } from "./taskView.js";
+import { TASK_BUNDLE_SCHEMA, TASK_VIEW_METADATA_SCHEMA } from "./taskViewSchema.js";
 
 export const PAGE_OBSERVATION_SCHEMA_V3 = "browser-page-observation/v3" as const;
 
@@ -188,6 +190,8 @@ export interface PageObservationV3 {
 }
 
 export interface PageObservationView {
+	task?: TaskViewMetadata;
+	bundles?: DecisionBundle[];
 	target: Pick<PageTarget, "url">;
 	content?: PageObservationContent;
 	visual?: PublicVisualObservation;
@@ -799,6 +803,8 @@ export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
 	$id: "browser-page-observation-view/v2",
 	type: "object",
 	properties: {
+		task: TASK_VIEW_METADATA_SCHEMA,
+		bundles: { type: "array", items: TASK_BUNDLE_SCHEMA },
 		target: { type: "object", properties: { url: { type: "string" } }, additionalProperties: false },
 		content: {
 			type: "object",

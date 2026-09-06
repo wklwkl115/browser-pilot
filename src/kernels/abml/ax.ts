@@ -606,6 +606,9 @@ export function mergeKnownDomAndAxEntity(
 			...(trustedIdentity && ax.hints?.currentContainerKeys
 				? { currentContainerKeys: ax.hints.currentContainerKeys }
 				: {}),
+			...(trustedIdentity && ax.hints?.contextAncestorKeys
+				? { contextAncestorKeys: ax.hints.contextAncestorKeys }
+				: {}),
 			mergedSources: ["dom", "ax"],
 			fusionMatch: match,
 			...(Object.keys(fieldSource).length ? { fieldSource } : {}),

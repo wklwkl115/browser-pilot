@@ -54,6 +54,10 @@ export function summarizeAttempts(attempts) {
 			attempts.filter((attempt) => attempt.success).map((attempt) => attempt.durationMs),
 		),
 		toolCalls: attempts.reduce((total, attempt) => total + attempt.toolCalls, 0),
+		resourceReads: attempts.reduce((total, attempt) => total + (attempt.resourceReads ?? 0), 0),
+		mcpResponseJsonBytes: attempts.every((attempt) => typeof attempt.mcpResponseJsonBytes === "number")
+			? attempts.reduce((total, attempt) => total + attempt.mcpResponseJsonBytes, 0)
+			: null,
 		responseJsonBytes: attempts.reduce((total, attempt) => total + attempt.responseJsonBytes, 0),
 		responseTextChars: attempts.reduce((total, attempt) => total + attempt.responseTextChars, 0),
 		errors,

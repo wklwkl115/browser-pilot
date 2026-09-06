@@ -13,6 +13,7 @@ import type { CommandRegistrarContext } from "./commandShared.js";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { currentPageIdentity, pageIdentityFromUnknown } from "./observe/pageIdentity.js";
 import { samePageIdentity } from "../kernels/session/pageIdentity.js";
+import { observeViewSchema, prepareTaskView, prepareTaskViewTarget } from "./observe/taskViewInput.js";
 
 export function selectDiffBaselineSnapshot(
 	server: BrowserCommandRuntimePort,
@@ -50,9 +51,10 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 		description:
 			"Return compact page content, actions, changes, and expandable semantic resources for the current tab.",
 		promptGuidelines: [
-			"Use browser_observe only for page understanding. It returns a deterministic whole-page semantic map and exposes only irreducible overflow as MCP resources.",
+			"Use browser_observe only for page understanding. By default it returns a deterministic whole-page semantic map. Optional view organizes captured evidence around explicit refs or a literal query; it never acts or declares business success.",
 		],
 		parameters: strictCommandParameters({
+			view: Type.Optional(observeViewSchema),
 			mode: Type.Optional(
 				Type.Enum(["auto", "full", "diff"], {
 					description: "Return an automatic session view, full view, or diff against the latest observation.",
@@ -70,12 +72,13 @@ export function defineObserveCommand({ commands, ensureStarted }: CommandRegistr
 				async (): Promise<import("../utils/toolResult.js").BrowserTextCommandResult> => {
 					const toolCtx = ctx ?? {};
 					const server = await ensureStarted();
-					const { mode, ...rest } = params;
-					const observeParams: ObserveToolParams = {
+					const { mode, view, ...rest } = params;
+					const observeParams: ObserveToolParams = prepareTaskViewTarget(server, {
 						...rest,
+						view: prepareTaskView(view),
 						...(mode === "full" ? { fresh: true } : {}),
 						...(mode === "diff" ? { diff: true } : {}),
-					};
+					});
 					// diff mode keeps the semantic choice with the agent while resolving the bookkeeping
 					// (which snapshotId) here — pick the most recent prior scan snapshot for this tab.
 					if (observeParams.baseline === undefined && observeParams.diff === true) {

@@ -50,6 +50,8 @@ The result of one `browser_observe` call. Two shapes exist:
 
 The view is deliberately small. It is meant to be enough to decide the next action, not to be a dump of the page.
 
+An optional declarative `view` selects evidence from the same captured model before generic compression. [Task views](task-views.md) return self-contained object bundles and explicit captured/matched/displayed scope. They do not maintain task ownership, navigate the page or infer business success.
+
 ### Snapshot, baseline, diff
 
 Every observation gets a `snapshotId`. `browser_observe` with `mode: "diff"` picks the latest prior snapshot of the same tab and page as the **baseline** and reports what changed. `mode: "full"` forces a fresh, complete model. `mode: "auto"` (default) lets Browser Pilot decide based on whether a usable baseline exists.
