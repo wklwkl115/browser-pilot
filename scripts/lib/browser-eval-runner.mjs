@@ -5,6 +5,7 @@ import { startEvaluationFixtures } from "./browser-eval-fixtures.mjs";
 import { summarizeAttempts } from "./evaluation-metrics.mjs";
 import { renderMcpToolResult, readMcpResource } from "../../src/apps/mcp/server.ts";
 import { compareTaskViewCosts, withSharedExecutionTail } from "./task-view-costs.mjs";
+import { compareEquivalentNeedCosts } from "./equivalent-need-costs.mjs";
 
 function fail(category, code, message) {
 	throw Object.assign(new Error(message), { category, code });
@@ -64,6 +65,10 @@ function taskContext(daemon, session, fixture, round, metrics, artifactRoot, res
 		presentation: () => lastPresentation,
 		compareTaskViews: async () => {
 			metrics.contextCosts = await compareTaskViewCosts(lastRaw, artifactRoot);
+		},
+		compareEquivalentNeeds: async (contract, budget) => {
+			metrics.equivalentNeedCosts = await compareEquivalentNeedCosts(lastRaw, artifactRoot, contract, budget);
+			return metrics.equivalentNeedCosts;
 		},
 		beginTaskEffects: () => {
 			metrics.executionCostStart = metrics.mcpResponseJsonBytes ?? 0;
@@ -171,7 +176,7 @@ export async function runBrowserEvaluation(options, tasks) {
 	const attempts = [];
 	const metadata = {
 		schemaVersion: 2,
-		fixtureVersion: 7,
+		fixtureVersion: 8,
 		generatedAt: new Date().toISOString(),
 		node: process.version,
 		platform: process.platform,

@@ -36,6 +36,34 @@ test("an empty evaluation does not report a perfect success rate", () => {
 	assert.equal(summary.recoverableGaps.successRate, null);
 });
 
+test("equivalent-need summaries cannot promote partial or budget-exhausted comparisons", () => {
+	const summary = summarizeAttempts([
+		{
+			success: true,
+			durationMs: 1,
+			toolCalls: 1,
+			responseJsonBytes: 1,
+			responseTextChars: 1,
+			equivalentNeedCosts: {
+				allPathsSatisfied: true,
+				paths: {
+					page: { status: "satisfied" },
+					wholeGroup: { status: "unsatisfied" },
+					progressivePacket: { status: "budget-exhausted" },
+				},
+			},
+		},
+	]);
+	assert.deepEqual(summary.equivalentNeeds, {
+		comparisons: 1,
+		comparableComparisons: 0,
+		satisfiedPaths: 1,
+		unsatisfiedPaths: 1,
+		budgetExhaustedPaths: 1,
+		missingPaths: 0,
+	});
+});
+
 test("recoverable gap metrics count failures without equating resource reads with recovery", () => {
 	const summary = summarizeAttempts([
 		{

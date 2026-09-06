@@ -16,7 +16,7 @@ Node.js 22+ and Chrome/Edge are required. Set `BROWSER_PILOT_SMOKE_BROWSER` to c
 
 The shared harness creates a temporary browser profile and a private copy of the extension with an ephemeral pairing secret. It does not install into the user's extension directory or use their cookies. Initial browser startup/build time is outside task timing; an explicit restart inside a recovery task is included. Each attempt navigates to fresh fixture state; failed writes are never automatically retried.
 
-## Scenarios (fixture version 7)
+## Scenarios (fixture version 8)
 
 | Task                   | Kind     | Independent completion check                                                                                                                                                      |
 | ---------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -82,10 +82,38 @@ Resource costs are also reported as cumulative `resourceResponseJsonBytes` and m
 
 `task-view-progressive` adds a 180-field form, an externally associated native Save, labels, a related error and another form. It requires a complete independent Note packet, checks native ownership provenance, edits only the intended form once, and verifies identical historical packet reads after the write.
 
-`recoverableGaps` counts attempted versus successfully addressed captured-evidence gaps, not successful resource requests. The existing progressive scenario combines fixture fact checks with the packet's completeness report; it is not yet an independent information-sufficiency oracle or an autonomous Agent trial.
+`recoverableGaps` counts attempted versus successfully addressed captured-evidence gaps, not successful resource requests. The scripted progressive workflow retains its packet completeness assertions and independent save/side-effect checks. Its separate `equivalentNeedCosts` comparison now uses a fixture-owned observation oracle; neither is an autonomous Agent trial.
 
 `contextCosts` measures **fixed-snapshot, fixed-reading-strategy** byte counts with the same 32 KiB inline budget. It includes rendered MCP envelopes and exact saved resource/index wrappers, but the paths are deliberately different: page output always adds full captured-evidence expansion even if inline information suffices; whole-group reads may still lack required evidence after materialization limits; packet reads cover only the materialized packets. A small number may therefore describe an insufficient path. This comparison measures serialization and expansion behavior, not equal information needs, minimum reads, task success or actual Agent task cost.
 
 Reports label this as `comparisonKind: "fixed-snapshot-fixed-reading-strategy"`, `informationSufficiency: "not-evaluated"`, and `equivalentTaskCostValidated: false`; `readingPolicy` records each path's assumptions. `fixedStrategyWithSharedTail` adds the same measured execution/check tail to these fixed-strategy counts. It replaces the misleading `completedTask` label and does not prove any alternative path completed the task. Older reports containing `completedTask` should be read with this same limitation. Actual `mcpResponseJsonBytes` still counts every resource read performed by the scripted scenario, including historical/independence checks, and is reported separately.
 
-Equivalent-need cost evaluation requires a separate fixture-owned oracle and a bounded progressive-reading policy that records satisfied, unsatisfied or budget-exhausted results before comparing costs. That evaluation and real Agent-driven trials remain separate follow-up work; neither has been run by this fixed-strategy benchmark. No token savings or model performance gain is claimed.
+The fixed-strategy benchmark remains separate from the equivalent-need evaluation below. Real Agent-driven trials remain follow-up work. No token savings or model performance gain is claimed.
+
+## Equivalent observation needs
+
+Fixture version 8 adds `equivalentNeedCosts` to `task-view-progressive`. The `record-edit-readiness/v1` oracle checks actual delivered record identity, the intended editable field and current value, field ownership, every required linked description, the intended submit control and native form ownership, disabled/occluded state, all fixture-declared matching candidates, visible known blockers, and snapshot consistency. `contextComplete`, `requirements`, `gaps`, match ranking and resource-read success never establish sufficiency. Contradictory values, wrong refs/snapshots, an `aria-controls` edge standing in for ownership, hidden candidate identities, and missing blocker evidence fail the oracle.
+
+The fixture declares expected labels, values, selectors and relationships independently of projection output. Exact main-target selectors bind these expectations to opaque canonical refs; missing or ambiguous bindings stay unsatisfied. This evaluates delivery from a captured model, not the correctness of every browser capture/locator. The existing independent page-state oracle still checks actual writes and side effects. Observation sufficiency is not permission to act or proof of persistence; even a fully disclosed blocker can satisfy an information need.
+
+Three evaluation configurations use one immutable canonical snapshot and the same requirement/budgets:
+
+- `page` starts with the normal production page projection, including its usual overflow behavior. It does not force a full evidence read when inline facts already suffice.
+- `wholeGroup` uses whole-bundle packing and saved group resources, with packets disabled in its derived task artifact. A read of a truncated group is not assumed sufficient.
+- `progressivePacket` uses production packet packing, indexes and packet resources.
+
+All three explicitly expose the same existing immutable snapshot-evidence reader as a fallback. This common fallback is an evaluation adapter, not a change to default public page output or the browser tool catalog. Original artifacts are never rewritten; a separate saved whole-group variant is generated. Production resource registration/reading enforces scope, expiry, schema and digests; no comparison read queries the current page, operation registry, or live execution refs.
+
+`public-link-priority-v1` discovers only returned public frontier, index, remedy and resource-link URIs. It prefers relevant task packets/groups and mandatory signals, follows index pagination, deduplicates visited URIs, and uses snapshot evidence as a fallback. It sees the original `focus`/`fields` and public labels, not the oracle's selector/ref bindings. Every admitted response is assessed before another read. This is a deterministic progressive reading policy, not an optimal search or a model-selected path.
+
+Defaults are 12 resource attempts and 512 KiB of cumulative model-visible response JSON, in addition to the usual 32 KiB observation-view limit. Each path reports:
+
+| Result             | Meaning                                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| `satisfied`        | All independent fixture checks passed after the last admitted response. Reading stops immediately. |
+| `unsatisfied`      | The need remains unmet and no unread allowed resource remains, or a resource read failed.          |
+| `budget-exhausted` | A resource-attempt limit or cumulative context-byte limit prevents further delivery.               |
+
+`contextJsonBytes` sums complete admitted MCP observation/resource response envelopes, including both text/structured channels where emitted. `obtainedResponseJsonBytes` also counts a terminal oversized response that was materialized but rejected before the oracle saw it; `resourceReads` includes that attempted expansion. A failed read charges a normalized `RESOURCE_READ_FAILED` response and ends the path. Trace entries include kind, bytes, admission and missing requirement IDs, without raw evidence or private refs. No partial JSON is admitted. Server setup/materialization costs and model-generated requests/tokens are outside this context metric.
+
+`costsAtEqualSufficiency` is populated **only when all three paths are satisfied**; otherwise it is `null`. A cheap unsatisfied or budget-exhausted path cannot become a cost winner. Summary `equivalentNeeds` counts comparable comparisons and each outcome separately. These observation streams are separate from the actual scripted workflow's `mcpResponseJsonBytes`; they are not added to its execution tail or relabeled as completed business-task costs. Real Agent success, false-success rates and model-token cost remain unmeasured.
