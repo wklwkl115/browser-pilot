@@ -194,3 +194,32 @@ test("container group resources retain descendants and advertise full expansion 
 	);
 	assert.ok(Buffer.byteLength(result.content[0]!.text) < 32768);
 });
+
+test("historical task groups preserve uncertain actions and ordinary row identity", async (t) => {
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-context-review-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	const note = taskEntity("note", "textbox", "Note");
+	const identity = taskEntity("id", "cell", "INV-2048");
+	const save = taskEntity("save", "button", "Save");
+	const row = taskEntity("row", "row", "Invoice row", [
+		identity,
+		taskEntity("fields", "group", "Fields", [note]),
+		taskEntity("actions", "group", "Actions", [save]),
+	]);
+	const result = await pageObservationResult({
+		observation: taskObservation([row]),
+		fallbackName: "row.json",
+		ctx: { cwd },
+		view: prepareTaskView({ focus: { refs: [note.ref] }, intent: "interact" }),
+	});
+	registerMcpObservationResources(result.details, cwd);
+	const descriptor = (result.details![OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[]).find(
+		(item) => item.taskProjection,
+	)!;
+	const index = resourceText(await readMcpResource(descriptor.uri, cwd));
+	const group = resourceText(await readMcpResource(index.groups[0].resourceUri, cwd));
+	assert.ok(group.bundle.facts.some((fact: { ref: string }) => fact.ref === identity.ref));
+	assert.ok(!group.bundle.facts.some((fact: { ref: string }) => fact.ref === save.ref));
+	assert.ok(group.bundle.gaps.includes("context-actions-unknown"));
+	assert.equal(group.task.outputScope.contextComplete, false);
+});

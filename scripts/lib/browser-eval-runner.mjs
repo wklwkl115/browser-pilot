@@ -151,7 +151,7 @@ export async function runBrowserEvaluation(options, tasks) {
 	const attempts = [];
 	const metadata = {
 		schemaVersion: 2,
-		fixtureVersion: 5,
+		fixtureVersion: 6,
 		generatedAt: new Date().toISOString(),
 		node: process.version,
 		platform: process.platform,

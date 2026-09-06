@@ -1,3 +1,5 @@
+import { checkOwnerContextVariants, checkExactTargetDuringRouteChange } from "./browser-eval-context-checks.mjs";
+
 function taskFact(ctx, bundle, name) {
 	const facts = bundle.facts.filter((fact) => fact.name === name && fact.actions?.length);
 	ctx.assert(facts.length === 1, "TASK_CONTROL_IDENTITY", `Expected one ${name} control in the selected record`);
@@ -122,6 +124,8 @@ export const taskViewEvaluationTasks = [
 				"DOCUMENT_EVIDENCE_BOUNDARY",
 				"Same selector and matching text in a new document were attributed to an old operation",
 			);
+			await checkOwnerContextVariants(ctx);
+			await checkExactTargetDuringRouteChange(ctx);
 		},
 	},
 	{

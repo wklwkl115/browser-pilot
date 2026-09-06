@@ -17,7 +17,8 @@ export type ConditionRuntime = {
 	networkBaseline?: NetworkBaseline;
 	/** null means the pre-write document could not be identified. */
 	documentBaseline?: number | null;
-	allowedDocumentUrl?: string;
+	/** Conjunctive target constraints inherited only through allOf branches. */
+	targetDocumentUrls?: readonly string[];
 };
 
 export function hasDomCondition(condition: DeclarativeCondition): boolean {
@@ -202,17 +203,17 @@ return { count: 1, value: typeof value === 'string' ? value.slice(0, 4096) : nul
 		signal: runtime.signal,
 	});
 	const data = isRecord(result.data) ? result.data : {};
-	if (
-		runtime.documentBaseline !== undefined &&
-		!(typeof runtime.documentBaseline === "number" && data.documentOrigin === runtime.documentBaseline) &&
-		!(runtime.allowedDocumentUrl && data.url === runtime.allowedDocumentUrl)
-	)
+	const targetMatches = runtime.targetDocumentUrls?.length
+		? runtime.targetDocumentUrls.every((url) => data.url === url)
+		: runtime.documentBaseline === undefined ||
+			(typeof runtime.documentBaseline === "number" && data.documentOrigin === runtime.documentBaseline);
+	if (!targetMatches)
 		return conditionResult(
 			runtime.verb,
 			"inconclusive",
 			condition,
-			{},
-			"Document changed or is unidentified; declare an exact destination URL in allOf to inspect a post-navigation page",
+			{ url: data.url, documentOrigin: data.documentOrigin },
+			"DOM evidence does not satisfy its exact target URL constraints or original document boundary",
 		);
 	if (data.count !== 1 || typeof data.value !== "string" || data.truncated === true)
 		return conditionResult(
@@ -239,11 +240,12 @@ async function evaluateCombination(
 ) {
 	const all = "allOf" in condition;
 	const children = all ? condition.allOf : condition.anyOf;
-	const destination = all ? children.find((child) => "url" in child && "equals" in child.url) : undefined;
-	const childRuntime =
-		destination && "url" in destination && "equals" in destination.url
-			? { ...runtime, allowedDocumentUrl: destination.url.equals }
-			: runtime;
+	const destinations = all
+		? children.flatMap((child) => ("url" in child && "equals" in child.url ? [child.url.equals] : []))
+		: [];
+	const childRuntime = destinations.length
+		? { ...runtime, targetDocumentUrls: [...(runtime.targetDocumentUrls ?? []), ...destinations] }
+		: runtime;
 	const results: VerificationResult[] = [];
 	for (const child of children) {
 		const result = await evaluateCondition(child, childRuntime);
