@@ -3,7 +3,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function firstDefined(record: Record<string, unknown>, keys: readonly string[]): unknown {
-	for (const key of keys) if (record[key] !== undefined && record[key] !== null && record[key] !== "") return record[key];
+	for (const key of keys)
+		if (record[key] !== undefined && record[key] !== null && record[key] !== "") return record[key];
 	return undefined;
 }
 

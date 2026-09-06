@@ -1,4 +1,4 @@
-// ABML collection completeness kernel (pure core).
+// Concept: "Collection" and "Frontier" completeness (docs/concepts.md) — pure core.
 //
 // This module classifies repeated page structures as collections and reports whether the observed
 // window is complete. It is perception-only and never asks the browser to scroll/click.
@@ -7,18 +7,12 @@ import type { SnapshotProjection, SnapshotProjectionTemplate } from "./snapshotP
 import type { StructureTemplate } from "./templating.js";
 import { firstSafeSemanticText, safeContainerLabelText, sanitizeSemanticText } from "./semanticText.js";
 import type { ScanActionable, ScanListHint } from "./pageWorldScan.js";
-import { nonEmptyString as stringValue } from "../../utils/records.js";
+import { isRecord, nonEmptyString as stringValue } from "../../utils/records.js";
 
 type ListHintInput = ScanListHint | Record<string, unknown>;
 type ActionableInput = ScanActionable | Record<string, unknown>;
 
-export type CollectionCompleteness =
-	| "complete"
-	| "viewport-window"
-	| "virtualized"
-	| "paginated"
-	| "lazy"
-	| "unknown";
+export type CollectionCompleteness = "complete" | "viewport-window" | "virtualized" | "paginated" | "lazy" | "unknown";
 
 export type CollectionKind = "list" | "table" | "grid" | "feed" | "menu" | "tree" | "region";
 export type CollectionConfidence = "high" | "medium" | "low";
@@ -98,9 +92,22 @@ type DraftCollection = {
 	sourceRank: number;
 	preferredCompleteness?: CollectionCompleteness;
 	preferredConfidence?: CollectionConfidence;
+	/** Viewport-relative union of member geometry; anchors pagination controls to their collection. */
+	box?: Box;
 	dataSources: NonNullable<CollectionModel["dataSources"]>;
 	evidence: CollectionModel["evidence"];
 };
+
+type Box = { x: number; y: number; w: number; h: number };
+
+function unionBox(boxes: Box[]): Box | undefined {
+	if (!boxes.length) return undefined;
+	const minX = Math.min(...boxes.map((box) => box.x));
+	const minY = Math.min(...boxes.map((box) => box.y));
+	const maxX = Math.max(...boxes.map((box) => box.x + box.w));
+	const maxY = Math.max(...boxes.map((box) => box.y + box.h));
+	return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
 
 const COLLECTION_ITEM_ROLES = new Set([
 	"article",
@@ -112,16 +119,7 @@ const COLLECTION_ITEM_ROLES = new Set([
 	"row",
 	"treeitem",
 ]);
-const COLLECTION_CONTAINER_ROLES = new Set([
-	"feed",
-	"grid",
-	"list",
-	"listbox",
-	"menu",
-	"menubar",
-	"table",
-	"tree",
-]);
+const COLLECTION_CONTAINER_ROLES = new Set(["feed", "grid", "list", "listbox", "menu", "menubar", "table", "tree"]);
 
 function numberValue(value: unknown): number | undefined {
 	const n = Number(value);
@@ -152,16 +150,28 @@ function collectionKind(containerRole?: string, itemRole?: string, entityKind?: 
 	return entityKind === "region" ? "region" : "list";
 }
 
-function collectionKey(parts: { containerRef?: string; containerRole?: string; containerName?: string; containerKey?: string; itemRole?: string; declaredTotal?: number; jsonPath?: string }): string {
-	return [
-		parts.containerRef,
-		parts.containerRole,
-		parts.containerName,
-		parts.containerKey,
-		parts.itemRole,
-		parts.declaredTotal === undefined ? undefined : `total:${parts.declaredTotal}`,
-		parts.jsonPath,
-	].filter((item): item is string => !!item).join("\u0000") || "unknown";
+function collectionKey(parts: {
+	containerRef?: string;
+	containerRole?: string;
+	containerName?: string;
+	containerKey?: string;
+	itemRole?: string;
+	declaredTotal?: number;
+	jsonPath?: string;
+}): string {
+	return (
+		[
+			parts.containerRef,
+			parts.containerRole,
+			parts.containerName,
+			parts.containerKey,
+			parts.itemRole,
+			parts.declaredTotal === undefined ? undefined : `total:${parts.declaredTotal}`,
+			parts.jsonPath,
+		]
+			.filter((item): item is string => !!item)
+			.join("\u0000") || "unknown"
+	);
 }
 
 function normalizeNameKey(value: string | undefined): string {
@@ -187,7 +197,9 @@ function disambiguatedCollectionName(name: string | undefined, context: string |
 	return normalizeNameKey(name) === normalizeNameKey(context) ? name : `${name} (${context})`;
 }
 
-function templateKey(template: Pick<StructureTemplate, "container" | "containerName" | "containerKey" | "role" | "setSize">): string {
+function templateKey(
+	template: Pick<StructureTemplate, "container" | "containerName" | "containerKey" | "role" | "setSize">,
+): string {
 	return collectionKey({
 		containerRole: template.container,
 		containerName: template.containerName,
@@ -197,7 +209,9 @@ function templateKey(template: Pick<StructureTemplate, "container" | "containerN
 	});
 }
 
-function snapshotTemplateKey(template: Pick<SnapshotProjectionTemplate, "container" | "containerName" | "containerKey" | "role" | "setSize">): string {
+function snapshotTemplateKey(
+	template: Pick<SnapshotProjectionTemplate, "container" | "containerName" | "containerKey" | "role" | "setSize">,
+): string {
 	return collectionKey({
 		containerRole: template.container,
 		containerName: template.containerName,
@@ -217,7 +231,12 @@ function entityCollectionKey(entity: Entity): string | undefined {
 	if (containerRole || setSize !== undefined) {
 		return collectionKey({ containerRole, containerName, containerKey, itemRole: role, declaredTotal: setSize });
 	}
-	if (listContainer) return collectionKey({ containerRole: role, containerName: entity.name, jsonPath: stringValue(entity.hints?.jsonPath) });
+	if (listContainer)
+		return collectionKey({
+			containerRole: role,
+			containerName: entity.name,
+			jsonPath: stringValue(entity.hints?.jsonPath),
+		});
 	return undefined;
 }
 
@@ -231,7 +250,8 @@ function isCollectionItem(entity: Entity): boolean {
 
 function isSkeletonEntity(entity: Entity): boolean {
 	const hints = entity.hints || {};
-	if (booleanish(hints.skeleton) || booleanish(hints.placeholder) || booleanish(hints.loadingPlaceholder)) return true;
+	if (booleanish(hints.skeleton) || booleanish(hints.placeholder) || booleanish(hints.loadingPlaceholder))
+		return true;
 	const role = normalizeRole(entity.role);
 	const name = `${entity.name || ""} ${entity.value || ""}`.toLowerCase();
 	return role === "progressbar" || /\b(skeleton|placeholder|loading)\b/.test(name);
@@ -248,13 +268,14 @@ function addDraft(map: Map<string, DraftCollection>, key: string, draft: DraftCo
 		return;
 	}
 	const observedPositions = Math.max(existing.observedPositions ?? 0, draft.observedPositions ?? 0) || undefined;
-	const refs = existing.observedPositions && draft.observedPositions
-		? uniq([...existing.itemRefs, ...draft.itemRefs])
-		: draft.observedPositions
-			? draft.itemRefs
-			: existing.observedPositions
-				? existing.itemRefs
-				: uniq([...existing.itemRefs, ...draft.itemRefs]);
+	const refs =
+		existing.observedPositions && draft.observedPositions
+			? uniq([...existing.itemRefs, ...draft.itemRefs])
+			: draft.observedPositions
+				? draft.itemRefs
+				: existing.observedPositions
+					? existing.itemRefs
+					: uniq([...existing.itemRefs, ...draft.itemRefs]);
 	const evidence = [...existing.evidence, ...draft.evidence];
 	const dataSources = [...existing.dataSources, ...draft.dataSources];
 	map.set(key, {
@@ -268,13 +289,18 @@ function addDraft(map: Map<string, DraftCollection>, key: string, draft: DraftCo
 		itemRole: existing.itemRole ?? draft.itemRole,
 		observedCount: observedPositions ?? Math.max(existing.observedCount, draft.observedCount),
 		itemRefs: refs,
-		itemRefCount: observedPositions ?? Math.max(existing.itemRefCount ?? existing.itemRefs.length, draft.itemRefCount ?? draft.itemRefs.length),
+		itemRefCount:
+			observedPositions ??
+			Math.max(existing.itemRefCount ?? existing.itemRefs.length, draft.itemRefCount ?? draft.itemRefs.length),
 		observedPositions,
 		declaredTotal: existing.declaredTotal ?? draft.declaredTotal,
 		estimatedTotal: Math.max(existing.estimatedTotal ?? 0, draft.estimatedTotal ?? 0) || undefined,
 		sourceRank: Math.min(existing.sourceRank, draft.sourceRank),
 		preferredCompleteness: existing.preferredCompleteness ?? draft.preferredCompleteness,
 		preferredConfidence: existing.preferredConfidence ?? draft.preferredConfidence,
+		...(existing.box || draft.box
+			? { box: unionBox([...(existing.box ? [existing.box] : []), ...(draft.box ? [draft.box] : [])]) }
+			: {}),
 		dataSources,
 		evidence,
 	});
@@ -293,16 +319,23 @@ function templateDraft(template: StructureTemplate, sourceRank: number): DraftCo
 		itemRefCount: observedCount,
 		declaredTotal: template.setSize,
 		sourceRank,
-		dataSources: [{
-			source: "aria",
-			summary: template.setSize !== undefined ? `template has ${observedCount} entity instances across ${template.setSize} declared item positions` : `template has ${observedCount} entity instances`,
-			confidence: "medium",
-		}],
-		evidence: [{
-			source: "templates",
-			summary: `repeated ${template.role} template contains ${observedCount} entity instances`,
-			ref: template.sample?.ref,
-		}],
+		dataSources: [
+			{
+				source: "aria",
+				summary:
+					template.setSize !== undefined
+						? `template has ${observedCount} entity instances across ${template.setSize} declared item positions`
+						: `template has ${observedCount} entity instances`,
+				confidence: "medium",
+			},
+		],
+		evidence: [
+			{
+				source: "templates",
+				summary: `repeated ${template.role} template contains ${observedCount} entity instances`,
+				ref: template.sample?.ref,
+			},
+		],
 	};
 }
 
@@ -319,17 +352,24 @@ function snapshotDraft(template: SnapshotProjectionTemplate): DraftCollection {
 		itemRefCount: observedCount,
 		declaredTotal: template.setSize,
 		sourceRank: 0,
-		dataSources: [{
-			source: "snapshot",
-			summary: template.setSize !== undefined ? `snapshot projection has ${observedCount} entity instances across ${template.setSize} declared item positions` : `snapshot projection has ${observedCount} entity instances`,
-			confidence: "medium",
-		}],
-		evidence: [{
-			source: "templates",
-			summary: `snapshot template ${template.templateKey} contains ${observedCount} entity instances`,
-			jsonPath: `envelope.snapshotProjection.templates[templateKey=${template.templateKey}]`,
-			ref: template.sample?.ref,
-		}],
+		dataSources: [
+			{
+				source: "snapshot",
+				summary:
+					template.setSize !== undefined
+						? `snapshot projection has ${observedCount} entity instances across ${template.setSize} declared item positions`
+						: `snapshot projection has ${observedCount} entity instances`,
+				confidence: "medium",
+			},
+		],
+		evidence: [
+			{
+				source: "templates",
+				summary: `snapshot template ${template.templateKey} contains ${observedCount} entity instances`,
+				jsonPath: `envelope.snapshotProjection.templates[templateKey=${template.templateKey}]`,
+				ref: template.sample?.ref,
+			},
+		],
 	};
 }
 
@@ -352,8 +392,10 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 		const first = members[0]!;
 		const itemMembers = members.filter((entity) => entity.hints?.listContainer !== true);
 		const role = normalizeRole(first.role);
-		const containerRole = normalizeRole(first.hints?.containerRole) ?? (first.hints?.listContainer === true ? role : undefined);
-		const containerName = sanitizeSemanticText(first.hints?.containerName, 160) ?? sanitizeSemanticText(first.name, 160);
+		const containerRole =
+			normalizeRole(first.hints?.containerRole) ?? (first.hints?.listContainer === true ? role : undefined);
+		const containerName =
+			sanitizeSemanticText(first.hints?.containerName, 160) ?? sanitizeSemanticText(first.name, 160);
 		const declaredTotal = numberValue(first.structure?.setSize);
 		const positioned = new Map<number, Entity>();
 		for (const entity of itemMembers) {
@@ -363,12 +405,19 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 		const positions = new Set(positioned.keys());
 		const skeletonCount = skeletonsByKey.get(key) || 0;
 		const observedCount = positions.size || itemMembers.length || numberValue(first.hints?.itemCount) || 0;
-		const refs = uniq((positions.size ? [...positioned.values()] : itemMembers).filter(isAddressableEntity).map((entity) => entity.ref));
+		const refs = uniq(
+			(positions.size ? [...positioned.values()] : itemMembers)
+				.filter(isAddressableEntity)
+				.map((entity) => entity.ref),
+		);
 		const dataSources: NonNullable<CollectionModel["dataSources"]> = [];
 		if (declaredTotal !== undefined || positions.size) {
 			dataSources.push({
 				source: "aria",
-				summary: declaredTotal !== undefined ? `ARIA set positions ${positions.size}/${declaredTotal}` : `ARIA positions ${positions.size}`,
+				summary:
+					declaredTotal !== undefined
+						? `ARIA set positions ${positions.size}/${declaredTotal}`
+						: `ARIA positions ${positions.size}`,
 				confidence: declaredTotal !== undefined ? "high" : "medium",
 			});
 		}
@@ -376,15 +425,23 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 			dataSources.push({
 				source: "dom",
 				ref: first.ref,
-				summary: skeletonCount > 0 ? `list container has ${skeletonCount} loading placeholders` : "list container hint",
+				summary:
+					skeletonCount > 0
+						? `list container has ${skeletonCount} loading placeholders`
+						: "list container hint",
 				confidence: skeletonCount > 0 ? "medium" : "low",
 			});
 		}
-		const evidence: CollectionModel["evidence"] = [{
-			source: "itemEntities",
-			summary: declaredTotal !== undefined ? `item entities observed ${observedCount} of declared ${declaredTotal}` : `item entities observed ${observedCount}`,
-			ref: first.ref,
-		}];
+		const evidence: CollectionModel["evidence"] = [
+			{
+				source: "itemEntities",
+				summary:
+					declaredTotal !== undefined
+						? `item entities observed ${observedCount} of declared ${declaredTotal}`
+						: `item entities observed ${observedCount}`,
+				ref: first.ref,
+			},
+		];
 		if (skeletonCount > 0) {
 			evidence.push({
 				source: "listHints",
@@ -392,6 +449,7 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 				ref: first.ref,
 			});
 		}
+		const box = unionBox(members.flatMap((entity) => (entity.geometry?.box ? [entity.geometry.box] : [])));
 		addDraft(drafts, key, {
 			kind: collectionKind(containerRole, role, first.kind),
 			containerRef: first.hints?.listContainer === true ? first.ref : undefined,
@@ -404,6 +462,7 @@ function buildEntityDrafts(entities: Entity[]): Map<string, DraftCollection> {
 			...(positions.size ? { observedPositions: positions.size } : {}),
 			declaredTotal,
 			sourceRank: 1,
+			...(box ? { box } : {}),
 			...(skeletonCount > 0 ? { preferredCompleteness: "lazy", preferredConfidence: "medium" } : {}),
 			dataSources,
 			evidence,
@@ -446,16 +505,20 @@ function listHintDraft(hint: ListHintInput, index: number): DraftCollection {
 		sourceRank: 3,
 		preferredCompleteness: "viewport-window",
 		preferredConfidence: "low",
-		dataSources: [{
-			source: "dom",
-			summary: `scan list hint observed ${observedCount}`,
-			confidence: "low",
-		}],
-		evidence: [{
-			source: "listHints",
-			summary: firstItem ? `list hint sample: ${firstItem}` : "scan list hint",
-			jsonPath: `data.structure.listHints[${index}]`,
-		}],
+		dataSources: [
+			{
+				source: "dom",
+				summary: `scan list hint observed ${observedCount}`,
+				confidence: "low",
+			},
+		],
+		evidence: [
+			{
+				source: "listHints",
+				summary: firstItem ? `list hint sample: ${firstItem}` : "scan list hint",
+				jsonPath: `data.structure.listHints[${index}]`,
+			},
+		],
 	};
 }
 
@@ -467,53 +530,148 @@ function actionableText(actionable: ActionableInput): string {
 		.toLowerCase();
 }
 
+// Pagination vocabulary. English uses word boundaries; CJK has no word boundaries so those
+// alternatives match as substrings. Keep every entry a short, unambiguous navigation phrase.
+const PREVIOUS_PATTERN =
+	/\bprevious\b|\bprev\b|\bback\b|\bnewer\b|上一页|上页|前一页|前へ|前のページ|zurück|précédent|anterior/i;
+const NEXT_PATTERN = /\bnext\b|\bolder\b|下一页|下页|后一页|次へ|次のページ|weiter|nächste|suivant|siguiente/i;
+const LOAD_MORE_PATTERN =
+	/\bload\s*more\b|加载更多|载入更多|读取更多|さらに読み込む|mehr laden|charger plus|cargar más/i;
+const SHOW_MORE_PATTERN =
+	/\bshow\s*more\b|\bview\s*more\b|\bsee\s*more\b|查看更多|显示更多|展开更多|更多|もっと見る|mehr anzeigen|voir plus|ver más/i;
+const PAGE_WORD_PATTERN = /\bpage\b|\bpages\b|第\s*\d+\s*页|页码|翻页|末页|首页|ページ/i;
+
+type PaginationEdge = {
+	completeness: "paginated" | "lazy";
+	confidence: CollectionConfidence;
+	summary: string;
+	jsonPath?: string;
+	control: PaginationControl;
+	rect?: { x: number; y: number; w: number; h: number };
+};
+
 function classifyPaginationControlKind(text: string): PaginationControlKind {
-	if (/\bprevious\b|\bprev\b|\bback\b/.test(text)) return "previous";
-	if (/\bnext\b|\bolder\b|\bnewer\b/.test(text)) return "next";
-	if (/\bload\s*more\b/.test(text)) return "load-more";
-	if (/\bshow\s*more\b/.test(text)) return "show-more";
+	if (PREVIOUS_PATTERN.test(text)) return "previous";
+	if (NEXT_PATTERN.test(text)) return "next";
+	if (LOAD_MORE_PATTERN.test(text)) return "load-more";
+	if (SHOW_MORE_PATTERN.test(text)) return "show-more";
 	return "other";
 }
 
-function paginationEdge(actionables: ActionableInput[] | undefined): { completeness: "paginated" | "lazy"; confidence: CollectionConfidence; summary: string; jsonPath?: string; control: PaginationControl } | undefined {
-	for (const [index, actionable] of (actionables ?? []).entries()) {
-		if (actionable.disabled === true || actionable.hidden === true) continue;
-		const text = actionableText(actionable);
-		const rel = new Set((stringValue(actionable.rel) ?? "").toLowerCase().split(/\s+/).filter(Boolean));
-		const relKind = rel.has("next") ? "next" as const : rel.has("prev") || rel.has("previous") ? "previous" as const : undefined;
-		if (relKind) {
-			const ref = stringValue(actionable.ref);
-			const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
-			return {
-				completeness: "paginated",
-				confidence: "high",
-				summary: `HTML rel=${relKind === "next" ? "next" : "prev"} control`,
-				jsonPath: `data.structure.actionables[${index}]`,
-				control: { ...(ref ? { ref } : {}), ...(label ? { label } : {}), kind: relKind },
-			};
-		}
-		if (/\b(next|more|load\s*more|show\s*more|older|newer)\b/.test(text)) {
-			const isPagination = /\b(next|older|newer|page)\b/.test(text);
-			const controlKind = classifyPaginationControlKind(text);
-			const ref = stringValue(actionable.ref);
-			const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
-			return {
-					completeness: isPagination ? "paginated" : "lazy",
-				confidence: "low",
-				summary: isPagination ? "pagination label heuristic" : "load-more label heuristic",
-				jsonPath: `data.structure.actionables[${index}]`,
-				control: {
-					...(ref ? { ref } : {}),
-					...(label ? { label } : {}),
-					kind: controlKind,
-				},
-			};
-		}
-	}
-	return undefined;
+function actionableRect(actionable: ActionableInput): PaginationEdge["rect"] {
+	const rect: Record<string, unknown> | undefined = isRecord(actionable.rect) ? actionable.rect : undefined;
+	const x = numberValue(rect?.x);
+	const y = numberValue(rect?.y);
+	const w = numberValue(rect?.width ?? rect?.w);
+	const h = numberValue(rect?.height ?? rect?.h);
+	return x !== undefined && y !== undefined && w !== undefined && h !== undefined ? { x, y, w, h } : undefined;
 }
 
-function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>): { completeness: CollectionCompleteness; confidence: CollectionConfidence; reason: string } {
+function paginationEdgeFor(actionable: ActionableInput, index: number): PaginationEdge | undefined {
+	if (actionable.disabled === true || actionable.hidden === true) return undefined;
+	const ref = stringValue(actionable.ref);
+	const label = stringValue(actionable.label) ?? stringValue(actionable.text) ?? stringValue(actionable.ariaLabel);
+	const control = (kind: PaginationControlKind): PaginationControl => ({
+		...(ref ? { ref } : {}),
+		...(label ? { label } : {}),
+		kind,
+	});
+	const rect = actionableRect(actionable);
+	const rel = new Set((stringValue(actionable.rel) ?? "").toLowerCase().split(/\s+/).filter(Boolean));
+	const relKind = rel.has("next") ? "next" : rel.has("prev") || rel.has("previous") ? "previous" : undefined;
+	if (relKind)
+		return {
+			completeness: "paginated",
+			confidence: "high",
+			summary: `HTML rel=${relKind === "next" ? "next" : "prev"} control`,
+			jsonPath: `data.structure.actionables[${index}]`,
+			control: control(relKind),
+			...(rect ? { rect } : {}),
+		};
+	const text = actionableText(actionable);
+	const kind = classifyPaginationControlKind(text);
+	if (kind === "other") return undefined;
+	const isPagination = kind === "next" || kind === "previous" || PAGE_WORD_PATTERN.test(text);
+	return {
+		completeness: isPagination ? "paginated" : "lazy",
+		confidence: "low",
+		summary: isPagination ? "pagination label heuristic" : "load-more label heuristic",
+		jsonPath: `data.structure.actionables[${index}]`,
+		control: control(kind),
+		...(rect ? { rect } : {}),
+	};
+}
+
+function paginationEdges(actionables: ActionableInput[] | undefined): PaginationEdge[] {
+	const edges: PaginationEdge[] = [];
+	for (const [index, actionable] of (actionables ?? []).entries()) {
+		const edge = paginationEdgeFor(actionable, index);
+		if (edge) edges.push(edge);
+	}
+	return edges;
+}
+
+function draftBox(draft: DraftCollection, entitiesByRef: Map<string, Entity>): Box | undefined {
+	const boxes: Box[] = draft.box ? [draft.box] : [];
+	for (const ref of [...(draft.containerRef ? [draft.containerRef] : []), ...draft.itemRefs]) {
+		const box = entitiesByRef.get(ref)?.geometry?.box;
+		if (box) boxes.push(box);
+	}
+	return unionBox(boxes);
+}
+
+/**
+ * Pagination controls sit inside their collection (load-more inside a feed, "Next" in a table
+ * footer) or directly below it, horizontally overlapping. Score each control against each
+ * collection by that vertical gap and give every collection at most its closest control.
+ */
+function assignPaginationEdges(
+	drafts: DraftCollection[],
+	edges: PaginationEdge[],
+	entitiesByRef: Map<string, Entity>,
+): Map<DraftCollection, PaginationEdge> {
+	const assigned = new Map<DraftCollection, PaginationEdge>();
+	if (!edges.length) return assigned;
+	if (drafts.length === 1 && edges.some((edge) => !edge.rect)) {
+		// Without geometry the page-level heuristic only makes sense when there is a single collection.
+		const best = edges.find((edge) => edge.confidence === "high") ?? edges[0]!;
+		assigned.set(drafts[0]!, best);
+		return assigned;
+	}
+	const boxes = drafts.map((draft) => draftBox(draft, entitiesByRef));
+	const candidates: Array<{ draftIndex: number; edge: PaginationEdge; gap: number }> = [];
+	for (const edge of edges) {
+		if (!edge.rect) continue;
+		const centerX = edge.rect.x + edge.rect.w / 2;
+		for (const [draftIndex, box] of boxes.entries()) {
+			if (!box) continue;
+			const horizontallyAligned = centerX >= box.x - 48 && centerX <= box.x + box.w + 48;
+			if (!horizontallyAligned) continue;
+			const inside = edge.rect.y >= box.y && edge.rect.y <= box.y + box.h;
+			const below = edge.rect.y >= box.y + box.h;
+			const maxGap = Math.max(160, Math.min(480, box.h * 0.5));
+			const gap = inside ? 0 : edge.rect.y - (box.y + box.h);
+			if (!inside && (!below || gap > maxGap)) continue;
+			candidates.push({ draftIndex, edge, gap });
+		}
+	}
+	candidates.sort(
+		(a, b) => (a.edge.confidence === "high" ? 0 : 1) - (b.edge.confidence === "high" ? 0 : 1) || a.gap - b.gap,
+	);
+	const usedEdges = new Set<PaginationEdge>();
+	for (const candidate of candidates) {
+		const draft = drafts[candidate.draftIndex]!;
+		if (assigned.has(draft) || usedEdges.has(candidate.edge)) continue;
+		assigned.set(draft, candidate.edge);
+		usedEdges.add(candidate.edge);
+	}
+	return assigned;
+}
+
+function completenessForDraft(
+	draft: DraftCollection,
+	edge?: PaginationEdge,
+): { completeness: CollectionCompleteness; confidence: CollectionConfidence; reason: string } {
 	if (draft.declaredTotal !== undefined && draft.declaredTotal > 0) {
 		if (draft.observedCount < draft.declaredTotal) {
 			return {
@@ -525,7 +683,11 @@ function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof p
 	}
 	if (draft.declaredTotal !== undefined && draft.declaredTotal > 0) {
 		if (draft.observedCount >= draft.declaredTotal) {
-			return { completeness: "complete", confidence: "high", reason: `observed ${draft.observedCount} covers declared total ${draft.declaredTotal}` };
+			return {
+				completeness: "complete",
+				confidence: "high",
+				reason: `observed ${draft.observedCount} covers declared total ${draft.declaredTotal}`,
+			};
 		}
 	}
 	if (draft.preferredCompleteness === "lazy") {
@@ -559,16 +721,25 @@ function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof p
 	return { completeness: "unknown", confidence: "low", reason: "not enough collection evidence" };
 }
 
-function modelFromDraft(index: number, draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, ambiguousNames?: Set<string>): CollectionModel {
+function modelFromDraft(
+	index: number,
+	draft: DraftCollection,
+	edge?: PaginationEdge,
+	ambiguousNames?: Set<string>,
+): CollectionModel {
 	const collectionId = `c${index + 1}`;
 	const classified = completenessForDraft(draft, edge);
 	const evidence = [...draft.evidence];
 	if (edge) evidence.push({ source: "relations", summary: edge.summary, jsonPath: edge.jsonPath });
-	const estimatedTotal = draft.estimatedTotal ?? (draft.declaredTotal !== undefined ? draft.declaredTotal : undefined);
+	const estimatedTotal =
+		draft.estimatedTotal ?? (draft.declaredTotal !== undefined ? draft.declaredTotal : undefined);
 	const hasAmbiguousName = !!draft.containerName && ambiguousNames?.has(normalizeNameKey(draft.containerName));
 	const safeContext = hasAmbiguousName ? draft.containerNameContext : undefined;
-	const containerName = hasAmbiguousName ? disambiguatedCollectionName(draft.containerName, safeContext) : draft.containerName;
-	const containerNameSource = hasAmbiguousName && containerName !== draft.containerName ? "disambiguated" : draft.containerNameSource;
+	const containerName = hasAmbiguousName
+		? disambiguatedCollectionName(draft.containerName, safeContext)
+		: draft.containerName;
+	const containerNameSource =
+		hasAmbiguousName && containerName !== draft.containerName ? "disambiguated" : draft.containerNameSource;
 
 	const paginationControl = edge?.control;
 
@@ -649,9 +820,26 @@ export function buildCollectionModels(input: BuildCollectionModelsInput): Collec
 	}
 	const sortedDrafts = [...drafts.values()]
 		.filter((draft) => draft.observedCount > 0 || draft.itemRefs.length > 0)
-		.sort((a, b) => a.sourceRank - b.sourceRank || b.observedCount - a.observedCount || (b.declaredTotal ?? 0) - (a.declaredTotal ?? 0));
-	const edge = sortedDrafts.length === 1 ? paginationEdge(input.scanEvidence?.actionables) : undefined;
+		.sort(
+			(a, b) =>
+				a.sourceRank - b.sourceRank ||
+				b.observedCount - a.observedCount ||
+				(b.declaredTotal ?? 0) - (a.declaredTotal ?? 0),
+		);
+	const entitiesByRef = new Map(input.entities.map((entity) => [entity.ref, entity]));
+	const edges = assignPaginationEdges(sortedDrafts, paginationEdges(input.scanEvidence?.actionables), entitiesByRef);
 	const outputAmbiguousNames = ambiguousContainerNames(sortedDrafts);
 	const inputAmbiguousNames = ambiguousContainerNames([...drafts.values()]);
-	return uniqueCollectionNames(sortedDrafts.map((draft, index) => modelFromDraft(index, draft, edge, outputAmbiguousNames.has(normalizeNameKey(draft.containerName)) ? outputAmbiguousNames : inputAmbiguousNames)));
+	return uniqueCollectionNames(
+		sortedDrafts.map((draft, index) =>
+			modelFromDraft(
+				index,
+				draft,
+				edges.get(draft),
+				outputAmbiguousNames.has(normalizeNameKey(draft.containerName))
+					? outputAmbiguousNames
+					: inputAmbiguousNames,
+			),
+		),
+	);
 }

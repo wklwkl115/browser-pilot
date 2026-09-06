@@ -1,6 +1,19 @@
-import { ACTIONABLE_ATTRIBUTE_NAMES, ACTIONABLE_HIGH_INTENT_PATTERN, ACTIONABLE_KEYWORD_PATTERN, ACTIONABLE_PRIMARY_INTENT_PATTERN, FRAMEWORK_ACTION_HANDLER_PATTERN, FRAMEWORK_HANDLER_OWNER_PATTERN } from "./actionableRules.js";
+import {
+	ACTIONABLE_ATTRIBUTE_NAMES,
+	ACTIONABLE_HIGH_INTENT_PATTERN,
+	ACTIONABLE_KEYWORD_PATTERN,
+	ACTIONABLE_PRIMARY_INTENT_PATTERN,
+	FRAMEWORK_ACTION_HANDLER_PATTERN,
+	FRAMEWORK_HANDLER_OWNER_PATTERN,
+} from "./actionableRules.js";
 import { DOM_ACCESSIBILITY_API_BUNDLE } from "./domAccessibilityApiBundle.js";
-import { BROWSER_NOISE_CLASS_PATTERNS, BROWSER_NOISE_IDS, BROWSER_NOISE_SELECTORS, BROWSER_NOISE_TAGS, SCAN_EXTENSION_URL_PATTERN } from "./noiseRules.js";
+import {
+	BROWSER_NOISE_CLASS_PATTERNS,
+	BROWSER_NOISE_IDS,
+	BROWSER_NOISE_SELECTORS,
+	BROWSER_NOISE_TAGS,
+	SCAN_EXTENSION_URL_PATTERN,
+} from "./noiseRules.js";
 import { jsonForInlineScript } from "../capture/inject.js";
 import { scanPage } from "../../capture-src/entries/scanTemplate.js";
 import { PAGE_WORLD_SCAN_SCHEMA } from "../kernels/abml/pageWorldScan.js";
@@ -16,12 +29,25 @@ function boundedInt(value: unknown, fallback: number, min: number, max: number):
 	return Math.max(min, Math.min(max, safe));
 }
 
+/** The script is pure in its options; every observe asks for the same budget, so build it once per budget. */
+const scanScriptCache = new Map<string, string>();
+
 export function buildScanScript(options: BrowserScanOptions = {}): string {
 	const opts = {
 		maxChars: boundedInt(options.maxChars, 35_000, 1_000, 500_000),
-		// ponytail: 200k-node safety ceiling; raise only after capture can be chunked within the tool deadline.
+		// Tuning note: 200k-node safety ceiling; raise only after capture can be chunked within the tool deadline.
 		maxNodes: boundedInt(options.maxNodes, 200_000, 100, 200_000),
 	};
+	const cacheKey = `${opts.maxChars}:${opts.maxNodes}`;
+	const cached = scanScriptCache.get(cacheKey);
+	if (cached) return cached;
+	const script = renderScanScript(opts);
+	if (scanScriptCache.size >= 8) scanScriptCache.delete(scanScriptCache.keys().next().value!);
+	scanScriptCache.set(cacheKey, script);
+	return script;
+}
+
+function renderScanScript(opts: { maxChars: number; maxNodes: number }): string {
 	const config = {
 		options: opts,
 		ignoreIds: BROWSER_NOISE_IDS,

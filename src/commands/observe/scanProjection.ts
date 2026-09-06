@@ -4,7 +4,17 @@ import type { TreeDiff } from "../../kernels/abml/treeDiff.js";
 import type { CausalSummary } from "../../kernels/abml/causal.js";
 import { causalFiredHint } from "../../kernels/abml/causal.js";
 import { isRecord } from "../../utils/params.js";
-import { PAGE_OBSERVATION_SCHEMA_V3, type AgentActionSpace, type CollectionSummary, type CompactActionable, type ObservationSnapshot, type PageObservationV3, type PageTarget, type ProviderExecutionReport, type VisualObservation } from "../../kernels/abml/pageObservation.js";
+import {
+	PAGE_OBSERVATION_SCHEMA_V3,
+	type AgentActionSpace,
+	type CollectionSummary,
+	type CompactActionable,
+	type ObservationSnapshot,
+	type PageObservationV3,
+	type PageTarget,
+	type ProviderExecutionReport,
+	type VisualObservation,
+} from "../../kernels/abml/pageObservation.js";
 import type { CollectionModel } from "../../kernels/abml/collections.js";
 import type { ScanSummary } from "./scanAssembly.js";
 
@@ -45,11 +55,12 @@ function fallbackActions(entity: Entity): EntityAction[] {
 
 function actionScope(entity: Entity): { key: string; name?: string; size?: number; position?: number } | undefined {
 	if (entity.scope?.key) return entity.scope;
-	const key = typeof entity.hints?.containerKey === "string"
-		? entity.hints.containerKey
-		: typeof entity.hints?.containerRole === "string"
-			? `${entity.hints.containerRole}\u0000${typeof entity.hints.containerName === "string" ? entity.hints.containerName : ""}\u0000${entity.structure?.setSize ?? ""}`
-			: undefined;
+	const key =
+		typeof entity.hints?.containerKey === "string"
+			? entity.hints.containerKey
+			: typeof entity.hints?.containerRole === "string"
+				? `${entity.hints.containerRole}\u0000${typeof entity.hints.containerName === "string" ? entity.hints.containerName : ""}\u0000${entity.structure?.setSize ?? ""}`
+				: undefined;
 	if (!key) return undefined;
 	return {
 		key,
@@ -59,15 +70,24 @@ function actionScope(entity: Entity): { key: string; name?: string; size?: numbe
 	};
 }
 
-function compactActionSpace(entities: Entity[], focus: Partial<ScanSummary["focus"]>, captureComplete: boolean): AgentActionSpace {
+function compactActionSpace(
+	entities: Entity[],
+	focus: Partial<ScanSummary["focus"]>,
+	captureComplete: boolean,
+): AgentActionSpace {
 	const primaryRefs = focus.primary_entities ?? [];
 	const rank = new Map(primaryRefs.map((ref, index) => [ref, index]));
 	const candidates = entities
 		.map((entity, index) => ({ entity, index }))
 		.filter(({ entity }) => entity.actionability !== undefined || entity.kind === "control")
-		.sort((a, b) => (rank.get(a.entity.ref) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.entity.ref) ?? Number.MAX_SAFE_INTEGER)
-			|| (a.entity.actionability?.confidence === "high" ? 0 : 1) - (b.entity.actionability?.confidence === "high" ? 0 : 1)
-			|| a.index - b.index);
+		.sort(
+			(a, b) =>
+				(rank.get(a.entity.ref) ?? Number.MAX_SAFE_INTEGER) -
+					(rank.get(b.entity.ref) ?? Number.MAX_SAFE_INTEGER) ||
+				(a.entity.actionability?.confidence === "high" ? 0 : 1) -
+					(b.entity.actionability?.confidence === "high" ? 0 : 1) ||
+				a.index - b.index,
+		);
 	const scopeIds = new Map<string, string>();
 	const scopes: AgentActionSpace["scopes"] = [];
 	const items: CompactActionable[] = candidates.map(({ entity }) => {
@@ -78,15 +98,26 @@ function compactActionSpace(entities: Entity[], focus: Partial<ScanSummary["focu
 			if (!id) {
 				id = `scope-${scopeIds.size + 1}`;
 				scopeIds.set(scope.key, id);
-				scopes.push({ id, ...(scope.name ? { name: scope.name } : {}), ...(scope.size ? { size: scope.size } : {}) });
+				scopes.push({
+					id,
+					...(scope.name ? { name: scope.name } : {}),
+					...(scope.size ? { size: scope.size } : {}),
+				});
 			}
 			compactScope = { id, ...(scope.position ? { position: scope.position } : {}) };
 		}
+		const inputKind = typeof entity.hints?.inputKind === "string" ? entity.hints.inputKind : undefined;
+		const placeholder = typeof entity.hints?.placeholder === "string" ? entity.hints.placeholder : undefined;
+		const href = typeof entity.hints?.href === "string" ? entity.hints.href : undefined;
 		return {
 			ref: entity.ref,
 			kind: entity.kind,
 			role: entity.role,
 			...(entity.name ? { name: entity.name } : {}),
+			...(entity.value !== undefined && inputKind !== "password" ? { value: entity.value } : {}),
+			...(placeholder ? { placeholder } : {}),
+			...(inputKind && inputKind !== "text" ? { inputKind } : {}),
+			...(href ? { href } : {}),
 			actions: entity.actionability?.actions ?? fallbackActions(entity),
 			...(entity.actionability?.hint ? { hint: entity.actionability.hint } : {}),
 			confidence: entity.actionability?.confidence ?? "medium",
@@ -99,13 +130,19 @@ function compactActionSpace(entities: Entity[], focus: Partial<ScanSummary["focu
 
 function collectionSummaries(collections: CollectionModel[]): CollectionSummary[] {
 	return collections.map((collection) => {
-		const frontierNeeded = collection.completeness !== "complete" || collection.itemRefs.length > 3 || collection.evidence.length > 0 || Boolean(collection.dataSources?.length);
+		const frontierNeeded =
+			collection.completeness !== "complete" ||
+			collection.itemRefs.length > 3 ||
+			collection.evidence.length > 0 ||
+			Boolean(collection.dataSources?.length);
 		return {
 			ref: collection.containerRef ?? `collection:${collection.collectionId}`,
 			kind: collection.kind,
 			...(collection.containerName ? { name: collection.containerName } : {}),
 			observed: collection.observedCount,
-			...(typeof collection.declaredTotal === "number" || typeof collection.estimatedTotal === "number" ? { total: collection.declaredTotal ?? collection.estimatedTotal } : {}),
+			...(typeof collection.declaredTotal === "number" || typeof collection.estimatedTotal === "number"
+				? { total: collection.declaredTotal ?? collection.estimatedTotal }
+				: {}),
 			completeness: collection.completeness,
 			confidence: collection.confidence,
 			itemRefs: [...collection.itemRefs],
@@ -118,7 +155,15 @@ function collectionSummaries(collections: CollectionModel[]): CollectionSummary[
 			...(collection.itemRole ? { itemRole: collection.itemRole } : {}),
 			...(collection.paginationControl ? { paginationControl: collection.paginationControl } : {}),
 			...(collection.dataSources?.length ? { dataSources: collection.dataSources } : {}),
-			...(collection.evidence.length ? { evidence: collection.evidence.map((item) => ({ source: item.source, summary: item.summary, ...(item.ref ? { ref: item.ref } : {}) })) } : {}),
+			...(collection.evidence.length
+				? {
+						evidence: collection.evidence.map((item) => ({
+							source: item.source,
+							summary: item.summary,
+							...(item.ref ? { ref: item.ref } : {}),
+						})),
+					}
+				: {}),
 		};
 	});
 }
@@ -134,9 +179,11 @@ function optionalInteger(value: unknown): number | undefined {
 function observationSnapshot(value: Record<string, unknown>): ObservationSnapshot {
 	const snapshotId = optionalString(value.snapshotId);
 	const sourceMode = optionalString(value.sourceMode);
-	const capturedAt = typeof value.capturedAt === "number" && Number.isFinite(value.capturedAt) ? value.capturedAt : undefined;
+	const capturedAt =
+		typeof value.capturedAt === "number" && Number.isFinite(value.capturedAt) ? value.capturedAt : undefined;
 	const ttlMs = typeof value.ttlMs === "number" && Number.isFinite(value.ttlMs) ? value.ttlMs : undefined;
-	if (!snapshotId || !sourceMode || capturedAt === undefined || ttlMs === undefined) throw new Error("PAGE_OBSERVATION_SNAPSHOT_INVALID");
+	if (!snapshotId || !sourceMode || capturedAt === undefined || ttlMs === undefined)
+		throw new Error("PAGE_OBSERVATION_SNAPSHOT_INVALID");
 	return {
 		snapshotId,
 		sourceMode,
@@ -145,14 +192,20 @@ function observationSnapshot(value: Record<string, unknown>): ObservationSnapsho
 		...(optionalString(value.browserSessionId) ? { browserSessionId: optionalString(value.browserSessionId) } : {}),
 		...(optionalInteger(value.tabId) !== undefined ? { tabId: optionalInteger(value.tabId) } : {}),
 		...(optionalString(value.url) ? { url: optionalString(value.url) } : {}),
-		...(optionalInteger(value.targetGeneration) !== undefined ? { targetGeneration: optionalInteger(value.targetGeneration) } : {}),
+		...(optionalInteger(value.targetGeneration) !== undefined
+			? { targetGeneration: optionalInteger(value.targetGeneration) }
+			: {}),
 		...(optionalString(value.pageEpoch) ? { pageEpoch: optionalString(value.pageEpoch) } : {}),
 		...(optionalString(value.documentId) ? { documentId: optionalString(value.documentId) } : {}),
 		...(optionalString(value.frameScope) ? { frameScope: optionalString(value.frameScope) } : {}),
-		...(optionalInteger(value.selectionVersion) !== undefined ? { selectionVersion: optionalInteger(value.selectionVersion) } : {}),
+		...(optionalInteger(value.selectionVersion) !== undefined
+			? { selectionVersion: optionalInteger(value.selectionVersion) }
+			: {}),
 		...(optionalInteger(value.networkSeq) !== undefined ? { networkSeq: optionalInteger(value.networkSeq) } : {}),
 		...(optionalInteger(value.hookSeq) !== undefined ? { hookSeq: optionalInteger(value.hookSeq) } : {}),
-		...(optionalString(value.invalidatedReason) ? { invalidatedReason: optionalString(value.invalidatedReason) } : {}),
+		...(optionalString(value.invalidatedReason)
+			? { invalidatedReason: optionalString(value.invalidatedReason) }
+			: {}),
 		...(typeof value.expired === "boolean" ? { expired: value.expired } : {}),
 	};
 }
@@ -179,7 +232,11 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 		structure: {
 			planned: true,
 			status: input.abmlIntegrated && !structureDegraded ? "executed" : "degraded",
-			...(!input.abmlIntegrated ? { reason: "abml-read-failed" } : structureDegraded ? { reason: "accessibility-enrichment-incomplete" } : {}),
+			...(!input.abmlIntegrated
+				? { reason: "abml-read-failed" }
+				: structureDegraded
+					? { reason: "accessibility-enrichment-incomplete" }
+					: {}),
 		},
 		...(input.providerExecution ?? {}),
 	};
@@ -196,11 +253,17 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 		canonical: true,
 		target,
 		snapshot,
-		content: { text: input.content, ...(input.headings?.length ? { headings: input.headings } : {}), complete: input.contentComplete !== false },
+		content: {
+			text: input.content,
+			...(input.headings?.length ? { headings: input.headings } : {}),
+			complete: input.contentComplete !== false,
+		},
 		...(input.visual ? { visual: input.visual } : {}),
 		...(reason ? { reanchorReason: reason } : {}),
 		...(input.summary.delta === "session" ? { delta: "session" as const } : {}),
-		...(typeof input.summary.baselineSnapshotId === "string" ? { baselineSnapshotId: input.summary.baselineSnapshotId } : {}),
+		...(typeof input.summary.baselineSnapshotId === "string"
+			? { baselineSnapshotId: input.summary.baselineSnapshotId }
+			: {}),
 		...(gist ? { gist } : {}),
 		...(outline.length ? { outline } : {}),
 		...(input.entities.length ? { entities: input.entities } : {}),
@@ -218,7 +281,9 @@ export function buildPageObservation(input: PageObservationInput): PageObservati
 			abmlIntegrated: input.abmlIntegrated,
 			...(input.providerFailures?.length ? { providerFailures: input.providerFailures } : {}),
 		},
-		...(Array.isArray(input.summary.nextActions) ? { nextActions: input.summary.nextActions.filter((item): item is string => typeof item === "string") } : {}),
+		...(Array.isArray(input.summary.nextActions)
+			? { nextActions: input.summary.nextActions.filter((item): item is string => typeof item === "string") }
+			: {}),
 	};
 }
 
@@ -239,7 +304,9 @@ export function buildScanNextActionHints(input: {
 			...(s.sample?.disappeared?.length ? [`-${s.sample.disappeared.slice(0, 3).join(", ")}`] : []),
 			...(s.sample?.changed?.length ? [`~${s.sample.changed.slice(0, 3).join(", ")}`] : []),
 		].join("; ");
-		hints.push(`treeDiff: +${s.appeared}/-${s.disappeared}/~${s.changed} templates${eg ? ` (${eg})` : ""}; read the tree-diff resource only if the summary sample is insufficient`);
+		hints.push(
+			`treeDiff: +${s.appeared}/-${s.disappeared}/~${s.changed} templates${eg ? ` (${eg})` : ""}; read the tree-diff resource only if the summary sample is insufficient`,
+		);
 	}
 	return hints;
 }
@@ -250,13 +317,27 @@ export function buildObserveAbmlDetails(input: {
 }) {
 	return input.abmlRead?.ok === true
 		? {
-			integrated: true,
-			entityCount: input.abmlRead.entities?.length ?? 0,
-			primaryEntityCount: input.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0,
-			listEntityCount: input.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0,
-			visualRegionCount: input.abmlRead.entities?.filter((entity) => entity.kind === "region" && (entity.source === "vision" || entity.hints?.visualSurface === true)).length ?? 0,
-			frameEntityCount: input.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0,
-			diagnostics: input.diagnostics,
-		}
-		: { integrated: false, ...(input.abmlRead?.error ? { error: input.abmlRead.error } : {}), diagnostics: input.diagnostics };
+				integrated: true,
+				entityCount: input.abmlRead.entities?.length ?? 0,
+				primaryEntityCount:
+					input.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame")
+						.length ?? 0,
+				listEntityCount:
+					input.abmlRead.entities?.filter(
+						(entity) => entity.kind === "region" && entity.hints?.listContainer === true,
+					).length ?? 0,
+				visualRegionCount:
+					input.abmlRead.entities?.filter(
+						(entity) =>
+							entity.kind === "region" &&
+							(entity.source === "vision" || entity.hints?.visualSurface === true),
+					).length ?? 0,
+				frameEntityCount: input.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0,
+				diagnostics: input.diagnostics,
+			}
+		: {
+				integrated: false,
+				...(input.abmlRead?.error ? { error: input.abmlRead.error } : {}),
+				diagnostics: input.diagnostics,
+			};
 }

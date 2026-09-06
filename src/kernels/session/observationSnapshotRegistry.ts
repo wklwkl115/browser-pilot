@@ -38,7 +38,12 @@ export class SessionObservationSnapshotRegistry {
 		this.snapshots.clear();
 	}
 
-	create(snapshot: Omit<SessionObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): SessionObservationSnapshotInfo {
+	create(
+		snapshot: Omit<SessionObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & {
+			snapshotId?: string;
+			ttlMs?: number;
+		},
+	): SessionObservationSnapshotInfo {
 		this.pruneExpiredByTtl();
 		const record: SessionObservationSnapshotInfo = {
 			snapshotId: snapshot.snapshotId || randomUUID(),
@@ -76,7 +81,9 @@ export class SessionObservationSnapshotRegistry {
 	}
 
 	private pruneExpiredByTtl(now = Date.now()): void {
-		const active = new Set(pruneObservationSnapshotsByTtl(this.snapshots.values(), now).map((record) => record.snapshotId));
+		const active = new Set(
+			pruneObservationSnapshotsByTtl(this.snapshots.values(), now).map((record) => record.snapshotId),
+		);
 		for (const snapshotId of this.snapshots.keys()) if (!active.has(snapshotId)) this.snapshots.delete(snapshotId);
 	}
 }

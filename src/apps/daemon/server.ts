@@ -22,11 +22,22 @@ import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
 import { validateBrowserCommandArguments } from "../../commands/commandValidation.js";
-import { MAX_CONTROL_BODY_BYTES, writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
+import {
+	MAX_CONTROL_BODY_BYTES,
+	writeLockfile,
+	removeLockfile,
+	readBridgeSecret,
+	type DaemonInfo,
+} from "./daemonControl.js";
 import { daemonVersion } from "./packageInfo.js";
-import { compareDaemonContractIdentity, createDaemonContractIdentity, type DaemonContractIdentity } from "./contractIdentity.js";
+import {
+	compareDaemonContractIdentity,
+	createDaemonContractIdentity,
+	type DaemonContractIdentity,
+} from "./contractIdentity.js";
 
 export const DAEMON_VERSION = daemonVersion();
+const DEFAULT_DAEMON_IDLE_TIMEOUT_MS = 15 * 60_000;
 
 export interface DaemonHandle {
 	controlHost: string;
@@ -40,6 +51,8 @@ export interface DaemonHandle {
 export interface StartDaemonOptions {
 	/** Write the user-local singleton lockfile (default true). Tests pass false. */
 	writeLock?: boolean;
+	/** Explicit pairing secret for an isolated embedded bridge; otherwise use user-local pairing state. */
+	bridgeSecret?: string;
 	/**
 	 * Bind the BrowserBridgeServer immediately on startup instead of lazily on the
 	 * first /connect or /invoke (default: same as writeLock). Eager binding lets the
@@ -48,6 +61,8 @@ export interface StartDaemonOptions {
 	 * tests (writeLock:false) skip it to avoid binding a real port.
 	 */
 	startBridgeEagerly?: boolean;
+	/** Exit after this long without control traffic while no extension is connected. Zero disables it. */
+	idleTimeoutMs?: number;
 	/** Called after /shutdown closes the server, or by its bounded terminal fallback if a close callback stalls. */
 	onShutdown?: () => void;
 	/** Hermetic test injection: replace the command registry without adding a public validation route. */
@@ -79,7 +94,16 @@ type DaemonControlContext = {
 	draining: boolean;
 	close: () => Promise<void>;
 	onShutdown: StartDaemonOptions["onShutdown"];
+	lastActivityAt: number;
+	activeControlRequests: number;
 };
+
+function daemonIdleTimeoutMs(options: StartDaemonOptions, writeLock: boolean): number {
+	const configured = options.idleTimeoutMs ?? process.env.BROWSER_PILOT_DAEMON_IDLE_TIMEOUT_MS;
+	if (configured === undefined) return writeLock ? DEFAULT_DAEMON_IDLE_TIMEOUT_MS : 0;
+	const value = Number(configured);
+	return Number.isFinite(value) ? Math.max(0, Math.round(value)) : writeLock ? DEFAULT_DAEMON_IDLE_TIMEOUT_MS : 0;
+}
 
 function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 	return new Promise((resolve, reject) => {
@@ -114,7 +138,11 @@ function safely<T>(read: () => T, fallback: T): T {
 }
 
 function activeTabFrom(tabs: unknown[]): unknown {
-	return tabs.find((tab) => typeof tab === "object" && tab && (tab as { active?: unknown }).active === true) ?? tabs[0] ?? null;
+	return (
+		tabs.find((tab) => typeof tab === "object" && tab && (tab as { active?: unknown }).active === true) ??
+		tabs[0] ??
+		null
+	);
 }
 
 function ageMs(timestamp: unknown, now: number): number | undefined {
@@ -122,19 +150,25 @@ function ageMs(timestamp: unknown, now: number): number | undefined {
 }
 
 function extensionStatusPayload(extension: BrowserBridgeSnapshot["extension"]): Record<string, unknown> | undefined {
-	return extension ? {
-		id: extension.extensionId,
-		name: extension.name,
-		version: extension.version,
-		build: extension.build,
-		extensionStale: extension.extensionStale,
-		expectedBuild: extension.expectedBuild,
-		reportedBuild: extension.reportedBuild,
-		buildManifestPath: extension.buildManifestPath,
-	} : undefined;
+	return extension
+		? {
+				id: extension.extensionId,
+				name: extension.name,
+				version: extension.version,
+				build: extension.build,
+				extensionStale: extension.extensionStale,
+				expectedBuild: extension.expectedBuild,
+				reportedBuild: extension.reportedBuild,
+				buildManifestPath: extension.buildManifestPath,
+			}
+		: undefined;
 }
 
-function bridgeHealthPayload(snapshot: BrowserBridgeSnapshot | undefined, lastTabSyncAt: number | undefined, now: number): Record<string, unknown> {
+function bridgeHealthPayload(
+	snapshot: BrowserBridgeSnapshot | undefined,
+	lastTabSyncAt: number | undefined,
+	now: number,
+): Record<string, unknown> {
 	const extension = snapshot?.extension;
 	return {
 		connectedAt: extension?.connectedAt,
@@ -152,7 +186,12 @@ function bridgeHealthPayload(snapshot: BrowserBridgeSnapshot | undefined, lastTa
 	};
 }
 
-function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, contractIdentity: DaemonContractIdentity, includeTabs: boolean): Record<string, unknown> {
+function bridgeStatusPayload(
+	server: BrowserBridgeServer,
+	toolCount: number,
+	contractIdentity: DaemonContractIdentity,
+	includeTabs: boolean,
+): Record<string, unknown> {
 	const tabs: BrowserTabInfo[] = safely(() => server.getTabs(), []);
 	const snapshot = safely<BrowserBridgeSnapshot | undefined>(() => server.snapshot(), undefined);
 	const lastTabSyncAt = server.getLastTabSyncAt();
@@ -186,14 +225,26 @@ export function validateDaemonCommandArguments(definition: CommandDefinition, ar
 	return validateBrowserCommandArguments(definition, args);
 }
 
-function prepareInvoke(body: Record<string, unknown>, toolByName: Map<string, CommandDefinition>): PreparedInvoke | { errorStatus: number; errorBody: Record<string, unknown> } {
+function prepareInvoke(
+	body: Record<string, unknown>,
+	toolByName: Map<string, CommandDefinition>,
+): PreparedInvoke | { errorStatus: number; errorBody: Record<string, unknown> } {
 	const tool = typeof body.tool === "string" ? body.tool : "";
 	const params = body.params === undefined ? {} : body.params;
 	const cwd = typeof body.cwd === "string" ? body.cwd : undefined;
 	const def = toolByName.get(tool);
 	if (!def) return { errorStatus: 404, errorBody: { ok: false, error: `unknown tool: ${tool || "(missing)"}` } };
 	const validation = validateDaemonCommandArguments(def, params);
-	if (!validation.ok) return { errorStatus: 400, errorBody: { ok: false, code: "COMMAND_VALIDATION_FAILED", error: validation.error, issues: validation.issues } };
+	if (!validation.ok)
+		return {
+			errorStatus: 400,
+			errorBody: {
+				ok: false,
+				code: "COMMAND_VALIDATION_FAILED",
+				error: validation.error,
+				issues: validation.issues,
+			},
+		};
 	return { tool, cwd, def, args: validation.args };
 }
 
@@ -201,26 +252,46 @@ async function executeInvoke(invocation: PreparedInvoke, signal?: AbortSignal): 
 	const startedAt = Date.now();
 	try {
 		const result = await invocation.def.execute(invocation.args, signal, { cwd: invocation.cwd });
-		console.error(`[browser-pilot] invoke ${invocation.tool} ${result.terminate ? "error" : "ok"} +${Date.now() - startedAt}ms`);
+		console.error(
+			`[browser-pilot] invoke ${invocation.tool} ${result.terminate ? "error" : "ok"} +${Date.now() - startedAt}ms`,
+		);
 		const terminate = result.terminate === true;
 		const isError = result.isError === true || terminate;
 		return { ok: true, content: result.content, details: result.details, isError, terminate };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error(`[browser-pilot] invoke ${invocation.tool} error +${Date.now() - startedAt}ms ${JSON.stringify({ error: message })}`);
+		console.error(
+			`[browser-pilot] invoke ${invocation.tool} error +${Date.now() - startedAt}ms ${JSON.stringify({ error: message })}`,
+		);
 		return { ok: true, content: [{ type: "text", text: message }], isError: true, terminate: true };
 	}
 }
 
-export async function handleInvokeRoute({ send, body, toolByName, contractIdentity, signal }: InvokePipelineContext): Promise<void> {
+export async function handleInvokeRoute({
+	send,
+	body,
+	toolByName,
+	contractIdentity,
+	signal,
+}: InvokePipelineContext): Promise<void> {
 	const contract = compareDaemonContractIdentity(contractIdentity, body.contractIdentity);
-	if (!contract.ok) return send(409, { ok: false, code: contract.code, error: "daemon command contract does not match the MCP client", reason: contract.reason, mismatches: contract.mismatches });
+	if (!contract.ok)
+		return send(409, {
+			ok: false,
+			code: contract.code,
+			error: "daemon command contract does not match the MCP client",
+			reason: contract.reason,
+			mismatches: contract.mismatches,
+		});
 	const prepared = prepareInvoke(body, toolByName);
 	if ("errorStatus" in prepared) return send(prepared.errorStatus, prepared.errorBody);
 	return send(200, await executeInvoke(prepared, signal));
 }
 
-function invocationAbortController(req: http.IncomingMessage, res: http.ServerResponse): { signal: AbortSignal; cleanup: () => void } {
+function invocationAbortController(
+	req: http.IncomingMessage,
+	res: http.ServerResponse,
+): { signal: AbortSignal; cleanup: () => void } {
 	const controller = new AbortController();
 	const abort = () => {
 		if (!res.writableEnded) controller.abort();
@@ -237,7 +308,11 @@ function invocationAbortController(req: http.IncomingMessage, res: http.ServerRe
 	};
 }
 
-async function handleConnectRoute(context: DaemonControlContext, req: http.IncomingMessage, send: JsonSender): Promise<void> {
+async function handleConnectRoute(
+	context: DaemonControlContext,
+	req: http.IncomingMessage,
+	send: JsonSender,
+): Promise<void> {
 	const body = await readBody(req);
 	const wait = body.wait === true;
 	const timeoutMs = Math.max(0, Math.min(120_000, Math.floor(Number(body.timeoutMs ?? 0) || 0)));
@@ -276,19 +351,32 @@ function scheduleShutdown(context: DaemonControlContext): void {
 	});
 }
 
-async function handleControlRequest(context: DaemonControlContext, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+async function handleControlRequest(
+	context: DaemonControlContext,
+	req: http.IncomingMessage,
+	res: http.ServerResponse,
+): Promise<void> {
 	const send: JsonSender = (status, obj) => {
 		if (res.destroyed || res.writableEnded) return;
 		const body = JSON.stringify(obj);
 		res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
 		res.end(body);
 	};
-	if (req.headers["x-browser-pilot-daemon-token"] !== context.token) return send(401, { ok: false, error: "unauthorized" });
+	if (req.headers["x-browser-pilot-daemon-token"] !== context.token)
+		return send(401, { ok: false, error: "unauthorized" });
 	const url = new URL(req.url ?? "/", "http://127.0.0.1");
 	try {
 		switch (`${req.method} ${url.pathname}`) {
 			case "GET /status":
-				return send(200, bridgeStatusPayload(context.bridgeServer, context.toolCount, context.contractIdentity, url.searchParams.get("tabs") === "1"));
+				return send(
+					200,
+					bridgeStatusPayload(
+						context.bridgeServer,
+						context.toolCount,
+						context.contractIdentity,
+						url.searchParams.get("tabs") === "1",
+					),
+				);
 			case "POST /shutdown":
 				context.draining = true;
 				send(200, { ok: true });
@@ -297,12 +385,19 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 			case "POST /connect":
 				return await handleConnectRoute(context, req, send);
 			case "POST /invoke":
-				if (context.draining) return send(503, { ok: false, code: "DAEMON_DRAINING", error: "daemon is draining for shutdown" });
+				if (context.draining)
+					return send(503, { ok: false, code: "DAEMON_DRAINING", error: "daemon is draining for shutdown" });
 				{
 					const body = await readBody(req);
 					const invocation = invocationAbortController(req, res);
 					try {
-						return await handleInvokeRoute({ send, body, toolByName: context.toolByName, contractIdentity: context.contractIdentity, signal: invocation.signal });
+						return await handleInvokeRoute({
+							send,
+							body,
+							toolByName: context.toolByName,
+							contractIdentity: context.contractIdentity,
+							signal: invocation.signal,
+						});
 					} finally {
 						invocation.cleanup();
 					}
@@ -318,7 +413,10 @@ async function handleControlRequest(context: DaemonControlContext, req: http.Inc
 /** Construct the daemon, start its control server, and (optionally) write the lockfile. */
 export async function startDaemon(options: StartDaemonOptions = {}): Promise<DaemonHandle> {
 	const writeLock = options.writeLock ?? true;
-	const bridgeServer = new BrowserBridgeServer();
+	const bridgeServer = new BrowserBridgeServer({
+		bridgeSecret: options.bridgeSecret ?? (writeLock ? readBridgeSecret : undefined),
+	});
+	const idleTimeoutMs = daemonIdleTimeoutMs(options, writeLock);
 
 	let startPromise: Promise<void> | undefined;
 	const ensureStarted: EnsureStarted = async () => {
@@ -346,14 +444,16 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 
 	const token = randomBytes(24).toString("hex");
 	let closing = false;
+	let idleTimer: NodeJS.Timeout | undefined;
 	const close = async (): Promise<void> => {
 		if (closing) return;
 		closing = true;
+		if (idleTimer) clearInterval(idleTimer);
 		await new Promise<void>((resolve) => {
 			server.close(() => resolve());
 			server.closeIdleConnections?.();
 			// /shutdown has already acknowledged before close() is scheduled. Force any
-				// lingering loopback keep-alive request closed on the next turn so one caller
+			// lingering loopback keep-alive request closed on the next turn so one caller
 			// connection cannot hold a draining daemon beyond replacement grace.
 			setImmediate(() => server.closeAllConnections?.());
 		});
@@ -363,8 +463,32 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		if (writeLock) removeLockfile();
 	};
 
-	const controlContext: DaemonControlContext = { token, bridgeServer, ensureStarted, toolByName, toolCount, contractIdentity, draining: false, close, onShutdown: options.onShutdown };
-	const server = http.createServer((req, res) => void handleControlRequest(controlContext, req, res));
+	const controlContext: DaemonControlContext = {
+		token,
+		bridgeServer,
+		ensureStarted,
+		toolByName,
+		toolCount,
+		contractIdentity,
+		draining: false,
+		close,
+		onShutdown: options.onShutdown,
+		lastActivityAt: Date.now(),
+		activeControlRequests: 0,
+	};
+	const server = http.createServer((req, res) => {
+		controlContext.lastActivityAt = Date.now();
+		controlContext.activeControlRequests += 1;
+		let completed = false;
+		const complete = () => {
+			if (completed) return;
+			completed = true;
+			controlContext.activeControlRequests = Math.max(0, controlContext.activeControlRequests - 1);
+		};
+		res.once("finish", complete);
+		res.once("close", complete);
+		void handleControlRequest(controlContext, req, res);
+	});
 
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
@@ -385,7 +509,9 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		try {
 			await ensureStarted();
 		} catch (error) {
-			console.error(`[browser-pilot] eager bridge start failed: ${error instanceof Error ? error.message : String(error)}`);
+			console.error(
+				`[browser-pilot] eager bridge start failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		}
 	}
 
@@ -403,5 +529,29 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		writeLockfile(info);
 	}
 
-	return { controlHost: "127.0.0.1", controlPort, token, bridgePort: bridgeServer.running ? bridgeServer.port : 0, contractIdentity, close };
+	if (idleTimeoutMs > 0) {
+		idleTimer = setInterval(
+			() => {
+				if (closing || controlContext.draining || controlContext.activeControlRequests > 0) return;
+				if (bridgeServer.running && bridgeServer.snapshot().connectedClients > 0) {
+					controlContext.lastActivityAt = Date.now();
+					return;
+				}
+				if (Date.now() - controlContext.lastActivityAt < idleTimeoutMs) return;
+				controlContext.draining = true;
+				scheduleShutdown(controlContext);
+			},
+			Math.max(10, Math.min(60_000, Math.floor(idleTimeoutMs / 4))),
+		);
+		idleTimer.unref();
+	}
+
+	return {
+		controlHost: "127.0.0.1",
+		controlPort,
+		token,
+		bridgePort: bridgeServer.running ? bridgeServer.port : 0,
+		contractIdentity,
+		close,
+	};
 }

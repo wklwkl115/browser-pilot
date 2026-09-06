@@ -2,7 +2,11 @@ export function sanitizeSemanticText(value: unknown, maxChars = 160): string | u
 	if (typeof value !== "string") return undefined;
 	const raw = value.trim();
 	if (!raw) return undefined;
-	const stripped = raw.replace(/<[^>]*>/g, " ").replace(/&(?:nbsp|amp|lt|gt|quot|apos);/gi, " ").replace(/\s+/g, " ").trim();
+	const stripped = raw
+		.replace(/<[^>]*>/g, " ")
+		.replace(/&(?:nbsp|amp|lt|gt|quot|apos);/gi, " ")
+		.replace(/\s+/g, " ")
+		.trim();
 	if (!stripped) return undefined;
 	if (looksLikeUnsafeSemantic(raw, stripped)) return undefined;
 	return stripped.length > maxChars ? `${stripped.slice(0, maxChars)}…` : stripped;
@@ -22,11 +26,23 @@ export function isItemLikePreview(value: unknown): boolean {
 	const lower = text.toLowerCase();
 	const words = text.split(/\s+/).filter(Boolean);
 	const separators = (text.match(/[|•·,;:：，；、]/g) || []).length;
-	const moneyTokens = (text.match(/(?:[$€£¥￥]\s*\d|\d+(?:\.\d+)?\s*(?:usd|eur|gbp|cny|rmb|元|美元|人民币)|(?:input|output|cache|token|price|billing|per\s+1m|pricing|计费|价格|输入|输出|缓存|倍率))/gi) || []).length;
-	const keyValueTokens = (text.match(/[\p{L}\p{N}][\p{L}\p{N}\s_-]{0,24}[:：=]\s*[^:：=|,;，；]{1,40}/gu) || []).length;
-	const metricTokens = (text.match(/\b\d+(?:\.\d+)?\s*(?:x|倍|k|m|b|ms|s|gb|mb|tb|tokens?|req(?:uest)?s?)\b/gi) || []).length;
-	const fieldWords = (lower.match(/\b(?:input|output|cache|cached|context|price|rate|billing|plan|model|request|token|usage|free|pro|enterprise)\b/g) || []).length;
-	const cjkFieldWords = (text.match(/(?:输入|输出|缓存|价格|计费|模型|倍率|上下文|请求|额度|套餐|供应商|话题|用户|时间)/g) || []).length;
+	const moneyTokens = (
+		text.match(
+			/(?:[$€£¥￥]\s*\d|\d+(?:\.\d+)?\s*(?:usd|eur|gbp|cny|rmb|元|美元|人民币)|(?:input|output|cache|token|price|billing|per\s+1m|pricing|计费|价格|输入|输出|缓存|倍率))/gi,
+		) || []
+	).length;
+	const keyValueTokens = (text.match(/[\p{L}\p{N}][\p{L}\p{N}\s_-]{0,24}[:：=]\s*[^:：=|,;，；]{1,40}/gu) || [])
+		.length;
+	const metricTokens = (text.match(/\b\d+(?:\.\d+)?\s*(?:x|倍|k|m|b|ms|s|gb|mb|tb|tokens?|req(?:uest)?s?)\b/gi) || [])
+		.length;
+	const fieldWords = (
+		lower.match(
+			/\b(?:input|output|cache|cached|context|price|rate|billing|plan|model|request|token|usage|free|pro|enterprise)\b/g,
+		) || []
+	).length;
+	const cjkFieldWords = (
+		text.match(/(?:输入|输出|缓存|价格|计费|模型|倍率|上下文|请求|额度|套餐|供应商|话题|用户|时间)/g) || []
+	).length;
 	if (text.length > 96) return true;
 	if (words.length >= 14) return true;
 	if (moneyTokens >= 2 || keyValueTokens >= 2 || metricTokens >= 3) return true;
@@ -49,12 +65,25 @@ function looksLikeUnsafeSemantic(raw: string, stripped: string): boolean {
 	const lower = text.toLowerCase();
 	const rawLower = raw.toLowerCase();
 	if (!text) return true;
-	if (/^<\/?(?:svg|path|g|use|polygon|polyline|circle|rect|ellipse|line|defs|clipPath|mask)\b/i.test(raw.trim())) return true;
+	if (/^<\/?(?:svg|path|g|use|polygon|polyline|circle|rect|ellipse|line|defs|clipPath|mask)\b/i.test(raw.trim()))
+		return true;
 	if (/^<[^>]+>$/.test(raw.trim()) && raw.replace(/<[^>]*>/g, "").trim().length === 0) return true;
 	if (/^(?:[.#][A-Za-z0-9_-]+|[A-Za-z][\w-]*(?:[#.:[\]-]|\s*[>+~]\s*)+)$/.test(text)) return true;
-	if (/^(?:div|span|button|a|input|svg|path|g|use|ul|li|section|article|nav|main)(?:[.#:[\]\w-]|\s*[>+~]\s*)+$/i.test(text)) return true;
+	// A tag name counts as selector-like only when selector punctuation or a combinator follows it;
+	// plain words that merely start with a tag name ("About", "link", "Gallery") are real labels.
+	if (
+		/^(?:div|span|button|a|input|svg|path|g|use|ul|li|section|article|nav|main)(?:[.#:[\]]|\s*[>+~]\s*)[\w\s.#:()[\]>+~="'-]*$/i.test(
+			text,
+		)
+	)
+		return true;
 	if (/^[MmZzLlHhVvCcSsQqTtAa][\d\s,.-]+$/.test(text) && /\d/.test(text)) return true;
-	if (/^(?:d|viewbox|xmlns|fill|stroke|clip-rule|fill-rule|evenodd|currentcolor|none|true|false|null|undefined)$/i.test(text)) return true;
+	if (
+		/^(?:d|viewbox|xmlns|fill|stroke|clip-rule|fill-rule|evenodd|currentcolor|none|true|false|null|undefined)$/i.test(
+			text,
+		)
+	)
+		return true;
 	if (/^(?:[a-f0-9]{12,}|[a-z0-9_-]{24,})$/i.test(text) && !/[\s]/.test(text)) return true;
 	if (rawLower.includes("<path") || rawLower.includes("<svg")) return text.length <= 2 || /^[\d\s,.;:-]+$/.test(text);
 	if (/^[{}()[\].,:;#>+~*="'`/\\|-]+$/.test(text)) return true;

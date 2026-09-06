@@ -1,3 +1,5 @@
+// Concept: "Page identity and re-anchoring" (docs/concepts.md). The (browser session, tab, target
+// generation, page epoch) tuple that scopes refs and baselines; a change means refs must re-anchor.
 export type PageIdentity = {
 	browserSessionId: string;
 	tabId: number;
@@ -8,30 +10,30 @@ export type PageIdentity = {
 };
 
 export type PageReanchorReason =
-	| "document_changed"
-	| "target_replaced"
-	| "session_changed"
-	| "identity_unproven"
-	| "baseline_missing";
+	"document_changed" | "target_replaced" | "session_changed" | "identity_unproven" | "baseline_missing";
 
 function validIdentity(identity: PageIdentity | undefined): identity is PageIdentity {
-	return !!identity
-		&& identity.browserSessionId.length > 0
-		&& Number.isInteger(identity.tabId)
-		&& identity.tabId > 0
-		&& Number.isInteger(identity.targetGeneration)
-		&& identity.targetGeneration > 0
-		&& identity.pageEpoch.length > 0;
+	return (
+		!!identity &&
+		identity.browserSessionId.length > 0 &&
+		Number.isInteger(identity.tabId) &&
+		identity.tabId > 0 &&
+		Number.isInteger(identity.targetGeneration) &&
+		identity.targetGeneration > 0 &&
+		identity.pageEpoch.length > 0
+	);
 }
 
 /** URL and documentId are facts; equality is defined only by the stable identity tuple. */
 export function samePageIdentity(a: PageIdentity | undefined, b: PageIdentity | undefined): boolean {
-	return validIdentity(a)
-		&& validIdentity(b)
-		&& a.browserSessionId === b.browserSessionId
-		&& a.tabId === b.tabId
-		&& a.targetGeneration === b.targetGeneration
-		&& a.pageEpoch === b.pageEpoch;
+	return (
+		validIdentity(a) &&
+		validIdentity(b) &&
+		a.browserSessionId === b.browserSessionId &&
+		a.tabId === b.tabId &&
+		a.targetGeneration === b.targetGeneration &&
+		a.pageEpoch === b.pageEpoch
+	);
 }
 
 export function pageReanchorReason(
@@ -41,7 +43,8 @@ export function pageReanchorReason(
 	if (!baseline) return "baseline_missing";
 	if (!validIdentity(baseline) || !validIdentity(current)) return "identity_unproven";
 	if (baseline.browserSessionId !== current.browserSessionId) return "session_changed";
-	if (baseline.tabId !== current.tabId || baseline.targetGeneration !== current.targetGeneration) return "target_replaced";
+	if (baseline.tabId !== current.tabId || baseline.targetGeneration !== current.targetGeneration)
+		return "target_replaced";
 	if (baseline.pageEpoch !== current.pageEpoch) return "document_changed";
 	return undefined;
 }

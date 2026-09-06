@@ -32,19 +32,31 @@ export class BrowserBridgeHttpServer {
 	private wss?: WebSocketServer;
 	private starting?: Promise<void>;
 
-	constructor(host: string, port: number, onConnection: (ws: WebSocket) => void, options: { portRangeEnd?: number; maxConnections?: number; maxPayloadBytes?: number } = {}) {
+	constructor(
+		host: string,
+		port: number,
+		onConnection: (ws: WebSocket) => void,
+		options: { portRangeEnd?: number; maxConnections?: number; maxPayloadBytes?: number } = {},
+	) {
 		this.host = host;
 		this.requestedPort = port;
 		this.portRangeEnd = options.portRangeEnd && options.portRangeEnd >= port ? options.portRangeEnd : port;
 		this.activePort = port;
 		this.onConnection = onConnection;
 		const configuredMax = Number(process.env.BROWSER_PILOT_BRIDGE_MAX_CONNECTIONS ?? options.maxConnections);
-		const fallback = Math.max(8, (this.portRangeEnd - port + 1) * 4 || DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END - port + 1);
-		this.maxConnections = Number.isFinite(configuredMax) && configuredMax > 0 ? Math.floor(configuredMax) : fallback;
-		const configuredMaxPayloadBytes = Number(process.env.BROWSER_PILOT_BRIDGE_MAX_PAYLOAD_BYTES ?? options.maxPayloadBytes);
-		this.maxPayloadBytes = Number.isFinite(configuredMaxPayloadBytes) && configuredMaxPayloadBytes > 0
-			? Math.floor(configuredMaxPayloadBytes)
-			: DEFAULT_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES;
+		const fallback = Math.max(
+			8,
+			(this.portRangeEnd - port + 1) * 4 || DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END - port + 1,
+		);
+		this.maxConnections =
+			Number.isFinite(configuredMax) && configuredMax > 0 ? Math.floor(configuredMax) : fallback;
+		const configuredMaxPayloadBytes = Number(
+			process.env.BROWSER_PILOT_BRIDGE_MAX_PAYLOAD_BYTES ?? options.maxPayloadBytes,
+		);
+		this.maxPayloadBytes =
+			Number.isFinite(configuredMaxPayloadBytes) && configuredMaxPayloadBytes > 0
+				? Math.floor(configuredMaxPayloadBytes)
+				: DEFAULT_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES;
 	}
 
 	get port(): number {
@@ -58,7 +70,9 @@ export class BrowserBridgeHttpServer {
 	async start(): Promise<void> {
 		if (this.running) return;
 		if (this.starting) return this.starting;
-		this.starting = this.startOnAvailablePort().finally(() => { this.starting = undefined; });
+		this.starting = this.startOnAvailablePort().finally(() => {
+			this.starting = undefined;
+		});
 		return this.starting;
 	}
 
@@ -70,7 +84,16 @@ export class BrowserBridgeHttpServer {
 		const server = http.createServer((req, res) => {
 			if (req.url === "/health" || req.url === "/") {
 				res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-				res.end(JSON.stringify({ ok: true, name: "browser-pilot", port: this.port, activeConnections: this.activeConnectionCount(), maxConnections: this.maxConnections, maxPayloadBytes: this.maxPayloadBytes }));
+				res.end(
+					JSON.stringify({
+						ok: true,
+						name: "browser-pilot",
+						port: this.port,
+						activeConnections: this.activeConnectionCount(),
+						maxConnections: this.maxConnections,
+						maxPayloadBytes: this.maxPayloadBytes,
+					}),
+				);
 				return;
 			}
 			res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
@@ -80,13 +103,29 @@ export class BrowserBridgeHttpServer {
 		const wss = new WebSocketServer({ noServer: true, maxPayload: this.maxPayloadBytes });
 		server.on("upgrade", (req, socket, head) => {
 			if (!isAllowedBridgeOrigin(req.headers.origin)) {
-					const body = JSON.stringify({ ok: false, error: "Extension origin not allowed", rejectedOrigin: req.headers.origin ?? null });
-				socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" + body);
+				const body = JSON.stringify({
+					ok: false,
+					error: "Extension origin not allowed",
+					rejectedOrigin: req.headers.origin ?? null,
+				});
+				socket.write(
+					"HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" +
+						body,
+				);
 				socket.destroy();
 				return;
 			}
 			if (wss.clients.size >= this.maxConnections) {
-				socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" + JSON.stringify({ ok: false, error: "Browser bridge connection limit reached", maxConnections: this.maxConnections, activeConnections: wss.clients.size, hint: "Close unused browser tabs or sessions to free connections, or set the BROWSER_PILOT_BRIDGE_MAX_CONNECTIONS environment variable to a higher value." }));
+				socket.write(
+					"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" +
+						JSON.stringify({
+							ok: false,
+							error: "Browser bridge connection limit reached",
+							maxConnections: this.maxConnections,
+							activeConnections: wss.clients.size,
+							hint: "Close unused browser tabs or sessions to free connections, or set the BROWSER_PILOT_BRIDGE_MAX_CONNECTIONS environment variable to a higher value.",
+						}),
+				);
 				socket.destroy();
 				return;
 			}
@@ -121,9 +160,18 @@ export class BrowserBridgeHttpServer {
 				if (!isAddressInUse(error)) break;
 			}
 		}
-		const portRangeLabel = this.requestedPort === this.portRangeEnd ? String(this.requestedPort) : `${this.requestedPort}-${this.portRangeEnd}`;
+		const portRangeLabel =
+			this.requestedPort === this.portRangeEnd
+				? String(this.requestedPort)
+				: `${this.requestedPort}-${this.portRangeEnd}`;
 		const hint = `Check if other processes are using port${this.requestedPort === this.portRangeEnd ? "" : "s"} ${portRangeLabel}, or set BROWSER_PILOT_BRIDGE_PORT / BROWSER_PILOT_BRIDGE_PORT_RANGE_END environment variables to use a different range.`;
-		throw new BrowserBridgeError("BRIDGE_START_FAILED", normalizeErrorMessage(lastError), { host: this.host, port: this.requestedPort, portRangeEnd: this.portRangeEnd, triedPortRange: portRangeLabel, hint });
+		throw new BrowserBridgeError("BRIDGE_START_FAILED", normalizeErrorMessage(lastError), {
+			host: this.host,
+			port: this.requestedPort,
+			portRangeEnd: this.portRangeEnd,
+			triedPortRange: portRangeLabel,
+			hint,
+		});
 	}
 
 	async stop(): Promise<void> {
@@ -144,18 +192,28 @@ export class BrowserBridgeHttpServer {
 		}
 		await Promise.all([
 			new Promise<void>((resolve) => {
-				if (!wss) { resolve(); return; }
-				try { wss.close(() => resolve()); }
-				catch { resolve(); }
+				if (!wss) {
+					resolve();
+					return;
+				}
+				try {
+					wss.close(() => resolve());
+				} catch {
+					resolve();
+				}
 			}),
 			new Promise<void>((resolve) => {
-				if (!server?.listening) { resolve(); return; }
+				if (!server?.listening) {
+					resolve();
+					return;
+				}
 				try {
 					server.close(() => resolve());
 					server.closeIdleConnections?.();
 					server.closeAllConnections?.();
+				} catch {
+					resolve();
 				}
-				catch { resolve(); }
 			}),
 		]);
 	}

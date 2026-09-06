@@ -1,5 +1,4 @@
 import { BrowserBridgeError } from "../utils/errors.js";
-import { redactSensitiveText } from "../utils/redaction.js";
 
 /**
  * Build the canonical TAB_NOT_FOUND error with an actionable recovery hint.
@@ -10,7 +9,20 @@ import { redactSensitiveText } from "../utils/redaction.js";
  */
 function compactTabForError(tab: Record<string, unknown>): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
-	for (const key of ["id", "browserId", "tabId", "tabHandle", "targetRef", "title", "active", "windowId", "openerTabId", "incognito", "type", "connectedAt"] as const) {
+	for (const key of [
+		"id",
+		"browserId",
+		"tabId",
+		"tabHandle",
+		"targetRef",
+		"title",
+		"active",
+		"windowId",
+		"openerTabId",
+		"incognito",
+		"type",
+		"connectedAt",
+	] as const) {
 		if (tab[key] !== undefined) out[key] = tab[key];
 	}
 	if (typeof tab.url === "string") out.url = compactUrlForError(tab.url);
@@ -22,17 +34,18 @@ function targetRefForTab(tab: Record<string, unknown>): string | undefined {
 	return typeof value === "string" && value ? value : undefined;
 }
 
+const MAX_ERROR_URL_CHARS = 512;
+
+/** Error payloads list every tab; keep each URL bounded so a data: URL cannot bloat the response. */
 function compactUrlForError(value: string): string {
-	const base = value.split(/[?#]/, 1)[0] || value;
+	if (value.length <= MAX_ERROR_URL_CHARS) return value;
 	try {
 		const url = new URL(value);
-		const suffix = url.search || url.hash ? "?[redacted]" : "";
-		if (url.protocol === "http:" || url.protocol === "https:") return redactSensitiveText(`${url.origin}${url.pathname}${suffix}`);
-		if (["data:", "javascript:", "vbscript:", "mailto:"].includes(url.protocol)) return `${url.protocol}[redacted]`;
-		return redactSensitiveText(`${base}${suffix}`);
+		if (url.protocol === "data:" || url.protocol === "javascript:") return `${url.protocol}[${value.length} chars]`;
 	} catch {
-		return redactSensitiveText(base);
+		/* not a URL; fall through to plain truncation */
 	}
+	return `${value.slice(0, MAX_ERROR_URL_CHARS)}…`;
 }
 
 export function tabNotFoundError(args: {
@@ -48,12 +61,16 @@ export function tabNotFoundError(args: {
 }): BrowserBridgeError {
 	const liveTargetRefs = args.tabs.map(targetRefForTab).filter((value): value is string => value !== undefined);
 	const suggestedTabId = args.replacedByTabId ?? args.latestTabId;
-	const suggestedTargetRef = suggestedTabId === undefined ? undefined : targetRefForTab(args.tabs.find((tab) => tab.tabId === suggestedTabId) ?? {});
-	const chainDiagnostic = args.replacementChainFailure === "max_hops_exceeded"
-		? "tab replacement chain exceeded maximum depth (3 hops) — select a current targetRef"
-		: args.replacementChainFailure === "ttl_expired"
-			? `tab replacement record expired (>5min) — re-query tabs with browser_tabs list`
-			: undefined;
+	const suggestedTargetRef =
+		suggestedTabId === undefined
+			? undefined
+			: targetRefForTab(args.tabs.find((tab) => tab.tabId === suggestedTabId) ?? {});
+	const chainDiagnostic =
+		args.replacementChainFailure === "max_hops_exceeded"
+			? "tab replacement chain exceeded maximum depth (3 hops) — select a current targetRef"
+			: args.replacementChainFailure === "ttl_expired"
+				? `tab replacement record expired (>5min) — re-query tabs with browser_tabs list`
+				: undefined;
 	const baseHint = args.tabs.length
 		? "The selected tab is not connected. Use a current targetRef from browser_tabs list, or omit targetRef to use the selected active tab."
 		: "No browser tabs are currently connected. Open a tab or use browser_tabs create.";
@@ -95,14 +112,14 @@ export function targetHandleNotFoundError(args: {
 				: "The stable target reference is no longer connected. Re-list tabs and choose a current targetRef.",
 			nextActions: suggestedTargetRef
 				? [
-					`retry with targetRef ${suggestedTargetRef}`,
-					"browser_tabs action=list if multiple tabs are possible or the suggested target is not intended",
-					"omit targetRef to use the selected active tab",
-				]
+						`retry with targetRef ${suggestedTargetRef}`,
+						"browser_tabs action=list if multiple tabs are possible or the suggested target is not intended",
+						"omit targetRef to use the selected active tab",
+					]
 				: [
-					"browser_tabs action=list",
-					"retry with a current targetRef, or omit targetRef to use the selected active tab",
-				],
+						"browser_tabs action=list",
+						"retry with a current targetRef, or omit targetRef to use the selected active tab",
+					],
 			liveTargetRefs,
 			...(suggestedTargetRef ? { suggestedTargetRef } : {}),
 		},
@@ -119,17 +136,19 @@ export function targetHandleNotFoundError(args: {
  * worker (was connected, went idle), and always name the concrete next steps and
  * the status command, mirroring tabNotFoundError.
  */
-export function noBrowserExtensionError(args: {
-	port?: number;
-	everConnected?: boolean;
-	extensionConnected?: boolean;
-	extensionWaitMs?: number;
-	connectionWaitMs?: number;
-	negativeCacheActive?: boolean;
-	negativeCacheRemainingMs?: number;
-	browserSessionId?: string;
-	sessions?: unknown;
-} = {}): BrowserBridgeError {
+export function noBrowserExtensionError(
+	args: {
+		port?: number;
+		everConnected?: boolean;
+		extensionConnected?: boolean;
+		extensionWaitMs?: number;
+		connectionWaitMs?: number;
+		negativeCacheActive?: boolean;
+		negativeCacheRemainingMs?: number;
+		browserSessionId?: string;
+		sessions?: unknown;
+	} = {},
+): BrowserBridgeError {
 	// Keep the port out of the prose hint — it lives in details.port. Embedding a
 	// volatile value in the message would break envelope parity across servers.
 	const hint = args.everConnected
@@ -144,14 +163,16 @@ export function noBrowserExtensionError(args: {
 		...(typeof args.extensionWaitMs === "number" ? { extensionWaitMs: args.extensionWaitMs } : {}),
 		...(typeof args.connectionWaitMs === "number" ? { connectionWaitMs: args.connectionWaitMs } : {}),
 		...(typeof args.negativeCacheActive === "boolean" ? { negativeCacheActive: args.negativeCacheActive } : {}),
-		...(typeof args.negativeCacheRemainingMs === "number" ? { negativeCacheRemainingMs: args.negativeCacheRemainingMs } : {}),
+		...(typeof args.negativeCacheRemainingMs === "number"
+			? { negativeCacheRemainingMs: args.negativeCacheRemainingMs }
+			: {}),
 		recovery: {
 			retryable: true,
 			hint,
-				nextActions: [
-					"verify the Browser Pilot Bridge extension is installed and enabled in the browser",
-					"open or reload any browser tab so the extension service worker wakes and connects to the bridge",
-				],
+			nextActions: [
+				"verify the Browser Pilot Bridge extension is installed and enabled in the browser",
+				"open or reload any browser tab so the extension service worker wakes and connects to the bridge",
+			],
 		},
 	});
 }

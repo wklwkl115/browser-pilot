@@ -3,15 +3,42 @@ name: ci
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: classify changes and check documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Select validation scope
+        id: scope
+        run: node scripts/ci-change-scope.mjs
+
   verify:
     name: verify (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -33,3 +60,93 @@ jobs:
 
       - name: Verify
         run: npm run verify
+
+  smoke:
+    name: browser smoke and tasks (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Loads the unpacked extension into headless Chrome and drives the daemon through the same
+      # loopback API the MCP process uses: observe -> input.ref -> expect -> wait -> navigate.
+      - name: Install Chrome for Testing on Linux
+        if: runner.os == 'Linux'
+        id: chrome
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2
+        with:
+          chrome-version: stable
+
+      - name: Configure Chrome sandbox on Linux
+        if: runner.os == 'Linux'
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          sandbox="$(dirname "$CHROME_PATH")/chrome_sandbox"
+          test -f "$sandbox"
+          sudo chown root:root "$sandbox"
+          sudo chmod 4755 "$sandbox"
+          echo "CHROME_DEVEL_SANDBOX=$sandbox" >> "$GITHUB_ENV"
+
+      - name: Browser smoke
+        run: npm run smoke:browser
+        env:
+          BROWSER_PILOT_SMOKE_BROWSER: ${{ steps.chrome.outputs.chrome-path || '' }}
+          BROWSER_PILOT_SMOKE_LAUNCH_TIMEOUT_MS: "45000"
+
+      - name: Browser task evaluation
+        run: npm run eval:browser -- --suite all --rounds 2
+        env:
+          BROWSER_PILOT_SMOKE_BROWSER: ${{ steps.chrome.outputs.chrome-path || '' }}
+          BROWSER_PILOT_SMOKE_LAUNCH_TIMEOUT_MS: "45000"
+
+      # Only synthetic-task summary metrics are uploaded, never browser captures or profiles.
+      - name: Retain evaluation summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-evaluation-summary-${{ runner.os }}
+          path: .cache/browser-eval/report.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
+  result:
+    name: ci result
+    if: always()
+    needs: [changes, verify, smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require the selected checks to pass
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          FULL: ${{ needs.changes.outputs.full }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          if [ "$FULL" = true ]; then
+            test "$VERIFY_RESULT" = success
+            test "$SMOKE_RESULT" = success
+          else
+            test "$FULL" = false
+            test "$VERIFY_RESULT" = skipped
+            test "$SMOKE_RESULT" = skipped
+          fi

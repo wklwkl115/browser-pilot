@@ -1,4 +1,8 @@
-import { canonicalBridgeCommand, getNativeCommandProtocolSchema, validateBridgeCommand } from "../../../types/nativeProtocol";
+import {
+	canonicalBridgeCommand,
+	getNativeCommandProtocolSchema,
+	validateBridgeCommand,
+} from "../../../types/nativeProtocol";
 
 const schema = getNativeCommandProtocolSchema();
 

@@ -8,7 +8,8 @@ import type { PageReanchorReason } from "../session/pageIdentity.js";
 
 export const PAGE_OBSERVATION_SCHEMA_V3 = "browser-page-observation/v3" as const;
 
-export type ObservationFrontierState = "folded" | "viewport-window" | "virtualized" | "paginated" | "lazy" | "unavailable";
+export type ObservationFrontierState =
+	"folded" | "viewport-window" | "virtualized" | "paginated" | "lazy" | "unavailable";
 export type ObservationFrontierKind = "action-space" | "collection-window" | "content" | "details";
 
 export interface ObservationFrontierItem {
@@ -23,7 +24,9 @@ export interface ObservationFrontierItem {
 	unavailableReason?: string;
 }
 
-export interface ObservationFrontier { items: ObservationFrontierItem[] }
+export interface ObservationFrontier {
+	items: ObservationFrontierItem[];
+}
 
 export type ProviderExecutionStatus = "executed" | "scan-backed" | "skipped" | "failed" | "degraded";
 export interface ProviderExecutionItem {
@@ -40,6 +43,13 @@ export interface CompactActionable {
 	kind: string;
 	role: string;
 	name?: string;
+	/** Current field content (inputs, textareas, selects, contenteditable); never present for password fields. */
+	value?: string;
+	placeholder?: string;
+	/** HTML input type for text-like controls (email, search, number, ...). */
+	inputKind?: string;
+	/** Absolute link target for links. */
+	href?: string;
 	actions: EntityAction[];
 	hint?: string;
 	confidence: "high" | "medium";
@@ -92,7 +102,10 @@ export interface VisualObservation {
 	targets: Array<{ ref: string; box: { x: number; y: number; w: number; h: number } }>;
 }
 
-export type PublicVisualObservation = Pick<VisualObservation, "ref" | "resourceUri" | "actionableGrounding" | "coordinateSpace" | "targets"> & {
+export type PublicVisualObservation = Pick<
+	VisualObservation,
+	"ref" | "resourceUri" | "actionableGrounding" | "coordinateSpace" | "targets"
+> & {
 	image: Pick<VisualObservation["image"], "width" | "height">;
 };
 
@@ -100,7 +113,11 @@ export type PublicCausalSummary =
 	| { requests: CausalRequest[]; requestCount?: number; events?: CausalEvent[]; eventCount?: number }
 	| { unavailable: string; events?: CausalEvent[]; eventCount?: number };
 
-export type PublicRelationSummary = { summary: RelationSummary["summary"]; highlights: Array<Pick<RelationSummary["highlights"][number], "type" | "sourceRef" | "targetRef">>; highlightCount?: number };
+export type PublicRelationSummary = {
+	summary: RelationSummary["summary"];
+	highlights: Array<Pick<RelationSummary["highlights"][number], "type" | "sourceRef" | "targetRef">>;
+	highlightCount?: number;
+};
 
 /** Saved artifacts use the same v3 root while retaining collection evidence. */
 export interface CollectionSummary extends CompactCollection {
@@ -205,9 +222,17 @@ const FRONTIER_ITEM_SCHEMA = {
 } as const;
 
 const ENTITY_STATE_PROPERTIES = {
-	visible: { type: "boolean" }, occluded: { type: "boolean" }, disabled: { type: "boolean" }, focused: { type: "boolean" },
-	checked: { type: "boolean" }, selected: { type: "boolean" }, pressed: { type: "boolean" }, expanded: { type: "boolean" },
-	current: { anyOf: [{ type: "boolean" }, { type: "string" }] }, editable: { type: "boolean" }, inViewport: { type: "boolean" },
+	visible: { type: "boolean" },
+	occluded: { type: "boolean" },
+	disabled: { type: "boolean" },
+	focused: { type: "boolean" },
+	checked: { type: "boolean" },
+	selected: { type: "boolean" },
+	pressed: { type: "boolean" },
+	expanded: { type: "boolean" },
+	current: { anyOf: [{ type: "boolean" }, { type: "string" }] },
+	editable: { type: "boolean" },
+	inViewport: { type: "boolean" },
 } as const;
 
 const ENTITY_SCHEMA = {
@@ -215,16 +240,100 @@ const ENTITY_SCHEMA = {
 	properties: {
 		ref: { type: "string", pattern: "^bp-ref://" },
 		kind: { enum: ["element", "control", "text", "region", "media", "frame"] },
-		role: { type: "string" }, name: { type: "string" }, value: { type: "string" },
-		state: { type: "object", properties: ENTITY_STATE_PROPERTIES, required: ["visible", "occluded", "disabled", "focused", "editable", "inViewport"], additionalProperties: false },
-		actionability: { type: "object", properties: { actions: { type: "array", minItems: 1, items: { enum: ["click", "edit"] } }, hint: { type: "string" }, confidence: { enum: ["high", "medium"] } }, required: ["actions", "confidence"], additionalProperties: false },
-		scope: { type: "object", properties: { key: { type: "string" }, name: { type: "string" }, position: { type: "number" }, size: { type: "number" } }, required: ["key"], additionalProperties: false },
-		structure: { type: "object", properties: { level: { type: "number" }, setSize: { type: "number" }, posInSet: { type: "number" }, sort: { type: "string" }, landmark: { type: "string" }, rowIndex: { type: "number" }, colIndex: { type: "number" } }, additionalProperties: false },
-		relations: { type: "array", items: { type: "object", properties: { type: { type: "string" }, targetRef: { type: "string" }, source: { enum: ["ax", "dom", "geometry", "timing", "event"] }, confidence: { enum: ["high", "medium", "low"] }, evidence: { type: "object" } }, required: ["type", "targetRef", "source", "confidence"], additionalProperties: false } },
+		role: { type: "string" },
+		name: { type: "string" },
+		value: { type: "string" },
+		state: {
+			type: "object",
+			properties: ENTITY_STATE_PROPERTIES,
+			required: ["visible", "occluded", "disabled", "focused", "editable", "inViewport"],
+			additionalProperties: false,
+		},
+		actionability: {
+			type: "object",
+			properties: {
+				actions: { type: "array", minItems: 1, items: { enum: ["click", "edit"] } },
+				hint: { type: "string" },
+				confidence: { enum: ["high", "medium"] },
+			},
+			required: ["actions", "confidence"],
+			additionalProperties: false,
+		},
+		scope: {
+			type: "object",
+			properties: {
+				key: { type: "string" },
+				name: { type: "string" },
+				position: { type: "number" },
+				size: { type: "number" },
+			},
+			required: ["key"],
+			additionalProperties: false,
+		},
+		structure: {
+			type: "object",
+			properties: {
+				level: { type: "number" },
+				setSize: { type: "number" },
+				posInSet: { type: "number" },
+				sort: { type: "string" },
+				landmark: { type: "string" },
+				rowIndex: { type: "number" },
+				colIndex: { type: "number" },
+			},
+			additionalProperties: false,
+		},
+		relations: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					type: { type: "string" },
+					targetRef: { type: "string" },
+					source: { enum: ["ax", "dom", "geometry", "timing", "event"] },
+					confidence: { enum: ["high", "medium", "low"] },
+					evidence: { type: "object" },
+				},
+				required: ["type", "targetRef", "source", "confidence"],
+				additionalProperties: false,
+			},
+		},
 		source: { enum: ["dom", "ax", "vision"] },
 		locators: { type: "array", items: { type: "object" } },
-		geometry: { type: "object", properties: { box: { type: "object", properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } }, required: ["x", "y", "w", "h"], additionalProperties: false }, point: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false } }, additionalProperties: false },
-		children: { anyOf: [{ type: "array", items: { type: "object" } }, { type: "object", properties: { handle: { type: "string" }, count: { type: "number" } }, required: ["handle", "count"], additionalProperties: false }] },
+		geometry: {
+			type: "object",
+			properties: {
+				box: {
+					type: "object",
+					properties: {
+						x: { type: "number" },
+						y: { type: "number" },
+						w: { type: "number" },
+						h: { type: "number" },
+					},
+					required: ["x", "y", "w", "h"],
+					additionalProperties: false,
+				},
+				point: {
+					type: "object",
+					properties: { x: { type: "number" }, y: { type: "number" } },
+					required: ["x", "y"],
+					additionalProperties: false,
+				},
+			},
+			additionalProperties: false,
+		},
+		children: {
+			anyOf: [
+				{ type: "array", items: { type: "object" } },
+				{
+					type: "object",
+					properties: { handle: { type: "string" }, count: { type: "number" } },
+					required: ["handle", "count"],
+					additionalProperties: false,
+				},
+			],
+		},
 		hints: { type: "object" },
 	},
 	required: ["ref", "kind", "role", "state", "source"],
@@ -234,14 +343,58 @@ const ENTITY_SCHEMA = {
 const ACTION_SPACE_SCHEMA = {
 	type: "object",
 	properties: {
-		coverage: { type: "object", properties: { captured: { type: "integer", minimum: 0 }, captureComplete: { type: "boolean" } }, required: ["captured", "captureComplete"], additionalProperties: false },
-		scopes: { type: "array", items: { type: "object", properties: { id: { type: "string", minLength: 1 }, name: { type: "string" }, size: { type: "integer", minimum: 1 } }, required: ["id"], additionalProperties: false } },
-		items: { type: "array", items: { type: "object", properties: {
-			ref: { type: "string", minLength: 1 }, kind: { type: "string", minLength: 1 }, role: { type: "string", minLength: 1 }, name: { type: "string" },
-			actions: { type: "array", minItems: 1, items: { enum: ["click", "edit"] } }, hint: { type: "string" }, confidence: { enum: ["high", "medium"] },
-			scope: { type: "object", properties: { id: { type: "string", minLength: 1 }, position: { type: "integer", minimum: 1 } }, required: ["id"], additionalProperties: false },
-			state: { type: "object", properties: ENTITY_STATE_PROPERTIES, required: ["visible", "occluded", "disabled", "focused", "editable", "inViewport"], additionalProperties: false },
-		}, required: ["ref", "kind", "role", "actions", "confidence", "state"], additionalProperties: false } },
+		coverage: {
+			type: "object",
+			properties: { captured: { type: "integer", minimum: 0 }, captureComplete: { type: "boolean" } },
+			required: ["captured", "captureComplete"],
+			additionalProperties: false,
+		},
+		scopes: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					id: { type: "string", minLength: 1 },
+					name: { type: "string" },
+					size: { type: "integer", minimum: 1 },
+				},
+				required: ["id"],
+				additionalProperties: false,
+			},
+		},
+		items: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					ref: { type: "string", minLength: 1 },
+					kind: { type: "string", minLength: 1 },
+					role: { type: "string", minLength: 1 },
+					name: { type: "string" },
+					value: { type: "string" },
+					placeholder: { type: "string" },
+					inputKind: { type: "string" },
+					href: { type: "string" },
+					actions: { type: "array", minItems: 1, items: { enum: ["click", "edit"] } },
+					hint: { type: "string" },
+					confidence: { enum: ["high", "medium"] },
+					scope: {
+						type: "object",
+						properties: { id: { type: "string", minLength: 1 }, position: { type: "integer", minimum: 1 } },
+						required: ["id"],
+						additionalProperties: false,
+					},
+					state: {
+						type: "object",
+						properties: ENTITY_STATE_PROPERTIES,
+						required: ["visible", "occluded", "disabled", "focused", "editable", "inViewport"],
+						additionalProperties: false,
+					},
+				},
+				required: ["ref", "kind", "role", "actions", "confidence", "state"],
+				additionalProperties: false,
+			},
+		},
 	},
 	required: ["coverage", "scopes", "items"],
 	additionalProperties: false,
@@ -255,20 +408,75 @@ const VISUAL_OBSERVATION_SCHEMA = {
 		captureMethod: { type: "string", minLength: 1 },
 		actionableGrounding: { type: "boolean" },
 		coordinateSpace: { const: "normalized-image" },
-		image: { type: "object", properties: { width: { type: "number", exclusiveMinimum: 0 }, height: { type: "number", exclusiveMinimum: 0 }, sha256: { type: "string", pattern: "^[0-9a-f]{64}$" } }, required: ["width", "height", "sha256"], additionalProperties: false },
+		image: {
+			type: "object",
+			properties: {
+				width: { type: "number", exclusiveMinimum: 0 },
+				height: { type: "number", exclusiveMinimum: 0 },
+				sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
+			},
+			required: ["width", "height", "sha256"],
+			additionalProperties: false,
+		},
 		basis: {
 			type: "object",
 			properties: {
-				observationId: { type: "string", minLength: 1 }, changeSeq: { type: "number" }, url: { type: "string" },
-				scrollX: { type: "number" }, scrollY: { type: "number" }, viewportWidth: { type: "number", exclusiveMinimum: 0 }, viewportHeight: { type: "number", exclusiveMinimum: 0 }, devicePixelRatio: { type: "number", exclusiveMinimum: 0 },
+				observationId: { type: "string", minLength: 1 },
+				changeSeq: { type: "number" },
+				url: { type: "string" },
+				scrollX: { type: "number" },
+				scrollY: { type: "number" },
+				viewportWidth: { type: "number", exclusiveMinimum: 0 },
+				viewportHeight: { type: "number", exclusiveMinimum: 0 },
+				devicePixelRatio: { type: "number", exclusiveMinimum: 0 },
 				imageToCss: { type: "array", minItems: 6, maxItems: 6, items: { type: "number" } },
 			},
-			required: ["observationId", "changeSeq", "scrollX", "scrollY", "viewportWidth", "viewportHeight", "devicePixelRatio", "imageToCss"],
+			required: [
+				"observationId",
+				"changeSeq",
+				"scrollX",
+				"scrollY",
+				"viewportWidth",
+				"viewportHeight",
+				"devicePixelRatio",
+				"imageToCss",
+			],
 			additionalProperties: false,
 		},
-		targets: { type: "array", maxItems: 128, items: { type: "object", properties: { ref: { type: "string", pattern: "^bp-ref://" }, box: { type: "object", properties: { x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 }, w: { type: "number", minimum: 0, maximum: 1 }, h: { type: "number", minimum: 0, maximum: 1 } }, required: ["x", "y", "w", "h"], additionalProperties: false } }, required: ["ref", "box"], additionalProperties: false } },
+		targets: {
+			type: "array",
+			maxItems: 128,
+			items: {
+				type: "object",
+				properties: {
+					ref: { type: "string", pattern: "^bp-ref://" },
+					box: {
+						type: "object",
+						properties: {
+							x: { type: "number", minimum: 0, maximum: 1 },
+							y: { type: "number", minimum: 0, maximum: 1 },
+							w: { type: "number", minimum: 0, maximum: 1 },
+							h: { type: "number", minimum: 0, maximum: 1 },
+						},
+						required: ["x", "y", "w", "h"],
+						additionalProperties: false,
+					},
+				},
+				required: ["ref", "box"],
+				additionalProperties: false,
+			},
+		},
 	},
-	required: ["ref", "resourceUri", "captureMethod", "actionableGrounding", "coordinateSpace", "image", "basis", "targets"],
+	required: [
+		"ref",
+		"resourceUri",
+		"captureMethod",
+		"actionableGrounding",
+		"coordinateSpace",
+		"image",
+		"basis",
+		"targets",
+	],
 	additionalProperties: false,
 } as const;
 
@@ -288,12 +496,24 @@ const PROVIDER_ITEM_SCHEMA = {
 const COLLECTION_SCHEMA = {
 	type: "object",
 	properties: {
-		ref: { type: "string", minLength: 1 }, kind: { type: "string", minLength: 1 }, name: { type: "string" },
-		observed: { type: "integer", minimum: 0 }, total: { type: "integer", minimum: 0 }, completeness: { type: "string" }, confidence: { type: "string" },
-		itemRefs: { type: "array", items: { type: "string" } }, frontierRef: { type: "string" }, collectionId: { type: "string" }, itemRefCount: { type: "integer", minimum: 0 },
-		containerRole: { type: "string" }, containerNameContext: { type: "string" }, containerNameSource: { type: "string" }, itemRole: { type: "string" },
+		ref: { type: "string", minLength: 1 },
+		kind: { type: "string", minLength: 1 },
+		name: { type: "string" },
+		observed: { type: "integer", minimum: 0 },
+		total: { type: "integer", minimum: 0 },
+		completeness: { type: "string" },
+		confidence: { type: "string" },
+		itemRefs: { type: "array", items: { type: "string" } },
+		frontierRef: { type: "string" },
+		collectionId: { type: "string" },
+		itemRefCount: { type: "integer", minimum: 0 },
+		containerRole: { type: "string" },
+		containerNameContext: { type: "string" },
+		containerNameSource: { type: "string" },
+		itemRole: { type: "string" },
 		paginationControl: { type: "object" },
-		dataSources: { type: "array", items: { type: "object" } }, evidence: { type: "array", items: { type: "object" } },
+		dataSources: { type: "array", items: { type: "object" } },
+		evidence: { type: "array", items: { type: "object" } },
 	},
 	required: ["ref", "kind", "observed", "completeness", "confidence", "itemRefs"],
 	additionalProperties: false,
@@ -303,28 +523,77 @@ export const PAGE_OBSERVATION_V3_JSON_SCHEMA = {
 	$id: PAGE_OBSERVATION_SCHEMA_V3,
 	type: "object",
 	properties: {
-		schema: { const: PAGE_OBSERVATION_SCHEMA_V3 }, tool: { const: "browser_observe" }, model: { const: "PageObservation" }, canonical: { const: true },
+		schema: { const: PAGE_OBSERVATION_SCHEMA_V3 },
+		tool: { const: "browser_observe" },
+		model: { const: "PageObservation" },
+		canonical: { const: true },
 		target: {
 			type: "object",
-			properties: { browserSessionId: { type: "string" }, tabId: { type: "integer" }, targetGeneration: { type: "integer" }, pageEpoch: { type: "string" }, url: { type: "string" } },
+			properties: {
+				browserSessionId: { type: "string" },
+				tabId: { type: "integer" },
+				targetGeneration: { type: "integer" },
+				pageEpoch: { type: "string" },
+				url: { type: "string" },
+			},
 			additionalProperties: false,
 		},
 		snapshot: {
 			type: "object",
 			properties: {
-				snapshotId: { type: "string" }, browserSessionId: { type: "string" }, tabId: { type: "integer" }, url: { type: "string" }, targetGeneration: { type: "integer" }, pageEpoch: { type: "string" }, documentId: { type: "string" }, frameScope: { type: "string" }, selectionVersion: { type: "integer" }, sourceMode: { type: "string" }, capturedAt: { type: "number" }, ttlMs: { type: "number" }, networkSeq: { type: "integer" }, hookSeq: { type: "integer" }, invalidatedReason: { type: "string" }, expired: { type: "boolean" },
+				snapshotId: { type: "string" },
+				browserSessionId: { type: "string" },
+				tabId: { type: "integer" },
+				url: { type: "string" },
+				targetGeneration: { type: "integer" },
+				pageEpoch: { type: "string" },
+				documentId: { type: "string" },
+				frameScope: { type: "string" },
+				selectionVersion: { type: "integer" },
+				sourceMode: { type: "string" },
+				capturedAt: { type: "number" },
+				ttlMs: { type: "number" },
+				networkSeq: { type: "integer" },
+				hookSeq: { type: "integer" },
+				invalidatedReason: { type: "string" },
+				expired: { type: "boolean" },
 			},
 			required: ["snapshotId", "sourceMode", "capturedAt", "ttlMs"],
 			additionalProperties: false,
 		},
-		reanchorReason: { enum: ["document_changed", "target_replaced", "session_changed", "identity_unproven", "baseline_missing"] }, delta: { const: "session" }, baselineSnapshotId: { type: "string" },
-		content: { type: "object", properties: { text: { type: "string" }, headings: { type: "array", items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
+		reanchorReason: {
+			enum: ["document_changed", "target_replaced", "session_changed", "identity_unproven", "baseline_missing"],
+		},
+		delta: { const: "session" },
+		baselineSnapshotId: { type: "string" },
+		content: {
+			type: "object",
+			properties: {
+				text: { type: "string" },
+				headings: { type: "array", items: { type: "string" } },
+				complete: { type: "boolean" },
+			},
+			required: ["text", "complete"],
+			additionalProperties: false,
+		},
 		visual: VISUAL_OBSERVATION_SCHEMA,
-		gist: { type: "object" }, outline: { type: "array", items: { type: "object" } }, entities: { type: "array", items: ENTITY_SCHEMA },
+		gist: { type: "object" },
+		outline: { type: "array", items: { type: "object" } },
+		entities: { type: "array", items: ENTITY_SCHEMA },
 		actionSpace: ACTION_SPACE_SCHEMA,
-		relations: { type: "object" }, diff: { type: "object" }, causal: { type: "object" }, treeDiff: { type: "object" }, snapshotProjection: { type: "object" }, collections: { type: "array", items: COLLECTION_SCHEMA },
+		relations: { type: "object" },
+		diff: { type: "object" },
+		causal: { type: "object" },
+		treeDiff: { type: "object" },
+		snapshotProjection: { type: "object" },
+		collections: { type: "array", items: COLLECTION_SCHEMA },
 		providers: { type: "object", additionalProperties: PROVIDER_ITEM_SCHEMA },
-		frontier: { type: "object", properties: { items: { type: "array", items: FRONTIER_ITEM_SCHEMA } }, required: ["items"], additionalProperties: false },
+		frontier: {
+			type: "object",
+			properties: { items: { type: "array", items: FRONTIER_ITEM_SCHEMA } },
+			required: ["items"],
+			additionalProperties: false,
+		},
 		diagnostics: { type: "object" },
 		nextActions: { type: "array", items: { type: "string" } },
 	},
@@ -356,8 +625,38 @@ const PUBLIC_VISUAL_OBSERVATION_SCHEMA = {
 		resourceUri: { type: "string", pattern: "^browser-pilot://artifact/" },
 		actionableGrounding: { type: "boolean" },
 		coordinateSpace: { const: "normalized-image" },
-		image: { type: "object", properties: { width: { type: "number", exclusiveMinimum: 0 }, height: { type: "number", exclusiveMinimum: 0 } }, required: ["width", "height"], additionalProperties: false },
-		targets: { type: "array", maxItems: 128, items: { type: "object", properties: { ref: { type: "string", pattern: "^bp-ref://" }, box: { type: "object", properties: { x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 }, w: { type: "number", minimum: 0, maximum: 1 }, h: { type: "number", minimum: 0, maximum: 1 } }, required: ["x", "y", "w", "h"], additionalProperties: false } }, required: ["ref", "box"], additionalProperties: false } },
+		image: {
+			type: "object",
+			properties: {
+				width: { type: "number", exclusiveMinimum: 0 },
+				height: { type: "number", exclusiveMinimum: 0 },
+			},
+			required: ["width", "height"],
+			additionalProperties: false,
+		},
+		targets: {
+			type: "array",
+			maxItems: 128,
+			items: {
+				type: "object",
+				properties: {
+					ref: { type: "string", pattern: "^bp-ref://" },
+					box: {
+						type: "object",
+						properties: {
+							x: { type: "number", minimum: 0, maximum: 1 },
+							y: { type: "number", minimum: 0, maximum: 1 },
+							w: { type: "number", minimum: 0, maximum: 1 },
+							h: { type: "number", minimum: 0, maximum: 1 },
+						},
+						required: ["x", "y", "w", "h"],
+						additionalProperties: false,
+					},
+				},
+				required: ["ref", "box"],
+				additionalProperties: false,
+			},
+		},
 	},
 	required: ["ref", "resourceUri", "actionableGrounding", "coordinateSpace", "image", "targets"],
 	additionalProperties: false,
@@ -375,7 +674,10 @@ const GIST_SCHEMA = {
 const OUTLINE_ITEM_SCHEMA = {
 	type: "object",
 	properties: {
-		container: { type: "string" }, name: { type: "string" }, memberCount: { type: "integer", minimum: 0 }, controlCount: { type: "integer", minimum: 0 },
+		container: { type: "string" },
+		name: { type: "string" },
+		memberCount: { type: "integer", minimum: 0 },
+		controlCount: { type: "integer", minimum: 0 },
 		memberRefs: { type: "array", maxItems: 3, items: { type: "string", pattern: "^bp-ref://" } },
 	},
 	required: ["container", "memberCount", "memberRefs"],
@@ -386,9 +688,20 @@ const RELATIONS_SCHEMA = {
 	type: "object",
 	properties: {
 		summary: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
-		highlights: { type: "array", maxItems: 3, items: { type: "object", properties: {
-			type: { type: "string" }, sourceRef: { type: "string", pattern: "^bp-ref://" }, targetRef: { type: "string", pattern: "^bp-ref://" },
-		}, required: ["type", "sourceRef", "targetRef"], additionalProperties: false } },
+		highlights: {
+			type: "array",
+			maxItems: 3,
+			items: {
+				type: "object",
+				properties: {
+					type: { type: "string" },
+					sourceRef: { type: "string", pattern: "^bp-ref://" },
+					targetRef: { type: "string", pattern: "^bp-ref://" },
+				},
+				required: ["type", "sourceRef", "targetRef"],
+				additionalProperties: false,
+			},
+		},
 		highlightCount: { type: "integer", minimum: 0 },
 	},
 	required: ["summary", "highlights"],
@@ -398,7 +711,14 @@ const RELATIONS_SCHEMA = {
 const CAUSAL_REQUEST_SCHEMA = {
 	type: "object",
 	properties: {
-		ref: { type: "string", pattern: "^bp-ref://" }, method: { type: "string" }, url: { type: "string" }, status: { type: "number" }, type: { type: "string" }, at: { type: "number" }, initiatorType: { type: "string" }, passive: { type: "boolean" },
+		ref: { type: "string", pattern: "^bp-ref://" },
+		method: { type: "string" },
+		url: { type: "string" },
+		status: { type: "number" },
+		type: { type: "string" },
+		at: { type: "number" },
+		initiatorType: { type: "string" },
+		passive: { type: "boolean" },
 	},
 	required: ["ref"],
 	additionalProperties: false,
@@ -406,26 +726,70 @@ const CAUSAL_REQUEST_SCHEMA = {
 
 const CAUSAL_EVENT_SCHEMA = {
 	type: "object",
-	properties: { ref: { type: "string", pattern: "^bp-ref://" }, type: { type: "string" }, at: { type: "number" }, summary: { type: "string" }, selector: { type: "string" } },
+	properties: {
+		ref: { type: "string", pattern: "^bp-ref://" },
+		type: { type: "string" },
+		at: { type: "number" },
+		summary: { type: "string" },
+		selector: { type: "string" },
+	},
 	required: ["ref", "type"],
 	additionalProperties: false,
 } as const;
 
 const CAUSAL_SCHEMA = {
 	anyOf: [
-		{ type: "object", properties: { requests: { type: "array", maxItems: 3, items: CAUSAL_REQUEST_SCHEMA }, requestCount: { type: "integer", minimum: 0 }, events: { type: "array", maxItems: 3, items: CAUSAL_EVENT_SCHEMA }, eventCount: { type: "integer", minimum: 0 } }, required: ["requests"], additionalProperties: false },
-		{ type: "object", properties: { unavailable: { type: "string" }, events: { type: "array", maxItems: 3, items: CAUSAL_EVENT_SCHEMA }, eventCount: { type: "integer", minimum: 0 } }, required: ["unavailable"], additionalProperties: false },
+		{
+			type: "object",
+			properties: {
+				requests: { type: "array", maxItems: 3, items: CAUSAL_REQUEST_SCHEMA },
+				requestCount: { type: "integer", minimum: 0 },
+				events: { type: "array", maxItems: 3, items: CAUSAL_EVENT_SCHEMA },
+				eventCount: { type: "integer", minimum: 0 },
+			},
+			required: ["requests"],
+			additionalProperties: false,
+		},
+		{
+			type: "object",
+			properties: {
+				unavailable: { type: "string" },
+				events: { type: "array", maxItems: 3, items: CAUSAL_EVENT_SCHEMA },
+				eventCount: { type: "integer", minimum: 0 },
+			},
+			required: ["unavailable"],
+			additionalProperties: false,
+		},
 	],
 } as const;
 
 const TREE_DIFF_SCHEMA = {
 	type: "object",
 	properties: {
-		summary: { type: "object", properties: {
-			templateCount: { type: "integer", minimum: 0 }, changedTemplateCount: { type: "integer", minimum: 0 }, appeared: { type: "integer", minimum: 0 }, disappeared: { type: "integer", minimum: 0 }, changed: { type: "integer", minimum: 0 }, reordered: { type: "integer", minimum: 0 },
-			sample: { type: "object", properties: { appeared: { type: "array", items: { type: "string" } }, disappeared: { type: "array", items: { type: "string" } }, changed: { type: "array", items: { type: "string" } } }, additionalProperties: false },
-			partialBaseline: { type: "boolean" }, unavailable: { type: "string" },
-		}, required: ["templateCount", "changedTemplateCount", "appeared", "disappeared", "changed", "reordered"], additionalProperties: false },
+		summary: {
+			type: "object",
+			properties: {
+				templateCount: { type: "integer", minimum: 0 },
+				changedTemplateCount: { type: "integer", minimum: 0 },
+				appeared: { type: "integer", minimum: 0 },
+				disappeared: { type: "integer", minimum: 0 },
+				changed: { type: "integer", minimum: 0 },
+				reordered: { type: "integer", minimum: 0 },
+				sample: {
+					type: "object",
+					properties: {
+						appeared: { type: "array", items: { type: "string" } },
+						disappeared: { type: "array", items: { type: "string" } },
+						changed: { type: "array", items: { type: "string" } },
+					},
+					additionalProperties: false,
+				},
+				partialBaseline: { type: "boolean" },
+				unavailable: { type: "string" },
+			},
+			required: ["templateCount", "changedTemplateCount", "appeared", "disappeared", "changed", "reordered"],
+			additionalProperties: false,
+		},
 	},
 	required: ["summary"],
 	additionalProperties: false,
@@ -436,7 +800,16 @@ export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
 	type: "object",
 	properties: {
 		target: { type: "object", properties: { url: { type: "string" } }, additionalProperties: false },
-		content: { type: "object", properties: { text: { type: "string", maxLength: 6_000 }, headings: { type: "array", maxItems: 16, items: { type: "string" } }, complete: { type: "boolean" } }, required: ["text", "complete"], additionalProperties: false },
+		content: {
+			type: "object",
+			properties: {
+				text: { type: "string", maxLength: 6_000 },
+				headings: { type: "array", maxItems: 16, items: { type: "string" } },
+				complete: { type: "boolean" },
+			},
+			required: ["text", "complete"],
+			additionalProperties: false,
+		},
 		visual: PUBLIC_VISUAL_OBSERVATION_SCHEMA,
 		gist: GIST_SCHEMA,
 		outline: { type: "array", maxItems: 8, items: OUTLINE_ITEM_SCHEMA },
@@ -445,7 +818,12 @@ export const PAGE_OBSERVATION_VIEW_JSON_SCHEMA = {
 		causal: CAUSAL_SCHEMA,
 		treeDiff: TREE_DIFF_SCHEMA,
 		collections: { type: "array", maxItems: 12, items: PUBLIC_COLLECTION_SCHEMA },
-		frontier: { type: "object", properties: { items: { type: "array", maxItems: 13, items: FRONTIER_ITEM_SCHEMA } }, required: ["items"], additionalProperties: false },
+		frontier: {
+			type: "object",
+			properties: { items: { type: "array", maxItems: 13, items: FRONTIER_ITEM_SCHEMA } },
+			required: ["items"],
+			additionalProperties: false,
+		},
 		warnings: { type: "array", items: { type: "string" } },
 		nextActions: { type: "array", maxItems: 8, items: { type: "string" } },
 	},

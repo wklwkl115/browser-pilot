@@ -69,9 +69,15 @@ export function entityRelationKeys(entity: Entity): string[] {
 	const locator = entity.locators?.find((item) => item.by === "backendNodeId");
 	const locatorBackend = locator?.by === "backendNodeId" ? Number(locator.value) : NaN;
 	const hintBackend = Number(entity.hints?.backendNodeId);
-	const backend = Number.isFinite(hintBackend) ? hintBackend : locator?.by === "backendNodeId" && Number.isFinite(locatorBackend) ? locatorBackend : undefined;
+	const backend = Number.isFinite(hintBackend)
+		? hintBackend
+		: locator?.by === "backendNodeId" && Number.isFinite(locatorBackend)
+			? locatorBackend
+			: undefined;
 	if (backend !== undefined) {
-		const targetId = cleanTargetId(entity.hints?.targetId ?? entity.hints?.cdpTargetId) ?? (locator?.by === "backendNodeId" ? cleanTargetId(locator.targetId) : undefined);
+		const targetId =
+			cleanTargetId(entity.hints?.targetId ?? entity.hints?.cdpTargetId) ??
+			(locator?.by === "backendNodeId" ? cleanTargetId(locator.targetId) : undefined);
 		keys.push(backendNodeKey({ backendNodeId: backend, targetId }));
 	}
 	const axNodeId = entity.hints?.axNodeId;
@@ -111,23 +117,53 @@ export function deriveStateRelationAnchors(entities: Entity[]): RelationAnchor[]
 	for (const entity of entities) {
 		const sourceKey = entityRelationKeys(entity)[0];
 		if (!sourceKey) continue;
-		const containerKeys = Array.isArray(entity.hints?.currentContainerKeys) ? (entity.hints!.currentContainerKeys as unknown[]).filter((k): k is string => typeof k === "string" && k.length > 0) : [];
+		const containerKeys = Array.isArray(entity.hints?.currentContainerKeys)
+			? (entity.hints!.currentContainerKeys as unknown[]).filter(
+					(k): k is string => typeof k === "string" && k.length > 0,
+				)
+			: [];
 		if (entity.state.current !== undefined && entity.state.current !== false && containerKeys.length) {
-			out.push({ sourceKey, type: "currentIn", targetKey: containerKeys[0]!, ...(containerKeys.length > 1 ? { targetKeyFallbacks: containerKeys.slice(1) } : {}), source: "ax", confidence: "high", evidence: { current: entity.state.current } });
+			out.push({
+				sourceKey,
+				type: "currentIn",
+				targetKey: containerKeys[0]!,
+				...(containerKeys.length > 1 ? { targetKeyFallbacks: containerKeys.slice(1) } : {}),
+				source: "ax",
+				confidence: "high",
+				evidence: { current: entity.state.current },
+			});
 		}
 		const occluder = entity.hints?.occluderSelector;
 		if (entity.state.occluded === true && typeof occluder === "string" && occluder) {
-			out.push({ sourceKey, type: "coveredBy", targetKey: `s:${occluder}`, source: "geometry", confidence: "medium", evidence: { hitTest: true } });
-			out.push({ sourceKey: `s:${occluder}`, type: "occludes", targetKey: sourceKey, source: "geometry", confidence: "medium" });
+			out.push({
+				sourceKey,
+				type: "coveredBy",
+				targetKey: `s:${occluder}`,
+				source: "geometry",
+				confidence: "medium",
+				evidence: { hitTest: true },
+			});
+			out.push({
+				sourceKey: `s:${occluder}`,
+				type: "occludes",
+				targetKey: sourceKey,
+				source: "geometry",
+				confidence: "medium",
+			});
 		}
 		// aria-controls/owns/expandedTarget by selector — resolves even when the target is collapsed/
 		// hidden (the AX-property path drops those). Deduped against the AX-sourced controls/owns when
 		// the target is also visible (same target ref).
-		for (const [hintKey, type] of [["controlsSelectors", "controls"], ["ownsSelectors", "owns"], ["expandedTargetSelectors", "expandedTarget"]] as const) {
+		for (const [hintKey, type] of [
+			["controlsSelectors", "controls"],
+			["ownsSelectors", "owns"],
+			["expandedTargetSelectors", "expandedTarget"],
+		] as const) {
 			const selectors = entity.hints?.[hintKey];
 			if (!Array.isArray(selectors)) continue;
 			for (const selector of selectors) {
-				if (typeof selector === "string" && selector) out.push({ sourceKey, type, targetKey: `s:${selector}`, source: "dom", confidence: "high" });
+				if (typeof selector === "string" && selector)
+					out.push({ sourceKey, type, targetKey: `s:${selector}`, source: "dom", confidence: "high" });
 			}
 		}
 	}
@@ -182,15 +218,19 @@ export function derivePaintOrderRelationAnchors(entities: Entity[], entries: Pai
 	}
 	if (indexed.length < 2) return [];
 	indexed.sort((a, b) => a.paintOrder - b.paintOrder || a.backendNodeId - b.backendNodeId);
-	const spatialIndex = buildBoundedSpatialIndex(indexed.map((item) => ({ value: item, rect: item.bounds })), {
-		bucketSize: PAINT_ORDER_BUCKET_SIZE,
-		maxBucketsPerRect: MAX_PAINT_ORDER_BUCKETS_PER_RECT,
-	});
+	const spatialIndex = buildBoundedSpatialIndex(
+		indexed.map((item) => ({ value: item, rect: item.bounds })),
+		{
+			bucketSize: PAINT_ORDER_BUCKET_SIZE,
+			maxBucketsPerRect: MAX_PAINT_ORDER_BUCKETS_PER_RECT,
+		},
+	);
 	const anchors: RelationAnchor[] = [];
 	for (const lower of indexed) {
 		const candidates = new Map<string, IndexedPaintEntity>();
 		for (const candidate of queryBoundedSpatialIndex(spatialIndex, lower.bounds)) {
-			if (candidate.key !== lower.key && candidate.paintOrder > lower.paintOrder) candidates.set(candidate.key, candidate);
+			if (candidate.key !== lower.key && candidate.paintOrder > lower.paintOrder)
+				candidates.set(candidate.key, candidate);
 		}
 		let best: { item: IndexedPaintEntity; intersection: number; ratio: number } | undefined;
 		for (const candidate of candidates.values()) {
@@ -198,10 +238,14 @@ export function derivePaintOrderRelationAnchors(entities: Entity[], entries: Pai
 			if (intersection < MIN_OCCLUSION_OVERLAP_AREA) continue;
 			const ratio = intersection / Math.max(1, Math.min(lower.area, candidate.area));
 			if (ratio < MIN_OCCLUSION_OVERLAP_RATIO) continue;
-			if (!best
-				|| candidate.paintOrder < best.item.paintOrder
-				|| (candidate.paintOrder === best.item.paintOrder && ratio > best.ratio)
-				|| (candidate.paintOrder === best.item.paintOrder && ratio === best.ratio && candidate.backendNodeId < best.item.backendNodeId)) {
+			if (
+				!best ||
+				candidate.paintOrder < best.item.paintOrder ||
+				(candidate.paintOrder === best.item.paintOrder && ratio > best.ratio) ||
+				(candidate.paintOrder === best.item.paintOrder &&
+					ratio === best.ratio &&
+					candidate.backendNodeId < best.item.backendNodeId)
+			) {
 				best = { item: candidate, intersection, ratio };
 			}
 		}
@@ -213,13 +257,32 @@ export function derivePaintOrderRelationAnchors(entities: Entity[], entries: Pai
 			overlapArea: Math.round(best.intersection),
 			overlapRatio: Number(best.ratio.toFixed(3)),
 		};
-		anchors.push({ sourceKey: lower.key, type: "coveredBy", targetKey: best.item.key, source: "geometry", confidence: "medium", evidence });
-		anchors.push({ sourceKey: best.item.key, type: "occludes", targetKey: lower.key, source: "geometry", confidence: "medium", evidence });
+		anchors.push({
+			sourceKey: lower.key,
+			type: "coveredBy",
+			targetKey: best.item.key,
+			source: "geometry",
+			confidence: "medium",
+			evidence,
+		});
+		anchors.push({
+			sourceKey: best.item.key,
+			type: "occludes",
+			targetKey: lower.key,
+			source: "geometry",
+			confidence: "medium",
+			evidence,
+		});
 	}
 	return anchors;
 }
 
-export type RelationHighlight = { type: RelationType; sourceRef: string; targetRef: string; source: "ax" | "dom" | "geometry" | "timing" | "event" };
+export type RelationHighlight = {
+	type: RelationType;
+	sourceRef: string;
+	targetRef: string;
+	source: "ax" | "dom" | "geometry" | "timing" | "event";
+};
 export type RelationGraphEdge = EntityRelation & {
 	id: string;
 	sourceRef: string;
@@ -241,13 +304,20 @@ export function addEntityRelations(entity: Entity, added: EntityRelation[]): Ent
 	if (!added.length) return entity;
 	return { ...entity, relations: sortRelations(dedupeRelations([...(entity.relations ?? []), ...added])) };
 }
-export type RelationSummary = { summary: Record<string, number>; highlights: RelationHighlight[]; highlightCount?: number };
+export type RelationSummary = {
+	summary: Record<string, number>;
+	highlights: RelationHighlight[];
+	highlightCount?: number;
+};
 
 function confidenceRank(confidence: EntityRelation["confidence"]): number {
 	switch (confidence) {
-		case "high": return 0;
-		case "medium": return 1;
-		case "low": return 2;
+		case "high":
+			return 0;
+		case "medium":
+			return 1;
+		case "low":
+			return 2;
 	}
 }
 
@@ -264,12 +334,19 @@ function edgeKey(edge: Pick<RelationGraphEdge, "sourceRef" | "type" | "targetRef
 	return `${edge.sourceRef}|${edge.type}|${edge.targetRef}`;
 }
 
-function mergeEdgeEvidence(current: Omit<RelationGraphEdge, "id">, next: Omit<RelationGraphEdge, "id">, preferred: Omit<RelationGraphEdge, "id">): Omit<RelationGraphEdge, "id"> {
+function mergeEdgeEvidence(
+	current: Omit<RelationGraphEdge, "id">,
+	next: Omit<RelationGraphEdge, "id">,
+	preferred: Omit<RelationGraphEdge, "id">,
+): Omit<RelationGraphEdge, "id"> {
 	if (!current.evidence && !next.evidence) return preferred;
 	return { ...preferred, evidence: { ...(current.evidence ?? {}), ...(next.evidence ?? {}) } };
 }
 
-function preferredEdge(current: Omit<RelationGraphEdge, "id">, next: Omit<RelationGraphEdge, "id">): Omit<RelationGraphEdge, "id"> {
+function preferredEdge(
+	current: Omit<RelationGraphEdge, "id">,
+	next: Omit<RelationGraphEdge, "id">,
+): Omit<RelationGraphEdge, "id"> {
 	const confidence = confidenceRank(next.confidence) - confidenceRank(current.confidence);
 	if (confidence < 0) return mergeEdgeEvidence(current, next, next);
 	if (confidence > 0) return mergeEdgeEvidence(current, next, current);
@@ -318,7 +395,10 @@ function graphEdgesFromAnchors(entities: Entity[], anchors: RelationAnchor[]): A
 		const sourceRef = keyToRef.get(anchor.sourceKey);
 		let targetRef = keyToRef.get(anchor.targetKey);
 		if (!targetRef && anchor.targetKeyFallbacks) {
-			for (const fallback of anchor.targetKeyFallbacks) { targetRef = keyToRef.get(fallback); if (targetRef) break; }
+			for (const fallback of anchor.targetKeyFallbacks) {
+				targetRef = keyToRef.get(fallback);
+				if (targetRef) break;
+			}
 		}
 		if (!sourceRef || !targetRef || sourceRef === targetRef) continue;
 		edges.push({
@@ -358,7 +438,10 @@ function entitiesWithGraphRelations(entities: Entity[], graph: RelationGraph): E
 	});
 }
 
-export function materializeRelationGraph(entities: Entity[], anchors: RelationAnchor[]): { entities: Entity[]; graph: RelationGraph } {
+export function materializeRelationGraph(
+	entities: Entity[],
+	anchors: RelationAnchor[],
+): { entities: Entity[]; graph: RelationGraph } {
 	const graph = relationGraphFromEdges(graphEdgesFromAnchors(entities, anchors));
 	return { entities: entitiesWithGraphRelations(entities, graph), graph };
 }
@@ -385,7 +468,12 @@ export function buildRelationSummary(entities: Entity[]): RelationSummary {
 			if (relation.type === "cellOf") tableCellRefs.add(entity.ref);
 			if (TABLE_STRUCTURAL_TYPES.has(relation.type)) continue; // encoded as tableCells below
 			summary[relation.type] = (summary[relation.type] ?? 0) + 1;
-			highlights.push({ type: relation.type, sourceRef: entity.ref, targetRef: relation.targetRef, source: relation.source });
+			highlights.push({
+				type: relation.type,
+				sourceRef: entity.ref,
+				targetRef: relation.targetRef,
+				source: relation.source,
+			});
 		}
 	}
 	if (tableCellRefs.size) summary.tableCells = tableCellRefs.size;

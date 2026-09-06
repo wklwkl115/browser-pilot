@@ -1,13 +1,25 @@
 import { BROWSER_PILOT_BRIDGE_PORT } from "./config";
+import { BROWSER_PILOT_BRIDGE_SECRET_PLACEHOLDER } from "../../security/bridgePairing.js";
 import { chromeApi as chrome } from "./runtimeEnv";
-import { isScriptable, browserPilotBridgeInfo, getExtensionInstanceId, registerOffscreenUnreachableGetter } from "./bridge_info";
+import {
+	isScriptable,
+	browserPilotBridgeInfo,
+	getExtensionInstanceId,
+	registerOffscreenUnreachableGetter,
+} from "./bridge_info";
 import { setBridgeWakeProbe } from "./core_commands";
 import { handleBrowserPilotBridgeWsMessage } from "./router";
 import { runStartupRecovery } from "./state_store";
 import { installBrowserPilotTabSync } from "./tab_sync";
 import { browserPilotPageIdentityFields } from "./page_identity";
 import { browserPilotTabIdentityFields } from "./tab_identity";
-import type { JsonRecord, BrowserPilotBridgeWebSocketLike, BrowserPilotBridgeWsEnvelope, BrowserPilotChromeAlarm, BrowserPilotChromeTab } from "./types";
+import type {
+	JsonRecord,
+	BrowserPilotBridgeWebSocketLike,
+	BrowserPilotBridgeWsEnvelope,
+	BrowserPilotChromeAlarm,
+	BrowserPilotChromeTab,
+} from "./types";
 
 type OffscreenMessage = JsonRecord & { type?: string; port?: number; data?: unknown; resetDelay?: boolean };
 type SocketAdapter = BrowserPilotBridgeWebSocketLike & { port: number; readyState: number };
@@ -25,257 +37,346 @@ let offscreenUnreachable = false;
 registerOffscreenUnreachableGetter(() => offscreenUnreachable);
 
 function isOffscreenEventMessage(message: unknown): message is OffscreenMessage {
-  if (!message || typeof message !== "object") return false;
-  const type = String((message as OffscreenMessage).type || "");
-  return type === "browser-pilot-offscreen-ready"
-    || type === "browser-pilot-offscreen-connected"
-    || type === "browser-pilot-offscreen-disconnected"
-    || type === "browser-pilot-offscreen-ws-message";
+	if (!message || typeof message !== "object") return false;
+	const type = String((message as OffscreenMessage).type || "");
+	return (
+		type === "browser-pilot-offscreen-ready" ||
+		type === "browser-pilot-offscreen-connected" ||
+		type === "browser-pilot-offscreen-disconnected" ||
+		type === "browser-pilot-offscreen-ws-message"
+	);
 }
 
 function offscreenUrl(): string {
-  return chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
+	return chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
 }
 
 async function hasOffscreenDocument(): Promise<boolean> {
-  if (typeof chrome.offscreen?.hasDocument === "function") return await chrome.offscreen.hasDocument();
-  const workerGlobal = globalThis as typeof globalThis & { clients?: { matchAll(options?: unknown): Promise<Array<{ url?: string }>> } };
-  const clientsApi = workerGlobal.clients;
-  if (!clientsApi?.matchAll) return false;
-  const clients = await clientsApi.matchAll({ type: "window", includeUncontrolled: true });
-  return clients.some((client) => client.url === offscreenUrl());
+	if (typeof chrome.offscreen?.hasDocument === "function") return await chrome.offscreen.hasDocument();
+	const workerGlobal = globalThis as typeof globalThis & {
+		clients?: { matchAll(options?: unknown): Promise<Array<{ url?: string }>> };
+	};
+	const clientsApi = workerGlobal.clients;
+	if (!clientsApi?.matchAll) return false;
+	const clients = await clientsApi.matchAll({ type: "window", includeUncontrolled: true });
+	return clients.some((client) => client.url === offscreenUrl());
 }
 
 async function ensureOffscreenDocument(): Promise<boolean> {
-  if (!chrome.offscreen?.createDocument) {
-    console.warn("[BROWSER-PILOT-WS] chrome.offscreen unavailable; durable transport cannot start");
-    return false;
-  }
-  if (await hasOffscreenDocument()) return true;
-  if (!offscreenCreateInFlight) {
-    offscreenCreateInFlight = chrome.offscreen.createDocument({
-      url: OFFSCREEN_DOCUMENT_PATH,
-      reasons: ["WORKERS"],
-      justification: "Maintain the local Browser Pilot Bridge WebSocket transport outside the MV3 service worker lifetime.",
-    }).then(() => true, async (error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      if (/only a single offscreen document/i.test(message)) {
-        // Validate the existing offscreen document is reachable
-        try {
-          const pong = await Promise.race([
-            chrome.runtime.sendMessage({ type: "browser-pilot-offscreen-status" }),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
-          ]);
-          if (pong && typeof pong === "object") {
-            offscreenUnreachable = false;
-            return true;
-          }
-        } catch (_pingError) {
-          // Ping failed — offscreen may be crashed
-        }
-        // Offscreen document exists but is unreachable — try to close and recreate
-        console.warn("[BROWSER-PILOT-WS] offscreen document exists but is unreachable; attempting close+recreate");
-        try {
-          const offscreenApi = chrome.offscreen as typeof chrome.offscreen & { closeDocument?: () => Promise<void> };
-          if (typeof offscreenApi?.closeDocument === "function") await offscreenApi.closeDocument();
-          await chrome.offscreen!.createDocument({
-            url: OFFSCREEN_DOCUMENT_PATH,
-            reasons: ["WORKERS"],
-            justification: "Maintain the local Browser Pilot Bridge WebSocket transport outside the MV3 service worker lifetime.",
-          });
-          offscreenUnreachable = false;
-          return true;
-        } catch (recreateError) {
-          console.warn("[BROWSER-PILOT-WS] offscreen close+recreate failed", recreateError);
-          offscreenUnreachable = true;
-          return false;
-        }
-      }
-      console.warn("[BROWSER-PILOT-WS] offscreen create failed", error);
-      return false;
-    }).finally(() => { offscreenCreateInFlight = null; });
-  }
-  return await offscreenCreateInFlight;
+	if (!chrome.offscreen?.createDocument) {
+		console.warn("[BROWSER-PILOT-WS] chrome.offscreen unavailable; durable transport cannot start");
+		return false;
+	}
+	if (await hasOffscreenDocument()) return true;
+	if (!offscreenCreateInFlight) {
+		offscreenCreateInFlight = chrome.offscreen
+			.createDocument({
+				url: OFFSCREEN_DOCUMENT_PATH,
+				reasons: ["WORKERS"],
+				justification:
+					"Maintain the local Browser Pilot Bridge WebSocket transport outside the MV3 service worker lifetime.",
+			})
+			.then(
+				() => true,
+				async (error: unknown) => {
+					const message = error instanceof Error ? error.message : String(error);
+					if (/only a single offscreen document/i.test(message)) {
+						// Validate the existing offscreen document is reachable
+						try {
+							const pong = await Promise.race([
+								chrome.runtime.sendMessage({ type: "browser-pilot-offscreen-status" }),
+								new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+							]);
+							if (pong && typeof pong === "object") {
+								offscreenUnreachable = false;
+								return true;
+							}
+						} catch (_pingError) {
+							// Ping failed — offscreen may be crashed
+						}
+						// Offscreen document exists but is unreachable — try to close and recreate
+						console.warn(
+							"[BROWSER-PILOT-WS] offscreen document exists but is unreachable; attempting close+recreate",
+						);
+						try {
+							const offscreenApi = chrome.offscreen as typeof chrome.offscreen & {
+								closeDocument?: () => Promise<void>;
+							};
+							if (typeof offscreenApi?.closeDocument === "function") await offscreenApi.closeDocument();
+							await chrome.offscreen!.createDocument({
+								url: OFFSCREEN_DOCUMENT_PATH,
+								reasons: ["WORKERS"],
+								justification:
+									"Maintain the local Browser Pilot Bridge WebSocket transport outside the MV3 service worker lifetime.",
+							});
+							offscreenUnreachable = false;
+							return true;
+						} catch (recreateError) {
+							console.warn("[BROWSER-PILOT-WS] offscreen close+recreate failed", recreateError);
+							offscreenUnreachable = true;
+							return false;
+						}
+					}
+					console.warn("[BROWSER-PILOT-WS] offscreen create failed", error);
+					return false;
+				},
+			)
+			.finally(() => {
+				offscreenCreateInFlight = null;
+			});
+	}
+	return await offscreenCreateInFlight;
 }
 
 async function sendOffscreenMessage(message: OffscreenMessage, shouldSend?: () => boolean): Promise<unknown> {
-  if (!await ensureOffscreenDocument()) return { ok: false, error: "offscreen unavailable" };
-  if (shouldSend && !shouldSend()) return undefined;
-  return await chrome.runtime.sendMessage(message);
+	if (!(await ensureOffscreenDocument())) return { ok: false, error: "offscreen unavailable" };
+	if (shouldSend && !shouldSend()) return undefined;
+	return await chrome.runtime.sendMessage(message);
 }
 
 function offscreenTransportErrorMessage(error: unknown): string {
-  return error && typeof error === "object" && "message" in error ? String((error as { message?: unknown }).message || error) : String(error);
+	return error && typeof error === "object" && "message" in error
+		? String((error as { message?: unknown }).message || error)
+		: String(error);
 }
 
-function isExpectedOffscreenTransientError(message: string): boolean { return /browser is shutting down|extension context invalidated|context invalidated|receiving end does not exist/i.test(message); }
+function isExpectedOffscreenTransientError(message: string): boolean {
+	return /browser is shutting down|extension context invalidated|context invalidated|receiving end does not exist/i.test(
+		message,
+	);
+}
 
 function logTransportAsyncError(reason: string, error: unknown): void {
-  const message = offscreenTransportErrorMessage(error);
-  if (isExpectedOffscreenTransientError(message)) return;
-  console.warn(`[BROWSER-PILOT-WS] ${reason} failed`, message);
+	const message = offscreenTransportErrorMessage(error);
+	if (isExpectedOffscreenTransientError(message)) return;
+	console.warn(`[BROWSER-PILOT-WS] ${reason} failed`, message);
 }
 
-function runTransportTask(reason: string, task: () => Promise<unknown>): void { void task().catch((error: unknown) => logTransportAsyncError(reason, error)); }
+function runTransportTask(reason: string, task: () => Promise<unknown>): void {
+	void task().catch((error: unknown) => logTransportAsyncError(reason, error));
+}
 
 function ensureStartupRecovery(): Promise<void> {
-  if (!startupRecovery) {
-    startupRecovery = runStartupRecovery()
-      .then(() => undefined)
-      .catch((error: unknown) => { console.warn("[BROWSER-PILOT-WS] Startup recovery failed", error); });
-  }
-  return startupRecovery;
+	if (!startupRecovery) {
+		startupRecovery = runStartupRecovery()
+			.then(() => undefined)
+			.catch((error: unknown) => {
+				console.warn("[BROWSER-PILOT-WS] Startup recovery failed", error);
+			});
+	}
+	return startupRecovery;
 }
 
 function isCurrentSocket(socket: SocketAdapter): boolean {
-  return socket.readyState === SOCKET_OPEN && sockets.get(socket.port) === socket;
+	return socket.readyState === SOCKET_OPEN && sockets.get(socket.port) === socket;
 }
 
 function enqueueOffscreenSend(socket: SocketAdapter, buildData: () => string | Promise<string>): Promise<void> {
-  const previous = outboundTails.get(socket) || Promise.resolve();
-  const next = previous.then(async () => {
-    if (!isCurrentSocket(socket)) return;
-    const data = await buildData();
-    if (!isCurrentSocket(socket)) return;
-    const response = await sendOffscreenMessage(
-      { type: "browser-pilot-offscreen-send", port: socket.port, data },
-      () => isCurrentSocket(socket),
-    );
-    const sent = response && typeof response === "object" ? (response as JsonRecord).sent : undefined;
-    if (sent === false) cleanupTransportSocket(socket, "offscreen-send-failed");
-  }).catch((error: unknown) => {
-    const message = offscreenTransportErrorMessage(error);
-    if (!isExpectedOffscreenTransientError(message)) console.warn("[BROWSER-PILOT-WS] offscreen send failed", message);
-    cleanupTransportSocket(socket, "offscreen-send-error");
-  });
-  outboundTails.set(socket, next);
-  void next.finally(() => { if (outboundTails.get(socket) === next) outboundTails.delete(socket); });
-  return next;
+	const previous = outboundTails.get(socket) || Promise.resolve();
+	const next = previous
+		.then(async () => {
+			if (!isCurrentSocket(socket)) return;
+			const data = await buildData();
+			if (!isCurrentSocket(socket)) return;
+			const response = await sendOffscreenMessage(
+				{ type: "browser-pilot-offscreen-send", port: socket.port, data },
+				() => isCurrentSocket(socket),
+			);
+			const sent = response && typeof response === "object" ? (response as JsonRecord).sent : undefined;
+			if (sent === false) cleanupTransportSocket(socket, "offscreen-send-failed");
+		})
+		.catch((error: unknown) => {
+			const message = offscreenTransportErrorMessage(error);
+			if (!isExpectedOffscreenTransientError(message))
+				console.warn("[BROWSER-PILOT-WS] offscreen send failed", message);
+			cleanupTransportSocket(socket, "offscreen-send-error");
+		});
+	outboundTails.set(socket, next);
+	void next.finally(() => {
+		if (outboundTails.get(socket) === next) outboundTails.delete(socket);
+	});
+	return next;
 }
 
 function ensureSocketAdapter(port: number): SocketAdapter {
-  const current = sockets.get(port);
-  if (current) {
-    current.readyState = SOCKET_OPEN;
-    return current;
-  }
-  const socket: SocketAdapter = {
-    port,
-    readyState: SOCKET_OPEN,
-    send(data: string) {
-      void enqueueOffscreenSend(socket, () => data);
-    },
-  };
-  sockets.set(port, socket);
-  return socket;
+	const current = sockets.get(port);
+	if (current) {
+		current.readyState = SOCKET_OPEN;
+		return current;
+	}
+	const socket: SocketAdapter = {
+		port,
+		readyState: SOCKET_OPEN,
+		send(data: string) {
+			void enqueueOffscreenSend(socket, () => data);
+		},
+	};
+	sockets.set(port, socket);
+	return socket;
 }
 
 function responseOpenPorts(response: unknown): number[] {
-  const record = response && typeof response === "object" ? response as JsonRecord : {};
-  return Array.isArray(record.openPorts) ? record.openPorts.filter((port): port is number => typeof port === "number") : [];
+	const record = response && typeof response === "object" ? (response as JsonRecord) : {};
+	return Array.isArray(record.openPorts)
+		? record.openPorts.filter((port): port is number => typeof port === "number")
+		: [];
 }
 
 function getBrowserPilotTransportSocket(): BrowserPilotBridgeWebSocketLike | null {
-  return getBrowserPilotTransportSockets()[0] ?? null;
+	return getBrowserPilotTransportSockets()[0] ?? null;
 }
 
 function getBrowserPilotTransportSockets(): BrowserPilotBridgeWebSocketLike[] {
-  return Array.from(sockets.values()).filter((socket) => socket.readyState === SOCKET_OPEN);
+	return Array.from(sockets.values()).filter((socket) => socket.readyState === SOCKET_OPEN);
 }
 
 function cleanupTransportSocket(socket: BrowserPilotBridgeWebSocketLike | null, _reason = ""): boolean {
-  if (!socket) return false;
-  let removed = false;
-  for (const [port, current] of sockets.entries()) {
-    if (current !== socket) continue;
-    current.readyState = SOCKET_CLOSED;
-    sockets.delete(port);
-    removed = true;
-  }
-  return removed;
+	if (!socket) return false;
+	let removed = false;
+	for (const [port, current] of sockets.entries()) {
+		if (current !== socket) continue;
+		current.readyState = SOCKET_CLOSED;
+		sockets.delete(port);
+		removed = true;
+	}
+	return removed;
 }
 
 function scheduleProbe(resetDelay = false): void {
-  void resetDelay;
-  // Repeating alarm (not one-shot): the wake cadence self-heals even if a probe
-  // throws before it can reschedule. 1 minute is the Chrome floor for released
-  // extensions; this is only the cold-start backstop — a warm offscreen reconnects
-  // far faster via its own sub-10s backoff.
-  chrome.alarms.create("browser-pilot-ws-probe", { delayInMinutes: 1, periodInMinutes: 1 });
+	void resetDelay;
+	// Repeating alarm (not one-shot): the wake cadence self-heals even if a probe
+	// throws before it can reschedule. 1 minute is the Chrome floor for released
+	// extensions; this is only the cold-start backstop — a warm offscreen reconnects
+	// far faster via its own sub-10s backoff.
+	chrome.alarms.create("browser-pilot-ws-probe", { delayInMinutes: 1, periodInMinutes: 1 });
 }
 
 async function syncOpenPorts(response: unknown): Promise<void> {
-  for (const port of responseOpenPorts(response)) await handleOffscreenConnected(port);
+	for (const port of responseOpenPorts(response)) await handleOffscreenConnected(port);
 }
 
 async function probeAndConnectWS(resetDelay: boolean): Promise<void> {
-  const response = await sendOffscreenMessage({ type: "browser-pilot-offscreen-probe", resetDelay });
-  await syncOpenPorts(response);
-  scheduleProbe(resetDelay);
+	const response = await sendOffscreenMessage({ type: "browser-pilot-offscreen-probe", resetDelay });
+	await syncOpenPorts(response);
+	scheduleProbe(resetDelay);
 }
 
 async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> {
-  primaryPort = port;
-  await enqueueOffscreenSend(socket, async () => {
-    await ensureStartupRecovery();
-    const extensionInstanceId = await getExtensionInstanceId();
-    const tabs = (await chrome.tabs.query({}) as BrowserPilotChromeTab[]).filter((tab: BrowserPilotChromeTab) => isScriptable(tab.url));
-    const tabsWithIdentity = await Promise.all(tabs.map(async (tab: BrowserPilotChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId, ...browserPilotPageIdentityFields(tab), ...await browserPilotTabIdentityFields(tab) })));
-    return JSON.stringify({
-      type: "ext_ready",
-      bridge: { ...browserPilotBridgeInfo(), bridgePort: port, primaryPort, ...(extensionInstanceId ? { extensionInstanceId } : {}) },
-      tabs: tabsWithIdentity,
-    });
-  });
+	primaryPort = port;
+	await enqueueOffscreenSend(socket, async () => {
+		await ensureStartupRecovery();
+		const extensionInstanceId = await getExtensionInstanceId();
+		const tabs = ((await chrome.tabs.query({})) as BrowserPilotChromeTab[]).filter((tab: BrowserPilotChromeTab) =>
+			isScriptable(tab.url),
+		);
+		const tabsWithIdentity = await Promise.all(
+			tabs.map(async (tab: BrowserPilotChromeTab) => ({
+				id: tab.id,
+				url: tab.url,
+				title: tab.title,
+				active: tab.active,
+				windowId: tab.windowId,
+				...browserPilotPageIdentityFields(tab),
+				...(await browserPilotTabIdentityFields(tab)),
+			})),
+		);
+		return JSON.stringify({
+			type: "ext_ready",
+			bridge: {
+				...browserPilotBridgeInfo(),
+				secret: BROWSER_PILOT_BRIDGE_SECRET_PLACEHOLDER,
+				bridgePort: port,
+				primaryPort,
+				...(extensionInstanceId ? { extensionInstanceId } : {}),
+			},
+			tabs: tabsWithIdentity,
+		});
+	});
 }
 
 async function handleOffscreenConnected(port: number): Promise<void> {
-  const current = sockets.get(port);
-  const shouldSendReady = !current || current.readyState !== SOCKET_OPEN;
-  const socket = ensureSocketAdapter(port);
-  if (shouldSendReady) await sendExtReady(socket, port);
+	const current = sockets.get(port);
+	const shouldSendReady = !current || current.readyState !== SOCKET_OPEN;
+	const socket = ensureSocketAdapter(port);
+	if (shouldSendReady) await sendExtReady(socket, port);
 }
 
 async function handleBrowserPilotOffscreenMessage(message: OffscreenMessage): Promise<unknown> {
-  if (message.type === "browser-pilot-offscreen-ready") return { ok: true };
-  if (message.type === "browser-pilot-offscreen-connected" && typeof message.port === "number") {
-    await handleOffscreenConnected(message.port);
-    return { ok: true };
-  }
-  if (message.type === "browser-pilot-offscreen-disconnected" && typeof message.port === "number") {
-    cleanupTransportSocket(sockets.get(message.port) ?? null, String((message.data as JsonRecord | undefined)?.reason ?? ""));
-    return { ok: true };
-  }
-  if (message.type === "browser-pilot-offscreen-ws-message" && typeof message.port === "number") {
-    await handleBrowserPilotBridgeWsMessage(message.data as BrowserPilotBridgeWsEnvelope, ensureSocketAdapter(message.port));
-    return { ok: true };
-  }
-  return { ok: false, error: "unknown offscreen message" };
+	if (message.type === "browser-pilot-offscreen-ready") return { ok: true };
+	if (message.type === "browser-pilot-offscreen-connected" && typeof message.port === "number") {
+		await handleOffscreenConnected(message.port);
+		return { ok: true };
+	}
+	if (message.type === "browser-pilot-offscreen-disconnected" && typeof message.port === "number") {
+		cleanupTransportSocket(
+			sockets.get(message.port) ?? null,
+			String((message.data as JsonRecord | undefined)?.reason ?? ""),
+		);
+		return { ok: true };
+	}
+	if (message.type === "browser-pilot-offscreen-ws-message" && typeof message.port === "number") {
+		await handleBrowserPilotBridgeWsMessage(
+			message.data as BrowserPilotBridgeWsEnvelope,
+			ensureSocketAdapter(message.port),
+		);
+		return { ok: true };
+	}
+	return { ok: false, error: "unknown offscreen message" };
 }
 
 async function handleBrowserPilotTransportAlarm(alarm: BrowserPilotChromeAlarm): Promise<void> {
-  if (alarm.name === "browser-pilot-self-reload") {
-    chrome.runtime.reload();
-    return;
-  }
-  if (alarm.name === "browser-pilot-ws-probe") await probeAndConnectWS(false);
+	if (alarm.name === "browser-pilot-self-reload") {
+		chrome.runtime.reload();
+		return;
+	}
+	if (alarm.name === "browser-pilot-ws-probe") await probeAndConnectWS(false);
 }
 
 function installBrowserPilotTransport(): boolean {
-  if (browserPilotTransportInstalled) return false;
-  chrome.runtime.onMessage.addListener((message: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
-    if (!isOffscreenEventMessage(message)) return false;
-    void handleBrowserPilotOffscreenMessage(message).then(sendResponse);
-    return true;
-  });
-  chrome.runtime.onInstalled.addListener(() => { runTransportTask("install probe", async () => { await probeAndConnectWS(true); }); });
-  chrome.alarms.onAlarm.addListener((alarm: BrowserPilotChromeAlarm) => { runTransportTask("transport alarm", async () => { await handleBrowserPilotTransportAlarm(alarm); }); });
-  setBridgeWakeProbe(probeAndConnectWS);
-  runTransportTask("initial probe", async () => { await probeAndConnectWS(true); });
-  chrome.runtime.onStartup.addListener(() => { runTransportTask("startup probe", async () => { await probeAndConnectWS(true); }); });
-  installBrowserPilotTabSync({ getSocket: getBrowserPilotTransportSocket, getSockets: getBrowserPilotTransportSockets, probe: probeAndConnectWS });
-  browserPilotTransportInstalled = true;
-  return true;
+	if (browserPilotTransportInstalled) return false;
+	chrome.runtime.onMessage.addListener(
+		(message: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
+			if (!isOffscreenEventMessage(message)) return false;
+			void handleBrowserPilotOffscreenMessage(message).then(sendResponse);
+			return true;
+		},
+	);
+	chrome.runtime.onInstalled.addListener(() => {
+		runTransportTask("install probe", async () => {
+			await probeAndConnectWS(true);
+		});
+	});
+	chrome.alarms.onAlarm.addListener((alarm: BrowserPilotChromeAlarm) => {
+		runTransportTask("transport alarm", async () => {
+			await handleBrowserPilotTransportAlarm(alarm);
+		});
+	});
+	setBridgeWakeProbe(probeAndConnectWS);
+	runTransportTask("initial probe", async () => {
+		await probeAndConnectWS(true);
+	});
+	chrome.runtime.onStartup.addListener(() => {
+		runTransportTask("startup probe", async () => {
+			await probeAndConnectWS(true);
+		});
+	});
+	installBrowserPilotTabSync({
+		getSocket: getBrowserPilotTransportSocket,
+		getSockets: getBrowserPilotTransportSockets,
+		probe: probeAndConnectWS,
+	});
+	browserPilotTransportInstalled = true;
+	return true;
 }
 
-export { installBrowserPilotTransport, getBrowserPilotTransportSocket, getBrowserPilotTransportSockets, cleanupTransportSocket, scheduleProbe, probeAndConnectWS, handleBrowserPilotTransportAlarm, handleBrowserPilotOffscreenMessage, ensureOffscreenDocument };
+export {
+	installBrowserPilotTransport,
+	getBrowserPilotTransportSocket,
+	getBrowserPilotTransportSockets,
+	cleanupTransportSocket,
+	scheduleProbe,
+	probeAndConnectWS,
+	handleBrowserPilotTransportAlarm,
+	handleBrowserPilotOffscreenMessage,
+	ensureOffscreenDocument,
+};

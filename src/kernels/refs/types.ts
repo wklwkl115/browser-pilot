@@ -29,7 +29,6 @@ export type RefOwner = {
 };
 
 export type RefPolicy = {
-	redaction: "default" | "disabled";
 	shareableAcrossSessions: boolean;
 	liveActionsAllowed: boolean;
 };

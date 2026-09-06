@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { access, cp, mkdir, rm } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { stateDir } from "../daemon/daemonControl.js";
 import { packageRoot, packageVersion } from "../daemon/packageInfo.js";
+import { installExtensionFiles } from "./installTransaction.js";
 
 export type BrowserName = "chrome" | "edge";
 
@@ -12,11 +13,10 @@ type OpenedBrowser = BrowserCandidate & { page: string };
 type InstallOptions = {
 	sourceDir?: string;
 	installDir?: string;
+	stateDirectory?: string;
 	browser?: BrowserName;
 	openPage?: (browser?: BrowserName) => Promise<OpenedBrowser>;
 };
-
-const REQUIRED_EXTENSION_FILES = ["manifest.json", "dist/service-worker.js"];
 
 function candidatePaths(browser?: BrowserName): BrowserCandidate[] {
 	const home = os.homedir();
@@ -27,7 +27,11 @@ function candidatePaths(browser?: BrowserName): BrowserCandidate[] {
 	const override = process.env.BROWSER_PILOT_BROWSER;
 	if (override) {
 		const basename = path.basename(override).toLowerCase();
-		const overrideBrowser = basename.includes("edge") ? "edge" : basename.includes("chrome") || basename.includes("chromium") ? "chrome" : browser ?? "chrome";
+		const overrideBrowser = basename.includes("edge")
+			? "edge"
+			: basename.includes("chrome") || basename.includes("chromium")
+				? "chrome"
+				: (browser ?? "chrome");
 		add(overrideBrowser, override);
 	}
 
@@ -83,14 +87,19 @@ export async function openExtensionsPage(browser?: BrowserName): Promise<OpenedB
 			// Try the next installed browser.
 		}
 	}
-	throw new Error(`No supported browser found. Set BROWSER_PILOT_BROWSER or open ${browser === "edge" ? "edge://extensions" : "chrome://extensions"} manually.`);
+	throw new Error(
+		`No supported browser found. Set BROWSER_PILOT_BROWSER or open ${browser === "edge" ? "edge://extensions" : "chrome://extensions"} manually.`,
+	);
 }
 
 export function parseInstallBrowser(args: string[]): BrowserName | undefined {
 	if (args.length === 0) return undefined;
-	const value = args.length === 1 && args[0]?.startsWith("--browser=")
-		? args[0].slice("--browser=".length)
-		: args.length === 2 && args[0] === "--browser" ? args[1] : undefined;
+	const value =
+		args.length === 1 && args[0]?.startsWith("--browser=")
+			? args[0].slice("--browser=".length)
+			: args.length === 2 && args[0] === "--browser"
+				? args[1]
+				: undefined;
 	if (value === "chrome" || value === "edge") return value;
 	throw new Error("Usage: browser-pilot-mcp install [--browser chrome|edge]");
 }
@@ -100,18 +109,14 @@ export async function installBrowserExtension(options: InstallOptions = {}) {
 	const sourceDir = options.sourceDir ?? (root ? path.join(root, "bridge", "browser_pilot_bridge") : undefined);
 	if (!sourceDir) throw new Error("Browser Pilot package root was not found");
 	const installDir = path.resolve(options.installDir ?? path.join(stateDir(), "extension"));
-	if (path.resolve(sourceDir) === installDir) throw new Error("Extension source and install directory must differ");
-	for (const relative of REQUIRED_EXTENSION_FILES) {
-		try { await access(path.join(sourceDir, relative)); }
-		catch { throw new Error(`Packaged extension is incomplete: missing ${relative}. Run npm run build:bridge for a source checkout.`); }
-	}
-	await mkdir(path.dirname(installDir), { recursive: true, mode: 0o700 });
-	await rm(installDir, { recursive: true, force: true });
-	await cp(sourceDir, installDir, { recursive: true, force: true });
+	await installExtensionFiles(sourceDir, installDir, options.stateDirectory ?? path.dirname(installDir));
 	try {
 		const opened = await (options.openPage ?? openExtensionsPage)(options.browser);
 		return { version: packageVersion(), installDir, ...opened };
 	} catch (cause) {
-		throw new Error(`Extension copied to ${installDir}, but its browser extensions page could not be opened: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+		throw new Error(
+			`Extension copied to ${installDir}, but its browser extensions page could not be opened: ${cause instanceof Error ? cause.message : String(cause)}`,
+			{ cause },
+		);
 	}
 }

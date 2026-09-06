@@ -30,7 +30,8 @@ function pageIdentity(descriptor: RefDescriptor): PageIdentity | undefined {
 
 function executionTarget(descriptor: RefDescriptor, fresh: boolean): ExecutionRefTarget {
 	const backend = descriptor.locators.find((locator) => locator.by === "backendNodeId");
-	const backendNodeId = backend?.by === "backendNodeId" && Number.isFinite(Number(backend.value)) ? Number(backend.value) : undefined;
+	const backendNodeId =
+		backend?.by === "backendNodeId" && Number.isFinite(Number(backend.value)) ? Number(backend.value) : undefined;
 	const targetId = descriptor.owner.targetId || (backend?.by === "backendNodeId" ? backend.targetId : undefined);
 	const point = descriptor.geometry?.point;
 	return {

@@ -1,3 +1,5 @@
+// Concept: "Perception ledger" (docs/concepts.md). Per-page record of which facts were last seen at
+// which snapshot and of the last action, so a later diff can attribute changes (see "Causal").
 import type { PageIdentity } from "./pageIdentity.js";
 
 export type PerceptionLedgerKey = Pick<PageIdentity, "browserSessionId" | "tabId" | "targetGeneration" | "pageEpoch">;
@@ -35,7 +37,12 @@ export class PerceptionLedger {
 	record(frame: PerceptionLedgerFrame): PerceptionLedgerFrame {
 		const key = keyString(frame.key);
 		for (const [existingKey, existing] of this.frames) {
-			if (existingKey !== key && existing.key.browserSessionId === frame.key.browserSessionId && existing.key.tabId === frame.key.tabId) this.frames.delete(existingKey);
+			if (
+				existingKey !== key &&
+				existing.key.browserSessionId === frame.key.browserSessionId &&
+				existing.key.tabId === frame.key.tabId
+			)
+				this.frames.delete(existingKey);
 		}
 		this.frames.delete(key);
 		this.frames.set(key, frame);
@@ -43,11 +50,21 @@ export class PerceptionLedger {
 		return frame;
 	}
 
-	migrateTabId(fromTabId: number, toTabId: number, options: { browserSessionIds?: Iterable<string | undefined> } = {}): number {
+	migrateTabId(
+		fromTabId: number,
+		toTabId: number,
+		options: { browserSessionIds?: Iterable<string | undefined> } = {},
+	): number {
 		if (!Number.isInteger(fromTabId) || !Number.isInteger(toTabId) || fromTabId === toTabId) return 0;
-		const scopedSessionIds = options.browserSessionIds ? new Set(Array.from(options.browserSessionIds).map((id) => id || "default")) : undefined;
+		const scopedSessionIds = options.browserSessionIds
+			? new Set(Array.from(options.browserSessionIds).map((id) => id || "default"))
+			: undefined;
 		const frames = Array.from(this.frames.entries())
-			.filter(([, frame]) => frame.key.tabId === fromTabId && (!scopedSessionIds || scopedSessionIds.has(frame.key.browserSessionId || "default")))
+			.filter(
+				([, frame]) =>
+					frame.key.tabId === fromTabId &&
+					(!scopedSessionIds || scopedSessionIds.has(frame.key.browserSessionId || "default")),
+			)
 			.map(([key, frame]) => ({ key, frame }));
 		for (const { key } of frames) this.frames.delete(key);
 		for (const { frame } of frames.sort((a, b) => a.frame.capturedAt - b.frame.capturedAt)) {

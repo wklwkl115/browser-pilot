@@ -1,6 +1,14 @@
-import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
+import type {
+	BrowserBridgeExecutionResult,
+	BrowserBridgeTargetInfo,
+	BrowserRuntimeCommand,
+} from "./BrowserRuntimeTypes.js";
 import type { SessionObservationSnapshotInfo } from "../kernels/session/observationSnapshotRegistry.js";
-import type { PerceptionLedgerFactState, PerceptionLedgerFrame, PerceptionLedgerKey } from "../kernels/session/perceptionLedger.js";
+import type {
+	PerceptionLedgerFactState,
+	PerceptionLedgerFrame,
+	PerceptionLedgerKey,
+} from "../kernels/session/perceptionLedger.js";
 
 export type CommandPerceptionLedgerKey = PerceptionLedgerKey;
 export type CommandPerceptionLedgerFactState = PerceptionLedgerFactState;
@@ -14,7 +22,7 @@ export type BrowserCommandRuntimeSnapshot = {
 	running: boolean;
 	connectedClients: number;
 	extensionConnected: boolean;
-	extension?: ({ id?: string; workerBootId?: string } & Record<string, unknown>);
+	extension?: { id?: string; workerBootId?: string } & Record<string, unknown>;
 	clients: unknown[];
 	defaultTabId?: number;
 	defaultTabHandle?: string;
@@ -44,8 +52,14 @@ export type BrowserCommandTargetTransactionInput = {
 export interface BrowserCommandSnapshotPort {
 	snapshot(options?: { browserSessionId?: string }): BrowserCommandRuntimeSnapshot;
 	getTabs(options?: { includeDisconnected?: boolean }): BrowserTabLike[];
-	refreshTabs(timeoutMs?: number, options?: { browserSessionId?: string; signal?: AbortSignal }): Promise<BrowserTabLike[]>;
-	waitForExtensionReconnect(previousClientId: string | undefined, timeoutMs?: number): Promise<BrowserCommandRuntimeSnapshot>;
+	refreshTabs(
+		timeoutMs?: number,
+		options?: { browserSessionId?: string; signal?: AbortSignal },
+	): Promise<BrowserTabLike[]>;
+	waitForExtensionReconnect(
+		previousClientId: string | undefined,
+		timeoutMs?: number,
+	): Promise<BrowserCommandRuntimeSnapshot>;
 }
 
 export interface BrowserCommandTargetPort {
@@ -53,26 +67,73 @@ export interface BrowserCommandTargetPort {
 }
 
 export interface BrowserCommandDispatchPort extends BrowserCommandTargetPort {
-	sendCommand(command: BrowserRuntimeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
-	executeJavaScript(script: string, options?: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number; accessMode?: "read" | "write"; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	sendCommand(
+		command: BrowserRuntimeCommand,
+		options?: {
+			browserSessionId?: string;
+			tabId?: number | string;
+			targetRef?: string;
+			timeoutMs?: number;
+			accessMode?: "read" | "write";
+			internal?: boolean;
+			signal?: AbortSignal;
+		},
+	): Promise<BrowserBridgeExecutionResult>;
+	executeJavaScript(
+		script: string,
+		options?: {
+			browserSessionId?: string;
+			tabId?: number | string;
+			timeoutMs?: number;
+			accessMode?: "read" | "write";
+			signal?: AbortSignal;
+		},
+	): Promise<BrowserBridgeExecutionResult>;
 	withTargetTransaction?<T>(input: BrowserCommandTargetTransactionInput, run: () => Promise<T>): Promise<T>;
 }
 
 export interface BrowserCommandTabControlPort {
-	switchTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
-	createTab(url: string, active?: boolean, timeoutMs?: number, options?: { browserSessionId?: string; incognito?: boolean; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
-	closeTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string; signal?: AbortSignal }): Promise<BrowserBridgeExecutionResult>;
+	switchTab(
+		tabId: number | string,
+		timeoutMs?: number,
+		options?: { browserSessionId?: string; signal?: AbortSignal },
+	): Promise<BrowserBridgeExecutionResult>;
+	createTab(
+		url: string,
+		active?: boolean,
+		timeoutMs?: number,
+		options?: { browserSessionId?: string; incognito?: boolean; signal?: AbortSignal },
+	): Promise<BrowserBridgeExecutionResult>;
+	closeTab(
+		tabId: number | string,
+		timeoutMs?: number,
+		options?: { browserSessionId?: string; signal?: AbortSignal },
+	): Promise<BrowserBridgeExecutionResult>;
 }
 
 export interface BrowserCommandObservationPort {
-	createObservationSnapshot(snapshot: Omit<CommandObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): CommandObservationSnapshotInfo;
+	createObservationSnapshot(
+		snapshot: Omit<CommandObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & {
+			snapshotId?: string;
+			ttlMs?: number;
+		},
+	): CommandObservationSnapshotInfo;
 	getObservationSnapshot(snapshotId: string): CommandObservationSnapshotInfo | undefined;
 	listObservationSnapshots(): CommandObservationSnapshotInfo[];
 }
 
 export interface BrowserCommandRecorderStatePort {
-	getKnownRecorderState?(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined): { active: boolean; lastSeq?: number } | undefined;
-	recordKnownRecorderState?(kind: "network" | "hook", browserSessionId: string | undefined, tabId: number | undefined, state: { active: boolean; lastSeq?: number }): void;
+	getKnownRecorderState?(
+		kind: "network" | "hook",
+		browserSessionId: string | undefined,
+		tabId: number | undefined,
+	): { active: boolean; lastSeq?: number } | undefined;
+	recordKnownRecorderState?(
+		kind: "network" | "hook",
+		browserSessionId: string | undefined,
+		tabId: number | undefined,
+		state: { active: boolean; lastSeq?: number },
+	): void;
 }
 
 export interface BrowserCommandPerceptionPort {
@@ -80,13 +141,13 @@ export interface BrowserCommandPerceptionPort {
 	recordPerceptionLedgerFrame?(frame: CommandPerceptionLedgerFrame): CommandPerceptionLedgerFrame;
 }
 
-export interface BrowserCommandRuntimePort extends
-	BrowserCommandSnapshotPort,
-	BrowserCommandDispatchPort,
-	BrowserCommandTabControlPort,
-	BrowserCommandObservationPort,
-	BrowserCommandRecorderStatePort,
-	BrowserCommandPerceptionPort {
-}
+export interface BrowserCommandRuntimePort
+	extends
+		BrowserCommandSnapshotPort,
+		BrowserCommandDispatchPort,
+		BrowserCommandTabControlPort,
+		BrowserCommandObservationPort,
+		BrowserCommandRecorderStatePort,
+		BrowserCommandPerceptionPort {}
 
 export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo };

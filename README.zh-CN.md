@@ -48,15 +48,15 @@ Browser Pilot 直接使用 Chrome 或 Edge 中**已打开**的标签页和登录
 
 ## 差异化对比
 
-| | Browser Pilot | 截图式 AI | Puppeteer / Playwright | Selenium |
-|---|---|---|---|---|
-| **真实浏览器标签页** | 是 &mdash; 使用你已登录的会话 | 无头或独立配置文件 | 无头或启动新实例 | 无头或启动新实例 |
-| **页面理解方式** | 结构化 DOM 模型 | 像素级图像推理 | 手动选择器 | 手动选择器 |
-| **操作精度** | 引用定向，确定性 | 坐标点击，易出错 | CSS / XPath 选择器 | CSS / XPath 选择器 |
-| **结果验证** | 内置，目标级差异 | 重新截图 + LLM 猜测 | 手动断言 | 手动断言 |
-| **证据链** | 每次操作的结构化产物 | 仅截图 | 截图 / 轨迹 | 截图 / 日志 |
-| **需要多模态** | 否 | 是 | 否 | 否 |
-| **AI 智能体原生** | MCP 工具，可组合 | 因实现而异 | 库 API | 库 API |
+|                      | Browser Pilot                 | 截图式 AI           | Puppeteer / Playwright | Selenium           |
+| -------------------- | ----------------------------- | ------------------- | ---------------------- | ------------------ |
+| **真实浏览器标签页** | 是 &mdash; 使用你已登录的会话 | 无头或独立配置文件  | 无头或启动新实例       | 无头或启动新实例   |
+| **页面理解方式**     | 结构化 DOM 模型               | 像素级图像推理      | 手动选择器             | 手动选择器         |
+| **操作精度**         | 引用定向，确定性              | 坐标点击，易出错    | CSS / XPath 选择器     | CSS / XPath 选择器 |
+| **结果验证**         | 内置，目标级差异              | 重新截图 + LLM 猜测 | 手动断言               | 手动断言           |
+| **证据链**           | 每次操作的结构化产物          | 仅截图              | 截图 / 轨迹            | 截图 / 日志        |
+| **需要多模态**       | 否                            | 是                  | 否                     | 否                 |
+| **AI 智能体原生**    | MCP 工具，可组合              | 因实现而异          | 库 API                 | 库 API             |
 
 ## 真实工作流
 
@@ -88,6 +88,8 @@ npx --yes browser-pilot-mcp@latest install
 
 同时安装了两个浏览器时，可通过 `--browser edge` 或 `--browser chrome` 指定。npm 包升级后再次运行安装命令，然后在自动打开的页面点击**重新加载**。
 
+随时运行 `npx browser-pilot-mcp status` 检查安装、守护进程和扩展连接状态；出现问题时会直接给出下一步操作。
+
 ### 第 2 步 &mdash; 配置 MCP 客户端
 
 ```toml
@@ -118,17 +120,19 @@ npm run mcp -- install
 
 Browser Pilot 提供 5 个可组合的 MCP 工具：
 
-| 工具 | 用途 |
-|---|---|
-| `browser_observe` | 返回精简的页面内容、可执行操作、页面变化和可展开的语义资源。 |
-| `browser_execute` | 在当前标签页或引用所属标签页中执行页面 JavaScript。 |
-| `browser_command` | 执行可信输入以及经过校验的浏览器原生命令或 CDP 操作。 |
-| `browser_tabs` | 列出、切换、创建或关闭已连接的浏览器标签页。 |
-| `browser_screenshot` | 以 MCP 图片资源返回当前视口或完整页面截图。 |
+| 工具                 | 用途                                                          |
+| -------------------- | ------------------------------------------------------------- |
+| `browser_observe`    | 返回精简的页面内容、可执行操作、页面变化和可展开的语义资源。  |
+| `browser_execute`    | 在当前标签页或引用所属标签页中执行页面 JavaScript。           |
+| `browser_command`    | 执行可信输入、等待，以及经过校验的浏览器原生命令或 CDP 操作。 |
+| `browser_tabs`       | 列出、切换、创建、关闭或导航已连接的浏览器标签页。            |
+| `browser_screenshot` | 以 MCP 图片资源返回当前视口或完整页面截图。                   |
 
-MCP 的 `tools/list` 响应是公开语法的准确信息源。[`src/commands/commandCatalog.ts`](src/commands/commandCatalog.ts) 维护公开工具列表，各个 `*Command.ts` 模块维护对应的参数结构和处理逻辑。原生命令结构可通过 `browser-pilot://native-command/<cmd>` 资源读取。
+MCP 的 `tools/list` 响应是公开语法的准确信息源。[`src/commands/commandCatalog.ts`](src/commands/commandCatalog.ts) 维护公开工具列表，各个 `*Command.ts` 模块维护对应的参数结构和处理逻辑。`browser_command` 在工具描述里内联列出**核心**命令（CDP、可信输入、等待、网络录制、frame、HTML、传输）；**高级**命令族（`hook.*`、`intercept.*`、`ws.*`、新文档脚本）仍然公开，但只通过 `browser-pilot://native-commands` 索引和 `browser-pilot://native-command/<cmd>` 资源提供文档。
 
-`browser_observe` 支持 `mode: "auto" | "full" | "diff"` 和 `visual: "auto" | "always" | "never"`。内联结果只保留当前决策需要的数据，无法继续压缩的内容通过带类型的观察资源提供。`browser_tabs` 始终返回 `{ "tabs": [...] }`；`browser_screenshot` 返回截图元数据和图片资源。
+`browser_observe` 支持 `mode: "auto" | "full" | "diff"` 和 `visual: "auto" | "always" | "never"`。内联结果只保留当前决策需要的数据，无法继续压缩的内容通过带类型的观察资源提供。`browser_tabs` 返回 `{ "tabs": [...] }`（`navigate` 额外附带 `effect`）；`browser_screenshot` 返回截图元数据和图片资源。
+
+第一次接触 ref、entity、frontier、collection、causal、verification 这些词？先读 [docs/concepts.md](docs/concepts.md)（英文），它逐个解释工具输出里出现的术语，并按字段讲解 `browser_observe` 的返回结构。
 
 ## 智能体工作流程
 
@@ -138,8 +142,9 @@ MCP 的 `tools/list` 响应是公开语法的准确信息源。[`src/commands/co
 
 1. **从活动标签页开始。** 省略 `targetRef` 时使用当前选中的标签页。只在需要区分时列出标签页；任务确实需要时再创建、切换或关闭。
 2. **按需观察。** 只有需要理解页面时才调用 `browser_observe`。观察结果中的 `bp-ref` 会让后续操作自动路由到引用所属标签页。
-3. **选对工具。** 页面 JavaScript 使用 `browser_execute`，原生浏览器操作使用 `browser_command`。同一页面内能够确定执行的 JavaScript 应合并到一次调用中。
-4. **验证写操作。** 写操作需要验证时添加 `expect`。只有下一步决策依赖新页面状态时才重新观察。
+3. **选对工具。** 加载 URL 用 `browser_tabs navigate`；对已观察到的控件做可信输入用 `browser_command` 的 `input.ref`（`click`、`type`、`check`、`select`、`focus`、`hover`）；页面 JavaScript 用 `browser_execute`。同一页面内能够确定执行的 JavaScript 应合并到一次调用中。
+4. **有意识地等待。** 下一步依赖页面稳定时，通过 `browser_command` 调用 `wait.loadState`、`wait.selector`、`wait.networkIdle` 或 `wait.navigation`，不要轮询。
+5. **验证写操作。** 写操作需要验证时添加 `expect`。只有下一步决策依赖新页面状态时才重新观察。
 
 <details>
 <summary><strong>执行与验证约定</strong></summary>
@@ -148,7 +153,7 @@ MCP 的 `tools/list` 响应是公开语法的准确信息源。[`src/commands/co
 
 成功的 `browser_execute` 和 `browser_command` 调用返回 `{ "result": ..., "effect"?: ..., "verification"?: ... }`；写操作可能附带 `effect` 和 `verification`。`expect` 可以是返回真值的 JavaScript 表达式，也可以是结构化的引用/状态后置条件，例如 `{ "ref": "bp-ref://control/...", "state": { "pressed": true } }`。结构化验证会在命令执行前后读取同一引用，融合 DOM 与目标可访问性状态，并返回目标级差异。
 
-原始 CDP 命令使用 `command: { cmd: "cdp", method: "Domain.method", params: {...} }`。目标仍通过工具级 `targetRef` 指定；运行时会话、物理目标、超时、附加和清理状态不属于公开参数。
+可信输入使用 `command: { cmd: "input.ref", ref: "bp-ref://...", action: "type", text: "...", clear: true }`；`check` 接受 `checked`，`select` 接受 `value`、`label` 或 `index`。原始 CDP 命令使用 `command: { cmd: "cdp", method: "Domain.method", params: {...} }`。目标仍通过工具级 `targetRef` 指定；运行时会话、物理目标、超时、附加和清理状态不属于公开参数。等待与传输类命令的固定预算比一次性命令更长。
 
 </details>
 
@@ -172,14 +177,14 @@ MCP 进程  --本地 IPC-->  Node 守护进程
                   Chrome 或 Edge 标签页
 ```
 
-| 状态 | 所有者 |
-|---|---|
-| MCP 协议和项目根目录 | 每个智能体独立的 MCP 进程 |
-| 守护进程生命周期 | 用户本地守护进程 |
-| 连接、待处理请求和目标写入队列 | `BrowserBridgeServer` |
-| 当前浏览器和标签页会话 | 会话注册表 |
-| Chrome API 和 CDP 会话 | MV3 Service Worker |
-| 已捕获证据 | 请求级项目产物根目录 |
+| 状态                           | 所有者                    |
+| ------------------------------ | ------------------------- |
+| MCP 协议和项目根目录           | 每个智能体独立的 MCP 进程 |
+| 守护进程生命周期               | 用户本地守护进程          |
+| 连接、待处理请求和目标写入队列 | `BrowserBridgeServer`     |
+| 当前浏览器和标签页会话         | 会话注册表                |
+| Chrome API 和 CDP 会话         | MV3 Service Worker        |
+| 已捕获证据                     | 请求级项目产物根目录      |
 
 源码按职责组织：`src/apps` 包含 MCP 服务器和守护进程；`src/bridge` 负责传输与扩展；`src/commands` 维护公开工具结构和编排；`src/browser-command-runtime` 准备命令执行；`src/browser-page-runtime` 执行页面脚本；`src/browser-runtime` 适配浏览器 I/O；`src/kernels` 保持纯逻辑。页面扫描位于 `src/scan` 和 `capture-src`，观察结果组装位于 `src/commands/observe`。
 
@@ -218,30 +223,39 @@ browser-pilot/
 - WebSocket 桥**只**接受来自已配置 Browser Pilot 扩展来源的升级请求；扩展报告的构建版本过期时，命令分发会拒绝执行。
 - 页面内容**始终**是不可信输入。
 - Browser Pilot **不会**移除页面安全响应头，也**不会**屏蔽页面对话框。
+- 工具结果、网络捕获和产物**原样返回**，Browser Pilot 不对页面或网络内容做脱敏。唯一例外是密码输入框的值，它们不会进入观察结果。请把 `.browser-pilot/artifacts/` 当作原始本地证据来管理。
 - 安全漏洞请通过 GitHub 私密漏洞报告提交。如果该功能不可用，只在公开 issue 中请求私密联系方式 &mdash; 不要附带密钥、令牌或未脱敏证据。
 
 ## 开发
 
-**环境要求：** Node.js 22+、Chrome 或 Edge，以及用于执行仓库任务的 [`mise`](https://mise.jdx.dev/)。
+**环境要求：** Node.js 22+；浏览器集成检查还需要 Chrome 或 Edge。[`mise`](https://mise.jdx.dev/) 可选；`mise.toml` 只负责钉住 Node 版本并转发到下面的 npm 脚本。
 
 ```bash
-mise run verify          # 统一检查：类型检查 + lint + 测试 + 构建
-mise run smoke-browser   # 浏览器集成冒烟测试
+npm run verify           # 统一检查：生成物 + 格式 + 类型检查 + lint + 测试 + 扩展构建
+npm test                 # 确定性 Node 测试（tests/<layer>/ 与 src/ 分层对应）
+npm run smoke:browser    # 浏览器集成冒烟测试
+npm run eval:browser     # 任务评测：输出成功率、耗时和响应大小
+npx prettier --check <files>  # 检查修改文件；使用 --write 格式化
+npx browser-pilot-mcp status   # 诊断本机安装（源码目录下用 npm run mcp -- status）
 ```
 
-运行时代码位于 `src/` 和 `capture-src/`；`dist/` 与 `bridge/browser_pilot_bridge/` 是生成目录。桥接主机和端口范围由 `bridge/browser_bridge_config.json` 管理 &mdash; 修改后运行 `npm run sync:config`。
+运行时代码位于 `src/` 和 `capture-src/`；`dist/` 与 `bridge/browser_pilot_bridge/` 是生成目录，不纳入版本控制。桥接主机和端口范围由 `bridge/browser_bridge_config.json` 管理 &mdash; 修改后运行 `npm run sync:config`。代码格式由 Prettier（`.prettierrc.json`）统一管理，未格式化的文件会导致检查失败。
+
+评测场景、指标和适用范围见[浏览器任务评测](docs/browser-evaluation.md)；验证语义和安装失败处理见[可靠性与恢复](docs/reliability.md)。
 
 ## 贡献
 
-欢迎贡献。请先开 issue 讨论你想改变的内容。
+欢迎贡献。重大架构、公共接口或兼容性变更仍有需求未明确时，先讨论相关问题；已有 issue 或明确的任务讨论即可，常规修复和文档修改不要求另开 issue。
 
 1. Fork 本仓库
-2. 创建功能分支（`git checkout -b feat/amazing-feature`）
+2. 创建功能分支（例如 `git checkout -b codex/amazing-feature`）
 3. 提交更改（`git commit -m 'feat: add amazing feature'`）
-4. 推送到分支（`git push origin feat/amazing-feature`）
+4. 推送到分支（`git push origin codex/amazing-feature`）
 5. 发起 Pull Request
 
-提交前请确保 `mise run verify` 通过。
+按改动影响选择本地检查，具体见[仓库规则](AGENTS.md#testing-guidelines)。纯文档改动检查内容、引用和格式；行为改动增加针对性回归，影响浏览器行为时增加真实浏览器检查。`observe` 和 `mcp` 测试范围都包含多个基础层；单文件测试使用 `node --import tsx --test tests/<layer>/<name>.test.ts`。
+
+CI 在 PR 和 `main` 分支推送时运行，避免功能分支 push 与 PR 重复执行。纯文档改动走轻量检查，其他或无法判断的改动保留 Linux、Windows 双平台完整验证和浏览器检查；`ci result` 汇总两条路径的结果。发布检查仍为必需。交付时报告已完成的检查及阻塞项，没有新变化时不必为每次本地提交重复验证。本地任务完成、提交和发布是按用户授权范围执行的不同操作。
 
 ## 许可证
 

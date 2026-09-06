@@ -66,7 +66,13 @@ function contractJson(value: unknown, seen = new WeakSet<object>()): CanonicalJs
 		const result: Record<string, CanonicalJson> = {};
 		for (const key of Object.keys(value as Record<string, unknown>).sort()) {
 			const child = (value as Record<string, unknown>)[key];
-			if (child === undefined || typeof child === "function" || typeof child === "symbol" || typeof child === "bigint") continue;
+			if (
+				child === undefined ||
+				typeof child === "function" ||
+				typeof child === "symbol" ||
+				typeof child === "bigint"
+			)
+				continue;
 			result[key] = contractJson(child, seen);
 		}
 		seen.delete(value);
@@ -80,21 +86,23 @@ function contractJson(value: unknown, seen = new WeakSet<object>()): CanonicalJs
  * merely because it is itself named `description` or `title`.
  */
 function contractSchema(value: unknown, role: "schema" | "schema-map" | "literal" = "schema"): unknown {
-	if (Array.isArray(value)) return value.map((item) => contractSchema(item, role === "literal" ? "literal" : "schema"));
+	if (Array.isArray(value))
+		return value.map((item) => contractSchema(item, role === "literal" ? "literal" : "schema"));
 	if (!value || typeof value !== "object") return value;
 	const source = value as Record<string, unknown>;
 	const result: Record<string, unknown> = {};
 	for (const key of Object.keys(source)) {
 		if (role === "schema" && NON_CONTRACT_SCHEMA_KEYS.has(key)) continue;
-		const nextRole = role === "literal"
-			? "literal"
-			: role === "schema-map"
-				? "schema"
-				: SCHEMA_MAP_KEYS.has(key)
-					? "schema-map"
-					: SCHEMA_LITERAL_KEYS.has(key)
-						? "literal"
-						: "schema";
+		const nextRole =
+			role === "literal"
+				? "literal"
+				: role === "schema-map"
+					? "schema"
+					: SCHEMA_MAP_KEYS.has(key)
+						? "schema-map"
+						: SCHEMA_LITERAL_KEYS.has(key)
+							? "literal"
+							: "schema";
 		result[key] = contractSchema(source[key], nextRole);
 	}
 	return result;
@@ -111,14 +119,18 @@ function sha256(value: string): string {
 
 function nativeProtocolContractPayload(): Record<string, unknown> {
 	const schema = getNativeCommandProtocolSchema() as unknown as Record<string, unknown>;
-	const commands = Object.fromEntries(Object.entries((schema.commands ?? {}) as Record<string, Record<string, unknown>>).map(([name, spec]) => {
-		const { notes: _notes, ...behavior } = spec;
-		return [name, behavior];
-	}));
-	const errorCodes = Object.fromEntries(Object.entries((schema.errorCodes ?? {}) as Record<string, Record<string, unknown>>).map(([name, spec]) => {
-		const { summary: _summary, ...behavior } = spec;
-		return [name, behavior];
-	}));
+	const commands = Object.fromEntries(
+		Object.entries((schema.commands ?? {}) as Record<string, Record<string, unknown>>).map(([name, spec]) => {
+			const { notes: _notes, ...behavior } = spec;
+			return [name, behavior];
+		}),
+	);
+	const errorCodes = Object.fromEntries(
+		Object.entries((schema.errorCodes ?? {}) as Record<string, Record<string, unknown>>).map(([name, spec]) => {
+			const { summary: _summary, ...behavior } = spec;
+			return [name, behavior];
+		}),
+	);
 	return {
 		name: schema.name,
 		version: schema.version,
@@ -146,19 +158,29 @@ export type CommandContractPayload = {
 
 export function commandContractPayload(definitions: readonly CommandDefinition[]): CommandContractPayload {
 	const commands = definitions
-			.map((definition) => ({
-				name: definition.name,
-				parameters: contractSchema(definition.parameters ?? null),
-			}))
+		.map((definition) => ({
+			name: definition.name,
+			parameters: contractSchema(definition.parameters ?? null),
+		}))
 		.sort((left, right) => left.name.localeCompare(right.name));
 	const nativeProtocolHash = nativeProtocolContractHash();
-		return {
-			commands,
-			daemonProtocolVersion: DAEMON_PROTOCOL_VERSION,
-			nativeProtocolHash,
-			publicSchemaHashes: {
-				pageScanV1: sha256(canonicalContractJson({ schema: PAGE_WORLD_SCAN_SCHEMA, definition: contractSchema(PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA) })),
-			pageObservationV3: sha256(canonicalContractJson({ schema: PAGE_OBSERVATION_SCHEMA_V3, definition: contractSchema(PAGE_OBSERVATION_V3_JSON_SCHEMA) })),
+	return {
+		commands,
+		daemonProtocolVersion: DAEMON_PROTOCOL_VERSION,
+		nativeProtocolHash,
+		publicSchemaHashes: {
+			pageScanV1: sha256(
+				canonicalContractJson({
+					schema: PAGE_WORLD_SCAN_SCHEMA,
+					definition: contractSchema(PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA),
+				}),
+			),
+			pageObservationV3: sha256(
+				canonicalContractJson({
+					schema: PAGE_OBSERVATION_SCHEMA_V3,
+					definition: contractSchema(PAGE_OBSERVATION_V3_JSON_SCHEMA),
+				}),
+			),
 		},
 	};
 }
@@ -189,27 +211,28 @@ export function localDaemonContractIdentity(): DaemonContractIdentity {
 function hasDaemonContractIdentityShape(value: unknown): value is Record<keyof DaemonContractIdentity, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const candidate = value as Partial<DaemonContractIdentity>;
-	return typeof candidate.packageVersion === "string"
-		&& typeof candidate.daemonProtocolVersion === "number"
-		&& Number.isInteger(candidate.daemonProtocolVersion)
-		&& typeof candidate.commandContractVersion === "number"
-		&& Number.isInteger(candidate.commandContractVersion)
-		&& typeof candidate.commandContractHash === "string"
-		&& /^[a-f0-9]{64}$/.test(candidate.commandContractHash)
-		&& typeof candidate.toolCount === "number"
-		&& Number.isInteger(candidate.toolCount)
-		&& candidate.toolCount >= 0;
+	return (
+		typeof candidate.packageVersion === "string" &&
+		typeof candidate.daemonProtocolVersion === "number" &&
+		Number.isInteger(candidate.daemonProtocolVersion) &&
+		typeof candidate.commandContractVersion === "number" &&
+		Number.isInteger(candidate.commandContractVersion) &&
+		typeof candidate.commandContractHash === "string" &&
+		/^[a-f0-9]{64}$/.test(candidate.commandContractHash) &&
+		typeof candidate.toolCount === "number" &&
+		Number.isInteger(candidate.toolCount) &&
+		candidate.toolCount >= 0
+	);
 }
 
-export function compareDaemonContractIdentity(
-	local: DaemonContractIdentity,
-	daemon: unknown,
-): DaemonContractCheck {
-	if (daemon === null) return { ok: false, code: "DAEMON_CONTRACT_MISMATCH", reason: "daemon_missing", mismatches: [] };
-	if (!hasDaemonContractIdentityShape(daemon)) return { ok: false, code: "DAEMON_CONTRACT_MISMATCH", reason: "identity_missing", mismatches: [] };
-	const mismatches = DAEMON_CONTRACT_IDENTITY_FIELDS.flatMap((field): DaemonContractMismatch[] => (
-		Object.is(local[field], daemon[field]) ? [] : [{ field, local: local[field], daemon: daemon[field] }]
-	));
+export function compareDaemonContractIdentity(local: DaemonContractIdentity, daemon: unknown): DaemonContractCheck {
+	if (daemon === null)
+		return { ok: false, code: "DAEMON_CONTRACT_MISMATCH", reason: "daemon_missing", mismatches: [] };
+	if (!hasDaemonContractIdentityShape(daemon))
+		return { ok: false, code: "DAEMON_CONTRACT_MISMATCH", reason: "identity_missing", mismatches: [] };
+	const mismatches = DAEMON_CONTRACT_IDENTITY_FIELDS.flatMap((field): DaemonContractMismatch[] =>
+		Object.is(local[field], daemon[field]) ? [] : [{ field, local: local[field], daemon: daemon[field] }],
+	);
 	return mismatches.length === 0
 		? { ok: true, code: "DAEMON_CONTRACT_MATCH", reason: "match", mismatches }
 		: { ok: false, code: "DAEMON_CONTRACT_MISMATCH", reason: "field_mismatch", mismatches };

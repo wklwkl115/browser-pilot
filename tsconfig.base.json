@@ -7,8 +7,6 @@
     "noUnusedParameters": true,
     "allowJs": false,
     "skipLibCheck": true,
-    "types": [
-      "node"
-    ]
+    "types": ["node"]
   }
 }

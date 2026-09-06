@@ -1,7 +1,7 @@
-# `@browser-pilot/abml-kernel` — the ABML pure-core kernel
+# ABML kernel (`src/kernels/abml`)
 
 This folder is the **pure-core kernel** of ABML, the perception substrate under the `browser_*`
-tools. It models a web page as a trustworthy semantic graph: entities, refs, DOM↔AX fusion,
+tools. It is a source directory, not a separately published package. It models a web page as a trustworthy semantic graph: entities, refs, DOM↔AX fusion,
 identity, relations, diffs, collection completeness, projections, and verification results.
 
 **The one rule:** everything here is **pure** — zero browser, zero Node, zero npm dependencies.
@@ -14,6 +14,10 @@ kernel; the kernel never depends on the runtime.
 ```
 
 This split keeps the kernel readable and unit-testable without a browser.
+
+For the agent-facing vocabulary (refs, entities, frontier, collections, causal, verification) and what
+`browser_observe` actually returns, start with [`docs/concepts.md`](../../../docs/concepts.md). This
+file covers the kernel's internal invariants.
 
 ## Agent-native perception contract
 
@@ -45,24 +49,24 @@ parallel identity graph or bypass ABML ownership, freshness, and execution polic
 
 The modules below make up the kernel's public surface — consumers import them directly.
 
-| Module | Role |
-| --- | --- |
-| `types.ts` | Shared ref aliases and structured verification results. |
-| `entity.ts` | `Entity` / `EntityState` / `EntityStructure` model + builders. |
-| `ax.ts` | **DOM↔AX merge** — backend identity plus bounded geometry/semantic enrichment, DOM-authoritative physical state, AX-authoritative accessible semantics/state/structure. |
-| `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |
-| `semanticText.ts` | Bounded semantic text sanitization and item-preview classification. |
-| `nodeKey.ts` | Stable cross-provider node keys. |
-| `identityBootstrap.ts` | Best-effort scan rect ↔ DOMSnapshot backend identity candidate diagnostics. |
-| `spatialIndex.ts` | Shared bounded spatial candidate index with correctness-preserving overflow fallback. |
-| `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
-| `treeDiff.ts` | Template-level living diff over repeated structures; O(change) projection without ref-mint changes. |
-| `semanticRefAnchor.ts` | Semantic ref-anchor candidate derivation for repeated structures. |
-| `snapshotProjection.ts` | M2c living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
-| `collections.ts` | Collection completeness evidence for long, virtualized, lazy, and paginated structures. |
-| `relations.ts`, `causal.ts` | Semantic relations and causal evidence. |
-| `diff.ts`, `verification.ts` | Entity-level changes and post-action verification. |
-| `pageWorldScan.ts`, `pageObservation.ts` | Page-world input and assembled observation contracts. |
+| Module                                   | Role                                                                                                                                                                    |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `types.ts`                               | Shared ref aliases and structured verification results.                                                                                                                 |
+| `entity.ts`                              | `Entity` / `EntityState` / `EntityStructure` model + builders.                                                                                                          |
+| `ax.ts`                                  | **DOM↔AX merge** — backend identity plus bounded geometry/semantic enrichment, DOM-authoritative physical state, AX-authoritative accessible semantics/state/structure. |
+| `grouping.ts`                            | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers.                                                      |
+| `semanticText.ts`                        | Bounded semantic text sanitization and item-preview classification.                                                                                                     |
+| `nodeKey.ts`                             | Stable cross-provider node keys.                                                                                                                                        |
+| `identityBootstrap.ts`                   | Best-effort scan rect ↔ DOMSnapshot backend identity candidate diagnostics.                                                                                             |
+| `spatialIndex.ts`                        | Shared bounded spatial candidate index with correctness-preserving overflow fallback.                                                                                   |
+| `templating.ts`                          | Structure templating for repeated AX/ARIA sibling groups.                                                                                                               |
+| `treeDiff.ts`                            | Template-level living diff over repeated structures; O(change) projection without ref-mint changes.                                                                     |
+| `semanticRefAnchor.ts`                   | Semantic ref-anchor candidate derivation for repeated structures.                                                                                                       |
+| `snapshotProjection.ts`                  | Persisted snapshot projection — compact current templates plus attached template deltas for saved observe artifacts.                                                    |
+| `collections.ts`                         | Collection completeness evidence for long, virtualized, lazy, and paginated structures.                                                                                 |
+| `relations.ts`, `causal.ts`              | Semantic relations and causal evidence.                                                                                                                                 |
+| `diff.ts`, `verification.ts`             | Entity-level changes and post-action verification.                                                                                                                      |
+| `pageWorldScan.ts`, `pageObservation.ts` | Page-world input and assembled observation contracts.                                                                                                                   |
 
 Generic ref descriptor types, URI minting, stable IDs, and ref-access policy live in
 [`../refs/`](../refs) so resource storage and ABML share one ref owner without
@@ -91,7 +95,7 @@ runtime, Node-only, or npm dependency import is a boundary violation.
 
 - **Improve perception** (new ARIA state/relationship/structure) → it almost always belongs in
   `ax.ts` (the merge), `entity.ts` (the model), `grouping.ts`, `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, `snapshotProjection.ts`, or `collections.ts`. Stay generic —
-	ABML models ARIA patterns, never per-site/per-framework branches.
+  ABML models ARIA patterns, never per-site/per-framework branches.
 - **Improve verification** → keep browser reads in runtime code and put deterministic evidence
   evaluation in `verification.ts`.
 

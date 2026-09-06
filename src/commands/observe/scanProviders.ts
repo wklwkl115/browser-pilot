@@ -1,10 +1,19 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { buildCausalEvents, buildCausalSummary, causalUnavailable, type CausalSummary } from "../../kernels/abml/causal.js";
+import {
+	buildCausalEvents,
+	buildCausalSummary,
+	causalUnavailable,
+	type CausalSummary,
+} from "../../kernels/abml/causal.js";
 import { queryHookDelta, queryNetworkDelta } from "../pageSignals.js";
 import { elapsedMs, type ObserveTimingMetrics } from "./timings.js";
 import type { BaselineResolution } from "./baseline.js";
 import type { ObserveToolParams } from "./common.js";
-import type { ProviderExecutionItem, ProviderExecutionReport, ProviderExecutionStatus } from "../../kernels/abml/pageObservation.js";
+import type {
+	ProviderExecutionItem,
+	ProviderExecutionReport,
+	ProviderExecutionStatus,
+} from "../../kernels/abml/pageObservation.js";
 import type { BrowserBridgeExecutionResult } from "../../ports/BrowserRuntimeTypes.js";
 import { isRecord } from "../../utils/records.js";
 
@@ -20,7 +29,12 @@ type ObserveProvidersOptions = {
 };
 
 type RecorderState = { active: boolean; lastSeq?: number };
-type CausalPlan = { planned: boolean; reservedMs: number; reason: "planned" | "not-required" | "budget-preflight"; probe: boolean };
+type CausalPlan = {
+	planned: boolean;
+	reservedMs: number;
+	reason: "planned" | "not-required" | "budget-preflight";
+	probe: boolean;
+};
 
 function recorderHighWater(value: Record<string, unknown>): number | undefined {
 	const candidate = value.lastSeq ?? value.last_seq ?? value.seq ?? value.eventSeq ?? value.event_seq;
@@ -32,14 +46,19 @@ function recorderStatus(value: unknown, kind: "network" | "hook"): RecorderState
 	const response = isRecord(value) ? value : undefined;
 	if (!response) return undefined;
 	const code = String(response.error_code ?? response.code ?? "");
-	if (response.ok === false) return /NO_SESSION|NOT_INSTALLED|INACTIVE|STOPPED/.test(code) ? { active: false } : undefined;
+	if (response.ok === false)
+		return /NO_SESSION|NOT_INSTALLED|INACTIVE|STOPPED/.test(code) ? { active: false } : undefined;
 	const data = isRecord(response.data) ? response.data : response;
 	const lastSeq = recorderHighWater(data);
 	const state = typeof data.state === "string" ? data.state : undefined;
-	const active = typeof data.active === "boolean"
-		? data.active
-		: state ? !/uninstalled|stopped|inactive/i.test(state)
-			: kind === "hook" ? lastSeq !== undefined : true;
+	const active =
+		typeof data.active === "boolean"
+			? data.active
+			: state
+				? !/uninstalled|stopped|inactive/i.test(state)
+				: kind === "hook"
+					? lastSeq !== undefined
+					: true;
 	return { active, ...(lastSeq !== undefined ? { lastSeq } : {}) };
 }
 
@@ -50,14 +69,34 @@ function batchResults(result: BrowserBridgeExecutionResult): unknown[] {
 	return Array.isArray(data?.results) ? data.results : [];
 }
 
-async function probeRecorderStates(options: ObserveProvidersOptions, timeoutMs: number, network: RecorderState | undefined, hook: RecorderState | undefined): Promise<{ network?: RecorderState; hook?: RecorderState }> {
+async function probeRecorderStates(
+	options: ObserveProvidersOptions,
+	timeoutMs: number,
+	network: RecorderState | undefined,
+	hook: RecorderState | undefined,
+): Promise<{ network?: RecorderState; hook?: RecorderState }> {
 	const commands: Array<{ cmd: "network.status" | "hook.status" }> = [];
 	const indexes: Array<"network" | "hook"> = [];
-	if (options.baseline?.networkSeq !== undefined && !network) { commands.push({ cmd: "network.status" }); indexes.push("network"); }
-	if (options.baseline?.hookSeq !== undefined && !hook) { commands.push({ cmd: "hook.status" }); indexes.push("hook"); }
+	if (options.baseline?.networkSeq !== undefined && !network) {
+		commands.push({ cmd: "network.status" });
+		indexes.push("network");
+	}
+	if (options.baseline?.hookSeq !== undefined && !hook) {
+		commands.push({ cmd: "hook.status" });
+		indexes.push("hook");
+	}
 	if (!commands.length || timeoutMs <= 0) return { network, hook };
 	try {
-		const result = await options.server.sendCommand({ cmd: "batch", commands }, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs, internal: true, signal: options.signal });
+		const result = await options.server.sendCommand(
+			{ cmd: "batch", commands },
+			{
+				browserSessionId: options.params.browserSessionId,
+				tabId: options.tabId,
+				timeoutMs,
+				internal: true,
+				signal: options.signal,
+			},
+		);
 		const results = batchResults(result);
 		let nextNetwork = network;
 		let nextHook = hook;
@@ -92,17 +131,31 @@ function providerReportItem(input: {
 	};
 }
 
-function causalPlan(options: ObserveProvidersOptions, network: RecorderState | undefined, hook: RecorderState | undefined): CausalPlan {
+function causalPlan(
+	options: ObserveProvidersOptions,
+	network: RecorderState | undefined,
+	hook: RecorderState | undefined,
+): CausalPlan {
 	const totalMs = Math.max(0, options.deadlineAt - options.startedAt);
 	const remainingMs = Math.max(0, options.deadlineAt - Date.now());
 	const reservedMs = Math.max(0, remainingMs - Math.min(remainingMs, Math.max(500, Math.ceil(totalMs * 0.1))));
 	const required = options.baseline !== undefined;
 	const planned = required && reservedMs >= 500;
-	const statusUnknown = options.baseline?.networkSeq !== undefined && !network || options.baseline?.hookSeq !== undefined && !hook;
-	return { planned, reservedMs, reason: !required ? "not-required" : planned ? "planned" : "budget-preflight", probe: planned && statusUnknown };
+	const statusUnknown =
+		(options.baseline?.networkSeq !== undefined && !network) || (options.baseline?.hookSeq !== undefined && !hook);
+	return {
+		planned,
+		reservedMs,
+		reason: !required ? "not-required" : planned ? "planned" : "budget-preflight",
+		probe: planned && statusUnknown,
+	};
 }
 
-function causalNetworkPreflight(network: RecorderState | undefined, baselineNetworkSeq: number | undefined, remainingMs: number): CausalSummary | undefined {
+function causalNetworkPreflight(
+	network: RecorderState | undefined,
+	baselineNetworkSeq: number | undefined,
+	remainingMs: number,
+): CausalSummary | undefined {
 	if (network?.active === false) return causalUnavailable("network recorder is known inactive");
 	if (baselineNetworkSeq === undefined) return causalUnavailable("baseline has no network recorder high-water mark");
 	if (!network) return causalUnavailable("network recorder status is unavailable");
@@ -121,11 +174,26 @@ async function queryCausalNetworkDelta(
 		return { causal: preflight ?? causalUnavailable("causal provider preflight failed"), network: knownNetwork };
 	}
 	try {
-		const delta = await queryNetworkDelta(options.server, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs: remainingMs(), sinceSeq: baselineNetworkSeq, signal: options.signal });
-		const network = { active: delta.active, ...(delta.lastSeq !== undefined ? { lastSeq: delta.lastSeq } : knownNetwork.lastSeq !== undefined ? { lastSeq: knownNetwork.lastSeq } : {}) };
+		const delta = await queryNetworkDelta(options.server, {
+			browserSessionId: options.params.browserSessionId,
+			tabId: options.tabId,
+			timeoutMs: remainingMs(),
+			sinceSeq: baselineNetworkSeq,
+			signal: options.signal,
+		});
+		const network = {
+			active: delta.active,
+			...(delta.lastSeq !== undefined
+				? { lastSeq: delta.lastSeq }
+				: knownNetwork.lastSeq !== undefined
+					? { lastSeq: knownNetwork.lastSeq }
+					: {}),
+		};
 		options.server.recordKnownRecorderState?.("network", options.params.browserSessionId, options.tabId, network);
 		return {
-			causal: delta.active ? buildCausalSummary(delta.items, baselineNetworkSeq) : causalUnavailable("network recorder became inactive"),
+			causal: delta.active
+				? buildCausalSummary(delta.items, baselineNetworkSeq)
+				: causalUnavailable("network recorder became inactive"),
 			network,
 		};
 	} catch {
@@ -144,8 +212,21 @@ async function queryCausalHookEvents(
 		return { hook: knownHook };
 	}
 	try {
-		const delta = await queryHookDelta(options.server, { browserSessionId: options.params.browserSessionId, tabId: options.tabId, timeoutMs: remainingMs(), sinceSeq: hookSeq, signal: options.signal });
-		const hook = { active: delta.active, ...(delta.lastSeq !== undefined ? { lastSeq: delta.lastSeq } : knownHook.lastSeq !== undefined ? { lastSeq: knownHook.lastSeq } : {}) };
+		const delta = await queryHookDelta(options.server, {
+			browserSessionId: options.params.browserSessionId,
+			tabId: options.tabId,
+			timeoutMs: remainingMs(),
+			sinceSeq: hookSeq,
+			signal: options.signal,
+		});
+		const hook = {
+			active: delta.active,
+			...(delta.lastSeq !== undefined
+				? { lastSeq: delta.lastSeq }
+				: knownHook.lastSeq !== undefined
+					? { lastSeq: knownHook.lastSeq }
+					: {}),
+		};
 		options.server.recordKnownRecorderState?.("hook", options.params.browserSessionId, options.tabId, hook);
 		const events = buildCausalEvents(delta.items, hookSeq);
 		return { ...(events.events.length ? { events } : {}), hook };
@@ -155,9 +236,24 @@ async function queryCausalHookEvents(
 	}
 }
 
-async function runCausalProvider(options: ObserveProvidersOptions, item: CausalPlan, initialNetwork: RecorderState | undefined, initialHook: RecorderState | undefined): Promise<{ value?: CausalSummary; report: ProviderExecutionItem; network?: RecorderState; hook?: RecorderState }> {
+async function runCausalProvider(
+	options: ObserveProvidersOptions,
+	item: CausalPlan,
+	initialNetwork: RecorderState | undefined,
+	initialHook: RecorderState | undefined,
+): Promise<{ value?: CausalSummary; report: ProviderExecutionItem; network?: RecorderState; hook?: RecorderState }> {
 	if (!item.planned) {
-		return { network: initialNetwork, hook: initialHook, report: providerReportItem({ planned: false, status: "skipped", reason: item.reason, reservedMs: item.reservedMs, actualMs: 0 }) };
+		return {
+			network: initialNetwork,
+			hook: initialHook,
+			report: providerReportItem({
+				planned: false,
+				status: "skipped",
+				reason: item.reason,
+				reservedMs: item.reservedMs,
+				actualMs: 0,
+			}),
+		};
 	}
 	const startedAt = Date.now();
 	const providerDeadline = Math.min(options.deadlineAt, startedAt + item.reservedMs);
@@ -182,13 +278,23 @@ async function runCausalProvider(options: ObserveProvidersOptions, item: CausalP
 		value: causal,
 		network: knownNetwork,
 		hook: knownHook,
-		report: providerReportItem({ planned: true, status: "unavailable" in causal ? "degraded" : "executed", ...( "unavailable" in causal ? { reason: causal.unavailable } : {}), reservedMs: item.reservedMs, actualMs }),
+		report: providerReportItem({
+			planned: true,
+			status: "unavailable" in causal ? "degraded" : "executed",
+			...("unavailable" in causal ? { reason: causal.unavailable } : {}),
+			reservedMs: item.reservedMs,
+			actualMs,
+		}),
 	};
 }
 
 export async function runObserveProviders(options: ObserveProvidersOptions) {
 	options.signal?.throwIfAborted();
-	const knownNetwork = options.server.getKnownRecorderState?.("network", options.params.browserSessionId, options.tabId);
+	const knownNetwork = options.server.getKnownRecorderState?.(
+		"network",
+		options.params.browserSessionId,
+		options.tabId,
+	);
 	const knownHook = options.server.getKnownRecorderState?.("hook", options.params.browserSessionId, options.tabId);
 	const plan = causalPlan(options, knownNetwork, knownHook);
 	const causalResult = await runCausalProvider(options, plan, knownNetwork, knownHook);
@@ -197,8 +303,14 @@ export async function runObserveProviders(options: ObserveProvidersOptions) {
 	};
 	return {
 		causal: causalResult.value,
-		recorderState: causalResult.network ?? { active: false, ...(options.baseline?.networkSeq !== undefined ? { lastSeq: options.baseline.networkSeq } : {}) },
-		hookState: causalResult.hook ?? { active: false, ...(options.baseline?.hookSeq !== undefined ? { lastSeq: options.baseline.hookSeq } : {}) },
+		recorderState: causalResult.network ?? {
+			active: false,
+			...(options.baseline?.networkSeq !== undefined ? { lastSeq: options.baseline.networkSeq } : {}),
+		},
+		hookState: causalResult.hook ?? {
+			active: false,
+			...(options.baseline?.hookSeq !== undefined ? { lastSeq: options.baseline.hookSeq } : {}),
+		},
 		report,
 	};
 }

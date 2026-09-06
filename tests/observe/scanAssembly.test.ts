@@ -13,7 +13,12 @@ test("successful ABML assembly does not require scan fallback entities", () => {
 		state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true },
 		source: "dom",
 	};
-	const offscreen = { ...entity, ref: "bp-ref://control/offscreen", name: "Offscreen", state: { ...entity.state, inViewport: false } };
+	const offscreen = {
+		...entity,
+		ref: "bp-ref://control/offscreen",
+		name: "Offscreen",
+		state: { ...entity.state, inViewport: false },
+	};
 	const result = assembleScanSummary({
 		summaryData: pageWorldScanBundle(),
 		abmlEntities: [offscreen, entity],
@@ -34,7 +39,15 @@ test("ABML assembly attributes post-action requests to the recorded action ref",
 		kind: "control",
 		role: "button",
 		name: "Like",
-		state: { visible: true, occluded: false, disabled: false, focused: false, pressed: true, editable: false, inViewport: true },
+		state: {
+			visible: true,
+			occluded: false,
+			disabled: false,
+			focused: false,
+			pressed: true,
+			editable: false,
+			inViewport: true,
+		},
 		source: "dom",
 	};
 	const result = assembleScanSummary({
@@ -46,13 +59,15 @@ test("ABML assembly attributes post-action requests to the recorded action ref",
 		action: { ref: actionRef, verb: "input.ref", at: 10 },
 		ledgerDeltaFields: {},
 	});
-	assert.deepEqual(result.envelopeEntities[0]?.relations, [{
-		type: "triggered",
-		targetRef: "bp-ref://network/like",
-		source: "timing",
-		confidence: "medium",
-		evidence: { since: 0, initiatorType: "script" },
-	}]);
+	assert.deepEqual(result.envelopeEntities[0]?.relations, [
+		{
+			type: "triggered",
+			targetRef: "bp-ref://network/like",
+			source: "timing",
+			confidence: "medium",
+			evidence: { since: 0, initiatorType: "script" },
+		},
+	]);
 	const missingAction = assembleScanSummary({
 		summaryData: pageWorldScanBundle(),
 		abmlEntities: [entity],

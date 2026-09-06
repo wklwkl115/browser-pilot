@@ -13,10 +13,6 @@ function assertInsideRoot(target) {
 	return resolved;
 }
 
-for (const relativePath of [
-	"dist",
-	"bridge/browser_pilot_bridge/dist",
-	".cache/tsconfig.build.tsbuildinfo",
-]) {
+for (const relativePath of ["dist", "bridge/browser_pilot_bridge/dist", ".cache/tsconfig.build.tsbuildinfo"]) {
 	rmSync(assertInsideRoot(path.join(root, relativePath)), { recursive: true, force: true });
 }

@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import { timingSafeEqual } from "node:crypto";
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
@@ -31,7 +32,11 @@ type BrowserBridgeClientMessageServiceDeps = {
 	clearRecorderStateForReplacement?: (fromTabId: number, toTabId: number, browserSessionId: string) => void;
 	notifyExtensionReady?: () => void;
 	handshakeTimeoutMs?: number;
+	/** When set, ext_ready must carry a matching `secret`; unpaired extensions are closed with 1008. */
+	bridgeSecret?: string | (() => string | undefined);
 };
+
+export const BRIDGE_SECRET_MISMATCH_REASON = "secret_mismatch";
 
 type AppliedTabReplacement = ReturnType<BrowserTabSessionRouter["applyTabReplacements"]>[number];
 
@@ -54,9 +59,16 @@ export class BrowserBridgeClientMessageService {
 		}, this.handshakeTimeoutMs);
 		timer.unref();
 		this.handshakeTimers.set(ws, timer);
-		ws.on("message", (data) => void this.handleClientMessage(ws, data.toString()).catch((error) => {
-			console.error("[browser-pilot-bridge] WebSocket message handler failed", this.redactMessageError(error, data.toString()));
-		}));
+		ws.on(
+			"message",
+			(data) =>
+				void this.handleClientMessage(ws, data.toString()).catch((error) => {
+					console.error(
+						"[browser-pilot-bridge] WebSocket message handler failed",
+						this.redactMessageError(error, data.toString()),
+					);
+				}),
+		);
 		ws.on("pong", () => this.deps.clients.markPong(ws));
 		ws.on("close", () => this.unregisterClient(ws, "ws_close"));
 		ws.on("error", () => this.unregisterClient(ws, "ws_error"));
@@ -68,7 +80,12 @@ export class BrowserBridgeClientMessageService {
 		this.clearHandshakeTimeout(ws);
 		const instanceId = info.extensionInstanceId;
 		this.deps.pendingRequests.rejectClient(ws);
-		if (reason) this.deps.clients.recordDisconnect(reason, instanceId, !this.deps.clients.hasOpenInstanceClient(instanceId, ws));
+		if (reason)
+			this.deps.clients.recordDisconnect(
+				reason,
+				instanceId,
+				!this.deps.clients.hasOpenInstanceClient(instanceId, ws),
+			);
 		this.deps.clients.unregister(ws);
 		this.deps.tabs.markClientDisconnected(ws);
 	}
@@ -77,9 +94,11 @@ export class BrowserBridgeClientMessageService {
 		for (const replacement of replacements) {
 			if (!replacement.sameTab) {
 				this.deps.queues.migrateTabQueue(replacement.browserId, replacement.from, replacement.to);
-				if (browserSessionId) this.deps.migratePerceptionLedger?.(replacement.from, replacement.to, browserSessionId);
+				if (browserSessionId)
+					this.deps.migratePerceptionLedger?.(replacement.from, replacement.to, browserSessionId);
 			}
-			if (browserSessionId) this.deps.clearRecorderStateForReplacement?.(replacement.from, replacement.to, browserSessionId);
+			if (browserSessionId)
+				this.deps.clearRecorderStateForReplacement?.(replacement.from, replacement.to, browserSessionId);
 		}
 	}
 
@@ -97,7 +116,7 @@ export class BrowserBridgeClientMessageService {
 		if (type !== "ext_ready" && !this.readyClients.has(ws)) return;
 		this.deps.clients.markSeen(ws);
 		if (type === "ping") return;
-		if (type === "ext_ready" && !this.isValidExtensionReady(message)) return;
+		if (type === "ext_ready" && !this.isValidExtensionReady(ws, message)) return;
 		if (type === "ext_ready" || type === "tabs_update") {
 			const defaultSession = this.deps.browserSessions.defaultSession();
 			const selectedClient = this.deps.browserSessions.selectedOpenClient(defaultSession);
@@ -109,14 +128,21 @@ export class BrowserBridgeClientMessageService {
 			this.deps.clients.updateClientInfo(ws, message.bridge || message.extension);
 			const incomingInfo = this.deps.clients.info(ws);
 			const incomingInstanceId = incomingInfo?.extensionInstanceId;
-			const replacesSelectedInstance = selectedClient !== undefined
-				&& selectedInstanceId !== undefined
-				&& selectedInstanceId === incomingInstanceId;
+			const replacesSelectedInstance =
+				selectedClient !== undefined &&
+				selectedInstanceId !== undefined &&
+				selectedInstanceId === incomingInstanceId;
 			if (type === "ext_ready") {
 				this.clearHandshakeTimeout(ws);
-				const upgradesStaleSelection = selectedInfo?.extensionStale === true && incomingInfo?.extensionStale === false;
-				const downgradesCurrentSelection = selectedInfo?.extensionStale === false && incomingInfo?.extensionStale === true;
-				if (selectedClient && selectedClient !== ws && (downgradesCurrentSelection || (!replacesSelectedInstance && !upgradesStaleSelection))) {
+				const upgradesStaleSelection =
+					selectedInfo?.extensionStale === true && incomingInfo?.extensionStale === false;
+				const downgradesCurrentSelection =
+					selectedInfo?.extensionStale === false && incomingInfo?.extensionStale === true;
+				if (
+					selectedClient &&
+					selectedClient !== ws &&
+					(downgradesCurrentSelection || (!replacesSelectedInstance && !upgradesStaleSelection))
+				) {
 					this.unregisterClient(ws);
 					if (ws.readyState === WebSocket.OPEN) ws.close(1008, "Another browser is already connected");
 					return;
@@ -125,26 +151,35 @@ export class BrowserBridgeClientMessageService {
 				this.readyClients.add(ws);
 				// Classify before removing the previous owner so reconnect metrics retain context.
 				const info = this.deps.clients.info(ws);
-				const sameSocketRestart = previousInstanceId !== undefined
-					&& previousInstanceId === info?.extensionInstanceId
-					&& previousWorkerBootId !== undefined
-					&& info?.workerBootId !== undefined
-					&& previousWorkerBootId !== info.workerBootId;
-				const sameSocketDuplicate = previousInstanceId !== undefined
-					&& previousInstanceId === info?.extensionInstanceId
-					&& previousWorkerBootId !== undefined
-					&& previousWorkerBootId === info?.workerBootId;
-				const connectKind = sameSocketRestart ? "sw-restart" : sameSocketDuplicate ? "duplicate" : this.deps.clients.classifyConnect(ws, info?.extensionInstanceId, info?.workerBootId);
+				const sameSocketRestart =
+					previousInstanceId !== undefined &&
+					previousInstanceId === info?.extensionInstanceId &&
+					previousWorkerBootId !== undefined &&
+					info?.workerBootId !== undefined &&
+					previousWorkerBootId !== info.workerBootId;
+				const sameSocketDuplicate =
+					previousInstanceId !== undefined &&
+					previousInstanceId === info?.extensionInstanceId &&
+					previousWorkerBootId !== undefined &&
+					previousWorkerBootId === info?.workerBootId;
+				const connectKind = sameSocketRestart
+					? "sw-restart"
+					: sameSocketDuplicate
+						? "duplicate"
+						: this.deps.clients.classifyConnect(ws, info?.extensionInstanceId, info?.workerBootId);
 				if (info) info.connectKind = connectKind;
 				this.deps.clients.recordConnect(connectKind, info?.extensionInstanceId, info?.workerBootId);
 				this.deps.clients.recordHandshake();
 				const superseded = this.deps.clients.supersedeClients(ws);
 				for (const stale of superseded) this.unregisterClient(stale, "superseded");
 			}
-			const replacements = Array.isArray(message.replaced) ? this.deps.tabs.applyTabReplacements(message.replaced, ws) : [];
+			const replacements = Array.isArray(message.replaced)
+				? this.deps.tabs.applyTabReplacements(message.replaced, ws)
+				: [];
 			this.deps.tabs.updateTabs(Array.isArray(message.tabs) ? message.tabs : [], ws);
 			this.deps.tabs.recordTabActivation(message.activation, ws);
-			const affectedBrowserSessionId = this.deps.browserSessions.selectedOpenClient(defaultSession) === ws ? defaultSession.id : undefined;
+			const affectedBrowserSessionId =
+				this.deps.browserSessions.selectedOpenClient(defaultSession) === ws ? defaultSession.id : undefined;
 			this.applyReplacementSideEffects(replacements, affectedBrowserSessionId);
 			this.deps.notifyExtensionReady?.();
 			return;
@@ -161,7 +196,13 @@ export class BrowserBridgeClientMessageService {
 				this.deps.pendingRequests.rejectBrowserError(id, ws, message.error, message.result, diagnostics);
 				return;
 			}
-			this.deps.pendingRequests.resolve(id, ws, message.result, Array.isArray(message.newTabs) ? message.newTabs : [], diagnostics);
+			this.deps.pendingRequests.resolve(
+				id,
+				ws,
+				message.result,
+				Array.isArray(message.newTabs) ? message.newTabs : [],
+				diagnostics,
+			);
 		}
 	}
 
@@ -171,11 +212,25 @@ export class BrowserBridgeClientMessageService {
 		this.handshakeTimers.delete(ws);
 	}
 
-	private isValidExtensionReady(message: IncomingMessage): boolean {
+	private isValidExtensionReady(ws: WebSocket, message: IncomingMessage): boolean {
 		const bridge = message.bridge;
-		return !!bridge && typeof bridge === "object" && !Array.isArray(bridge)
-			&& typeof (bridge as Record<string, unknown>).id === "string"
-			&& (bridge as Record<string, unknown>).id !== "";
+		const validIdentity =
+			!!bridge &&
+			typeof bridge === "object" &&
+			!Array.isArray(bridge) &&
+			typeof (bridge as Record<string, unknown>).id === "string" &&
+			(bridge as Record<string, unknown>).id !== "";
+		if (!validIdentity) return false;
+		const configured = this.deps.bridgeSecret;
+		const expected = typeof configured === "function" ? configured() : configured;
+		if (!expected) return true;
+		const actual = (bridge as Record<string, unknown>).secret;
+		const actualBytes = Buffer.from(typeof actual === "string" ? actual : "");
+		const expectedBytes = Buffer.from(expected);
+		if (actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes)) return true;
+		this.unregisterClient(ws, BRIDGE_SECRET_MISMATCH_REASON);
+		if (ws.readyState === WebSocket.OPEN) ws.close(1008, BRIDGE_SECRET_MISMATCH_REASON);
+		return false;
 	}
 
 	private redactMessageError(error: unknown, raw: string): Record<string, unknown> {

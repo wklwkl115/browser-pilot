@@ -13,8 +13,28 @@ export type EntityChange = {
 };
 
 export type EntityDiffSalienceItem =
-	| { kind: "changed"; ref: string; changeKind: EntityChangeKind; score: number; signal: string; entityKind?: string; role?: string; name?: string; fields: string[]; before?: unknown; after?: unknown }
-	| { kind: "churn"; score: number; signal: string; appeared: number; disappeared: number; sampleAppeared: string[]; sampleDisappeared: string[] };
+	| {
+			kind: "changed";
+			ref: string;
+			changeKind: EntityChangeKind;
+			score: number;
+			signal: string;
+			entityKind?: string;
+			role?: string;
+			name?: string;
+			fields: string[];
+			before?: unknown;
+			after?: unknown;
+	  }
+	| {
+			kind: "churn";
+			score: number;
+			signal: string;
+			appeared: number;
+			disappeared: number;
+			sampleAppeared: string[];
+			sampleDisappeared: string[];
+	  };
 
 export type EntityDiffSalience = {
 	changed: number;
@@ -52,7 +72,10 @@ const STATE_KEYS: Array<keyof EntityState> = [
 	"inViewport",
 ];
 
-function stateDelta(before: EntityState, after: EntityState): { before: Partial<EntityState>; after: Partial<EntityState> } | undefined {
+function stateDelta(
+	before: EntityState,
+	after: EntityState,
+): { before: Partial<EntityState>; after: Partial<EntityState> } | undefined {
 	const beforeDelta: Partial<EntityState> = {};
 	const afterDelta: Partial<EntityState> = {};
 	for (const key of STATE_KEYS) {
@@ -112,7 +135,9 @@ function changedFields(change: EntityChange): string[] {
 	return Array.from(new Set([...before, ...after]));
 }
 
-function entityLabel(entity: Entity | undefined): Pick<Extract<EntityDiffSalienceItem, { kind: "changed" }>, "entityKind" | "role" | "name"> {
+function entityLabel(
+	entity: Entity | undefined,
+): Pick<Extract<EntityDiffSalienceItem, { kind: "changed" }>, "entityKind" | "role" | "name"> {
 	if (!entity) return {};
 	return {
 		entityKind: entity.kind,
@@ -132,7 +157,8 @@ function changeScore(change: EntityChange, entity: Entity | undefined, focusedRe
 	if (change.ref === focusedRef) score += 30;
 	const fields = changedFields(change);
 	for (const field of fields) {
-		if (["value", "checked", "selected", "pressed", "expanded", "current", "disabled", "focused"].includes(field)) score += 8;
+		if (["value", "checked", "selected", "pressed", "expanded", "current", "disabled", "focused"].includes(field))
+			score += 8;
 	}
 	return score;
 }
@@ -163,17 +189,20 @@ export function summarizeEntityDiff(diff: EntityDiff, before: Entity[] = [], aft
 		};
 	});
 	changedItems.sort((a, b) => b.score - a.score || compareCodepoint(a.signal, b.signal));
-	const churn = diff.appeared.length || diff.disappeared.length
-		? [{
-			kind: "churn" as const,
-			score: 0,
-			signal: `appeared:${diff.appeared.length} disappeared:${diff.disappeared.length}`,
-			appeared: diff.appeared.length,
-			disappeared: diff.disappeared.length,
-			sampleAppeared: diff.appeared.slice(0, 8),
-			sampleDisappeared: diff.disappeared.slice(0, 8),
-		}]
-		: [];
+	const churn =
+		diff.appeared.length || diff.disappeared.length
+			? [
+					{
+						kind: "churn" as const,
+						score: 0,
+						signal: `appeared:${diff.appeared.length} disappeared:${diff.disappeared.length}`,
+						appeared: diff.appeared.length,
+						disappeared: diff.disappeared.length,
+						sampleAppeared: diff.appeared.slice(0, 8),
+						sampleDisappeared: diff.disappeared.slice(0, 8),
+					},
+				]
+			: [];
 	return {
 		changed: diff.changed.length,
 		appeared: diff.appeared.length,

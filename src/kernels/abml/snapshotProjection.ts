@@ -1,6 +1,6 @@
-// ABML mechanism arm — M2c living snapshot projection (pure core).
+// Concept: "Template and tree diff" (docs/concepts.md) — persisted snapshot projection (pure core).
 //
-// M1 emits current structure templates and M2a emits template-level deltas. This module combines
+// templating.ts emits current structure templates and treeDiff.ts emits template-level deltas. This module combines
 // those two ARIA-grounded views into a compact persisted projection: current templates + attached
 // delta buckets where available. It intentionally does not mint refs, resolve actions, or infer DOM
 // structure from tag/class/selector patterns.
@@ -67,11 +67,19 @@ export type SnapshotProjectionOptions = {
 };
 
 function suppressRedundantTextLeafGroups(groups: TemplateGroup[]): TemplateGroup[] {
-	const scopesWithStructuralTemplates = new Set(groups
-		.filter((group) => isActionableOrStructural(group.descriptor))
-		.map((group) => structureScopeKey(group.descriptor)));
+	const scopesWithStructuralTemplates = new Set(
+		groups
+			.filter((group) => isActionableOrStructural(group.descriptor))
+			.map((group) => structureScopeKey(group.descriptor)),
+	);
 	if (!scopesWithStructuralTemplates.size) return groups;
-	return groups.filter((group) => !(isPureTextLeaf(group.descriptor) && scopesWithStructuralTemplates.has(structureScopeKey(group.descriptor))));
+	return groups.filter(
+		(group) =>
+			!(
+				isPureTextLeaf(group.descriptor) &&
+				scopesWithStructuralTemplates.has(structureScopeKey(group.descriptor))
+			),
+	);
 }
 
 function groupEntities(entities: Entity[]): TemplateGroup[] {
@@ -100,7 +108,15 @@ function projectionDelta(diff: TreeTemplateDiff): SnapshotProjectionDelta | unde
 		appeared: cloneInstanceBucket(diff.appeared),
 		disappeared: cloneInstanceBucket(diff.disappeared),
 		changed: cloneChangedBucket(diff.changed),
-		...(diff.reordered ? { reordered: { ...diff.reordered, beforeSample: [...diff.reordered.beforeSample], afterSample: [...diff.reordered.afterSample] } } : {}),
+		...(diff.reordered
+			? {
+					reordered: {
+						...diff.reordered,
+						beforeSample: [...diff.reordered.beforeSample],
+						afterSample: [...diff.reordered.afterSample],
+					},
+				}
+			: {}),
 	};
 }
 
@@ -146,7 +162,10 @@ function deltaOnlyTemplate(diff: TreeTemplateDiff, delta: SnapshotProjectionDelt
 	};
 }
 
-export function buildSnapshotProjection(entities: Entity[], options: SnapshotProjectionOptions = {}): SnapshotProjection {
+export function buildSnapshotProjection(
+	entities: Entity[],
+	options: SnapshotProjectionOptions = {},
+): SnapshotProjection {
 	const deltaByKey = new Map<string, SnapshotProjectionDelta>();
 	for (const diff of options.treeDiff?.templates ?? []) {
 		const delta = projectionDelta(diff);
@@ -163,16 +182,28 @@ export function buildSnapshotProjection(entities: Entity[], options: SnapshotPro
 		if (!delta) continue;
 		templates.push(deltaOnlyTemplate(diff, delta));
 	}
-	const sorted = templates.sort((a, b) => templateRank(a) - templateRank(b) || Math.max(b.count, b.delta?.beforeCount ?? 0) - Math.max(a.count, a.delta?.beforeCount ?? 0));
+	const sorted = templates.sort(
+		(a, b) =>
+			templateRank(a) - templateRank(b) ||
+			Math.max(b.count, b.delta?.beforeCount ?? 0) - Math.max(a.count, a.delta?.beforeCount ?? 0),
+	);
 	const summary: SnapshotProjectionSummary = {
 		templateCount: sorted.length,
 		instanceCount: sorted.reduce((sum, item) => sum + item.count, 0),
 		projectedInstanceRefCount: sorted.reduce((sum, item) => sum + item.instanceRefCount, 0),
-		...(typeof options.treeDiff?.summary.changedTemplateCount === "number" ? { changedTemplateCount: options.treeDiff.summary.changedTemplateCount } : {}),
-		...(typeof options.treeDiff?.summary.appeared === "number" ? { appeared: options.treeDiff.summary.appeared } : {}),
-		...(typeof options.treeDiff?.summary.disappeared === "number" ? { disappeared: options.treeDiff.summary.disappeared } : {}),
+		...(typeof options.treeDiff?.summary.changedTemplateCount === "number"
+			? { changedTemplateCount: options.treeDiff.summary.changedTemplateCount }
+			: {}),
+		...(typeof options.treeDiff?.summary.appeared === "number"
+			? { appeared: options.treeDiff.summary.appeared }
+			: {}),
+		...(typeof options.treeDiff?.summary.disappeared === "number"
+			? { disappeared: options.treeDiff.summary.disappeared }
+			: {}),
 		...(typeof options.treeDiff?.summary.changed === "number" ? { changed: options.treeDiff.summary.changed } : {}),
-		...(typeof options.treeDiff?.summary.reordered === "number" ? { reordered: options.treeDiff.summary.reordered } : {}),
+		...(typeof options.treeDiff?.summary.reordered === "number"
+			? { reordered: options.treeDiff.summary.reordered }
+			: {}),
 		...(options.treeDiff?.summary.partialBaseline ? { partialBaseline: true } : {}),
 		...(options.treeDiff?.summary.unavailable ? { unavailable: options.treeDiff.summary.unavailable } : {}),
 	};

@@ -1,6 +1,13 @@
+// Concept: "Ref" locators (docs/concepts.md). Best-effort matching of scan geometry to DOMSnapshot
+// backend node ids. Diagnostic only: it never promotes identity or actionability (see README).
 import { finiteNumber as num, isRecord } from "../../utils/records.js";
 import type { PageWorldScanBundleV1, ScanActionable } from "./pageWorldScan.js";
-import { buildBoundedSpatialIndex, queryBoundedSpatialIndex, type BoundedSpatialIndex, type SpatialRect } from "./spatialIndex.js";
+import {
+	buildBoundedSpatialIndex,
+	queryBoundedSpatialIndex,
+	type BoundedSpatialIndex,
+	type SpatialRect,
+} from "./spatialIndex.js";
 
 type Rect = SpatialRect;
 type GeometryIndex = {
@@ -8,7 +15,12 @@ type GeometryIndex = {
 	byId: Map<string, SnapshotGeometryEntry>;
 	spatial: BoundedSpatialIndex<SnapshotGeometryEntry>;
 };
-type BootstrapOptions = { scanCapturedAt?: number; scanCapturedAtIso?: string; snapshotStartedAt?: string; snapshotEndedAt?: string };
+type BootstrapOptions = {
+	scanCapturedAt?: number;
+	scanCapturedAtIso?: string;
+	snapshotStartedAt?: string;
+	snapshotEndedAt?: string;
+};
 
 export type SnapshotGeometryEntry = {
 	backendNodeId: number;
@@ -88,14 +100,30 @@ function idFromSimpleSelector(selector: unknown): string | undefined {
 	return match?.[1];
 }
 
-function countStatuses(records: BackendNodeIdBootstrapRecord[]): Omit<BackendNodeIdBootstrapStats, "total" | "coverage" | "matchThreshold" | "coordinateSpace" | "viewportKnown" | "records" | "sampleWindowMs" | "scanCapturedAt" | "snapshotStartedAt" | "snapshotEndedAt"> {
+function countStatuses(
+	records: BackendNodeIdBootstrapRecord[],
+): Omit<
+	BackendNodeIdBootstrapStats,
+	| "total"
+	| "coverage"
+	| "matchThreshold"
+	| "coordinateSpace"
+	| "viewportKnown"
+	| "records"
+	| "sampleWindowMs"
+	| "scanCapturedAt"
+	| "snapshotStartedAt"
+	| "snapshotEndedAt"
+> {
 	const counts = { matched: 0, ambiguous: 0, stale: 0, missing: 0, unsupported: 0 };
 	for (const item of records) counts[item.status] += 1;
 	return counts;
 }
 
 function indexEntries(entries: SnapshotGeometryEntry[]): SnapshotGeometryEntry[] {
-	return entries.filter((entry) => Number.isFinite(entry.backendNodeId) && entry.backendNodeId > 0 && rectArea(entry.bounds) > 0);
+	return entries.filter(
+		(entry) => Number.isFinite(entry.backendNodeId) && entry.backendNodeId > 0 && rectArea(entry.bounds) > 0,
+	);
 }
 
 function entriesById(entries: SnapshotGeometryEntry[]): Map<string, SnapshotGeometryEntry> {
@@ -105,10 +133,13 @@ function entriesById(entries: SnapshotGeometryEntry[]): Map<string, SnapshotGeom
 }
 
 function buildGeometryIndex(entries: SnapshotGeometryEntry[]): GeometryIndex {
-	const spatial = buildBoundedSpatialIndex(entries.map((entry) => ({ value: entry, rect: entry.bounds })), {
-		bucketSize: GEOMETRY_BUCKET_SIZE,
-		maxBucketsPerRect: MAX_GEOMETRY_BUCKETS_PER_RECT,
-	});
+	const spatial = buildBoundedSpatialIndex(
+		entries.map((entry) => ({ value: entry, rect: entry.bounds })),
+		{
+			bucketSize: GEOMETRY_BUCKET_SIZE,
+			maxBucketsPerRect: MAX_GEOMETRY_BUCKETS_PER_RECT,
+		},
+	);
 	return { entries, byId: entriesById(entries), spatial };
 }
 
@@ -121,7 +152,10 @@ function actionableJsonPath(item: ScanActionable, index: number): string {
 	return `data.structure.actionables[${actionableIndex(item, index)}]`;
 }
 
-function highIouSummary(scanRect: Rect, index: GeometryIndex): { count: number; best?: SnapshotGeometryEntry; bestIou: number } {
+function highIouSummary(
+	scanRect: Rect,
+	index: GeometryIndex,
+): { count: number; best?: SnapshotGeometryEntry; bestIou: number } {
 	let count = 0;
 	let best: SnapshotGeometryEntry | undefined;
 	let bestIou = 0;
@@ -147,7 +181,11 @@ function sampleWindowMs(options: BootstrapOptions): number | undefined {
 	return Math.max(0, endedAt - options.scanCapturedAt);
 }
 
-function buildStats(records: BackendNodeIdBootstrapRecord[], viewportKnown: boolean, options: BootstrapOptions): BackendNodeIdBootstrapStats {
+function buildStats(
+	records: BackendNodeIdBootstrapRecord[],
+	viewportKnown: boolean,
+	options: BootstrapOptions,
+): BackendNodeIdBootstrapStats {
 	const counts = countStatuses(records);
 	const windowMs = sampleWindowMs(options);
 	return {
@@ -169,20 +207,89 @@ function bootstrapActionable(item: ScanActionable, index: number, geometryIndex:
 	const jsonPath = actionableJsonPath(item, index);
 	const selector = typeof item.selector === "string" ? item.selector : undefined;
 	const scanRect = rectFromScan(item.documentRect ?? item.rect);
-	if (!scanRect || !geometryIndex.entries.length) return { item, record: { jsonPath, selector, status: "unsupported" as const, reason: !scanRect ? "scan-rect-unavailable" : "snapshot-geometry-unavailable" } };
+	if (!scanRect || !geometryIndex.entries.length)
+		return {
+			item,
+			record: {
+				jsonPath,
+				selector,
+				status: "unsupported" as const,
+				reason: !scanRect ? "scan-rect-unavailable" : "snapshot-geometry-unavailable",
+			},
+		};
 	const summary = highIouSummary(scanRect, geometryIndex);
-	if (summary.count > 1) return { item: { ...item, backendNodeIdBootstrap: { status: "ambiguous", reason: "multiple-high-iou-candidates", candidateCount: summary.count } }, record: { jsonPath, selector, status: "ambiguous" as const, reason: "multiple-high-iou-candidates", candidateCount: summary.count, scanRect, iou: Number(summary.bestIou.toFixed(3)) } };
+	if (summary.count > 1)
+		return {
+			item: {
+				...item,
+				backendNodeIdBootstrap: {
+					status: "ambiguous",
+					reason: "multiple-high-iou-candidates",
+					candidateCount: summary.count,
+				},
+			},
+			record: {
+				jsonPath,
+				selector,
+				status: "ambiguous" as const,
+				reason: "multiple-high-iou-candidates",
+				candidateCount: summary.count,
+				scanRect,
+				iou: Number(summary.bestIou.toFixed(3)),
+			},
+		};
 	if (summary.best) {
 		const iou = Number(summary.bestIou.toFixed(3));
-		return { item: { ...item, backendNodeIdBootstrap: { status: "matched", reason: "unique-high-iou", iou } }, record: { jsonPath, selector, status: "matched" as const, reason: "unique-high-iou", backendNodeId: summary.best.backendNodeId, iou, candidateCount: 1, scanRect, snapshotBounds: summary.best.bounds } };
+		return {
+			item: { ...item, backendNodeIdBootstrap: { status: "matched", reason: "unique-high-iou", iou } },
+			record: {
+				jsonPath,
+				selector,
+				status: "matched" as const,
+				reason: "unique-high-iou",
+				backendNodeId: summary.best.backendNodeId,
+				iou,
+				candidateCount: 1,
+				scanRect,
+				snapshotBounds: summary.best.bounds,
+			},
+		};
 	}
 	const selectorEntry = geometryIndex.byId.get(idFromSimpleSelector(selector) || "");
-	if (!selectorEntry) return { item: { ...item, backendNodeIdBootstrap: { status: "missing", reason: "no-high-iou-candidate" } }, record: { jsonPath, selector, status: "missing" as const, reason: "no-high-iou-candidate", candidateCount: 0, scanRect } };
+	if (!selectorEntry)
+		return {
+			item: { ...item, backendNodeIdBootstrap: { status: "missing", reason: "no-high-iou-candidate" } },
+			record: {
+				jsonPath,
+				selector,
+				status: "missing" as const,
+				reason: "no-high-iou-candidate",
+				candidateCount: 0,
+				scanRect,
+			},
+		};
 	const iou = Number(rectIou(scanRect, selectorEntry.bounds).toFixed(3));
-	return { item: { ...item, backendNodeIdBootstrap: { status: "stale", reason: "selector-node-geometry-drift", iou } }, record: { jsonPath, selector, status: "stale" as const, reason: "selector-node-geometry-drift", backendNodeId: selectorEntry.backendNodeId, iou, candidateCount: 0, scanRect, snapshotBounds: selectorEntry.bounds } };
+	return {
+		item: { ...item, backendNodeIdBootstrap: { status: "stale", reason: "selector-node-geometry-drift", iou } },
+		record: {
+			jsonPath,
+			selector,
+			status: "stale" as const,
+			reason: "selector-node-geometry-drift",
+			backendNodeId: selectorEntry.backendNodeId,
+			iou,
+			candidateCount: 0,
+			scanRect,
+			snapshotBounds: selectorEntry.bounds,
+		},
+	};
 }
 
-export function bootstrapScanBackendNodeIds(data: PageWorldScanBundleV1, entries: SnapshotGeometryEntry[], options: BootstrapOptions = {}): BackendNodeIdBootstrapResult {
+export function bootstrapScanBackendNodeIds(
+	data: PageWorldScanBundleV1,
+	entries: SnapshotGeometryEntry[],
+	options: BootstrapOptions = {},
+): BackendNodeIdBootstrapResult {
 	const viewportKnown = data.structure.actionables.some((item) => item.documentRect !== undefined);
 	const indexedEntries = indexEntries(entries);
 	const geometryIndex = buildGeometryIndex(indexedEntries);

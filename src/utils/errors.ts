@@ -1,8 +1,13 @@
-import { mergeRecoveries, recoveryForNormalized, isAbmlRecoveryCode, isWebSocketRecoveryCode } from "../kernels/evidence/distill/recovery.js";
+import {
+	mergeRecoveries,
+	recoveryForNormalized,
+	isAbmlRecoveryCode,
+	isWebSocketRecoveryCode,
+} from "../kernels/evidence/distill/recovery.js";
 import type { ErrorRecovery } from "../kernels/evidence/distill/recovery.js";
 import { nativeErrorCodes, type NativeErrorCode, normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import { firstDefined, isRecord, pickDefined } from "./records.js";
-import { redactSensitiveText, redactSensitiveValue } from "./redaction.js";
+import { safeJsonClone } from "./safeClone.js";
 
 export type { ErrorRecovery } from "../kernels/evidence/distill/recovery.js";
 
@@ -80,7 +85,7 @@ function stripStackFields(value: unknown, seen = new WeakSet<object>()): unknown
 }
 
 function cleanDetails(value: unknown): Record<string, unknown> {
-	return isRecord(value) ? stripStackFields(value) as Record<string, unknown> : {};
+	return isRecord(value) ? (stripStackFields(value) as Record<string, unknown>) : {};
 }
 
 function domainFromCategory(category: string): ErrorTaxonomyDomain {
@@ -91,14 +96,21 @@ function domainFromCategory(category: string): ErrorTaxonomyDomain {
 	if (category === "tool.artifact") return "artifact";
 	if (category === "runtime.network") return "network";
 	if (category === "runtime.cdp") return "cdp";
-	if (category === "runtime.page" || category === "runtime.selector" || category === "runtime.frame" || category === "runtime.tab") return "page";
+	if (
+		category === "runtime.page" ||
+		category === "runtime.selector" ||
+		category === "runtime.frame" ||
+		category === "runtime.tab"
+	)
+		return "page";
 	if (category.startsWith("tool.")) return "tool";
 	if (category.startsWith("runtime.")) return "native";
 	return "unknown";
 }
 
 export function errorTaxonomyForCode(code: string): ErrorTaxonomy {
-	const schemaEntry = nativeErrorCodes[code as keyof typeof nativeErrorCodes] as { category?: string; retryable?: boolean; summary?: string } | undefined;
+	const schemaEntry = nativeErrorCodes[code as keyof typeof nativeErrorCodes] as
+		{ category?: string; retryable?: boolean; summary?: string } | undefined;
 	if (schemaEntry) {
 		const category = schemaEntry.category || "runtime.internal";
 		return {
@@ -109,20 +121,75 @@ export function errorTaxonomyForCode(code: string): ErrorTaxonomy {
 			source: "schema",
 		};
 	}
-	if (code === "INVALID_TIMEOUT") return { domain: "tool", category: "tool.validation", retryable: false, summary: "Tool timeout parameter is invalid.", source: "heuristic" };
-	if (code.includes("CDP") || ["NO_TAB_ID", "SESSION_LIMIT", "ATTACH_FAILED", "DETACH_FAILED", "SEND_FAILED", "FRAME_EVAL_FAILED", "NO_METHOD", "FRAME_NOT_FOUND", "NO_SOURCE", "NO_IDENTIFIER", "SCRIPT_NOT_FOUND", "UNKNOWN_ACTION"].includes(code)) {
-		return { domain: "cdp", category: "runtime.cdp", retryable: /TIMEOUT|FAILED|DETACH|ATTACH|SEND/.test(code), summary: "Persistent CDP bridge failure.", source: "heuristic" };
+	if (code === "INVALID_TIMEOUT")
+		return {
+			domain: "tool",
+			category: "tool.validation",
+			retryable: false,
+			summary: "Tool timeout parameter is invalid.",
+			source: "heuristic",
+		};
+	if (
+		code.includes("CDP") ||
+		[
+			"NO_TAB_ID",
+			"SESSION_LIMIT",
+			"ATTACH_FAILED",
+			"DETACH_FAILED",
+			"SEND_FAILED",
+			"FRAME_EVAL_FAILED",
+			"NO_METHOD",
+			"FRAME_NOT_FOUND",
+			"NO_SOURCE",
+			"NO_IDENTIFIER",
+			"SCRIPT_NOT_FOUND",
+			"UNKNOWN_ACTION",
+		].includes(code)
+	) {
+		return {
+			domain: "cdp",
+			category: "runtime.cdp",
+			retryable: /TIMEOUT|FAILED|DETACH|ATTACH|SEND/.test(code),
+			summary: "Persistent CDP bridge failure.",
+			source: "heuristic",
+		};
 	}
-	if (["ELEMENT_INDEX_OUT_OF_RANGE", "ELEMENT_NOT_CLICKABLE", "MEDIA_URL_NOT_FOUND"].includes(code)) return { domain: "page", category: "runtime.page", retryable: false, summary: "Page-side element operation failed.", source: "heuristic" };
-	return { domain: "unknown", category: "unknown", retryable: false, summary: code || "Unknown error.", source: "heuristic" };
+	if (["ELEMENT_INDEX_OUT_OF_RANGE", "ELEMENT_NOT_CLICKABLE", "MEDIA_URL_NOT_FOUND"].includes(code))
+		return {
+			domain: "page",
+			category: "runtime.page",
+			retryable: false,
+			summary: "Page-side element operation failed.",
+			source: "heuristic",
+		};
+	return {
+		domain: "unknown",
+		category: "unknown",
+		retryable: false,
+		summary: code || "Unknown error.",
+		source: "heuristic",
+	};
 }
 
-function extractWaitDiagnosis(supervisor: Record<string, unknown> | undefined): ErrorDiagnostics["waitDiagnosis"] | undefined {
+function extractWaitDiagnosis(
+	supervisor: Record<string, unknown> | undefined,
+): ErrorDiagnostics["waitDiagnosis"] | undefined {
 	if (!supervisor) return undefined;
 	const wd = isRecord(supervisor.waitDiagnosis) ? supervisor.waitDiagnosis : undefined;
 	if (!wd) return undefined;
-	if (typeof wd.waitType !== "string" || typeof wd.condition !== "string" || typeof wd.observedState !== "string" || typeof wd.suggestion !== "string") return undefined;
-	return { waitType: wd.waitType, condition: wd.condition, observedState: wd.observedState, suggestion: wd.suggestion };
+	if (
+		typeof wd.waitType !== "string" ||
+		typeof wd.condition !== "string" ||
+		typeof wd.observedState !== "string" ||
+		typeof wd.suggestion !== "string"
+	)
+		return undefined;
+	return {
+		waitType: wd.waitType,
+		condition: wd.condition,
+		observedState: wd.observedState,
+		suggestion: wd.suggestion,
+	};
 }
 
 export function errorDiagnosticsFromDetails(details: Record<string, unknown>, code?: string): ErrorDiagnostics {
@@ -133,7 +200,16 @@ export function errorDiagnosticsFromDetails(details: Record<string, unknown>, co
 		...pickDefined(targetRecord, ["tabId", "browserId", "source", "selectionVersion"]),
 	};
 	const session = {
-		...pickDefined(details, ["sessionId", "session_id", "requestId", "request_id", "waitId", "wait_id", "listenerId", "listener_id"]),
+		...pickDefined(details, [
+			"sessionId",
+			"session_id",
+			"requestId",
+			"request_id",
+			"waitId",
+			"wait_id",
+			"listenerId",
+			"listener_id",
+		]),
 	};
 	const pending = {
 		...pickDefined(details, ["id", "pendingCount", "acked", "timeoutMs"]),
@@ -142,10 +218,15 @@ export function errorDiagnosticsFromDetails(details: Record<string, unknown>, co
 	if (Object.keys(session).length) scopes.push("session");
 	if (Object.keys(pending).length) scopes.push("pending");
 	if (firstDefined(details, ["recorder", "bodyAvailability", "bodyUnavailableReason"])) scopes.push("network");
-	if (code?.startsWith("ARTIFACT_") || firstDefined(details, ["path", "requested", "bytes", "maxBytes", "allowedRoot", "fileCount", "root", "glob"])) scopes.push("artifact");
+	if (
+		code?.startsWith("ARTIFACT_") ||
+		firstDefined(details, ["path", "requested", "bytes", "maxBytes", "allowedRoot", "fileCount", "root", "glob"])
+	)
+		scopes.push("artifact");
 	if (firstDefined(details, ["files", "files_count", "selector", "downloadId"])) scopes.push("transfer");
 	if (isRecord(details.operation)) scopes.push("operation");
-	if (isRecord(details.snapshot) || firstDefined(details, ["snapshotId", "invalidatedReason"])) scopes.push("snapshot");
+	if (isRecord(details.snapshot) || firstDefined(details, ["snapshotId", "invalidatedReason"]))
+		scopes.push("snapshot");
 	if (code && isAbmlRecoveryCode(code)) scopes.push("abml");
 	if (code && isWebSocketRecoveryCode(code)) scopes.push("websocket");
 	const supervisor = isRecord(details.supervisor) ? details.supervisor : undefined;
@@ -167,7 +248,7 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 		const details = cleanDetails(extra.details);
 		const taxonomy = errorTaxonomyForCode(code);
 		const generatedRecovery = recoveryForNormalized(code, details, taxonomy);
-		const existingRecovery = isRecord(details.recovery) ? details.recovery as ErrorRecovery : undefined;
+		const existingRecovery = isRecord(details.recovery) ? (details.recovery as ErrorRecovery) : undefined;
 		const recovery = mergeRecoveries(existingRecovery, generatedRecovery);
 		return {
 			code,
@@ -182,35 +263,60 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 	if (isRecord(error)) {
 		const nested = isRecord(error.error) ? error.error : {};
 		const code =
-			typeof error.code === "string" && error.code.trim() ? error.code
-				: typeof error.error_code === "string" && error.error_code.trim() ? error.error_code
-					: typeof nested.code === "string" && nested.code.trim() ? nested.code
-						: typeof nested.error_code === "string" && nested.error_code.trim() ? nested.error_code
+			typeof error.code === "string" && error.code.trim()
+				? error.code
+				: typeof error.error_code === "string" && error.error_code.trim()
+					? error.error_code
+					: typeof nested.code === "string" && nested.code.trim()
+						? nested.code
+						: typeof nested.error_code === "string" && nested.error_code.trim()
+							? nested.error_code
 							: fallbackCode;
 		const message =
-			typeof error.message === "string" && error.message ? error.message
-				: typeof error.error === "string" && error.error ? error.error
-					: typeof nested.message === "string" && nested.message ? nested.message
-						: typeof nested.error === "string" && nested.error ? nested.error
+			typeof error.message === "string" && error.message
+				? error.message
+				: typeof error.error === "string" && error.error
+					? error.error
+					: typeof nested.message === "string" && nested.message
+						? nested.message
+						: typeof nested.error === "string" && nested.error
+							? nested.error
 							: String(code);
 		const nestedDetails = cleanDetails(nested.details);
 		const details = cleanDetails({ ...nestedDetails, ...cleanDetails(error.details) });
 		const taxonomy = errorTaxonomyForCode(code);
 		const generatedRecovery = recoveryForNormalized(code, details, taxonomy);
-		const existingRecovery = isRecord(details.recovery) ? details.recovery as ErrorRecovery : undefined;
+		const existingRecovery = isRecord(details.recovery) ? (details.recovery as ErrorRecovery) : undefined;
 		const recovery = mergeRecoveries(existingRecovery, generatedRecovery);
-		return { code, message, details, taxonomy, diagnostics: errorDiagnosticsFromDetails(details, code), recovery, name: typeof error.name === "string" ? error.name : undefined };
+		return {
+			code,
+			message,
+			details,
+			taxonomy,
+			diagnostics: errorDiagnosticsFromDetails(details, code),
+			recovery,
+			name: typeof error.name === "string" ? error.name : undefined,
+		};
 	}
 	const details = {};
 	const taxonomy = errorTaxonomyForCode(fallbackCode);
 	const recovery = recoveryForNormalized(fallbackCode, details, taxonomy);
-	return { code: fallbackCode, message: String(error), details, taxonomy, diagnostics: errorDiagnosticsFromDetails(details, fallbackCode), recovery, name: "Error" };
+	return {
+		code: fallbackCode,
+		message: String(error),
+		details,
+		taxonomy,
+		diagnostics: errorDiagnosticsFromDetails(details, fallbackCode),
+		recovery,
+		name: "Error",
+	};
 }
 
 export function suppressErrorStack<T extends Error>(error: T): T {
 	const descriptor = Object.getOwnPropertyDescriptor(error, "stack");
 	if (!descriptor) {
-		if (Object.isExtensible(error)) Object.defineProperty(error, "stack", { value: undefined, configurable: true, writable: true });
+		if (Object.isExtensible(error))
+			Object.defineProperty(error, "stack", { value: undefined, configurable: true, writable: true });
 		return error;
 	}
 	if (descriptor.configurable) {
@@ -223,15 +329,13 @@ export function suppressErrorStack<T extends Error>(error: T): T {
 
 export function compactError(error: unknown, fallbackCode = "INTERNAL_ERROR"): Record<string, unknown> {
 	const normalized = normalizeError(error, fallbackCode);
-	const diagnostics = redactSensitiveValue(normalized.diagnostics);
-	const recovery = normalized.recovery ? redactSensitiveValue(normalized.recovery) : undefined;
 	return {
 		code: normalized.code,
-		message: redactSensitiveText(normalized.message),
+		message: normalized.message,
 		taxonomy: normalized.taxonomy,
-		diagnostics,
-		details: redactSensitiveValue(normalized.details),
-		recovery,
+		diagnostics: safeJsonClone(normalized.diagnostics),
+		details: safeJsonClone(normalized.details),
+		recovery: normalized.recovery ? safeJsonClone(normalized.recovery) : undefined,
 		name: normalized.name,
 	};
 }

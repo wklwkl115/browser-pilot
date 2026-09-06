@@ -15,8 +15,19 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { spawn, type ChildProcess } from "node:child_process";
+import {
+	chmodSync,
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { packageRoot } from "./packageInfo.js";
 import {
@@ -80,10 +91,82 @@ export function startLockfilePath(): string {
 	return path.join(stateDir(), "browser-daemon.starting.json");
 }
 
+export function bridgeSecretPath(root = stateDir()): string {
+	return path.join(root, "bridge-secret");
+}
+
+export function ensurePrivateStateDirectory(root = stateDir()): void {
+	mkdirSync(root, { recursive: true, mode: 0o700 });
+	if (process.platform !== "win32") {
+		chmodSync(root, 0o700);
+		return;
+	}
+	const username = process.env.USERNAME;
+	if (!username) throw new Error("Cannot secure Browser Pilot state: USERNAME is unavailable");
+	const principal = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${username}` : username;
+	const result = spawnSync(
+		"icacls",
+		[
+			root,
+			"/inheritance:r",
+			"/grant:r",
+			`${principal}:(OI)(CI)(F)`,
+			"*S-1-5-18:(OI)(CI)(F)",
+			"*S-1-5-32-544:(OI)(CI)(F)",
+			"/T",
+			"/C",
+		],
+		{ encoding: "utf8", windowsHide: true },
+	);
+	if (result.error || result.status !== 0)
+		throw new Error(
+			`Cannot secure Browser Pilot state ACL: ${result.error?.message || result.stderr.trim() || `icacls exited ${result.status}`}`,
+		);
+	// /inheritance:r applies recursively, so existing child files also need explicit grants before
+	// their inherited entries are removed. Keep inheritable grants on the root for future files.
+	const childResult = spawnSync(
+		"icacls",
+		[root, "/grant:r", `${principal}:(F)`, "*S-1-5-18:(F)", "*S-1-5-32-544:(F)", "/T", "/C"],
+		{ encoding: "utf8", windowsHide: true },
+	);
+	if (childResult.error || childResult.status !== 0)
+		throw new Error(
+			`Cannot secure Browser Pilot child ACLs: ${childResult.error?.message || childResult.stderr.trim() || `icacls exited ${childResult.status}`}`,
+		);
+}
+
+export function readBridgeSecret(root = stateDir()): string | undefined {
+	try {
+		const secret = readFileSync(bridgeSecretPath(root), "utf8").trim();
+		return secret.length >= 32 ? secret : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export function writeBridgeSecret(secret: string, root = stateDir()): void {
+	if (secret.length < 32) throw new Error("browser bridge secret must contain at least 32 characters");
+	ensurePrivateStateDirectory(root);
+	// Never truncate the live pairing file: a failed update must leave the previous secret usable.
+	const temporary = path.join(root, `.bridge-secret-${randomUUID()}.tmp`);
+	try {
+		writeFileSync(temporary, `${secret}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+		if (process.platform !== "win32") chmodSync(temporary, 0o600);
+		renameSync(temporary, bridgeSecretPath(root));
+	} finally {
+		rmSync(temporary, { force: true });
+	}
+}
+
 export function readLockfile(): DaemonInfo | undefined {
 	try {
 		const parsed = JSON.parse(readFileSync(lockfilePath(), "utf8")) as Partial<DaemonInfo>;
-		if (typeof parsed?.pid === "number" && typeof parsed.controlPort === "number" && typeof parsed.token === "string" && typeof parsed.controlHost === "string") {
+		if (
+			typeof parsed?.pid === "number" &&
+			typeof parsed.controlPort === "number" &&
+			typeof parsed.token === "string" &&
+			typeof parsed.controlHost === "string"
+		) {
 			return parsed as DaemonInfo;
 		}
 	} catch {
@@ -93,7 +176,7 @@ export function readLockfile(): DaemonInfo | undefined {
 }
 
 export function writeLockfile(info: DaemonInfo): void {
-	mkdirSync(path.dirname(lockfilePath()), { recursive: true, mode: 0o700 });
+	ensurePrivateStateDirectory(path.dirname(lockfilePath()));
 	writeFileSync(lockfilePath(), `${JSON.stringify(info, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 	if (process.platform !== "win32") chmodSync(lockfilePath(), 0o600);
 }
@@ -164,12 +247,16 @@ function releaseOwnedStartLock(token: string): void {
 }
 
 function tryAcquireStartLock(): { release: () => void } | undefined {
-	mkdirSync(path.dirname(startLockfilePath()), { recursive: true, mode: 0o700 });
+	ensurePrivateStateDirectory(path.dirname(startLockfilePath()));
 	try {
 		const fd = openSync(startLockfilePath(), "wx", 0o600);
 		const token = randomUUID();
 		try {
-			writeFileSync(fd, `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString(), token })}\n`, "utf8");
+			writeFileSync(
+				fd,
+				`${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString(), token })}\n`,
+				"utf8",
+			);
 		} finally {
 			closeSync(fd);
 		}
@@ -200,18 +287,21 @@ export function daemonContractReport(found?: FoundDaemon): DaemonContractReport 
 	const check: DaemonContractCheck = ok
 		? { ok: true, code: "DAEMON_CONTRACT_MATCH", reason: "match", mismatches: [] }
 		: {
-			ok: false,
-			code: "DAEMON_CONTRACT_MISMATCH",
-			reason: !found
-				? "daemon_missing"
-				: daemonCheck.reason === "identity_missing" || daemonCheck.reason === "daemon_missing" || lockCheck.reason === "identity_missing" || lockCheck.reason === "daemon_missing"
-					? "identity_missing"
-					: "field_mismatch",
-			mismatches: [
-				...daemonCheck.mismatches.map((mismatch) => ({ ...mismatch, source: "daemon" as const })),
-				...lockCheck.mismatches.map((mismatch) => ({ ...mismatch, source: "lock" as const })),
-			],
-		};
+				ok: false,
+				code: "DAEMON_CONTRACT_MISMATCH",
+				reason: !found
+					? "daemon_missing"
+					: daemonCheck.reason === "identity_missing" ||
+						  daemonCheck.reason === "daemon_missing" ||
+						  lockCheck.reason === "identity_missing" ||
+						  lockCheck.reason === "daemon_missing"
+						? "identity_missing"
+						: "field_mismatch",
+				mismatches: [
+					...daemonCheck.mismatches.map((mismatch) => ({ ...mismatch, source: "daemon" as const })),
+					...lockCheck.mismatches.map((mismatch) => ({ ...mismatch, source: "lock" as const })),
+				],
+			};
 	return {
 		local,
 		daemon,
@@ -230,7 +320,10 @@ export function isDaemonReadyForReuse(found: FoundDaemon): boolean {
 export class DaemonReplacementError extends Error {
 	readonly code = "DAEMON_REPLACEMENT_FAILED" as const;
 
-	constructor(message: string, readonly details: Record<string, unknown> = {}) {
+	constructor(
+		message: string,
+		readonly details: Record<string, unknown> = {},
+	) {
 		super(message);
 		this.name = "DaemonReplacementError";
 	}
@@ -275,16 +368,16 @@ export function controlRequest(
 		const data = body !== undefined ? JSON.stringify(body) : undefined;
 		const req = http.request(
 			{
-					host: info.controlHost,
-					port: info.controlPort,
-					method,
-					path: pathname,
-					signal: opts?.signal,
-					headers: {
-						"x-browser-pilot-daemon-token": info.token,
-						...(data ? { "content-type": "application/json", "content-length": Buffer.byteLength(data) } : {}),
-					},
+				host: info.controlHost,
+				port: info.controlPort,
+				method,
+				path: pathname,
+				signal: opts?.signal,
+				headers: {
+					"x-browser-pilot-daemon-token": info.token,
+					...(data ? { "content-type": "application/json", "content-length": Buffer.byteLength(data) } : {}),
 				},
+			},
 			(res) => {
 				let buf = "";
 				let responseBytes = 0;
@@ -312,8 +405,8 @@ export function controlRequest(
 				});
 				res.on("error", (error) => safeReject(error instanceof Error ? error : new Error(String(error))));
 			},
-			);
-			req.on("error", (error) => safeReject(error instanceof Error ? error : new Error(String(error))));
+		);
+		req.on("error", (error) => safeReject(error instanceof Error ? error : new Error(String(error))));
 		req.setTimeout(timeoutMs, () => {
 			const error = new Error("control request timeout");
 			req.destroy(error);
@@ -324,26 +417,49 @@ export function controlRequest(
 	});
 }
 
-/** GET /status; undefined if the daemon is unreachable. */
-export async function pingStatus(info: DaemonInfo, timeoutMs = 1_500, opts: { tabs?: boolean } = {}): Promise<DaemonStatus | undefined> {
-	try {
-		const { status, json } = await controlRequest(info, "GET", opts.tabs ? "/status?tabs=1" : "/status", undefined, timeoutMs);
-		if (status === 200 && json) return json as unknown as DaemonStatus;
-	} catch {
-		/* unreachable */
-	}
-	return undefined;
+function isConnectionRefused(error: unknown): boolean {
+	return (error as NodeJS.ErrnoException | undefined)?.code === "ECONNREFUSED";
 }
 
-/** Read the lockfile and confirm the daemon answers. Cleans up a lockfile whose pid is dead. */
+type StatusProbe = { status?: DaemonStatus; refused: boolean };
+
+/** GET /status, distinguishing "nothing listens on the recorded port" from other failures. */
+async function probeStatus(info: DaemonInfo, timeoutMs: number, opts: { tabs?: boolean }): Promise<StatusProbe> {
+	try {
+		const { status, json } = await controlRequest(
+			info,
+			"GET",
+			opts.tabs ? "/status?tabs=1" : "/status",
+			undefined,
+			timeoutMs,
+		);
+		return { status: status === 200 && json ? (json as unknown as DaemonStatus) : undefined, refused: false };
+	} catch (error) {
+		return { refused: isConnectionRefused(error) };
+	}
+}
+
+/** GET /status; undefined if the daemon is unreachable. */
+export async function pingStatus(
+	info: DaemonInfo,
+	timeoutMs = 1_500,
+	opts: { tabs?: boolean } = {},
+): Promise<DaemonStatus | undefined> {
+	return (await probeStatus(info, timeoutMs, opts)).status;
+}
+
+/**
+ * Read the lockfile and confirm the daemon answers. The lockfile is written only after the
+ * control server is listening, so a refused connection means the listener is gone even when the
+ * recorded pid is alive: operating systems reuse pids, and a lockfile that survives a reboot or a
+ * crash would otherwise pin the daemon to an unrelated process forever.
+ */
 export async function findDaemon(opts: { tabs?: boolean } = {}): Promise<FoundDaemon | undefined> {
 	const info = readLockfile();
 	if (!info) return undefined;
-	const status = await pingStatus(info, 1_500, opts);
-	if (status) return { info, status };
-	// Not answering. Only reclaim the lockfile if the process is gone — a live but
-	// slow-starting daemon must not have its lockfile yanked out from under it.
-	if (!isPidAlive(info.pid)) removeLockfile();
+	const probe = await probeStatus(info, 1_500, opts);
+	if (probe.status) return { info, status: probe.status };
+	if (probe.refused || !isPidAlive(info.pid)) removeLockfile();
 	return undefined;
 }
 
@@ -389,10 +505,9 @@ export function resolveDaemonStartCommand(): DaemonStartCommand {
 	if (explicit) return { command: process.execPath, args: [explicit] };
 	const modulePath = fileURLToPath(import.meta.url);
 	const root = packageRoot() ?? path.resolve(path.dirname(modulePath), "..", "..", "..");
-	const tsEntry = [
-		path.join(root, "src", "apps", "daemon", "bin.ts"),
-		path.join(root, "daemon", "bin.ts"),
-	].find((candidate) => existsSync(candidate));
+	const tsEntry = [path.join(root, "src", "apps", "daemon", "bin.ts"), path.join(root, "daemon", "bin.ts")].find(
+		(candidate) => existsSync(candidate),
+	);
 	// A source checkout may also contain an older dist/ from a prior build. Starting
 	// that output would be correctly rejected by contract identity but could never
 	// converge, so source execution must launch the source entry.
@@ -414,7 +529,7 @@ function resolveSourceDaemonStartCommand(root: string, tsEntry: string): DaemonS
 		// windowsHide and pops a console window on Windows; the single-process form
 		// inherits windowsHide and stays invisible. cwd=root so the bare `tsx` resolves.
 		// Older Node without `--import` falls back to the (windowed) re-exec wrapper.
-			if (supportsImportFlag()) return { command: process.execPath, args: ["--import", "tsx", tsEntry], cwd: root };
+		if (supportsImportFlag()) return { command: process.execPath, args: ["--import", "tsx", tsEntry], cwd: root };
 		return { command: process.execPath, args: [tsxEntry, tsEntry] };
 	}
 	return { command: process.execPath, args: [tsEntry, "daemon", "start"] };
@@ -439,29 +554,40 @@ function removeLockfileForPid(pid: number): void {
  * signals: if graceful shutdown cannot be proven within the grace period, the
  * old process remains isolated and the caller receives a stable failure code.
  */
-export async function replaceStaleDaemon(
-	info: DaemonInfo,
-	opts: { graceMs?: number } = {},
-): Promise<void> {
+export async function replaceStaleDaemon(info: DaemonInfo, opts: { graceMs?: number } = {}): Promise<void> {
 	let acknowledged = false;
+	let refused = false;
 	try {
-		const response = await controlRequest(info, "POST", "/shutdown", { reason: "contract_mismatch", drain: true }, 2_000);
+		const response = await controlRequest(
+			info,
+			"POST",
+			"/shutdown",
+			{ reason: "contract_mismatch", drain: true },
+			2_000,
+		);
 		acknowledged = response.status === 200 && response.json?.ok !== false;
-	} catch {
-		/* reported below with a stable replacement failure */
+	} catch (error) {
+		refused = isConnectionRefused(error);
 	}
 	if (!acknowledged) {
-		if (!isPidAlive(info.pid)) {
+		// No listener on the recorded port: the daemon is gone and the pid, if alive, belongs to
+		// something else. Reclaim the lockfile instead of waiting on a process we do not own.
+		if (refused || !isPidAlive(info.pid)) {
 			removeLockfileForPid(info.pid);
 			return;
 		}
-		throw new DaemonReplacementError("stale browser-pilot daemon did not acknowledge graceful replacement", { pid: info.pid });
+		throw new DaemonReplacementError("stale browser-pilot daemon did not acknowledge graceful replacement", {
+			pid: info.pid,
+		});
 	}
 	if (!(await waitForPidDeath(info.pid, opts.graceMs ?? DAEMON_REPLACEMENT_GRACE_MS))) {
-		throw new DaemonReplacementError("stale browser-pilot daemon did not drain within the replacement grace period", {
-			pid: info.pid,
-			graceMs: opts.graceMs ?? DAEMON_REPLACEMENT_GRACE_MS,
-		});
+		throw new DaemonReplacementError(
+			"stale browser-pilot daemon did not drain within the replacement grace period",
+			{
+				pid: info.pid,
+				graceMs: opts.graceMs ?? DAEMON_REPLACEMENT_GRACE_MS,
+			},
+		);
 	}
 	removeLockfileForPid(info.pid);
 }

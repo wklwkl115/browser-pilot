@@ -16,7 +16,8 @@ function normalizedStoredIdentities(value: unknown): Record<string, string> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 	const identities: Record<string, string> = {};
 	for (const [key, identity] of Object.entries(value as JsonRecord)) {
-		if (/^\d+$/.test(key) && typeof identity === "string" && TAB_IDENTITY_PATTERN.test(identity)) identities[key] = identity;
+		if (/^\d+$/.test(key) && typeof identity === "string" && TAB_IDENTITY_PATTERN.test(identity))
+			identities[key] = identity;
 	}
 	return identities;
 }
@@ -50,7 +51,11 @@ async function persistBrowserPilotTabIdentities(identities: Record<string, strin
 }
 
 function newBrowserPilotTabIdentity(): string {
-	return (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`).replace(/[^a-fA-F0-9]/g, "").toLowerCase().padEnd(32, "0").slice(0, 32);
+	return (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
+		.replace(/[^a-fA-F0-9]/g, "")
+		.toLowerCase()
+		.padEnd(32, "0")
+		.slice(0, 32);
 }
 
 async function ensureBrowserPilotTabIdentity(tabIdValue: unknown): Promise<string | undefined> {
@@ -79,14 +84,18 @@ async function forgetBrowserPilotTabIdentity(tabIdValue: unknown): Promise<void>
 	await persistBrowserPilotTabIdentities(identities);
 }
 
-async function replaceBrowserPilotTabIdentity(removedTabIdValue: unknown, addedTabIdValue: unknown): Promise<string | undefined> {
+async function replaceBrowserPilotTabIdentity(
+	removedTabIdValue: unknown,
+	addedTabIdValue: unknown,
+): Promise<string | undefined> {
 	const removedTabId = normalizedTabId(removedTabIdValue);
 	const addedTabId = normalizedTabId(addedTabIdValue);
 	if (addedTabId === undefined) return undefined;
 	const identities = await loadBrowserPilotTabIdentities();
 	const removedKey = removedTabId === undefined ? undefined : String(removedTabId);
 	const addedKey = String(addedTabId);
-	const identity = (removedKey ? identities[removedKey] : undefined) ?? identities[addedKey] ?? newBrowserPilotTabIdentity();
+	const identity =
+		(removedKey ? identities[removedKey] : undefined) ?? identities[addedKey] ?? newBrowserPilotTabIdentity();
 	if (removedKey && removedKey !== addedKey) delete identities[removedKey];
 	identities[addedKey] = identity;
 	await persistBrowserPilotTabIdentities(identities);
@@ -98,4 +107,10 @@ function resetBrowserPilotTabIdentitiesForTest(): void {
 	tabIdentitiesLoad = undefined;
 }
 
-export { browserPilotTabIdentityFields, ensureBrowserPilotTabIdentity, forgetBrowserPilotTabIdentity, replaceBrowserPilotTabIdentity, resetBrowserPilotTabIdentitiesForTest };
+export {
+	browserPilotTabIdentityFields,
+	ensureBrowserPilotTabIdentity,
+	forgetBrowserPilotTabIdentity,
+	replaceBrowserPilotTabIdentity,
+	resetBrowserPilotTabIdentitiesForTest,
+};

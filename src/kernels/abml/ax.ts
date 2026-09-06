@@ -1,5 +1,11 @@
+// Concept: "Entity" fusion (docs/concepts.md) — the DOM↔AX merge that produces entities. The rules
+// for which reader wins each field are the fusion invariants in src/kernels/abml/README.md.
 import { defaultRefPolicyForKind } from "../refs/refPolicy.js";
-import { finiteNumber as numberValue, nonEmptyString as stringValue, recordValue as asRecord } from "../../utils/records.js";
+import {
+	finiteNumber as numberValue,
+	nonEmptyString as stringValue,
+	recordValue as asRecord,
+} from "../../utils/records.js";
 import { memoizedUrlOrigin } from "../../utils/url.js";
 import { dedupeLocators } from "./entity.js";
 import type { BuiltEntity, Entity, EntityKind, EntityState, EntityStructure, RelationType } from "./entity.js";
@@ -55,6 +61,8 @@ export type AxFusionDiagnostics = {
 	axOnly: number;
 	matched: { backend: number; geometry: number; semantic: number };
 	degraded: boolean;
+	publishedAxOnly?: number;
+	axOnlyTruncated?: boolean;
 	skipped: {
 		ambiguousBackend: number;
 		ambiguousGeometry: number;
@@ -87,17 +95,52 @@ function emptyFusionDiagnostics(scanBacked: number): AxFusionDiagnostics {
 	};
 }
 
-const CONTROL_AX_ROLES = new Set(["button", "link", "textbox", "searchbox", "combobox", "checkbox", "radio", "switch", "tab", "listbox", "menuitem", "option", "slider", "spinbutton"]);
+const CONTROL_AX_ROLES = new Set([
+	"button",
+	"link",
+	"textbox",
+	"searchbox",
+	"combobox",
+	"checkbox",
+	"radio",
+	"switch",
+	"tab",
+	"listbox",
+	"menuitem",
+	"option",
+	"slider",
+	"spinbutton",
+]);
 const TEXT_AX_ROLES = new Set(["statictext", "text", "labeltext", "heading"]);
 const CONTENT_LEAF_AX_ROLES = new Set(["statictext", "text", "labeltext", "inlinetextbox"]);
 const MEDIA_AX_ROLES = new Set(["image", "img"]);
 const FRAME_AX_ROLES = new Set(["iframe", "frame", "webarea", "rootwebarea"]);
-const BORING_AX_ROLES = new Set(["rootwebarea", "none", "generic", "group", "pane", "section", "paragraph", "listitemmarker", "inlinetextbox"]);
+const BORING_AX_ROLES = new Set([
+	"rootwebarea",
+	"none",
+	"generic",
+	"group",
+	"pane",
+	"section",
+	"paragraph",
+	"listitemmarker",
+	"inlinetextbox",
+]);
 const EDITABLE_AX_ROLES = new Set(["textbox", "searchbox", "combobox", "textarea", "spinbutton"]);
-const LANDMARK_ROLES = new Set(["banner", "navigation", "main", "complementary", "contentinfo", "search", "form", "region"]);
+const LANDMARK_ROLES = new Set([
+	"banner",
+	"navigation",
+	"main",
+	"complementary",
+	"contentinfo",
+	"search",
+	"form",
+	"region",
+]);
 const AX_AUTHORITATIVE_STATE = ["checked", "selected", "pressed", "expanded"] as const;
 const GEOMETRY_MATCH_RADIUS_PX = 24;
 const COINCIDENT_BOX_IOU = 0.8;
+const FUSION_DEGRADED_SKIP_RATIO = 0.05;
 const AX_GEOMETRY_BUCKET_SIZE = 64;
 const MAX_AX_GEOMETRY_BUCKETS_PER_RECT = 256;
 
@@ -161,10 +204,10 @@ export function axName(node: AxTreeNode): string | undefined {
 
 export function axValue(node: AxTreeNode, propertyMap?: AxPropertyMap): string | undefined {
 	return safeAxSemanticText(
-		axValueText(node.value)
-		|| axValueText(axProperty(node, "value", propertyMap))
-		|| axValueText(axProperty(node, "valuetext", propertyMap))
-		|| axValueText(axProperty(node, "valuenow", propertyMap)),
+		axValueText(node.value) ||
+			axValueText(axProperty(node, "value", propertyMap)) ||
+			axValueText(axProperty(node, "valuetext", propertyMap)) ||
+			axValueText(axProperty(node, "valuenow", propertyMap)),
 	);
 }
 
@@ -203,13 +246,16 @@ export function buildAxLocators(node: AxTreeNode, propertyMap?: AxPropertyMap, t
 	const backendNodeId = axBackendNodeId(node);
 	const role = axRole(node);
 	const name = axName(node) || axValue(node, propertyMap);
-	if (backendNodeId !== undefined && backendNodeId > 0) locators.push({ by: "backendNodeId", value: backendNodeId, ...(targetId ? { targetId } : {}) });
+	if (backendNodeId !== undefined && backendNodeId > 0)
+		locators.push({ by: "backendNodeId", value: backendNodeId, ...(targetId ? { targetId } : {}) });
 	if (nodeId) locators.push({ by: "axNodeId", value: nodeId });
 	if (name) locators.push({ by: "textAnchor", value: name, role, exact: false });
 	return dedupeLocators(locators);
 }
 
-export function boxModelToGeometry(model: unknown): { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } } | undefined {
+export function boxModelToGeometry(
+	model: unknown,
+): { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } } | undefined {
 	const record = asRecord(model);
 	if (!record) return undefined;
 	const border = Array.isArray(record.border) ? record.border.map((item) => Number(item)) : [];
@@ -237,14 +283,15 @@ function axStructure(node: AxTreeNode, role: string, propertyMap?: AxPropertyMap
 	const rowIndex = numberValue(axValueText(axProperty(node, "rowindex", propertyMap)));
 	const landmark = LANDMARK_ROLES.has(role.toLowerCase()) ? role.toLowerCase() : undefined;
 	if (
-		level === undefined
-		&& setSize === undefined
-		&& posInSet === undefined
-		&& (!sortText || sortText === "none")
-		&& colIndex === undefined
-		&& rowIndex === undefined
-		&& landmark === undefined
-	) return undefined;
+		level === undefined &&
+		setSize === undefined &&
+		posInSet === undefined &&
+		(!sortText || sortText === "none") &&
+		colIndex === undefined &&
+		rowIndex === undefined &&
+		landmark === undefined
+	)
+		return undefined;
 	return {
 		...(level !== undefined ? { level } : {}),
 		...(setSize !== undefined ? { setSize } : {}),
@@ -256,11 +303,21 @@ function axStructure(node: AxTreeNode, role: string, propertyMap?: AxPropertyMap
 	};
 }
 
-function geometryInViewport(geometry: Parameters<typeof buildAxEntityFromNode>[2], viewport: AxContext["viewport"]): boolean {
+function geometryInViewport(
+	geometry: Parameters<typeof buildAxEntityFromNode>[2],
+	viewport: AxContext["viewport"],
+): boolean {
 	if (!geometry || !viewport || viewport.width <= 0 || viewport.height <= 0) return false;
 	if (geometry.box) {
 		const box = geometry.box;
-		return box.w > 0 && box.h > 0 && box.x + box.w > 0 && box.y + box.h > 0 && box.x < viewport.width && box.y < viewport.height;
+		return (
+			box.w > 0 &&
+			box.h > 0 &&
+			box.x + box.w > 0 &&
+			box.y + box.h > 0 &&
+			box.x < viewport.width &&
+			box.y < viewport.height
+		);
 	}
 	const point = geometry.point;
 	return Boolean(point && point.x >= 0 && point.y >= 0 && point.x < viewport.width && point.y < viewport.height);
@@ -269,7 +326,8 @@ function geometryInViewport(geometry: Parameters<typeof buildAxEntityFromNode>[2
 function axRelatedBackendIds(node: AxTreeNode, propertyName: string, propertyMap?: AxPropertyMap): number[] {
 	const value = axProperty(node, propertyName, propertyMap);
 	const record = asRecord(value);
-	const related = record && Array.isArray(record.relatedNodes) ? record.relatedNodes : Array.isArray(value) ? value : [];
+	const related =
+		record && Array.isArray(record.relatedNodes) ? record.relatedNodes : Array.isArray(value) ? value : [];
 	const ids: number[] = [];
 	for (const item of related) {
 		const rec = asRecord(item);
@@ -293,12 +351,18 @@ export function extractAxPropertyRelationAnchors(node: AxTreeNode, propertyMap?:
 		for (const id of axRelatedBackendIds(node, property, propertyMap)) out.push({ type, targetKey: `b:${id}` });
 	}
 	if (axPropertyBool(node, "expanded", propertyMap) !== undefined) {
-		for (const id of axRelatedBackendIds(node, "controls", propertyMap)) out.push({ type: "expandedTarget", targetKey: `b:${id}` });
+		for (const id of axRelatedBackendIds(node, "controls", propertyMap))
+			out.push({ type: "expandedTarget", targetKey: `b:${id}` });
 	}
 	return out;
 }
 
-export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } }, options: { redactValue?: boolean } = {}): BuiltEntity {
+export function buildAxEntityFromNode(
+	node: AxTreeNode,
+	context: AxContext,
+	geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } },
+	options: { redactValue?: boolean } = {},
+): BuiltEntity {
 	const role = axRole(node);
 	const roleLower = role.toLowerCase();
 	const targetId = cleanTargetId(context.targetId);
@@ -307,23 +371,33 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 	const origin = memoizedUrlOrigin(context.url);
 	const structure = axStructure(node, role, propertyMap);
 	const rawName = axValueText(node.name);
-	const rawValue = axValueText(node.value)
-		|| axValueText(axProperty(node, "value", propertyMap))
-		|| axValueText(axProperty(node, "valuetext", propertyMap))
-		|| axValueText(axProperty(node, "valuenow", propertyMap));
+	const rawValue =
+		axValueText(node.value) ||
+		axValueText(axProperty(node, "value", propertyMap)) ||
+		axValueText(axProperty(node, "valuetext", propertyMap)) ||
+		axValueText(axProperty(node, "valuenow", propertyMap));
 	const name = safeAxSemanticText(rawName);
 	const value = options.redactValue ? undefined : safeAxSemanticText(rawValue);
 	const kind = kindForAxRole(role);
 	const locators = buildAxLocators(node, propertyMap, targetId);
 	const capturedAt = context.capturedAt;
-	const disabled = axPropertyBool(node, "disabled", propertyMap) === true || axPropertyBool(node, "aria-disabled", propertyMap) === true;
+	const disabled =
+		axPropertyBool(node, "disabled", propertyMap) === true ||
+		axPropertyBool(node, "aria-disabled", propertyMap) === true;
 	const focused = axPropertyBool(node, "focused", propertyMap) === true;
 	const expanded = axPropertyBool(node, "expanded", propertyMap);
 	const checked = axPropertyBool(node, "checked", propertyMap);
 	const selected = axPropertyBool(node, "selected", propertyMap);
 	const pressed = axPropertyBool(node, "pressed", propertyMap);
 	const currentText = axValueText(axProperty(node, "current", propertyMap));
-	const current = currentText === undefined ? undefined : currentText === "false" ? false : currentText === "true" ? true : currentText;
+	const current =
+		currentText === undefined
+			? undefined
+			: currentText === "false"
+				? false
+				: currentText === "true"
+					? true
+					: currentText;
 	const inViewport = geometryInViewport(geometry, context.viewport);
 	const state = {
 		visible: node.hidden !== true && node.invisible !== true,
@@ -339,8 +413,10 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 		inViewport,
 	};
 	const executable = backendNodeId !== undefined && backendNodeId > 0;
-	const actions = [executable && CONTROL_AX_ROLES.has(roleLower) ? "click" as const : undefined, executable && EDITABLE_AX_ROLES.has(roleLower) ? "edit" as const : undefined]
-		.filter((action): action is "click" | "edit" => action !== undefined);
+	const actions = [
+		executable && CONTROL_AX_ROLES.has(roleLower) ? ("click" as const) : undefined,
+		executable && EDITABLE_AX_ROLES.has(roleLower) ? ("edit" as const) : undefined,
+	].filter((action): action is "click" | "edit" => action !== undefined);
 	return {
 		entity: {
 			kind,
@@ -360,7 +436,11 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 				...(rawName && !name ? { unsafeNameSkipped: true } : {}),
 				...(rawValue && options.redactValue ? { valueRedacted: true } : {}),
 				...(rawValue && !options.redactValue && !value ? { unsafeValueSkipped: true } : {}),
-				physicalStateConfidence: { visible: "medium", occluded: "low", inViewport: context.viewport ? "high" : "low" },
+				physicalStateConfidence: {
+					visible: "medium",
+					occluded: "low",
+					inViewport: context.viewport ? "high" : "low",
+				},
 			},
 		},
 		descriptor: {
@@ -394,7 +474,9 @@ function entityName(entity: Entity | BuiltEntity["entity"]): string | undefined 
 }
 
 function entityRole(entity: Entity | BuiltEntity["entity"]): string {
-	return String(entity.role || "generic").trim().toLowerCase();
+	return String(entity.role || "generic")
+		.trim()
+		.toLowerCase();
 }
 
 function entityPoint(entity: Entity | BuiltEntity["entity"]): { x: number; y: number } | undefined {
@@ -416,14 +498,18 @@ function buildEntityMatchInfo(entity: Entity | BuiltEntity["entity"]): EntityMat
 	};
 }
 
-function entityBackendNodeIdentity(entity: Entity | BuiltEntity["entity"]): { backendNodeId: number; targetId?: string } | undefined {
+function entityBackendNodeIdentity(
+	entity: Entity | BuiltEntity["entity"],
+): { backendNodeId: number; targetId?: string } | undefined {
 	const hintedTargetId = cleanTargetId(entity.hints?.targetId ?? entity.hints?.cdpTargetId);
 	const hinted = numberValue(entity.hints?.backendNodeId);
 	const locator = entity.locators?.find((item) => item.by === "backendNodeId");
 	if (locator?.by === "backendNodeId" && locator.value > 0) {
 		return { backendNodeId: locator.value, targetId: cleanTargetId(locator.targetId) ?? hintedTargetId };
 	}
-	return hinted !== undefined && hinted > 0 ? { backendNodeId: hinted, ...(hintedTargetId ? { targetId: hintedTargetId } : {}) } : undefined;
+	return hinted !== undefined && hinted > 0
+		? { backendNodeId: hinted, ...(hintedTargetId ? { targetId: hintedTargetId } : {}) }
+		: undefined;
 }
 
 function entityBackendNodeId(entity: Entity | BuiltEntity["entity"]): number | undefined {
@@ -433,7 +519,14 @@ function entityBackendNodeId(entity: Entity | BuiltEntity["entity"]): number | u
 export type AxFusionMatch = { tier: "backend" | "geometry" | "semantic"; confidence: "high" | "medium" };
 
 function sameSemanticValue(left: unknown, right: unknown): boolean {
-	return String(left ?? "").trim().toLowerCase() === String(right ?? "").trim().toLowerCase();
+	return (
+		String(left ?? "")
+			.trim()
+			.toLowerCase() ===
+		String(right ?? "")
+			.trim()
+			.toLowerCase()
+	);
 }
 
 function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number }): number | undefined {
@@ -441,18 +534,29 @@ function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number 
 	return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-export function mergeKnownDomAndAxEntity(base: Entity, ax: BuiltEntity["entity"], match: AxFusionMatch = { tier: "backend", confidence: "high" }): Entity {
+export function mergeKnownDomAndAxEntity(
+	base: Entity,
+	ax: BuiltEntity["entity"],
+	match: AxFusionMatch = { tier: "backend", confidence: "high" },
+): Entity {
 	const mergedState: EntityState = { ...base.state };
 	const stateSource: Record<string, "ax"> = {};
 	const conflicts: string[] = [];
 	const trustedIdentity = match.tier === "backend";
 	const axActionability = trustedIdentity ? ax.actionability : undefined;
 	const actions = [...new Set([...(base.actionability?.actions ?? []), ...(axActionability?.actions ?? [])])];
-	const actionability = actions.length ? {
-		actions,
-		...(base.actionability?.hint || axActionability?.hint ? { hint: base.actionability?.hint ?? axActionability?.hint } : {}),
-		confidence: base.actionability?.confidence === "high" || axActionability?.confidence === "high" ? "high" as const : "medium" as const,
-	} : undefined;
+	const actionability = actions.length
+		? {
+				actions,
+				...(base.actionability?.hint || axActionability?.hint
+					? { hint: base.actionability?.hint ?? axActionability?.hint }
+					: {}),
+				confidence:
+					base.actionability?.confidence === "high" || axActionability?.confidence === "high"
+						? ("high" as const)
+						: ("medium" as const),
+			}
+		: undefined;
 	for (const key of AX_AUTHORITATIVE_STATE) {
 		const axStateValue = (ax.state as Record<string, unknown>)[key];
 		if (axStateValue !== undefined) {
@@ -465,12 +569,15 @@ export function mergeKnownDomAndAxEntity(base: Entity, ax: BuiltEntity["entity"]
 	const role = ax.role && ax.role !== "generic" ? ax.role : base.role;
 	const name = ax.name || base.name;
 	const password = base.hints?.inputKind === "password";
-	const value = password ? base.value : ax.value ?? base.value;
+	const value = password ? base.value : (ax.value ?? base.value);
 	if (ax.role && ax.role !== "generic" && !sameSemanticValue(base.role, ax.role)) conflicts.push("role");
 	if (base.name && ax.name && !sameSemanticValue(base.name, ax.name)) conflicts.push("name");
-	if (!password && base.value !== undefined && ax.value !== undefined && !sameSemanticValue(base.value, ax.value)) conflicts.push("value");
+	if (!password && base.value !== undefined && ax.value !== undefined && !sameSemanticValue(base.value, ax.value))
+		conflicts.push("value");
 	const backendNodeId = trustedIdentity ? entityBackendNodeId(ax) : undefined;
-	const axIdentityLocators = trustedIdentity ? (ax.locators ?? []).filter((locator) => locator.by === "backendNodeId" || locator.by === "axNodeId") : [];
+	const axIdentityLocators = trustedIdentity
+		? (ax.locators ?? []).filter((locator) => locator.by === "backendNodeId" || locator.by === "axNodeId")
+		: [];
 	const fieldSource = {
 		...(role === ax.role && ax.role !== "generic" ? { role: "ax" as const } : {}),
 		...(ax.name ? { name: "ax" as const } : {}),
@@ -484,7 +591,9 @@ export function mergeKnownDomAndAxEntity(base: Entity, ax: BuiltEntity["entity"]
 		value,
 		state: mergedState,
 		...(actionability ? { actionability } : {}),
-		...(ax.structure || base.structure ? { structure: { ...(base.structure || {}), ...(ax.structure || {}) } } : {}),
+		...(ax.structure || base.structure
+			? { structure: { ...(base.structure || {}), ...(ax.structure || {}) } }
+			: {}),
 		locators: dedupeLocators([...axIdentityLocators, ...(base.locators ?? [])]),
 		geometry: base.geometry || ax.geometry,
 		hints: {
@@ -494,7 +603,9 @@ export function mergeKnownDomAndAxEntity(base: Entity, ax: BuiltEntity["entity"]
 			...(ax.hints?.containerRole ? { containerRole: ax.hints.containerRole } : {}),
 			...(ax.hints?.containerName ? { containerName: ax.hints.containerName } : {}),
 			...(trustedIdentity && ax.hints?.containerKey ? { containerKey: ax.hints.containerKey } : {}),
-			...(trustedIdentity && ax.hints?.currentContainerKeys ? { currentContainerKeys: ax.hints.currentContainerKeys } : {}),
+			...(trustedIdentity && ax.hints?.currentContainerKeys
+				? { currentContainerKeys: ax.hints.currentContainerKeys }
+				: {}),
 			mergedSources: ["dom", "ax"],
 			fusionMatch: match,
 			...(Object.keys(fieldSource).length ? { fieldSource } : {}),
@@ -504,7 +615,10 @@ export function mergeKnownDomAndAxEntity(base: Entity, ax: BuiltEntity["entity"]
 	};
 }
 
-function boxIoU(a?: { x: number; y: number; w: number; h: number }, b?: { x: number; y: number; w: number; h: number }): number | undefined {
+function boxIoU(
+	a?: { x: number; y: number; w: number; h: number },
+	b?: { x: number; y: number; w: number; h: number },
+): number | undefined {
 	if (!a || !b) return undefined;
 	const ix = Math.max(a.x, b.x);
 	const iy = Math.max(a.y, b.y);
@@ -517,20 +631,47 @@ function boxIoU(a?: { x: number; y: number; w: number; h: number }, b?: { x: num
 
 function compatibleMatchRoles(left: string, right: string): boolean {
 	if (left === right) return true;
-	return (left === "img" && right === "image")
-		|| (left === "image" && right === "img")
-		|| (left === "label" && ["labeltext", "text", "statictext"].includes(right))
-		|| (right === "label" && ["labeltext", "text", "statictext"].includes(left))
-		|| (["text", "statictext", "labeltext"].includes(left) && ["text", "statictext", "labeltext"].includes(right))
-		|| (["frame", "iframe"].includes(left) && ["frame", "iframe"].includes(right));
+	return (
+		(left === "img" && right === "image") ||
+		(left === "image" && right === "img") ||
+		(left === "label" && ["labeltext", "text", "statictext"].includes(right)) ||
+		(right === "label" && ["labeltext", "text", "statictext"].includes(left)) ||
+		(["text", "statictext", "labeltext"].includes(left) && ["text", "statictext", "labeltext"].includes(right)) ||
+		(["frame", "iframe"].includes(left) && ["frame", "iframe"].includes(right))
+	);
 }
 
-function axMatchScore(dom: EntityMatchInfo, ax: EntityMatchInfo): { score: number; geometryBacked: boolean } | undefined {
+/** A final parenthesized/bracketed number ("Inbox (3)" vs "Inbox (4)") is a live counter. */
+function looselyEqualNames(left: string, right: string): boolean {
+	const counter = (value: string) => {
+		const match = value.match(/^(.*?)\s*(\(\d+\)|\[\d+\])$/);
+		return match ? { label: match[1]!.trim().toLowerCase(), style: match[2]![0] } : undefined;
+	};
+	const leftCounter = counter(left);
+	const rightCounter = counter(right);
+	return (
+		leftCounter !== undefined &&
+		rightCounter !== undefined &&
+		leftCounter.label === rightCounter.label &&
+		leftCounter.style === rightCounter.style
+	);
+}
+
+function axMatchScore(
+	dom: EntityMatchInfo,
+	ax: EntityMatchInfo,
+): { score: number; geometryBacked: boolean } | undefined {
 	if (dom.targetId !== ax.targetId) return undefined;
 	if (!compatibleMatchRoles(dom.role, ax.role)) return undefined;
-	if (dom.name !== undefined && ax.name !== undefined && dom.name !== ax.name) return undefined;
 	const iou = boxIoU(dom.box, ax.box);
-	if (iou !== undefined && iou >= COINCIDENT_BOX_IOU) return { score: 120 + iou * 10, geometryBacked: true };
+	const coincident = iou !== undefined && iou >= COINCIDENT_BOX_IOU;
+	if (dom.name !== undefined && ax.name !== undefined && dom.name !== ax.name) {
+		// Only coincident geometry may excuse a name difference, and only a digits-only one: the box proves it
+		// is the same node while the DOM and AX readers saw the counter at different instants.
+		if (!coincident || !looselyEqualNames(dom.name, ax.name)) return undefined;
+		return { score: 110 + iou * 10, geometryBacked: true };
+	}
+	if (coincident) return { score: 120 + iou * 10, geometryBacked: true };
 	const nameMatch = dom.name !== undefined && dom.name === ax.name;
 	const roleMatch = dom.role === ax.role;
 	const dist = pointDistance(dom.point, ax.point);
@@ -630,17 +771,26 @@ function geometryMatchCandidates(ax: EntityMatchInfo, index: DomMatchIndex): Set
 	const candidates = new Set<number>();
 	if (ax.box) addCandidates(candidates, queryBoundedSpatialIndex(index.boxes, ax.box));
 	if (ax.point) {
-		addCandidates(candidates, queryBoundedSpatialIndex(index.points, {
-			x: ax.point.x - GEOMETRY_MATCH_RADIUS_PX,
-			y: ax.point.y - GEOMETRY_MATCH_RADIUS_PX,
-			w: GEOMETRY_MATCH_RADIUS_PX * 2,
-			h: GEOMETRY_MATCH_RADIUS_PX * 2,
-		}));
+		addCandidates(
+			candidates,
+			queryBoundedSpatialIndex(index.points, {
+				x: ax.point.x - GEOMETRY_MATCH_RADIUS_PX,
+				y: ax.point.y - GEOMETRY_MATCH_RADIUS_PX,
+				w: GEOMETRY_MATCH_RADIUS_PX * 2,
+				h: GEOMETRY_MATCH_RADIUS_PX * 2,
+			}),
+		);
 	}
 	return candidates;
 }
 
-function bestMatch(candidates: Iterable<number>, usedDom: Uint8Array, domPrepared: EntityMatchInfo[], ax: EntityMatchInfo, geometryOnly: boolean): { index: number; ambiguous: boolean } {
+function bestMatch(
+	candidates: Iterable<number>,
+	usedDom: Uint8Array,
+	domPrepared: EntityMatchInfo[],
+	ax: EntityMatchInfo,
+	geometryOnly: boolean,
+): { index: number; ambiguous: boolean } {
 	let bestIndex = -1;
 	let bestScore = 0;
 	let ambiguous = false;
@@ -670,7 +820,10 @@ function considerScoredMatch(best: ScoredMatch, index: number, score: number, co
 	}
 }
 
-function availableGroupExcluding(group: Set<number> | undefined, excluded: Set<number>): { index: number; count: number } {
+function availableGroupExcluding(
+	group: Set<number> | undefined,
+	excluded: Set<number>,
+): { index: number; count: number } {
 	if (!group?.size) return { index: -1, count: 0 };
 	let excludedCount = 0;
 	for (const candidate of excluded) if (group.has(candidate)) excludedCount += 1;
@@ -682,12 +835,22 @@ function availableGroupExcluding(group: Set<number> | undefined, excluded: Set<n
 	return { index: -1, count: 0 };
 }
 
-function considerSemanticGroup(best: ScoredMatch, group: Set<number> | undefined, geometryCandidates: Set<number>, score: number): void {
+function considerSemanticGroup(
+	best: ScoredMatch,
+	group: Set<number> | undefined,
+	geometryCandidates: Set<number>,
+	score: number,
+): void {
 	const available = availableGroupExcluding(group, geometryCandidates);
 	if (available.index >= 0) considerScoredMatch(best, available.index, score, available.count);
 }
 
-function bestSemanticMatch(ax: EntityMatchInfo, index: DomMatchIndex, usedDom: Uint8Array, domPrepared: EntityMatchInfo[]): { index: number; ambiguous: boolean } {
+function bestSemanticMatch(
+	ax: EntityMatchInfo,
+	index: DomMatchIndex,
+	usedDom: Uint8Array,
+	domPrepared: EntityMatchInfo[],
+): { index: number; ambiguous: boolean } {
 	const geometryCandidates = geometryMatchCandidates(ax, index);
 	const best: ScoredMatch = { index: -1, score: 0, count: 0 };
 	for (const domIndex of geometryCandidates) {
@@ -701,14 +864,27 @@ function bestSemanticMatch(ax: EntityMatchInfo, index: DomMatchIndex, usedDom: U
 	if (ax.name === undefined) {
 		considerSemanticGroup(best, requireWithoutPoint ? semantic.withoutPoint : semantic.all, geometryCandidates, 40);
 	} else {
-		considerSemanticGroup(best, (requireWithoutPoint ? semantic.withoutPointByName : semantic.byName).get(ax.name), geometryCandidates, 60);
-		considerSemanticGroup(best, requireWithoutPoint ? semantic.unnamedWithoutPoint : semantic.unnamed, geometryCandidates, 40);
+		considerSemanticGroup(
+			best,
+			(requireWithoutPoint ? semantic.withoutPointByName : semantic.byName).get(ax.name),
+			geometryCandidates,
+			60,
+		);
+		considerSemanticGroup(
+			best,
+			requireWithoutPoint ? semantic.unnamedWithoutPoint : semantic.unnamed,
+			geometryCandidates,
+			40,
+		);
 	}
 	return { index: best.index, ambiguous: best.count > 1 };
 }
 
 export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEntity[]): AxFusionResult {
-	const merged: Entity[] = domEntities.map((entity) => ({ ...entity, ...(entity.hints ? { hints: { ...entity.hints } } : {}) }));
+	const merged: Entity[] = domEntities.map((entity) => ({
+		...entity,
+		...(entity.hints ? { hints: { ...entity.hints } } : {}),
+	}));
 	const diagnostics = emptyFusionDiagnostics(domEntities.length);
 	const domPrepared = merged.map((entity) => buildEntityMatchInfo(entity));
 	const axPrepared = axEntities.map((ax) => buildEntityMatchInfo(ax.entity));
@@ -725,14 +901,21 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 	}
 	const commit = (axIndex: number, domIndex: number, tier: AxFusionMatch["tier"]): void => {
 		retireDomMatchCandidate(matchIndex, domIndex, merged[domIndex]!, domPrepared[domIndex]!);
-		merged[domIndex] = mergeKnownDomAndAxEntity(merged[domIndex]!, axEntities[axIndex]!.entity, { tier, confidence: tier === "semantic" ? "medium" : "high" });
+		merged[domIndex] = mergeKnownDomAndAxEntity(merged[domIndex]!, axEntities[axIndex]!.entity, {
+			tier,
+			confidence: tier === "semantic" ? "medium" : "high",
+		});
 		domPrepared[domIndex] = buildEntityMatchInfo(merged[domIndex]!);
 		usedAx[axIndex] = 1;
 		usedDom[domIndex] = 1;
 		diagnostics.axEnriched += 1;
 		diagnostics.matched[tier] += 1;
 	};
-	const commitUnique = (proposals: Array<{ axIndex: number; domIndex: number }>, tier: AxFusionMatch["tier"], ambiguity: "ambiguousBackend" | "ambiguousGeometry" | "ambiguousSemantic"): void => {
+	const commitUnique = (
+		proposals: Array<{ axIndex: number; domIndex: number }>,
+		tier: AxFusionMatch["tier"],
+		ambiguity: "ambiguousBackend" | "ambiguousGeometry" | "ambiguousSemantic",
+	): void => {
 		const byDom = new Map<number, number[]>();
 		for (const proposal of proposals) {
 			const candidates = byDom.get(proposal.domIndex);
@@ -749,15 +932,23 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 		const axBackendIdentity = entityBackendNodeIdentity(axEntities[axIndex]!.entity);
 		if (!axBackendIdentity) continue;
 		const backendCandidates = matchIndex.byBackendNodeKey.get(backendNodeKey(axBackendIdentity));
-		if (backendCandidates?.size === 1) backendProposals.push({ axIndex, domIndex: backendCandidates.values().next().value! });
+		if (backendCandidates?.size === 1)
+			backendProposals.push({ axIndex, domIndex: backendCandidates.values().next().value! });
 		else if (backendCandidates && backendCandidates.size > 1) diagnostics.skipped.ambiguousBackend += 1;
-		else if (matchIndex.byBackendNodeId.get(axBackendIdentity.backendNodeId)?.size) diagnostics.skipped.targetScopeMismatch += 1;
+		else if (matchIndex.byBackendNodeId.get(axBackendIdentity.backendNodeId)?.size)
+			diagnostics.skipped.targetScopeMismatch += 1;
 	}
 	commitUnique(backendProposals, "backend", "ambiguousBackend");
 	const geometryProposals: Array<{ axIndex: number; domIndex: number }> = [];
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
 		if (usedAx[axIndex] || unsafeAx[axIndex]) continue;
-		const match = bestMatch(geometryMatchCandidates(axPrepared[axIndex]!, matchIndex), usedDom, domPrepared, axPrepared[axIndex]!, true);
+		const match = bestMatch(
+			geometryMatchCandidates(axPrepared[axIndex]!, matchIndex),
+			usedDom,
+			domPrepared,
+			axPrepared[axIndex]!,
+			true,
+		);
 		if (match.index >= 0 && !match.ambiguous) geometryProposals.push({ axIndex, domIndex: match.index });
 		else if (match.index >= 0) diagnostics.skipped.ambiguousGeometry += 1;
 	}
@@ -772,6 +963,9 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 	commitUnique(semanticProposals, "semantic", "ambiguousSemantic");
 	const unmatchedAx = axEntities.filter((_, index) => !usedAx[index] && !unsafeAx[index]);
 	diagnostics.axOnly = unmatchedAx.length;
-	diagnostics.degraded = Object.values(diagnostics.skipped).some((count) => count > 0);
+	// A page is "degraded" when more than a small share of AX nodes could not be fused; a handful of
+	// ambiguous matches on a large page is normal and must not mark the whole enrichment unreliable.
+	const skippedTotal = Object.values(diagnostics.skipped).reduce((sum, count) => sum + count, 0);
+	diagnostics.degraded = skippedTotal > Math.floor(axEntities.length * FUSION_DEGRADED_SKIP_RATIO);
 	return { merged, unmatchedAx, diagnostics };
 }

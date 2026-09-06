@@ -10,7 +10,10 @@ function packageMetadata(): { root: string; pkg: { name?: unknown; version?: unk
 	let dir = path.dirname(fileURLToPath(import.meta.url));
 	while (true) {
 		try {
-			const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8")) as { name?: unknown; version?: unknown };
+			const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8")) as {
+				name?: unknown;
+				version?: unknown;
+			};
 			if (pkg.name === PACKAGE_NAME) return { root: dir, pkg };
 		} catch {
 			/* keep walking */

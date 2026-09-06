@@ -1,14 +1,12 @@
-// ABML causal plane with passive network deltas and initiator-enhanced attribution.
+// Concept: "Causal" (docs/concepts.md) — passive network deltas with initiator-enhanced attribution.
 //
 // Given the network records captured since a baseline observation, produce a complete
 // "what fired since baseline" summary for the observe envelope. It reports requests observed in
 // the window and attributes them to a control when an action context is present. CDP initiator
 // metadata (type/url, NOT full call-stack parsing) filters structural noise and elevates
-// confidence when the initiator confirms a script-triggered request. URLs are redacted;
-// no bodies. Pure core: zero browser/Node deps.
+// confidence when the initiator confirms a script-triggered request. URLs are kept verbatim;$([Environment]::NewLine)// no bodies. Pure core: zero browser/Node deps.
 import type { Entity, EntityRelation } from "./entity.js";
 import { finiteNumber as num, isRecord, nonEmptyString as str } from "../../utils/records.js";
-import { redactSensitiveText } from "../../utils/redaction.js";
 import { mintRef } from "../refs/core.js";
 
 export type CausalRequest = {
@@ -29,7 +27,7 @@ export type CausalEvent = {
 	ref: string; // bp-ref://event/<seq|id>
 	type: string; // console | domSink | storage | error | ...
 	at?: number;
-	summary?: string; // redacted; never a raw payload
+	summary?: string; // a compact text summary; never a raw payload
 	selector?: string; // the event's target element, when it names one
 };
 
@@ -37,7 +35,13 @@ export type CausalEvent = {
 // the tab; the agent opts in via `browser_command network.start`. The optional `events` field carries
 // hook events since baseline alongside the network `requests`.
 export type CausalSummary =
-	| { sinceSeq: number; requests: CausalRequest[]; requestCount?: number; events?: CausalEvent[]; eventCount?: number }
+	| {
+			sinceSeq: number;
+			requests: CausalRequest[];
+			requestCount?: number;
+			events?: CausalEvent[];
+			eventCount?: number;
+	  }
 	| { unavailable: string; events?: CausalEvent[]; eventCount?: number };
 
 export function causalRequestsFiredCount(causal: CausalSummary): number {
@@ -56,11 +60,10 @@ function refIdComponent(value: string, fallback: string): string {
 	return cleaned || fallback;
 }
 
-function redactUrl(url: string): string {
-	return redactSensitiveText(url);
-}
-
-function deltaRecordsSinceSeq(records: Array<Record<string, unknown>>, sinceSeq: number): Array<{ record: Record<string, unknown>; seq: number }> {
+function deltaRecordsSinceSeq(
+	records: Array<Record<string, unknown>>,
+	sinceSeq: number,
+): Array<{ record: Record<string, unknown>; seq: number }> {
 	return records
 		.map((record) => {
 			const seq = num(record.seq);
@@ -71,7 +74,7 @@ function deltaRecordsSinceSeq(records: Array<Record<string, unknown>>, sinceSeq:
 		.map(({ record, seq }) => ({ record, seq }));
 }
 
-// One network record → a compact, redacted causal request. Tolerant of both the full NetworkRecord
+// One network record → a compact causal request. Tolerant of both the full NetworkRecord
 // shape and the network.list summary shape (fields read defensively, like stream.ts).
 const PASSIVE_INITIATOR_TYPES = new Set(["parser", "preload", "preflight"]);
 
@@ -90,7 +93,7 @@ export function buildCausalRequest(record: Record<string, unknown>): CausalReque
 	return {
 		ref: mintRef("network", refIdComponent(requestId, "request")),
 		...(method ? { method } : {}),
-		...(url ? { url: redactUrl(url) } : {}),
+		...(url ? { url } : {}),
 		...(status !== undefined ? { status } : {}),
 		...(type ? { type } : {}),
 		...(at !== undefined ? { at } : {}),
@@ -113,12 +116,18 @@ export function buildCausalSummary(records: Array<Record<string, unknown>>, sinc
 
 // Event (non-network) causal entries.
 
-// A redacted summary for a hook event: prefer a named text field (message/summary/preview/…),
+// A compact summary for a hook event: prefer a named text field (message/summary/preview/…),
 // never dump the raw payload object. Falls back to undefined so the entry stays compact.
 function eventSummary(data: unknown): string | undefined {
 	if (typeof data === "string") return data;
 	if (!isRecord(data)) return undefined;
-	const direct = str(data.message) || str(data.summary) || str(data.preview) || str(data.text) || str(data.value) || str(data.url);
+	const direct =
+		str(data.message) ||
+		str(data.summary) ||
+		str(data.preview) ||
+		str(data.text) ||
+		str(data.value) ||
+		str(data.url);
 	if (direct) return direct;
 	// console.* events carry their message in `args` (the hook records `{ args, stack }`); the first
 	// string arg is the human-meaningful summary. Generic shape, no per-event-type branching.
@@ -133,15 +142,23 @@ function eventSummary(data: unknown): string | undefined {
 // elementRef `{ nodeName, className, selector }`). Used for element-sourced attribution.
 function eventSelector(record: Record<string, unknown>): string | undefined {
 	const data = isRecord(record.data) ? record.data : {};
-	const el = isRecord(record.elementRef) ? record.elementRef : isRecord(data.elementRef) ? data.elementRef : isRecord(data.element) ? data.element : undefined;
+	const el = isRecord(record.elementRef)
+		? record.elementRef
+		: isRecord(data.elementRef)
+			? data.elementRef
+			: isRecord(data.element)
+				? data.element
+				: undefined;
 	return str(record.selector) || str(data.selector) || (el ? str(el.selector) : undefined);
 }
 
-// One hook event → a compact, redacted causal event. Tolerant of the HookEvent shape
+// One hook event → a compact causal event. Tolerant of the HookEvent shape
 // (`{ seq, type, timestamp, data }`) and defensive field aliases, like buildCausalRequest.
 export function buildCausalEvent(record: Record<string, unknown>, fallbackIndex?: number): CausalEvent {
 	const seq = num(record.seq);
-	const id = str(record.id) || (seq !== undefined ? String(seq) : fallbackIndex !== undefined ? `event-${fallbackIndex}` : "event");
+	const id =
+		str(record.id) ||
+		(seq !== undefined ? String(seq) : fallbackIndex !== undefined ? `event-${fallbackIndex}` : "event");
 	const type = str(record.type) || str(record.event) || str(record.eventType) || "event";
 	const at = num(record.timestamp) ?? num(record.t) ?? num(record.at);
 	const summary = eventSummary(record.data ?? record.summary ?? record.message);
@@ -150,13 +167,16 @@ export function buildCausalEvent(record: Record<string, unknown>, fallbackIndex?
 		ref: mintRef("event", refIdComponent(id, "event")),
 		type,
 		...(at !== undefined ? { at } : {}),
-		...(summary ? { summary: redactSensitiveText(summary) } : {}),
+		...(summary ? { summary } : {}),
 		...(selector ? { selector } : {}),
 	};
 }
 
 // Build the event-delta (hook events captured since the baseline seq). Mirrors buildCausalSummary.
-export function buildCausalEvents(records: Array<Record<string, unknown>>, sinceSeq: number): { events: CausalEvent[]; eventCount?: number } {
+export function buildCausalEvents(
+	records: Array<Record<string, unknown>>,
+	sinceSeq: number,
+): { events: CausalEvent[]; eventCount?: number } {
 	const delta = deltaRecordsSinceSeq(records, sinceSeq);
 	const events = delta.map(({ record }, index) => buildCausalEvent(record, index));
 	return {
@@ -188,10 +208,15 @@ export function latestSeq(records: Array<Record<string, unknown>>): number | und
 // (parser/preload initiated) are excluded — they are structural, not action-caused. When
 // hasActionRef is true AND the request has initiatorType "script", confidence is elevated to
 // "medium" (multi-signal: timing window + CDP initiator type confirmation).
-export function buildTriggeredRelations(causal: CausalSummary, options?: { hasActionRef?: boolean; actionAt?: number }): EntityRelation[] {
+export function buildTriggeredRelations(
+	causal: CausalSummary,
+	options?: { hasActionRef?: boolean; actionAt?: number },
+): EntityRelation[] {
 	if (!("requests" in causal)) return [];
 	return causal.requests
-		.filter((r) => !r.passive && (options?.actionAt === undefined || r.at !== undefined && r.at >= options.actionAt))
+		.filter(
+			(r) => !r.passive && (options?.actionAt === undefined || (r.at !== undefined && r.at >= options.actionAt)),
+		)
 		.map((request) => {
 			const initiatorConfirmed = request.initiatorType === "script" && options?.hasActionRef;
 			return {
@@ -214,7 +239,11 @@ export function buildTriggeredRelations(causal: CausalSummary, options?: { hasAc
 // accepted when it resolves to a focusable control/element entity — a `focusedRef` that lands on a
 // frame/region (observed on live pages) is rejected, so the delta is never mis-attributed. Returns
 // undefined when no trustworthy control is identified (causal stays present, just without `triggered`).
-export function resolveActionEntityRef(actionRef: string | undefined, focusedRef: string | undefined, entities: Entity[]): string | undefined {
+export function resolveActionEntityRef(
+	actionRef: string | undefined,
+	focusedRef: string | undefined,
+	entities: Entity[],
+): string | undefined {
 	const resolveActionable = (ref: string | undefined): string | undefined => {
 		if (!ref) return undefined;
 		const entity = entities.find((candidate) => candidate.ref === ref);
@@ -236,8 +265,10 @@ export function eventTriggeredByEntity(events: CausalEvent[], entities: Entity[]
 	if (!events.length) return out;
 	const bySelector = new Map<string, string>();
 	for (const entity of entities) {
-		const selector = isRecord(entity.hints) && typeof entity.hints.selector === "string" ? entity.hints.selector.trim() : "";
-		if (selector && (entity.kind === "control" || entity.kind === "element") && !bySelector.has(selector)) bySelector.set(selector, entity.ref);
+		const selector =
+			isRecord(entity.hints) && typeof entity.hints.selector === "string" ? entity.hints.selector.trim() : "";
+		if (selector && (entity.kind === "control" || entity.kind === "element") && !bySelector.has(selector))
+			bySelector.set(selector, entity.ref);
 	}
 	if (!bySelector.size) return out;
 	for (const event of events) {
@@ -245,7 +276,13 @@ export function eventTriggeredByEntity(events: CausalEvent[], entities: Entity[]
 		if (!selector) continue;
 		const entityRef = bySelector.get(selector);
 		if (!entityRef) continue;
-		const relation: EntityRelation = { type: "triggered", targetRef: event.ref, source: "event", confidence: "medium", evidence: { eventType: event.type } };
+		const relation: EntityRelation = {
+			type: "triggered",
+			targetRef: event.ref,
+			source: "event",
+			confidence: "medium",
+			evidence: { eventType: event.type },
+		};
 		const list = out.get(entityRef);
 		if (list) list.push(relation);
 		else out.set(entityRef, [relation]);

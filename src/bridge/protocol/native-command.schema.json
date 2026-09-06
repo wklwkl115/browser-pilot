@@ -4,9 +4,7 @@
   "transport": "Browser Pilot Bridge WebSocket command envelope",
   "envelope": {
     "type": "object",
-    "required": [
-      "cmd"
-    ],
+    "required": ["cmd"],
     "properties": {
       "cmd": {
         "type": "string"
@@ -28,21 +26,8 @@
     "hook.ping": "hook.status"
   },
   "domains": {
-    "core": [
-      "bridge_wake",
-      "tabs",
-      "management",
-      "cdp",
-      "persistent_cdp",
-      "batch",
-      "content.fingerprint"
-    ],
-    "input": [
-      "input.pointer",
-      "input.keys",
-      "input.touch",
-      "input.ref"
-    ],
+    "core": ["bridge_wake", "tabs", "management", "cdp", "persistent_cdp", "batch", "content.fingerprint"],
+    "input": ["input.pointer", "input.keys", "input.touch", "input.ref"],
     "wait": [
       "wait.navigate",
       "wait.navigateAndWait",
@@ -99,37 +84,13 @@
       "hook.getListenerChain",
       "hook.getSinkHints"
     ],
-    "frame": [
-      "frame.list",
-      "frame.evaluate",
-      "frame.addNewDocumentScript",
-      "frame.removeNewDocumentScript"
-    ],
-    "layer": [
-      "layer.probe"
-    ],
-    "transfer": [
-      "transfer.download",
-      "transfer.upload"
-    ],
-    "html": [
-      "html.get"
-    ],
-    "screenshot": [
-      "screenshot.capture"
-    ],
-    "evidence": [
-      "evidence.collect"
-    ],
-    "ws": [
-      "ws.open",
-      "ws.status",
-      "ws.send",
-      "ws.replay",
-      "ws.wait",
-      "ws.collect",
-      "ws.close"
-    ]
+    "frame": ["frame.list", "frame.evaluate", "frame.addNewDocumentScript", "frame.removeNewDocumentScript"],
+    "layer": ["layer.probe"],
+    "transfer": ["transfer.download", "transfer.upload"],
+    "html": ["html.get"],
+    "screenshot": ["screenshot.capture"],
+    "evidence": ["evidence.collect"],
+    "ws": ["ws.open", "ws.status", "ws.send", "ws.replay", "ws.wait", "ws.collect", "ws.close"]
   },
   "commands": {
     "bridge_wake": {
@@ -155,18 +116,11 @@
       "domain": "core",
       "tabScoped": false,
       "accessMode": "read",
-      "methods": [
-        "list",
-        "switch",
-        "create",
-        "close"
-      ],
+      "methods": ["list", "switch", "create", "close"],
       "defaultMethod": "list",
       "methodSpecs": {
         "switch": {
-          "required": [
-            "tabId"
-          ],
+          "required": ["tabId"],
           "accessMode": "write"
         },
         "create": {
@@ -174,17 +128,7 @@
         },
         "close": {
           "accessMode": "write",
-          "requiredAny": [
-            [
-              "targetTabId"
-            ],
-            [
-              "closeTabId"
-            ],
-            [
-              "tabId"
-            ]
-          ]
+          "requiredAny": [["targetTabId"], ["closeTabId"], ["tabId"]]
         }
       }
     },
@@ -193,9 +137,7 @@
       "tabScoped": false,
       "accessMode": "write",
       "internal": true,
-      "methods": [
-        "reload"
-      ],
+      "methods": ["reload"],
       "methodRequired": true,
       "methodSpecs": {
         "reload": {
@@ -215,9 +157,7 @@
       "domain": "core",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "method"
-      ],
+      "required": ["method"],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -238,7 +178,21 @@
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "action": { "enum": ["attach", "attachTarget", "send", "detachTarget", "detach", "targets", "frameTree", "evaluateInFrame", "addNewDocumentScript", "removeNewDocumentScript", "releaseIdle"] },
+          "action": {
+            "enum": [
+              "attach",
+              "attachTarget",
+              "send",
+              "detachTarget",
+              "detach",
+              "targets",
+              "frameTree",
+              "evaluateInFrame",
+              "addNewDocumentScript",
+              "removeNewDocumentScript",
+              "releaseIdle"
+            ]
+          },
           "name": { "type": "string" },
           "protocolVersion": { "type": "string" },
           "bringToFront": { "type": "boolean" },
@@ -286,11 +240,7 @@
       "domain": "input",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "gesture",
-        "x",
-        "y"
-      ],
+      "required": ["gesture", "x", "y"],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -299,12 +249,22 @@
           "y": { "type": "number" },
           "button": { "enum": ["left", "middle", "right", "back", "forward", "none"] },
           "count": { "type": "number" },
-          "modifiers": { "anyOf": [{ "type": "number" }, { "type": "array", "items": { "type": "string" } }, { "type": "object" }] },
+          "modifiers": {
+            "anyOf": [{ "type": "number" }, { "type": "array", "items": { "type": "string" } }, { "type": "object" }]
+          },
           "deltaX": { "type": "number" },
           "deltaY": { "type": "number" },
           "toX": { "type": "number" },
           "toY": { "type": "number" },
-          "path": { "type": "array", "items": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"], "additionalProperties": false } }
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+              "required": ["x", "y"],
+              "additionalProperties": false
+            }
+          }
         },
         "required": ["gesture", "x", "y"],
         "additionalProperties": false
@@ -314,14 +274,7 @@
       "domain": "input",
       "tabScoped": true,
       "accessMode": "write",
-      "requiredAny": [
-        [
-          "text"
-        ],
-        [
-          "keys"
-        ]
-      ],
+      "requiredAny": [["text"], ["keys"]],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -334,7 +287,13 @@
               "properties": {
                 "key": { "type": "string", "minLength": 1 },
                 "type": { "enum": ["keyDown", "keyUp"] },
-                "modifiers": { "anyOf": [{ "type": "number" }, { "type": "array", "items": { "type": "string" } }, { "type": "object" }] }
+                "modifiers": {
+                  "anyOf": [
+                    { "type": "number" },
+                    { "type": "array", "items": { "type": "string" } },
+                    { "type": "object" }
+                  ]
+                }
               },
               "required": ["key"],
               "additionalProperties": false
@@ -349,11 +308,7 @@
       "domain": "input",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "gesture",
-        "x",
-        "y"
-      ],
+      "required": ["gesture", "x", "y"],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -362,7 +317,15 @@
           "y": { "type": "number" },
           "toX": { "type": "number" },
           "toY": { "type": "number" },
-          "path": { "type": "array", "items": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"], "additionalProperties": false } }
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+              "required": ["x", "y"],
+              "additionalProperties": false
+            }
+          }
         },
         "required": ["gesture", "x", "y"],
         "additionalProperties": false
@@ -372,31 +335,106 @@
       "domain": "input",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "action",
-        "ref"
-      ],
-      "notes": "Pass an observed bp-ref URI in ref. Screenshot-grounded actions also pass a normalized visual.point; the daemon resolves ownership and private browser state.",
+      "required": ["action", "ref"],
+      "notes": "Pass an observed bp-ref URI in ref. DOM/AX refs accept click, hover, type (text; clear:true replaces the current value), focus, check (checked defaults to true), and select (value | label | index). Screenshot-grounded refs pass a normalized visual.point and accept click, hover, wheel, drag, and type. select dispatches synthetic input/change events; every other action is trusted browser input.",
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "action": { "enum": ["click", "hover", "wheel", "drag", "type"] },
-          "ref": { "type": "string", "pattern": "^bp-ref://" },
+          "action": {
+            "enum": ["click", "hover", "wheel", "drag", "type", "focus", "check", "select"]
+          },
+          "ref": {
+            "type": "string",
+            "pattern": "^bp-ref://"
+          },
           "visual": {
             "type": "object",
             "properties": {
-              "point": { "type": "object", "properties": { "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 } }, "required": ["x", "y"], "additionalProperties": false },
-              "to": { "type": "object", "properties": { "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 } }, "required": ["x", "y"], "additionalProperties": false }
+              "point": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": ["x", "y"],
+                "additionalProperties": false
+              },
+              "to": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": ["x", "y"],
+                "additionalProperties": false
+              }
             },
             "required": ["point"],
             "additionalProperties": false
           },
-          "text": { "type": "string" },
-          "deltaX": { "type": "number" },
-          "deltaY": { "type": "number" },
-          "button": { "enum": ["left", "middle", "right", "back", "forward", "none"] },
-          "count": { "type": "number" },
-          "modifiers": { "anyOf": [{ "type": "number" }, { "type": "array", "items": { "type": "string" } }, { "type": "object" }] }
+          "text": {
+            "type": "string"
+          },
+          "clear": {
+            "type": "boolean"
+          },
+          "checked": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deltaX": {
+            "type": "number"
+          },
+          "deltaY": {
+            "type": "number"
+          },
+          "button": {
+            "enum": ["left", "middle", "right", "back", "forward", "none"]
+          },
+          "count": {
+            "type": "number"
+          },
+          "modifiers": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "object"
+              }
+            ]
+          }
         },
         "required": ["action", "ref"],
         "additionalProperties": false
@@ -408,54 +446,130 @@
       "accessMode": "write",
       "internal": true,
       "notes": "Internal transport optimization; public callers issue one browser primitive per browser_command call.",
-      "required": [
-        "commands"
-      ]
+      "required": ["commands"]
     },
     "wait.navigate": {
       "domain": "wait",
       "tabScoped": true,
       "accessMode": "write",
       "internal": true,
-      "required": [
-        "url"
-      ]
+      "required": ["url"]
     },
     "wait.navigateAndWait": {
       "domain": "wait",
       "tabScoped": true,
       "accessMode": "write",
       "internal": true,
-      "required": [
-        "url"
-      ]
+      "required": ["url"]
     },
     "wait.navigation": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "read"
-      ,"internal": true
+      "accessMode": "read",
+      "notes": "Wait until the tab has navigated and reached waitUntil (default load). Pass url or urlContains so the wait is idempotent: it returns immediately when the current page already matches. Without a URL filter it waits for the next navigation event. Bounded by the tool timeout.",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "urlContains": {
+            "type": "string"
+          },
+          "waitUntil": {
+            "enum": ["commit", "domcontentloaded", "load", "complete", "networkidle"]
+          },
+          "sameDocument": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "wait.loadState": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "read"
-      ,"internal": true
+      "accessMode": "read",
+      "notes": "Wait until document.readyState reaches state (default complete). Returns immediately when already satisfied. Bounded by the tool timeout.",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "enum": ["domcontentloaded", "load", "complete", "networkidle"]
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "wait.networkIdle": {
       "domain": "wait",
       "tabScoped": true,
-      "accessMode": "read"
-      ,"internal": true
+      "accessMode": "read",
+      "notes": "Wait until no more than maxInflight (default 0) requests have been in flight for idleMs (default 500). Long-polling, beacons, and preflights are ignored by default. Bounded by the tool timeout.",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "idleMs": {
+            "type": "integer",
+            "minimum": 100
+          },
+          "maxInflight": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "includeUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ignoreUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resourceTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ignoreResourceTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "wait.selector": {
       "domain": "wait",
       "tabScoped": true,
       "accessMode": "read",
-      "internal": true,
-      "required": [
-        "selector"
-      ]
+      "required": ["selector"],
+      "notes": "Wait until a CSS selector in the main frame reaches state: attached (default), visible, hidden, detached, or stable (visible and geometrically still for stableMs). Bounded by the tool timeout.",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "enum": ["attached", "visible", "hidden", "detached", "stable"]
+          },
+          "stableMs": {
+            "type": "integer",
+            "minimum": 50,
+            "maximum": 5000
+          }
+        },
+        "required": ["selector"],
+        "additionalProperties": false
+      }
     },
     "wait.any": {
       "domain": "wait",
@@ -545,13 +659,21 @@
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "limit": { "type": "number" }, "offset": { "type": "number" }, "sinceSeq": { "type": "number" },
-          "requestId": { "type": "string" }, "url": { "type": "string" }, "urlContains": { "type": "string" },
-          "urlPattern": { "type": "string" }, "method": { "type": "string" }, "type": { "type": "string" },
-          "mime": { "type": "string" }, "status": { "type": "number" },
+          "limit": { "type": "number" },
+          "offset": { "type": "number" },
+          "sinceSeq": { "type": "number" },
+          "requestId": { "type": "string" },
+          "url": { "type": "string" },
+          "urlContains": { "type": "string" },
+          "urlPattern": { "type": "string" },
+          "method": { "type": "string" },
+          "type": { "type": "string" },
+          "mime": { "type": "string" },
+          "status": { "type": "number" },
           "includeUrls": { "type": "array", "items": { "type": "string" } },
           "excludeUrls": { "type": "array", "items": { "type": "string" } },
-          "includeDetails": { "type": "boolean" }, "includeBody": { "type": "boolean" }
+          "includeDetails": { "type": "boolean" },
+          "includeBody": { "type": "boolean" }
         },
         "additionalProperties": false
       }
@@ -575,7 +697,11 @@
       "requiredAny": [["bodyRef"], ["requestId"]],
       "paramsSchema": {
         "type": "object",
-        "properties": { "bodyRef": { "type": "string" }, "requestId": { "type": "string" }, "maxBytes": { "type": "number" } },
+        "properties": {
+          "bodyRef": { "type": "string" },
+          "requestId": { "type": "string" },
+          "maxBytes": { "type": "number" }
+        },
         "requiredAny": [["bodyRef"], ["requestId"]],
         "anyOf": [{ "required": ["bodyRef"] }, { "required": ["requestId"] }],
         "additionalProperties": false
@@ -588,9 +714,16 @@
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "format": { "enum": ["har", "json"] }, "includeBody": { "type": "boolean" }, "sinceSeq": { "type": "number" },
-          "url": { "type": "string" }, "urlContains": { "type": "string" }, "urlPattern": { "type": "string" },
-          "method": { "type": "string" }, "type": { "type": "string" }, "mime": { "type": "string" }, "status": { "type": "number" },
+          "format": { "enum": ["har", "json"] },
+          "includeBody": { "type": "boolean" },
+          "sinceSeq": { "type": "number" },
+          "url": { "type": "string" },
+          "urlContains": { "type": "string" },
+          "urlPattern": { "type": "string" },
+          "method": { "type": "string" },
+          "type": { "type": "string" },
+          "mime": { "type": "string" },
+          "status": { "type": "number" },
           "includeUrls": { "type": "array", "items": { "type": "string" } },
           "excludeUrls": { "type": "array", "items": { "type": "string" } }
         },
@@ -604,7 +737,9 @@
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "condition": { "enum": ["request", "response", "body", "finished", "failed", "websocket", "sse", "idle", "count"] },
+          "condition": {
+            "enum": ["request", "response", "body", "finished", "failed", "websocket", "sse", "idle", "count"]
+          },
           "idleMs": { "type": "number" },
           "count": { "type": "number" },
           "requestId": { "type": "string" },
@@ -625,6 +760,7 @@
       }
     },
     "intercept.install": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "write",
@@ -639,30 +775,32 @@
       }
     },
     "intercept.uninstall": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "write",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "intercept.status": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "read",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "intercept.listRules": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "read",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "intercept.addRule": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "action"
-      ],
+      "required": ["action"],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -689,7 +827,9 @@
               "bodyBase64": { "type": "string" },
               "responseCode": { "type": "number" },
               "responsePhrase": { "type": "string" },
-              "responseHeaders": { "anyOf": [{ "type": "object" }, { "type": "array", "items": { "type": "object" } }] },
+              "responseHeaders": {
+                "anyOf": [{ "type": "object" }, { "type": "array", "items": { "type": "object" } }]
+              },
               "errorReason": { "type": "string" }
             },
             "additionalProperties": false
@@ -700,12 +840,11 @@
       }
     },
     "intercept.removeRule": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "ruleId"
-      ],
+      "required": ["ruleId"],
       "paramsSchema": {
         "type": "object",
         "properties": { "ruleId": { "type": "string", "minLength": 1 } },
@@ -714,6 +853,7 @@
       }
     },
     "intercept.collect": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "read",
@@ -724,12 +864,11 @@
       }
     },
     "intercept.pause": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "params"
-      ],
+      "required": ["params"],
       "paramsSchema": {
         "type": "object",
         "properties": { "params": { "type": "object" }, "autoApply": { "type": "boolean" } },
@@ -738,12 +877,11 @@
       }
     },
     "intercept.continue": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "requestId"
-      ],
+      "required": ["requestId"],
       "notes": "patch may mutate url, method, headers, or body before send; body strings are UTF-8 base64-encoded for CDP Fetch.continueRequest.postData.",
       "paramsSchema": {
         "type": "object",
@@ -767,12 +905,11 @@
       }
     },
     "intercept.fail": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "requestId"
-      ],
+      "required": ["requestId"],
       "paramsSchema": {
         "type": "object",
         "properties": { "requestId": { "type": "string", "minLength": 1 }, "errorReason": { "type": "string" } },
@@ -781,12 +918,11 @@
       }
     },
     "intercept.fulfill": {
+      "tier": "advanced",
       "domain": "intercept",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "requestId"
-      ],
+      "required": ["requestId"],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -810,136 +946,193 @@
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "hook.install": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "write",
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "targets": { "anyOf": [{ "type": "array", "minItems": 1, "items": { "enum": ["console", "error", "networkApi", "websocket", "storage", "crypto", "dom", "domSinks", "cookies"] } }, { "type": "object", "minProperties": 1 }] },
-          "options": { "type": "object" }, "bufferSize": { "type": "integer", "minimum": 1, "maximum": 10000 }
+          "targets": {
+            "anyOf": [
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "enum": [
+                    "console",
+                    "error",
+                    "networkApi",
+                    "websocket",
+                    "storage",
+                    "crypto",
+                    "dom",
+                    "domSinks",
+                    "cookies"
+                  ]
+                }
+              },
+              { "type": "object", "minProperties": 1 }
+            ]
+          },
+          "options": { "type": "object" },
+          "bufferSize": { "type": "integer", "minimum": 1, "maximum": 10000 }
         },
         "required": ["targets"],
         "additionalProperties": false
       }
     },
     "hook.status": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "read",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "hook.collect": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "read",
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "sinceSeq": { "type": "number" }, "limit": { "type": "number" },
-          "eventTypes": { "type": "array", "items": { "type": "string" } }, "minCount": { "type": "number" }
+          "sinceSeq": { "type": "number" },
+          "limit": { "type": "number" },
+          "eventTypes": { "type": "array", "items": { "type": "string" } },
+          "minCount": { "type": "number" }
         },
         "additionalProperties": false
       }
     },
     "hook.clear": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "write",
       "canonical": "hook.clear_buffer"
     },
     "hook.clear_buffer": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "write",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "hook.pause": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "write",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "hook.resume": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "write",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "hook.uninstall": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "write",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "hook.evaluate": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "read",
-      "required": [
-        "expression"
-      ],
+      "required": ["expression"],
       "paramsSchema": {
-        "type": "object", "properties": { "expression": { "type": "string" }, "awaitPromise": { "type": "boolean" } },
-        "required": ["expression"], "additionalProperties": false
+        "type": "object",
+        "properties": { "expression": { "type": "string" }, "awaitPromise": { "type": "boolean" } },
+        "required": ["expression"],
+        "additionalProperties": false
       }
     },
     "hook.addEventListener": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "eventType"
-      ],
+      "required": ["eventType"],
       "paramsSchema": {
-        "type": "object", "properties": { "eventType": { "type": "string" }, "listenerId": { "type": "string" }, "selector": { "type": "string" }, "diagnostics": { "type": "object" } },
-        "required": ["eventType"], "additionalProperties": false
+        "type": "object",
+        "properties": {
+          "eventType": { "type": "string" },
+          "listenerId": { "type": "string" },
+          "selector": { "type": "string" },
+          "diagnostics": { "type": "object" }
+        },
+        "required": ["eventType"],
+        "additionalProperties": false
       }
     },
     "hook.removeEventListener": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "listenerId"
-      ],
+      "required": ["listenerId"],
       "paramsSchema": {
-        "type": "object", "properties": { "listenerId": { "type": "string" } },
-        "required": ["listenerId"], "additionalProperties": false
+        "type": "object",
+        "properties": { "listenerId": { "type": "string" } },
+        "required": ["listenerId"],
+        "additionalProperties": false
       }
     },
     "hook.getPerformanceEntries": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "read",
-      "paramsSchema": { "type": "object", "properties": { "entryType": { "type": "string" }, "nameContains": { "type": "string" } }, "additionalProperties": false }
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "entryType": { "type": "string" }, "nameContains": { "type": "string" } },
+        "additionalProperties": false
+      }
     },
     "hook.getNodeListeners": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "read",
-      "required": [
-        "selector"
-      ],
-      "paramsSchema": { "type": "object", "properties": { "selector": { "type": "string" }, "maxListeners": { "type": "number" } }, "required": ["selector"], "additionalProperties": false }
+      "required": ["selector"],
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "selector": { "type": "string" }, "maxListeners": { "type": "number" } },
+        "required": ["selector"],
+        "additionalProperties": false
+      }
     },
     "hook.getListenerChain": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "read",
-      "required": [
-        "selector"
-      ],
-      "paramsSchema": { "type": "object", "properties": { "selector": { "type": "string" }, "maxListeners": { "type": "number" } }, "required": ["selector"], "additionalProperties": false }
+      "required": ["selector"],
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "selector": { "type": "string" }, "maxListeners": { "type": "number" } },
+        "required": ["selector"],
+        "additionalProperties": false
+      }
     },
     "hook.getSinkHints": {
+      "tier": "advanced",
       "domain": "hook",
       "tabScoped": true,
       "accessMode": "read",
-      "required": [
-        "selector"
-      ],
-      "paramsSchema": { "type": "object", "properties": { "selector": { "type": "string" } }, "required": ["selector"], "additionalProperties": false }
+      "required": ["selector"],
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "selector": { "type": "string" } },
+        "required": ["selector"],
+        "additionalProperties": false
+      }
     },
     "frame.list": {
       "domain": "frame",
@@ -951,43 +1144,51 @@
       "domain": "frame",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "frameId",
-        "expression"
-      ],
+      "required": ["frameId", "expression"],
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "frameId": { "type": "string" }, "expression": { "type": "string" }, "awaitPromise": { "type": "boolean" },
-          "grantUniversalAccess": { "type": "boolean" }, "returnByValue": { "type": "boolean" }, "userGesture": { "type": "boolean" },
+          "frameId": { "type": "string" },
+          "expression": { "type": "string" },
+          "awaitPromise": { "type": "boolean" },
+          "grantUniversalAccess": { "type": "boolean" },
+          "returnByValue": { "type": "boolean" },
+          "userGesture": { "type": "boolean" },
           "worldName": { "type": "string" }
         },
-        "required": ["frameId", "expression"], "additionalProperties": false
+        "required": ["frameId", "expression"],
+        "additionalProperties": false
       }
     },
     "frame.addNewDocumentScript": {
+      "tier": "advanced",
       "domain": "frame",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "source"
-      ],
+      "required": ["source"],
       "paramsSchema": {
         "type": "object",
-        "properties": { "source": { "type": "string", "maxLength": 262144 }, "runImmediately": { "type": "boolean" }, "worldName": { "type": "string" }, "includeCommandLineAPI": { "type": "boolean" } },
-        "required": ["source"], "additionalProperties": false
+        "properties": {
+          "source": { "type": "string", "maxLength": 262144 },
+          "runImmediately": { "type": "boolean" },
+          "worldName": { "type": "string" },
+          "includeCommandLineAPI": { "type": "boolean" }
+        },
+        "required": ["source"],
+        "additionalProperties": false
       }
     },
     "frame.removeNewDocumentScript": {
+      "tier": "advanced",
       "domain": "frame",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "identifier"
-      ],
+      "required": ["identifier"],
       "paramsSchema": {
-        "type": "object", "properties": { "identifier": { "type": "string" } },
-        "required": ["identifier"], "additionalProperties": false
+        "type": "object",
+        "properties": { "identifier": { "type": "string" } },
+        "required": ["identifier"],
+        "additionalProperties": false
       }
     },
     "layer.probe": {
@@ -1036,12 +1237,11 @@
       }
     },
     "ws.open": {
+      "tier": "advanced",
       "domain": "ws",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "url"
-      ],
+      "required": ["url"],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -1054,12 +1254,14 @@
       }
     },
     "ws.status": {
+      "tier": "advanced",
       "domain": "ws",
       "tabScoped": true,
       "accessMode": "read",
       "paramsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     "ws.send": {
+      "tier": "advanced",
       "domain": "ws",
       "tabScoped": true,
       "accessMode": "write",
@@ -1072,12 +1274,11 @@
       }
     },
     "ws.replay": {
+      "tier": "advanced",
       "domain": "ws",
       "tabScoped": true,
       "accessMode": "write",
-      "required": [
-        "steps"
-      ],
+      "required": ["steps"],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -1101,16 +1302,22 @@
       }
     },
     "ws.wait": {
+      "tier": "advanced",
       "domain": "ws",
       "tabScoped": true,
       "accessMode": "read",
       "paramsSchema": {
         "type": "object",
-        "properties": { "afterSeq": { "type": "number" }, "contains": { "type": "string" }, "regex": { "type": "string" } },
+        "properties": {
+          "afterSeq": { "type": "number" },
+          "contains": { "type": "string" },
+          "regex": { "type": "string" }
+        },
         "additionalProperties": false
       }
     },
     "ws.collect": {
+      "tier": "advanced",
       "domain": "ws",
       "tabScoped": true,
       "accessMode": "read",
@@ -1121,6 +1328,7 @@
       }
     },
     "ws.close": {
+      "tier": "advanced",
       "domain": "ws",
       "tabScoped": true,
       "accessMode": "write",
@@ -1135,14 +1343,7 @@
       "tabScoped": true,
       "accessMode": "write",
       "notes": "Download through Chrome. Use selector with mode click or media, or url with mode url; optional fields: index, filename, conflictAction, saveAs, expectMime.",
-      "requiredAny": [
-        [
-          "selector"
-        ],
-        [
-          "url"
-        ]
-      ],
+      "requiredAny": [["selector"], ["url"]],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -1156,7 +1357,11 @@
           "expectMime": { "type": "string" }
         },
         "oneOf": [
-          { "properties": { "mode": { "enum": ["click", "media"] } }, "required": ["selector"], "not": { "required": ["url"] } },
+          {
+            "properties": { "mode": { "enum": ["click", "media"] } },
+            "required": ["selector"],
+            "not": { "required": ["url"] }
+          },
           { "properties": { "mode": { "enum": ["url"] } }, "required": ["url"], "not": { "required": ["selector"] } }
         ],
         "additionalProperties": false
@@ -1167,10 +1372,7 @@
       "tabScoped": true,
       "accessMode": "write",
       "notes": "Upload local files through a page file chooser. Required fields: selector and files; optional field: index.",
-      "required": [
-        "selector",
-        "files"
-      ],
+      "required": ["selector", "files"],
       "paramsSchema": {
         "type": "object",
         "properties": {
@@ -1196,17 +1398,19 @@
       "accessMode": "write",
       "internal": true,
       "notes": "Internal compatibility command; public hook.install accepts the same target id array.",
-      "required": [
-        "targets"
-      ],
+      "required": ["targets"],
       "paramsSchema": {
         "type": "object",
         "properties": {
           "targets": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-          "options": { "type": "object" }, "bufferSize": { "type": "number" }, "force": { "type": "boolean" },
-          "expectedVersion": { "type": "string" }, "installFingerprint": { "type": "string" }
+          "options": { "type": "object" },
+          "bufferSize": { "type": "number" },
+          "force": { "type": "boolean" },
+          "expectedVersion": { "type": "string" },
+          "installFingerprint": { "type": "string" }
         },
-        "required": ["targets"], "additionalProperties": false
+        "required": ["targets"],
+        "additionalProperties": false
       }
     }
   },
@@ -1431,6 +1635,86 @@
       "retryable": true,
       "summary": "Persistent CDP could not attach or recover a child target session."
     },
+    "TARGET_DETACH_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "Persistent CDP could not detach a child target session."
+    },
+    "ATTACH_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "chrome.debugger could not attach to the tab (another debugger may own it)."
+    },
+    "DETACH_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "chrome.debugger could not detach from the tab."
+    },
+    "SEND_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "A CDP command failed inside the browser; see details for the raw protocol error."
+    },
+    "SESSION_LIMIT": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "The extension's persistent CDP session table is full; idle sessions are released over time."
+    },
+    "SCRIPT_LIMIT": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "Too many new-document scripts are registered for this tab; remove one before adding another."
+    },
+    "SCRIPT_TOO_LARGE": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "The submitted script exceeds the size the extension accepts; split or shorten it."
+    },
+    "SCRIPT_NOT_FOUND": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "No new-document script with that identifier is registered for this tab."
+    },
+    "FRAME_NOT_FOUND": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "The requested frame is not in the tab's current frame tree."
+    },
+    "FRAME_EVAL_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "Evaluating in the requested frame failed; the frame may have navigated or detached."
+    },
+    "NO_TAB_ID": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "The CDP command reached the extension without a tab id."
+    },
+    "NO_TARGET_ID": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "The command requires a targetId or sessionId."
+    },
+    "NO_METHOD": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "A raw CDP send requires a method name."
+    },
+    "NO_SOURCE": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "Adding a new-document script requires source text."
+    },
+    "NO_IDENTIFIER": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "Removing a new-document script requires its identifier."
+    },
+    "UNKNOWN_ACTION": {
+      "category": "runtime.cdp",
+      "retryable": false,
+      "summary": "The persistent CDP action is not one the extension implements."
+    },
     "NO_TAB": {
       "category": "driver.tab",
       "retryable": true,
@@ -1466,11 +1750,6 @@
       "retryable": true,
       "summary": "ABML ref is stale."
     },
-    "REF_AMBIGUOUS": {
-      "category": "abml.ref",
-      "retryable": true,
-      "summary": "ABML ref resolved ambiguously."
-    },
     "REF_SCOPE_VIOLATION": {
       "category": "abml.session",
       "retryable": true,
@@ -1480,26 +1759,6 @@
       "category": "abml.ref",
       "retryable": true,
       "summary": "Referenced handle was not found."
-    },
-    "HANDLE_EXPIRED": {
-      "category": "abml.ref",
-      "retryable": true,
-      "summary": "Referenced handle expired."
-    },
-    "HANDLE_KIND_MISMATCH": {
-      "category": "abml.input",
-      "retryable": false,
-      "summary": "Referenced handle kind does not match the expected kind."
-    },
-    "HANDLE_ETAG_MISMATCH": {
-      "category": "abml.ref",
-      "retryable": true,
-      "summary": "Referenced handle etag does not match the current artifact."
-    },
-    "PRIVACY_BLOCKED": {
-      "category": "abml.privacy",
-      "retryable": false,
-      "summary": "Requested access is blocked by ABML privacy policy."
     },
     "ACTIONABILITY_TIMEOUT": {
       "category": "abml.actionability",
@@ -1520,26 +1779,6 @@
       "category": "abml.actionability",
       "retryable": false,
       "summary": "Target is not editable."
-    },
-    "BACKEND_UNAVAILABLE": {
-      "category": "abml.backend",
-      "retryable": true,
-      "summary": "Required backend is unavailable."
-    },
-    "CROSS_ORIGIN_BLOCKED": {
-      "category": "abml.backend",
-      "retryable": false,
-      "summary": "Requested operation is blocked by cross-origin frame boundaries."
-    },
-    "VERIFY_FAILED": {
-      "category": "abml.verification",
-      "retryable": true,
-      "summary": "Post-action verification failed."
-    },
-    "VERIFY_INCONCLUSIVE": {
-      "category": "abml.verification",
-      "retryable": true,
-      "summary": "Post-action verification was inconclusive."
     },
     "INVALID_INPUT": {
       "category": "abml.input",

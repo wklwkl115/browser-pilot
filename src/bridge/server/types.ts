@@ -3,7 +3,11 @@ import type { SessionObservationSnapshotInfo } from "../../kernels/session/obser
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../../ports/BrowserRuntimeTypes.js";
 import type { BrowserCommandQueueInfo } from "./BrowserCommandQueueRegistry.js";
 
-export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserBridgeTargetSource } from "../../ports/BrowserRuntimeTypes.js";
+export type {
+	BrowserBridgeExecutionResult,
+	BrowserBridgeTargetInfo,
+	BrowserBridgeTargetSource,
+} from "../../ports/BrowserRuntimeTypes.js";
 export type { BrowserCommandQueueInfo } from "./BrowserCommandQueueRegistry.js";
 
 export type BrowserBridgeClientInfo = {

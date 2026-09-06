@@ -1,4 +1,13 @@
-import { normalizePersistentBrowserPilotResponse, browserPilotError, browserPilotEval, browserPilotPersistentCdp, BROWSER_PILOT_ERROR_CODES, integerInRange as asPositiveInt, runtimeErrorMessage as errorText, runtimeRecord as asRecord } from "./runtimeSupport.js";
+import {
+	normalizePersistentBrowserPilotResponse,
+	browserPilotError,
+	browserPilotEval,
+	browserPilotPersistentCdp,
+	BROWSER_PILOT_ERROR_CODES,
+	integerInRange as asPositiveInt,
+	runtimeErrorMessage as errorText,
+	runtimeRecord as asRecord,
+} from "./runtimeSupport.js";
 import { subscribeBrowserPilotCdp, unsubscribeBrowserPilotCdp } from "./wait_cdp";
 import type { JsonRecord, BrowserPilotBridgeCommand, BrowserPilotBridgeResponse } from "./types";
 
@@ -38,10 +47,17 @@ function sinkHintsExpression(selector: string): string {
 	})()`;
 }
 
-async function cdpSend(tabId: number, method: string, params: JsonRecord = {}, timeoutMs?: number): Promise<JsonRecord> {
+async function cdpSend(
+	tabId: number,
+	method: string,
+	params: JsonRecord = {},
+	timeoutMs?: number,
+): Promise<JsonRecord> {
 	const cdp = browserPilotPersistentCdp();
 	if (!cdp?.send) throw new Error("persistent CDP helper is not loaded");
-	const response = normalizePersistentBrowserPilotResponse(await cdp.send(tabId, method, params, { persistent: true, name: "dom_flow", timeoutMs }));
+	const response = normalizePersistentBrowserPilotResponse(
+		await cdp.send(tabId, method, params, { persistent: true, name: "dom_flow", timeoutMs }),
+	);
 	if (!response || response.ok === false) {
 		const error = asRecord(response?.error);
 		throw new Error(String(error.message || response?.message || response?.error || `${method} failed`));
@@ -114,10 +130,19 @@ async function resolveNodeObjectId(tabId: number, selector: string, timeoutMs?: 
 	const probe = await browserPilotEval(tabId, probeExpression, true, { timeoutMs });
 	if (!probe.ok) throw new Error(String(probe.error || probe.message || "Runtime.evaluate failed"));
 	const probeData = asRecord(probe.data);
-	if (probeData.ok === false && probeData.error_code === "INVALID_SELECTOR") throw new Error(`INVALID_SELECTOR: ${String(probeData.error || "invalid selector")}`);
-	if (probeData.ok === false && probeData.error_code === "SELECTOR_NOT_FOUND") throw new Error(`SELECTOR_NOT_FOUND: ${String(probeData.error || "selector did not match an element")}`);
+	if (probeData.ok === false && probeData.error_code === "INVALID_SELECTOR")
+		throw new Error(`INVALID_SELECTOR: ${String(probeData.error || "invalid selector")}`);
+	if (probeData.ok === false && probeData.error_code === "SELECTOR_NOT_FOUND")
+		throw new Error(`SELECTOR_NOT_FOUND: ${String(probeData.error || "selector did not match an element")}`);
 	const resolveExpression = `(() => document.querySelector(${JSON.stringify(selector)}))()`;
-	const response = normalizePersistentBrowserPilotResponse(await (browserPilotPersistentCdp()!.send!(tabId, "Runtime.evaluate", { expression: resolveExpression, awaitPromise: true, returnByValue: false }, { persistent: true, name: "dom_flow_resolve", timeoutMs })));
+	const response = normalizePersistentBrowserPilotResponse(
+		await browserPilotPersistentCdp()!.send!(
+			tabId,
+			"Runtime.evaluate",
+			{ expression: resolveExpression, awaitPromise: true, returnByValue: false },
+			{ persistent: true, name: "dom_flow_resolve", timeoutMs },
+		),
+	);
 	if (!response || response.ok === false) {
 		const error = asRecord(response?.error);
 		throw new Error(String(error.message || response?.message || response?.error || "Runtime.evaluate failed"));
@@ -126,17 +151,31 @@ async function resolveNodeObjectId(tabId: number, selector: string, timeoutMs?: 
 	const remote = asRecord(result.result);
 	const objectId = String(remote.objectId || "").trim();
 	if (!objectId) throw new Error("failed to resolve selector objectId");
-	return { objectId, node: asRecord(probeData.nodeInfo), pageUrl: typeof probeData.pageUrl === "string" ? probeData.pageUrl : undefined };
+	return {
+		objectId,
+		node: asRecord(probeData.nodeInfo),
+		pageUrl: typeof probeData.pageUrl === "string" ? probeData.pageUrl : undefined,
+	};
 }
 
-export async function collectNodeListeners(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+export async function collectNodeListeners(
+	tabId: number,
+	msg: BrowserPilotBridgeCommand,
+): Promise<BrowserPilotBridgeResponse> {
 	try {
 		const selector = selectorText(msg.selector);
 		const timeoutMs = asPositiveInt(msg.timeoutMs ?? msg.timeout_ms, 10_000, 1, 60_000);
 		const maxListeners = asPositiveInt(msg.maxListeners ?? msg.max_listeners, 20, 1, 200);
 		const { objectId, node, pageUrl } = await resolveNodeObjectId(tabId, selector, timeoutMs);
-		const listenerResult = await cdpSend(tabId, "DOMDebugger.getEventListeners", { objectId, depth: 1, pierce: true }, timeoutMs);
-		const listeners = Array.isArray(listenerResult.listeners) ? listenerResult.listeners.slice(0, maxListeners).map((item) => asRecord(item)) : [];
+		const listenerResult = await cdpSend(
+			tabId,
+			"DOMDebugger.getEventListeners",
+			{ objectId, depth: 1, pierce: true },
+			timeoutMs,
+		);
+		const listeners = Array.isArray(listenerResult.listeners)
+			? listenerResult.listeners.slice(0, maxListeners).map((item) => asRecord(item))
+			: [];
 		const scripts = await collectDebuggerScriptLookup(tabId, timeoutMs);
 		return {
 			ok: true,
@@ -153,26 +192,48 @@ export async function collectNodeListeners(tabId: number, msg: BrowserPilotBridg
 					handler: listenerSourceFact(listener, scripts, pageUrl),
 				})),
 				count: listeners.length,
-				truncated: Array.isArray(listenerResult.listeners) ? listenerResult.listeners.length > listeners.length : false,
+				truncated: Array.isArray(listenerResult.listeners)
+					? listenerResult.listeners.length > listeners.length
+					: false,
 			},
 		};
 	} catch (error) {
 		const message = errorText(error);
-		if (/INVALID_SELECTOR/i.test(message)) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_SELECTOR, message, { tabId, selector: msg.selector });
-		if (/SELECTOR_NOT_FOUND|selector did not match/i.test(message)) return browserPilotError(BROWSER_PILOT_ERROR_CODES.SELECTOR_NOT_FOUND, message, { tabId, selector: msg.selector });
+		if (/INVALID_SELECTOR/i.test(message))
+			return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_SELECTOR, message, {
+				tabId,
+				selector: msg.selector,
+			});
+		if (/SELECTOR_NOT_FOUND|selector did not match/i.test(message))
+			return browserPilotError(BROWSER_PILOT_ERROR_CODES.SELECTOR_NOT_FOUND, message, {
+				tabId,
+				selector: msg.selector,
+			});
 		return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, message, { tabId, selector: msg.selector });
 	}
 }
 
-export async function collectNodeSinkHints(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+export async function collectNodeSinkHints(
+	tabId: number,
+	msg: BrowserPilotBridgeCommand,
+): Promise<BrowserPilotBridgeResponse> {
 	try {
 		const selector = selectorText(msg.selector);
 		const timeoutMs = asPositiveInt(msg.timeoutMs ?? msg.timeout_ms, 10_000, 1, 60_000);
 		const result = await browserPilotEval(tabId, sinkHintsExpression(selector), true, { timeoutMs });
 		if (!result.ok) return result;
 		const data = asRecord(result.data);
-		if (data.ok === false && data.error_code === 'INVALID_SELECTOR') return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_SELECTOR, data.error || 'invalid selector', { tabId, selector });
-		if (data.ok === false && data.error_code === 'SELECTOR_NOT_FOUND') return browserPilotError(BROWSER_PILOT_ERROR_CODES.SELECTOR_NOT_FOUND, data.error || 'selector did not match an element', { tabId, selector });
+		if (data.ok === false && data.error_code === "INVALID_SELECTOR")
+			return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_SELECTOR, data.error || "invalid selector", {
+				tabId,
+				selector,
+			});
+		if (data.ok === false && data.error_code === "SELECTOR_NOT_FOUND")
+			return browserPilotError(
+				BROWSER_PILOT_ERROR_CODES.SELECTOR_NOT_FOUND,
+				data.error || "selector did not match an element",
+				{ tabId, selector },
+			);
 		return {
 			ok: true,
 			data: {
@@ -186,30 +247,43 @@ export async function collectNodeSinkHints(tabId: number, msg: BrowserPilotBridg
 		};
 	} catch (error) {
 		const message = errorText(error);
-		if (/INVALID_SELECTOR/i.test(message)) return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_SELECTOR, message, { tabId, selector: msg.selector });
-		if (/SELECTOR_NOT_FOUND|selector did not match/i.test(message)) return browserPilotError(BROWSER_PILOT_ERROR_CODES.SELECTOR_NOT_FOUND, message, { tabId, selector: msg.selector });
+		if (/INVALID_SELECTOR/i.test(message))
+			return browserPilotError(BROWSER_PILOT_ERROR_CODES.INVALID_SELECTOR, message, {
+				tabId,
+				selector: msg.selector,
+			});
+		if (/SELECTOR_NOT_FOUND|selector did not match/i.test(message))
+			return browserPilotError(BROWSER_PILOT_ERROR_CODES.SELECTOR_NOT_FOUND, message, {
+				tabId,
+				selector: msg.selector,
+			});
 		return browserPilotError(BROWSER_PILOT_ERROR_CODES.INTERNAL_ERROR, message, { tabId, selector: msg.selector });
 	}
 }
 
-export async function collectNodeListenerChain(tabId: number, msg: BrowserPilotBridgeCommand): Promise<BrowserPilotBridgeResponse> {
+export async function collectNodeListenerChain(
+	tabId: number,
+	msg: BrowserPilotBridgeCommand,
+): Promise<BrowserPilotBridgeResponse> {
 	const listeners = await collectNodeListeners(tabId, msg);
 	if (!listeners.ok) return listeners;
 	const data = asRecord(listeners.data);
-	const chain = Array.isArray(data.listeners) ? data.listeners.map((listener, index) => {
-		const entry = asRecord(listener);
-		const handler = asRecord(entry.handler);
-		return {
-			index,
-			eventType: entry.type,
-			flags: {
-				capture: entry.useCapture === true,
-				passive: entry.passive === true,
-				once: entry.once === true,
-			},
-			handler,
-		};
-	}) : [];
+	const chain = Array.isArray(data.listeners)
+		? data.listeners.map((listener, index) => {
+				const entry = asRecord(listener);
+				const handler = asRecord(entry.handler);
+				return {
+					index,
+					eventType: entry.type,
+					flags: {
+						capture: entry.useCapture === true,
+						passive: entry.passive === true,
+						once: entry.once === true,
+					},
+					handler,
+				};
+			})
+		: [];
 	return {
 		ok: true,
 		data: {

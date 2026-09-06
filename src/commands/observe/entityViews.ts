@@ -2,7 +2,13 @@ import { isAddressableEntity, type Entity } from "../../kernels/abml/entity.js";
 
 export function entitySalienceRank(entity: Entity): number {
 	const s = entity.state;
-	if (s.checked === true || s.selected === true || s.pressed === true || (s.current !== undefined && s.current !== false)) return 0;
+	if (
+		s.checked === true ||
+		s.selected === true ||
+		s.pressed === true ||
+		(s.current !== undefined && s.current !== false)
+	)
+		return 0;
 	if (s.checked !== undefined || s.selected !== undefined || s.pressed !== undefined) return 1;
 	if (entity.kind === "control") return s.inViewport === true ? 2 : 3;
 	if (s.inViewport === true) return 4;
@@ -17,7 +23,10 @@ export function sortEntitiesBySalience(entities: Entity[]): Entity[] {
 }
 
 export function buildEntityOutline(entities: Entity[]): Array<Record<string, unknown>> {
-	const groups = new Map<string, { container: string; name?: string; memberCount: number; controlRefs: string[]; otherRefs: string[] }>();
+	const groups = new Map<
+		string,
+		{ container: string; name?: string; memberCount: number; controlRefs: string[]; otherRefs: string[] }
+	>();
 	for (const entity of entities) {
 		const role = typeof entity.hints?.containerRole === "string" ? entity.hints.containerRole : undefined;
 		if (!role) continue;
@@ -29,7 +38,8 @@ export function buildEntityOutline(entities: Entity[]): Array<Record<string, unk
 			groups.set(key, group);
 		}
 		group.memberCount += 1;
-		if (isAddressableEntity(entity)) (entity.kind === "control" ? group.controlRefs : group.otherRefs).push(entity.ref);
+		if (isAddressableEntity(entity))
+			(entity.kind === "control" ? group.controlRefs : group.otherRefs).push(entity.ref);
 	}
 	return Array.from(groups.values())
 		.sort((a, b) => b.memberCount - a.memberCount)
@@ -55,11 +65,15 @@ export function buildPageGist(entities: Entity[]): Record<string, unknown> {
 		const landmark = entity.structure?.landmark;
 		if (typeof landmark === "string") landmarks.add(landmark);
 		const containerRole = entity.hints?.containerRole;
-		if (typeof containerRole === "string") containers.add(`${containerRole} ${typeof entity.hints?.containerName === "string" ? entity.hints.containerName : ""}`);
+		if (typeof containerRole === "string")
+			containers.add(
+				`${containerRole} ${typeof entity.hints?.containerName === "string" ? entity.hints.containerName : ""}`,
+			);
 		if (entity.kind === "control") {
 			controlCount += 1;
 			const s = entity.state;
-			if (s.checked !== undefined || s.selected !== undefined || s.pressed !== undefined) statefulControlCount += 1;
+			if (s.checked !== undefined || s.selected !== undefined || s.pressed !== undefined)
+				statefulControlCount += 1;
 			if (s.checked === true || s.selected === true || s.pressed === true) activeControlCount += 1;
 		}
 	}

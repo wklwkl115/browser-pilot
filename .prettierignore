@@ -1,0 +1,19 @@
+# Build outputs and dependencies
+dist/
+node_modules/
+coverage/
+.browser-pilot/
+bridge/browser_pilot_bridge/
+package-lock.json
+
+# Generated sources: owned by scripts/sync-bridge-config.mjs and
+# scripts/generate-dom-accessibility-bundle.mjs, verified by `npm run check:generated`.
+src/bridge/extension/service_worker/config.ts
+src/bridge/server/browserBridgeConfig.ts
+src/scan/domAccessibilityApiBundle.ts
+
+# Hand-maintained assets
+docs/assets/
+*.min.js
+THIRD_PARTY_NOTICES
+LICENSE

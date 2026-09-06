@@ -1,5 +1,11 @@
 import { Type } from "typebox";
-import { artifactFallbackName, decodeDataUrl, pruneObservationArtifacts, resolveArtifactPath, saveBuffer } from "../artifacts/artifactFiles.js";
+import {
+	artifactFallbackName,
+	decodeDataUrl,
+	pruneObservationArtifacts,
+	resolveArtifactPath,
+	saveBuffer,
+} from "../artifacts/artifactFiles.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams, targetTabId } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, strictCommandParameters } from "./commandShared.js";
@@ -21,7 +27,9 @@ export function defineScreenshotCommand({ commands, ensureStarted }: CommandRegi
 		name: "browser_screenshot",
 		label: "Browser Screenshot",
 		description: "Capture a native screenshot and return it as an MCP resource.",
-		promptGuidelines: ["Use browser_screenshot when visual state is required; prefer browser_observe for text and page structure."],
+		promptGuidelines: [
+			"Use browser_screenshot when visual state is required; prefer browser_observe for text and page structure.",
+		],
 		parameters: strictCommandParameters({
 			...sharedTabScopedToolParams(),
 			fullPage: Type.Optional(Type.Boolean({ description: "Capture beyond the visible viewport." })),
@@ -30,7 +38,16 @@ export function defineScreenshotCommand({ commands, ensureStarted }: CommandRegi
 			return await runCommandHandler(async () => {
 				const server = await ensureStarted();
 				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
-				const result = await server.sendCommand({ cmd: SCREENSHOT_COMMAND, format: "png", captureBeyondViewport: params.fullPage === true, fallback: true, timeoutMs }, { tabId: targetTabId(params) as string | number | undefined, timeoutMs, signal });
+				const result = await server.sendCommand(
+					{
+						cmd: SCREENSHOT_COMMAND,
+						format: "png",
+						captureBeyondViewport: params.fullPage === true,
+						fallback: true,
+						timeoutMs,
+					},
+					{ tabId: targetTabId(params) as string | number | undefined, timeoutMs, signal },
+				);
 				const data = result.data as Record<string, unknown> | undefined;
 				const screenshot = typeof data?.screenshot === "string" ? data.screenshot : undefined;
 				let saved: Awaited<ReturnType<typeof saveBuffer>> | undefined;
@@ -42,7 +59,10 @@ export function defineScreenshotCommand({ commands, ensureStarted }: CommandRegi
 					saved = await saveBuffer(decoded.buffer, outputPath, decoded.mime);
 					void pruneObservationArtifacts(saved.path);
 				}
-				return jsonResult({ captured: Boolean(saved), ...(dimensions ?? {}), ...(saved ? { mime: saved.mime } : {}) }, { saved });
+				return jsonResult(
+					{ captured: Boolean(saved), ...(dimensions ?? {}), ...(saved ? { mime: saved.mime } : {}) },
+					{ saved },
+				);
 			});
 		},
 	});
