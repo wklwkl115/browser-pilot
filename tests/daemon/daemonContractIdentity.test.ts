@@ -39,6 +39,7 @@ test("daemon identity is stable and includes the live command surface", () => {
 	assert.equal(first.toolCount, definitions.length);
 	const payload = commandContractPayload(browserCommandDefinitions());
 	assert.match(payload.nativeProtocolHash, /^[a-f0-9]{64}$/);
+	assert.match(payload.publicSchemaHashes.operationV1, /^[a-f0-9]{64}$/);
 	assert.ok(payload.commands.some((command) => command.name === "browser_execute"));
 });
 

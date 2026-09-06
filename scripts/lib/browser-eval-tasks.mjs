@@ -8,13 +8,46 @@ const coreTasks = [
 		async run(ctx) {
 			const view = await ctx.observe();
 			await ctx.input(ctx.ref(view, "Request title"), "type", { text: "Evaluation request", clear: true });
-			const saved = await ctx.input(
-				ctx.ref(view, "Send request"),
-				"click",
-				{},
-				"document.querySelector('#result').dataset.saved === 'yes'",
-			);
+			await ctx.native({ cmd: "network.start", captureBodies: true });
+			let saved;
+			try {
+				saved = await ctx.call("browser_command", {
+					command: { cmd: "input.ref", ref: ctx.ref(view, "Send request"), action: "click" },
+					expect: { text: { selector: "#result", match: { equals: "CASE-001" } } },
+					business: {
+						success: {
+							allOf: [
+								{
+									request: {
+										url: `${ctx.fixture.url}api/cases?run=${ctx.round}`,
+										method: "POST",
+										status: 200,
+									},
+								},
+								{
+									request: {
+										url: `${ctx.fixture.url}api/cases/CASE-001?run=${ctx.round}`,
+										method: "GET",
+										status: 200,
+										json: [
+											{ pointer: "/id", equals: "CASE-001" },
+											{ pointer: "/title", equals: "Evaluation request" },
+										],
+									},
+								},
+							],
+						},
+					},
+				});
+			} finally {
+				await ctx.native({ cmd: "network.stop" });
+			}
 			ctx.verified(saved);
+			ctx.assert(
+				saved.business?.status === "succeeded",
+				"BUSINESS_READBACK",
+				"Save response and unique-record readback did not establish success",
+			);
 			ctx.assert(
 				JSON.stringify(ctx.fixture.submissions(ctx.round)) === '["Evaluation request"]',
 				"EXACTLY_ONCE",

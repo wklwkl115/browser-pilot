@@ -309,7 +309,9 @@ test("commands execution: browser_tabs actions preserve runtime dispatch", async
 	const create = parseResult(
 		await command.execute({ action: "create", url: "https://example.test/new", active: false, incognito: true }),
 	);
-	assert.deepEqual(create, { tabs: [{ targetRef: "tab-8", url: "https://example.test/new" }] });
+	assert.deepEqual(create.tabs, [{ targetRef: "tab-8", url: "https://example.test/new" }]);
+	assert.equal((create.execution as Record<string, unknown>).status, "returned");
+	assert.equal((create.business as Record<string, unknown>).status, "unknown");
 	const createArgs = runtime.calls.find((call) => call.name === "createTab")?.args;
 	assert.deepEqual(createArgs?.slice(0, 3), ["https://example.test/new", false, 5_000]);
 	assert.deepEqual(
@@ -318,9 +320,9 @@ test("commands execution: browser_tabs actions preserve runtime dispatch", async
 	);
 	assert.ok((createArgs?.[3] as { signal?: unknown }).signal instanceof AbortSignal);
 	const switched = parseResult(await command.execute({ action: "switch", targetRef: "tab-7" }));
-	assert.deepEqual(switched, { tabs: [{ targetRef: "tab-7", active: true }] });
+	assert.deepEqual(switched.tabs, [{ targetRef: "tab-7", active: true }]);
 	const closed = parseResult(await command.execute({ action: "close", targetRef: "tab-7" }));
-	assert.deepEqual(closed, { tabs: [] });
+	assert.deepEqual(closed.tabs, []);
 	for (const [name, prefix] of [
 		["switchTab", ["tab-7", 5_000]],
 		["closeTab", ["tab-7", 5_000]],

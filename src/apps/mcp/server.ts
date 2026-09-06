@@ -1,4 +1,5 @@
 import { readFile, realpath } from "node:fs/promises";
+import { OPERATION_RESULT_PROPERTIES, OPERATION_OUTPUT_SCHEMA } from "../../operations/resultSchema.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -45,7 +46,7 @@ import {
 	semanticContentSections,
 	type ObservationResourceDescriptor,
 } from "../../commands/observe/observationResources.js";
-import { publicToolValue } from "../../utils/toolResult.js";
+import { publicToolValue, errorResult } from "../../utils/toolResult.js";
 import { artifactResourceUri } from "../../artifacts/artifactFiles.js";
 
 type McpContent =
@@ -57,6 +58,7 @@ type McpServerState = { projectRoot: string; rootRefresh?: Promise<void> };
 const RESOURCE_NOT_FOUND = -32002;
 const ROOTS_LIST_TIMEOUT_MS = 5_000;
 const SERVER_INSTRUCTIONS = [
+	"Keep execution, assertion verification, and business outcome separate: verified only means the specified assertion holds. Business success requires declared evidence, preferably unique-record readback rather than optimistic UI. Do not replay uncertain writes; inspect browser_operation using operationId.",
 	"Use the selected active tab by default; call browser_tabs list only to disambiguate tabs.",
 	"Call browser_observe only when page understanding is required; observed bp-ref values route later calls automatically.",
 	"Use browser_execute for JavaScript and browser_command for native or trusted input.",
@@ -78,7 +80,7 @@ function toolDescription(definition: CommandDefinition): string | undefined {
 }
 
 function toolAnnotations(name: string): Tool["annotations"] | undefined {
-	if (name === "browser_observe")
+	if (name === "browser_observe" || name === "browser_operation")
 		return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
 	return undefined;
 }
@@ -123,11 +125,24 @@ const OBSERVE_TOOL_OUTPUT_SCHEMA = {
 } satisfies NonNullable<Tool["outputSchema"]>;
 
 function toolOutputSchema(name: string): Tool["outputSchema"] | undefined {
+	if (name === "browser_operation") return OPERATION_OUTPUT_SCHEMA;
+	if (name === "browser_execute" || name === "browser_command")
+		return {
+			type: "object",
+			properties: {
+				result: {},
+				effect: { type: "object", additionalProperties: true },
+				...OPERATION_RESULT_PROPERTIES,
+			},
+			required: ["result"],
+			additionalProperties: false,
+		};
 	if (name === "browser_observe") return OBSERVE_TOOL_OUTPUT_SCHEMA;
 	if (name === "browser_tabs")
 		return {
 			type: "object",
 			properties: {
+				...OPERATION_RESULT_PROPERTIES,
 				tabs: {
 					type: "array",
 					items: {
@@ -416,10 +431,7 @@ export async function callMcpTool(
 			isError,
 		};
 	} catch (error) {
-		return {
-			content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-			isError: true,
-		};
+		return errorResult(error);
 	}
 }
 

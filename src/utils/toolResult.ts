@@ -64,9 +64,17 @@ function projectRecord(value: Record<string, unknown>, options: PublicToolValueO
 	}
 
 	const errorEnvelope = typeof value.code === "string" && typeof value.message === "string";
+	const publicOperation =
+		typeof value.operationId === "string" &&
+		/^[0-9a-f-]{36}$/i.test(value.operationId) &&
+		(value.scope === "assertion" || isRecord(value.execution));
 	return Object.fromEntries(
 		Object.entries(value)
-			.filter(([key]) => !isRuntimeResultKey(key) && !(errorEnvelope && key === "diagnostics"))
+			.filter(
+				([key]) =>
+					(!isRuntimeResultKey(key) || (key === "operationId" && publicOperation)) &&
+					!(errorEnvelope && key === "diagnostics"),
+			)
 			.map(([key, item]) => [
 				key,
 				options.preserveExecutionData && key === "result" ? item : publicToolValue(item, options),
@@ -100,6 +108,7 @@ export function errorResult(error: unknown): BrowserTextCommandResult {
 	const normalized = publicToolValue(compactError(error)) as Record<string, unknown>;
 	const rawDetails = isRecord(normalized.details) ? normalized.details : {};
 	const {
+		operation,
 		recovery: _nestedRecovery,
 		commandName: _commandName,
 		snapshotId: _snapshotId,
@@ -112,8 +121,17 @@ export function errorResult(error: unknown): BrowserTextCommandResult {
 	const publicError = {
 		code: normalized.code,
 		message: normalized.message,
+		...(isRecord(operation)
+			? {
+					operationId: operation.operationId,
+					execution: operation.execution,
+					business: operation.business,
+					...(operation.verification ? { verification: operation.verification } : {}),
+					...(operation.evidence ? { evidence: operation.evidence } : {}),
+				}
+			: {}),
 		...(Object.keys(details).length ? { details } : {}),
-		...(Object.keys(recovery).length ? { recovery } : {}),
+		...(isRecord(operation) ? { recovery: operation.recovery } : Object.keys(recovery).length ? { recovery } : {}),
 	};
 	return {
 		content: [{ type: "text", text: stableJson(publicError) }],

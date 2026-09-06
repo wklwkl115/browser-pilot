@@ -80,6 +80,7 @@ export type InvokePipelineContext = Pick<DaemonControlContext, "toolByName" | "c
 type PreparedInvoke = {
 	tool: string;
 	cwd?: string;
+	operationId?: string;
 	def: CommandDefinition;
 	args: Record<string, unknown>;
 };
@@ -232,6 +233,15 @@ function prepareInvoke(
 	const tool = typeof body.tool === "string" ? body.tool : "";
 	const params = body.params === undefined ? {} : body.params;
 	const cwd = typeof body.cwd === "string" ? body.cwd : undefined;
+	const operationId = typeof body.operationId === "string" ? body.operationId : undefined;
+	if (
+		body.operationId !== undefined &&
+		(!operationId || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operationId))
+	)
+		return {
+			errorStatus: 400,
+			errorBody: { ok: false, code: "COMMAND_VALIDATION_FAILED", error: "Invalid operationId" },
+		};
 	const def = toolByName.get(tool);
 	if (!def) return { errorStatus: 404, errorBody: { ok: false, error: `unknown tool: ${tool || "(missing)"}` } };
 	const validation = validateDaemonCommandArguments(def, params);
@@ -245,13 +255,16 @@ function prepareInvoke(
 				issues: validation.issues,
 			},
 		};
-	return { tool, cwd, def, args: validation.args };
+	return { tool, cwd, operationId, def, args: validation.args };
 }
 
 async function executeInvoke(invocation: PreparedInvoke, signal?: AbortSignal): Promise<Record<string, unknown>> {
 	const startedAt = Date.now();
 	try {
-		const result = await invocation.def.execute(invocation.args, signal, { cwd: invocation.cwd });
+		const result = await invocation.def.execute(invocation.args, signal, {
+			cwd: invocation.cwd,
+			...(invocation.operationId ? { operationId: invocation.operationId } : {}),
+		});
 		console.error(
 			`[browser-pilot] invoke ${invocation.tool} ${result.terminate ? "error" : "ok"} +${Date.now() - startedAt}ms`,
 		);

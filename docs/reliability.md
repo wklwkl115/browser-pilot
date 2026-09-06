@@ -2,7 +2,9 @@
 
 ## Writes and verification
 
-`effect.settled` describes a short interval of page stability, not completion of background requests. Retryable `expect` checks continue within a five-second verification budget, bounded by the caller deadline. A terminal non-retryable result or cancellation ends polling earlier.
+Execution receipts, assertions and business outcomes are independent. `verification.status: "verified"` means only the supplied assertion holds, including an assertion that a failure UI appeared. Writes expose `operationId`, `execution`, and `business`; without explicit business conditions the outcome stays `unknown`. See [operation outcomes](operation-outcomes.md) for declarative conditions, evidence boundaries, and the read-only `browser_operation` continuation tool.
+
+`effect.settled` describes a short interval of page stability, not completion of background requests. Retryable `expect` checks use a five-second observation budget by default, configurable with bounded `verificationWaitMs` and capped by the operation deadline. A terminal non-retryable result or cancellation ends assertion polling earlier; declared business conditions may still need observation.
 
 `unmet` and `inconclusive` do not undo a write. Inspect business state before retrying; for work exceeding the budget, follow up with an explicit wait. Script timeouts and unknown execution outcomes are not replayed through another executor. CDP fallback is allowed when the initial page-world eval is explicitly blocked before user code starts, not when user code throws a CSP-like error after a side effect. Page security headers remain unchanged.
 

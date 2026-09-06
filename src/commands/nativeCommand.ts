@@ -1,8 +1,18 @@
 import { Type } from "typebox";
+import {
+	businessConditionsInputSchema,
+	CONDITION_DEFINITIONS,
+	prepareBusinessConditions,
+	verificationWaitSchema,
+	prepareVerificationWait,
+} from "../operations/conditionSchema.js";
+import { verificationRefs } from "./commandExpectation.js";
 import { resolveExecutionRef, type ExecutionRefTarget } from "../browser-command-runtime/executionRef.js";
 import { recordAbmlActionContext } from "../browser-command-runtime/abml/verification.js";
 import { BrowserBridgeError } from "../utils/errors.js";
-import { jsonResult } from "../utils/toolResult.js";
+import { jsonResult, errorResult } from "../utils/toolResult.js";
+import { OperationRegistry, type OperationRecord } from "../operations/operationRegistry.js";
+import { operationFailure } from "../operations/operationObservation.js";
 import type { CommandEffect } from "./commandEffect.js";
 import { commandExpectationSchema, prepareCommandExpectation } from "./commandExpectation.js";
 import { runVerifiedWrite, verifiedWriteValue } from "./verifiedWrite.js";
@@ -250,13 +260,18 @@ function prepareNativeRef(command: BridgeCommand): { command: BridgeCommand; ref
 	return { command: { ...command, target }, refs: [resolved.target] };
 }
 
-export function defineNativeCommand({ commands, ensureStarted }: CommandRegistrarContext) {
+export function defineNativeCommand({
+	commands,
+	ensureStarted,
+	operations = new OperationRegistry(),
+}: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_command",
 		label: "Browser Command",
 		description:
 			"Run one validated native browser command in the selected or ref-owning tab. Writes may return effect and verification evidence.",
 		promptGuidelines: [
+			"verification.verified means the declared assertion holds, not business success. Declare business success/failure evidence explicitly; optimistic UI alone is weak evidence. Uncertain dispatched writes must not be replayed; query browser_operation with operationId instead.",
 			"Read browser-pilot://native-command/<cmd> only when an unfamiliar native command's fields are needed.",
 			"For raw CDP, pass command={cmd:'cdp',method:'Domain.method',params:{...}}; Browser Pilot owns attach, reuse, recovery, and cleanup.",
 			"For trusted input on an observed control, use command={cmd:'input.ref',ref:'bp-ref://...',action:'click'|'hover'|'focus'|'type'|'check'|'select'}: type takes text (clear:true replaces the current value), check takes checked (default true), select takes value, label, or index. Browser Pilot resolves the tab and private CDP target.",
@@ -264,147 +279,181 @@ export function defineNativeCommand({ commands, ensureStarted }: CommandRegistra
 			"For tab-scoped writes, expect may declare a JavaScript truth expression or structured ref/state postcondition; Browser Pilot owns settlement and verification.",
 			"When the next step depends on the page settling, use wait.loadState, wait.selector, wait.networkIdle, or wait.navigation (with url or urlContains) instead of polling from browser_execute.",
 		],
-		parameters: strictCommandParameters({
-			command: Type.Object(
-				{
-					cmd: Type.String({
-						minLength: 1,
-						description: `Native command name. Core: ${coreCommandNames.join(", ")}. Advanced (${advancedCommandFamilies.join(", ")}) are documented in browser-pilot://native-commands.`,
-					}),
-				},
-				{ additionalProperties: true, description: "Validated native bridge command object." },
-			),
-			expect: Type.Optional(commandExpectationSchema),
-			...sharedTabScopedToolParams(),
-		}),
+		parameters: strictCommandParameters(
+			{
+				command: Type.Object(
+					{
+						cmd: Type.String({
+							minLength: 1,
+							description: `Native command name. Core: ${coreCommandNames.join(", ")}. Advanced (${advancedCommandFamilies.join(", ")}) are documented in browser-pilot://native-commands.`,
+						}),
+					},
+					{ additionalProperties: true, description: "Validated native bridge command object." },
+				),
+				expect: Type.Optional(commandExpectationSchema),
+				business: Type.Optional(businessConditionsInputSchema),
+				verificationWaitMs: Type.Optional(verificationWaitSchema),
+				...sharedTabScopedToolParams(),
+			},
+			CONDITION_DEFINITIONS,
+		),
 		async execute(params, signal, ctx) {
-			return await runCommandHandler(async () => {
-				if (!params.command || typeof params.command !== "object" || Array.isArray(params.command))
-					throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", {
-						commandName: "browser_command",
+			let operation: OperationRecord | undefined;
+			return await runCommandHandler(
+				async () => {
+					if (!params.command || typeof params.command !== "object" || Array.isArray(params.command))
+						throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", {
+							commandName: "browser_command",
+						});
+					const protocol = validateBridgeCommand(params.command, {
+						allowMissingTabId: true,
+						publicCall: true,
 					});
-				const protocol = validateBridgeCommand(params.command, { allowMissingTabId: true, publicCall: true });
-				if (!protocol.ok)
-					throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", protocol.error, protocol.details);
-				const owner = nativeCommandOwner(protocol.command);
-				if (owner)
-					throw new BrowserBridgeError(
-						"INVALID_RULE",
-						`${String(protocol.command.cmd)} must be invoked through ${owner}`,
-						{ commandName: "browser_command", useTool: owner },
+					if (!protocol.ok)
+						throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", protocol.error, protocol.details);
+					const owner = nativeCommandOwner(protocol.command);
+					if (owner)
+						throw new BrowserBridgeError(
+							"INVALID_RULE",
+							`${String(protocol.command.cmd)} must be invoked through ${owner}`,
+							{ commandName: "browser_command", useTool: owner },
+						);
+					if (!isPublicNativeCommand(protocol.command))
+						throw new BrowserBridgeError(
+							"INVALID_RULE",
+							`${String(protocol.command.cmd)} is not a public native command`,
+							{ commandName: "browser_command", catalog: "browser-pilot://native-commands" },
+						);
+					const write = isNativeWriteCommand(protocol.command);
+					if (write)
+						operation = operations.create(
+							String(protocol.command.cmd),
+							ctx?.cwd ?? process.cwd(),
+							ctx?.operationId,
+						);
+					const prepared = prepareNativeRef(protocol.command);
+					const command = prepared.command;
+					const expect = prepareCommandExpectation(params.expect, "browser_command");
+					const business = prepareBusinessConditions(params.business);
+					const verificationWaitMs = prepareVerificationWait(params.verificationWaitMs);
+					if ((expect || business || verificationWaitMs !== undefined) && !write)
+						throw new BrowserBridgeError(
+							"INVALID_RULE",
+							"browser_command expect is only valid for writes",
+							{
+								commandName: "browser_command",
+							},
+						);
+					const server = await ensureStarted();
+					const timeoutMs = nativeCommandTimeoutMs(String(command.cmd || ""));
+					const rawTarget = targetTabId(params, command);
+					const expectationRefs = verificationRefs(expect, business).map(
+						(ref) => resolveExecutionRef(ref).target,
 					);
-				if (!isPublicNativeCommand(protocol.command))
-					throw new BrowserBridgeError(
-						"INVALID_RULE",
-						`${String(protocol.command.cmd)} is not a public native command`,
-						{ commandName: "browser_command", catalog: "browser-pilot://native-commands" },
-					);
-				const prepared = prepareNativeRef(protocol.command);
-				const command = prepared.command;
-				const write = isNativeWriteCommand(command);
-				const expect = prepareCommandExpectation(params.expect, "browser_command");
-				if (expect && !write)
-					throw new BrowserBridgeError("INVALID_RULE", "browser_command expect is only valid for writes", {
-						commandName: "browser_command",
+					const resolvedTarget = resolveRefExecutionTarget(server, prepared.refs, {
+						rawTarget,
+						observedRefs: expectationRefs,
 					});
-				const server = await ensureStarted();
-				const timeoutMs = nativeCommandTimeoutMs(String(command.cmd || ""));
-				const rawTarget = targetTabId(params, command);
-				const expectationRefs =
-					expect?.kind === "abml" ? [resolveExecutionRef(expect.expectation.ref).target] : [];
-				const resolvedTarget = resolveRefExecutionTarget(server, prepared.refs, {
-					rawTarget,
-					observedRefs: expectationRefs,
-				});
-				const target = isNativeTabScopedCommand(command)
-					? pinTabExecutionTarget(server, resolvedTarget)
-					: resolvedTarget;
-				if (expect && target.tabId === undefined)
-					throw new BrowserBridgeError("INVALID_RULE", "browser_command expect requires a tab-scoped write", {
-						commandName: "browser_command",
-					});
-				const commandName = String(command.cmd || "");
-				const dispatchable = withNativeTimeoutBudget(command, timeoutMs);
-				const dispatch = ({ signal: dispatchSignal }: { signal?: AbortSignal }) =>
-					server.sendCommand(dispatchable, {
-						browserSessionId: target.browserSessionId,
-						tabId: target.rawTarget,
-						timeoutMs,
-						accessMode: write ? "write" : "read",
-						signal: dispatchSignal,
-					});
-				const visualBinding = prepared.refs[0]?.visual;
-				let beforeVisual: VisualScreenshotCapture | undefined;
-				let actionAt: number | undefined;
-				const outcome = write
-					? await runVerifiedWrite({
-							server,
-							verb: commandName,
-							target,
+					const target = isNativeTabScopedCommand(command)
+						? pinTabExecutionTarget(server, resolvedTarget)
+						: resolvedTarget;
+					if ((expect || business) && target.tabId === undefined)
+						throw new BrowserBridgeError(
+							"INVALID_RULE",
+							"browser_command expect requires a tab-scoped write",
+							{
+								commandName: "browser_command",
+							},
+						);
+					const commandName = String(command.cmd || "");
+					const dispatchable = withNativeTimeoutBudget(command, timeoutMs);
+					const dispatch = ({ signal: dispatchSignal }: { signal?: AbortSignal }) =>
+						server.sendCommand(dispatchable, {
+							browserSessionId: target.browserSessionId,
+							tabId: target.rawTarget,
 							timeoutMs,
-							signal,
-							expect,
-							verifyScript:
-								expect?.kind === "javascript"
-									? `return Boolean(await (${expect.expression}));`
-									: undefined,
-							before: async ({ signal: operationSignal }) => {
-								if (!visualBinding) return;
-								beforeVisual = await preflightVisualInput({
-									server,
-									binding: visualBinding,
-									browserSessionId: target.browserSessionId,
-									tabId: target.tabId!,
-									timeoutMs,
-									signal: operationSignal,
-								});
-							},
-							dispatch: (context) => {
-								if (command.cmd === "input.ref") actionAt = Date.now();
-								return dispatch(context);
-							},
-							after: async ({ signal: operationSignal }) =>
-								await captureNativeWriteEvidence({
-									server,
-									command,
-									commandName,
-									target: { browserSessionId: target.browserSessionId, tabId: target.tabId! },
-									timeoutMs,
-									signal: operationSignal,
-									visualBinding,
-									beforeVisual,
-									actionAt,
-								}),
-						})
-					: { result: await dispatch({ signal }) };
-				const visual = outcome.extra;
-				const visualSaved = visual?.capture
-					? await saveBuffer(
-							visual.capture.buffer,
-							resolveArtifactPath(ctx, undefined, artifactFallbackName("visual-effect", "png")),
-							visual.capture.mime,
-						)
-					: undefined;
-				if (visualSaved) void pruneObservationArtifacts(visualSaved.path);
-				const visualResourceUri = visualSaved
-					? artifactResourceUri(visualSaved.path, ctx?.cwd ?? process.cwd())
-					: undefined;
-				const effect =
-					outcome.effect && visual?.effect
-						? {
-								...outcome.effect,
-								visual: {
-									...visual.effect,
-									...(visualResourceUri ? { resourceUri: visualResourceUri } : {}),
+							accessMode: write ? "write" : "read",
+							signal: dispatchSignal,
+						});
+					const visualBinding = prepared.refs[0]?.visual;
+					let beforeVisual: VisualScreenshotCapture | undefined;
+					let actionAt: number | undefined;
+					const outcome = write
+						? await runVerifiedWrite({
+								server,
+								verb: commandName,
+								target,
+								timeoutMs,
+								signal,
+								expect,
+								business,
+								verificationWaitMs,
+								operations,
+								ctx,
+								record: operation,
+								verifyScript:
+									expect?.kind === "javascript"
+										? `return Boolean(await (${expect.expression}));`
+										: undefined,
+								before: async ({ signal: operationSignal }) => {
+									if (!visualBinding) return;
+									beforeVisual = await preflightVisualInput({
+										server,
+										binding: visualBinding,
+										browserSessionId: target.browserSessionId,
+										tabId: target.tabId!,
+										timeoutMs,
+										signal: operationSignal,
+									});
 								},
-							}
-						: outcome.effect;
-				return jsonResult(verifiedWriteValue(outcome, effect), {
-					mode: "command",
-					command: commandName,
-					...(visualSaved ? { saved: visualSaved } : {}),
-				});
-			});
+								dispatch: (context) => {
+									if (command.cmd === "input.ref") actionAt = Date.now();
+									return dispatch(context);
+								},
+								after: async ({ signal: operationSignal }) =>
+									await captureNativeWriteEvidence({
+										server,
+										command,
+										commandName,
+										target: { browserSessionId: target.browserSessionId, tabId: target.tabId! },
+										timeoutMs,
+										signal: operationSignal,
+										visualBinding,
+										beforeVisual,
+										actionAt,
+									}),
+							})
+						: { result: await dispatch({ signal }) };
+					const visual = outcome.extra;
+					const visualSaved = visual?.capture
+						? await saveBuffer(
+								visual.capture.buffer,
+								resolveArtifactPath(ctx, undefined, artifactFallbackName("visual-effect", "png")),
+								visual.capture.mime,
+							)
+						: undefined;
+					if (visualSaved) void pruneObservationArtifacts(visualSaved.path);
+					const visualResourceUri = visualSaved
+						? artifactResourceUri(visualSaved.path, ctx?.cwd ?? process.cwd())
+						: undefined;
+					const effect =
+						outcome.effect && visual?.effect
+							? {
+									...outcome.effect,
+									visual: {
+										...visual.effect,
+										...(visualResourceUri ? { resourceUri: visualResourceUri } : {}),
+									},
+								}
+							: outcome.effect;
+					return jsonResult(verifiedWriteValue(outcome, effect), {
+						mode: "command",
+						command: commandName,
+						...(visualSaved ? { saved: visualSaved } : {}),
+					});
+				},
+				async (error) => errorResult(await operationFailure(error, operation)),
+			);
 		},
 	});
 }

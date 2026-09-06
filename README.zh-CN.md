@@ -118,7 +118,7 @@ npm run mcp -- install
 
 ## 工具
 
-Browser Pilot 提供 5 个可组合的 MCP 工具：
+Browser Pilot 提供 6 个可组合的 MCP 工具：
 
 | 工具                 | 用途                                                          |
 | -------------------- | ------------------------------------------------------------- |
@@ -127,6 +127,7 @@ Browser Pilot 提供 5 个可组合的 MCP 工具：
 | `browser_command`    | 执行可信输入、等待，以及经过校验的浏览器原生命令或 CDP 操作。 |
 | `browser_tabs`       | 列出、切换、创建、关闭或导航已连接的浏览器标签页。            |
 | `browser_screenshot` | 以 MCP 图片资源返回当前视口或完整页面截图。                   |
+| `browser_operation`  | 查询执行回执或继续声明式观察，不重放原始写操作。              |
 
 MCP 的 `tools/list` 响应是公开语法的准确信息源。[`src/commands/commandCatalog.ts`](src/commands/commandCatalog.ts) 维护公开工具列表，各个 `*Command.ts` 模块维护对应的参数结构和处理逻辑。`browser_command` 在工具描述里内联列出**核心**命令（CDP、可信输入、等待、网络录制、frame、HTML、传输）；**高级**命令族（`hook.*`、`intercept.*`、`ws.*`、新文档脚本）仍然公开，但只通过 `browser-pilot://native-commands` 索引和 `browser-pilot://native-command/<cmd>` 资源提供文档。
 
@@ -144,7 +145,7 @@ MCP 的 `tools/list` 响应是公开语法的准确信息源。[`src/commands/co
 2. **按需观察。** 只有需要理解页面时才调用 `browser_observe`。观察结果中的 `bp-ref` 会让后续操作自动路由到引用所属标签页。
 3. **选对工具。** 加载 URL 用 `browser_tabs navigate`；对已观察到的控件做可信输入用 `browser_command` 的 `input.ref`（`click`、`type`、`check`、`select`、`focus`、`hover`）；页面 JavaScript 用 `browser_execute`。同一页面内能够确定执行的 JavaScript 应合并到一次调用中。
 4. **有意识地等待。** 下一步依赖页面稳定时，通过 `browser_command` 调用 `wait.loadState`、`wait.selector`、`wait.networkIdle` 或 `wait.navigation`，不要轮询。
-5. **验证写操作。** 写操作需要验证时添加 `expect`。只有下一步决策依赖新页面状态时才重新观察。
+5. **区分断言与业务结果。** `expect` 只验证指定断言；业务成功或失败需要显式声明 `business.success` / `business.failure`，否则保持 `unknown`。执行结果不确定时，用返回的 `operationId` 查询 `browser_operation`，不要直接再次提交。详见[操作结果契约](docs/operation-outcomes.md)。
 
 <details>
 <summary><strong>执行与验证约定</strong></summary>
@@ -152,6 +153,8 @@ MCP 的 `tools/list` 响应是公开语法的准确信息源。[`src/commands/co
 `browser_execute` 提供 `browserPilot.refs`、`resolve(ref)`、`box(ref)` 和 `setValue(target, value)`。写操作按目标串行执行，并自动使用扩展/CDP 回退路径。
 
 成功的 `browser_execute` 和 `browser_command` 调用返回 `{ "result": ..., "effect"?: ..., "verification"?: ... }`；写操作可能附带 `effect` 和 `verification`。`expect` 可以是返回真值的 JavaScript 表达式，也可以是结构化的引用/状态后置条件，例如 `{ "ref": "bp-ref://control/...", "state": { "pressed": true } }`。结构化验证会在命令执行前后读取同一引用，融合 DOM 与目标可访问性状态，并返回目标级差异。
+
+写操作还返回彼此独立的 `operationId`、`execution` 和 `business`。声明式条件支持文本、输入值、URL、已捕获响应及组合判断，`verificationWaitMs` 控制有界观察预算。`browser_operation` 只继续声明式观察，不执行原写操作。验证“失败提示出现”也可以得到 `verified`；本地操作标识不提供网站端的 exactly-once 保证。
 
 可信输入使用 `command: { cmd: "input.ref", ref: "bp-ref://...", action: "type", text: "...", clear: true }`；`check` 接受 `checked`，`select` 接受 `value`、`label` 或 `index`。原始 CDP 命令使用 `command: { cmd: "cdp", method: "Domain.method", params: {...} }`。目标仍通过工具级 `targetRef` 指定；运行时会话、物理目标、超时、附加和清理状态不属于公开参数。等待与传输类命令的固定预算比一次性命令更长。
 

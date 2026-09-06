@@ -5,6 +5,25 @@ import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.
 import { withBrowserOperation, type BrowserOperationDispatchContext } from "./browserOperation.js";
 import { withCommandEffect, type CommandEffect } from "./commandEffect.js";
 import { javascriptVerificationResult, type PreparedCommandExpectation } from "./commandExpectation.js";
+import {
+	OperationRegistry,
+	assertionResult,
+	unknownBusiness,
+	recordDispatchFailure,
+	type OperationRecord,
+	type OperationSnapshot,
+} from "../operations/operationRegistry.js";
+import { inOperationPhase } from "../operations/operationContext.js";
+import {
+	attachOperationWait,
+	observeOperation,
+	persistOperation,
+	operationFailure,
+	type ObservationPlan,
+} from "../operations/operationObservation.js";
+import { readNetworkBaseline } from "../operations/conditionRuntime.js";
+import { hasRequestCondition, type BusinessConditions } from "../operations/conditionSchema.js";
+import { BrowserBridgeError } from "../utils/errors.js";
 
 /**
  * One write pipeline for every tool that mutates a tab: serialize on the target, bracket the
@@ -15,7 +34,12 @@ import { javascriptVerificationResult, type PreparedCommandExpectation } from ".
 
 export type VerifiedWriteTarget = { browserSessionId?: string; tabId?: number; rawTarget?: string | number };
 
-export type VerifiedWriteOutcome<T> = { result: T; effect?: CommandEffect; verification?: VerificationResult };
+export type VerifiedWriteOutcome<T> = {
+	result: T;
+	effect?: CommandEffect;
+	verification?: VerificationResult;
+	operation?: OperationSnapshot;
+};
 
 export type VerifiedWriteOptions<T extends BrowserBridgeExecutionResult, Extra> = {
 	server: BrowserCommandRuntimePort;
@@ -25,6 +49,12 @@ export type VerifiedWriteOptions<T extends BrowserBridgeExecutionResult, Extra> 
 	timeoutMs: number;
 	signal?: AbortSignal;
 	expect?: PreparedCommandExpectation;
+	business?: BusinessConditions;
+	verificationWaitMs?: number;
+	operations?: OperationRegistry;
+	record?: OperationRecord;
+	ctx?: { cwd?: string; operationId?: string };
+	effects?: boolean;
 	/** Page script that evaluates a JavaScript `expect` to a boolean; required when expect.kind is "javascript". */
 	verifyScript?: string;
 	dispatch: (context: BrowserOperationDispatchContext) => Promise<T>;
@@ -37,19 +67,68 @@ export type VerifiedWriteOptions<T extends BrowserBridgeExecutionResult, Extra> 
 export async function runVerifiedWrite<T extends BrowserBridgeExecutionResult, Extra = undefined>(
 	options: VerifiedWriteOptions<T, Extra>,
 ): Promise<VerifiedWriteOutcome<T> & { extra?: Extra }> {
+	const record =
+		options.record ??
+		(options.operations ?? new OperationRegistry()).create(
+			options.verb,
+			options.ctx?.cwd ?? process.cwd(),
+			options.ctx?.operationId,
+		);
+	if (options.business) record.view.business = unknownBusiness("Declared business conditions have not been observed");
+	try {
+		const outcome = await inOperationPhase(record, "prepare", () => executeVerifiedWrite(options, record));
+		record.view.active = false;
+		await persistOperation(record);
+		return { ...outcome, operation: record.view };
+	} catch (error) {
+		throw await operationFailure(error, record);
+	}
+}
+
+async function dispatchRecorded<T extends BrowserBridgeExecutionResult>(
+	record: OperationRecord,
+	dispatch: () => Promise<T>,
+): Promise<T> {
+	try {
+		const result = await inOperationPhase(record, "dispatch", dispatch);
+		record.view.execution = {
+			...record.view.execution,
+			status: "returned",
+			acknowledged: result.acknowledged,
+			// Arbitrary page return values (including {ok:false}) are not execution receipts.
+			response: "success",
+			returnedAt: Date.now(),
+		};
+		record.view.recovery.action = "observe_only";
+		return result;
+	} catch (error) {
+		recordDispatchFailure(record, error);
+		throw error;
+	}
+}
+
+async function executeVerifiedWrite<T extends BrowserBridgeExecutionResult, Extra>(
+	options: VerifiedWriteOptions<T, Extra>,
+	record: OperationRecord,
+): Promise<VerifiedWriteOutcome<T> & { extra?: Extra }> {
 	const { server, target, timeoutMs, signal, verb } = options;
+	const waitMs = options.verificationWaitMs ?? 5_000;
 	return await withBrowserOperation(
 		{
 			server,
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			targetRef: target.rawTarget,
-			timeoutMs,
+			timeoutMs: timeoutMs + Math.max(0, waitMs - 5_000),
 			signal,
 		},
 		async (context) => {
 			// Without a tracked tab there is nothing to fingerprint or verify: dispatch only.
-			if (target.tabId === undefined) return { result: await options.dispatch(context) };
+			if (target.tabId === undefined || options.effects === false) {
+				if (options.expect || options.business)
+					throw new BrowserBridgeError("INVALID_RULE", "Verification requires a tracked browser target");
+				return { result: await dispatchRecorded(record, () => options.dispatch(context)) };
+			}
 			const tabId = target.tabId;
 			await options.before?.(context);
 			const structured = options.expect?.kind === "abml" ? options.expect.expectation : undefined;
@@ -68,23 +147,32 @@ export async function runVerifiedWrite<T extends BrowserBridgeExecutionResult, E
 			const script = options.expect?.kind === "javascript" ? options.verifyScript : undefined;
 			const initialVerification =
 				abml?.initialVerification ?? (script ? javascriptVerificationResult(verb) : undefined);
-			const verify =
-				abml?.verify ??
-				(script
-					? async () =>
-							javascriptVerificationResult(
-								verb,
-								(
-									await server.executeJavaScript(script, {
-										browserSessionId: target.browserSessionId,
-										tabId: target.rawTarget,
-										timeoutMs,
-										accessMode: "read",
-										signal: context.signal,
-									})
-								).data === true,
-							)
-					: undefined);
+			if (initialVerification)
+				record.view.verification = assertionResult(record.operationId, initialVerification);
+			const expect =
+				options.expect?.kind === "abml"
+					? options.expect.expectation
+					: options.expect?.kind === "declarative"
+						? options.expect.condition
+						: undefined;
+			const plan: ObservationPlan = {
+				runtime: {
+					server,
+					verb,
+					browserSessionId: target.browserSessionId,
+					tabId,
+					rawTarget: target.rawTarget,
+					timeoutMs,
+				},
+				expect,
+				business: options.business,
+			};
+			const conditions = [expect, options.business?.success, options.business?.failure].filter(
+				(item) => item !== undefined,
+			);
+			if (conditions.some(hasRequestCondition))
+				plan.runtime.networkBaseline = await readNetworkBaseline({ ...plan.runtime, signal: context.signal });
+			attachOperationWait(record, plan);
 			const effected = await withCommandEffect(
 				server,
 				{
@@ -93,13 +181,39 @@ export async function runVerifiedWrite<T extends BrowserBridgeExecutionResult, E
 					timeoutMs,
 					deadlineAt: context.deadlineAt,
 					signal: context.signal,
-					...(initialVerification ? { initialVerification } : {}),
-					...(verify ? { verify } : {}),
 				},
-				() => options.dispatch(context),
+				() => dispatchRecorded(record, () => options.dispatch(context)),
 			);
-			const extra = await options.after?.(context, effected);
-			return { ...effected, ...(extra !== undefined ? { extra } : {}) };
+			const legacyVerify =
+				abml?.verify ??
+				(script
+					? async (runtime: import("../operations/conditionRuntime.js").ConditionRuntime) =>
+							javascriptVerificationResult(
+								verb,
+								(
+									await server.executeJavaScript(script, {
+										browserSessionId: target.browserSessionId,
+										tabId: target.rawTarget,
+										timeoutMs: runtime.timeoutMs,
+										accessMode: "read",
+										signal: runtime.signal,
+									})
+								).data === true,
+							)
+					: undefined);
+			await observeOperation(
+				record,
+				{ ...plan, ...(abml ? { expect: undefined } : {}) },
+				Math.max(1, Math.min(waitMs, context.deadlineAt - Date.now())),
+				context.signal,
+				legacyVerify,
+			);
+			const outcome = {
+				...effected,
+				...(record.view.verification ? { verification: record.view.verification } : {}),
+			};
+			const extra = await inOperationPhase(record, "evidence", () => options.after?.(context, outcome));
+			return { ...outcome, ...(extra !== undefined ? { extra } : {}) };
 		},
 	);
 }
@@ -108,10 +222,22 @@ export async function runVerifiedWrite<T extends BrowserBridgeExecutionResult, E
 export function verifiedWriteValue<T extends BrowserBridgeExecutionResult>(
 	outcome: VerifiedWriteOutcome<T>,
 	effect: CommandEffect | undefined = outcome.effect,
-): { result: unknown; effect?: CommandEffect; verification?: VerificationResult } {
+): Record<string, unknown> {
 	return {
 		result: outcome.result.data ?? null,
+		...(outcome.operation ? operationValue(outcome.operation) : {}),
 		...(effect ? { effect } : {}),
 		...(outcome.verification ? { verification: outcome.verification } : {}),
+	};
+}
+
+export function operationValue(operation: OperationSnapshot): Record<string, unknown> {
+	return {
+		operationId: operation.operationId,
+		execution: operation.execution,
+		business: operation.business,
+		recovery: operation.recovery,
+		...(operation.evidence ? { evidence: operation.evidence } : {}),
+		...(operation.continuation ? { continuation: operation.continuation } : {}),
 	};
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { operationRequest } from "../../operations/operationContext.js";
 import { WebSocket } from "ws";
 import { BrowserBridgeError } from "../../utils/errors.js";
 import { normalizeNativeErrorCode } from "../../types/nativeErrorCodes.js";
@@ -61,6 +62,7 @@ export class BrowserBridgePendingRequests {
 		return new Promise<BrowserBridgeExecutionResult>((resolve, reject) => {
 			let dispatched = false;
 			const pending: PendingRequest = {
+				operation: operationRequest(id),
 				id,
 				tabId: options.tabId,
 				client: socket,
@@ -102,9 +104,13 @@ export class BrowserBridgePendingRequests {
 				return;
 			}
 			try {
+				// Sending may partially succeed before throwing; absence of ACK does not prove non-delivery.
+				dispatched = true;
+				pending.operation?.sent();
 				socket.send(
 					JSON.stringify({
 						id,
+						...(pending.operation ? { operationId: pending.operation.operationId } : {}),
 						code,
 						timeoutMs,
 						...(options.tabId !== undefined ? { tabId: options.tabId } : {}),
@@ -159,6 +165,7 @@ export class BrowserBridgePendingRequests {
 	ack(id: string, client: WebSocket): void {
 		const pending = this.pending.get(id);
 		if (pending?.client === client) {
+			pending.operation?.ack();
 			pending.acked = true;
 			pending.ackAt = Date.now();
 		}
@@ -183,6 +190,7 @@ export class BrowserBridgePendingRequests {
 	): void {
 		const pending = this.takeFromClient(id, client);
 		if (!pending) return;
+		pending.operation?.returned("success");
 		const latency = this.latency(pending);
 		pending.resolve({
 			id,
@@ -224,6 +232,11 @@ export class BrowserBridgePendingRequests {
 		const acked = typeof dispatchDetails?.acked === "boolean" ? dispatchDetails.acked : pending.acked;
 		const dispatchStarted =
 			typeof dispatchDetails?.dispatchStarted === "boolean" ? dispatchDetails.dispatchStarted : pending.acked;
+		pending.operation?.returned(
+			"error",
+			dispatchDetails?.dispatchStarted !== false || pending.acked,
+			!/(?:TIMEOUT|TIMED_OUT|DISCONNECTED|UNKNOWN_OUTCOME)$/.test(code),
+		);
 		pending.reject(
 			new BrowserBridgeError(code, normalizeErrorMessage(error), {
 				id,

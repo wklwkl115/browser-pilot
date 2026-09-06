@@ -3,7 +3,7 @@
  * embedding Browser Pilot in another Node process (a custom MCP host, a test harness, or a CLI)
  * without going through stdio.
  *
- *   - Tools:     define the five browser_* tools against any BrowserCommandSink.
+ *   - Tools:     define browser_* tools and read-only operation observation against any BrowserCommandSink.
  *   - MCP:       build the MCP server or call tools / read resources in-process.
  *   - Daemon:    start, find, or reuse the user-local daemon that owns the browser bridge.
  *   - Bridge:    host the WebSocket bridge directly when no daemon is wanted.
