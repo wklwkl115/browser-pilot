@@ -99,6 +99,8 @@ function toolAnnotations(name: string): Tool["annotations"] | undefined {
  * PAGE_OBSERVATION_VIEW_JSON_SCHEMA keeps validating every result before it leaves the server.
  */
 const OBSERVE_VIEW_KEY_DESCRIPTIONS: Record<keyof typeof PAGE_OBSERVATION_VIEW_JSON_SCHEMA.properties, string> = {
+	packets:
+		"Independent field or action context with object identification, required dependencies and explicit exclusions. Folded packets have snapshot resources.",
 	task: "Information need, literal candidate count and ambiguity, captured/matched/displayed scope, and missing context. No task completion claim.",
 	bundles:
 		"Self-contained evidence groups: object identity, fields, related controls, observed global signals and changes. Folded groups remain available as snapshot resources.",
