@@ -1,3 +1,5 @@
+import type { WebSocket } from "ws";
+import { BrowserBridgePendingRequests } from "../../src/bridge/server/BrowserBridgePendingRequests.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1461,3 +1463,47 @@ test("commands execution: visual input.ref rejects modified observation pixels b
 		await rm(directory, { recursive: true, force: true });
 	}
 });
+
+for (const firstMode of ["read", "write"] as const) {
+	test(`public browser_execute preserves ${firstMode} classification across composed bridge requests`, async (t) => {
+		const cwd = await mkdtemp(path.join(tmpdir(), "browser-operation-public-"));
+		t.after(() => rm(cwd, { recursive: true, force: true }));
+		const pending = new BrowserBridgePendingRequests(
+			() => ({}),
+			(target) => target,
+		);
+		let count = 0;
+		const socket = {
+			send(raw: string) {
+				const { id } = JSON.parse(raw) as { id: string };
+				if (++count === 1) {
+					pending.ack(id, socket);
+					pending.resolve(id, socket, "done", []);
+				} else
+					pending.rejectBrowserError(
+						id,
+						socket,
+						{ code: "INVALID_RULE", message: "not started", details: { dispatchStarted: false } },
+						undefined,
+					);
+			},
+		} as unknown as WebSocket;
+		const runtime = createRuntime({
+			async executeJavaScript(_script, options) {
+				await pending.send(socket, "first", { ...options, tabId: 7, accessMode: firstMode });
+				return pending.send(socket, "second", { ...options, tabId: 7, accessMode: "write" });
+			},
+		});
+		const command = defineCommand(defineExecuteCommand, runtime);
+		const result = parseResult(await command.execute({ script: "return 1;" }, undefined, { cwd }));
+		assert.equal(count, 2);
+		assert.equal(
+			(result.execution as Record<string, unknown>).status,
+			firstMode === "read" ? "not_dispatched" : "returned",
+		);
+		assert.equal(
+			(result.recovery as Record<string, unknown>).action,
+			firstMode === "read" ? "retry_after_review" : "observe_only",
+		);
+	});
+}

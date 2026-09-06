@@ -68,11 +68,14 @@ function taskContext(daemon, session, fixture, round, metrics, artifactRoot, res
 				.map((item) => item.text)
 				.join("\n");
 			metrics.resourceReads = (metrics.resourceReads ?? 0) + 1;
+			metrics.resourceResponseJsonBytes = (metrics.resourceResponseJsonBytes ?? 0) + bytes;
+			metrics.maxResourceResponseJsonBytes = Math.max(metrics.maxResourceResponseJsonBytes ?? 0, bytes);
 			metrics.responseJsonBytes += bytes;
 			metrics.mcpResponseJsonBytes = (metrics.mcpResponseJsonBytes ?? 0) + bytes;
 			metrics.responseTextChars += text.length;
 			metrics.steps.push({
 				operation: "resource-read",
+				resourceKind: /\/groups\/\d+$/.test(uri) ? "group" : /\/scope\/\d+$/.test(uri) ? "scope" : "index",
 				success: true,
 				responseJsonBytes: bytes,
 				responseTextChars: text.length,
@@ -148,7 +151,7 @@ export async function runBrowserEvaluation(options, tasks) {
 	const attempts = [];
 	const metadata = {
 		schemaVersion: 2,
-		fixtureVersion: 4,
+		fixtureVersion: 5,
 		generatedAt: new Date().toISOString(),
 		node: process.version,
 		platform: process.platform,

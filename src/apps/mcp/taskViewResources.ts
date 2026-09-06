@@ -44,11 +44,7 @@ export function readTaskProjectionResource(
 	if (selector?.kind === "groups") {
 		const group = artifact.bundles[selector.index];
 		if (!group) throw new Error("Task group is unavailable");
-		return {
-			capturedAt: artifact.capturedAt,
-			task: resourceTask(artifact, 1, group.mandatory ? 1 : 0),
-			bundle: group,
-		};
+		return groupResource(artifact, group);
 	}
 	if (selector?.kind === "scope") {
 		if (selector.index !== 0) throw new Error("Task scope page is unavailable");
@@ -75,12 +71,22 @@ export function readTaskProjectionResource(
 			candidate: bundle.candidate,
 			mandatory: bundle.mandatory,
 			factCount: bundle.facts.length,
+			resourceJsonBytes: Buffer.byteLength(JSON.stringify(groupResource(artifact, bundle))),
+			exceedsInlineBudget: Buffer.byteLength(JSON.stringify(groupResource(artifact, bundle))) > 32 * 1024,
 			gaps: bundle.gaps,
 			resourceUri: `${descriptor.uri}/groups/${start + offset}`,
 		})),
 		...(start + INDEX_PAGE_SIZE < artifact.bundles.length
 			? { nextUri: `${descriptor.uri}/index/${page + 1}` }
 			: {}),
+	};
+}
+
+function groupResource(artifact: TaskProjectionArtifact, bundle: TaskProjectionArtifact["bundles"][number]) {
+	return {
+		capturedAt: artifact.capturedAt,
+		task: resourceTask(artifact, 1, bundle.mandatory ? 1 : 0),
+		bundle,
 	};
 }
 

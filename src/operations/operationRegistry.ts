@@ -1,3 +1,4 @@
+import { OperationExecution } from "./operationExecution.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { VerificationResult } from "../kernels/abml/types.js";
@@ -47,6 +48,7 @@ export type OperationRecord = OperationTrace & {
 	projectRoot: string;
 	view: OperationSnapshot;
 	requests: OperationRequestEvent[];
+	executionTrace: OperationExecution;
 	/** Contains observation logic only, never the original mutating command. */
 	wait?: (waitMs: number, signal?: AbortSignal) => Promise<void>;
 };
@@ -138,28 +140,14 @@ export class OperationRegistry {
 			projectRoot: path.resolve(projectRoot),
 			view,
 			requests: [],
+			executionTrace: new OperationExecution(),
 			request: (event) => {
 				const existing = record.requests.findIndex((item) => item.requestId === event.requestId);
 				if (existing >= 0) record.requests[existing] = { ...event };
 				else record.requests.push({ ...event });
 				if (record.requests.length > 128) record.requests.shift();
-				if (event.phase !== "dispatch") return;
-				if (event.dispatchStarted === false && event.ackAt === undefined) {
-					view.execution = { status: "not_dispatched", acknowledged: false };
-					view.recovery.action = "retry_after_review";
-					return;
-				}
-				view.execution = {
-					status: event.response && event.outcomeKnown !== false ? "returned" : "dispatched_unknown",
-					dispatchedAt: event.sentAt,
-					acknowledged: event.ackAt !== undefined,
-					...(event.response
-						? {
-								response: event.response,
-								...(event.outcomeKnown !== false ? { returnedAt: event.finishedAt } : {}),
-							}
-						: {}),
-				};
+				const execution = record.executionTrace.request(event);
+				if (execution) view.execution = execution;
 				view.recovery.action = "observe_only";
 			},
 		};
@@ -185,15 +173,9 @@ export class OperationRegistry {
 }
 
 export function recordDispatchFailure(record: OperationRecord, error: unknown): void {
-	if (record.view.execution.status === "returned") return;
 	const normalized = compactError(error);
 	const details = isRecord(normalized.details) ? normalized.details : {};
-	// No ACK alone never proves non-delivery. Only an explicit non-dispatch report can do so.
-	if (details.dispatchStarted === false && record.view.execution.acknowledged !== true) {
-		record.view.execution = { status: "not_dispatched", acknowledged: false };
-		record.view.recovery.action = "retry_after_review";
-	} else {
-		record.view.execution.status = "dispatched_unknown";
-		record.view.recovery.action = "observe_only";
-	}
+	record.view.execution = record.executionTrace.finish(false, details.dispatchStarted === false);
+	record.view.recovery.action =
+		record.view.execution.status === "not_dispatched" ? "retry_after_review" : "observe_only";
 }

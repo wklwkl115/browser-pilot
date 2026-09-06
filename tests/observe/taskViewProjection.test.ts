@@ -158,3 +158,39 @@ test("task diff and return-to-page do not inherit a previous task filter", async
 	assert.equal(JSON.parse(page.content[0]!.text).task, undefined);
 	assert.equal(JSON.parse(page.content[0]!.text).bundles, undefined);
 });
+
+test("container group resources retain descendants and advertise full expansion bytes", async (t) => {
+	const cwd = await mkdtemp(path.join(tmpdir(), "browser-task-audit-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	const facts = Array.from({ length: 20 }, (_, i) =>
+		taskEntity(`large-${i}`, "cell", `INV-${i} ${"正文".repeat(3000)}`),
+	);
+	const container = taskEntity("table", "table", "Records", [taskEntity("row", "row", "Row", facts)]);
+	const form = taskEntity("form", "form", "Editor", [container]);
+	const result = await pageObservationResult({
+		observation: taskObservation([form]),
+		fallbackName: "canonical.json",
+		ctx: { cwd },
+		view: prepareTaskView({ focus: { refs: [container.ref] } }),
+	});
+	registerMcpObservationResources(result.details, cwd);
+	const descriptor = (result.details![OBSERVATION_RESOURCES_DETAIL_KEY] as ObservationResourceDescriptor[]).find(
+		(item) => item.taskProjection,
+	)!;
+	const index = resourceText(await readMcpResource(descriptor.uri, cwd));
+	const groupResponse = await readMcpResource(index.groups[0].resourceUri, cwd);
+	const group = resourceText(groupResponse);
+	for (const fact of facts) assert.ok(group.bundle.facts.some((item: { ref: string }) => item.ref === fact.ref));
+	const content = groupResponse.contents[0]!;
+	assert.ok("text" in content);
+	assert.equal(index.groups[0].resourceJsonBytes, Buffer.byteLength(content.text));
+	assert.ok(index.groups[0].exceedsInlineBudget);
+	t.diagnostic(
+		JSON.stringify({
+			indexBytes: Buffer.byteLength(JSON.stringify(index)),
+			groupBytes: Buffer.byteLength(content.text),
+			resourceResponseBytes: Buffer.byteLength(JSON.stringify(groupResponse)),
+		}),
+	);
+	assert.ok(Buffer.byteLength(result.content[0]!.text) < 32768);
+});

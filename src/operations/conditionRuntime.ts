@@ -15,7 +15,32 @@ export type ConditionRuntime = {
 	timeoutMs: number;
 	signal?: AbortSignal;
 	networkBaseline?: NetworkBaseline;
+	/** null means the pre-write document could not be identified. */
+	documentBaseline?: number | null;
+	allowedDocumentUrl?: string;
 };
+
+export function hasDomCondition(condition: DeclarativeCondition): boolean {
+	if ("allOf" in condition) return condition.allOf.some(hasDomCondition);
+	if ("anyOf" in condition) return condition.anyOf.some(hasDomCondition);
+	return "text" in condition || "value" in condition;
+}
+
+export async function readDocumentBaseline(runtime: ConditionRuntime): Promise<number | null> {
+	try {
+		const result = await runtime.server.executeJavaScript("return performance.timeOrigin;", {
+			browserSessionId: runtime.browserSessionId,
+			tabId: runtime.rawTarget ?? runtime.tabId,
+			timeoutMs: runtime.timeoutMs,
+			accessMode: "read",
+			signal: runtime.signal,
+		});
+		return typeof result.data === "number" && Number.isFinite(result.data) ? result.data : null;
+	} catch {
+		runtime.signal?.throwIfAborted();
+		return null;
+	}
+}
 
 export function conditionResult(
 	verb: string,
@@ -168,7 +193,7 @@ if (nodes.length !== 1) return { count: nodes.length };
 const node = nodes[0];
 if (node.matches('input[type="password"]')) return { count: 1, unavailable: 'password' };
 const value = node[${JSON.stringify(property)}];
-return { count: 1, value: typeof value === 'string' ? value.slice(0, 4096) : null, truncated: typeof value === 'string' && value.length > 4096 };`;
+return { count: 1, value: typeof value === 'string' ? value.slice(0, 4096) : null, truncated: typeof value === 'string' && value.length > 4096, documentOrigin: performance.timeOrigin, url: location.href };`;
 	const result = await runtime.server.executeJavaScript(script, {
 		browserSessionId: runtime.browserSessionId,
 		tabId: runtime.rawTarget ?? runtime.tabId,
@@ -177,6 +202,18 @@ return { count: 1, value: typeof value === 'string' ? value.slice(0, 4096) : nul
 		signal: runtime.signal,
 	});
 	const data = isRecord(result.data) ? result.data : {};
+	if (
+		runtime.documentBaseline !== undefined &&
+		!(typeof runtime.documentBaseline === "number" && data.documentOrigin === runtime.documentBaseline) &&
+		!(runtime.allowedDocumentUrl && data.url === runtime.allowedDocumentUrl)
+	)
+		return conditionResult(
+			runtime.verb,
+			"inconclusive",
+			condition,
+			{},
+			"Document changed or is unidentified; declare an exact destination URL in allOf to inspect a post-navigation page",
+		);
 	if (data.count !== 1 || typeof data.value !== "string" || data.truncated === true)
 		return conditionResult(
 			runtime.verb,
@@ -202,9 +239,14 @@ async function evaluateCombination(
 ) {
 	const all = "allOf" in condition;
 	const children = all ? condition.allOf : condition.anyOf;
+	const destination = all ? children.find((child) => "url" in child && "equals" in child.url) : undefined;
+	const childRuntime =
+		destination && "url" in destination && "equals" in destination.url
+			? { ...runtime, allowedDocumentUrl: destination.url.equals }
+			: runtime;
 	const results: VerificationResult[] = [];
 	for (const child of children) {
-		const result = await evaluateCondition(child, runtime);
+		const result = await evaluateCondition(child, childRuntime);
 		results.push(result);
 		if (result.status === (all ? "unmet" : "verified")) break;
 	}

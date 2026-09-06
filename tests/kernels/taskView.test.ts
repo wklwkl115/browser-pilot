@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { projectTaskView } from "../../src/kernels/abml/taskViewSelection.ts";
-import { taskEntityIndex, taskObjectRoot } from "../../src/kernels/abml/taskViewGraph.ts";
+import { taskContext, taskEntityIndex, taskObjectRoot } from "../../src/kernels/abml/taskViewGraph.ts";
 import { prepareTaskView } from "../../src/commands/observe/taskViewInput.ts";
 import { taskEntity, taskInvoice, taskObservation } from "../helpers/taskView.ts";
 
@@ -236,4 +236,50 @@ test("the focused collection's loading boundary precedes unrelated collections",
 			.contextComplete,
 		false,
 	);
+});
+
+for (const role of ["table", "tabpanel", "generic"]) {
+	test(`explicit ${role} anchor expands its captured descendants`, () => {
+		const cell = taskEntity("cell", "cell", "INV-2048");
+		const container = taskEntity("container", role, "Details", [taskEntity("row", "row", "Record", [cell])]);
+		const form = taskEntity("form", "form", "Editor", [container, taskEntity("save", "button", "Save")]);
+		const spec = prepareTaskView({ focus: { refs: [container.ref] } })!;
+		const context = taskContext(taskEntityIndex([form]), container, {
+			spec,
+			matchedRefs: new Set(),
+			changedRefs: new Set(),
+		});
+		assert.ok(context.entities.some((entity) => entity.ref === cell.ref));
+		assert.deepEqual(context.gaps, []);
+	});
+}
+
+test("nested layout group retains owner identity and actions without sibling records", () => {
+	const note = taskEntity("note", "textbox", "Note");
+	const group = taskEntity("notes", "group", "Notes", [note]);
+	const heading = taskEntity("identity", "heading", "INV-2048");
+	const save = taskEntity("save", "button", "Save");
+	const other = taskEntity("other", "group", "INV-9999", [taskEntity("other-save", "button", "Save other")]);
+	const form = taskEntity("form", "form", "Invoice editor", [heading, group, save, other]);
+	const plan = projectTaskView(
+		taskObservation([form]),
+		prepareTaskView({ focus: { refs: [note.ref] }, intent: "interact" })!,
+	);
+	const refs = new Set(plan.bundles[0]!.facts.map((fact) => fact.ref));
+	for (const entity of [note, group, form, heading, save]) assert.ok(refs.has(entity.ref), entity.name);
+	assert.ok(!refs.has(other.ref));
+	assert.ok(!plan.bundles[0]!.facts.some((fact) => fact.name === "Save other"));
+	assert.equal(taskObjectRoot(taskEntityIndex([form]), note).ref, group.ref);
+});
+
+test("context traversal terminates on cyclic captured ancestry", () => {
+	const anchor = taskEntity("cycle-anchor", "table", "Table");
+	const form = taskEntity("cycle-form", "form", "Form", [anchor]);
+	anchor.children = [form];
+	const context = taskContext(taskEntityIndex([form]), anchor, {
+		spec: prepareTaskView({ focus: { refs: [anchor.ref] } })!,
+		matchedRefs: new Set(),
+		changedRefs: new Set(),
+	});
+	assert.equal(context.entities.length, 2);
 });

@@ -43,7 +43,13 @@ export class BrowserBridgePendingRequests {
 	send(
 		socket: WebSocket,
 		code: unknown,
-		options: { tabId?: number; timeoutMs?: number; target?: BrowserBridgeTargetInfo; signal?: AbortSignal } = {},
+		options: {
+			tabId?: number;
+			timeoutMs?: number;
+			target?: BrowserBridgeTargetInfo;
+			signal?: AbortSignal;
+			accessMode?: "read" | "write";
+		} = {},
 	): Promise<BrowserBridgeExecutionResult> {
 		const id = randomUUID();
 		const timeoutMs = Math.max(100, Math.floor(options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
@@ -62,7 +68,7 @@ export class BrowserBridgePendingRequests {
 		return new Promise<BrowserBridgeExecutionResult>((resolve, reject) => {
 			let dispatched = false;
 			const pending: PendingRequest = {
-				operation: operationRequest(id),
+				operation: operationRequest(id, options.accessMode),
 				id,
 				tabId: options.tabId,
 				client: socket,
