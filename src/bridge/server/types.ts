@@ -1,4 +1,5 @@
 import type { WebSocket } from "ws";
+import type { OperationRequest } from "../../operations/operationContext.js";
 import type { SessionObservationSnapshotInfo } from "../../kernels/session/observationSnapshotRegistry.js";
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../../ports/BrowserRuntimeTypes.js";
 import type { BrowserCommandQueueInfo } from "./BrowserCommandQueueRegistry.js";
@@ -125,6 +126,7 @@ export type ExecuteOptions = {
 };
 
 export type PendingRequest = {
+	operation?: OperationRequest;
 	id: string;
 	tabId?: number;
 	client: WebSocket;

@@ -352,6 +352,7 @@ test("MCP client reuses one validated daemon and never replays an uncertain invo
 	let statusRequests = 0;
 	let invokeRequests = 0;
 	let resetNextInvoke = false;
+	let malformedNextInvoke = false;
 	const invokeBodies: Record<string, unknown>[] = [];
 	const server = http.createServer(async (req, res) => {
 		const send = (status: number, body: Record<string, unknown>) => {
@@ -373,6 +374,7 @@ test("MCP client reuses one validated daemon and never replays an uncertain invo
 				req.socket.destroy();
 				return;
 			}
+			if (malformedNextInvoke) return send(200, { ok: true });
 			return send(200, { ok: true, content: [{ type: "text", text: "{}" }] });
 		}
 		return send(404, { ok: false });
@@ -384,14 +386,84 @@ test("MCP client reuses one validated daemon and never replays an uncertain invo
 		writeLockfile(daemonInfo({ controlPort: address.port, token: "cached-daemon-token", contractIdentity }));
 		await invokeDaemonTool("browser_tabs", { action: "list" }, process.cwd());
 		await invokeDaemonTool("browser_tabs", { action: "list" }, process.cwd());
+		const cancelled = new AbortController();
+		cancelled.abort();
+		await assert.rejects(
+			invokeDaemonTool("browser_execute", { script: "submit()" }, process.cwd(), cancelled.signal),
+			(error: unknown) => {
+				assert.equal(
+					(error as { details: { operation: { execution: { status: string } } } }).details.operation.execution
+						.status,
+					"not_dispatched",
+				);
+				return true;
+			},
+		);
+		assert.equal(invokeRequests, 2, "pre-cancelled calls must not contact the daemon");
 		resetNextInvoke = true;
-		await assert.rejects(invokeDaemonTool("browser_tabs", { action: "list" }, process.cwd()));
+		await assert.rejects(invokeDaemonTool("browser_tabs", { action: "list" }, process.cwd()), (error: unknown) => {
+			const operation = (
+				error as { details: { operation: { operationId: string; execution: { status: string } } } }
+			).details.operation;
+			assert.equal(operation.operationId, invokeBodies[2]?.operationId);
+			assert.equal(operation.execution.status, "dispatched_unknown");
+			return true;
+		});
+		assert.equal(new Set(invokeBodies.map((body) => body.operationId)).size, 3);
 		assert.equal(statusRequests, 1);
 		assert.equal(invokeRequests, 3);
 		assert.deepEqual(
 			invokeBodies.map((body) => body.contractIdentity),
 			[contractIdentity, contractIdentity, contractIdentity],
 		);
+		resetNextInvoke = false;
+		malformedNextInvoke = true;
+		await assert.rejects(
+			invokeDaemonTool("browser_execute", { script: "submit()" }, process.cwd()),
+			(error: unknown) => {
+				const operation = (
+					error as { details: { operation: { operationId: string; execution: { status: string } } } }
+				).details.operation;
+				assert.equal(operation.operationId, invokeBodies[3]?.operationId);
+				assert.equal(operation.execution.status, "dispatched_unknown");
+				return true;
+			},
+		);
+		assert.equal(invokeRequests, 4, "missing receipts must not replay the call");
+		const originalId = String(invokeBodies[3]!.operationId);
+		const checkObservationError = (error: unknown) => {
+			const operation = (
+				error as {
+					details: {
+						operation: {
+							operationId: string;
+							execution: { status: string };
+							recovery: { action: string; automaticReplay: boolean };
+						};
+					};
+				}
+			).details.operation;
+			assert.equal(operation.operationId, originalId);
+			assert.equal(operation.execution.status, "dispatched_unknown");
+			assert.deepEqual(operation.recovery, { action: "observe_only", automaticReplay: false });
+			return true;
+		};
+		for (const action of ["status", "wait"]) {
+			const params = { action, operationId: originalId };
+			await assert.rejects(
+				invokeDaemonTool("browser_operation", params, process.cwd(), cancelled.signal),
+				checkObservationError,
+			);
+			const before: number = invokeRequests;
+			malformedNextInvoke = true;
+			await assert.rejects(invokeDaemonTool("browser_operation", params, process.cwd()), checkObservationError);
+			malformedNextInvoke = false;
+			resetNextInvoke = true;
+			await assert.rejects(invokeDaemonTool("browser_operation", params, process.cwd()), checkObservationError);
+			resetNextInvoke = false;
+			assert.equal(invokeRequests, before + 2, "observation failures must not replay or send cancelled calls");
+		}
+		assert.equal(new Set(invokeBodies.map((body) => body.operationId)).size, invokeBodies.length);
 	} finally {
 		removeLockfile();
 		await new Promise<void>((resolve) => server.close(() => resolve()));

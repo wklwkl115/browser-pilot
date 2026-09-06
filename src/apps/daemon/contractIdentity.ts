@@ -5,11 +5,12 @@ import { getNativeCommandProtocolSchema } from "../../types/nativeProtocol.js";
 import { COMMAND_CONTRACT_VERSION, DAEMON_PROTOCOL_VERSION, packageVersion } from "./packageInfo.js";
 import { PAGE_WORLD_SCAN_BUNDLE_JSON_SCHEMA, PAGE_WORLD_SCAN_SCHEMA } from "../../kernels/abml/pageWorldScan.js";
 import { PAGE_OBSERVATION_SCHEMA_V3, PAGE_OBSERVATION_V3_JSON_SCHEMA } from "../../kernels/abml/pageObservation.js";
+import { OPERATION_OUTPUT_SCHEMA } from "../../operations/resultSchema.js";
 
 export interface DaemonContractIdentity {
 	packageVersion: string;
 	daemonProtocolVersion: number;
-	commandContractVersion: 4;
+	commandContractVersion: 5;
 	commandContractHash: string;
 	toolCount: number;
 }
@@ -153,6 +154,7 @@ export type CommandContractPayload = {
 	publicSchemaHashes: {
 		pageScanV1: string;
 		pageObservationV3: string;
+		operationV1: string;
 	};
 };
 
@@ -169,6 +171,7 @@ export function commandContractPayload(definitions: readonly CommandDefinition[]
 		daemonProtocolVersion: DAEMON_PROTOCOL_VERSION,
 		nativeProtocolHash,
 		publicSchemaHashes: {
+			operationV1: sha256(canonicalContractJson(contractSchema(OPERATION_OUTPUT_SCHEMA))),
 			pageScanV1: sha256(
 				canonicalContractJson({
 					schema: PAGE_WORLD_SCAN_SCHEMA,

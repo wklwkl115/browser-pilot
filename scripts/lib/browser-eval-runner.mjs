@@ -29,6 +29,8 @@ function taskContext(daemon, session, fixture, round, metrics, artifactRoot, res
 			const value = resultEnvelope(raw, tool);
 			const code = value.code ?? raw.details?.error?.code;
 			if (value.verification) step.verification = value.verification.status;
+			if (value.execution) step.execution = value.execution.status;
+			if (value.business) step.business = value.business.status;
 			if (raw.ok === false || raw.isError || raw.terminate || value.ok === false || code) {
 				step.code = code ?? "TOOL_ERROR";
 				if (!expectedErrors.includes(step.code))
@@ -100,7 +102,7 @@ function taskContext(daemon, session, fixture, round, metrics, artifactRoot, res
 				fail(
 					"verification",
 					value.verification?.status ?? "MISSING_VERIFICATION",
-					"Business postcondition was not verified",
+					"Declared assertion was not verified",
 				);
 		},
 		assert: (condition, code, message) => {
@@ -116,7 +118,7 @@ export async function runBrowserEvaluation(options, tasks) {
 	const attempts = [];
 	const metadata = {
 		schemaVersion: 2,
-		fixtureVersion: 2,
+		fixtureVersion: 3,
 		generatedAt: new Date().toISOString(),
 		node: process.version,
 		platform: process.platform,

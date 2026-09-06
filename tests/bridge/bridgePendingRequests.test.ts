@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { inOperationPhase } from "../../src/operations/operationContext.ts";
+import { OperationRegistry } from "../../src/operations/operationRegistry.ts";
 import { getEventListeners } from "node:events";
 import type { WebSocket } from "ws";
 import { BrowserBridgePendingRequests } from "../../src/bridge/server/BrowserBridgePendingRequests.ts";
@@ -8,6 +10,49 @@ import type { BrowserBridgeSnapshot } from "../../src/bridge/server/types.ts";
 
 type SentMessage = Record<string, unknown>;
 type FakeSocket = WebSocket & { sent: SentMessage[] };
+
+test("operation IDs follow primary dispatch and lost ACKs never prove non-delivery", async () => {
+	for (const ack of [false, true]) {
+		const record = new OperationRegistry().create("save", process.cwd());
+		const socket = fakeSocket();
+		const requests = new BrowserBridgePendingRequests(
+			() => ({}),
+			(target) => target,
+		);
+		const pending = inOperationPhase(record, "dispatch", () => requests.send(socket, { cmd: "save" }));
+		const sent = socket.sent[0]!;
+		assert.equal(sent.operationId, record.operationId);
+		if (ack) requests.ack(String(sent.id), socket);
+		requests.rejectClient(socket);
+		await assert.rejects(pending, /lost|could not be confirmed/);
+		assert.equal(record.view.execution.status, "dispatched_unknown");
+		assert.equal(record.view.execution.acknowledged, ack);
+		assert.equal(record.requests[0]?.requestId, sent.id);
+		assert.equal(record.view.business.status, "unknown");
+	}
+});
+
+test("a returned timeout is uncertain, while explicit rejection before dispatch is not", async () => {
+	for (const code of ["TIMEOUT", "INVALID_RULE"]) {
+		const record = new OperationRegistry().create("save", process.cwd());
+		const socket = fakeSocket();
+		const requests = new BrowserBridgePendingRequests(
+			() => ({}),
+			(target) => target,
+		);
+		const pending = inOperationPhase(record, "dispatch", () => requests.send(socket, { cmd: "save" }));
+		const id = String(socket.sent[0]!.id);
+		if (code === "TIMEOUT") requests.ack(id, socket);
+		requests.rejectBrowserError(
+			id,
+			socket,
+			{ code, message: "fixture", details: { dispatchStarted: code === "TIMEOUT" } },
+			undefined,
+		);
+		await assert.rejects(pending);
+		assert.equal(record.view.execution.status, code === "TIMEOUT" ? "dispatched_unknown" : "not_dispatched");
+	}
+});
 
 function fakeSocket(): FakeSocket {
 	const sent: SentMessage[] = [];

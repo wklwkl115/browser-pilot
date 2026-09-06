@@ -118,15 +118,16 @@ Then point the MCP client at `dist/src/apps/mcp/bin.js` with `command = "node"`.
 
 ## Tools
 
-Browser Pilot exposes five composable MCP tools:
+Browser Pilot exposes six composable MCP tools:
 
-| Tool                 | Purpose                                                                           |
-| -------------------- | --------------------------------------------------------------------------------- |
-| `browser_observe`    | Return compact page content, actions, changes, and expandable semantic resources. |
-| `browser_execute`    | Run page JavaScript in the selected or ref-owning tab.                            |
-| `browser_command`    | Run trusted input, waits, and validated native browser or CDP operations.         |
-| `browser_tabs`       | List, switch, create, close, or navigate connected browser tabs.                  |
-| `browser_screenshot` | Return a viewport or full-page screenshot as an MCP image resource.               |
+| Tool                 | Purpose                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| `browser_observe`    | Return compact page content, actions, changes, and expandable semantic resources.     |
+| `browser_execute`    | Run page JavaScript in the selected or ref-owning tab.                                |
+| `browser_command`    | Run trusted input, waits, and validated native browser or CDP operations.             |
+| `browser_tabs`       | List, switch, create, close, or navigate connected browser tabs.                      |
+| `browser_screenshot` | Return a viewport or full-page screenshot as an MCP image resource.                   |
+| `browser_operation`  | Inspect execution receipts or continue declared observation without replaying writes. |
 
 The MCP `tools/list` response is the public syntax authority. [`src/commands/commandCatalog.ts`](src/commands/commandCatalog.ts) owns the public tool list; each `*Command.ts` module owns its schema and handler. `browser_command` names its **core** commands inline (CDP, trusted input, waits, network recorder, frames, HTML, transfers); **advanced** families (`hook.*`, `intercept.*`, `ws.*`, new-document scripts) stay public but are documented only through the `browser-pilot://native-commands` index and `browser-pilot://native-command/<cmd>` resources.
 
@@ -144,7 +145,7 @@ observe  ->  choose a bp-ref  ->  execute or command  ->  verify  ->  collect ev
 2. **Observe when needed.** Call `browser_observe` only when the task needs page understanding. Its `bp-ref` values route later actions back to the owning tab automatically.
 3. **Act through the right tool.** Use `browser_tabs navigate` to load a URL, `browser_command` `input.ref` for trusted input on an observed control (`click`, `type`, `check`, `select`, `focus`, `hover`), and `browser_execute` for page JavaScript. Combine deterministic same-page JavaScript in one call.
 4. **Wait deliberately.** When the next step depends on the page settling, use `wait.loadState`, `wait.selector`, `wait.networkIdle`, or `wait.navigation` through `browser_command` instead of polling.
-5. **Verify writes.** Add `expect` when a write must be verified. Observe again only when the next decision depends on new page state.
+5. **Separate assertions from business outcomes.** `expect` verifies only the supplied assertion. Declare `business.success` / `business.failure` for business evidence; otherwise the outcome stays `unknown`. After uncertain execution, inspect `browser_operation` with the returned `operationId` instead of resubmitting. See [operation outcomes](docs/operation-outcomes.md).
 
 <details>
 <summary><strong>Execution and verification contract</strong></summary>
@@ -152,6 +153,8 @@ observe  ->  choose a bp-ref  ->  execute or command  ->  verify  ->  collect ev
 `browser_execute` provides `browserPilot.refs`, `resolve(ref)`, `box(ref)`, and `setValue(target, value)`. Writes are serialized by target and use the extension/CDP fallback path automatically.
 
 Successful `browser_execute` and `browser_command` calls return `{ "result": ..., "effect"?: ..., "verification"?: ... }`; writes may add `effect` and `verification`. An `expect` can be a JavaScript truth expression or a structured ref/state postcondition such as `{ "ref": "bp-ref://control/...", "state": { "pressed": true } }`. Structured verification reads the same ref before and after dispatch, fuses DOM and targeted accessibility state, and returns a target-scoped diff.
+
+Writes also return `operationId`, `execution`, and `business`, independently of assertion verification. Declarative text, value, URL, captured-response and combination conditions are supported; `verificationWaitMs` provides a bounded observation budget. `browser_operation` continues stored declarative checks without executing the original write. A `verified` assertion may describe a failure UI, and operation IDs do not provide website-level exactly-once guarantees.
 
 Trusted input uses `command: { cmd: "input.ref", ref: "bp-ref://...", action: "type", text: "...", clear: true }`; `check` takes `checked`, `select` takes `value`, `label`, or `index`. Raw CDP uses `command: { cmd: "cdp", method: "Domain.method", params: {...} }`. Targeting remains at the tool-level `targetRef`; runtime session, physical target, timeout, attach, and cleanup state are not public contract fields. Waits and transfers get a longer fixed budget than one-shot commands.
 

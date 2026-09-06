@@ -2,51 +2,45 @@ import { Type } from "typebox";
 import { isAbmlStateExpectation, type AbmlStateExpectation } from "../kernels/abml/verification.js";
 import type { VerificationResult } from "../kernels/abml/types.js";
 import { BrowserBridgeError } from "../utils/errors.js";
-
-const stateProperties = {
-	visible: Type.Optional(Type.Boolean()),
-	occluded: Type.Optional(Type.Boolean()),
-	disabled: Type.Optional(Type.Boolean()),
-	focused: Type.Optional(Type.Boolean()),
-	checked: Type.Optional(Type.Boolean()),
-	selected: Type.Optional(Type.Boolean()),
-	pressed: Type.Optional(Type.Boolean()),
-	expanded: Type.Optional(Type.Boolean()),
-	current: Type.Optional(Type.Union([Type.Boolean(), Type.String()])),
-	editable: Type.Optional(Type.Boolean()),
-	inViewport: Type.Optional(Type.Boolean()),
-};
+import {
+	declarativeConditionInputSchema,
+	isDeclarativeCondition,
+	conditionRefs,
+	type DeclarativeCondition,
+	type BusinessConditions,
+} from "../operations/conditionSchema.js";
 
 export const commandExpectationSchema = Type.Union([
 	Type.String({
 		minLength: 1,
-		description: "JavaScript truth expression returning truthy when the intended state is reached.",
+		description: "Read-only JavaScript truth expression. verified means the assertion holds, not business success.",
 	}),
-	Type.Object(
-		{
-			ref: Type.String({
-				pattern: "^bp-ref://",
-				description: "Observed entity whose state is the business postcondition.",
-			}),
-			state: Type.Object(stateProperties, { additionalProperties: false, minProperties: 1 }),
-		},
-		{
-			additionalProperties: false,
-			description: "Structured postcondition verified from the target's observed state.",
-		},
-	),
+	declarativeConditionInputSchema,
 ]);
 
 export type PreparedCommandExpectation =
-	{ kind: "javascript"; expression: string } | { kind: "abml"; expectation: AbmlStateExpectation };
+	| { kind: "javascript"; expression: string }
+	| { kind: "abml"; expectation: AbmlStateExpectation }
+	| { kind: "declarative"; condition: DeclarativeCondition };
+
+export function verificationRefs(expect?: PreparedCommandExpectation, business?: BusinessConditions): string[] {
+	const condition =
+		expect?.kind === "abml" ? expect.expectation : expect?.kind === "declarative" ? expect.condition : undefined;
+	return [
+		...new Set(
+			[condition, business?.success, business?.failure].flatMap((item) => (item ? conditionRefs(item) : [])),
+		),
+	];
+}
 
 export function prepareCommandExpectation(value: unknown, commandName: string): PreparedCommandExpectation | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value === "string" && value.trim()) return { kind: "javascript", expression: value.trim() };
 	if (isAbmlStateExpectation(value)) return { kind: "abml", expectation: value };
+	if (isDeclarativeCondition(value)) return { kind: "declarative", condition: value };
 	throw new BrowserBridgeError(
 		"INVALID_RULE",
-		`${commandName} expect must be a non-empty JavaScript expression or structured ref/state postcondition`,
+		`${commandName} expect must be a non-empty read-only JavaScript expression or declarative condition`,
 		{ commandName },
 	);
 }

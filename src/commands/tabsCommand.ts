@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { type NativeErrorCode } from "../types/nativeErrorCodes.js";
 import { BrowserBridgeError } from "../utils/errors.js";
-import { jsonResult } from "../utils/toolResult.js";
+import { jsonResult, errorResult } from "../utils/toolResult.js";
 import {
 	defineBrowserCommand,
 	pinTabExecutionTarget,
@@ -12,8 +12,10 @@ import {
 import { compactTabForList } from "./tabsProjection.js";
 import { LONG_RUNNING_TOOL_TIMEOUT_MS, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
-import { withBrowserOperation } from "./browserOperation.js";
-import { withCommandEffect } from "./commandEffect.js";
+import { runVerifiedWrite, operationValue } from "./verifiedWrite.js";
+import { OperationRegistry, type OperationRecord } from "../operations/operationRegistry.js";
+import { operationFailure } from "../operations/operationObservation.js";
+import type { BrowserCommandExecuteContext } from "./commandDefinition.js";
 import type { ValidationIssue } from "./commandDefinition.js";
 import { isRecord } from "../utils/records.js";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
@@ -68,7 +70,10 @@ async function navigateTab(
 	server: BrowserCommandRuntimePort,
 	params: { targetRef?: string; url: string; waitUntil?: string },
 	signal: AbortSignal | undefined,
-): Promise<{ tabs: Record<string, unknown>[]; effect: unknown }> {
+	operations: OperationRegistry,
+	ctx?: BrowserCommandExecuteContext,
+	operation?: OperationRecord,
+): Promise<Record<string, unknown>> {
 	// A navigation waits for the page to load, so it gets the long-running budget rather than the one-shot one.
 	const timeoutMs = LONG_RUNNING_TOOL_TIMEOUT_MS;
 	const explicitTabId = resolveLocalTargetTabId(server, params.targetRef);
@@ -83,31 +88,33 @@ async function navigateTab(
 			{},
 		);
 	const tabId = target.tabId;
-	const outcome = await withBrowserOperation(
-		{ server, browserSessionId: target.browserSessionId, tabId, targetRef: target.rawTarget, timeoutMs, signal },
-		async ({ signal: operationSignal, deadlineAt }) =>
-			await withCommandEffect(
-				server,
-				{ browserSessionId: target.browserSessionId, tabId, timeoutMs, deadlineAt, signal: operationSignal },
-				() =>
-					server.sendCommand(
-						{
-							cmd: "wait.navigateAndWait",
-							url: params.url,
-							waitUntil: params.waitUntil ?? "load",
-							timeoutMs: Math.max(500, timeoutMs - NAVIGATE_WAIT_MARGIN_MS),
-						},
-						{
-							browserSessionId: target.browserSessionId,
-							tabId: target.rawTarget,
-							timeoutMs,
-							accessMode: "write",
-							internal: true,
-							signal: operationSignal,
-						},
-					),
+	const outcome = await runVerifiedWrite({
+		server,
+		target,
+		timeoutMs,
+		signal,
+		operations,
+		ctx,
+		verb: "browser_tabs.navigate",
+		record: operation,
+		dispatch: ({ signal: operationSignal }) =>
+			server.sendCommand(
+				{
+					cmd: "wait.navigateAndWait",
+					url: params.url,
+					waitUntil: params.waitUntil ?? "load",
+					timeoutMs: Math.max(500, timeoutMs - NAVIGATE_WAIT_MARGIN_MS),
+				},
+				{
+					browserSessionId: target.browserSessionId,
+					tabId: target.rawTarget,
+					timeoutMs,
+					accessMode: "write",
+					internal: true,
+					signal: operationSignal,
+				},
 			),
-	);
+	});
 	const refreshed = await server
 		.refreshTabs(5_000, { browserSessionId: target.browserSessionId, signal })
 		.catch(() => server.getTabs());
@@ -117,7 +124,7 @@ async function navigateTab(
 		...(params.targetRef ? { targetRef: params.targetRef } : {}),
 		...(typeof live?.url !== "string" ? { url: params.url } : {}),
 	});
-	return { tabs: [tab], effect: outcome.effect };
+	return { tabs: [tab], effect: outcome.effect, ...(outcome.operation ? operationValue(outcome.operation) : {}) };
 }
 
 function changedTab(result: unknown, targetRef?: string): Record<string, unknown> | undefined {
@@ -177,7 +184,11 @@ export function validateTabsArguments(args: Record<string, unknown>): Validation
 	return issues;
 }
 
-export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarContext) {
+export function defineTabsCommand({
+	commands,
+	ensureStarted,
+	operations = new OperationRegistry(),
+}: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_tabs",
 		label: "Browser Tabs",
@@ -205,65 +216,86 @@ export function defineTabsCommand({ commands, ensureStarted }: CommandRegistrarC
 			),
 		}),
 		validateArguments: validateTabsArguments,
-		async execute(params, signal) {
-			return await runCommandHandler(async () => {
-				const action = String(params.action || "")
-					.trim()
-					.toLowerCase();
-				const timeoutMs = 5_000;
-				const tabRef = TAB_TARGET_ACTIONS.has(action)
-					? requireTabsActionTargetRef(action, params.targetRef)
-					: undefined;
-				const createUrl = action === "create" ? normalizeTabUrl("create", params.url) : undefined;
-				const server = await ensureStarted();
-				if (action === "navigate") {
-					const navigated = await navigateTab(
-						server,
-						{
-							targetRef: params.targetRef,
-							url: normalizeTabUrl("navigate", params.url),
-							waitUntil: params.waitUntil,
-						},
-						signal,
-					);
-					return jsonResult(navigated, { action });
-				}
-				if (action === "list") {
-					const tabs = await server.refreshTabs(timeoutMs, { signal });
-					const compactTabs = tabs.map((tab) => compactTabForList(tab as Record<string, unknown>));
-					return jsonResult({ tabs: compactTabs });
-				}
-				if (["switch", "create", "close"].includes(action)) {
-					const trackedTabId = action === "create" ? undefined : resolveLocalTargetTabId(server, tabRef);
-					const result = await withBrowserOperation(
-						{
+		async execute(params, signal, ctx) {
+			let operation: OperationRecord | undefined;
+			return await runCommandHandler(
+				async () => {
+					const action = String(params.action || "")
+						.trim()
+						.toLowerCase();
+					const timeoutMs = 5_000;
+					const tabRef = TAB_TARGET_ACTIONS.has(action)
+						? requireTabsActionTargetRef(action, params.targetRef)
+						: undefined;
+					const createUrl = action === "create" ? normalizeTabUrl("create", params.url) : undefined;
+					if (action !== "list" && TAB_ACTIONS.some((value) => value === action))
+						operation = operations.create(
+							`browser_tabs.${action}`,
+							ctx?.cwd ?? process.cwd(),
+							ctx?.operationId,
+						);
+					const server = await ensureStarted();
+					if (action === "navigate") {
+						const navigated = await navigateTab(
 							server,
-							tabId: trackedTabId,
-							targetRef: tabRef,
+							{
+								targetRef: params.targetRef,
+								url: normalizeTabUrl("navigate", params.url),
+								waitUntil: params.waitUntil,
+							},
+							signal,
+							operations,
+							ctx,
+							operation,
+						);
+						return jsonResult(navigated, { action });
+					}
+					if (action === "list") {
+						const tabs = await server.refreshTabs(timeoutMs, { signal });
+						const compactTabs = tabs.map((tab) => compactTabForList(tab as Record<string, unknown>));
+						return jsonResult({ tabs: compactTabs });
+					}
+					if (["switch", "create", "close"].includes(action)) {
+						const trackedTabId = action === "create" ? undefined : resolveLocalTargetTabId(server, tabRef);
+						const outcome = await runVerifiedWrite({
+							server,
+							target: { tabId: trackedTabId, rawTarget: tabRef },
 							timeoutMs,
 							signal,
-						},
-						async ({ signal: operationSignal }) => {
-							if (action === "switch")
-								return await server.switchTab(tabRef!, timeoutMs, { signal: operationSignal });
-							if (action === "create")
-								return await server.createTab(
-									createUrl || "about:blank",
-									params.active !== false,
-									timeoutMs,
-									{ incognito: params.incognito === true, signal: operationSignal },
-								);
-							return await server.closeTab(tabRef!, timeoutMs, { signal: operationSignal });
-						},
-					);
-					const tab =
-						action === "close" ? undefined : changedTab(result, action === "switch" ? tabRef : undefined);
-					return jsonResult({ tabs: tab ? [tab] : [] }, { action });
-				}
-				throw tabsToolError("INVALID_RULE", `Unsupported browser_tabs action: ${params.action}`, {
-					action: params.action,
-				});
-			});
+							operations,
+							ctx,
+							verb: `browser_tabs.${action}`,
+							record: operation,
+							effects: false,
+							dispatch: async ({ signal: operationSignal }) => {
+								if (action === "switch")
+									return await server.switchTab(tabRef!, timeoutMs, { signal: operationSignal });
+								if (action === "create")
+									return await server.createTab(
+										createUrl || "about:blank",
+										params.active !== false,
+										timeoutMs,
+										{ incognito: params.incognito === true, signal: operationSignal },
+									);
+								return await server.closeTab(tabRef!, timeoutMs, { signal: operationSignal });
+							},
+						});
+						const result = outcome.result;
+						const tab =
+							action === "close"
+								? undefined
+								: changedTab(result, action === "switch" ? tabRef : undefined);
+						return jsonResult(
+							{ tabs: tab ? [tab] : [], ...(outcome.operation ? operationValue(outcome.operation) : {}) },
+							{ action },
+						);
+					}
+					throw tabsToolError("INVALID_RULE", `Unsupported browser_tabs action: ${params.action}`, {
+						action: params.action,
+					});
+				},
+				async (error) => errorResult(await operationFailure(error, operation)),
+			);
 		},
 	});
 }

@@ -7,6 +7,8 @@ export type BrowserCommandResult = {
 
 export type BrowserCommandExecuteContext = {
 	cwd?: string;
+	/** Assigned by the calling transport, never used to claim third-party idempotency. */
+	operationId?: string;
 };
 
 export interface ValidationIssue {

@@ -34,9 +34,20 @@ test("MCP publishes the command catalog as tools", () => {
 	const tools = mcpTools();
 	assert.deepEqual(
 		tools.map((tool) => tool.name),
-		["browser_tabs", "browser_command", "browser_execute", "browser_observe", "browser_screenshot"],
+		[
+			"browser_tabs",
+			"browser_command",
+			"browser_execute",
+			"browser_observe",
+			"browser_screenshot",
+			"browser_operation",
+		],
 	);
 	assert.ok(tools.every((tool) => tool.inputSchema.type === "object"));
+	const operationTool = tools.find((tool) => tool.name === "browser_operation");
+	assert.equal(operationTool?.annotations?.readOnlyHint, true);
+	assert.ok(operationTool?.outputSchema?.properties?.execution);
+	assert.match(tools.find((tool) => tool.name === "browser_execute")?.description ?? "", /assertion holds/);
 	const observeSchema = tools.find((tool) => tool.name === "browser_observe")?.outputSchema;
 	// The advertised schema is shallow and described; the full nested contract stays internal.
 	assert.deepEqual(

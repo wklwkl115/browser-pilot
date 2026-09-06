@@ -85,6 +85,8 @@ export class BrowserCommandQueueRegistry {
 					tabId,
 					depth: currentDepth,
 					maxDepth: this.maxDepth,
+					acked: false,
+					dispatchStarted: false,
 				}),
 			);
 		}

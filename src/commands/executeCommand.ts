@@ -1,14 +1,24 @@
 import { Type } from "typebox";
 import { prepareExecuteStdlib } from "../browser-command-runtime/executeStdlib.js";
 import { MAX_EXECUTION_REFS, resolveExecutionRef } from "../browser-command-runtime/executionRef.js";
-import { isAbmlStateExpectation } from "../kernels/abml/verification.js";
+import {
+	isDeclarativeCondition,
+	businessConditionsInputSchema,
+	CONDITION_DEFINITIONS,
+	prepareBusinessConditions,
+	verificationWaitSchema,
+	prepareVerificationWait,
+} from "../operations/conditionSchema.js";
+import { OperationRegistry, type OperationRecord } from "../operations/operationRegistry.js";
+import { operationFailure } from "../operations/operationObservation.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
-import { jsonResult } from "../utils/toolResult.js";
+import { jsonResult, errorResult } from "../utils/toolResult.js";
 import {
 	commandExpectationSchema,
 	prepareCommandExpectation,
+	verificationRefs,
 	type PreparedCommandExpectation,
 } from "./commandExpectation.js";
 import { runVerifiedWrite, verifiedWriteValue } from "./verifiedWrite.js";
@@ -97,14 +107,14 @@ export function validateExecuteArguments(args: Record<string, unknown>): Validat
 	if (
 		args.expect !== undefined &&
 		!(typeof args.expect === "string" && args.expect.trim()) &&
-		!isAbmlStateExpectation(args.expect)
+		!isDeclarativeCondition(args.expect)
 	)
 		return [
 			{
 				code: "EXECUTE_EXPECT_INVALID",
 				path: "/expect",
 				message:
-					"browser_execute expect must be a non-empty JavaScript expression or structured ref/state postcondition",
+					"browser_execute expect must be a non-empty read-only JavaScript expression or declarative condition",
 			},
 		];
 	if (args.expect !== undefined && args.readOnly === true)
@@ -113,6 +123,14 @@ export function validateExecuteArguments(args: Record<string, unknown>): Validat
 				code: "EXECUTE_EXPECT_READ_ONLY",
 				path: "/expect",
 				message: "browser_execute expect is only valid for writes",
+			},
+		];
+	if (args.readOnly === true && (args.business !== undefined || args.verificationWaitMs !== undefined))
+		return [
+			{
+				code: "EXECUTE_EXPECT_READ_ONLY",
+				path: "/business",
+				message: "Business verification is only valid for writes",
 			},
 		];
 	return [];
@@ -132,85 +150,114 @@ async function executePrepared(
 	});
 }
 
-export function defineExecuteCommand({ commands, ensureStarted }: CommandRegistrarContext) {
+export function defineExecuteCommand({
+	commands,
+	ensureStarted,
+	operations = new OperationRegistry(),
+}: CommandRegistrarContext) {
 	defineBrowserCommand(commands, {
 		name: "browser_execute",
 		label: "Browser Execute",
 		description:
 			"Execute JavaScript in the selected or ref-owning tab. Writes may return effect and verification evidence.",
 		promptGuidelines: [
+			"verification.verified only means the supplied assertion holds, even when it asserts a failure UI. Business outcome stays unknown unless explicit business success/failure conditions establish it. Prefer unique-record readback over optimistic UI signals.",
+			"A dispatched_unknown execution must not be replayed automatically. Use browser_operation to inspect or continue declarative observation by operationId; IDs do not provide third-party exactly-once or idempotency.",
 			"Combine deterministic same-page reads, writes, and waits in one script; split only when the next step depends on new page state.",
 			"Pass observed bp-ref URIs through refs; each entry is available as browserPilot.refs.<name>, and its owner selects the tab automatically. Use browser_command input.ref for trusted native input.",
 			"The page runtime exposes browserPilot.refs, resolve(ref), box(ref), and setValue(target,value).",
 			"Use readOnly:true for queries. For writes, expect may declare a JavaScript truth expression or structured ref/state postcondition; Browser Pilot owns settlement and verification.",
 		],
-		parameters: strictCommandParameters({
-			script: Type.String({ description: "JavaScript to execute." }),
-			refs: Type.Optional(
-				Type.Record(
-					Type.String({ pattern: "^[A-Za-z_$][A-Za-z0-9_$]*$", maxLength: 64 }),
-					Type.String({
-						pattern: "^bp-ref://",
-						description: "Observed bp-ref URI bound into browserPilot.refs under this key.",
-					}),
-					{
-						additionalProperties: false,
-						maxProperties: MAX_EXECUTION_REFS,
-						description:
-							"Named observed refs to resolve, inject, and use for automatic tab/session routing.",
-					},
+		parameters: strictCommandParameters(
+			{
+				script: Type.String({ description: "JavaScript to execute." }),
+				refs: Type.Optional(
+					Type.Record(
+						Type.String({ pattern: "^[A-Za-z_$][A-Za-z0-9_$]*$", maxLength: 64 }),
+						Type.String({
+							pattern: "^bp-ref://",
+							description: "Observed bp-ref URI bound into browserPilot.refs under this key.",
+						}),
+						{
+							additionalProperties: false,
+							maxProperties: MAX_EXECUTION_REFS,
+							description:
+								"Named observed refs to resolve, inject, and use for automatic tab/session routing.",
+						},
+					),
 				),
-			),
-			readOnly: Type.Optional(
-				Type.Boolean({ description: "Declare that the script does not mutate browser state." }),
-			),
-			expect: Type.Optional(commandExpectationSchema),
-			...sharedTabScopedToolParams(),
-		}),
+				readOnly: Type.Optional(
+					Type.Boolean({ description: "Declare that the script does not mutate browser state." }),
+				),
+				expect: Type.Optional(commandExpectationSchema),
+				business: Type.Optional(businessConditionsInputSchema),
+				verificationWaitMs: Type.Optional(verificationWaitSchema),
+				...sharedTabScopedToolParams(),
+			},
+			CONDITION_DEFINITIONS,
+		),
 		validateArguments: validateExecuteArguments,
-		async execute(params, signal) {
-			return await runCommandHandler(async () => {
-				const input = prepareExecute(params);
-				const prepared = prepareExecuteStdlib(input.script, { refs: input.refs });
-				const javascript = input.expect?.kind === "javascript" ? input.expect : undefined;
-				const expected = javascript
-					? prepareExecuteStdlib(`return Boolean(await (${javascript.expression}));`, { refs: input.refs })
-					: undefined;
-				const server = await ensureStarted();
-				const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
-				const rawTarget = targetTabId(params);
-				const expectationRefs =
-					input.expect?.kind === "abml" ? [resolveExecutionRef(input.expect.expectation.ref).target] : [];
-				const resolvedTarget = resolveRefExecutionTarget(server, prepared.targetRefs, {
-					rawTarget,
-					observedRefs: expectationRefs,
-				});
-				const target = input.readOnly ? resolvedTarget : pinTabExecutionTarget(server, resolvedTarget);
-				const dispatch = (dispatchSignal?: AbortSignal) =>
-					executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, {
-						browserSessionId: target.browserSessionId,
-						rawTarget: target.rawTarget,
-						timeoutMs,
-						signal: dispatchSignal,
+		async execute(params, signal, ctx) {
+			let operation: OperationRecord | undefined;
+			return await runCommandHandler(
+				async () => {
+					const input = prepareExecute(params);
+					if (!input.readOnly)
+						operation = operations.create("browser_execute", ctx?.cwd ?? process.cwd(), ctx?.operationId);
+					const business = prepareBusinessConditions(params.business);
+					const verificationWaitMs = prepareVerificationWait(params.verificationWaitMs);
+					if (input.readOnly && (business || verificationWaitMs !== undefined))
+						throw new BrowserBridgeError("INVALID_RULE", "Business verification is only valid for writes");
+					const prepared = prepareExecuteStdlib(input.script, { refs: input.refs });
+					const javascript = input.expect?.kind === "javascript" ? input.expect : undefined;
+					const expected = javascript
+						? prepareExecuteStdlib(`return Boolean(await (${javascript.expression}));`, {
+								refs: input.refs,
+							})
+						: undefined;
+					const server = await ensureStarted();
+					const timeoutMs = DEFAULT_TOOL_TIMEOUT_MS;
+					const rawTarget = targetTabId(params);
+					const expectationRefs = verificationRefs(input.expect, business).map(
+						(ref) => resolveExecutionRef(ref).target,
+					);
+					const resolvedTarget = resolveRefExecutionTarget(server, prepared.targetRefs, {
+						rawTarget,
+						observedRefs: expectationRefs,
 					});
-				const outcome = input.readOnly
-					? { result: await dispatch(signal) }
-					: await runVerifiedWrite({
-							server,
-							verb: "browser_execute",
-							target,
+					const target = input.readOnly ? resolvedTarget : pinTabExecutionTarget(server, resolvedTarget);
+					const dispatch = (dispatchSignal?: AbortSignal) =>
+						executePrepared({ script: prepared.script, readOnly: input.readOnly }, server, {
+							browserSessionId: target.browserSessionId,
+							rawTarget: target.rawTarget,
 							timeoutMs,
-							signal,
-							expect: input.expect,
-							verifyScript: expected?.script,
-							dispatch: ({ signal: operationSignal }) => dispatch(operationSignal),
+							signal: dispatchSignal,
 						});
-				return jsonResult(
-					verifiedWriteValue(outcome),
-					{ mode: "javascript", refsBound: Object.keys(input.refs).length },
-					{ preserveExecutionData: true },
-				);
-			});
+					const outcome = input.readOnly
+						? { result: await dispatch(signal) }
+						: await runVerifiedWrite({
+								server,
+								verb: "browser_execute",
+								target,
+								timeoutMs,
+								signal,
+								expect: input.expect,
+								business,
+								verificationWaitMs,
+								operations,
+								ctx,
+								record: operation,
+								verifyScript: expected?.script,
+								dispatch: ({ signal: operationSignal }) => dispatch(operationSignal),
+							});
+					return jsonResult(
+						verifiedWriteValue(outcome),
+						{ mode: "javascript", refsBound: Object.keys(input.refs).length },
+						{ preserveExecutionData: true },
+					);
+				},
+				async (error) => errorResult(await operationFailure(error, operation)),
+			);
 		},
 	});
 }

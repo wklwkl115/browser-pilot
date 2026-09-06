@@ -3,6 +3,7 @@ import { defineExecuteCommand } from "./executeCommand.js";
 import { defineObserveCommand } from "./observeCommand.js";
 import { defineScreenshotCommand } from "./screenshotCommand.js";
 import { defineTabsCommand } from "./tabsCommand.js";
+import { defineOperationCommand } from "./operationCommand.js";
 import type { CommandRegistrar } from "./commandShared.js";
 
 export const BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = [
@@ -11,4 +12,5 @@ export const BROWSER_COMMAND_REGISTRARS: readonly CommandRegistrar[] = [
 	defineExecuteCommand,
 	defineObserveCommand,
 	defineScreenshotCommand,
+	defineOperationCommand,
 ];

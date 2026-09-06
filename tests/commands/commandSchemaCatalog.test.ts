@@ -24,19 +24,26 @@ function deepKeys(value: unknown): string[] {
 		: [];
 }
 
-test("public tool surface remains five general tools without new mechanical inputs", () => {
+test("public tools expose operation observation while keeping private routing fields internal", () => {
 	const definitions = browserCommandDefinitions();
 	assert.deepEqual(
 		definitions.map((definition) => definition.name),
-		["browser_tabs", "browser_command", "browser_execute", "browser_observe", "browser_screenshot"],
+		[
+			"browser_tabs",
+			"browser_command",
+			"browser_execute",
+			"browser_observe",
+			"browser_screenshot",
+			"browser_operation",
+		],
 	);
 	assert.deepEqual(
 		Object.keys((command("browser_execute").parameters as { properties: Record<string, unknown> }).properties),
-		["script", "refs", "readOnly", "expect", "targetRef"],
+		["script", "refs", "readOnly", "expect", "business", "verificationWaitMs", "targetRef"],
 	);
 	assert.deepEqual(
 		Object.keys((command("browser_command").parameters as { properties: Record<string, unknown> }).properties),
-		["command", "expect", "targetRef"],
+		["command", "expect", "business", "verificationWaitMs", "targetRef"],
 	);
 	const forbiddenFields = new Set(["browserSessionId", "tabId", "sessionId", "timeoutMs", "targetId"]);
 	for (const definition of definitions) {

@@ -18,7 +18,9 @@ function taskPage(pathname, run, crossOrigin) {
 		document.querySelector('#request-form').onsubmit = async (event) => {
 			event.preventDefault(); const button = event.submitter; button.disabled = true;
 			const response = await fetch('/api/cases?run=${run}', {method:'POST', body:document.querySelector('#request-title').value});
-			const data = await response.json(); document.querySelector('#result').textContent = data.id;
+			const receipt = await response.json();
+			const data = await (await fetch('/api/cases/' + receipt.id + '?run=${run}', {cache:'no-store'})).json();
+			document.querySelector('#result').textContent = data.id;
 			document.querySelector('#result').dataset.saved = 'yes'; button.disabled = false;
 		};`,
 		);
@@ -74,6 +76,7 @@ function taskPage(pathname, run, crossOrigin) {
 			`
 		window.savedCount = 0;
 		document.querySelector('#send-failed').onclick = async () => {
+			document.querySelector('#status').textContent = 'Saved';
 			const response = await fetch('/api/failure?run=${run}', {method:'POST'});
 			const status = document.querySelector('#status'); status.dataset.httpStatus = String(response.status);
 			if (response.ok) { window.savedCount++; status.textContent = 'Saved'; }
@@ -159,9 +162,13 @@ export async function startEvaluationFixtures() {
 				submissions.set(run, [...(submissions.get(run) ?? []), text]);
 				later(650, () => send({ id: "CASE-001" }));
 			});
+		} else if (url.pathname === "/api/cases/CASE-001" && req.method === "GET") {
+			const records = submissions.get(run) ?? [];
+			if (records.length) send({ id: "CASE-001", title: records[records.length - 1] });
+			else send({ error: "not found" }, "application/json", 404);
 		} else if (url.pathname === "/api/failure" && req.method === "POST") {
 			failedRequests.set(run, (failedRequests.get(run) ?? 0) + 1);
-			later(250, () => send({ error: "fixture unavailable" }, "application/json", 503));
+			later(750, () => send({ error: "fixture unavailable" }, "application/json", 503));
 		} else if (url.pathname === "/api/invoices")
 			later(950, () =>
 				send([

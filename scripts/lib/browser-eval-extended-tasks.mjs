@@ -80,14 +80,34 @@ export const extendedEvaluationTasks = [
 		path: "failed-submit",
 		async run(ctx) {
 			const view = await ctx.observe();
-			ctx.verified(
-				await ctx.input(
-					ctx.ref(view, "Send failing request"),
-					"click",
-					{},
-					"document.querySelector('#status').dataset.failed === 'yes'",
-				),
-			);
+			await ctx.native({ cmd: "network.start" });
+			try {
+				const request = { url: `${ctx.fixture.url}api/failure?run=${ctx.round}`, method: "POST", status: 200 };
+				const submitted = await ctx.call("browser_command", {
+					command: { cmd: "input.ref", ref: ctx.ref(view, "Send failing request"), action: "click" },
+					expect: { text: { selector: "#status", match: { equals: "Not saved" } } },
+					business: { success: { request }, failure: { request: { ...request, status: 503 } } },
+					verificationWaitMs: 100,
+				});
+				ctx.assert(
+					submitted.business?.status !== "succeeded",
+					"OPTIMISTIC_FALSE_SUCCESS",
+					"Optimistic Saved text must not establish business success",
+				);
+				const settled = await ctx.call("browser_operation", {
+					operationId: submitted.operationId,
+					action: "wait",
+					waitMs: 3000,
+				});
+				ctx.verified(settled);
+				ctx.assert(
+					settled.operationId === submitted.operationId && settled.business?.status === "failed",
+					"BUSINESS_FAILURE",
+					"Continued observation did not establish failure for the same operation",
+				);
+			} finally {
+				await ctx.native({ cmd: "network.stop" });
+			}
 			ctx.assert(
 				ctx.fixture.failedRequests(ctx.round) === 1,
 				"DUPLICATE_REQUEST",

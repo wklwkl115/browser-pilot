@@ -106,11 +106,13 @@ Accessibility relations between entities: `labelledBy`, `describedBy`, `controls
 
 ### Effect and verification
 
+`verified` describes the supplied assertion, not business success. Writes additionally expose an `operationId`, an execution receipt, and an explicit business outcome that defaults to `unknown`. Declared business evidence and read-only continued observation are described in [operation outcomes](operation-outcomes.md).
+
 Writes through `browser_execute` and `browser_command`, and `browser_tabs navigate`, return an `effect`: did the page observably change (`changed`), did it settle (`settled`), did navigation happen, did new tabs open, how many DOM changes were counted. When the page could not be fingerprinted around the write, `observed` is `false` and `unobservedReason` says why (`no-tab`, `deadline-exhausted`, or `fingerprint-unavailable`).
 
 Add `expect` to a write to get a `verification`. `expect` is either a JavaScript truth expression or a structured postcondition such as `{ "ref": "bp-ref://control/...", "state": { "pressed": true } }`. Browser Pilot reads the ref before and after the write and returns `status` (`verified`, `unmet`, `inconclusive`), the observed state, the evidence used, and a target-scoped diff. Verification is scoped to the ref you named; it does not re-observe the whole page.
 
-A quiet page is not proof that asynchronous work has finished. Retryable postconditions keep polling until success, cancellation, or the verification budget (up to five seconds, bounded by the caller deadline). `unmet` means the condition was not observed within that budget; it does not mean the write was rolled back. Do not blindly repeat a write after an unmet or inconclusive result. For longer workflows, use an explicit wait and inspect the resulting business state.
+A quiet page is not proof that asynchronous work has finished. Retryable postconditions keep polling until the assertion holds, cancellation, or the observation budget (five seconds by default, configurable with bounded `verificationWaitMs`). `unmet` means the condition was not observed within that budget; it does not mean the write was rolled back. Do not blindly repeat a write after an unmet or inconclusive result. For longer workflows, use `browser_operation` to continue declared observation and inspect the resulting business state.
 
 ## What `browser_observe` returns
 
@@ -143,18 +145,20 @@ Alongside the JSON, the MCP result includes `resource_link` entries for every fr
 | `browser_command`    | You need trusted input on an observed control (`input.ref` with `click`, `type`, `check`, `select`, `focus`, `hover`), a wait (`wait.loadState`, `wait.selector`, `wait.networkIdle`, `wait.navigation`), a native browser operation (downloads, uploads, network recorder), or a raw CDP method. Field definitions live at `browser-pilot://native-command/<cmd>`. |
 | `browser_tabs`       | You need to navigate the selected tab to a URL, or disambiguate, create, switch, or close tabs. Omit it when the selected tab is already right.                                                                                                                                                                                                                     |
 | `browser_screenshot` | You want an image for a human or a vision model, without building a page model.                                                                                                                                                                                                                                                                                     |
+| `browser_operation`  | You need an execution receipt or continued declarative observation for an operationId, without replaying the write.                                                                                                                                                                                                                                                 |
 
 ## Where things live in the source
 
-| Path                        | Owns                                                                          |
-| --------------------------- | ----------------------------------------------------------------------------- |
-| `src/apps/mcp`              | The MCP server (official SDK, stdio) and the extension installer.             |
-| `src/apps/daemon`           | The user-local daemon that owns the bridge and sessions.                      |
-| `src/bridge/server`         | WebSocket bridge to the extension, pending requests, per-target write queues. |
-| `src/bridge/extension`      | The Manifest V3 extension: service worker, CDP helpers, content script.       |
-| `src/commands`              | Public tool schemas and orchestration; `observe/` assembles observations.     |
-| `src/kernels/abml`          | Pure page-model logic: entities, fusion, collections, diffs, verification.    |
-| `src/kernels/refs`          | Ref minting, locators, and access policy.                                     |
-| `src/kernels/session`       | Page identity, perception ledger, snapshot registry.                          |
-| `src/scan`, `capture-src`   | The page-world scan script and its noise/actionability rules.                 |
-| `.browser-pilot/artifacts/` | Saved observations and screenshots for the current project root.              |
+| Path                        | Owns                                                                                                       |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `src/apps/mcp`              | The MCP server (official SDK, stdio) and the extension installer.                                          |
+| `src/apps/daemon`           | The user-local daemon that owns the bridge and sessions.                                                   |
+| `src/bridge/server`         | WebSocket bridge to the extension, pending requests, per-target write queues.                              |
+| `src/bridge/extension`      | The Manifest V3 extension: service worker, CDP helpers, content script.                                    |
+| `src/commands`              | Public tool schemas and orchestration; `observe/` assembles observations.                                  |
+| `src/operations`            | Execution receipts, declared business conditions, correlated evidence, and bounded read-only continuation. |
+| `src/kernels/abml`          | Pure page-model logic: entities, fusion, collections, diffs, verification.                                 |
+| `src/kernels/refs`          | Ref minting, locators, and access policy.                                                                  |
+| `src/kernels/session`       | Page identity, perception ledger, snapshot registry.                                                       |
+| `src/scan`, `capture-src`   | The page-world scan script and its noise/actionability rules.                                              |
+| `.browser-pilot/artifacts/` | Saved observations and screenshots for the current project root.                                           |
