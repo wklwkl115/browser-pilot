@@ -1,3 +1,5 @@
+import { progressiveObservationNeed } from "./browser-eval-task-view-fixture.mjs";
+
 export const progressiveEvaluationTask = {
 	id: "task-view-progressive",
 	suite: "extended",
@@ -8,6 +10,12 @@ export const progressiveEvaluationTask = {
 			view: { focus: { query: "INV-7777" }, intent: "interact", fields: ["Note"] },
 		});
 		await ctx.compareTaskViews();
+		const equivalent = await ctx.compareEquivalentNeeds(progressiveObservationNeed());
+		ctx.assert(
+			equivalent.allPathsSatisfied,
+			"EQUIVALENT_NEED_UNSATISFIED",
+			"Every compared path must deliver the fixture's observation requirements within the common budget",
+		);
 		const resource = view.frontier.items.find((item) => item.ref === "frontier:task-view");
 		const index = await ctx.readResource(resource.resourceUri);
 		const descriptor = index.packetIndex.packets.find((packet) => packet.question === "Note context");
