@@ -179,8 +179,15 @@ test("optimistic UI cannot satisfy success requiring the completed save response
 	let writeCount = 0;
 	let requestReads = 0;
 	const f = await fixture(t, {
-		async executeJavaScript() {
-			return response({ count: 1, value: "Saved", truncated: false });
+		async executeJavaScript(script) {
+			if (script === "return performance.timeOrigin;") return response(1);
+			return response({
+				count: 1,
+				value: "Saved",
+				truncated: false,
+				documentOrigin: 1,
+				url: "https://example.test/editor",
+			});
 		},
 		async sendCommand(command) {
 			if (command.cmd === "network.status")
@@ -214,6 +221,7 @@ test("optimistic UI cannot satisfy success requiring the completed save response
 	const outcome = await runVerifiedWrite({
 		...f.options,
 		verificationWaitMs: 1000,
+		expect: { kind: "declarative", condition: { text: { selector: "#toast", match: { equals: "Saved" } } } },
 		business: {
 			success: { allOf: [{ text: { selector: "#toast", match: { equals: "Saved" } } }, { request }] },
 			failure: { request: { ...request, status: 503 } },
@@ -223,6 +231,7 @@ test("optimistic UI cannot satisfy success requiring the completed save response
 			return response(null);
 		},
 	});
+	assert.equal(outcome.verification?.status, "verified", "the optimistic UI itself must really verify");
 	assert.equal(outcome.operation?.business.status, "failed");
 	assert.notEqual(outcome.operation?.business.success?.status, "verified");
 	assert.equal(writeCount, 1);
@@ -628,4 +637,83 @@ test("prior success cannot explain an untracked outer dispatch failure", async (
 			return true;
 		},
 	);
+});
+
+for (const documentOrigin of [1, 2]) {
+	test(`exact URL constrains DOM evidence even with document origin ${documentOrigin}`, async (t) => {
+		const f = await fixture(t, {
+			async executeJavaScript(script) {
+				if (script === "return location.href;") return response("https://example.test/saved");
+				return response({ count: 1, value: "Saved", url: "https://example.test/other", documentOrigin });
+			},
+		});
+		const result = await evaluateCondition(
+			{
+				allOf: [
+					{ url: { equals: "https://example.test/saved" } },
+					{ text: { selector: "#status", match: { equals: "Saved" } } },
+				],
+			},
+			{ server: f.server, verb: "save", tabId: 7, timeoutMs: 100, documentBaseline: 1 },
+		);
+		assert.equal(result.status, "inconclusive");
+	});
+}
+
+test("continued business observation rejects a same-document route change between URL and DOM reads", async (t) => {
+	const f = await fixture(t, {
+		async executeJavaScript(script) {
+			if (script === "return performance.timeOrigin;") return response(1);
+			if (script === "return location.href;") return response("https://example.test/saved");
+			return response({ count: 1, value: "Saved", url: "https://example.test/other", documentOrigin: 1 });
+		},
+	});
+	const success = {
+		allOf: [
+			{ url: { equals: "https://example.test/saved" } },
+			{ text: { selector: "#status", match: { equals: "Saved" } } },
+		],
+	};
+	let operationId = "";
+	await assert.rejects(
+		runVerifiedWrite({
+			...f.options,
+			business: { success },
+			dispatch: async () => {
+				throw new BrowserBridgeError("BRIDGE_TIMEOUT", "unknown outcome", { dispatchStarted: true });
+			},
+		}),
+		(error) => {
+			operationId = String(payload(errorResult(error)).operationId);
+			return true;
+		},
+	);
+	const waited = payload(await f.query.execute({ operationId, action: "wait", waitMs: 100 }, undefined, f.ctx));
+	assert.equal((waited.business as Record<string, unknown>).status, "unknown");
+});
+
+test("nested allOf preserves every enclosing exact URL constraint", async (t) => {
+	let urlReads = 0;
+	const f = await fixture(t, {
+		async executeJavaScript(script) {
+			if (script === "return location.href;")
+				return response(++urlReads === 1 ? "https://example.test/a" : "https://example.test/b");
+			return response({ count: 1, value: "Saved", url: "https://example.test/b", documentOrigin: 1 });
+		},
+	});
+	const result = await evaluateCondition(
+		{
+			allOf: [
+				{ url: { equals: "https://example.test/a" } },
+				{
+					allOf: [
+						{ url: { equals: "https://example.test/b" } },
+						{ text: { selector: "#status", match: { equals: "Saved" } } },
+					],
+				},
+			],
+		},
+		{ server: f.server, verb: "save", tabId: 7, timeoutMs: 100, documentBaseline: 1 },
+	);
+	assert.equal(result.status, "inconclusive");
 });

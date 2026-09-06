@@ -1,3 +1,4 @@
+import { assessTaskContext, planOwnerContext, type TaskContextRequirements } from "./taskContextCoverage.js";
 import type { Entity, EntityRelation } from "./entity.js";
 import { entityRelationKeys } from "./relations.js";
 import { normalizeTaskText, type NormalizedTaskViewSpec } from "./taskView.js";
@@ -98,7 +99,7 @@ export function taskContext(
 	index: TaskEntityIndex,
 	anchor: Entity,
 	preferences: { spec: NormalizedTaskViewSpec; matchedRefs: Set<string>; changedRefs: Set<string> },
-): { entities: Entity[]; gaps: string[] } {
+): { entities: Entity[]; gaps: string[]; requirements: TaskContextRequirements } {
 	const root = taskObjectRoot(index, anchor);
 	const members = new Map<string, Entity>([
 		[anchor.ref, anchor],
@@ -119,7 +120,9 @@ export function taskContext(
 		members.set(ref, entity);
 		pending.push(...(index.children.get(ref) ?? []));
 	}
-	addOwnerContext(index, root, members);
+	const localRefs = new Set(members.keys());
+	const ownerPlan = planOwnerContext(index, root);
+	for (const ref of ownerPlan.refs) members.set(ref, index.byRef.get(ref)!);
 	const rank = (entity: Entity) => contextRank(entity, anchor.ref, root.ref, preferences);
 	const ranked = [...members.values()].sort((a, b) => rank(a) - rank(b));
 	const chosen = new Map(ranked.slice(0, TASK_CONTEXT_LIMIT).map((entity) => [entity.ref, entity]));
@@ -151,42 +154,26 @@ export function taskContext(
 	}
 	if (Array.from(chosen.values()).some((entity) => entity.children && !Array.isArray(entity.children)))
 		gaps.add("uncaptured-children");
-	return { entities: [...chosen.values()], gaps: [...gaps] };
-}
-
-/** Supplement a local layout group with proven owners, without entering sibling records. */
-function addOwnerContext(index: TaskEntityIndex, root: Entity, members: Map<string, Entity>): void {
-	if (!["group", "region"].includes(root.role.toLowerCase())) return;
-	const chain = new Set<string>([root.ref]);
-	let current = root.ref;
-	let ownerFound = false;
-	for (let depth = 0; depth < 24; depth++) {
-		const parent = index.parent.get(current);
-		if (!parent || chain.has(parent)) break;
-		const owner = index.byRef.get(parent);
-		if (!owner) break;
-		chain.add(parent);
-		current = parent;
-		if (["form", "row", "listitem", "article", "dialog", "alertdialog"].includes(owner.role.toLowerCase())) {
-			ownerFound = true;
-			break;
-		}
-	}
-	if (!ownerFound) return;
-	for (const ref of chain) members.set(ref, index.byRef.get(ref)!);
-	const pending = [...(index.children.get(current) ?? [])];
-	const visited = new Set<string>([current]);
-	for (let position = 0; position < pending.length; position++) {
-		const ref = pending[position]!;
-		if (visited.has(ref)) continue;
-		visited.add(ref);
-		const entity = index.byRef.get(ref);
-		if (!entity) continue;
-		const role = entity.role.toLowerCase();
-		if (OBJECT_ROLES.has(role) && !chain.has(ref)) continue;
-		if (["heading", "rowheader", "button", "alert", "status"].includes(role)) members.set(ref, entity);
-		pending.push(...(index.children.get(ref) ?? []));
-	}
+	const requirements = assessTaskContext({
+		anchor,
+		localRefs,
+		candidates: members,
+		selected: chosen,
+		ownerPlan,
+		intent: preferences.spec.intent,
+		focused:
+			preferences.matchedRefs.has(anchor.ref) ||
+			("refs" in preferences.spec.focus && preferences.spec.focus.refs.includes(anchor.ref)),
+		captureIncomplete:
+			!index.complete ||
+			gaps.has("structural-member-unavailable") ||
+			gaps.has("uncaptured-children") ||
+			gaps.has("related-context-unavailable") ||
+			gaps.has("context-selection-limit"),
+	});
+	for (const [requirement, status] of Object.entries(requirements))
+		if (status === "unknown" || status === "incomplete") gaps.add(`context-${requirement}-${status}`);
+	return { entities: [...chosen.values()], gaps: [...gaps], requirements };
 }
 
 function contextRank(
