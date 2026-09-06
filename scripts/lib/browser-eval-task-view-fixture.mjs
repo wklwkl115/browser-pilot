@@ -31,3 +31,26 @@ export function progressiveTaskFixture() {
 		document.querySelector('#other-packet-save').onclick = () => { window.otherPacketSaves++; };`,
 	};
 }
+
+export function progressiveObservationNeed() {
+	return {
+		id: "progressive-invoice-note",
+		record: { selector: "#packet-form", role: "form", name: "INV-7777" },
+		subject: {
+			selector: "#packet-note",
+			role: "textbox",
+			name: "Note",
+			value: "Draft packet",
+			state: { disabled: false, occluded: false },
+		},
+		submit: {
+			selector: "#packet-save",
+			role: "button",
+			name: "Save packet",
+			state: { disabled: false, occluded: false },
+		},
+		descriptions: [{ selector: "#packet-error", text: "Note requires review" }],
+		candidates: [{ selector: "#packet-form", role: "form", name: "INV-7777" }],
+		blockers: [],
+	};
+}
