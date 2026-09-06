@@ -21,7 +21,7 @@ import {
 	operationFailure,
 	type ObservationPlan,
 } from "../operations/operationObservation.js";
-import { readNetworkBaseline } from "../operations/conditionRuntime.js";
+import { hasDomCondition, readDocumentBaseline, readNetworkBaseline } from "../operations/conditionRuntime.js";
 import { hasRequestCondition, type BusinessConditions } from "../operations/conditionSchema.js";
 import { BrowserBridgeError } from "../utils/errors.js";
 
@@ -91,14 +91,7 @@ async function dispatchRecorded<T extends BrowserBridgeExecutionResult>(
 ): Promise<T> {
 	try {
 		const result = await inOperationPhase(record, "dispatch", dispatch);
-		record.view.execution = {
-			...record.view.execution,
-			status: "returned",
-			acknowledged: result.acknowledged,
-			// Arbitrary page return values (including {ok:false}) are not execution receipts.
-			response: "success",
-			returnedAt: Date.now(),
-		};
+		record.view.execution = record.executionTrace.finish(true, false, result.acknowledged);
 		record.view.recovery.action = "observe_only";
 		return result;
 	} catch (error) {
@@ -170,6 +163,8 @@ async function executeVerifiedWrite<T extends BrowserBridgeExecutionResult, Extr
 			const conditions = [expect, options.business?.success, options.business?.failure].filter(
 				(item) => item !== undefined,
 			);
+			if (conditions.some(hasDomCondition))
+				plan.runtime.documentBaseline = await readDocumentBaseline({ ...plan.runtime, signal: context.signal });
 			if (conditions.some(hasRequestCondition))
 				plan.runtime.networkBaseline = await readNetworkBaseline({ ...plan.runtime, signal: context.signal });
 			attachOperationWait(record, plan);

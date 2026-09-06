@@ -3,7 +3,7 @@ export function taskViewFixture() {
 		body: `<nav aria-label="Primary"><a href="/task-view">Invoice workspace</a></nav>
 		<section aria-label="Unrelated controls">${Array.from({ length: 90 }, (_, i) => `<button>Unrelated ${i}</button>`).join("")}</section>
 		<form aria-label="INV-2048"><h2>INV-2048</h2>
-		<label>Note <input id="target-note" value="Draft" aria-describedby="note-error"></label>
+		<fieldset><legend>Notes</legend><label>Note <input id="target-note" value="Draft" aria-describedby="note-error"></label></fieldset>
 		<button type="button" id="target-save">Save</button></form>
 		<form aria-label="INV-2099"><h2>INV-2099</h2>
 		<label>Note <input id="other-note" value="Other record"></label>

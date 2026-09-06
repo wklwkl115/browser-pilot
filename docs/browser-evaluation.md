@@ -16,7 +16,7 @@ Node.js 22+ and Chrome/Edge are required. Set `BROWSER_PILOT_SMOKE_BROWSER` to c
 
 The shared harness creates a temporary browser profile and a private copy of the extension with an ephemeral pairing secret. It does not install into the user's extension directory or use their cookies. Initial browser startup/build time is outside task timing; an explicit restart inside a recovery task is included. Each attempt navigates to fresh fixture state; failed writes are never automatically retried.
 
-## Scenarios (fixture version 4)
+## Scenarios (fixture version 5)
 
 | Task                   | Kind     | Independent completion check                                                                                                                                                      |
 | ---------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -77,3 +77,5 @@ There are no performance thresholds yet. Record repeated baselines before settin
 ## Extending the suite
 
 Keep fixtures deterministic and loopback-only. Each task must have a stable ID, suite, kind, and an independent completion oracle; asserting only a successful tool envelope is insufficient. Negative tests must name the expected rejection code and verify that no action occurred. Keep retries out of mutating tasks. Add fixture/contract tests under `tests/runtime/` or `tests/extension/`, update the catalog test when intentionally changing coverage, and increment `fixtureVersion` when changing existing scenario semantics. Keep raw responses, secrets, and user data out of the summary report.
+
+Resource costs are also reported as cumulative `resourceResponseJsonBytes` and maximum `maxResourceResponseJsonBytes`; resource steps identify index/group/scope reads. Fixture version 5 nests the target invoice field in a fieldset to exercise owner-context recovery.

@@ -105,10 +105,12 @@ export function taskContext(
 		[root.ref, root],
 	]);
 	const pending = [...(index.children.get(root.ref) ?? [])];
+	const visited = new Set<string>([root.ref]);
 	const gaps = new Set<string>();
 	for (let position = 0; position < pending.length; position++) {
 		const ref = pending[position]!;
-		if (members.has(ref)) continue;
+		if (visited.has(ref)) continue;
+		visited.add(ref);
 		const entity = index.byRef.get(ref);
 		if (!entity) {
 			gaps.add("structural-member-unavailable");
@@ -117,6 +119,7 @@ export function taskContext(
 		members.set(ref, entity);
 		pending.push(...(index.children.get(ref) ?? []));
 	}
+	addOwnerContext(index, root, members);
 	const rank = (entity: Entity) => contextRank(entity, anchor.ref, root.ref, preferences);
 	const ranked = [...members.values()].sort((a, b) => rank(a) - rank(b));
 	const chosen = new Map(ranked.slice(0, TASK_CONTEXT_LIMIT).map((entity) => [entity.ref, entity]));
@@ -149,6 +152,41 @@ export function taskContext(
 	if (Array.from(chosen.values()).some((entity) => entity.children && !Array.isArray(entity.children)))
 		gaps.add("uncaptured-children");
 	return { entities: [...chosen.values()], gaps: [...gaps] };
+}
+
+/** Supplement a local layout group with proven owners, without entering sibling records. */
+function addOwnerContext(index: TaskEntityIndex, root: Entity, members: Map<string, Entity>): void {
+	if (!["group", "region"].includes(root.role.toLowerCase())) return;
+	const chain = new Set<string>([root.ref]);
+	let current = root.ref;
+	let ownerFound = false;
+	for (let depth = 0; depth < 24; depth++) {
+		const parent = index.parent.get(current);
+		if (!parent || chain.has(parent)) break;
+		const owner = index.byRef.get(parent);
+		if (!owner) break;
+		chain.add(parent);
+		current = parent;
+		if (["form", "row", "listitem", "article", "dialog", "alertdialog"].includes(owner.role.toLowerCase())) {
+			ownerFound = true;
+			break;
+		}
+	}
+	if (!ownerFound) return;
+	for (const ref of chain) members.set(ref, index.byRef.get(ref)!);
+	const pending = [...(index.children.get(current) ?? [])];
+	const visited = new Set<string>([current]);
+	for (let position = 0; position < pending.length; position++) {
+		const ref = pending[position]!;
+		if (visited.has(ref)) continue;
+		visited.add(ref);
+		const entity = index.byRef.get(ref);
+		if (!entity) continue;
+		const role = entity.role.toLowerCase();
+		if (OBJECT_ROLES.has(role) && !chain.has(ref)) continue;
+		if (["heading", "rowheader", "button", "alert", "status"].includes(role)) members.set(ref, entity);
+		pending.push(...(index.children.get(ref) ?? []));
+	}
 }
 
 function contextRank(

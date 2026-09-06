@@ -72,3 +72,7 @@ The MCP text representation includes the task view alongside structured output s
 Deterministic tests cover selection, record identity, missing/conflicting refs, portal context, virtualized no-match boundaries, field changes, budget folding and historical resources. Browser scenarios `task-view-record` and `task-view-ambiguity` exercise task-resource refs, the text representation, targeted edits, conflicting visible feedback, and stale focus after navigation.
 
 These are controlled single-Agent fixtures. They do not establish arbitrary-site success, universal host resource support or model-token savings. The runtime adds no multi-Agent coordination, semantic retrieval, incremental scanning, automatic recovery writes or business planning.
+
+Task contexts traverse explicit container anchors even when those anchors were already selected. A nested layout group retains its local content and supplements proven enclosing form/row/article/dialog identity and nearby headings/actions, without entering sibling record groups. Cyclic captured ancestry is deduplicated.
+
+Task index entries include `resourceJsonBytes` (UTF-8 bytes of the full group JSON, excluding the MCP envelope) and `exceedsInlineBudget`. Large groups remain explicit opt-in expansions; the inline budget is not a resource cap. Evaluation separately reports cumulative `resourceResponseJsonBytes`, `maxResourceResponseJsonBytes`, and per-read `resourceKind` so index, group, and scope costs can be inspected. Total MCP bytes include these resource reads.

@@ -101,6 +101,27 @@ export const taskViewEvaluationTasks = [
 				"EXACT_TARGET",
 				"Task view acted on the wrong record or replayed a save",
 			);
+			const pending = await ctx.call("browser_execute", {
+				script: "return null;",
+				business: { success: { text: { selector: "#save-status", match: { equals: "Unsaved" } } } },
+				verificationWaitMs: 100,
+			});
+			ctx.assert(
+				pending.business.status === "unknown",
+				"BEFORE_NAVIGATION",
+				"Unexpected original document evidence",
+			);
+			await ctx.navigate("task-view");
+			const continued = await ctx.call("browser_operation", {
+				operationId: pending.operationId,
+				action: "wait",
+				waitMs: 100,
+			});
+			ctx.assert(
+				continued.business.status === "unknown",
+				"DOCUMENT_EVIDENCE_BOUNDARY",
+				"Same selector and matching text in a new document were attributed to an old operation",
+			);
 		},
 	},
 	{

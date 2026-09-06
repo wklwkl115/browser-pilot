@@ -498,3 +498,134 @@ test("declarative schemas reject executable or unbounded business declarations",
 		true,
 	);
 });
+
+for (const scenario of [
+	"write-then-no-dispatch",
+	"write-then-timeout",
+	"read-then-no-dispatch",
+	"evicted-write",
+] as const) {
+	test(`operation aggregates ${scenario} across the enclosing dispatch`, async (t) => {
+		const f = await fixture(t);
+		await assert.rejects(
+			runVerifiedWrite({
+				...f.options,
+				effects: false,
+				dispatch: async () => {
+					const first = operationRequest("first", scenario === "read-then-no-dispatch" ? "read" : "write")!;
+					first.sent();
+					first.ack();
+					first.returned("success");
+					if (scenario === "evicted-write")
+						for (let i = 0; i < 130; i++) {
+							const skipped = operationRequest(`skipped-${i}`)!;
+							skipped.returned("error", false);
+						}
+					const next = operationRequest("next")!;
+					if (scenario === "write-then-timeout") {
+						next.sent();
+						next.returned("error", true, false);
+					} else next.returned("error", false);
+					throw new BrowserBridgeError("BRIDGE_TIMEOUT", "second request failed", {
+						dispatchStarted: scenario === "write-then-timeout",
+					});
+				},
+			}),
+			(error) => {
+				const value = payload(errorResult(error));
+				assert.equal(
+					(value.execution as Record<string, unknown>).status,
+					scenario === "read-then-no-dispatch"
+						? "not_dispatched"
+						: scenario === "write-then-timeout"
+							? "dispatched_unknown"
+							: "returned",
+				);
+				assert.equal(
+					(value.recovery as Record<string, unknown>).action,
+					scenario === "read-then-no-dispatch" ? "retry_after_review" : "observe_only",
+				);
+				return true;
+			},
+		);
+	});
+}
+
+for (const allowDestination of [false, true]) {
+	test(`continued DOM evidence ${allowDestination ? "accepts an explicit destination" : "rejects an unrelated document"}`, async (t) => {
+		let documentOrigin = 1;
+		let url = "https://example.test/a";
+		let writes = 0;
+		const f = await fixture(t, {
+			async executeJavaScript(script) {
+				if (script === "return performance.timeOrigin;") return response(documentOrigin);
+				if (script === "return location.href;") return response(url);
+				return response({ count: 1, value: "Saved", documentOrigin, url });
+			},
+		});
+		const text = { text: { selector: "#status", match: { equals: "Saved" } } };
+		const success = allowDestination ? { allOf: [{ url: { equals: "https://example.test/b" } }, text] } : text;
+		let operationId = "";
+		await assert.rejects(
+			runVerifiedWrite({
+				...f.options,
+				business: { success },
+				dispatch: async () => {
+					writes++;
+					throw new BrowserBridgeError("BRIDGE_TIMEOUT", "write result unknown", { dispatchStarted: true });
+				},
+			}),
+			(error) => {
+				operationId = String(payload(errorResult(error)).operationId);
+				return true;
+			},
+		);
+		documentOrigin = 2;
+		url = "https://example.test/b";
+		const waited = payload(await f.query.execute({ operationId, action: "wait", waitMs: 100 }, undefined, f.ctx));
+		assert.equal((waited.business as Record<string, unknown>).status, allowDestination ? "succeeded" : "unknown");
+		assert.equal(writes, 1);
+	});
+}
+
+test("successful outer return cannot erase a child's unknown write outcome", async (t) => {
+	const f = await fixture(t);
+	const outcome = await runVerifiedWrite({
+		...f.options,
+		effects: false,
+		dispatch: async () => {
+			const first = operationRequest("success")!;
+			first.sent();
+			first.returned("success");
+			const second = operationRequest("unknown")!;
+			second.sent();
+			second.returned("error", true, false);
+			return response(null);
+		},
+	});
+	assert.equal(outcome.operation?.execution.status, "dispatched_unknown");
+	assert.equal(outcome.operation?.recovery.action, "observe_only");
+});
+
+test("prior success cannot explain an untracked outer dispatch failure", async (t) => {
+	const f = await fixture(t);
+	await assert.rejects(
+		runVerifiedWrite({
+			...f.options,
+			effects: false,
+			dispatch: async () => {
+				const first = operationRequest("success")!;
+				first.sent();
+				first.returned("success");
+				throw new Error("untracked adapter outcome");
+			},
+		}),
+		(error) => {
+			assert.equal(
+				(payload(errorResult(error)).execution as Record<string, unknown>).status,
+				"dispatched_unknown",
+			);
+			return true;
+		},
+	);
+});

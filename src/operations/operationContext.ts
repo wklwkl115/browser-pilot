@@ -4,6 +4,7 @@ export type OperationPhase = "prepare" | "dispatch" | "verify" | "evidence";
 export type OperationRequestEvent = {
 	requestId: string;
 	phase: OperationPhase;
+	accessMode?: "read" | "write";
 	sentAt: number;
 	ackAt?: number;
 	finishedAt?: number;
@@ -24,10 +25,16 @@ export function inOperationPhase<T>(trace: OperationTrace, phase: OperationPhase
 }
 
 /** Capture the originating context here: socket callbacks need not run in its async scope. */
-export function operationRequest(requestId: string) {
+export function operationRequest(requestId: string, accessMode: "read" | "write" = "write") {
 	const current = context.getStore();
 	if (!current) return undefined;
-	const event: OperationRequestEvent = { requestId, phase: current.phase, sentAt: Date.now(), dispatchStarted: true };
+	const event: OperationRequestEvent = {
+		requestId,
+		accessMode,
+		phase: current.phase,
+		sentAt: Date.now(),
+		dispatchStarted: true,
+	};
 	return {
 		operationId: current.trace.operationId,
 		sent: () => current.trace.request(event),

@@ -423,6 +423,7 @@ export class BrowserBridgeCommandService {
 						tabId: queuedTabId,
 						timeoutMs: options.timeoutMs,
 						target: queuedTarget,
+						accessMode: options.accessMode,
 						signal: options.signal,
 					});
 				};
@@ -433,6 +434,7 @@ export class BrowserBridgeCommandService {
 				tabId,
 				timeoutMs: options.timeoutMs,
 				target,
+				accessMode: options.accessMode,
 				signal: options.signal,
 			});
 		}
@@ -441,6 +443,7 @@ export class BrowserBridgeCommandService {
 			tabId,
 			timeoutMs: options.timeoutMs,
 			target,
+			accessMode: options.accessMode,
 			signal: options.signal,
 		});
 	}

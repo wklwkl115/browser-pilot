@@ -55,6 +55,14 @@ export function summarizeAttempts(attempts) {
 		),
 		toolCalls: attempts.reduce((total, attempt) => total + attempt.toolCalls, 0),
 		resourceReads: attempts.reduce((total, attempt) => total + (attempt.resourceReads ?? 0), 0),
+		resourceResponseJsonBytes: attempts.reduce(
+			(total, attempt) => total + (attempt.resourceResponseJsonBytes ?? 0),
+			0,
+		),
+		maxResourceResponseJsonBytes: Math.max(
+			0,
+			...attempts.map((attempt) => attempt.maxResourceResponseJsonBytes ?? 0),
+		),
 		mcpResponseJsonBytes: attempts.every((attempt) => typeof attempt.mcpResponseJsonBytes === "number")
 			? attempts.reduce((total, attempt) => total + attempt.mcpResponseJsonBytes, 0)
 			: null,
