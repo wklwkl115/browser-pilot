@@ -81,8 +81,8 @@ test("evaluation task selection is explicit, deterministic, and fails on typos",
 test("evaluation catalog covers the core, safety, frame, and recovery scenarios", async () => {
 	const { evaluationTasks } = await import(new URL("../../scripts/lib/browser-eval-tasks.mjs", import.meta.url).href);
 	assert.equal(selectEvaluationTasks(evaluationTasks, { suite: "core", tasks: [] }).length, 4);
-	assert.equal(selectEvaluationTasks(evaluationTasks, { suite: "extended", tasks: [] }).length, 8);
-	assert.equal(evaluationTasks.length, 12);
+	assert.equal(selectEvaluationTasks(evaluationTasks, { suite: "extended", tasks: [] }).length, 10);
+	assert.equal(evaluationTasks.length, 14);
 	for (const task of evaluationTasks) {
 		assert.equal(typeof task.run, "function");
 		assert.ok(["workflow", "safety", "recovery"].includes(task.kind));
@@ -97,6 +97,8 @@ test("evaluation catalog covers the core, safety, frame, and recovery scenarios"
 		"failed-submit-no-replay",
 		"spa-ref-continuity",
 		"occluded-control-guard",
+		"task-view-record",
+		"task-view-ambiguity",
 	])
 		assert.ok(
 			evaluationTasks.some((task: { id: string }) => task.id === id),

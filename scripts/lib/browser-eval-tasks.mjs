@@ -1,4 +1,5 @@
 import { extendedEvaluationTasks } from "./browser-eval-extended-tasks.mjs";
+import { taskViewEvaluationTasks } from "./browser-eval-task-view-tasks.mjs";
 
 const coreTasks = [
 	{
@@ -139,4 +140,8 @@ const coreTasks = [
 	},
 ];
 
-export const evaluationTasks = [...coreTasks.map((task) => ({ ...task, suite: "core" })), ...extendedEvaluationTasks];
+export const evaluationTasks = [
+	...coreTasks.map((task) => ({ ...task, suite: "core" })),
+	...extendedEvaluationTasks,
+	...taskViewEvaluationTasks,
+];

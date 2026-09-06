@@ -18,6 +18,7 @@ import {
 } from "../../kernels/abml/ax.js";
 import type { BuiltEntity } from "../../kernels/abml/entity.js";
 import type { SnapshotGeometryEntry } from "../../kernels/abml/identityBootstrap.js";
+import type { CapturedDomId } from "../../kernels/abml/taskViewCapture.js";
 import type { PaintOrderEntry, RelationAnchor } from "../../kernels/abml/relations.js";
 
 export type AbmlAxRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
@@ -111,6 +112,7 @@ const CURRENT_CONTAINER_ROLES = new Set([
 type AncestorContainerContext = {
 	nearest?: { role: string; name: string | undefined; key?: string };
 	currentContainerKeys: string[];
+	contextAncestorKeys: string[];
 };
 
 function nodeRelationKey(node: Record<string, unknown>): string | undefined {
@@ -127,12 +129,15 @@ function ancestorContainerContext(
 	let current = node;
 	let nearest: AncestorContainerContext["nearest"];
 	const currentContainerKeys: string[] = [];
+	const contextAncestorKeys: string[] = [];
 	for (let depth = 0; depth < 24; depth += 1) {
 		const id = axNodeId(current);
 		if (!id) break;
 		const parent = parentByChildId.get(id);
 		if (!parent) break;
 		const role = axRole(parent).toLowerCase();
+		const parentKey = nodeRelationKey(parent);
+		if (parentKey) contextAncestorKeys.push(parentKey);
 		if (!nearest && CONTAINER_ROLES.has(role))
 			nearest = { role, name: axName(parent), key: nodeRelationKey(parent) };
 		if (CURRENT_CONTAINER_ROLES.has(role)) {
@@ -141,7 +146,7 @@ function ancestorContainerContext(
 		}
 		current = parent;
 	}
-	return { ...(nearest ? { nearest } : {}), currentContainerKeys };
+	return { ...(nearest ? { nearest } : {}), currentContainerKeys, contextAncestorKeys };
 }
 
 function collectTableRows(
@@ -330,6 +335,7 @@ export type AxReadResult = {
 	entities: BuiltEntity[];
 	anchors: RelationAnchor[];
 	snapshotGeometryEntries?: SnapshotGeometryEntry[];
+	snapshotDomIds?: CapturedDomId[];
 	paintOrderEntries?: PaintOrderEntry[];
 	diagnostics?: AxReadDiagnostics;
 };
@@ -604,6 +610,7 @@ function snapshotLayoutViews(value: unknown, scrollX: number, scrollY: number) {
 		),
 		domBackendNodeIds,
 		passwordBackendNodeIds,
+		snapshotDomIds: capturedDomIds(attrsByNodeIndex, backendIds),
 		snapshotDocumentCount: documentCount,
 		snapshotDocumentsSkipped: Math.max(0, documentCount - 1),
 	} satisfies {
@@ -612,6 +619,7 @@ function snapshotLayoutViews(value: unknown, scrollX: number, scrollY: number) {
 		paintOrderEntries: PaintOrderEntry[];
 		domBackendNodeIds: Set<number>;
 		passwordBackendNodeIds: Set<number>;
+		snapshotDomIds: CapturedDomId[];
 		snapshotDocumentCount: number;
 		snapshotDocumentsSkipped: number;
 	};
@@ -626,6 +634,12 @@ function uniqueSnapshotLayoutEntries(entries: SnapshotLayoutEntry[]): SnapshotLa
 	});
 }
 
+function capturedDomIds(attributes: Map<number, Record<string, string>>, backendIds: unknown[]): CapturedDomId[] {
+	return [...attributes].flatMap(([index, attrs]) =>
+		attrs.id ? [{ id: attrs.id, backendNodeId: Number(backendIds[index]) }] : [],
+	);
+}
+
 type AxCdpRequest = Parameters<typeof sendPersistentCdp>[1];
 type AxCdpSender = (request: AxCdpRequest) => ReturnType<typeof sendPersistentCdp>;
 type AxNodeIndexes = {
@@ -634,6 +648,7 @@ type AxNodeIndexes = {
 	nodeByBackend: Map<number, Record<string, unknown>>;
 };
 type AxSnapshotRead = {
+	snapshotDomIds: CapturedDomId[];
 	rawGeometryByBackend: Map<number, AxGeometry | undefined>;
 	domBackendNodeIds: Set<number>;
 	passwordBackendNodeIds: Set<number>;
@@ -755,6 +770,7 @@ async function readAxSnapshot(
 		rawGeometryByBackend: new Map(views.geometryByBackend),
 		domBackendNodeIds: views.domBackendNodeIds,
 		passwordBackendNodeIds: views.passwordBackendNodeIds,
+		snapshotDomIds: views.snapshotDomIds,
 		snapshotEntries: views.snapshotEntries,
 		paintOrderEntries: views.paintOrderEntries,
 		snapshotGeometryCount: views.geometryByBackend.size,
@@ -835,6 +851,16 @@ function assembleAxEntities(
 			passwordBackendNodeIds.has(backendNodeId);
 		const built = buildAxEntityFromNode(node, context, geometryByNode.get(node), { redactValue });
 		const ancestors = ancestorContainerContext(node, indexes.parentByChildId);
+		// Reuse the AX tree already captured in this read. No extra browser reads or task filtering.
+		built.entity.hints = { ...(built.entity.hints ?? {}), contextAncestorKeys: ancestors.contextAncestorKeys };
+		if (["alert", "status", "dialog", "alertdialog", "paragraph"].includes(axRole(node).toLowerCase())) {
+			const text = capturedContextText(node, indexes.nodeById);
+			built.entity.hints = {
+				...built.entity.hints,
+				contextText: text.text,
+				contextTextIncomplete: text.incomplete,
+			};
+		}
 		if (ancestors.nearest)
 			built.entity.hints = {
 				...(built.entity.hints || {}),
@@ -874,6 +900,33 @@ function assembleAxEntities(
 	return { entities, anchors };
 }
 
+function capturedContextText(node: Record<string, unknown>, byId: Map<string, Record<string, unknown>>) {
+	const queue = [node];
+	const seen = new Set<Record<string, unknown>>();
+	const parts: string[] = [];
+	let length = 0;
+	while (queue.length && seen.size < 256 && length < 8192) {
+		const current = queue.shift()!;
+		if (seen.has(current)) continue;
+		seen.add(current);
+		const role = axRole(current).toLowerCase();
+		if (["textbox", "searchbox", "password"].includes(role)) continue;
+		if (["statictext", "text", "labeltext"].includes(role)) {
+			const name = axName(current);
+			if (name) {
+				parts.push(name);
+				length += name.length + 1;
+			}
+			continue;
+		}
+		for (const id of Array.isArray(current.childIds) ? current.childIds : []) {
+			const child = byId.get(String(id));
+			if (child) queue.push(child);
+		}
+	}
+	return { text: parts.join(" ").slice(0, 8192), incomplete: queue.length > 0 || length > 8192 };
+}
+
 function projectAxReadResult(input: {
 	startedAt: number;
 	cdpCalls: number;
@@ -887,6 +940,7 @@ function projectAxReadResult(input: {
 	const { snapshot, geometry } = input;
 	return {
 		...input.assembled,
+		snapshotDomIds: snapshot.snapshotDomIds,
 		...(snapshot.snapshotEntries.length ? { snapshotGeometryEntries: snapshot.snapshotEntries } : {}),
 		...(snapshot.paintOrderEntries.length ? { paintOrderEntries: snapshot.paintOrderEntries } : {}),
 		diagnostics: {

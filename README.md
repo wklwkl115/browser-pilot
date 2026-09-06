@@ -137,6 +137,8 @@ New to the vocabulary (refs, entities, frontier, collections, causal, verificati
 
 ## Agent Workflow
 
+For focused observation, use `browser_observe` with `view: { focus: { query: "INV-2048" }, intent: "locate" }`, then an observed ref and preferred field labels. Task views preserve object context, ambiguity and captured-scope limits without acting on the page. See [task views](docs/task-views.md).
+
 ```text
 observe  ->  choose a bp-ref  ->  execute or command  ->  verify  ->  collect evidence
 ```

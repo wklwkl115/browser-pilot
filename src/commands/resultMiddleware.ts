@@ -2,6 +2,8 @@ import { stableJson } from "../utils/json.js";
 import { pruneObservationArtifacts, saveTextArtifact } from "../artifacts/artifactFiles.js";
 import type { PageObservationV3, PageObservationView } from "../kernels/abml/pageObservation.js";
 import { publicToolValue, type BrowserTextCommandResult } from "../utils/toolResult.js";
+import type { NormalizedTaskViewSpec } from "../kernels/abml/taskView.js";
+import { projectTaskObservation } from "./observe/taskViewProjection.js";
 import {
 	OBSERVATION_RESOURCES_DETAIL_KEY,
 	projectObservationOverflow,
@@ -12,6 +14,7 @@ type ArtifactContext = { cwd?: string } | undefined;
 
 export type PageObservationResultOptions = {
 	observation: PageObservationV3;
+	view?: NormalizedTaskViewSpec;
 	artifactPath?: string;
 	fallbackName: string;
 	ctx?: ArtifactContext;
@@ -24,10 +27,13 @@ export async function pageObservationResult(options: PageObservationResultOption
 	const artifactText = stableJson(options.observation);
 	const saved = await saveTextArtifact(options.ctx, options.artifactPath, options.fallbackName, artifactText);
 	void pruneObservationArtifacts(saved.path);
-	let projected = projectObservationResources(options.observation, saved.path);
+	let projected = options.view
+		? await projectTaskObservation(options.observation, saved.path, artifactText, options.view)
+		: projectObservationResources(options.observation, saved.path);
 	let view = publicToolValue(projected.observation) as PageObservationView;
 	let rendered = JSON.stringify(view);
 	if (Buffer.byteLength(rendered, "utf8") > MAX_OBSERVATION_RESULT_BYTES) {
+		if (options.view) throw new Error("Task view exceeded its final result budget");
 		projected = projectObservationOverflow(options.observation, saved.path);
 		view = publicToolValue(projected.observation) as PageObservationView;
 		rendered = JSON.stringify(view);

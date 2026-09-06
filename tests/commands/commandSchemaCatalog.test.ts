@@ -328,9 +328,16 @@ test("every public native command has one closed canonical parameter schema", ()
 	);
 });
 
-test("browser_observe exposes one observation mode", () => {
+test("browser_observe exposes observation mode and an optional declarative view", () => {
 	const properties = (command("browser_observe").parameters as { properties: Record<string, unknown> }).properties;
-	assert.deepEqual(Object.keys(properties), ["mode", "visual", "targetRef"]);
+	assert.deepEqual(Object.keys(properties), ["view", "mode", "visual", "targetRef"]);
+	assert.equal(
+		validateBrowserCommandArguments(command("browser_observe"), {
+			view: { focus: { query: "INV-2048" }, intent: "locate" },
+		}).ok,
+		true,
+	);
+	assert.equal(validateBrowserCommandArguments(command("browser_observe"), { view: "page" }).ok, true);
 	assert.deepEqual((properties.mode as { enum: string[] }).enum, ["auto", "full", "diff"]);
 	for (const removed of [
 		"fresh",

@@ -1,4 +1,5 @@
 import { readFile, realpath } from "node:fs/promises";
+import { readTaskProjectionResource, taskResourceSuffix, validTaskResourceDescriptor } from "./taskViewResources.js";
 import { OPERATION_RESULT_PROPERTIES, OPERATION_OUTPUT_SCHEMA } from "../../operations/resultSchema.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +49,7 @@ import {
 } from "../../commands/observe/observationResources.js";
 import { publicToolValue, errorResult } from "../../utils/toolResult.js";
 import { artifactResourceUri } from "../../artifacts/artifactFiles.js";
+import type { BrowserCommandResult } from "../../commands/commandDefinition.js";
 
 type McpContent =
 	{ type: "text"; text: string } | { type: "resource_link"; uri: string; name: string; mimeType?: string };
@@ -91,6 +93,9 @@ function toolAnnotations(name: string): Tool["annotations"] | undefined {
  * PAGE_OBSERVATION_VIEW_JSON_SCHEMA keeps validating every result before it leaves the server.
  */
 const OBSERVE_VIEW_KEY_DESCRIPTIONS: Record<keyof typeof PAGE_OBSERVATION_VIEW_JSON_SCHEMA.properties, string> = {
+	task: "Information need, literal candidate count and ambiguity, captured/matched/displayed scope, and missing context. No task completion claim.",
+	bundles:
+		"Self-contained evidence groups: object identity, fields, related controls, observed global signals and changes. Folded groups remain available as snapshot resources.",
 	target: "{ url } of the observed tab.",
 	content: "Readable page text plus headings; complete:false means more text is behind a frontier resource.",
 	visual: "When a screenshot was attached: image ref, resourceUri, size, and normalized target boxes per ref.",
@@ -262,7 +267,7 @@ function visualResourceLink(
 
 function observationResourceToken(uri: string): string | undefined {
 	if (!uri.startsWith(OBSERVATION_RESOURCE_URI_PREFIX)) return undefined;
-	const token = uri.slice(OBSERVATION_RESOURCE_URI_PREFIX.length);
+	const token = (taskResourceSuffix(uri)?.base ?? uri).slice(OBSERVATION_RESOURCE_URI_PREFIX.length);
 	return OBSERVATION_RESOURCE_TOKEN.test(token) ? token : undefined;
 }
 
@@ -273,6 +278,7 @@ function pruneObservationResources(now = Date.now()): void {
 }
 
 function validObservationResourceTarget(descriptor: ObservationResourceDescriptor): boolean {
+	if (descriptor.taskProjection !== undefined) return validTaskResourceDescriptor(descriptor);
 	if (descriptor.kind === "content")
 		return (
 			Number.isInteger(descriptor.contentSection) &&
@@ -390,6 +396,7 @@ function publicJsonText(value: string): string {
 }
 
 function observationSummary(value: Record<string, unknown>): string {
+	if (value.task) return JSON.stringify(value);
 	const target = record(value.target);
 	const content = record(value.content);
 	const title = record(value.gist).title;
@@ -409,30 +416,35 @@ export async function callMcpTool(
 	if (!byName.has(name)) return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
 	try {
 		const result = await invokeDaemonTool(name, args, projectRoot, signal);
-		const resourceLinks = registerMcpObservationResources(result.details, projectRoot);
-		const link = resourceLink(result.details, projectRoot);
-		const isError = result.isError === true || result.terminate === true;
-		const content = isError ? publicContent(result.content) : result.content;
-		const textContent = content.filter((item): item is { type: "text"; text: string } => item.type === "text");
-		const structuredContent = isError ? undefined : recordJsonText(textContent);
-		const observation =
-			name === "browser_observe" && structuredContent && isPageObservationView(structuredContent)
-				? structuredContent
-				: undefined;
-		const visualLink = visualResourceLink(observation, projectRoot);
-		return {
-			content: [
-				...(observation ? [{ type: "text" as const, text: observationSummary(observation) }] : content),
-				...resourceLinks,
-				...(visualLink ? [visualLink] : []),
-				...(link ? [link] : []),
-			],
-			...(structuredContent ? { structuredContent } : {}),
-			isError,
-		};
+		return renderMcpToolResult(name, result, projectRoot);
 	} catch (error) {
 		return errorResult(error);
 	}
+}
+
+/** The transport adapter used by stdio and the browser evaluation harness. */
+export function renderMcpToolResult(name: string, result: BrowserCommandResult, projectRoot: string): McpToolResult {
+	const resourceLinks = registerMcpObservationResources(result.details, projectRoot);
+	const link = resourceLink(result.details, projectRoot);
+	const isError = result.isError === true || result.terminate === true;
+	const content = isError ? publicContent(result.content) : result.content;
+	const textContent = content.filter((item): item is { type: "text"; text: string } => item.type === "text");
+	const structuredContent = isError ? undefined : recordJsonText(textContent);
+	const observation =
+		name === "browser_observe" && structuredContent && isPageObservationView(structuredContent)
+			? structuredContent
+			: undefined;
+	const visualLink = visualResourceLink(observation, projectRoot);
+	return {
+		content: [
+			...(observation ? [{ type: "text" as const, text: observationSummary(observation) }] : content),
+			...resourceLinks,
+			...(visualLink ? [visualLink] : []),
+			...(link ? [link] : []),
+		],
+		...(structuredContent ? { structuredContent } : {}),
+		isError,
+	};
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -555,7 +567,13 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 		const relative = path.relative(root, target);
 		if (!relative || relative.startsWith("..") || path.isAbsolute(relative))
 			throw new Error("Observation resource is outside the project artifact root");
-		const observation = JSON.parse(await readFile(target, "utf8")) as unknown;
+		const artifactText = await readFile(target, "utf8");
+		if (descriptor.taskProjection) {
+			const value = readTaskProjectionResource(artifactText, descriptor, uri);
+			return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(publicToolValue(value)) }] };
+		}
+		if (taskResourceSuffix(uri)) throw new Error("This observation resource has no task groups");
+		const observation = JSON.parse(artifactText) as unknown;
 		if (!isPageObservationV3(observation) || observation.snapshot.snapshotId !== descriptor.snapshotId)
 			throw new Error("Observation resource snapshot mismatch");
 		let value: unknown;

@@ -2,6 +2,8 @@ import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntim
 import { resolveLocalTargetTabId, targetTabId } from "../commandRuntime.js";
 import type { PageIdentity } from "../../kernels/session/pageIdentity.js";
 import { currentPageIdentity } from "./pageIdentity.js";
+import type { NormalizedTaskViewSpec } from "../../kernels/abml/taskView.js";
+import type { ExecutionRefTarget } from "../../browser-command-runtime/executionRef.js";
 
 export type ObserveToolParams = {
 	browserSessionId?: string;
@@ -11,6 +13,9 @@ export type ObserveToolParams = {
 	fresh?: boolean;
 	diff?: boolean;
 	visual?: "auto" | "always" | "never";
+	view?: NormalizedTaskViewSpec;
+	/** Identity anchors resolved before capture; never part of the public schema. */
+	taskAnchors?: ExecutionRefTarget[];
 };
 
 export function currentObserveSnapshotMeta(

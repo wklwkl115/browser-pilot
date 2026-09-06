@@ -16,6 +16,7 @@ import { pageObservationResult } from "../resultMiddleware.js";
 import type { PageObservationBuild } from "./scanProjection.js";
 import type { VisualObservation } from "../../kernels/abml/pageObservation.js";
 import type { currentObserveSnapshotMeta, ObserveToolParams } from "./common.js";
+import { validateTaskAnchorSnapshot } from "./taskViewInput.js";
 
 export type ObservationProviderFailure = {
 	provider: string;
@@ -269,9 +270,11 @@ export async function finalizeScanObservation(input: FinalizeScanObservationInpu
 	options.timings.renderMs = elapsedMs(options.renderStartedAt);
 	const diagnostics = buildObserveDiagnostics(options, summary);
 	const pageObservation = buildCanonicalPageObservation(options, summary, diagnostics);
+	validateTaskAnchorSnapshot(input.params.taskAnchors, pageObservation);
 	const details = buildResultDetails(options, diagnostics);
 	const result = await pageObservationResult({
 		observation: pageObservation,
+		view: input.params.view,
 		artifactPath: outputPath,
 		fallbackName,
 		ctx,

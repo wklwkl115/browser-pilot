@@ -36,6 +36,8 @@ export type ObservationResourceDescriptor = {
 	label?: string;
 	jsonPath?: string;
 	contentSection?: number;
+	/** A saved public task projection, addressed by bounded index/group resources. */
+	taskProjection?: { sha256: string };
 };
 
 export type ObservationContentSection = { label: string; text: string };

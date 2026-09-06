@@ -23,6 +23,7 @@ export type {
 } from "./src/commands/commandDefinition.js";
 export { validateBrowserCommandArguments } from "./src/commands/commandValidation.js";
 export type { BrowserCommandRuntimePort } from "./src/ports/BrowserCommandRuntimePort.js";
+export type { ObserveView, TaskViewSpec } from "./src/kernels/abml/taskView.js";
 
 // MCP
 export {
