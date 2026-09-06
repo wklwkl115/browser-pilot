@@ -38,6 +38,8 @@ export type ObservationResourceDescriptor = {
 	contentSection?: number;
 	/** A saved public task projection, addressed by bounded index/group resources. */
 	taskProjection?: { sha256: string };
+	/** Saved canonical evidence exposed through a versioned public projection. */
+	taskEvidence?: { sha256: string; policy: string };
 };
 
 export type ObservationContentSection = { label: string; text: string };

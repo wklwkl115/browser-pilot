@@ -45,7 +45,7 @@ Task output adds `task` and `bundles` to the observation view. Each bundle keeps
 
 - `observationScope`: captured entity count, content/action completeness, collection counts, pagination or virtualization limits, and whether selection reached an internal bound.
 - `matchScope`: matching method, candidate count and counting unit, text occurrence count, and searched input categories. Hits in one proven structural object are one candidate; distinct records are not merged by name.
-- `outputScope`: total, inline and folded groups, including mandatory groups, and whether all selected necessary context is inline and available.
+- `outputScope`: total, inline and folded groups, including mandatory groups, and whether all selected necessary context is inline and available. `groupsUnavailable` and `mandatoryGroupsUnavailable` count groups that reached the materialization bound and have no group expansion; they are not counted as folded.
 
 `status` is `resolved`, `ambiguous`, `no-match-in-observed`, or `unresolved`. A resolved identity does not imply complete context. No match means no match under the stated literal rule in the captured inputs; it never proves absence from other pages or unloaded records. A text-only hit can remain unresolved because it does not identify a control or record.
 
@@ -77,4 +77,33 @@ Task contexts traverse explicit container anchors even when those anchors were a
 
 Task index entries include `resourceJsonBytes` (UTF-8 bytes of the full group JSON, excluding the MCP envelope) and `exceedsInlineBudget`. Large groups remain explicit opt-in expansions; the inline budget is not a resource cap. Evaluation separately reports cumulative `resourceResponseJsonBytes`, `maxResourceResponseJsonBytes`, and per-read `resourceKind` so index, group, and scope costs can be inspected. Total MCP bytes include these resource reads.
 
-Context coverage is evaluated against four internal requirements: local fields/relations, owner, captured identification fields, and applicable actions. Each requirement is complete, incomplete, unknown, or not applicable. Unknown/incomplete requirements propagate through bundle `gaps` (for example `context-identity-unknown` and `context-actions-unknown`) into `contextComplete: false`, and remain present in historical resource reads. Identification coverage describes retention of captured owner fields, not proof of a globally unique business identifier. Selection bounds still fold or truncate with gaps; they cannot establish completeness from the absence of traversal errors alone.
+## Structured requirements and remedies
+
+Each bundle exposes `requirements`, `gapDetails`, and `remedies`. The compatibility `gaps: string[]` is derived from `gapDetails` codes. Gap and remedy IDs are scoped to the saved task artifact; refs cite captured evidence and do not grant execution permission.
+
+The four requirements remain `local` (fields and related context), `owner` (captured structural owner), `identity` (captured object identification context), and `actions` (applicable controls with object context and known dependencies). Identification completeness is scoped to the observed object; it does not prove a globally unique business identifier. This policy still uses whole-object requirements, not field packets.
+
+Each requirement contains independent `evidence` and `delivery` states, plus `reasonCodes`, `evidenceRefs`, and `gapIds`:
+
+| Dimension  | States                                                         | Meaning                                                                                                                                                                                  |
+| ---------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `evidence` | `complete`, `incomplete`, `unknown`, `not-applicable`          | Whether the inspected canonical evidence meets the declared requirement. Known missing relations are incomplete; unproven ownership and uninspected index regions remain unknown.        |
+| `delivery` | `inline`, `partial`, `folded`, `unavailable`, `not-applicable` | How much supporting evidence this response delivers. Inline means the applicable evidence and necessary context are delivered; partial can reflect missing evidence or selection limits. |
+
+Evaluation traverses captured relations before ranking or truncation. Changing only the output byte budget never changes evidence status. A large captured form can have complete evidence with partial delivery after the 128-fact selection limit. Group index entries describe folded delivery; reading the group restores its saved inline/partial delivery, preserving all capture and association gaps. A budget-folded bundle is discovered through the task frontier's index rather than an orphan control or a truncated bundle. The index and group share the same evidence status.
+
+Each `gapDetails` item includes its requirement, layer, related refs, human-readable reason, and remedy IDs:
+
+| Layer         | Interpretation and available next step                                                                                                                                                                      |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `delivery`    | Saved group evidence is omitted here. Follow the generated `read-snapshot` remedy for that group.                                                                                                           |
+| `selection`   | The group omits captured facts/text, or a bounded index has not inspected them. A generated evidence resource may provide more of the same snapshot; reading the group itself cannot restore omitted facts. |
+| `capture`     | Required evidence is missing from capture, or its existence is unknown. `observe-again` explicitly changes the snapshot and is not a promise that another observation will find it.                         |
+| `association` | Structure or labels do not prove ownership. `disambiguate` retains the uncertain refs; an optional snapshot read allows inspection without establishing a relationship.                                     |
+| `freshness`   | Reserved for explicit freshness gaps. Existing expired focus/resource checks still fail, without silently refreshing or substituting another object.                                                        |
+
+`read-snapshot` specifies a generated `resourceUri` and `mayAddress` gap IDs, not a guarantee of resolution. `observe-again` carries `changesSnapshot: true`. `disambiguate` includes candidate refs and a reason. `page-action-required` is part of the contract but is not inferred from generic missing capture in this policy. No remedy runs automatically, and there is no `readyToAct` flag.
+
+When selection or association needs inspection beyond the materialized group, an additional registered evidence resource reads the saved canonical artifact. It returns public facts, captured typed relations, structural parent refs and capture boundaries, with password values and locator internals omitted. Text is not truncated by the group's text limit. The entity index remains bounded at 20,000 and reports `selectionComplete`; this resource is a broad, explicit expansion, not a dependency-complete packet. Its SHA-256, snapshot identity, expiry, project scope and projection policy are checked before reading. It never queries the page or operation registry. The existing whole-page semantic resource and `/groups/...` resources retain their meanings.
+
+New artifacts use `browser-task-projection/v2` and `literal-context-v2`. The reader still accepts valid v1 artifacts and returns their original bundle shape; it does not fabricate structured requirements for historical artifacts. Unknown or mismatched schema/policy versions fail. The task artifact digest binds the normalized task spec, canonical digest and saved requirements together. Reading any expansion leaves the saved report unchanged; only a new assessment with the missing evidence can remove a capture or association gap.
