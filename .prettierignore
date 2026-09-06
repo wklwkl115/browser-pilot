@@ -17,3 +17,6 @@ docs/assets/
 *.min.js
 THIRD_PARTY_NOTICES
 LICENSE
+
+# Byte-exact outputs emitted by historical task-view producers; see the fixture README.
+tests/fixtures/task-history/v*-*.json

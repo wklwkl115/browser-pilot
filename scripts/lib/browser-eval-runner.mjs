@@ -4,7 +4,7 @@ import { requestTool, resultEnvelope, resultText, repositoryRoot, withBrowserHar
 import { startEvaluationFixtures } from "./browser-eval-fixtures.mjs";
 import { summarizeAttempts } from "./evaluation-metrics.mjs";
 import { renderMcpToolResult, readMcpResource } from "../../src/apps/mcp/server.ts";
-import { compareTaskViewCosts } from "./task-view-costs.mjs";
+import { compareTaskViewCosts, withSharedExecutionTail } from "./task-view-costs.mjs";
 
 function fail(category, code, message) {
 	throw Object.assign(new Error(message), { category, code });
@@ -225,13 +225,7 @@ export async function runBrowserEvaluation(options, tasks) {
 						metrics.durationMs = Math.round(performance.now() - started);
 						if (metrics.contextCosts && metrics.executionCostStart !== undefined) {
 							const common = metrics.mcpResponseJsonBytes - metrics.executionCostStart;
-							metrics.contextCosts.commonExecutionAndCheckBytes = common;
-							metrics.contextCosts.completedTask = Object.fromEntries(
-								["page", "wholeGroup", "progressivePacket"].map((key) => [
-									key,
-									metrics.contextCosts[key] + common,
-								]),
-							);
+							metrics.contextCosts = withSharedExecutionTail(metrics.contextCosts, common);
 						}
 						attempts.push(metrics);
 						console.error(

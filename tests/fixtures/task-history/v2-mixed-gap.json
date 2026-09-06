@@ -1,0 +1,335 @@
+{
+  "schema": "browser-task-projection/v2",
+  "policy": "literal-context-v2",
+  "snapshotId": "history-mixed-gap",
+  "canonicalSha256": "10300fd098c670626e9af58bc36c51ff54c4a223bfe7bbc8b0bd5b1f83e93a7a",
+  "capturedAt": 1000,
+  "expiresAt": 61000,
+  "spec": {
+    "focus": {
+      "refs": [
+        "bp-ref://control/invariant-note"
+      ]
+    },
+    "intent": "interact",
+    "fields": [
+      "Note"
+    ]
+  },
+  "task": {
+    "intent": "interact",
+    "focus": {
+      "refs": [
+        "bp-ref://control/invariant-note"
+      ]
+    },
+    "fields": [
+      "Note"
+    ],
+    "status": "resolved",
+    "unresolvedRefs": [],
+    "observationScope": {
+      "entitiesObserved": 6,
+      "contentComplete": true,
+      "actionsComplete": true,
+      "selectionComplete": true,
+      "collectionCount": 0,
+      "partialCollectionCount": 0,
+      "collections": []
+    },
+    "matchScope": {
+      "method": "explicit-refs",
+      "unit": "structural-object-or-entity",
+      "candidateCount": 1,
+      "contentMatchCount": 0,
+      "searched": [
+        "explicit-refs"
+      ],
+      "complete": true
+    },
+    "outputScope": {
+      "groupsTotal": 1,
+      "groupsInline": 1,
+      "groupsFolded": 0,
+      "groupsUnavailable": 0,
+      "mandatoryGroups": 0,
+      "mandatoryGroupsFolded": 0,
+      "mandatoryGroupsUnavailable": 0,
+      "contextComplete": false
+    },
+    "limitations": [
+      "Only captured evidence was searched; unloaded pages were not checked.",
+      "No comparable page-change baseline is available; current facts are self-contained."
+    ]
+  },
+  "bundles": [
+    {
+      "id": "task-group-1",
+      "kind": "field",
+      "anchor": {
+        "ref": "bp-ref://control/invariant-note",
+        "role": "textbox",
+        "name": "Note"
+      },
+      "candidate": true,
+      "mandatory": false,
+      "reasons": [
+        "explicit-focus"
+      ],
+      "facts": [
+        {
+          "ref": "bp-ref://control/invariant-note",
+          "role": "textbox",
+          "source": "ax",
+          "name": "Note",
+          "value": "Draft",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": true,
+            "inViewport": true
+          },
+          "actions": [
+            "edit"
+          ]
+        },
+        {
+          "ref": "bp-ref://region/invariant-wrapper",
+          "role": "group",
+          "source": "ax",
+          "name": "Fields",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-id",
+          "role": "heading",
+          "source": "ax",
+          "name": "INV-2048",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-owner",
+          "role": "form",
+          "source": "ax",
+          "name": "INV-2048",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        }
+      ],
+      "matches": [],
+      "requirements": {
+        "local": {
+          "evidence": "incomplete",
+          "delivery": "partial",
+          "reasonCodes": [
+            "related-context-unavailable"
+          ],
+          "evidenceRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-wrapper"
+          ],
+          "gapIds": [
+            "task-group-1-gap-1"
+          ]
+        },
+        "owner": {
+          "evidence": "complete",
+          "delivery": "inline",
+          "reasonCodes": [],
+          "evidenceRefs": [
+            "bp-ref://region/invariant-owner"
+          ],
+          "gapIds": []
+        },
+        "identity": {
+          "evidence": "unknown",
+          "delivery": "partial",
+          "reasonCodes": [
+            "related-context-unavailable",
+            "context-identity-unknown"
+          ],
+          "evidenceRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-wrapper",
+            "bp-ref://region/invariant-owner",
+            "bp-ref://region/invariant-id"
+          ],
+          "gapIds": [
+            "task-group-1-gap-2",
+            "task-group-1-gap-4"
+          ]
+        },
+        "actions": {
+          "evidence": "unknown",
+          "delivery": "partial",
+          "reasonCodes": [
+            "related-context-unavailable",
+            "context-actions-unknown"
+          ],
+          "evidenceRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-wrapper",
+            "bp-ref://region/invariant-owner",
+            "bp-ref://region/invariant-id"
+          ],
+          "gapIds": [
+            "task-group-1-gap-3",
+            "task-group-1-gap-5"
+          ]
+        }
+      },
+      "gapDetails": [
+        {
+          "code": "related-context-unavailable",
+          "relatedRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-description"
+          ],
+          "reason": "Captured describedBy relation points to an unavailable node.",
+          "layer": "capture",
+          "requirement": "local",
+          "id": "task-group-1-gap-1",
+          "remedyIds": [
+            "task-group-1-gap-1-remedy"
+          ]
+        },
+        {
+          "code": "related-context-unavailable",
+          "relatedRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-description"
+          ],
+          "reason": "Captured describedBy relation points to an unavailable node.",
+          "layer": "capture",
+          "requirement": "identity",
+          "id": "task-group-1-gap-2",
+          "remedyIds": [
+            "task-group-1-gap-2-remedy"
+          ]
+        },
+        {
+          "code": "related-context-unavailable",
+          "relatedRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-description"
+          ],
+          "reason": "Captured describedBy relation points to an unavailable node.",
+          "layer": "capture",
+          "requirement": "actions",
+          "id": "task-group-1-gap-3",
+          "remedyIds": [
+            "task-group-1-gap-3-remedy"
+          ]
+        },
+        {
+          "code": "context-identity-unknown",
+          "requirement": "identity",
+          "layer": "association",
+          "relatedRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Captured sibling group/region boundaries have no proven ownership; reading their contents does not prove association.",
+          "id": "task-group-1-gap-4",
+          "remedyIds": [
+            "task-group-1-gap-4-remedy",
+            "task-group-1-gap-4-inspect"
+          ]
+        },
+        {
+          "code": "context-actions-unknown",
+          "requirement": "actions",
+          "layer": "association",
+          "relatedRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Captured sibling group/region boundaries have no proven ownership; reading their contents does not prove association.",
+          "id": "task-group-1-gap-5",
+          "remedyIds": [
+            "task-group-1-gap-5-remedy",
+            "task-group-1-gap-5-inspect"
+          ]
+        }
+      ],
+      "remedies": [
+        {
+          "id": "task-group-1-gap-1-remedy",
+          "kind": "observe-again",
+          "changesSnapshot": true,
+          "reason": "Captured describedBy relation points to an unavailable node."
+        },
+        {
+          "id": "task-group-1-gap-2-remedy",
+          "kind": "observe-again",
+          "changesSnapshot": true,
+          "reason": "Captured describedBy relation points to an unavailable node."
+        },
+        {
+          "id": "task-group-1-gap-3-remedy",
+          "kind": "observe-again",
+          "changesSnapshot": true,
+          "reason": "Captured describedBy relation points to an unavailable node."
+        },
+        {
+          "id": "task-group-1-gap-4-remedy",
+          "kind": "disambiguate",
+          "candidateRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Captured sibling group/region boundaries have no proven ownership; reading their contents does not prove association."
+        },
+        {
+          "id": "task-group-1-gap-4-inspect",
+          "kind": "read-snapshot",
+          "resourceUri": "browser-pilot://observation/67f2f2f9-338d-44ad-8a0b-365bc7ffcaed",
+          "mayAddress": [
+            "task-group-1-gap-4"
+          ]
+        },
+        {
+          "id": "task-group-1-gap-5-remedy",
+          "kind": "disambiguate",
+          "candidateRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Captured sibling group/region boundaries have no proven ownership; reading their contents does not prove association."
+        },
+        {
+          "id": "task-group-1-gap-5-inspect",
+          "kind": "read-snapshot",
+          "resourceUri": "browser-pilot://observation/67f2f2f9-338d-44ad-8a0b-365bc7ffcaed",
+          "mayAddress": [
+            "task-group-1-gap-5"
+          ]
+        }
+      ],
+      "gaps": [
+        "related-context-unavailable",
+        "context-identity-unknown",
+        "context-actions-unknown"
+      ],
+      "changes": []
+    }
+  ]
+}

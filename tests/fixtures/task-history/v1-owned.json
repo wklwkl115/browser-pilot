@@ -1,0 +1,175 @@
+{
+  "schema": "browser-task-projection/v1",
+  "policy": "literal-context-v1",
+  "snapshotId": "history-owned",
+  "canonicalSha256": "a994b765a4b6e8bf6b1e0e056762b8995096b426361bc94b42f35fe9c76bf25e",
+  "capturedAt": 1000,
+  "expiresAt": 61000,
+  "spec": {
+    "focus": {
+      "refs": [
+        "bp-ref://control/invariant-note"
+      ]
+    },
+    "intent": "interact",
+    "fields": [
+      "Note"
+    ]
+  },
+  "task": {
+    "intent": "interact",
+    "focus": {
+      "refs": [
+        "bp-ref://control/invariant-note"
+      ]
+    },
+    "fields": [
+      "Note"
+    ],
+    "status": "resolved",
+    "unresolvedRefs": [],
+    "observationScope": {
+      "entitiesObserved": 6,
+      "contentComplete": true,
+      "actionsComplete": true,
+      "selectionComplete": true,
+      "collectionCount": 0,
+      "partialCollectionCount": 0,
+      "collections": []
+    },
+    "matchScope": {
+      "method": "explicit-refs",
+      "unit": "structural-object-or-entity",
+      "candidateCount": 1,
+      "contentMatchCount": 0,
+      "searched": [
+        "explicit-refs"
+      ],
+      "complete": true
+    },
+    "outputScope": {
+      "groupsTotal": 1,
+      "groupsInline": 1,
+      "groupsFolded": 0,
+      "mandatoryGroups": 0,
+      "mandatoryGroupsFolded": 0,
+      "contextComplete": true
+    },
+    "limitations": [
+      "Only captured evidence was searched; unloaded pages were not checked.",
+      "No comparable page-change baseline is available; current facts are self-contained."
+    ]
+  },
+  "bundles": [
+    {
+      "id": "task-group-1",
+      "kind": "field",
+      "anchor": {
+        "ref": "bp-ref://control/invariant-note",
+        "role": "textbox",
+        "name": "Note"
+      },
+      "candidate": true,
+      "mandatory": false,
+      "reasons": [
+        "explicit-focus"
+      ],
+      "facts": [
+        {
+          "ref": "bp-ref://control/invariant-note",
+          "role": "textbox",
+          "source": "ax",
+          "name": "Note",
+          "value": "Draft",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": true,
+            "inViewport": true
+          },
+          "actions": [
+            "edit"
+          ]
+        },
+        {
+          "ref": "bp-ref://region/invariant-wrapper",
+          "role": "group",
+          "source": "ax",
+          "name": "Fields",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        },
+        {
+          "ref": "bp-ref://control/invariant-save",
+          "role": "button",
+          "source": "ax",
+          "name": "Save",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          },
+          "actions": [
+            "click"
+          ]
+        },
+        {
+          "ref": "bp-ref://region/invariant-id",
+          "role": "heading",
+          "source": "ax",
+          "name": "INV-2048",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-owner",
+          "role": "form",
+          "source": "ax",
+          "name": "INV-2048",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-description",
+          "role": "paragraph",
+          "source": "ax",
+          "name": "Review this invoice before saving.",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        }
+      ],
+      "matches": [],
+      "gaps": [],
+      "changes": []
+    }
+  ]
+}
