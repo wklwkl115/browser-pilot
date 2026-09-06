@@ -33,6 +33,31 @@ test("an empty evaluation does not report a perfect success rate", () => {
 	assert.equal(summary.successRate, null);
 	assert.equal(summary.latencyMs.p95, null);
 	assert.equal(summary.attempted, 0);
+	assert.equal(summary.recoverableGaps.successRate, null);
+});
+
+test("recoverable gap metrics count failures without equating resource reads with recovery", () => {
+	const summary = summarizeAttempts([
+		{
+			success: true,
+			durationMs: 1,
+			toolCalls: 1,
+			responseJsonBytes: 1,
+			responseTextChars: 1,
+			recoverableGaps: { attempted: 2, addressed: 1 },
+			resourceReads: 9,
+		},
+		{
+			success: false,
+			durationMs: 1,
+			toolCalls: 1,
+			responseJsonBytes: 1,
+			responseTextChars: 1,
+			recoverableGaps: { attempted: 1, addressed: 0 },
+			resourceReads: 4,
+		},
+	]);
+	assert.deepEqual(summary.recoverableGaps, { attempted: 3, addressed: 1, successRate: 1 / 3 });
 });
 
 test("browser evaluation arguments reject missing values, partial numbers, and unknown switches", () => {
@@ -81,8 +106,8 @@ test("evaluation task selection is explicit, deterministic, and fails on typos",
 test("evaluation catalog covers the core, safety, frame, and recovery scenarios", async () => {
 	const { evaluationTasks } = await import(new URL("../../scripts/lib/browser-eval-tasks.mjs", import.meta.url).href);
 	assert.equal(selectEvaluationTasks(evaluationTasks, { suite: "core", tasks: [] }).length, 4);
-	assert.equal(selectEvaluationTasks(evaluationTasks, { suite: "extended", tasks: [] }).length, 10);
-	assert.equal(evaluationTasks.length, 14);
+	assert.equal(selectEvaluationTasks(evaluationTasks, { suite: "extended", tasks: [] }).length, 11);
+	assert.equal(evaluationTasks.length, 15);
 	for (const task of evaluationTasks) {
 		assert.equal(typeof task.run, "function");
 		assert.ok(["workflow", "safety", "recovery"].includes(task.kind));
@@ -99,6 +124,7 @@ test("evaluation catalog covers the core, safety, frame, and recovery scenarios"
 		"occluded-control-guard",
 		"task-view-record",
 		"task-view-ambiguity",
+		"task-view-progressive",
 	])
 		assert.ok(
 			evaluationTasks.some((task: { id: string }) => task.id === id),

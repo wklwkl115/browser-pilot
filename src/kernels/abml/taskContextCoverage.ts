@@ -2,6 +2,7 @@ import type { Entity } from "./entity.js";
 import type { TaskEntityIndex } from "./taskViewGraph.js";
 import type { TaskEvidence, TaskGap, RequirementKind } from "./taskView.js";
 import { addTaskGap, emptyTaskEvidence, REQUIREMENT_KINDS } from "./taskEvidence.js";
+import { nativeFormOwner, supplementNativeOwnership } from "./taskOwnership.js";
 
 const OWNERS = new Set(["form", "row", "listitem", "article", "dialog", "alertdialog"]);
 const UNCERTAIN_BOUNDARIES = new Set(["group", "region"]);
@@ -11,21 +12,24 @@ export type OwnerContextPlan = {
 	unknownBoundaries: Set<string>;
 	unavailableRefs: Set<string>;
 	requiresOwner: boolean;
+	nativeOwnerAbsent?: boolean;
 };
 
 /** Plan required same-owner fields before ranking. Layout names do not establish ownership. */
-export function planOwnerContext(index: TaskEntityIndex, root: Entity): OwnerContextPlan {
+export function planOwnerContext(index: TaskEntityIndex, root: Entity, subject = root): OwnerContextPlan {
 	const plan: OwnerContextPlan = {
+		nativeOwnerAbsent: subject.hints?.formOwnerObserved === true && !subject.hints?.formOwnerSelector,
 		refs: new Set(),
 		unknownBoundaries: new Set(),
 		unavailableRefs: new Set(),
 		requiresOwner: OWNERS.has(root.role.toLowerCase()) || UNCERTAIN_BOUNDARIES.has(root.role.toLowerCase()),
 	};
-	if (OWNERS.has(root.role.toLowerCase())) return { ...plan, owner: root };
-	if (!UNCERTAIN_BOUNDARIES.has(root.role.toLowerCase())) return plan;
+	if (OWNERS.has(root.role.toLowerCase())) plan.owner = root;
+	const native = nativeFormOwner(index, subject);
+	if (!UNCERTAIN_BOUNDARIES.has(root.role.toLowerCase()) && !plan.owner && !native) return plan;
 	const chain = new Set<string>([root.ref]);
 	let current = root.ref;
-	for (let depth = 0; depth < 24; depth++) {
+	for (let depth = 0; depth < 24 && !plan.owner; depth++) {
 		const parent = index.parent.get(current);
 		if (!parent || chain.has(parent)) break;
 		const owner = index.byRef.get(parent);
@@ -37,7 +41,9 @@ export function planOwnerContext(index: TaskEntityIndex, root: Entity): OwnerCon
 			break;
 		}
 	}
+	if (native && (!plan.owner || plan.owner.role.toLowerCase() === "form")) plan.owner = native;
 	if (!plan.owner) return plan;
+	chain.add(plan.owner.ref);
 	plan.refs = chain;
 	const pending = [...(index.children.get(plan.owner.ref) ?? [])];
 	const visited = new Set<string>([plan.owner.ref]);
@@ -60,7 +66,7 @@ export function planOwnerContext(index: TaskEntityIndex, root: Entity): OwnerCon
 		plan.refs.add(ref);
 		pending.push(...(index.children.get(ref) ?? []));
 	}
-	return plan;
+	return supplementNativeOwnership(index, plan);
 }
 
 export function assessTaskContext(options: {
@@ -141,6 +147,16 @@ export function assessTaskContext(options: {
 			layer: "capture",
 			relatedRefs: [anchor.ref],
 			reason: "No related actionable control was captured; this does not prove that a separate save control exists or is absent.",
+		});
+	}
+	if (applicable.actions && ownerPlan.nativeOwnerAbsent) {
+		result.requirements.actions.evidence = "unknown";
+		addTaskGap(result, {
+			code: "native-form-owner-absent",
+			requirement: "actions",
+			layer: "association",
+			relatedRefs: [anchor.ref],
+			reason: "The native control has no form owner; structural containment alone does not establish its operation's ownership.",
 		});
 	}
 	return result;

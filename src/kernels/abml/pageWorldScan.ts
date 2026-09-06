@@ -44,6 +44,15 @@ export interface ScanActionable {
 	inViewport?: boolean;
 	current?: string;
 	inputKind?: string;
+	formOwnerObserved?: boolean;
+	contextRelationsIncomplete?: boolean;
+	contextText?: string;
+	contextTextIncomplete?: boolean;
+	contextTextSource?: "dom";
+	capturedDomPath?: Array<{ tag: string; index: number }>;
+	formOwnerSelector?: string;
+	labelledBySelectors?: string[];
+	describedBySelectors?: string[];
 	placeholder?: string;
 	controlsSelectors?: string[];
 	ownsSelectors?: string[];
@@ -197,6 +206,24 @@ const actionableProperties = {
 	inViewport: booleanSchema,
 	current: stringSchema,
 	inputKind: stringSchema,
+	formOwnerObserved: booleanSchema,
+	contextRelationsIncomplete: booleanSchema,
+	contextText: stringSchema,
+	contextTextIncomplete: booleanSchema,
+	contextTextSource: { const: "dom" },
+	capturedDomPath: {
+		type: "array",
+		maxItems: 64,
+		items: {
+			type: "object",
+			properties: { tag: stringSchema, index: { type: "integer", minimum: 1 } },
+			required: ["tag", "index"],
+			additionalProperties: false,
+		},
+	},
+	formOwnerSelector: stringSchema,
+	labelledBySelectors: stringArraySchema,
+	describedBySelectors: stringArraySchema,
 	placeholder: stringSchema,
 	controlsSelectors: stringArraySchema,
 	ownsSelectors: stringArraySchema,

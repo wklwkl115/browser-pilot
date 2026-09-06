@@ -1,5 +1,6 @@
 import { assessTaskContext, planOwnerContext } from "./taskContextCoverage.js";
 import { addTaskGap, retainTaskEvidence } from "./taskEvidence.js";
+import { belongsToTaskOwner } from "./taskOwnership.js";
 import type { Entity, EntityRelation } from "./entity.js";
 import { entityRelationKeys } from "./relations.js";
 import { normalizeTaskText, type NormalizedTaskViewSpec, type TaskEvidence, type TaskGap } from "./taskView.js";
@@ -131,8 +132,14 @@ export function taskContext(
 		pending.push(...(index.children.get(ref) ?? []));
 	}
 	const localRefs = new Set(members.keys());
-	const ownerPlan = planOwnerContext(index, root);
+	const ownerPlan = planOwnerContext(index, root, anchor);
 	for (const ref of ownerPlan.refs) members.set(ref, index.byRef.get(ref)!);
+	if (ownerPlan.owner && (anchor.state.editable || anchor.actionability?.actions.length))
+		for (const [ref, entity] of members)
+			if (ref !== anchor.ref && !belongsToTaskOwner(index, entity, ownerPlan.owner)) {
+				members.delete(ref);
+				localRefs.delete(ref);
+			}
 	// Resolve captured dependencies before selection so limits cannot hide missing relations.
 	const dependencies = [...members.values()];
 	for (let i = 0; i < dependencies.length; i++) {
@@ -145,6 +152,12 @@ export function taskContext(
 			);
 		if (source.hints?.contextTextIncomplete === true)
 			missing("captured-context-text-incomplete", [source.ref], "Captured context text is incomplete.");
+		if (source.hints?.contextRelationsIncomplete === true)
+			missing(
+				"captured-relations-incomplete",
+				[source.ref],
+				"A captured native or explicit relation target could not be materialized.",
+			);
 		for (const edge of taskRelations(dependencies[i]!)) {
 			if (
 				!["labelledBy", "describedBy", "columnOf", "coveredBy", "controls", "expandedTarget"].includes(

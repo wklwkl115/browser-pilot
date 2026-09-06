@@ -39,12 +39,23 @@ function distribution(values) {
 export function summarizeAttempts(attempts) {
 	const passed = attempts.filter((attempt) => attempt.success).length;
 	const errors = {};
+	const recoverable = attempts.reduce(
+		(total, attempt) => ({
+			attempted: total.attempted + (attempt.recoverableGaps?.attempted ?? 0),
+			addressed: total.addressed + (attempt.recoverableGaps?.addressed ?? 0),
+		}),
+		{ attempted: 0, addressed: 0 },
+	);
 	for (const attempt of attempts) {
 		if (attempt.success) continue;
 		const key = `${attempt.failure?.category ?? "unknown"}:${attempt.failure?.code ?? "UNKNOWN"}`;
 		errors[key] = (errors[key] ?? 0) + 1;
 	}
 	return {
+		recoverableGaps: {
+			...recoverable,
+			successRate: recoverable.attempted ? recoverable.addressed / recoverable.attempted : null,
+		},
 		attempted: attempts.length,
 		passed,
 		failed: attempts.length - passed,

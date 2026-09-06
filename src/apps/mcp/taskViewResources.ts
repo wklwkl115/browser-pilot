@@ -3,6 +3,7 @@ import {
 	TASK_PROJECTION_ARTIFACT_SCHEMA,
 	LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA,
 	V2_TASK_PROJECTION_ARTIFACT_SCHEMA,
+	V3_TASK_PROJECTION_ARTIFACT_SCHEMA,
 } from "../../kernels/abml/taskViewSchema.js";
 import { foldedTaskEvidence } from "../../kernels/abml/taskEvidence.js";
 import { TASK_PROJECTION_POLICY, type TaskProjectionArtifact, type TaskPacket } from "../../kernels/abml/taskView.js";
@@ -19,7 +20,9 @@ export function validTaskEvidenceDescriptor(descriptor: ObservationResourceDescr
 		descriptor.jsonPath === undefined &&
 		descriptor.contentSection === undefined &&
 		descriptor.taskProjection === undefined &&
-		[TASK_PROJECTION_POLICY, "literal-context-v2"].includes(descriptor.taskEvidence?.policy ?? "") &&
+		[TASK_PROJECTION_POLICY, "literal-context-v2", "literal-context-v3"].includes(
+			descriptor.taskEvidence?.policy ?? "",
+		) &&
 		typeof descriptor.taskEvidence?.sha256 === "string" &&
 		/^[a-f0-9]{64}$/.test(descriptor.taskEvidence.sha256)
 	);
@@ -75,6 +78,7 @@ export function readTaskProjectionResource(
 	if (
 		!Value.Check(TASK_PROJECTION_ARTIFACT_SCHEMA, parsed) &&
 		!Value.Check(V2_TASK_PROJECTION_ARTIFACT_SCHEMA, parsed) &&
+		!Value.Check(V3_TASK_PROJECTION_ARTIFACT_SCHEMA, parsed) &&
 		!Value.Check(LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA, parsed)
 	)
 		throw new Error("Invalid task projection artifact");

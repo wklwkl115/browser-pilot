@@ -132,6 +132,20 @@ test("packet resources keep complete historical dependencies, exact sizes and v2
 		() => readTaskProjectionResource(saved, legacyDescriptor, `${descriptor.uri}/packets/0`),
 		/unavailable/,
 	);
+	const v3 = JSON.parse(await readFile(descriptor.path, "utf8"));
+	v3.schema = "browser-task-projection/v3";
+	v3.policy = "literal-context-v3";
+	for (const packet of v3.packets) {
+		packet.scope.policy = "field-context-v1";
+		delete packet.relationEvidence;
+	}
+	const v3Text = JSON.stringify(v3);
+	const restored = readTaskProjectionResource(
+		v3Text,
+		{ ...descriptor, taskProjection: { sha256: taskArtifactHash(v3Text) } },
+		entry.resourceUri,
+	) as any;
+	assert.deepEqual(restored.packet, v3.packets[0]);
 });
 
 test("packet index pagination enumerates every saved packet without duplicating a subject", async (t) => {

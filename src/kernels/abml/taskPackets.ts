@@ -6,6 +6,7 @@ import { taskObjectRoot } from "./taskViewGraph.js";
 import { addTaskGap, bindTaskRemedies, emptyTaskEvidence, REQUIREMENT_KINDS } from "./taskEvidence.js";
 import { normalizeTaskText, type DecisionBundle, type NormalizedTaskViewSpec, type TaskPacket } from "./taskView.js";
 import { taskFact } from "./taskViewSelection.js";
+import { taskRelationEvidence, taskIdentityFields } from "./taskOwnership.js";
 
 const MAX_PACKETS = 256;
 const MAX_DEPENDENCIES = 128;
@@ -15,17 +16,23 @@ function packetSubjects(entities: Entity[], bundle: DecisionBundle, spec: Normal
 	return entities.filter((entity) => {
 		if (!entity.state.editable && !entity.actionability?.actions.length) return false;
 		if ("refs" in spec.focus && entity.ref === bundle.anchor.ref) return true;
-		return spec.fields.some((field) => normalizeTaskText(entity.name ?? "").includes(normalizeTaskText(field)));
+		return (
+			entity.state.editable &&
+			spec.fields.some((field) => normalizeTaskText(entity.name ?? "").includes(normalizeTaskText(field)))
+		);
 	});
 }
 
 /** Fixed policy: owner and captured static identification fields, subject, owner actions, and typed dependencies. */
 function packetMembers(index: TaskEntityIndex, subject: Entity, candidates: Entity[]) {
-	const ownerPlan = planOwnerContext(index, taskObjectRoot(index, subject));
-	const identity = candidates.filter(
-		(entity) =>
-			entity.ref === ownerPlan.owner?.ref ||
-			(!entity.state.editable && ["heading", "rowheader", "cell"].includes(entity.role.toLowerCase())),
+	const ownerPlan = planOwnerContext(index, taskObjectRoot(index, subject), subject);
+	const identity = taskIdentityFields(index, candidates, ownerPlan.owner);
+	const labels = new Set(
+		candidates.flatMap((entity) =>
+			taskRelations(entity)
+				.filter((edge) => edge.type === "labelledBy")
+				.map((edge) => edge.targetRef),
+		),
 	);
 	const members = new Map(
 		[
@@ -33,7 +40,7 @@ function packetMembers(index: TaskEntityIndex, subject: Entity, candidates: Enti
 			...identity,
 			...candidates.filter(
 				(entity) =>
-					entity.actionability?.actions.includes("click") ||
+					(entity.actionability?.actions.includes("click") && !labels.has(entity.ref)) ||
 					["alert", "status", "alertdialog"].includes(entity.role.toLowerCase()),
 			),
 		].map((entity) => [entity.ref, entity]),
@@ -72,6 +79,16 @@ function createPacket(
 		report.delivery = "inline";
 		report.evidenceRefs = kind === "owner" ? (ownerPlan.owner ? [ownerPlan.owner.ref] : []) : refs;
 	}
+	if (ownerPlan.nativeOwnerAbsent) {
+		evidence.requirements.actions.evidence = "unknown";
+		addTaskGap(evidence, {
+			code: "native-form-owner-absent",
+			requirement: "actions",
+			layer: "association",
+			relatedRefs: [subject.ref],
+			reason: "The control has no native form owner; its operation's ownership remains unproven.",
+		});
+	}
 	if (!ownerPlan.owner) {
 		for (const kind of ["owner", "identity", "actions"] as const) {
 			evidence.requirements[kind].evidence = "unknown";
@@ -98,7 +115,9 @@ function createPacket(
 	for (const kind of ["local", "identity", "actions"] as const) {
 		const incomplete = [...members.values()].filter(
 			(entity) =>
-				(entity.children && !Array.isArray(entity.children)) || entity.hints?.contextTextIncomplete === true,
+				(entity.children && !Array.isArray(entity.children)) ||
+				entity.hints?.contextTextIncomplete === true ||
+				entity.hints?.contextRelationsIncomplete === true,
 		);
 		if (missing.length || incomplete.length || !index.complete) {
 			evidence.requirements[kind].evidence = index.complete ? "incomplete" : "unknown";
@@ -127,12 +146,13 @@ function createPacket(
 		anchor: { ref: subject.ref, role: subject.role, ...(subject.name ? { name: subject.name } : {}) },
 		candidate: true,
 		mandatory: bundle.mandatory,
-		reasons: ["field-context-v1"],
+		reasons: ["field-context-v2"],
+		relationEvidence: taskRelationEvidence(index, new Set(refs), snapshotId),
 		facts: [...members.values()].map((entity) => taskFact(entity, true, evidence, Infinity)),
 		matches: bundle.matches.filter((match) => match.ref && members.has(match.ref)),
 		changes: bundle.changes.filter((change) => members.has(change.ref)),
 		scope: {
-			policy: "field-context-v1",
+			policy: "field-context-v2",
 			snapshotId,
 			subjectRef: subject.ref,
 			...(ownerPlan.owner ? { ownerRef: ownerPlan.owner.ref } : {}),

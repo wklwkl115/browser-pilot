@@ -17,3 +17,17 @@ export function taskViewFixture() {
 		document.querySelector('#other-save').onclick = () => { window.otherSaves++; };`,
 	};
 }
+
+export function progressiveTaskFixture() {
+	return {
+		body: `<form id="packet-form" aria-label="INV-7777"><h2>INV-7777</h2>
+		<fieldset><legend>Notes</legend><label for="packet-note">Note</label><input id="packet-note" value="Draft packet" aria-describedby="packet-error"></fieldset>
+		${Array.from({ length: 180 }, (_, i) => `<label>Optional ${i}<input value="Value ${i}"></label>`).join("")}</form>
+		<div role="group" aria-label="External actions"><button id="packet-save" form="packet-form" type="button">Save packet</button></div>
+		<form id="other-form" aria-label="INV-8888"><label>Other note<input id="other-packet-note" value="Other draft"></label><button id="other-packet-save" type="button">Save packet</button></form>
+		<p id="packet-error">Note requires review</p><p role="status" id="packet-status">Unsaved</p>`,
+		script: `window.packetSaves = 0; window.otherPacketSaves = 0;
+		document.querySelector('#packet-save').onclick = () => { window.packetSaves++; window.packetSavedValue = document.querySelector('#packet-note').value; document.querySelector('#packet-status').textContent = 'Saved packet'; };
+		document.querySelector('#other-packet-save').onclick = () => { window.otherPacketSaves++; };`,
+	};
+}

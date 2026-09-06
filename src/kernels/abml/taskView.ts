@@ -14,7 +14,7 @@ export type TaskFact = {
 	name?: string;
 	value?: string;
 	text?: string;
-	textSource?: "ax";
+	textSource?: "ax" | "dom";
 	state: EntityState;
 	actions?: EntityAction[];
 	source: "dom" | "ax" | "vision";
@@ -26,6 +26,14 @@ export type TaskMatch = {
 	kind: "exact" | "contains";
 };
 export type RequirementKind = "local" | "owner" | "identity" | "actions";
+export type RelationEvidence = {
+	fromRef: string;
+	toRef: string;
+	relation: string;
+	basis: "native-association" | "captured-structure" | "explicit-relation";
+	snapshotId: string;
+	source: "dom" | "ax";
+};
 export type RequirementReport = {
 	evidence: "complete" | "incomplete" | "unknown" | "not-applicable";
 	delivery: "inline" | "partial" | "folded" | "unavailable" | "not-applicable";
@@ -55,6 +63,7 @@ export type TaskEvidence = {
 	gaps: string[];
 };
 export type DecisionBundle = TaskEvidence & {
+	relationEvidence?: RelationEvidence[];
 	id: string;
 	kind: "record" | "field" | "dialog" | "feedback" | "context" | "content";
 	anchor: { ref?: string; role?: string; name?: string };
@@ -72,7 +81,7 @@ export type TaskPacket = DecisionBundle & {
 	packetKind: "field" | "action";
 	question: string;
 	scope: {
-		policy: "field-context-v1";
+		policy: "field-context-v2";
 		snapshotId: string;
 		subjectRef: string;
 		ownerRef?: string;
@@ -123,8 +132,8 @@ export type TaskViewMetadata = {
 };
 export type TaskProjectionPlan = { task: TaskViewMetadata; bundles: DecisionBundle[]; packets?: TaskPacket[] };
 
-export const TASK_PROJECTION_SCHEMA = "browser-task-projection/v3" as const;
-export const TASK_PROJECTION_POLICY = "literal-context-v3" as const;
+export const TASK_PROJECTION_SCHEMA = "browser-task-projection/v4" as const;
+export const TASK_PROJECTION_POLICY = "literal-context-v4" as const;
 export type TaskProjectionArtifact = TaskProjectionPlan & {
 	schema: typeof TASK_PROJECTION_SCHEMA;
 	policy: typeof TASK_PROJECTION_POLICY;
