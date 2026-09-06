@@ -10,7 +10,7 @@ import { renderMcpToolResult } from "../../src/apps/mcp/server.ts";
 
 const bytes = (value) => Buffer.byteLength(JSON.stringify(value));
 
-/** Deterministic replay of three delivery paths over one saved canonical observation and specification. */
+/** Fixed reading strategies measure serialization/expansion, not equivalent information sufficiency. */
 export async function compareTaskViewCosts(result, projectRoot) {
 	const descriptors = result.details?.[OBSERVATION_RESOURCES_DETAIL_KEY] ?? [];
 	const task = descriptors.find((descriptor) => descriptor.taskProjection);
@@ -63,10 +63,19 @@ export async function compareTaskViewCosts(result, projectRoot) {
 			).reduce((a, b) => a + b, 0)
 		: 0;
 	return {
+		comparisonKind: "fixed-snapshot-fixed-reading-strategy",
+		informationSufficiency: "not-evaluated",
+		equivalentTaskCostValidated: false,
+		readingPolicy: {
+			page: "Always read full captured evidence, even if the inline page may already suffice.",
+			wholeGroup: "Read folded candidate groups; materialization bounds may leave required evidence unavailable.",
+			progressivePacket:
+				"Read folded materialized packets; no independent check establishes that all task requirements are met.",
+		},
 		snapshotId: artifact.snapshotId,
 		budgetBytes: 32768,
 		unit: "serialized-mcp-json-utf8-bytes",
-		method: "same-snapshot replay of full-page evidence, whole groups and packets; exact saved resource wrappers; no model inference",
+		method: "fixed reading strategies over one snapshot; exact saved resource wrappers; neither equivalent-need nor model evaluation",
 		page: toolBytes(page) + resourceBytes(taskSnapshotEvidence(observation)),
 		wholeGroup:
 			toolBytes(group) +
@@ -76,5 +85,18 @@ export async function compareTaskViewCosts(result, projectRoot) {
 			toolBytes(packet) +
 			packetIndexBytes +
 			packetReads.reduce((sum, item) => sum + packetResourceBytes(`/packets/${plan.packets.indexOf(item)}`), 0),
+	};
+}
+
+export function withSharedExecutionTail(comparison, commonExecutionAndCheckBytes) {
+	return {
+		...comparison,
+		commonExecutionAndCheckBytes,
+		fixedStrategyWithSharedTail: Object.fromEntries(
+			["page", "wholeGroup", "progressivePacket"].map((key) => [
+				key,
+				comparison[key] + commonExecutionAndCheckBytes,
+			]),
+		),
 	};
 }
