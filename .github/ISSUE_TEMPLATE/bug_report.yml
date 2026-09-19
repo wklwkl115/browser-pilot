@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible problem in Browser Pilot
+title: "[Bug]: "
+labels:
+  - bug
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first. Do not include passwords, cookies, pairing secrets, private URLs, raw page captures or unredacted network responses.
+  - type: input
+    id: version
+    attributes:
+      label: Browser Pilot version or commit
+      description: Include the npm version, package version or commit SHA.
+      placeholder: "0.7.0 or 504d37b"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Node.js version, browser and browser version.
+      placeholder: "Windows 11, Node 22.x, Edge 140"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Give the smallest command sequence or MCP call that demonstrates the problem.
+      placeholder: |
+        1. Start the daemon.
+        2. Observe the page.
+        3. Run the command...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Observed behavior
+      description: Include the error code and redacted output when available.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Triage checks
+      options:
+        - label: I searched existing issues and removed private or sensitive data.
+          required: true
+        - label: I can reproduce this with the current supported code or release.
+          required: false
