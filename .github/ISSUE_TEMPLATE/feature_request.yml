@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose a focused improvement to Browser Pilot
+title: "[Feature]: "
+labels:
+  - enhancement
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the user problem and a concrete workflow. For broad design exploration, use Discussions first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and use case
+      description: Who is blocked, and what task cannot be completed reliably today?
+      placeholder: "When an agent needs to..., it currently..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest change that would solve the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Explain the existing command, workaround or design that was evaluated.
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and security considerations
+      description: Note public schema, browser permission, evidence or privacy implications.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Triage checks
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: This request is specific enough to evaluate as a focused change.
+          required: true
