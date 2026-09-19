@@ -3,6 +3,7 @@ export async function checkOwnerContextVariants(ctx) {
 		script: `const save = document.querySelector('#target-save');
 const actions = document.createElement('div'); actions.setAttribute('role', 'group'); actions.setAttribute('aria-label', 'Action controls');
 save.after(actions); actions.append(save);
+const custom = document.createElement('div'); custom.setAttribute('role', 'button'); custom.tabIndex = 0; custom.textContent = 'Custom save'; actions.append(custom);
 document.body.insertAdjacentHTML('beforeend', '<table role="table"><tbody><tr role="row" aria-label="Invoice row"><td role="cell">LINE-3051</td><td role="cell"><div role="group" aria-label="Row fields"><label>Row note <input id="row-note" value="Draft row"></label></div></td><td role="cell"><button>Apply row</button></td></tr><tr role="row" aria-label="Other row"><td role="cell">LINE-3052</td><td role="cell"><input aria-label="Other row note"></td><td role="cell"><button>Apply other row</button></td></tr></tbody></table>');`,
 	});
 	const record = await ctx.observe({ view: { focus: { query: "INV-2048" }, intent: "interact" } });
@@ -11,7 +12,7 @@ document.body.insertAdjacentHTML('beforeend', '<table role="table"><tbody><tr ro
 		.find((fact) => fact.name === "Note" && fact.actions?.includes("edit"));
 	ctx.assert(!!note, "NESTED_FIELD", "Missing nested invoice field");
 	const focused = await ctx.observe({ view: { focus: { refs: [note.ref] }, intent: "interact" } });
-	const candidate = focused.bundles.find((bundle) => bundle.candidate);
+	const candidate = [...focused.bundles, ...(focused.packets ?? [])].find((bundle) => bundle.candidate);
 	ctx.assert(
 		candidate.gaps.includes("context-identity-unknown") &&
 			candidate.gaps.includes("context-actions-unknown") &&
@@ -33,7 +34,9 @@ document.body.insertAdjacentHTML('beforeend', '<table role="table"><tbody><tr ro
 		.find((fact) => fact.name === "Row note" && fact.actions?.includes("edit"));
 	ctx.assert(!!rowNote, "ROW_FIELD", "Missing row field");
 	const rowFocus = await ctx.observe({ view: { focus: { refs: [rowNote.ref] }, intent: "interact" } });
-	const fields = rowFocus.bundles.filter((bundle) => bundle.candidate).flatMap((bundle) => bundle.facts);
+	const fields = [...rowFocus.bundles, ...(rowFocus.packets ?? [])]
+		.filter((bundle) => bundle.candidate)
+		.flatMap((bundle) => bundle.facts);
 	ctx.assert(
 		fields.some((fact) => fact.name === "LINE-3051") && fields.some((fact) => fact.name === "Apply row"),
 		"ROW_IDENTITY_CONTEXT",

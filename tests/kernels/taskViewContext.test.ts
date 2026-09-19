@@ -53,35 +53,39 @@ test("coverage requirements distinguish retained fields, uncertain ownership and
 		changedRefs: new Set<string>(),
 	};
 	const complete = taskContext(taskEntityIndex([owner]), note, preferences);
-	assert.deepEqual(complete.requirements, {
-		local: "complete",
-		owner: "complete",
-		identity: "complete",
-		actions: "complete",
-	});
+	assert.deepEqual(
+		Object.fromEntries(Object.entries(complete.requirements).map(([key, value]) => [key, value.evidence])),
+		{
+			local: "complete",
+			owner: "complete",
+			identity: "complete",
+			actions: "complete",
+		},
+	);
 	assert.deepEqual(complete.gaps, []);
 	const unknown = taskEntity("unclassified", "group", "Anything", [taskEntity("hidden-action", "button", "Submit")]);
 	(owner.children as (typeof note)[]).push(unknown);
 	const uncertain = taskContext(taskEntityIndex([owner]), note, preferences);
-	assert.equal(uncertain.requirements.owner, "complete");
-	assert.equal(uncertain.requirements.identity, "unknown");
-	assert.equal(uncertain.requirements.actions, "unknown");
+	assert.equal(uncertain.requirements.owner.evidence, "complete");
+	assert.equal(uncertain.requirements.identity.evidence, "unknown");
+	assert.equal(uncertain.requirements.actions.evidence, "unknown");
 	(owner.children as (typeof note)[]).pop();
 	(owner.children as (typeof note)[]).push(
 		...Array.from({ length: 140 }, (_, i) => taskEntity(`cell-${i}`, "cell", `Field ${i}`)),
 	);
 	const bounded = taskContext(taskEntityIndex([owner]), note, preferences);
-	assert.equal(bounded.requirements.identity, "incomplete");
-	assert.ok(bounded.gaps.includes("context-identity-incomplete"));
+	assert.equal(bounded.requirements.identity.evidence, "complete");
+	assert.equal(bounded.requirements.identity.delivery, "partial");
+	assert.ok(bounded.gapDetails.some((gap) => gap.requirement === "identity" && gap.layer === "selection"));
 	const signal = taskEntity("status", "status", "Saved");
 	const global = taskContext(taskEntityIndex([signal]), signal, preferences);
-	assert.equal(global.requirements.owner, "not-applicable");
-	assert.equal(global.requirements.actions, "not-applicable");
+	assert.equal(global.requirements.owner.evidence, "not-applicable");
+	assert.equal(global.requirements.actions.evidence, "not-applicable");
 	const cell = taskEntity("unowned-cell", "cell", "INV-unknown");
 	const unresolved = taskContext(taskEntityIndex([cell]), cell, {
 		...preferences,
 		spec: prepareTaskView({ focus: { refs: [cell.ref] }, intent: "interact" })!,
 	});
-	assert.equal(unresolved.requirements.owner, "unknown");
-	assert.equal(unresolved.requirements.actions, "unknown");
+	assert.equal(unresolved.requirements.owner.evidence, "unknown");
+	assert.equal(unresolved.requirements.actions.evidence, "unknown");
 });

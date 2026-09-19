@@ -1,4 +1,5 @@
 import { extendedEvaluationTasks } from "./browser-eval-extended-tasks.mjs";
+import { progressiveEvaluationTask } from "./browser-eval-progressive-task.mjs";
 import { taskViewEvaluationTasks } from "./browser-eval-task-view-tasks.mjs";
 
 const coreTasks = [
@@ -144,4 +145,5 @@ export const evaluationTasks = [
 	...coreTasks.map((task) => ({ ...task, suite: "core" })),
 	...extendedEvaluationTasks,
 	...taskViewEvaluationTasks,
+	progressiveEvaluationTask,
 ];

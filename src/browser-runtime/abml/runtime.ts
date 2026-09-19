@@ -13,6 +13,7 @@ import { diffEntities, type EntityDiff, type EntityDiffOptions } from "../../ker
 import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
 import { bootstrapScanBackendNodeIds } from "../../kernels/abml/identityBootstrap.js";
 import { attachCapturedTaskContext } from "../../kernels/abml/taskViewCapture.js";
+import { attachNativeTaskRelations } from "../../kernels/abml/taskNativeRelations.js";
 import {
 	materializeRelationGraph,
 	derivePaintOrderRelationAnchors,
@@ -329,10 +330,12 @@ export async function readBrowserAbmlStructure(
 }
 
 function capturedTaskContext(entities: Entity[], axRead: AxReadResult): Entity[] {
-	return attachCapturedTaskContext(
-		entities,
-		axRead.entities.map((built) => built.entity),
-		axRead.anchors,
-		axRead.snapshotDomIds ?? [],
+	return attachNativeTaskRelations(
+		attachCapturedTaskContext(
+			entities,
+			axRead.entities.map((built) => built.entity),
+			axRead.anchors,
+			axRead.snapshotDomIds ?? [],
+		),
 	);
 }

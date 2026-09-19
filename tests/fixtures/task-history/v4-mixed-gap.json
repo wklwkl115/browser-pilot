@@ -1,0 +1,652 @@
+{
+  "schema": "browser-task-projection/v4",
+  "policy": "literal-context-v4",
+  "snapshotId": "history-mixed-gap",
+  "canonicalSha256": "10300fd098c670626e9af58bc36c51ff54c4a223bfe7bbc8b0bd5b1f83e93a7a",
+  "capturedAt": 1000,
+  "expiresAt": 61000,
+  "spec": {
+    "focus": {
+      "refs": [
+        "bp-ref://control/invariant-note"
+      ]
+    },
+    "intent": "interact",
+    "fields": [
+      "Note"
+    ]
+  },
+  "task": {
+    "intent": "interact",
+    "focus": {
+      "refs": [
+        "bp-ref://control/invariant-note"
+      ]
+    },
+    "fields": [
+      "Note"
+    ],
+    "status": "resolved",
+    "unresolvedRefs": [],
+    "observationScope": {
+      "entitiesObserved": 6,
+      "contentComplete": true,
+      "actionsComplete": true,
+      "selectionComplete": true,
+      "collectionCount": 0,
+      "partialCollectionCount": 0,
+      "collections": []
+    },
+    "matchScope": {
+      "method": "explicit-refs",
+      "unit": "structural-object-or-entity",
+      "candidateCount": 1,
+      "contentMatchCount": 0,
+      "searched": [
+        "explicit-refs"
+      ],
+      "complete": true
+    },
+    "outputScope": {
+      "groupsTotal": 1,
+      "groupsInline": 1,
+      "groupsFolded": 0,
+      "groupsUnavailable": 0,
+      "mandatoryGroups": 0,
+      "mandatoryGroupsFolded": 0,
+      "mandatoryGroupsUnavailable": 0,
+      "contextComplete": false,
+      "packetsInline": 0,
+      "packetsFolded": 1,
+      "packetsUnavailable": 0
+    },
+    "limitations": [
+      "Only captured evidence was searched; unloaded pages were not checked.",
+      "No comparable page-change baseline is available; current facts are self-contained."
+    ]
+  },
+  "bundles": [
+    {
+      "id": "task-group-1",
+      "kind": "field",
+      "anchor": {
+        "ref": "bp-ref://control/invariant-note",
+        "role": "textbox",
+        "name": "Note"
+      },
+      "candidate": true,
+      "mandatory": false,
+      "reasons": [
+        "explicit-focus"
+      ],
+      "facts": [
+        {
+          "ref": "bp-ref://control/invariant-note",
+          "role": "textbox",
+          "source": "ax",
+          "name": "Note",
+          "value": "Draft",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": true,
+            "inViewport": true
+          },
+          "actions": [
+            "edit"
+          ]
+        },
+        {
+          "ref": "bp-ref://region/invariant-wrapper",
+          "role": "group",
+          "source": "ax",
+          "name": "Fields",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-id",
+          "role": "heading",
+          "source": "ax",
+          "name": "INV-2048",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-owner",
+          "role": "form",
+          "source": "ax",
+          "name": "INV-2048",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        }
+      ],
+      "relationEvidence": [
+        {
+          "fromRef": "bp-ref://control/invariant-note",
+          "toRef": "bp-ref://region/invariant-wrapper",
+          "relation": "containedBy",
+          "basis": "captured-structure",
+          "snapshotId": "history-mixed-gap",
+          "source": "ax"
+        },
+        {
+          "fromRef": "bp-ref://region/invariant-wrapper",
+          "toRef": "bp-ref://region/invariant-owner",
+          "relation": "containedBy",
+          "basis": "captured-structure",
+          "snapshotId": "history-mixed-gap",
+          "source": "ax"
+        },
+        {
+          "fromRef": "bp-ref://region/invariant-id",
+          "toRef": "bp-ref://region/invariant-owner",
+          "relation": "containedBy",
+          "basis": "captured-structure",
+          "snapshotId": "history-mixed-gap",
+          "source": "ax"
+        }
+      ],
+      "matches": [],
+      "requirements": {
+        "local": {
+          "evidence": "incomplete",
+          "delivery": "partial",
+          "reasonCodes": [
+            "related-context-unavailable"
+          ],
+          "evidenceRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-wrapper"
+          ],
+          "gapIds": [
+            "task-group-1-gap-1"
+          ]
+        },
+        "owner": {
+          "evidence": "complete",
+          "delivery": "inline",
+          "reasonCodes": [],
+          "evidenceRefs": [
+            "bp-ref://region/invariant-owner"
+          ],
+          "gapIds": []
+        },
+        "identity": {
+          "evidence": "unknown",
+          "delivery": "partial",
+          "reasonCodes": [
+            "related-context-unavailable",
+            "context-identity-unknown"
+          ],
+          "evidenceRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-wrapper",
+            "bp-ref://region/invariant-owner",
+            "bp-ref://region/invariant-id"
+          ],
+          "gapIds": [
+            "task-group-1-gap-2",
+            "task-group-1-gap-4"
+          ]
+        },
+        "actions": {
+          "evidence": "unknown",
+          "delivery": "partial",
+          "reasonCodes": [
+            "related-context-unavailable",
+            "context-actions-unknown"
+          ],
+          "evidenceRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-wrapper",
+            "bp-ref://region/invariant-owner",
+            "bp-ref://region/invariant-id"
+          ],
+          "gapIds": [
+            "task-group-1-gap-3",
+            "task-group-1-gap-5"
+          ]
+        }
+      },
+      "gapDetails": [
+        {
+          "code": "related-context-unavailable",
+          "relatedRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-description"
+          ],
+          "reason": "Captured describedBy relation points to an unavailable node.",
+          "layer": "capture",
+          "requirement": "local",
+          "id": "task-group-1-gap-1",
+          "remedyIds": [
+            "task-group-1-gap-1-remedy"
+          ]
+        },
+        {
+          "code": "related-context-unavailable",
+          "relatedRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-description"
+          ],
+          "reason": "Captured describedBy relation points to an unavailable node.",
+          "layer": "capture",
+          "requirement": "identity",
+          "id": "task-group-1-gap-2",
+          "remedyIds": [
+            "task-group-1-gap-2-remedy"
+          ]
+        },
+        {
+          "code": "related-context-unavailable",
+          "relatedRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-description"
+          ],
+          "reason": "Captured describedBy relation points to an unavailable node.",
+          "layer": "capture",
+          "requirement": "actions",
+          "id": "task-group-1-gap-3",
+          "remedyIds": [
+            "task-group-1-gap-3-remedy"
+          ]
+        },
+        {
+          "code": "context-identity-unknown",
+          "requirement": "identity",
+          "layer": "association",
+          "relatedRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Captured sibling group/region boundaries have no proven ownership; reading their contents does not prove association.",
+          "id": "task-group-1-gap-4",
+          "remedyIds": [
+            "task-group-1-gap-4-remedy",
+            "task-group-1-gap-4-inspect"
+          ]
+        },
+        {
+          "code": "context-actions-unknown",
+          "requirement": "actions",
+          "layer": "association",
+          "relatedRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Captured sibling group/region boundaries have no proven ownership; reading their contents does not prove association.",
+          "id": "task-group-1-gap-5",
+          "remedyIds": [
+            "task-group-1-gap-5-remedy",
+            "task-group-1-gap-5-inspect"
+          ]
+        }
+      ],
+      "remedies": [
+        {
+          "id": "task-group-1-gap-1-remedy",
+          "kind": "observe-again",
+          "changesSnapshot": true,
+          "reason": "Captured describedBy relation points to an unavailable node."
+        },
+        {
+          "id": "task-group-1-gap-2-remedy",
+          "kind": "observe-again",
+          "changesSnapshot": true,
+          "reason": "Captured describedBy relation points to an unavailable node."
+        },
+        {
+          "id": "task-group-1-gap-3-remedy",
+          "kind": "observe-again",
+          "changesSnapshot": true,
+          "reason": "Captured describedBy relation points to an unavailable node."
+        },
+        {
+          "id": "task-group-1-gap-4-remedy",
+          "kind": "disambiguate",
+          "candidateRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Captured sibling group/region boundaries have no proven ownership; reading their contents does not prove association."
+        },
+        {
+          "id": "task-group-1-gap-4-inspect",
+          "kind": "read-snapshot",
+          "resourceUri": "browser-pilot://observation/c25e084b-f7fc-4fc2-a857-183e5ccb9442",
+          "mayAddress": [
+            "task-group-1-gap-4"
+          ]
+        },
+        {
+          "id": "task-group-1-gap-5-remedy",
+          "kind": "disambiguate",
+          "candidateRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Captured sibling group/region boundaries have no proven ownership; reading their contents does not prove association."
+        },
+        {
+          "id": "task-group-1-gap-5-inspect",
+          "kind": "read-snapshot",
+          "resourceUri": "browser-pilot://observation/c25e084b-f7fc-4fc2-a857-183e5ccb9442",
+          "mayAddress": [
+            "task-group-1-gap-5"
+          ]
+        }
+      ],
+      "gaps": [
+        "related-context-unavailable",
+        "context-identity-unknown",
+        "context-actions-unknown"
+      ],
+      "changes": []
+    }
+  ],
+  "packets": [
+    {
+      "requirements": {
+        "local": {
+          "evidence": "incomplete",
+          "delivery": "partial",
+          "reasonCodes": [
+            "packet-dependency-unavailable"
+          ],
+          "evidenceRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-owner",
+            "bp-ref://region/invariant-id"
+          ],
+          "gapIds": [
+            "task-packet-1-gap-3"
+          ]
+        },
+        "owner": {
+          "evidence": "complete",
+          "delivery": "inline",
+          "reasonCodes": [],
+          "evidenceRefs": [
+            "bp-ref://region/invariant-owner"
+          ],
+          "gapIds": []
+        },
+        "identity": {
+          "evidence": "incomplete",
+          "delivery": "partial",
+          "reasonCodes": [
+            "context-identity-unknown",
+            "packet-dependency-unavailable"
+          ],
+          "evidenceRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-owner",
+            "bp-ref://region/invariant-id"
+          ],
+          "gapIds": [
+            "task-packet-1-gap-1",
+            "task-packet-1-gap-4"
+          ]
+        },
+        "actions": {
+          "evidence": "incomplete",
+          "delivery": "partial",
+          "reasonCodes": [
+            "context-actions-unknown",
+            "packet-dependency-unavailable"
+          ],
+          "evidenceRefs": [
+            "bp-ref://control/invariant-note",
+            "bp-ref://region/invariant-owner",
+            "bp-ref://region/invariant-id"
+          ],
+          "gapIds": [
+            "task-packet-1-gap-2",
+            "task-packet-1-gap-5"
+          ]
+        }
+      },
+      "gapDetails": [
+        {
+          "code": "context-identity-unknown",
+          "requirement": "identity",
+          "layer": "association",
+          "relatedRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Sibling boundaries have unproven ownership; inspection does not establish association.",
+          "id": "task-packet-1-gap-1",
+          "remedyIds": [
+            "task-packet-1-gap-1-remedy",
+            "task-packet-1-gap-1-inspect"
+          ]
+        },
+        {
+          "code": "context-actions-unknown",
+          "requirement": "actions",
+          "layer": "association",
+          "relatedRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Sibling boundaries have unproven ownership; inspection does not establish association.",
+          "id": "task-packet-1-gap-2",
+          "remedyIds": [
+            "task-packet-1-gap-2-remedy",
+            "task-packet-1-gap-2-inspect"
+          ]
+        },
+        {
+          "code": "packet-dependency-unavailable",
+          "requirement": "local",
+          "layer": "capture",
+          "relatedRefs": [
+            "bp-ref://region/invariant-description"
+          ],
+          "reason": "Required context is absent or incomplete in the inspected snapshot scope.",
+          "id": "task-packet-1-gap-3",
+          "remedyIds": [
+            "task-packet-1-gap-3-remedy"
+          ]
+        },
+        {
+          "code": "packet-dependency-unavailable",
+          "requirement": "identity",
+          "layer": "capture",
+          "relatedRefs": [
+            "bp-ref://region/invariant-description"
+          ],
+          "reason": "Required context is absent or incomplete in the inspected snapshot scope.",
+          "id": "task-packet-1-gap-4",
+          "remedyIds": [
+            "task-packet-1-gap-4-remedy"
+          ]
+        },
+        {
+          "code": "packet-dependency-unavailable",
+          "requirement": "actions",
+          "layer": "capture",
+          "relatedRefs": [
+            "bp-ref://region/invariant-description"
+          ],
+          "reason": "Required context is absent or incomplete in the inspected snapshot scope.",
+          "id": "task-packet-1-gap-5",
+          "remedyIds": [
+            "task-packet-1-gap-5-remedy"
+          ]
+        }
+      ],
+      "remedies": [
+        {
+          "id": "task-packet-1-gap-1-remedy",
+          "kind": "disambiguate",
+          "candidateRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Sibling boundaries have unproven ownership; inspection does not establish association."
+        },
+        {
+          "id": "task-packet-1-gap-1-inspect",
+          "kind": "read-snapshot",
+          "resourceUri": "browser-pilot://observation/c25e084b-f7fc-4fc2-a857-183e5ccb9442",
+          "mayAddress": [
+            "task-packet-1-gap-1"
+          ]
+        },
+        {
+          "id": "task-packet-1-gap-2-remedy",
+          "kind": "disambiguate",
+          "candidateRefs": [
+            "bp-ref://region/historical-action-group"
+          ],
+          "reason": "Sibling boundaries have unproven ownership; inspection does not establish association."
+        },
+        {
+          "id": "task-packet-1-gap-2-inspect",
+          "kind": "read-snapshot",
+          "resourceUri": "browser-pilot://observation/c25e084b-f7fc-4fc2-a857-183e5ccb9442",
+          "mayAddress": [
+            "task-packet-1-gap-2"
+          ]
+        },
+        {
+          "id": "task-packet-1-gap-3-remedy",
+          "kind": "observe-again",
+          "changesSnapshot": true,
+          "reason": "Required context is absent or incomplete in the inspected snapshot scope."
+        },
+        {
+          "id": "task-packet-1-gap-4-remedy",
+          "kind": "observe-again",
+          "changesSnapshot": true,
+          "reason": "Required context is absent or incomplete in the inspected snapshot scope."
+        },
+        {
+          "id": "task-packet-1-gap-5-remedy",
+          "kind": "observe-again",
+          "changesSnapshot": true,
+          "reason": "Required context is absent or incomplete in the inspected snapshot scope."
+        }
+      ],
+      "gaps": [
+        "context-identity-unknown",
+        "context-actions-unknown",
+        "packet-dependency-unavailable"
+      ],
+      "id": "task-packet-1",
+      "bundleId": "task-group-1",
+      "kind": "field",
+      "packetKind": "field",
+      "question": "Note context",
+      "anchor": {
+        "ref": "bp-ref://control/invariant-note",
+        "role": "textbox",
+        "name": "Note"
+      },
+      "candidate": true,
+      "mandatory": false,
+      "reasons": [
+        "field-context-v2"
+      ],
+      "relationEvidence": [
+        {
+          "fromRef": "bp-ref://region/invariant-id",
+          "toRef": "bp-ref://region/invariant-owner",
+          "relation": "containedBy",
+          "basis": "captured-structure",
+          "snapshotId": "history-mixed-gap",
+          "source": "ax"
+        }
+      ],
+      "facts": [
+        {
+          "ref": "bp-ref://control/invariant-note",
+          "role": "textbox",
+          "source": "ax",
+          "name": "Note",
+          "value": "Draft",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": true,
+            "inViewport": true
+          },
+          "actions": [
+            "edit"
+          ]
+        },
+        {
+          "ref": "bp-ref://region/invariant-owner",
+          "role": "form",
+          "source": "ax",
+          "name": "INV-2048",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        },
+        {
+          "ref": "bp-ref://region/invariant-id",
+          "role": "heading",
+          "source": "ax",
+          "name": "INV-2048",
+          "state": {
+            "visible": true,
+            "occluded": false,
+            "disabled": false,
+            "focused": false,
+            "editable": false,
+            "inViewport": true
+          }
+        }
+      ],
+      "matches": [],
+      "changes": [],
+      "scope": {
+        "policy": "field-context-v2",
+        "snapshotId": "history-mixed-gap",
+        "subjectRef": "bp-ref://control/invariant-note",
+        "ownerRef": "bp-ref://region/invariant-owner",
+        "identityRefs": [
+          "bp-ref://region/invariant-owner",
+          "bp-ref://region/invariant-id"
+        ],
+        "dependencyRefs": [
+          "bp-ref://control/invariant-note",
+          "bp-ref://region/invariant-owner",
+          "bp-ref://region/invariant-id"
+        ],
+        "contextComplete": false,
+        "excludedCount": 1,
+        "exclusions": [
+          {
+            "ref": "bp-ref://region/invariant-wrapper",
+            "reason": "Outside the subject, captured identification fields, owner actions and typed dependency closure."
+          }
+        ]
+      }
+    }
+  ]
+}

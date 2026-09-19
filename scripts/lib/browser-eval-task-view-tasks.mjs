@@ -1,7 +1,7 @@
 import { checkOwnerContextVariants, checkExactTargetDuringRouteChange } from "./browser-eval-context-checks.mjs";
 
-function taskFact(ctx, bundle, name) {
-	const facts = bundle.facts.filter((fact) => fact.name === name && fact.actions?.length);
+function taskFact(ctx, bundle, name, action) {
+	const facts = bundle.facts.filter((fact) => fact.name === name && fact.actions?.includes(action));
 	ctx.assert(facts.length === 1, "TASK_CONTROL_IDENTITY", `Expected one ${name} control in the selected record`);
 	return facts[0].ref;
 }
@@ -25,7 +25,8 @@ export const taskViewEvaluationTasks = [
 			const presentation = ctx.presentation();
 			const textView = JSON.parse(presentation.content.find((item) => item.type === "text").text);
 			ctx.assert(
-				textView.task.matchScope.candidateCount === 1 && textView.bundles.length > 0,
+				textView.task.matchScope.candidateCount === 1 &&
+					textView.bundles.length + (textView.packets?.length ?? 0) > 0,
 				"TEXT_HOST_CONTEXT",
 				"Text-only consumer lost task context",
 			);
@@ -41,14 +42,14 @@ export const taskViewEvaluationTasks = [
 				"PORTAL_CONTEXT",
 				"Related error outside the form was omitted",
 			);
-			const note = taskFact(ctx, expanded.bundle, "Note");
-			const save = taskFact(ctx, expanded.bundle, "Save");
+			const note = taskFact(ctx, expanded.bundle, "Note", "edit");
+			const save = taskFact(ctx, expanded.bundle, "Save", "click");
 			const focused = await ctx.observe({
 				mode: "diff",
 				view: { focus: { refs: [note] }, fields: ["Note"], intent: "read" },
 			});
 			ctx.assert(
-				focused.bundles.some((bundle) =>
+				[...focused.bundles, ...(focused.packets ?? [])].some((bundle) =>
 					bundle.facts.some((fact) => fact.ref === note && fact.value === "Draft"),
 				),
 				"TASK_SELF_CONTAINED",
@@ -75,14 +76,14 @@ export const taskViewEvaluationTasks = [
 				"Task check invented a business receipt",
 			);
 			ctx.assert(
-				checked.bundles.some((bundle) =>
+				[...checked.bundles, ...(checked.packets ?? [])].some((bundle) =>
 					bundle.facts.some((fact) => fact.name === "Saved locally" || fact.text === "Saved locally"),
 				),
 				"CHECK_FEEDBACK",
 				"Check omitted visible save feedback",
 			);
 			ctx.assert(
-				checked.bundles.some((bundle) =>
+				[...checked.bundles, ...(checked.packets ?? [])].some((bundle) =>
 					bundle.facts.some(
 						(fact) => fact.name === "Note requires review" || fact.text === "Note requires review",
 					),

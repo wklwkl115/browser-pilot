@@ -14,7 +14,7 @@ export type TaskFact = {
 	name?: string;
 	value?: string;
 	text?: string;
-	textSource?: "ax";
+	textSource?: "ax" | "dom";
 	state: EntityState;
 	actions?: EntityAction[];
 	source: "dom" | "ax" | "vision";
@@ -25,7 +25,45 @@ export type TaskMatch = {
 	text: string;
 	kind: "exact" | "contains";
 };
-export type DecisionBundle = {
+export type RequirementKind = "local" | "owner" | "identity" | "actions";
+export type RelationEvidence = {
+	fromRef: string;
+	toRef: string;
+	relation: string;
+	basis: "native-association" | "captured-structure" | "explicit-relation";
+	snapshotId: string;
+	source: "dom" | "ax";
+};
+export type RequirementReport = {
+	evidence: "complete" | "incomplete" | "unknown" | "not-applicable";
+	delivery: "inline" | "partial" | "folded" | "unavailable" | "not-applicable";
+	reasonCodes: string[];
+	evidenceRefs: string[];
+	gapIds: string[];
+};
+export type BundleRequirements = Record<RequirementKind, RequirementReport>;
+export type TaskGap = {
+	id: string;
+	code: string;
+	requirement: RequirementKind;
+	layer: "delivery" | "selection" | "capture" | "association" | "freshness";
+	relatedRefs: string[];
+	reason: string;
+	remedyIds: string[];
+};
+export type TaskRemedy =
+	| { id: string; kind: "read-snapshot"; resourceUri: string; mayAddress: string[]; resourceJsonBytes?: number }
+	| { id: string; kind: "observe-again"; reason: string; changesSnapshot: true }
+	| { id: string; kind: "disambiguate"; candidateRefs: string[]; reason: string }
+	| { id: string; kind: "page-action-required"; relatedRefs: string[]; reason: string };
+export type TaskEvidence = {
+	requirements: BundleRequirements;
+	gapDetails: TaskGap[];
+	remedies: TaskRemedy[];
+	gaps: string[];
+};
+export type DecisionBundle = TaskEvidence & {
+	relationEvidence?: RelationEvidence[];
 	id: string;
 	kind: "record" | "field" | "dialog" | "feedback" | "context" | "content";
 	anchor: { ref?: string; role?: string; name?: string };
@@ -37,6 +75,22 @@ export type DecisionBundle = {
 	gaps: string[];
 	text?: string;
 	changes: Array<{ ref: string; kind: string; fields: string[] }>;
+};
+export type TaskPacket = DecisionBundle & {
+	bundleId: string;
+	packetKind: "field" | "action";
+	question: string;
+	scope: {
+		policy: "field-context-v2";
+		snapshotId: string;
+		subjectRef: string;
+		ownerRef?: string;
+		identityRefs: string[];
+		dependencyRefs: string[];
+		contextComplete: boolean;
+		excludedCount: number;
+		exclusions: Array<{ ref: string; reason: string }>;
+	};
 };
 export type TaskViewMetadata = {
 	intent: NormalizedTaskViewSpec["intent"];
@@ -65,16 +119,21 @@ export type TaskViewMetadata = {
 		groupsTotal: number;
 		groupsInline: number;
 		groupsFolded: number;
+		groupsUnavailable: number;
 		mandatoryGroups: number;
 		mandatoryGroupsFolded: number;
+		mandatoryGroupsUnavailable: number;
 		contextComplete: boolean;
+		packetsInline?: number;
+		packetsFolded?: number;
+		packetsUnavailable?: number;
 	};
 	limitations: string[];
 };
-export type TaskProjectionPlan = { task: TaskViewMetadata; bundles: DecisionBundle[] };
+export type TaskProjectionPlan = { task: TaskViewMetadata; bundles: DecisionBundle[]; packets?: TaskPacket[] };
 
-export const TASK_PROJECTION_SCHEMA = "browser-task-projection/v1" as const;
-export const TASK_PROJECTION_POLICY = "literal-context-v1" as const;
+export const TASK_PROJECTION_SCHEMA = "browser-task-projection/v4" as const;
+export const TASK_PROJECTION_POLICY = "literal-context-v4" as const;
 export type TaskProjectionArtifact = TaskProjectionPlan & {
 	schema: typeof TASK_PROJECTION_SCHEMA;
 	policy: typeof TASK_PROJECTION_POLICY;

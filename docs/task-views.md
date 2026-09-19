@@ -45,7 +45,7 @@ Task output adds `task` and `bundles` to the observation view. Each bundle keeps
 
 - `observationScope`: captured entity count, content/action completeness, collection counts, pagination or virtualization limits, and whether selection reached an internal bound.
 - `matchScope`: matching method, candidate count and counting unit, text occurrence count, and searched input categories. Hits in one proven structural object are one candidate; distinct records are not merged by name.
-- `outputScope`: total, inline and folded groups, including mandatory groups, and whether all selected necessary context is inline and available.
+- `outputScope`: total, inline and folded groups, including mandatory groups, and whether all selected necessary context is inline and available. `groupsUnavailable` and `mandatoryGroupsUnavailable` count groups that reached the materialization bound and have no group expansion; they are not counted as folded.
 
 `status` is `resolved`, `ambiguous`, `no-match-in-observed`, or `unresolved`. A resolved identity does not imply complete context. No match means no match under the stated literal rule in the captured inputs; it never proves absence from other pages or unloaded records. A text-only hit can remain unresolved because it does not identify a control or record.
 
@@ -57,7 +57,7 @@ The implementation uses captured structure and typed relationships. For DOM cont
 
 ## Budgets and resources
 
-The canonical observation is saved unchanged before task selection. Selection precedes generic projection limits. The task view is limited to 32 KiB of serialized UTF-8 JSON and folds whole bundles. If a mandatory group cannot fit, the view discloses the folded blocker and does not fill the space with actionable candidate fragments.
+The canonical observation is saved unchanged before task selection. Selection precedes generic projection limits. The task view is limited to 32 KiB of serialized UTF-8 JSON and folds whole bundles or dependency-complete packets. If a mandatory group cannot fit, the view discloses the folded blocker and does not fill the space with actionable candidate fragments.
 
 Internal bounds include 20,000 indexed entities, 256 materialized object groups and 128 facts per group. A text-only match can add one evidence group. Preferred fields are ranked before the context bound. Bounded text excerpts and incomplete relationships are disclosed; the original captured model remains independently available. These limits do not authorize further page exploration.
 
@@ -77,4 +77,63 @@ Task contexts traverse explicit container anchors even when those anchors were a
 
 Task index entries include `resourceJsonBytes` (UTF-8 bytes of the full group JSON, excluding the MCP envelope) and `exceedsInlineBudget`. Large groups remain explicit opt-in expansions; the inline budget is not a resource cap. Evaluation separately reports cumulative `resourceResponseJsonBytes`, `maxResourceResponseJsonBytes`, and per-read `resourceKind` so index, group, and scope costs can be inspected. Total MCP bytes include these resource reads.
 
-Context coverage is evaluated against four internal requirements: local fields/relations, owner, captured identification fields, and applicable actions. Each requirement is complete, incomplete, unknown, or not applicable. Unknown/incomplete requirements propagate through bundle `gaps` (for example `context-identity-unknown` and `context-actions-unknown`) into `contextComplete: false`, and remain present in historical resource reads. Identification coverage describes retention of captured owner fields, not proof of a globally unique business identifier. Selection bounds still fold or truncate with gaps; they cannot establish completeness from the absence of traversal errors alone.
+## Structured requirements and remedies
+
+Each bundle exposes `requirements`, `gapDetails`, and `remedies`. The compatibility `gaps: string[]` is derived from `gapDetails` codes. Gap and remedy IDs are scoped to the saved task artifact; refs cite captured evidence and do not grant execution permission.
+
+The four requirements remain `local` (fields and related context), `owner` (captured structural owner), `identity` (captured object identification context), and `actions` (applicable controls with object context and known dependencies). Identification completeness is scoped to the observed object; it does not prove a globally unique business identifier. Group requirements cover the logical object; packet requirements cover their explicitly declared subject and dependencies.
+
+Each requirement contains independent `evidence` and `delivery` states, plus `reasonCodes`, `evidenceRefs`, and `gapIds`:
+
+| Dimension  | States                                                         | Meaning                                                                                                                                                                                  |
+| ---------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `evidence` | `complete`, `incomplete`, `unknown`, `not-applicable`          | Whether the inspected canonical evidence meets the declared requirement. Known missing relations are incomplete; unproven ownership and uninspected index regions remain unknown.        |
+| `delivery` | `inline`, `partial`, `folded`, `unavailable`, `not-applicable` | How much supporting evidence this response delivers. Inline means the applicable evidence and necessary context are delivered; partial can reflect missing evidence or selection limits. |
+
+Evaluation traverses captured relations before ranking or truncation. Changing only the output byte budget never changes evidence status. A large captured form can have complete evidence with partial delivery after the 128-fact selection limit. Group index entries describe folded delivery; reading the group restores its saved inline/partial delivery, preserving all capture and association gaps. A budget-folded bundle is discovered through the task frontier's index rather than an orphan control or a truncated bundle. The index and group share the same evidence status.
+
+Each `gapDetails` item includes its requirement, layer, related refs, human-readable reason, and remedy IDs:
+
+| Layer         | Interpretation and available next step                                                                                                                                                                      |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `delivery`    | Saved group evidence is omitted here. Follow the generated `read-snapshot` remedy for that group.                                                                                                           |
+| `selection`   | The group omits captured facts/text, or a bounded index has not inspected them. A generated evidence resource may provide more of the same snapshot; reading the group itself cannot restore omitted facts. |
+| `capture`     | Required evidence is missing from capture, or its existence is unknown. `observe-again` explicitly changes the snapshot and is not a promise that another observation will find it.                         |
+| `association` | Structure or labels do not prove ownership. `disambiguate` retains the uncertain refs; an optional snapshot read allows inspection without establishing a relationship.                                     |
+| `freshness`   | Reserved for explicit freshness gaps. Existing expired focus/resource checks still fail, without silently refreshing or substituting another object.                                                        |
+
+`read-snapshot` specifies a generated `resourceUri` and `mayAddress` gap IDs, not a guarantee of resolution. `observe-again` carries `changesSnapshot: true`. `disambiguate` includes candidate refs and a reason. `page-action-required` is part of the contract but is not inferred from generic missing capture in this policy. No remedy runs automatically, and there is no `readyToAct` flag.
+
+When selection or association needs inspection beyond the materialized group, an additional registered evidence resource reads the saved canonical artifact. It returns public facts, captured typed relations, structural parent refs and capture boundaries, with password values and locator internals omitted. Text is not truncated by the group's text limit. The entity index remains bounded at 20,000 and reports `selectionComplete`; this resource is a broad, explicit expansion, not a dependency-complete packet. Its SHA-256, snapshot identity, expiry, project scope and projection policy are checked before reading. It never queries the page or operation registry. The existing whole-page semantic resource and `/groups/...` resources retain their meanings.
+
+New artifacts use `browser-task-projection/v4` and `literal-context-v4`. The reader still accepts valid v1, v2 and v3 artifacts and returns their original bundle/packet shape; it does not fabricate new evidence for historical artifacts. Unknown or mismatched schema/policy versions fail. The task artifact digest binds the normalized task spec, canonical digest and saved requirements together. Reading any expansion leaves the saved report unchanged; only a new assessment with the missing evidence can remove a capture or association gap.
+
+## Progressive field packets
+
+`packets` are independent delivery units alongside `bundles`. A focused editable/control ref or a captured field matching `fields` can produce a field/action packet from the canonical entity index, including fields beyond the group's 128-fact materialization bound. Each packet identifies its `bundleId`, question, subject, owner, snapshot, identification refs and complete dependency refs. `/groups/...` continues to read the saved logical group; it does not return a packet.
+
+The fixed `field-context-v2` policy retains the subject, captured owner, static leaf identification fields, same-owner independent controls and feedback, then follows captured label, description, column, occlusion and control relations transitively. Identification uses captured non-editable leaf values/text, including ordinary wrappers; label/description subtrees belong to their respective fields. Clickable labels are field dependencies rather than independent owner operations. Unknown ownership and uncaptured dependencies remain gaps. Unrelated fields are excluded by policy, with an exclusion count and up to 16 representative reasons; budget changes never alter these rules. Packet context completeness is scoped to these dependencies, and does not imply that the whole form is displayed.
+
+The planner materializes up to 256 packets with at most 128 required entities each. Larger dependency sets count as `packetsUnavailable`, with no false expansion promise. Required text is not truncated: an oversized error folds the whole packet, preserving the exact error in its resource. `packetsInline` and `packetsFolded` describe delivery independently of whole-group scope. Mandatory dialogs and blockers still take precedence. Packets that share an owner reuse the same captured refs; each resource retains its own identification context so it can be understood independently.
+
+The task index includes a `packetIndex` with generated packet URIs, question, owner, gaps, completeness and exact expanded `resourceJsonBytes`. Follow its index/next URI for additional bounded pages. Packet reads include snapshot and canonical digest, capture/expiry times, task scope and the saved packet. They use no live browser or operation registry. Standard MCP resource reading and text/structured tool output expose the same evidence boundaries; the link alone does not mean a host has read the packet.
+
+## Captured ownership evidence
+
+Normal DOM capture reads native control `.form` and `.labels`, plus explicit ARIA labels/descriptions. Referenced targets enter the canonical entity model; selectors resolve only to unambiguous captured refs in the same target scope. A missing or conflicting endpoint remains incomplete. Projection remains pure and adds no browser reads.
+
+Controls without IDs can bind AX context through matching structured DOM paths captured by both the normal scan and main-document DOMSnapshot. Paths count only element siblings, ignore JSON property ordering and are bounded to 64 ancestors and the first 20,000 snapshot nodes (ID lookup remains available). This association does not upgrade execution locators or ref identity. Unmapped captured AX controls mark their container context incomplete, so a proven subset cannot silently discharge an unknown boundary. DOM-derived label/description text carries `textSource: "dom"` and explicit capture truncation; AX context remains marked `ax`.
+
+`relationEvidence` records `fromRef`, `toRef`, relation, basis (`native-association`, `captured-structure`, or `explicit-relation`), snapshot ID and source. Native form ownership can admit an external or sibling-group control individually. It does not admit the entire wrapper, unrelated descendants, another form, or another structural record under the same form. A sibling boundary is only discharged when its captured controls have proven associations and no unexplained static evidence remains. Unclassified/custom controls retain association gaps. A captured null native owner does not become a proven action owner through ancestry.
+
+Table cell/row/header relations retain their captured structural evidence. Multiple competing headers for the same column no longer silently select the last header; that relation remains incomplete. Identification completeness remains local to the observed object and candidate set, and equal titles never merge records.
+
+These distinctions follow the [HTML form-owner model](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-owner) and [ARIA relationship semantics](https://www.w3.org/TR/wai-aria-1.2/#aria-controls). A controls relation is not a business ownership relation. Custom form-associated components, arbitrary cross-frame native association and general semantic retrieval remain outside this policy.
+
+## Cross-layer evidence invariants
+
+Bundle and packet scopes remain different, but both now pass their declared dependencies through the same evidence assessor and delivery evaluator. In particular, intent applicability and the interaction of missing capture with unknown ownership use one rule. An excluded field's missing description may leave its form incomplete while the Note packet is complete; a missing Note dependency or unproven action association cannot be repaired by changing delivery format. A declared native owner whose supporting relation is absent or conflicting retains an association gap rather than falling back to complete structural ownership.
+
+Combination tests vary layout wrappers, external controls, neighboring records, deleted/conflicting ownership evidence, missing required descriptions and output budgets. They check fixture facts independently, compare equal dependency scopes, and carry evidence verdicts through text, structured output, folded indexes and resource reads. Budget changes affect delivery only. `unknown` and `incomplete` are distinct reasons, not an ordered confidence scale; neither can become `complete` merely by removing support or reading a resource.
+
+The [historical fixture corpus](../tests/fixtures/task-history/README.md) contains byte-exact outputs generated by the real v1-v4 producers in detached source checkouts, using synthetic common-era inputs. Current readers preserve those saved bundles/packets verbatim, including historical verdicts, rather than re-evaluating them. Resource lifetime and execution-ref freshness remain separate checks. This work changes no public input or schema and adds no execution authorization.

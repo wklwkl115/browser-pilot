@@ -40,7 +40,7 @@ const spec = {
 	additionalProperties: false,
 } as const;
 
-export const TASK_BUNDLE_SCHEMA = {
+const LEGACY_TASK_BUNDLE_SCHEMA = {
 	type: "object",
 	properties: {
 		id: text,
@@ -61,7 +61,7 @@ export const TASK_BUNDLE_SCHEMA = {
 					name: text,
 					value: text,
 					text,
-					textSource: { const: "ax" },
+					textSource: { enum: ["ax", "dom"] },
 					source: { enum: ["dom", "ax", "vision"] },
 					actions: { type: "array", items: { enum: ["click", "edit"] } },
 					state: {
@@ -113,6 +113,113 @@ export const TASK_BUNDLE_SCHEMA = {
 	},
 	required: ["id", "kind", "anchor", "candidate", "mandatory", "reasons", "facts", "matches", "gaps", "changes"],
 	additionalProperties: false,
+} as const;
+
+const requirement = { enum: ["local", "owner", "identity", "actions"] } as const;
+const report = {
+	type: "object",
+	properties: {
+		evidence: { enum: ["complete", "incomplete", "unknown", "not-applicable"] },
+		delivery: { enum: ["inline", "partial", "folded", "unavailable", "not-applicable"] },
+		reasonCodes: strings,
+		evidenceRefs: strings,
+		gapIds: strings,
+	},
+	required: ["evidence", "delivery", "reasonCodes", "evidenceRefs", "gapIds"],
+	additionalProperties: false,
+} as const;
+export const TASK_BUNDLE_SCHEMA = {
+	...LEGACY_TASK_BUNDLE_SCHEMA,
+	properties: {
+		...LEGACY_TASK_BUNDLE_SCHEMA.properties,
+		relationEvidence: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					fromRef: text,
+					toRef: text,
+					relation: text,
+					snapshotId: text,
+					basis: { enum: ["native-association", "captured-structure", "explicit-relation"] },
+					source: { enum: ["dom", "ax"] },
+				},
+				required: ["fromRef", "toRef", "relation", "basis", "snapshotId", "source"],
+				additionalProperties: false,
+			},
+		},
+		requirements: {
+			type: "object",
+			properties: { local: report, owner: report, identity: report, actions: report },
+			required: ["local", "owner", "identity", "actions"],
+			additionalProperties: false,
+		},
+		gapDetails: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					id: text,
+					code: text,
+					requirement,
+					layer: { enum: ["delivery", "selection", "capture", "association", "freshness"] },
+					relatedRefs: strings,
+					reason: text,
+					remedyIds: strings,
+				},
+				required: ["id", "code", "requirement", "layer", "relatedRefs", "reason", "remedyIds"],
+				additionalProperties: false,
+			},
+		},
+		remedies: {
+			type: "array",
+			items: {
+				anyOf: [
+					{
+						type: "object",
+						properties: {
+							id: text,
+							kind: { const: "read-snapshot" },
+							resourceUri: text,
+							mayAddress: strings,
+							resourceJsonBytes: count,
+						},
+						required: ["id", "kind", "resourceUri", "mayAddress"],
+						additionalProperties: false,
+					},
+					{
+						type: "object",
+						properties: {
+							id: text,
+							kind: { const: "observe-again" },
+							reason: text,
+							changesSnapshot: { const: true },
+						},
+						required: ["id", "kind", "reason", "changesSnapshot"],
+						additionalProperties: false,
+					},
+					{
+						type: "object",
+						properties: { id: text, kind: { const: "disambiguate" }, candidateRefs: strings, reason: text },
+						required: ["id", "kind", "candidateRefs", "reason"],
+						additionalProperties: false,
+					},
+					{
+						type: "object",
+						properties: {
+							id: text,
+							kind: { const: "page-action-required" },
+							relatedRefs: strings,
+							reason: text,
+						},
+						required: ["id", "kind", "relatedRefs", "reason"],
+						additionalProperties: false,
+					},
+				],
+			},
+		},
+	},
+	required: [...LEGACY_TASK_BUNDLE_SCHEMA.required, "requirements", "gapDetails", "remedies"],
 } as const;
 
 export const TASK_VIEW_METADATA_SCHEMA = {
@@ -172,9 +279,14 @@ export const TASK_VIEW_METADATA_SCHEMA = {
 				groupsTotal: count,
 				groupsInline: count,
 				groupsFolded: count,
+				groupsUnavailable: count,
 				mandatoryGroups: count,
 				mandatoryGroupsFolded: count,
+				mandatoryGroupsUnavailable: count,
 				contextComplete: flag,
+				packetsInline: count,
+				packetsFolded: count,
+				packetsUnavailable: count,
 			},
 			required: [
 				"groupsTotal",
@@ -202,7 +314,51 @@ export const TASK_VIEW_METADATA_SCHEMA = {
 	additionalProperties: false,
 } as const;
 
-export const TASK_PROJECTION_ARTIFACT_SCHEMA = {
+export const TASK_PACKET_SCHEMA = {
+	...TASK_BUNDLE_SCHEMA,
+	properties: {
+		...TASK_BUNDLE_SCHEMA.properties,
+		bundleId: text,
+		packetKind: { enum: ["field", "action"] },
+		question: text,
+		scope: {
+			type: "object",
+			properties: {
+				policy: { const: "field-context-v2" },
+				snapshotId: text,
+				subjectRef: text,
+				ownerRef: text,
+				identityRefs: strings,
+				dependencyRefs: strings,
+				contextComplete: flag,
+				excludedCount: count,
+				exclusions: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: { ref: text, reason: text },
+						required: ["ref", "reason"],
+						additionalProperties: false,
+					},
+				},
+			},
+			required: [
+				"policy",
+				"snapshotId",
+				"subjectRef",
+				"identityRefs",
+				"dependencyRefs",
+				"contextComplete",
+				"excludedCount",
+				"exclusions",
+			],
+			additionalProperties: false,
+		},
+	},
+	required: [...TASK_BUNDLE_SCHEMA.required, "bundleId", "packetKind", "question", "scope"],
+} as const;
+
+const PRE_PACKET_ARTIFACT_SCHEMA = {
 	type: "object",
 	properties: {
 		schema: { const: TASK_PROJECTION_SCHEMA },
@@ -227,4 +383,54 @@ export const TASK_PROJECTION_ARTIFACT_SCHEMA = {
 		"bundles",
 	],
 	additionalProperties: false,
+} as const;
+
+export const TASK_PROJECTION_ARTIFACT_SCHEMA = {
+	...PRE_PACKET_ARTIFACT_SCHEMA,
+	properties: { ...PRE_PACKET_ARTIFACT_SCHEMA.properties, packets: { type: "array", items: TASK_PACKET_SCHEMA } },
+	required: [...PRE_PACKET_ARTIFACT_SCHEMA.required, "packets"],
+} as const;
+
+export const V2_TASK_PROJECTION_ARTIFACT_SCHEMA = {
+	...PRE_PACKET_ARTIFACT_SCHEMA,
+	properties: {
+		...PRE_PACKET_ARTIFACT_SCHEMA.properties,
+		schema: { const: "browser-task-projection/v2" },
+		policy: { const: "literal-context-v2" },
+	},
+} as const;
+
+export const V3_TASK_PROJECTION_ARTIFACT_SCHEMA = {
+	...TASK_PROJECTION_ARTIFACT_SCHEMA,
+	properties: {
+		...TASK_PROJECTION_ARTIFACT_SCHEMA.properties,
+		schema: { const: "browser-task-projection/v3" },
+		policy: { const: "literal-context-v3" },
+		packets: {
+			type: "array",
+			items: {
+				...TASK_PACKET_SCHEMA,
+				properties: {
+					...TASK_PACKET_SCHEMA.properties,
+					scope: {
+						...TASK_PACKET_SCHEMA.properties.scope,
+						properties: {
+							...TASK_PACKET_SCHEMA.properties.scope.properties,
+							policy: { const: "field-context-v1" },
+						},
+					},
+				},
+			},
+		},
+	},
+} as const;
+
+export const LEGACY_TASK_PROJECTION_ARTIFACT_SCHEMA = {
+	...PRE_PACKET_ARTIFACT_SCHEMA,
+	properties: {
+		...PRE_PACKET_ARTIFACT_SCHEMA.properties,
+		schema: { const: "browser-task-projection/v1" },
+		policy: { const: "literal-context-v1" },
+		bundles: { type: "array", items: LEGACY_TASK_BUNDLE_SCHEMA },
+	},
 } as const;

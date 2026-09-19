@@ -1,5 +1,11 @@
 import { readFile, realpath } from "node:fs/promises";
-import { readTaskProjectionResource, taskResourceSuffix, validTaskResourceDescriptor } from "./taskViewResources.js";
+import {
+	readTaskProjectionResource,
+	taskResourceSuffix,
+	validTaskResourceDescriptor,
+	readTaskEvidenceResource,
+	validTaskEvidenceDescriptor,
+} from "./taskViewResources.js";
 import { OPERATION_RESULT_PROPERTIES, OPERATION_OUTPUT_SCHEMA } from "../../operations/resultSchema.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,6 +99,8 @@ function toolAnnotations(name: string): Tool["annotations"] | undefined {
  * PAGE_OBSERVATION_VIEW_JSON_SCHEMA keeps validating every result before it leaves the server.
  */
 const OBSERVE_VIEW_KEY_DESCRIPTIONS: Record<keyof typeof PAGE_OBSERVATION_VIEW_JSON_SCHEMA.properties, string> = {
+	packets:
+		"Independent field or action context with object identification, required dependencies and explicit exclusions. Folded packets have snapshot resources.",
 	task: "Information need, literal candidate count and ambiguity, captured/matched/displayed scope, and missing context. No task completion claim.",
 	bundles:
 		"Self-contained evidence groups: object identity, fields, related controls, observed global signals and changes. Folded groups remain available as snapshot resources.",
@@ -278,6 +286,7 @@ function pruneObservationResources(now = Date.now()): void {
 }
 
 function validObservationResourceTarget(descriptor: ObservationResourceDescriptor): boolean {
+	if (descriptor.taskEvidence !== undefined) return validTaskEvidenceDescriptor(descriptor);
 	if (descriptor.taskProjection !== undefined) return validTaskResourceDescriptor(descriptor);
 	if (descriptor.kind === "content")
 		return (
@@ -568,6 +577,11 @@ export async function readMcpResource(uri: string, projectRoot = mcpProjectRoot(
 		if (!relative || relative.startsWith("..") || path.isAbsolute(relative))
 			throw new Error("Observation resource is outside the project artifact root");
 		const artifactText = await readFile(target, "utf8");
+		if (descriptor.taskEvidence) {
+			if (taskResourceSuffix(uri)) throw new Error("This evidence resource has no task groups");
+			const value = readTaskEvidenceResource(artifactText, descriptor);
+			return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(publicToolValue(value)) }] };
+		}
 		if (descriptor.taskProjection) {
 			const value = readTaskProjectionResource(artifactText, descriptor, uri);
 			return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(publicToolValue(value)) }] };
