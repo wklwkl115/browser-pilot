@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage questions and design discussion
+    url: https://github.com/wklwkl115/browser-pilot/discussions
+    about: Ask how to use Browser Pilot or explore a proposed workflow.
+  - name: Security vulnerability
+    url: https://github.com/wklwkl115/browser-pilot/security/advisories/new
+    about: Report a security problem privately. Do not include secrets in a public issue.
+  - name: Documentation
+    url: https://github.com/wklwkl115/browser-pilot/tree/main/docs
+    about: Read the documentation index and recovery guidance before opening an issue.
